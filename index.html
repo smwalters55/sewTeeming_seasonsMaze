@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sketch Maze – Base Prototype</title>
+  <style>
+    :root{
+      --ink:#2b2b2b;
+      --paper:#f7f4ee;
+      --accent:#9bb7ff;
+      --haze:rgba(120,120,120,.35);
+    }
+    html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:ui-monospace, Menlo, Consolas, monospace;}
+    #game{position:relative; width:100vw; height:70vh; overflow:hidden; border-bottom:2px dashed var(--ink);}    
+    #world{position:absolute; left:0; bottom:0; height:100%; width:3000px;}
+    .ground{position:absolute; bottom:0; left:0; height:80px; width:100%; border-top:3px solid var(--ink); background:linear-gradient(#0000, #0001);}    
+    .tree{position:absolute; bottom:80px; width:180px; height:260px; border:3px solid var(--ink); border-radius:90px 90px 40px 40px;}
+    .trunk{position:absolute; bottom:80px; width:140px; height:40px; border:3px solid var(--ink); background:#fff;}
+    .apple{position:absolute; width:26px; height:26px; border:3px solid var(--ink); border-radius:50%; background:#fff; cursor:pointer;}
+    .apple.glow{box-shadow:0 0 0 0 rgba(155,183,255,.8); animation:glow 1.2s ease-in-out 2;}
+    @keyframes glow{50%{box-shadow:0 0 18px 6px rgba(155,183,255,.8)}}
+
+    .path{position:absolute; bottom:80px; width:160px; height:120px; border:3px dashed var(--ink); text-align:center; line-height:120px;}
+    .path.hazy{opacity:.45; filter:blur(1px);}    
+
+    #player{position:absolute; bottom:80px; width:34px; height:54px; border:3px solid var(--ink); background:#fff; transition:bottom .1s;}    
+    #player.jump{bottom:150px;}    
+    #player.crouch{height:34px;}
+
+    #ui{display:flex; gap:12px; padding:8px;}    
+    #basket{border:3px solid var(--ink); padding:6px 10px;}    
+
+    #overlay{position:absolute; inset:0; background:rgba(247,244,238,.95); display:none;}    
+    #map{margin:20px auto; width:90%; height:60%; border:3px solid var(--ink); position:relative;}    
+    .map-node{position:absolute; width:120px; height:60px; border:3px dashed var(--ink); text-align:center; line-height:60px;}    
+    .locked{opacity:.35;}
+
+    .note{padding:10px; font-size:14px;}
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="basket">Inventory: <span id="inv">(empty)</span></div>
+    <div class="note">← → move • ↑ jump • ↓ crouch/look • Space: map</div>
+  </div>
+
+  <div id="game">
+    <div id="world">
+      <div class="ground"></div>
+      <!-- Orchard -->
+      <div class="tree" style="left:200px"></div>
+      <div class="trunk" style="left:220px"></div>
+      <div id="apple1" class="apple" style="left:260px; bottom:240px"></div>
+
+      <!-- Paths -->
+      <div id="path1" class="path" style="left:520px">Path I</div>
+      <div id="path2" class="path hazy" style="left:720px">Path II</div>
+      <div id="path3" class="path hazy" style="left:920px">Path III</div>
+
+      <!-- Player -->
+      <div id="player" style="left:120px"></div>
+    </div>
+
+    <!-- Map Overlay -->
+    <div id="overlay">
+      <div id="map">
+        <div class="map-node" style="left:40px; top:40px">Orchard</div>
+        <div class="map-node" style="left:220px; top:40px">Path I</div>
+        <div class="map-node locked" style="left:400px; top:40px">Path II</div>
+        <div class="map-node locked" style="left:580px; top:40px">Path III</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const player=document.getElementById('player');
+    const world=document.getElementById('world');
+    const apple=document.getElementById('apple1');
+    const inv=document.getElementById('inv');
+    const overlay=document.getElementById('overlay');
+
+    let x=120, vx=0, hasApple=false;
+
+    // Apple fall intro
+    let fallY=240; const fall=setInterval(()=>{
+      fallY-=2; apple.style.bottom=fallY+'px'; if(fallY<=120) clearInterval(fall);
+    },16);
+
+    apple.onclick=()=>{
+      if(hasApple) return;
+      apple.classList.add('glow');
+      setTimeout(()=>{
+        hasApple=true; inv.textContent='Special Apple'; apple.style.display='none';
+      },1200);
+    };
+
+    const keys={};
+    window.addEventListener('keydown',e=>{
+      keys[e.key]=true;
+      if(e.key===' ') overlay.style.display = overlay.style.display==='block'?'none':'block';
+    });
+    window.addEventListener('keyup',e=>{
+      keys[e.key]=false;
+      player.classList.remove('jump','crouch');
+    });
+
+    function tick(){
+      vx=0;
+      if(keys['ArrowRight']) vx=4;
+      if(keys['ArrowLeft']) vx=-4;
+      if(keys['ArrowUp']) player.classList.add('jump');
+      if(keys['ArrowDown']) player.classList.add('crouch');
+
+      x=Math.max(0, Math.min(2600, x+vx));
+      player.style.left=x+'px';
+      world.style.left = Math.min(0, 300 - x) + 'px';
+      requestAnimationFrame(tick);
+    }
+    tick();
+  </script>
+</body>
+</html>
