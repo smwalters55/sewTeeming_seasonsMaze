@@ -25,7 +25,12 @@
     .path.hazy{opacity:.45; filter:blur(1px);}    
 
     #player{position:absolute; bottom:80px; width:34px; height:54px; border:3px solid var(--ink); background:#fff; transition:bottom .1s;}    
-    #player.jump{bottom:160px;}
+    #player.jump{animation:jump 0.35s ease-out forwards;}
+    @keyframes jump{
+      0%{bottom:80px}
+      50%{bottom:170px}
+      100%{bottom:80px}
+    }
     .platform{position:absolute; bottom:120px; width:120px; height:16px; border:3px solid var(--ink); background:#fff;}    
     #player.crouch{height:34px;}
 
@@ -96,7 +101,7 @@
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
 
-    let x=120, vx=0, hasApple=false, jumping=false, onPlatform=false;
+    let x=120, vx=0, hasApple=false, jumping=false, onPlatform=false, facing='right';
 
     // Apple fall intro
     let fallY=240; const fall=setInterval(()=>{
@@ -113,6 +118,7 @@
 
     const keys={};
     const frog=document.getElementById('frog');
+    let frogBlinkTimer=0;
     const dialogue=document.getElementById('dialogue');
     const dialogueText=document.getElementById('dialogueText');
     let talked=false;
@@ -141,7 +147,14 @@
       vx=0;
       if(keys['ArrowRight']) vx=4;
       if(keys['ArrowLeft']) vx=-4;
-      if(keys['ArrowUp'] && !jumping){ jumping=true; player.classList.add('jump'); setTimeout(()=>{ jumping=false; player.classList.remove('jump'); },300); }
+      if(keys['ArrowUp'] && !jumping){
+        jumping=true;
+        player.classList.add('jump');
+        setTimeout(()=>{
+          player.classList.remove('jump');
+          jumping=false;
+        },350);
+      }
       if(keys['ArrowDown']){ player.classList.add('crouch'); tryFrogTalk(); }
 
       x=Math.max(0, Math.min(2600, x+vx));
