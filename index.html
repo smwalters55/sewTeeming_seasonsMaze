@@ -25,7 +25,8 @@
     .path.hazy{opacity:.45; filter:blur(1px);}    
 
     #player{position:absolute; bottom:80px; width:34px; height:54px; border:3px solid var(--ink); background:#fff; transition:bottom .1s;}    
-    #player.jump{bottom:150px;}    
+    #player.jump{bottom:160px;}
+    .platform{position:absolute; bottom:120px; width:120px; height:16px; border:3px solid var(--ink); background:#fff;}    
     #player.crouch{height:34px;}
 
     #ui{display:flex; gap:12px; padding:8px;}    
@@ -42,7 +43,7 @@
 <body>
   <div id="ui">
     <div id="basket">Inventory: <span id="inv">(empty)</span></div>
-    <div class="note">← → move • ↑ jump • ↓ crouch/look • Space: map</div>
+    
   </div>
 
   <div id="game">
@@ -52,6 +53,9 @@
       <div class="tree" style="left:200px"></div>
       <div class="trunk" style="left:220px"></div>
       <div id="apple1" class="apple" style="left:260px; bottom:240px"></div>
+
+      <!-- Platform near Frog -->
+      <div class="platform" id="frogPlatform" style="left:800px"></div>
 
       <!-- Paths -->
       <div id="path1" class="path" style="left:520px">Path I</div>
@@ -92,7 +96,7 @@
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
 
-    let x=120, vx=0, hasApple=false;
+    let x=120, vx=0, hasApple=false, jumping=false, onPlatform=false;
 
     // Apple fall intro
     let fallY=240; const fall=setInterval(()=>{
@@ -137,12 +141,16 @@
       vx=0;
       if(keys['ArrowRight']) vx=4;
       if(keys['ArrowLeft']) vx=-4;
-      if(keys['ArrowUp']) player.classList.add('jump');
+      if(keys['ArrowUp'] && !jumping){ jumping=true; player.classList.add('jump'); setTimeout(()=>{ jumping=false; player.classList.remove('jump'); },300); }
       if(keys['ArrowDown']){ player.classList.add('crouch'); tryFrogTalk(); }
 
       x=Math.max(0, Math.min(2600, x+vx));
       player.style.left=x+'px';
       world.style.left = Math.min(0, 300 - x) + 'px';
+      const plat=document.getElementById('frogPlatform');
+      const px=player.getBoundingClientRect();
+      const fx=plat.getBoundingClientRect();
+      if(px.bottom<=fx.top+10 && px.right>fx.left && px.left<fx.right){ player.style.bottom='136px'; onPlatform=true; } else { if(!jumping){ player.style.bottom='80px'; onPlatform=false; }}
       requestAnimationFrame(tick);
     }
     tick();
