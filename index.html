@@ -25,9 +25,12 @@
     .path.hazy{opacity:.45; filter:blur(1px);}    
 
     #player{position:absolute; bottom:80px; width:34px; height:54px; border:3px solid var(--ink); background:#fff; transition:bottom .1s;}    
-    #player.jump{animation:jump 0.35s ease-out forwards;}
+    #player.jump{animation:jump 0.45s ease-in-out forwards;}
     @keyframes jump{
-      0%{bottom:80px}
+      0%{transform:translateY(0)}
+      50%{transform:translateY(-90px)}
+      100%{transform:translateY(0)}
+    }
       50%{bottom:170px}
       100%{bottom:80px}
     }
@@ -153,7 +156,8 @@
         setTimeout(()=>{
           player.classList.remove('jump');
           jumping=false;
-        },350);
+        },450);
+      },350);
       }
       if(keys['ArrowDown']){ player.classList.add('crouch'); tryFrogTalk(); }
 
@@ -163,7 +167,10 @@
       const plat=document.getElementById('frogPlatform');
       const px=player.getBoundingClientRect();
       const fx=plat.getBoundingClientRect();
-      if(px.bottom<=fx.top+10 && px.right>fx.left && px.left<fx.right){ player.style.bottom='136px'; onPlatform=true; } else { if(!jumping){ player.style.bottom='80px'; onPlatform=false; }}
+      if(!jumping && px.bottom<=fx.top+12 && px.right>fx.left && px.left<fx.right){
+        player.style.bottom='136px'; onPlatform=true;
+      } else if(!jumping){
+        player.style.bottom='}
       requestAnimationFrame(tick);
     }
     tick();
