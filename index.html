@@ -58,8 +58,20 @@
       <div id="path2" class="path hazy" style="left:720px">Path II</div>
       <div id="path3" class="path hazy" style="left:920px">Path III</div>
 
+      <!-- Frog NPC -->
+      <div id="frog" style="position:absolute; left:820px; bottom:80px; width:48px; height:42px; border:3px solid var(--ink); border-radius:20px 20px 16px 16px; background:#fff;">
+        <div style="position:absolute; top:-18px; left:10px; width:26px; height:14px; border:3px solid var(--ink); background:#fff"></div>
+        <div style="position:absolute; right:-10px; bottom:6px; width:20px; height:4px; border-top:3px solid var(--ink)"></div>
+      </div>
+      
+      <!-- Dialogue -->
+      <div id="dialogue" style="display:none; position:absolute; left:760px; bottom:160px; max-width:260px; border:3px solid var(--ink); background:var(--paper); padding:8px;">
+        <div id="dialogueText"></div>
+      </div>
+
       <!-- Player -->
       <div id="player" style="left:120px"></div>
+    </div>
     </div>
 
     <!-- Map Overlay -->
@@ -96,6 +108,22 @@
     };
 
     const keys={};
+    const frog=document.getElementById('frog');
+    const dialogue=document.getElementById('dialogue');
+    const dialogueText=document.getElementById('dialogueText');
+    let talked=false;
+
+    function tryFrogTalk(){
+      if(talked) return;
+      const px=player.getBoundingClientRect().left;
+      const fx=frog.getBoundingClientRect().left;
+      if(Math.abs(px-fx)<60){
+        talked=true;
+        dialogue.style.display='block';
+        dialogueText.innerHTML="Ah. You found <i>the</i> apple, didn’t you?<br><br>Paths open when things are carried with care.<br><br>I seem to have misplaced my bass…";
+      }
+    }
+
     window.addEventListener('keydown',e=>{
       keys[e.key]=true;
       if(e.key===' ') overlay.style.display = overlay.style.display==='block'?'none':'block';
@@ -110,7 +138,7 @@
       if(keys['ArrowRight']) vx=4;
       if(keys['ArrowLeft']) vx=-4;
       if(keys['ArrowUp']) player.classList.add('jump');
-      if(keys['ArrowDown']) player.classList.add('crouch');
+      if(keys['ArrowDown']){ player.classList.add('crouch'); tryFrogTalk(); }
 
       x=Math.max(0, Math.min(2600, x+vx));
       player.style.left=x+'px';
@@ -121,3 +149,52 @@
   </script>
 </body>
 </html>
+
+---
+
+## Added NPC: Frog Guide (Top Hat)
+
+### Visual Style
+- Hand-drawn sketch aesthetic
+- Slightly oversized head, long limbs
+- Wears a small **top hat**
+- Carries a **walking stick** (later doubles as bass bow reference)
+- Idle animation: gentle sway, occasional blink
+
+### Location
+- Appears in **Path One**, shortly after entering from orchard
+- Stands near a mild obstacle (rock / stump)
+
+### Interaction
+- Mouse click or ↓ + interact range
+- Dialogue appears in sketch-style speech bubble
+
+### Dialogue (Initial)
+> "Ah. You found *the* apple, didn’t you?"
+
+> "Paths open when things are carried with care."
+
+> "I seem to have misplaced my bass… perhaps it wandered ahead of me."
+
+### Function
+- Acts as:
+  - Narrative anchor
+  - Soft hint system
+  - Side quest giver
+
+### Side Quest Hook
+- **Quest:** Help Frog find their stand-up bass
+- Bass appears later in maze (different zone)
+- Returning bass unlocks:
+  - New traversal ability OR
+  - Hidden shortcut OR
+  - Decorative musical moment
+
+### Multiplayer-Future Ready
+- Frog dialogue can change depending on:
+  - Which player interacted first
+  - Whether both players are present
+- Frog acknowledges shared progress subtly
+
+---
+
