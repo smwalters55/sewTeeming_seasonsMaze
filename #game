@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-  <canvas id="game" width="800" height="400"></canvas>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +12,7 @@
       --haze:rgba(120,120,120,.35);
     }
     html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:ui-monospace, Menlo, Consolas, monospace;}
-    #game{position:relative; width:100vw; height:70vh; overflow:hidden; border-bottom:2px dashed var(--ink);}    
+    #game{width:100vw; border-bottom:2px dashed var(--ink);}    
     #world{position:absolute; left:0; bottom:0; height:100%; width:3000px;}
     .ground{position:absolute; bottom:0; left:0; height:80px; width:100%; border-top:3px solid var(--ink); background:linear-gradient(#0000, #0001);}    
     .tree{position:absolute; bottom:80px; width:180px; height:260px; border:3px solid var(--ink); border-radius:90px 90px 40px 40px;}
@@ -54,8 +53,7 @@
     <div id="basket">Inventory: <span id="inv">(empty)</span></div>
     
   </div>
-
-  <div id="game">
+  <canvas id="game" width="800" height="400"></canvas>
     <div id="world">
       <div class="ground"></div>
       <!-- Orchard -->
@@ -148,9 +146,8 @@ function handleInput() {
     camera.topDown = !camera.topDown;
     camera.locked = true;
   }
-
   if (!keys.space) camera.locked = false;
-
+}
   
 // motion over time
 function applyPhysics() {
@@ -205,6 +202,9 @@ function draw() {
 }
 
 window.addEventListener("keydown", (e) => {
+    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
+    e.preventDefault();
+  }
   if (e.key === "ArrowLeft") keys.left = true;
   if (e.key === "ArrowRight") keys.right = true;
   if (e.key === "ArrowUp") keys.up = true;
@@ -236,7 +236,6 @@ window.addEventListener("keyup", (e) => {
     };
 
   // add frog
-    const keys={};
     const frog=document.getElementById('frog');
     let frogBlinkTimer=0;
     const dialogue=document.getElementById('dialogue');
@@ -245,19 +244,15 @@ window.addEventListener("keyup", (e) => {
 
     function tryFrogTalk(){
       if(talked) return;
-      const px=player.getBoundingClientRect().left;
-      const fx=frog.getBoundingClientRect().left;
+      const px = player.x;
+      const fx = frog.offsetLeft;
       if(Math.abs(px-fx)<60){
         talked=true;
         dialogue.style.display='block';
         dialogueText.innerHTML="Ah. You found <i>the</i> apple, didn’t you?<br><br>Paths open when things are carried with care.<br><br>I seem to have misplaced my bass…";
       }
     }
-
-      x=Math.max(0, Math.min(2600, x+vx));
-      world.style.left = Math.min(0, 300 - x) + 'px';
-      const plat=document.getElementById('frogPlatform');
-    }
+  }
 
   // spine of update
 function update() {
