@@ -101,26 +101,38 @@
   <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
-    const player=document.getElementById('player');
     const world=document.getElementById('world');
     const apple=document.getElementById('apple1');
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
-    const platforms = [
-  { x: 250, y: groundY - 60, width: 120, height: 10 }
-];
-    const keys = {
-  left: false,
-  right: false,
-  up: false,
-  down: false,
-  space: false
+
+  const keys = {
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    space: false
+};
+
+  const player = {
+    x: 120,
+    y: 0,
+    width: 40,
+    height: 54,
+    speed: 3,
+    jumping: false,
+    jumpVelocity: 0
 };
     const camera = {
       topDown: false,
       locked: false
 };
+  const groundY = 300;
 
+  const platforms = [
+  { x: 800, y: groundY - 60, width: 120, height: 10 }
+];
+    
 // arrow keys move, stop when key released; spacebar changes camera angle
     // movement intent
 function handleInput() {
@@ -138,38 +150,10 @@ function handleInput() {
   }
 
   if (!keys.space) camera.locked = false;
-    // arrow keys move left, right, dowmn=crouch, up=jump
-const keys = {
-  left: false,
-  right: false,
-  up: false,
-  down: false,
-  space: false
-};
 
-const player = {
-  x: 120,
-  y: 0,
-  width: 40,
-  height: 54,
-  speed: 3,
-  jumping: false,
-  jumpVelocity: 0
-};
-
-const camera = {
-  topDown: false,
-  locked: false
-};
-
-const groundY = 300;
-
+  
 // motion over time
 function applyPhysics() {
-  // gravity
-  player.y += player.jumpVelocity;
-  player.jumpVelocity -= 0.8;
-
 // gravity always applies
   player.y += player.jumpVelocity;
   player.jumpVelocity -= 0.8;
@@ -180,36 +164,32 @@ function applyPhysics() {
       player.jumping = false;
       player.jumpVelocity = 0;
 
-      // platform collision
-platforms.forEach(p => {
-  const playerBottom = groundY - player.y;
-  const platformTop = p.y;
-
-  if (
-    player.x + player.width > p.x &&
-    player.x < p.x + p.width &&
-    playerBottom >= platformTop &&
-    playerBottom <= platformTop + 10 &&
-    player.jumpVelocity <= 0
-  ) {
-    player.y = groundY - platformTop;
-    player.jumping = false;
-    player.jumpVelocity = 0;
-  }
-});
+  // platforms
+  platforms.forEach(p => {
+    const playerBottom = groundY - player.y;
+    if (
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width &&
+      playerBottom >= p.y &&
+      playerBottom <= p.y + 10 &&
+      player.jumpVelocity <= 0
+    ) {
+      player.y = groundY - p.y;
+      player.jumping = false;
+      player.jumpVelocity = 0;
     }
-  }
+  });
 }
   
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // ground
-  ctx.fillStyle = "#2e2e2e";
+  ctx.fillStyle = "#2b2b2b";
   ctx.fillRect(0, groundY, canvas.width, 5);
 
-  // frog (placeholder box for now)
-  ctx.fillStyle = "green";
+  // player
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(
     player.x,
     groundY - player.height - player.y,
@@ -217,11 +197,11 @@ function draw() {
     player.height
   );
 
-  // platform land
-  ctx.fillStyle = "#8b5a2b";
-    platforms.forEach(p => {
-  ctx.fillRect(p.x, p.y, p.width, p.height);
-});
+  // platforms
+  ctx.fillStyle = "#888";
+  platforms.forEach(p => {
+    ctx.fillRect(p.x, p.y, p.width, p.height);
+  });
 }
 
 window.addEventListener("keydown", (e) => {
