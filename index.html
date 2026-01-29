@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+  <canvas id="game" width="800" height="400"></canvas>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -98,14 +99,143 @@
   </div>
 
   <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
     const player=document.getElementById('player');
     const world=document.getElementById('world');
     const apple=document.getElementById('apple1');
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
-
+    const platforms = [
+  { x: 250, y: groundY - 60, width: 120, height: 10 }
+];
+    const camera = {
+      topDown: false,
+      locked: false
+};
     let x=120, vx=0, hasApple=false, jumping=false, onPlatform=false, facing='right';
 
+// arrow keys move, stop when key released; spacebar changes camera angle
+    // movement intent
+function handleInput() {
+  if (keys.left) player.x -= player.speed;
+  if (keys.right) player.x += player.speed;
+
+  if (keys.up && !player.jumping) {
+    player.jumping = true;
+    player.jumpVelocity = 12;
+  }
+
+  if (keys.space && !camera.locked) {
+    camera.topDown = !camera.topDown;
+    camera.locked = true;
+  }
+
+  if (!keys.space) camera.locked = false;
+    // arrow keys move left, right, dowmn=crouch, up=jump
+const keys = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  space: false
+};
+
+const player = {
+  x: 100,
+  y: 0,          // vertical offset above ground
+  width: 40,
+  height: 40,
+  speed: 3,
+  jumping: false,
+  jumpVelocity: 0
+};
+
+const camera = {
+  topDown: false,
+  locked: false
+};
+
+const groundY = 300;
+
+// motion over time
+function applyPhysics() {
+  // gravity
+  player.y += player.jumpVelocity;
+  player.jumpVelocity -= 0.8;
+
+// gravity always applies
+  player.y += player.jumpVelocity;
+  player.jumpVelocity -= 0.8;
+  
+  // ground collision
+    if (player.y <= 0) {
+      player.y = 0;
+      player.jumping = false;
+      player.jumpVelocity = 0;
+
+      // platform collision
+platforms.forEach(p => {
+  const playerBottom = groundY - player.y;
+  const platformTop = p.y;
+
+  if (
+    player.x + player.width > p.x &&
+    player.x < p.x + p.width &&
+    playerBottom >= platformTop &&
+    playerBottom <= platformTop + 10 &&
+    player.jumpVelocity <= 0
+  ) {
+    player.y = groundY - platformTop;
+    player.jumping = false;
+    player.jumpVelocity = 0;
+  }
+});
+    }
+  }
+}
+  
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ground
+  ctx.fillStyle = "#2e2e2e";
+  ctx.fillRect(0, groundY, canvas.width, 5);
+
+  // frog (placeholder box for now)
+  ctx.fillStyle = "green";
+  ctx.fillRect(
+    player.x,
+    groundY - player.height - player.y,
+    player.width,
+    player.height
+  );
+
+  // platform land
+  ctx.fillStyle = "#8b5a2b";
+    platforms.forEach(p => {
+  ctx.fillRect(p.x, p.y, p.width, p.height);
+});
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") keys.left = true;
+  if (e.key === "ArrowRight") keys.right = true;
+  if (e.key === "ArrowUp") keys.up = true;
+  if (e.key === "ArrowDown") keys.down = true;
+  if (e.key === " ") keys.space = true;
+});
+
+    
+window.addEventListener("keyup", (e) => {
+  if (e.key === "ArrowLeft") keys.left = false;
+  if (e.key === "ArrowRight") keys.right = false;
+  if (e.key === "ArrowUp") keys.up = false;
+  if (e.key === "ArrowDown") keys.down = false;
+  if (e.key === " ") keys.space = false;
+});
+
+  
     // Apple fall intro
     let fallY=240; const fall=setInterval(()=>{
       fallY-=2; apple.style.bottom=fallY+'px'; if(fallY<=120) clearInterval(fall);
@@ -119,6 +249,8 @@
       },1200);
     };
 
+  // add frog
+  ctx.fillRect(player.x, groundY - player.y, player.width, player.height);
     const keys={};
     const frog=document.getElementById('frog');
     let frogBlinkTimer=0;
@@ -136,15 +268,6 @@
         dialogueText.innerHTML="Ah. You found <i>the</i> apple, didn’t you?<br><br>Paths open when things are carried with care.<br><br>I seem to have misplaced my bass…";
       }
     }
-
-    window.addEventListener('keydown',e=>{
-      keys[e.key]=true;
-      if(e.key===' ') overlay.style.display = overlay.style.display==='block'?'none':'block';
-    });
-    window.addEventListener('keyup',e=>{
-      keys[e.key]=false;
-      player.classList.remove('jump','crouch');
-    });
 
     function tick(){
       vx=0;
@@ -174,6 +297,17 @@
       requestAnimationFrame(tick);
     }
     tick();
+
+  // spine of update
+function update() {
+  handleInput();
+  applyPhysics();
+  draw();
+  requestAnimationFrame(update);
+}
+
+update();
+  
   </script>
 </body>
 </html>
