@@ -109,11 +109,17 @@
     const platforms = [
   { x: 250, y: groundY - 60, width: 120, height: 10 }
 ];
+    const keys = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  space: false
+};
     const camera = {
       topDown: false,
       locked: false
 };
-    let x=120, vx=0, hasApple=false, jumping=false, onPlatform=false, facing='right';
 
 // arrow keys move, stop when key released; spacebar changes camera angle
     // movement intent
@@ -142,10 +148,10 @@ const keys = {
 };
 
 const player = {
-  x: 100,
-  y: 0,          // vertical offset above ground
+  x: 120,
+  y: 0,
   width: 40,
-  height: 40,
+  height: 54,
   speed: 3,
   jumping: false,
   jumpVelocity: 0
@@ -250,7 +256,6 @@ window.addEventListener("keyup", (e) => {
     };
 
   // add frog
-  ctx.fillRect(player.x, groundY - player.y, player.width, player.height);
     const keys={};
     const frog=document.getElementById('frog');
     let frogBlinkTimer=0;
@@ -269,34 +274,10 @@ window.addEventListener("keyup", (e) => {
       }
     }
 
-    function tick(){
-      vx=0;
-      if(keys['ArrowRight']) vx=4;
-      if(keys['ArrowLeft']) vx=-4;
-      if(keys['ArrowUp'] && !jumping){
-        jumping=true;
-        player.classList.add('jump');
-        setTimeout(()=>{
-          player.classList.remove('jump');
-          jumping=false;
-        },450);
-      },350);
-      }
-      if(keys['ArrowDown']){ player.classList.add('crouch'); tryFrogTalk(); }
-
       x=Math.max(0, Math.min(2600, x+vx));
-      player.style.left=x+'px';
       world.style.left = Math.min(0, 300 - x) + 'px';
       const plat=document.getElementById('frogPlatform');
-      const px=player.getBoundingClientRect();
-      const fx=plat.getBoundingClientRect();
-      if(!jumping && px.bottom<=fx.top+12 && px.right>fx.left && px.left<fx.right){
-        player.style.bottom='136px'; onPlatform=true;
-      } else if(!jumping){
-        player.style.bottom='}
-      requestAnimationFrame(tick);
     }
-    tick();
 
   // spine of update
 function update() {
