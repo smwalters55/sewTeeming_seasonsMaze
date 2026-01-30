@@ -52,7 +52,6 @@
   <div id="ui">
     <div id="basket">Inventory: <span id="inv">(empty)</span></div>
     
-  </div>
   <canvas id="game" width="800" height="400"></canvas>
     <div id="world">
       <div class="ground"></div>
@@ -103,6 +102,7 @@
     const apple=document.getElementById('apple1');
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
+    let hasApple = false;
 
   const keys = {
     left: false,
@@ -236,11 +236,11 @@ window.addEventListener("keyup", (e) => {
     };
 
   // add frog
-    const frog=document.getElementById('frog');
-    let frogBlinkTimer=0;
-    const dialogue=document.getElementById('dialogue');
-    const dialogueText=document.getElementById('dialogueText');
-    let talked=false;
+    //const frog=document.getElementById('frog');
+    //let frogBlinkTimer=0;
+    //const dialogue=document.getElementById('dialogue');
+    //const dialogueText=document.getElementById('dialogueText');
+    //let talked=false;
 
     function tryFrogTalk(){
       if(talked) return;
@@ -252,7 +252,6 @@ window.addEventListener("keyup", (e) => {
         dialogueText.innerHTML="Ah. You found <i>the</i> apple, didn’t you?<br><br>Paths open when things are carried with care.<br><br>I seem to have misplaced my bass…";
       }
     }
-  }
 
   // spine of update
 function update() {
