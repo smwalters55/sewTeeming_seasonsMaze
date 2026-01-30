@@ -133,8 +133,12 @@ canvas { display:block; }
 };
   const groundY = 300;
 
-  const platforms = [
-  { x: 800, y: groundY - 60, width: 120, height: 10 }
+  const platforms = [  {
+    x: 400,
+    y: groundY - 80, // 80px ABOVE the ground
+    width: 120,
+    height: 12
+  }
 ];
     
 // arrow keys move, stop when key released; spacebar changes camera angle
