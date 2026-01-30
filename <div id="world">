@@ -40,6 +40,7 @@ canvas { display:block; }
 
     #ui{display:flex; gap:12px; padding:8px;}    
     #basket{border:3px solid var(--ink); padding:6px 10px;}    
+    #basket { width: fit-content; }
 
     #overlay{position:absolute; inset:0; background:rgba(247,244,238,.95); display:none;}    
     #map{margin:20px auto; width:90%; height:60%; border:3px solid var(--ink); position:relative;}    
@@ -163,6 +164,23 @@ function applyPhysics() {
     player.jumpVelocity = 0;
   }
 
+  // platforms
+  platforms.forEach(p => {
+    const playerBottom = groundY - player.y;
+    if (
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width &&
+      playerBottom >= p.y &&
+      playerBottom <= p.y + p.height &&
+      player.jumpVelocity <= 0
+    ) {
+      player.y = groundY - p.y;
+      player.jumping = false;
+      player.jumpVelocity = 0;
+    }
+  });
+}
+
 // draw the bois
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -184,23 +202,6 @@ function draw() {
   ctx.fillStyle = "#888";
   platforms.forEach(p => {
     ctx.fillRect(p.x, p.y, p.width, p.height);
-  });
-}
-
-  // platforms
-  platforms.forEach(p => {
-    const playerBottom = groundY - player.y;
-    if (
-      player.x + player.width > p.x &&
-      player.x < p.x + p.width &&
-      playerBottom >= p.y &&
-      playerBottom <= p.y + p.height &&
-      player.jumpVelocity <= 0
-    ) {
-      player.y = groundY - p.y;
-      player.jumping = false;
-      player.jumpVelocity = 0;
-    }
   });
 }
 
