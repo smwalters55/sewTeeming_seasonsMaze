@@ -145,8 +145,8 @@ canvas { display:block; }
 
 const appleObj = {
   x: 260,
-  y: 0,
-  radius: 10,
+  y: -40,          // start above ground
+  radius: 14,      // bigger
   falling: true,
   glow: false,
   collected: false
@@ -192,8 +192,8 @@ function applyPhysics() {
 
 // apple falls at intro
 if (appleObj.falling) {
-  appleObj.y -= 1.5;
-  if (appleObj.y <= 0) {
+  appleObj.y += 1.5;
+  if (appleObj.y >= 0) {
     appleObj.y = 0;
     appleObj.falling = false;
   }
@@ -227,8 +227,9 @@ if (appleObj.falling) {
 }
 
 
-// draw the bois an friends
+// DRAW the bois an friends
 function draw() {
+  ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   /* ======================
@@ -252,6 +253,10 @@ function draw() {
 
   const camX = cameraX;
 
+// tie some backgroud hues together
+  ctx.fillStyle = "rgba(220,180,140,0.08)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
   /* ======================
      PLATFORMS
      ====================== */
@@ -265,13 +270,19 @@ function draw() {
     ctx.fill();
   });
 
+  // tree stump
+    ctx.fillStyle = "#8b5a3c";
+    ctx.beginPath();
+    ctx.roundRect(ax - 20, groundY - 16, 40, 16, 6);
+    ctx.fill();
+  
   /* ======================
      APPLE (idle sway + stem)
      ====================== */
   if (!appleObj.collected) {
     const sway = Math.sin(performance.now() * 0.002) * 2;
     const ax = appleObj.x - camX;
-    const ay = groundY - appleObj.y - 14 + sway;
+    const ay = groundY - appleObj.y - appleObj.radius + sway;
 
     // apple body
     ctx.fillStyle = "#a23b32"; // body
@@ -311,12 +322,13 @@ function draw() {
   /* ======================
      FROG
      ====================== */
-  const frogY =
-    groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
+const frogY =
+  groundY - frog.height + Math.sin(frog.bob) * 2;
+
   const fx = frog.x - camX;
 
   // shadow
-  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillStyle = "rgba(60,40,20,0.18)";
   ctx.beginPath();
   ctx.ellipse(fx + frog.width / 2, groundY + 4, 16, 6, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -326,6 +338,11 @@ function draw() {
   ctx.beginPath();
   ctx.roundRect(fx, frogY, frog.width, frog.height, 10);
   ctx.fill();
+
+  // subtle rim light
+  ctx.strokeStyle = "rgba(255,240,220,0.35)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
   // eyes
   ctx.fillStyle = "#ffffff";
@@ -360,7 +377,7 @@ function draw() {
   const py = groundY - player.height - player.y;
 
   // shadow
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.fillStyle = "rgba(60,40,20,0.18)";
   ctx.beginPath();
   ctx.ellipse(px + player.width / 2, groundY + 5, 18, 6, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -370,6 +387,11 @@ function draw() {
   ctx.beginPath();
   ctx.roundRect(px, py, player.width, player.height, 8);
   ctx.fill();
+
+  // subtle rim light
+  ctx.strokeStyle = "rgba(255,240,220,0.35)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
   // eyes
   ctx.fillStyle = "#ffffff";
