@@ -228,152 +228,173 @@ if (appleObj.falling) {
 
 
 // draw the bois an friends
-
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "red";
-  ctx.fillRect(10, 10, 10, 10);
 
-// sky
-const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
-skyGrad.addColorStop(0, "#b9d7ff");
-skyGrad.addColorStop(1, "#eef6ff");
-ctx.fillStyle = skyGrad;
-ctx.fillRect(0, 0, canvas.width, groundY);
+  /* ======================
+     SKY (soft gradient)
+     ====================== */
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+  skyGrad.addColorStop(0, "#b9d7ff");
+  skyGrad.addColorStop(1, "#eef6ff");
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, canvas.width, groundY);
 
-// ground
-const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-groundGrad.addColorStop(0, "#6f8f5e");
-groundGrad.addColorStop(1, "#4f6f46");
-ctx.fillStyle = groundGrad;
-ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+  /* ======================
+     GROUND
+     ====================== */
+  const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
+  groundGrad.addColorStop(0, "#7fa36b");
+  groundGrad.addColorStop(1, "#4f6f46");
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
+  /* ======================
+     CAMERA OFFSET
+     ====================== */
+  const camX = cameraX;
 
-// camera view toggle
-if (camera.topDown) {
-  ctx.save();
-  ctx.translate(0, -100);
-  ctx.scale(1, 0.7);
-}
+  /* ======================
+     PLATFORM(S)
+     ====================== */
+  platforms.forEach(p => {
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(
+      p.x - camX,
+      p.y + 6,
+      p.width,
+      p.height
+    );
 
-  // ground
-  ctx.fillStyle = "#2b2b2b";
-  ctx.fillRect(0, groundY, canvas.width, 4);
+    // platform body
+    ctx.fillStyle = "#c9b59b";
+    ctx.beginPath();
+    ctx.roundRect(
+      p.x - camX,
+      p.y,
+      p.width,
+      p.height,
+      6
+    );
+    ctx.fill();
+  });
 
-  // player
-ctx.fillStyle = "#7a6cff";
-ctx.beginPath();
-ctx.roundRect(
-  player.x - cameraX,
-  groundY - player.height - player.y,
-  player.width,
-  player.height,
-  8
-);
-ctx.fill();
+  /* ======================
+     APPLE
+     ====================== */
+  if (!appleObj.collected) {
+    const appleX = appleObj.x - camX;
+    const appleY = groundY - appleObj.y - 12;
 
-// soft shadow
-ctx.fillStyle = "rgba(0,0,0,0.15)";
-ctx.beginPath();
-ctx.ellipse(
-  player.x - cameraX + player.width / 2,
-  groundY + 4,
-  18,
-  6,
-  0,
-  0,
-  Math.PI * 2
-);
-ctx.fill();
+    // apple body
+    ctx.fillStyle = "#c9433f";
+    ctx.beginPath();
+    ctx.arc(appleX, appleY, appleObj.radius, 0, Math.PI * 2);
+    ctx.fill();
 
+    // apple highlight
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.beginPath();
+    ctx.arc(appleX - 3, appleY - 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-// frog, sketch style
-const frogY =
-  groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
+  /* ======================
+     FROG (idle bob)
+     ====================== */
+  const frogY =
+    groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
 
-ctx.strokeStyle = "#2b2b2b";
-ctx.fillStyle = "#ffffff";
-ctx.lineWidth = 3;
-
-// body
-ctx.fillStyle = "#5f8f63";
-ctx.beginPath();
-ctx.roundRect(
-  frog.x - cameraX,
-  frogY,
-  frog.width,
-  frog.height,
-  10
-);
-ctx.fill();
-
-// hat
-ctx.fillRect(
-  frog.x - cameraX + 12,
-  frogY - 14,
-  24,
-  6
-);
-ctx.strokeRect(
-  frog.x - cameraX + 18,
-  frogY - 28,
-  12,
-  14
-);
-
-// draw apple, sketch style
-if (!appleObj.collected) {
-  const ax = appleObj.x - cameraX;
-  const ay = groundY - appleObj.y - 14;
-
-  // apple body
-ctx.fillStyle = "#c9433f";
-ctx.beginPath();
-ctx.arc(
-  appleObj.x - cameraX,
-  groundY - appleObj.y - 12,
-  appleObj.radius,
-  0,
-  Math.PI * 2
-);
-ctx.fill();
-
-// apple highlight
-ctx.fillStyle = "rgba(255,255,255,0.4)";
-ctx.beginPath();
-ctx.arc(
-  appleObj.x - cameraX - 3,
-  groundY - appleObj.y - 16,
-  3,
-  0,
-  Math.PI * 2
-);
-ctx.fill();
-
-  // stem
+  // frog shadow
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
-  ctx.moveTo(ax, ay - 12);
-  ctx.lineTo(ax + 4, ay - 20);
-  ctx.stroke();
-}
-
-
-  // platforms
-ctx.fillStyle = "#2b2b2b";
-platforms.forEach(p => {
-  ctx.fillRect(
-    p.x - cameraX,
-    p.y,
-    p.width,
-    p.height
+  ctx.ellipse(
+    frog.x - camX + frog.width / 2,
+    groundY + 4,
+    16,
+    6,
+    0,
+    0,
+    Math.PI * 2
   );
-});
+  ctx.fill();
 
-// restore camera view
-if (camera.topDown) {
-  ctx.restore();
+  // frog body
+  ctx.fillStyle = "#5f8f63";
+  ctx.beginPath();
+  ctx.roundRect(
+    frog.x - camX,
+    frogY,
+    frog.width,
+    frog.height,
+    10
+  );
+  ctx.fill();
+
+  /* ======================
+     PLAYER
+     ====================== */
+  const playerX = player.x - camX;
+  const playerY = groundY - player.height - player.y;
+
+  // player shadow
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(
+    playerX + player.width / 2,
+    groundY + 5,
+    18,
+    6,
+    0,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+
+  // player body
+  ctx.fillStyle = "#7b6cff";
+  ctx.beginPath();
+  ctx.roundRect(
+    playerX,
+    playerY,
+    player.width,
+    player.height,
+    8
+  );
+  ctx.fill();
+
+  /* ======================
+     TOP-DOWN OVERLAY (spacebar)
+     ====================== */
+  if (camera.topDown) {
+    ctx.fillStyle = "rgba(245,245,240,0.92)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#2b2b2b";
+    ctx.font = "14px ui-monospace";
+    ctx.fillText("Orchard", 120, 90);
+    ctx.fillText("Path I", 280, 90);
+    ctx.fillText("Path II", 440, 90);
+    ctx.fillText("Path III", 600, 90);
+
+    // nodes
+    const nodes = [
+      { x: 110, y: 110 },
+      { x: 270, y: 110 },
+      { x: 430, y: 110 },
+      { x: 590, y: 110 }
+    ];
+
+    nodes.forEach((n, i) => {
+      ctx.fillStyle = i === 0 ? "#7fa36b" : "#cfcfcf";
+      ctx.beginPath();
+      ctx.roundRect(n.x, n.y, 80, 40, 8);
+      ctx.fill();
+    });
+  }
 }
-}
+
 
 window.addEventListener("keydown", (e) => {
     if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
