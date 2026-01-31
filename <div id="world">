@@ -62,7 +62,8 @@ canvas { display:block; }
 <body>
   <div id="ui">
     <div id="basket">Inventory: <span id="inv">(empty)</span></div>
-    
+  </div>
+
   <canvas id="game" width="800" height="400"></canvas>
     <div id="world">
       <div class="ground"></div>
@@ -109,8 +110,6 @@ canvas { display:block; }
   <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
-    const world=document.getElementById('world');
-    const apple=document.getElementById('apple1');
     const inv=document.getElementById('inv');
     const overlay=document.getElementById('overlay');
     let cameraX = 0;
@@ -264,27 +263,38 @@ ctx.strokeRect(
   frog.height
 );
 
+// draw apple, sketch style
 if (!appleObj.collected) {
-  ctx.beginPath();
-  ctx.arc(
-    appleObj.x,
-    groundY - appleObj.y - 12,
-    appleObj.radius,
-    0,
-    Math.PI * 2
-  );
+  const ax = appleObj.x - cameraX;
+  const ay = groundY - appleObj.y - 14;
+
+  // apple body
+  ctx.fillStyle = "#ffffff";
   ctx.strokeStyle = "#2b2b2b";
   ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(ax, ay, 12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // stem
+  ctx.beginPath();
+  ctx.moveTo(ax, ay - 12);
+  ctx.lineTo(ax + 4, ay - 20);
   ctx.stroke();
 }
 
+
   // platforms
-ctx.fillRect(
-  p.x - cameraX,
-  p.y,
-  p.width,
-  p.height
-);
+ctx.fillStyle = "#2b2b2b";
+platforms.forEach(p => {
+  ctx.fillRect(
+    p.x - cameraX,
+    p.y,
+    p.width,
+    p.height
+  );
+});
 
 // restore camera view
 if (camera.topDown) {
@@ -312,19 +322,6 @@ window.addEventListener("keyup", (e) => {
   if (e.key === " ") keys.space = false;
 });
 
-  
-    // Apple fall intro
-    let fallY=240; const fall=setInterval(()=>{
-      fallY-=2; apple.style.bottom=fallY+'px'; if(fallY<=120) clearInterval(fall);
-    },16);
-
-    apple.onclick=()=>{
-      if(hasApple) return;
-      apple.classList.add('glow');
-      setTimeout(()=>{
-        hasApple=true; inv.textContent='Special Apple'; apple.style.display='none';
-      },1200);
-    };
 
 // frog DOM version code, prob delete
     //const frog=document.getElementById('frog');
