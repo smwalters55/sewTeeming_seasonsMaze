@@ -115,6 +115,21 @@ canvas { display:block; }
     let cameraX = 0;
     let hasApple = false;
 
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+
   const keys = {
     left: false,
     right: false,
@@ -266,7 +281,7 @@ function draw() {
 
     ctx.fillStyle = "#c9b59b";
     ctx.beginPath();
-    ctx.roundRect(p.x - camX, p.y, p.width, p.height, 6);
+    roundRect(ctx,p.x - camX, p.y, p.width, p.height, 6);
     ctx.fill();
   });
 
@@ -282,7 +297,7 @@ function draw() {
       // tree stump
     ctx.fillStyle = "#8b5a3c";
     ctx.beginPath();
-    ctx.roundRect(ax - 22, groundY - 14, 44, 14, 6);
+    roundRect(ctx,ax - 22, groundY - 14, 44, 14, 6);
     ctx.fill();
 
     // apple body
@@ -337,7 +352,7 @@ const frogY =
   // body
   ctx.fillStyle = "#6f8f6a";
   ctx.beginPath();
-  ctx.roundRect(fx, frogY, frog.width, frog.height, 10);
+  roundRect(ctx,fx, frogY, frog.width, frog.height, 10);
   ctx.fill();
 
   // subtle rim light
@@ -386,7 +401,7 @@ const frogY =
   // body
   ctx.fillStyle = "#7a78b8";
   ctx.beginPath();
-  ctx.roundRect(px, py, player.width, player.height, 8);
+  roundRect(ctx,px, py, player.width, player.height, 8);
   ctx.fill();
 
   // subtle rim light
@@ -431,7 +446,7 @@ const frogY =
     nodes.forEach(n => {
       ctx.fillStyle = n.open ? "#7fa36b" : "#cfcfcf";
       ctx.beginPath();
-      ctx.roundRect(n.x, n.y, 80, 40, 8);
+      roundRect(ctx,n.x, n.y, 80, 40, 8);
       ctx.fill();
     });
   }
@@ -484,7 +499,8 @@ function update() {
   applyPhysics();
   draw();
   requestAnimationFrame(update);
-  cameraX = player.x - canvas.width / 2;
+  const targetCameraX = player.x - canvas.width * 0.4;
+  cameraX += (targetCameraX - cameraX) * 0.08;
   if (cameraX < 0) cameraX = 0;
 
 }
