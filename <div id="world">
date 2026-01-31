@@ -235,8 +235,10 @@ function draw() {
 // camera view togle
 if (camera.topDown) {
   ctx.save();
-  ctx.globalAlpha = 0.85;
+  ctx.translate(0, -100);
+  ctx.scale(1, 0.7);
 }
+
   // ground
   ctx.fillStyle = "#2b2b2b";
   ctx.fillRect(0, groundY, canvas.width, 4);
@@ -250,17 +252,38 @@ if (camera.topDown) {
   player.height
 );
 
-// frog
+// frog, sketch style
 const frogY =
   groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
 
 ctx.strokeStyle = "#2b2b2b";
+ctx.fillStyle = "#ffffff";
 ctx.lineWidth = 3;
-ctx.strokeRect(
+
+// body
+ctx.beginPath();
+ctx.roundRect(
   frog.x - cameraX,
   frogY,
   frog.width,
-  frog.height
+  frog.height,
+  12
+);
+ctx.fill();
+ctx.stroke();
+
+// hat
+ctx.fillRect(
+  frog.x - cameraX + 12,
+  frogY - 14,
+  24,
+  6
+);
+ctx.strokeRect(
+  frog.x - cameraX + 18,
+  frogY - 28,
+  12,
+  14
 );
 
 // draw apple, sketch style
