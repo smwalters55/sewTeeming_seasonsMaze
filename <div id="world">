@@ -232,7 +232,7 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   /* ======================
-     SKY (soft gradient)
+     SKY
      ====================== */
   const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
   skyGrad.addColorStop(0, "#b9d7ff");
@@ -249,126 +249,145 @@ function draw() {
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
-  /* ======================
-     CAMERA OFFSET
-     ====================== */
   const camX = cameraX;
 
   /* ======================
-     PLATFORM(S)
+     PLATFORMS
      ====================== */
   platforms.forEach(p => {
-    // shadow
     ctx.fillStyle = "rgba(0,0,0,0.18)";
-    ctx.fillRect(
-      p.x - camX,
-      p.y + 6,
-      p.width,
-      p.height
-    );
+    ctx.fillRect(p.x - camX, p.y + 6, p.width, p.height);
 
-    // platform body
     ctx.fillStyle = "#c9b59b";
     ctx.beginPath();
-    ctx.roundRect(
-      p.x - camX,
-      p.y,
-      p.width,
-      p.height,
-      6
-    );
+    ctx.roundRect(p.x - camX, p.y, p.width, p.height, 6);
     ctx.fill();
   });
 
   /* ======================
-     APPLE
+     APPLE (idle sway + stem)
      ====================== */
   if (!appleObj.collected) {
-    const appleX = appleObj.x - camX;
-    const appleY = groundY - appleObj.y - 12;
+    const sway = Math.sin(performance.now() * 0.002) * 2;
+    const ax = appleObj.x - camX;
+    const ay = groundY - appleObj.y - 14 + sway;
 
     // apple body
     ctx.fillStyle = "#c9433f";
     ctx.beginPath();
-    ctx.arc(appleX, appleY, appleObj.radius, 0, Math.PI * 2);
+    ctx.arc(ax, ay, appleObj.radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // apple highlight
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    // highlight
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
     ctx.beginPath();
-    ctx.arc(appleX - 3, appleY - 4, 3, 0, Math.PI * 2);
+    ctx.arc(ax - 3, ay - 4, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // stem
+    ctx.strokeStyle = "#4a3a2a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - appleObj.radius);
+    ctx.lineTo(ax + 2, ay - appleObj.radius - 6);
+    ctx.stroke();
+
+    // leaf
+    ctx.fillStyle = "#5f8f63";
+    ctx.beginPath();
+    ctx.ellipse(
+      ax + 6,
+      ay - appleObj.radius - 6,
+      6,
+      3,
+      -0.4,
+      0,
+      Math.PI * 2
+    );
     ctx.fill();
   }
 
   /* ======================
-     FROG (idle bob)
+     FROG
      ====================== */
   const frogY =
     groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
+  const fx = frog.x - camX;
 
-  // frog shadow
+  // shadow
   ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
-  ctx.ellipse(
-    frog.x - camX + frog.width / 2,
-    groundY + 4,
-    16,
-    6,
-    0,
-    0,
-    Math.PI * 2
-  );
+  ctx.ellipse(fx + frog.width / 2, groundY + 4, 16, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // frog body
+  // body
   ctx.fillStyle = "#5f8f63";
   ctx.beginPath();
-  ctx.roundRect(
-    frog.x - camX,
-    frogY,
-    frog.width,
-    frog.height,
-    10
-  );
+  ctx.roundRect(fx, frogY, frog.width, frog.height, 10);
   ctx.fill();
+
+  // eyes
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(fx + 14, frogY + 10, 4, 0, Math.PI * 2);
+  ctx.arc(fx + 34, frogY + 10, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(fx + 14, frogY + 11, 2, 0, Math.PI * 2);
+  ctx.arc(fx + 34, frogY + 11, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // top hat
+  ctx.fillStyle = "#2b2b2b";
+  ctx.fillRect(fx + 10, frogY - 14, 28, 6);
+  ctx.fillRect(fx + 16, frogY - 28, 16, 14);
+
+  // cane
+  ctx.strokeStyle = "#4a3a2a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(fx + frog.width + 4, frogY + 8);
+  ctx.lineTo(fx + frog.width + 4, frogY + frog.height + 12);
+  ctx.stroke();
 
   /* ======================
      PLAYER
      ====================== */
-  const playerX = player.x - camX;
-  const playerY = groundY - player.height - player.y;
+  const px = player.x - camX;
+  const py = groundY - player.height - player.y;
 
-  // player shadow
+  // shadow
   ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.beginPath();
-  ctx.ellipse(
-    playerX + player.width / 2,
-    groundY + 5,
-    18,
-    6,
-    0,
-    0,
-    Math.PI * 2
-  );
+  ctx.ellipse(px + player.width / 2, groundY + 5, 18, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // player body
+  // body
   ctx.fillStyle = "#7b6cff";
   ctx.beginPath();
-  ctx.roundRect(
-    playerX,
-    playerY,
-    player.width,
-    player.height,
-    8
-  );
+  ctx.roundRect(px, py, player.width, player.height, 8);
+  ctx.fill();
+
+  // eyes
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(px + 12, py + 14, 3, 0, Math.PI * 2);
+  ctx.arc(px + 26, py + 14, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(px + 12, py + 15, 1.5, 0, Math.PI * 2);
+  ctx.arc(px + 26, py + 15, 1.5, 0, Math.PI * 2);
   ctx.fill();
 
   /* ======================
-     TOP-DOWN OVERLAY (spacebar)
+     TOP-DOWN MAP
      ====================== */
   if (camera.topDown) {
-    ctx.fillStyle = "rgba(245,245,240,0.92)";
+    ctx.fillStyle = "rgba(245,245,240,0.94)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.fillStyle = "#2b2b2b";
@@ -378,22 +397,22 @@ function draw() {
     ctx.fillText("Path II", 440, 90);
     ctx.fillText("Path III", 600, 90);
 
-    // nodes
     const nodes = [
-      { x: 110, y: 110 },
+      { x: 110, y: 110, open: true },
       { x: 270, y: 110 },
       { x: 430, y: 110 },
       { x: 590, y: 110 }
     ];
 
-    nodes.forEach((n, i) => {
-      ctx.fillStyle = i === 0 ? "#7fa36b" : "#cfcfcf";
+    nodes.forEach(n => {
+      ctx.fillStyle = n.open ? "#7fa36b" : "#cfcfcf";
       ctx.beginPath();
       ctx.roundRect(n.x, n.y, 80, 40, 8);
       ctx.fill();
     });
   }
 }
+
 
 
 window.addEventListener("keydown", (e) => {
