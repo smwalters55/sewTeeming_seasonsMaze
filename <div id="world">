@@ -235,8 +235,9 @@ function draw() {
      SKY
      ====================== */
   const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
-  skyGrad.addColorStop(0, "#b9d7ff");
-  skyGrad.addColorStop(1, "#eef6ff");
+  skyGrad.addColorStop(0, "#b8cfe6");
+  skyGrad.addColorStop(1, "#f3efe8");
+
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, canvas.width, groundY);
 
@@ -244,8 +245,8 @@ function draw() {
      GROUND
      ====================== */
   const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-  groundGrad.addColorStop(0, "#7fa36b");
-  groundGrad.addColorStop(1, "#4f6f46");
+  groundGrad.addColorStop(0, "#8fae8b");
+  groundGrad.addColorStop(1, "#5f7f63");
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
@@ -255,7 +256,7 @@ function draw() {
      PLATFORMS
      ====================== */
   platforms.forEach(p => {
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillStyle = "#c7b29a";
     ctx.fillRect(p.x - camX, p.y + 6, p.width, p.height);
 
     ctx.fillStyle = "#c9b59b";
@@ -273,7 +274,7 @@ function draw() {
     const ay = groundY - appleObj.y - 14 + sway;
 
     // apple body
-    ctx.fillStyle = "#c9433f";
+    ctx.fillStyle = "#a23b32"; // body
     ctx.beginPath();
     ctx.arc(ax, ay, appleObj.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -285,7 +286,7 @@ function draw() {
     ctx.fill();
 
     // stem
-    ctx.strokeStyle = "#4a3a2a";
+    ctx.strokeStyle = "#7a3e1d";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(ax, ay - appleObj.radius);
@@ -321,7 +322,7 @@ function draw() {
   ctx.fill();
 
   // body
-  ctx.fillStyle = "#5f8f63";
+  ctx.fillStyle = "#6f8f6a";
   ctx.beginPath();
   ctx.roundRect(fx, frogY, frog.width, frog.height, 10);
   ctx.fill();
@@ -340,12 +341,12 @@ function draw() {
   ctx.fill();
 
   // top hat
-  ctx.fillStyle = "#2b2b2b";
+  ctx.fillStyle = "#2a2320";
   ctx.fillRect(fx + 10, frogY - 14, 28, 6);
   ctx.fillRect(fx + 16, frogY - 28, 16, 14);
 
   // cane
-  ctx.strokeStyle = "#4a3a2a";
+  ctx.strokeStyle = "#6b3f2a";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(fx + frog.width + 4, frogY + 8);
@@ -365,7 +366,7 @@ function draw() {
   ctx.fill();
 
   // body
-  ctx.fillStyle = "#7b6cff";
+  ctx.fillStyle = "#7a78b8";
   ctx.beginPath();
   ctx.roundRect(px, py, player.width, player.height, 8);
   ctx.fill();
