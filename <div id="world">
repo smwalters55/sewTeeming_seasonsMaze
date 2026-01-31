@@ -270,11 +270,6 @@ function draw() {
     ctx.fill();
   });
 
-  // tree stump
-    ctx.fillStyle = "#8b5a3c";
-    ctx.beginPath();
-    ctx.roundRect(ax - 20, groundY - 16, 40, 16, 6);
-    ctx.fill();
   
   /* ======================
      APPLE (idle sway + stem)
@@ -283,6 +278,12 @@ function draw() {
     const sway = Math.sin(performance.now() * 0.002) * 2;
     const ax = appleObj.x - camX;
     const ay = groundY - appleObj.y - appleObj.radius + sway;
+  
+      // tree stump
+    ctx.fillStyle = "#8b5a3c";
+    ctx.beginPath();
+    ctx.roundRect(ax - 22, groundY - 14, 44, 14, 6);
+    ctx.fill();
 
     // apple body
     ctx.fillStyle = "#a23b32"; // body
