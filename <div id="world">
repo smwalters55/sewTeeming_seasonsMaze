@@ -189,9 +189,12 @@ function handleInput(){
 }
 
 // Frog interaction
+const frogCenterX = frog.x + frog.width / 2;
+const playerCenterX = player.x + player.width / 2;
+
 const nearFrog =
-  Math.abs(player.x - frog.x) < 60 &&
-  player.y === 0;
+  Math.abs(playerCenterX - frogCenterX) < 70 &&
+  player.y < 6; // instead of === 0
 
 if (nearFrog && keys.down && !frogActive) {
   frogActive = true;
@@ -291,12 +294,14 @@ function draw(){
   const camX = cameraX;
 
   /* SKY */
-  const sky = ctx.createLinearGradient(0,0,0,groundY);
-  sky.addColorStop(0,"#ffddb8");
-  sky.addColorStop(0.5,"#e8c89a");
-  sky.addColorStop(1,"#efe6da");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0,0,canvas.width,groundY);
+const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+sky.addColorStop(0, "#f3c89b");   // warm amber
+sky.addColorStop(0.45, "#d8a46f"); // copper light
+sky.addColorStop(0.8, "#b98b5a");  // orchard haze
+sky.addColorStop(1, "#9b7a4f");    // horizon warmth
+
+ctx.fillStyle = sky;
+ctx.fillRect(0, 0, canvas.width, groundY);
 
   /* FOG */
   fog.x += fog.speed;
@@ -305,7 +310,11 @@ function draw(){
   fg.addColorStop(0.5,"rgba(255,255,255,0.12)");
   fg.addColorStop(1,"rgba(255,255,255,0.03)");
   ctx.fillStyle = fg;
-  ctx.fillRect(0,0,canvas.width,fog.height);
+  ctx.fillRect(0,0,canvas.width,fog.height)
+
+  // distant fog layer
+  ctx.fillStyle = "rgba(255,245,230,0.08)";
+  ctx.fillRect(0, groundY - 80, canvas.width, 100);
 
   /* CROWS */
   ctx.strokeStyle = "#3b2f28";
@@ -322,6 +331,14 @@ function draw(){
   /* GROUND */
   ctx.fillStyle = "#5a6543";
   ctx.fillRect(-camX, groundY, canvas.width+camX, canvas.height-groundY);
+// subtle ground texture
+ctx.strokeStyle = "rgba(80,60,30,0.15)";
+for (let i = 0; i < canvas.width; i += 24) {
+  ctx.beginPath();
+  ctx.moveTo(i - camX % 24, groundY);
+  ctx.lineTo(i - camX % 24 + 12, groundY + 6);
+  ctx.stroke();
+}
 
   /* HAY */
   ctx.fillStyle = "rgba(210,180,120,0.35)";
