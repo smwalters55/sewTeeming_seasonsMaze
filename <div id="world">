@@ -188,23 +188,6 @@ function handleInput(){
   if (!keys.space) camera.locked = false;
 }
 
-// Frog interaction
-const frogCenterX = frog.x + frog.width / 2;
-const playerCenterX = player.x + player.width / 2;
-
-const nearFrog =
-  Math.abs(playerCenterX - frogCenterX) < 70 &&
-  player.y < 6; // instead of === 0
-
-if (nearFrog && keys.down && !frogActive) {
-  frogActive = true;
-  frogHatTip = 30;
-}
-
-if (frogActive && keys.down && frogHatTip <= 0) {
-  frogActive = false;
-}
-
 /* ======================================================
    PHYSICS
    ====================================================== */
@@ -332,11 +315,12 @@ ctx.fillRect(0, 0, canvas.width, groundY);
   ctx.fillStyle = "#5a6543";
   ctx.fillRect(-camX, groundY, canvas.width+camX, canvas.height-groundY);
 // subtle ground texture
-ctx.strokeStyle = "rgba(80,60,30,0.15)";
+ctx.strokeStyle = "rgba(80,60,30,0.08)";
 for (let i = 0; i < canvas.width; i += 24) {
   ctx.beginPath();
-  ctx.moveTo(i - camX % 24, groundY);
-  ctx.lineTo(i - camX % 24 + 12, groundY + 6);
+  ctx.moveTo(i - camX % 24, groundY + 2);
+  ctx.lineTo(i - camX % 24 + 12, groundY + 8);
+
   ctx.stroke();
 }
 
@@ -477,6 +461,20 @@ ctx.fill();
 function update(){
   handleInput();
   applyPhysics();
+
+  // --- FROG INTERACTION (per-frame, correct place) ---
+  const frogCenterX = frog.x + frog.width / 2;
+  const playerCenterX = player.x + player.width / 2;
+
+  const nearFrog =
+    Math.abs(playerCenterX - frogCenterX) < 70 &&
+    player.y < 6;
+
+  if (nearFrog && keys.down && !frogActive) {
+    frogActive = true;
+    frogHatTip = 30;
+  }
+
   draw();
 
   const targetCam = player.x - canvas.width*0.4;
@@ -485,6 +483,7 @@ function update(){
 
   requestAnimationFrame(update);
 }
+
 update();
 </script>
 
