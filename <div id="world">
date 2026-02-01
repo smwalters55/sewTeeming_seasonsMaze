@@ -308,15 +308,17 @@ drawAppleTree(940, camX);   // after frog
   /* ======================
      APPLE (idle sway + stem)
      ====================== */
-  if (!appleObj.collected) {
-    const sway = Math.sin(performance.now() * 0.002) * 2;
   
 /* ======================
    APPLE + STUMP
    ====================== */
 const ax = appleObj.x - camX;
-const ay = groundY - appleObj.y +
-           Math.sin(performance.now() * 0.002) * 1.5;
+const ay = 
+  groundY - appleObj.y +
+    Math.sin(performance.now() * 0.002) * 1.5;
+
+if (!appleObj.collected) {
+  const sway = Math.sin(performance.now() * 0.002) * 1.5;
 
 // stump
 ctx.fillStyle = "#7a4a2e";
