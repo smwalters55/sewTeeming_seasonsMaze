@@ -92,6 +92,18 @@ canvas { display:block; }
     space: false
 };
 
+// draw fog fx called in draw()
+const fog = {x: 0, speed: 0.1};
+function drawFog() {
+  fog.x += fog.speed;
+  const fogGrad = ctx.createLinearGradient(-100 + fog.x, 0, 400 + fog.x, 0);
+  fogGrad.addColorStop(0, "rgba(255,255,255,0.04)");
+  fogGrad.addColorStop(0.5, "rgba(255,255,255,0.12)");
+  fogGrad.addColorStop(1, "rgba(255,255,255,0.04)");
+  ctx.fillStyle = fogGrad;
+  ctx.fillRect(0, 0, canvas.width, groundY);
+}
+
 // player
   const player = {
     x: 120,
@@ -111,6 +123,22 @@ canvas { display:block; }
       height: 36,
       bob: 0
     };
+
+let frogTalked = false;
+
+// frog interaction check, called in update()
+function checkFrogInteraction() {
+  if (frogTalked) return;
+  const px = player.x + player.width / 2;
+  const fx = frog.x + frog.width / 2;
+  const dist = Math.abs(px - fx);
+
+  if (dist < 60 && keys.down) { // press down to interact
+    frogTalked = true;
+    alert("Frog: Ah, you found *the* apple! Paths open when things are carried with care.");
+    // later: can replace alert with DOM bubble
+  }
+}
 
 // add apple
 const appleObj = {
@@ -359,10 +387,6 @@ for (let i = 0; i < 80; i++) {
 drawAppleTree(180, camX);   // before platform
 drawAppleTree(940, camX);   // after frog
 
-  /* ======================
-     APPLE (idle sway + stem)
-     ====================== */
-  
 /* ======================
    APPLE + STUMP
    ====================== */
@@ -373,18 +397,6 @@ const ay =
 
 if (!appleObj.collected) {
   const sway = Math.sin(performance.now() * 0.002) * 1.5;
-
-// draw fog fx called in draw()
-const fog = {x: 0, speed: 0.1};
-function drawFog() {
-  fog.x += fog.speed;
-  const fogGrad = ctx.createLinearGradient(-100 + fog.x, 0, 400 + fog.x, 0);
-  fogGrad.addColorStop(0, "rgba(255,255,255,0.04)");
-  fogGrad.addColorStop(0.5, "rgba(255,255,255,0.12)");
-  fogGrad.addColorStop(1, "rgba(255,255,255,0.04)");
-  ctx.fillStyle = fogGrad;
-  ctx.fillRect(0, 0, canvas.width, groundY);
-}
 
 // stump
 ctx.fillStyle = "#7a4a2e";
@@ -505,21 +517,6 @@ const frogY =
   ctx.moveTo(fx + frog.width + 4, frogY + 8);
   ctx.lineTo(fx + frog.width + 4, frogY + frog.height + 12);
   ctx.stroke();
-
-let frogTalked = false;
-
-function checkFrogInteraction() {
-  if (frogTalked) return;
-  const px = player.x + player.width / 2;
-  const fx = frog.x + frog.width / 2;
-  const dist = Math.abs(px - fx);
-
-  if (dist < 60 && keys.down) { // press down to interact
-    frogTalked = true;
-    alert("Frog: Ah, you found *the* apple! Paths open when things are carried with care.");
-    // later: can replace alert with DOM bubble
-  }
-}
 
   /* ======================
      PLAYER
