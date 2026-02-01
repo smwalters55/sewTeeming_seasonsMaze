@@ -283,7 +283,7 @@ function draw(){
 
   /* PLATFORM */
   platforms.forEach(p=>{
-    const px = p.x - camX;
+    plauyer = p.x - camX;
     const py = groundY - (p.heightAboveGround + p.thickness);
     const wood = ctx.createLinearGradient(px,py,px,py+p.thickness);
     wood.addColorStop(0,"#b18652");
@@ -292,19 +292,68 @@ function draw(){
     ctx.fillRect(px,py,p.width,p.thickness);
   });
 
-  /* FROG */
-  const fx = frog.x - camX;
-  const fy = groundY - frog.height + Math.sin(frog.bob)*2;
-  ctx.fillStyle="#6f8f6a";
-  roundRect(ctx,fx,fy,frog.width,frog.height,10);
-  ctx.fill();
+/* FROG */
+const fx = frog.x - camX;
+const fy = groundY - frog.height + Math.sin(frog.bob)*2;
 
-  /* PLAYER */
-  const px = player.x - camX;
-  const py = groundY - player.height - player.y;
-  ctx.fillStyle="#7a78b8";
-  roundRect(ctx,px,py,player.width,player.height,8);
-  ctx.fill();
+// body
+ctx.fillStyle="#6f8f6a";
+roundRect(ctx, fx, fy, frog.width, frog.height, 10);
+ctx.fill();
+
+// eyes
+ctx.fillStyle="#fff";
+ctx.beginPath();
+ctx.arc(fx+14, fy+10, 4, 0, Math.PI*2);
+ctx.arc(fx+34, fy+10, 4, 0, Math.PI*2);
+ctx.fill();
+
+ctx.fillStyle="#2b2b2b";
+ctx.beginPath();
+ctx.arc(fx+14, fy+11, 2, 0, Math.PI*2);
+ctx.arc(fx+34, fy+11, 2, 0, Math.PI*2);
+ctx.fill();
+
+// top hat
+ctx.fillStyle="#2a2320";
+ctx.fillRect(fx+10, fy-14, 28, 6);
+ctx.fillRect(fx+16, fy-28, 16, 14);
+
+// cane
+ctx.strokeStyle="#6b3f2a";
+ctx.lineWidth=3;
+ctx.beginPath();
+ctx.moveTo(fx+frog.width+4, fy+8);
+ctx.lineTo(fx+frog.width+4, fy+frog.height+12);
+ctx.stroke();
+
+/* PLAYER */
+const px = player.x - camX;
+const py = groundY - player.height - player.y;
+
+// shadow
+ctx.fillStyle = "rgba(60,40,20,0.18)";
+ctx.beginPath();
+ctx.ellipse(px + player.width/2, groundY + 5, 18, 6, 0, 0, Math.PI*2);
+ctx.fill();
+
+// body
+ctx.fillStyle = "#7a78b8";
+roundRect(ctx, px, py, player.width, player.height, 8);
+ctx.fill();
+
+// eyes
+ctx.fillStyle = "#ffffff";
+ctx.beginPath();
+ctx.arc(px + 12, py + 16, 3, 0, Math.PI*2);
+ctx.arc(px + 28, py + 16, 3, 0, Math.PI*2);
+ctx.fill();
+
+ctx.fillStyle = "#2b2b2b";
+ctx.beginPath();
+ctx.arc(px + 12, py + 17, 1.5, 0, Math.PI*2);
+ctx.arc(px + 28, py + 17, 1.5, 0, Math.PI*2);
+ctx.fill();
 
   /* TOP DOWN MAP */
   if (camera.topDown) {
