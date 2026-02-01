@@ -47,7 +47,6 @@ canvas { display:block; }
   <canvas id="game" width="800" height="400"></canvas>
 
       <!-- Player -->
-      <div id="player" style="left:120px"></div>
     </div>
     </div>
 
@@ -131,7 +130,7 @@ const appleObj = {
   const groundY = 300;
 
   const platforms = [  {
-    x: 400,
+    x: 560,
     y: groundY - 80, // 80px ABOVE the ground
     width: 120,
     height: 12
@@ -159,6 +158,9 @@ function handleInput() {
   
 ////  motion over time PHYSICS  ////
 function applyPhysics() {
+
+  if (camera.topDown) return;
+
   // gravity
   player.y += player.jumpVelocity;
   player.jumpVelocity -= 0.8;
@@ -181,17 +183,18 @@ function applyPhysics() {
       appleObj.fallSpeed = 0;
     }
 
-    if (appleObj.falling) {
-      appleObj.fallSpeed += 0.035;
+   if (appleObj.falling) {
+      appleObj.fallSpeed += 0.015; // slower, gentler
       appleObj.y -= appleObj.fallSpeed;
 
-    if (appleObj.y >= STUMP_TOP_Y) {
-      appleObj.y = STUMP_TOP_Y;
-    appleObj.falling = false;
-    appleObj.landed = true;
-    appleObj.glitterTimer = 160;
-      }
-    }
+    if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
+      appleObj.y = STUMP_TOP_Y + appleObj.radius;
+      appleObj.falling = false;
+      appleObj.landed = true;
+      appleObj.glitterTimer = 160;
+  }
+}
+
   }
 
   // FROG BOB
@@ -378,7 +381,7 @@ if (appleObj.glitterTimer > 0) {
      FROG
      ====================== */
 const frogY =
-  groundY - frog.height + Math.sin(frog.bob) * 2;
+  groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
 
   const fx = frog.x - camX;
 
