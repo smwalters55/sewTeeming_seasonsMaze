@@ -201,45 +201,39 @@ function handleInput() {
   if (!keys.space) camera.locked = false;
 }
   
-// motion over time
+////  motion over time PHYSICS  ////
 function applyPhysics() {
   // gravity
   player.y += player.jumpVelocity;
   player.jumpVelocity -= 0.8;
-
-// apple falls at intro
-if (appleObj.falling) {
-  appleObj.y += 1.5;
-  if (appleObj.y >= 0) {
-    appleObj.y = 0;
-    appleObj.falling = false;
-  }
 }
 
 // APPLE DROP LOGIC
+// APPLE DROP LOGIC — SINGLE SOURCE OF TRUTH
+const STUMP_TOP_Y = 14;
+
 if (!appleObj.collected && !appleObj.landed) {
   const now = performance.now();
 
-  // wait 2.5 seconds before falling
-  if (!appleObj.falling && now - appleObj.spawnTime > 2500) {
+  if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
     appleObj.falling = true;
     appleObj.fallSpeed = 0;
   }
 
   if (appleObj.falling) {
-    appleObj.fallSpeed += 0.12; // gentle gravity
+    appleObj.fallSpeed += 0.035; // MUCH slower
     appleObj.y -= appleObj.fallSpeed;
 
-    // LAND ON STUMP (not ground)
-    const stumpTopY = 14; // visual height of stump
-    if (appleObj.y <= stumpTopY + appleObj.radius) {
-      appleObj.y = stumpTopY + appleObj.radius;
+// apple land on stump
+    if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
+      appleObj.y = STUMP_TOP_Y + appleObj.radius;
       appleObj.falling = false;
       appleObj.landed = true;
-      appleObj.glitterTimer = 120; // frames of glitter
+      appleObj.glitterTimer = 160;
     }
   }
 }
+
 
   // ground collision
   if (player.y <= 0) {
@@ -281,6 +275,14 @@ function drawAppleTree(x, camX) {
   ctx.arc(tx, groundY - 110, 50, 0, Math.PI * 2);
   ctx.fill();
 
+  const glow = ctx.createRadialGradient(tx - 10, groundY - 130, 20, tx, groundY - 110, 70);
+  glow.addColorStop(0, "rgba(255,200,140,0.35)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(tx, groundY - 110, 70, 0, Math.PI * 2);
+  ctx.fill();
+
   // apples
   ctx.fillStyle = "#8f2f2a";
   for (let i = 0; i < 4; i++) {
@@ -292,7 +294,7 @@ function drawAppleTree(x, camX) {
   }
 }
 
-// DRAW the bois an friends
+////  DRAW the bois an friends  ////
 function draw() {
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -301,20 +303,26 @@ function draw() {
      SKY
      ====================== */
   const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
-  skyGrad.addColorStop(0, "#b8cfe6");
-  skyGrad.addColorStop(1, "#f3efe8");
+  skyGrad.addColorStop(0, "#c9b1a2");   // warm parchment
+  skyGrad.addColorStop(0.45, "#d9b89c"); // amber haze
+  skyGrad.addColorStop(1, "#efe6da");   // faded memory
 
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, canvas.width, groundY);
+ctx.fillStyle = skyGrad;
+ctx.fillRect(0, 0, canvas.width, groundY);
 
   /* ======================
      GROUND
      ====================== */
   const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-  groundGrad.addColorStop(0, "#8fae8b");
-  groundGrad.addColorStop(1, "#5f7f63");
+  groundGrad.addColorStop(0, "#6b7a55");
+  groundGrad.addColorStop(0.6, "#5a6543");
+  groundGrad.addColorStop(1, "#4b3a2a");
+
   ctx.fillStyle = groundGrad;
   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+
+  ctx.fillStyle = "rgba(180,120,70,0.12)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const camX = cameraX;
 
@@ -336,8 +344,8 @@ function draw() {
   });
 
   // draw 2 apple trees
-    drawAppleTree(260, camX);
-    drawAppleTree(580, camX);
+drawAppleTree(180, camX);   // before platform
+drawAppleTree(940, camX);   // after frog
 
   /* ======================
      APPLE (idle sway + stem)
@@ -347,31 +355,40 @@ function draw() {
     const ax = appleObj.x - camX;
     const ay = groundY - appleObj.y - appleObj.radius + sway;
   
-      // tree stump
-    ctx.fillStyle = "#8b5a3c";
-    ctx.beginPath();
-    roundRect(ctx,ax - 22, groundY - 14, 44, 14, 6);
-    ctx.fill();
+/* ======================
+   APPLE + STUMP
+   ====================== */
+const ax = appleObj.x - camX;
+const ay = groundY - appleObj.y - appleObj.radius +
+           Math.sin(performance.now() * 0.002) * 1.5;
 
-    // apple body
-    ctx.fillStyle = "#a23b32"; // body
-    ctx.beginPath();
-    ctx.arc(ax, ay, appleObj.radius, 0, Math.PI * 2);
-    ctx.fill();
+// stump
+ctx.fillStyle = "#7a4a2e";
+roundRect(ctx, ax - 22, groundY - 14, 44, 14, 6);
+ctx.fill();
 
-    // highlight
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
-    ctx.beginPath();
-    ctx.arc(ax - 3, ay - 4, 3, 0, Math.PI * 2);
-    ctx.fill();
+// apple body
+ctx.fillStyle = "#8f2f2a"; // maroon
+ctx.beginPath();
+ctx.arc(ax, ay, appleObj.radius, 0, Math.PI * 2);
+ctx.fill();
 
-    // stem
-    ctx.strokeStyle = "#7a3e1d";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay - appleObj.radius);
-    ctx.lineTo(ax + 2, ay - appleObj.radius - 6);
-    ctx.stroke();
+// copper warmth
+const appleGlow = ctx.createRadialGradient(ax - 4, ay - 6, 2, ax, ay, 18);
+appleGlow.addColorStop(0, "rgba(255,210,160,0.35)");
+appleGlow.addColorStop(1, "rgba(0,0,0,0)");
+ctx.fillStyle = appleGlow;
+ctx.beginPath();
+ctx.arc(ax, ay, 18, 0, Math.PI * 2);
+ctx.fill();
+
+// stem
+ctx.strokeStyle = "#5c3317";
+ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.moveTo(ax, ay - appleObj.radius);
+ctx.lineTo(ax + 3, ay - appleObj.radius - 7);
+ctx.stroke();
 
     // leaf
     ctx.fillStyle = "#5f8f63";
@@ -388,26 +405,20 @@ function draw() {
     ctx.fill();
   }
 
-// apple glitter moment
+// apple GLITTER moment
 if (appleObj.glitterTimer > 0) {
   appleObj.glitterTimer--;
 
-  for (let i = 0; i < 4; i++) {
-    const angle = (i / 4) * Math.PI * 2 + performance.now() * 0.002;
-    const r = appleObj.radius + 6 + Math.sin(performance.now() * 0.01) * 2;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + performance.now() * 0.002;
+    const r = appleObj.radius + 8;
 
-    ctx.strokeStyle = "rgba(255, 210, 120, 0.8)";
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = "rgba(255,190,110,0.8)";
+    ctx.lineWidth = 1;
 
     ctx.beginPath();
-    ctx.moveTo(
-      ax + Math.cos(angle) * (r - 4),
-      ay + Math.sin(angle) * (r - 4)
-    );
-    ctx.lineTo(
-      ax + Math.cos(angle) * r,
-      ay + Math.sin(angle) * r
-    );
+    ctx.moveTo(ax + Math.cos(a) * (r - 3), ay + Math.sin(a) * (r - 3));
+    ctx.lineTo(ax + Math.cos(a) * r, ay + Math.sin(a) * r);
     ctx.stroke();
   }
 }
