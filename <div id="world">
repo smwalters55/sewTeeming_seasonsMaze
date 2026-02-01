@@ -61,141 +61,117 @@ canvas { display:block; }
     </div>
   </div>
 
-  <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    const inv=document.getElementById('inv');
-    const overlay=document.getElementById('overlay');
-    let cameraX = 0;
-    let hasApple = false;
+<script>
+/* ======================================================
+   CANVAS + CONTEXT
+   ====================================================== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
+/* ======================================================
+   WORLD CONSTANTS
+   ====================================================== */
+const groundY = 300;
 
+/* ======================================================
+   INPUT
+   ====================================================== */
+const keys = { left:false, right:false, up:false, down:false, space:false };
 
-  const keys = {
-    left: false,
-    right: false,
-    up: false,
-    down: false,
-    space: false
+window.addEventListener("keydown", e => {
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
+    e.preventDefault();
+  }
+  if (e.key==="ArrowLeft") keys.left=true;
+  if (e.key==="ArrowRight") keys.right=true;
+  if (e.key==="ArrowUp") keys.up=true;
+  if (e.key==="ArrowDown") keys.down=true;
+  if (e.key===" ") keys.space=true;
+});
+
+window.addEventListener("keyup", e => {
+  if (e.key==="ArrowLeft") keys.left=false;
+  if (e.key==="ArrowRight") keys.right=false;
+  if (e.key==="ArrowUp") keys.up=false;
+  if (e.key==="ArrowDown") keys.down=false;
+  if (e.key===" ") keys.space=false;
+});
+
+/* ======================================================
+   CAMERA
+   ====================================================== */
+let cameraX = 0;
+const camera = { topDown:false, locked:false };
+
+/* ======================================================
+   PLAYER
+   ====================================================== */
+const player = {
+  x: 120,
+  y: 0,               // height above ground
+  width: 40,
+  height: 54,
+  speed: 3,
+  jumping: false,
+  vy: 0
 };
 
-// draw fog fx called in draw()
-const fog = {x: 0, speed: 0.1};
-function drawFog() {
-  fog.x += fog.speed;
-  const fogGrad = ctx.createLinearGradient(-100 + fog.x, 0, 400 + fog.x, 0);
-  fogGrad.addColorStop(0, "rgba(255,255,255,0.04)");
-  fogGrad.addColorStop(0.5, "rgba(255,255,255,0.12)");
-  fogGrad.addColorStop(1, "rgba(255,255,255,0.04)");
-  ctx.fillStyle = fogGrad;
-  ctx.fillRect(0, 0, canvas.width, groundY);
-}
-
-// player
-  const player = {
-    x: 120,
-    y: 0,
-    width: 40,
-    height: 54,
-    speed: 3,
-    jumping: false,
-    jumpVelocity: 0
+/* ======================================================
+   FROG NPC
+   ====================================================== */
+const frog = {
+  x: 820,
+  y: 0,
+  width: 48,
+  height: 36,
+  bob: 0
 };
-
-  // add frog
-    const frog = {
-      x: 820,
-      y: 0,
-      width: 48,
-      height: 36,
-      bob: 0
-    };
-
 let frogTalked = false;
 
-// frog interaction check, called in update()
-function checkFrogInteraction() {
-  if (frogTalked) return;
-  const px = player.x + player.width / 2;
-  const fx = frog.x + frog.width / 2;
-  const dist = Math.abs(px - fx);
-
-  if (dist < 60 && keys.down) { // press down to interact
-    frogTalked = true;
-    alert("Frog: Ah, you found *the* apple! Paths open when things are carried with care.");
-    // later: can replace alert with DOM bubble
+/* ======================================================
+   PLATFORM (anchored from ground)
+   ====================================================== */
+const platforms = [
+  {
+    x: 560,
+    heightAboveGround: 48,
+    width: 120,
+    thickness: 14
   }
-}
+];
 
-// add apple
-const appleObj = {
-  x: 420,
-  y: 140,
-  radius: 14,
-  falling: false,
-  landed: false,
-  collected: false,
-  fallSpeed: 0,
-  spawnTime: performance.now(),
-  glitterTimer: 0
+/* ======================================================
+   ATMOSPHERE
+   ====================================================== */
+const fog = {
+  x: 0,
+  speed: 0.015,
+  height: 180
 };
-
-// start camera horizontal view
-    const camera = {
-      topDown: false,
-      locked: false
-};
-  const groundY = 300;
 
 const crows = [
-  {x: 800, y: 50, speed: 0.3},
-  {x: 600, y: 80, speed: 0.2}
+  { x: 780, y: 60, speed: 0.25 },
+  { x: 620, y: 90, speed: 0.18 }
 ];
 
-function drawCrows(camX) {
-  ctx.fillStyle = "#2b2b2b";
-  crows.forEach(c => {
-    c.x -= c.speed;
-    if(c.x < -20) c.x = canvas.width + 20;
-    ctx.beginPath();
-    ctx.moveTo(c.x - camX, c.y);
-    ctx.lineTo(c.x - camX + 8, c.y + 4);
-    ctx.lineTo(c.x - camX + 16, c.y);
-    ctx.stroke();
-  });
-}
+// hay positions (generated ONCE)
+const hay = Array.from({length: 90}, () => ({
+  x: Math.random()*canvas.width,
+  y: groundY + 6 + Math.random()*10,
+  h: 4 + Math.random()*6
+}));
 
-  const platforms = [  {
-    x: 560,
-    y: groundY - 80, // 80px ABOVE the ground
-    width: 120,
-    height: 12
-  }
-];
-    
-// arrow keys move, stop when key released; spacebar changes camera angle
-    // movement intent
-function handleInput() {
-  if (keys.space) return;
-  if (keys.left) player.x -= player.speed;
-  if (keys.right) player.x += player.speed;
-
-  if (keys.up && !player.jumping) {
-    player.jumping = true;
-    player.jumpVelocity = 12;
+/* ======================================================
+   INPUT HANDLING
+   ====================================================== */
+function handleInput(){
+  if (!camera.topDown) {
+    if (keys.left) player.x -= player.speed;
+    if (keys.right) player.x += player.speed;
+    if (keys.up && !player.jumping) {
+      player.jumping = true;
+      player.vy = 12;
+    }
   }
 
   if (keys.space && !camera.locked) {
@@ -204,442 +180,158 @@ function handleInput() {
   }
   if (!keys.space) camera.locked = false;
 }
-  
-////  motion over time PHYSICS  ////
-function applyPhysics() {
 
-  if (camera.topDown) {
-  frog.bob += 0.05;
-}
-
+/* ======================================================
+   PHYSICS
+   ====================================================== */
+function applyPhysics(){
   // gravity
-  player.y += player.jumpVelocity;
-  player.jumpVelocity -= 0.8;
+  player.y += player.vy;
+  player.vy -= 0.8;
 
   // ground collision
   if (player.y <= 0) {
     player.y = 0;
     player.jumping = false;
-    player.jumpVelocity = 0;
+    player.vy = 0;
   }
 
-// APPLE DROP LOGIC
-const STUMP_HEIGHT = 14;
+  // platform collision
+  platforms.forEach(p => {
+    const platformTop =
+      p.heightAboveGround + p.thickness;
 
-if (!appleObj.collected && !appleObj.landed) {
-  const now = performance.now();
+    const playerBottom = player.y;
 
-  if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
-    appleObj.falling = true;
-    appleObj.fallSpeed = 0;
-  }
-
-  if (appleObj.falling) {
-    appleObj.fallSpeed += 0.15; // gravity
-    appleObj.y -= appleObj.fallSpeed;
-
-    // LAND exactly on stump
-    if (appleObj.y <= STUMP_HEIGHT + appleObj.radius) {
-      appleObj.y = STUMP_HEIGHT + appleObj.radius;
-      appleObj.falling = false;
-      appleObj.landed = true;
-      appleObj.glitterTimer = 160;
+    if (
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 12 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
     }
-  }
+  });
+
+  frog.bob += 0.04;
 }
 
-  // FROG BOB
-  frog.bob += 0.05;
+/* ======================================================
+   DRAW HELPERS
+   ====================================================== */
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
 }
 
+/* ======================================================
+   DRAW
+   ====================================================== */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // platforms
-platforms.forEach(p => {
-  const playerTop = groundY - player.height - player.y;
-  const playerBottom = groundY - player.y;
+  /* SKY */
+  const sky = ctx.createLinearGradient(0,0,0,groundY);
+  sky.addColorStop(0,"#ffddb8");
+  sky.addColorStop(0.5,"#e8c89a");
+  sky.addColorStop(1,"#efe6da");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0,0,canvas.width,groundY);
 
-  // simple AABB collision
-  if (
-    player.x + player.width > p.x &&
-    player.x < p.x + p.width &&
-    playerBottom >= groundY - (p.y + p.height) &&
-    playerBottom <= groundY - p.y &&
-    player.jumpVelocity <= 0
-  ) {
-    // land on platform
-    player.y = groundY - (p.y + p.height);
-    player.jumping = false;
-    player.jumpVelocity = 0;
-  }
-});
+  /* FOG */
+  fog.x += fog.speed;
+  const fg = ctx.createLinearGradient(-200+fog.x,0,400+fog.x,0);
+  fg.addColorStop(0,"rgba(255,255,255,0.03)");
+  fg.addColorStop(0.5,"rgba(255,255,255,0.12)");
+  fg.addColorStop(1,"rgba(255,255,255,0.03)");
+  ctx.fillStyle = fg;
+  ctx.fillRect(0,0,canvas.width,fog.height);
 
-
-function drawAppleTree(x, camX) {
-  const tx = x - camX;
-
-  // trunk
-  ctx.fillStyle = "#7a4a2e";
-  ctx.fillRect(tx - 10, groundY - 90, 20, 90);
-
-  // canopy
-  ctx.fillStyle = "#5a6f3a";
-  ctx.beginPath();
-  ctx.arc(tx, groundY - 110, 50, 0, Math.PI * 2);
-  ctx.fill();
-
-  const glow = ctx.createRadialGradient(tx - 10, groundY - 130, 20, tx, groundY - 110, 70);
-  glow.addColorStop(0, "rgba(255,200,140,0.35)");
-  glow.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(tx, groundY - 110, 70, 0, Math.PI * 2);
-  ctx.fill();
-
-  // apples
-  ctx.fillStyle = "#8f2f2a";
-  for (let i = 0; i < 4; i++) {
-    const ax = tx + Math.cos(i * 1.7) * 30;
-    const ay = groundY - 110 + Math.sin(i * 1.3) * 20;
+  /* CROWS */
+  ctx.strokeStyle = "#3b2f28";
+  crows.forEach(c=>{
+    c.x -= c.speed;
+    if (c.x < -20) c.x = canvas.width+20;
     ctx.beginPath();
-    ctx.arc(ax, ay, 6, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
+    ctx.moveTo(c.x-cameraX,c.y);
+    ctx.lineTo(c.x-cameraX+8,c.y+4);
+    ctx.lineTo(c.x-cameraX+16,c.y);
+    ctx.stroke();
+  });
 
-////**  DRAW the bois an friends  **////
-function draw() {
-  ctx.globalCompositeOperation = "source-over";
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  /* GROUND */
+  ctx.fillStyle = "#5a6543";
+  ctx.fillRect(0,groundY,canvas.width,canvas.height-groundY);
 
-  /* ======================
-     SKY
-     ====================== */
-const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
-skyGrad.addColorStop(0, "#ffdab3");   // warm sunrise
-skyGrad.addColorStop(0.35, "#f2c28b"); // golden haze
-skyGrad.addColorStop(0.7, "#bdb0a0");  // soft clouds
-skyGrad.addColorStop(1, "#efe6da");    // ground fade
-ctx.fillStyle = skyGrad;
-ctx.fillRect(0, 0, canvas.width, groundY);
-
-// call draw fog
-drawFog()
-
-// draw crows
-drawCrows(cameraX)
-
-  /* ======================
-     GROUND
-     ====================== */
-  const groundGrad = ctx.createLinearGradient(0, groundY, 0, canvas.height);
-  groundGrad.addColorStop(0, "#6b7a55");
-  groundGrad.addColorStop(0.6, "#5a6543");
-  groundGrad.addColorStop(1, "#4b3a2a");
-
-  ctx.fillStyle = groundGrad;
-  ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
-
-  ctx.fillStyle = "rgba(180,120,70,0.12)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-// draw some hay to ground
-ctx.fillStyle = "rgba(210,180,120,0.2)";
-for (let i = 0; i < 80; i++) {
-  const hx = Math.random() * canvas.width;
-  const hy = groundY + 5 + Math.random() * 10;
-  ctx.fillRect(hx, hy, 2, 6);
-}
+  /* HAY */
+  ctx.fillStyle = "rgba(210,180,120,0.35)";
+  hay.forEach(h=>ctx.fillRect(h.x,h.y,2,h.h));
 
   const camX = cameraX;
 
-// tie some backgroud hues together
-  ctx.fillStyle = "rgba(220,180,140,0.08)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  /* PLATFORM */
+  platforms.forEach(p=>{
+    const px = p.x - camX;
+    const py = groundY - (p.heightAboveGround + p.thickness);
+    const wood = ctx.createLinearGradient(px,py,px,py+p.thickness);
+    wood.addColorStop(0,"#b18652");
+    wood.addColorStop(1,"#7a5230");
+    ctx.fillStyle = wood;
+    ctx.fillRect(px,py,p.width,p.thickness);
+  });
 
-  /* ======================
-     PLATFORMS
-     ====================== */
- platforms.forEach(p => {
-  const px = p.x - camX;
-  const py = p.y;
-
-  // oak wood gradient
-  const woodGrad = ctx.createLinearGradient(px, py, px, py + p.height);
-  woodGrad.addColorStop(0, "#a87c4a"); // lighter oak top
-  woodGrad.addColorStop(1, "#7a5230"); // darker oak bottom
-  ctx.fillStyle = woodGrad;
-  ctx.fillRect(px, groundY - (py + p.height), p.width, p.height);
-
-  // knots
-  ctx.fillStyle = "rgba(50,30,15,0.3)";
-  for (let i = 0; i < 3; i++) {
-    const kx = px + Math.random() * p.width * 0.8;
-    const ky = groundY - (py + p.height) + Math.random() * p.height * 0.6;
-    const kr = 4 + Math.random() * 3;
-    ctx.beginPath();
-    ctx.ellipse(kx, ky, kr, kr * 0.6, Math.random() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-});
-
-
-  // draw 2 apple trees
-drawAppleTree(180, camX);   // before platform
-drawAppleTree(940, camX);   // after frog
-
-/* ======================
-   APPLE + STUMP
-   ====================== */
-const ax = appleObj.x - camX;
-const ay = 
-  groundY - appleObj.y +
-    Math.sin(performance.now() * 0.002) * 1.5;
-
-if (!appleObj.collected) {
-  const sway = Math.sin(performance.now() * 0.002) * 1.5;
-
-// stump
-ctx.fillStyle = "#7a4a2e";
-const STUMP_HEIGHT = 14;
-roundRect(
-  ctx,
-  ax - 22,
-  groundY - STUMP_HEIGHT,
-  44,
-  STUMP_HEIGHT,
-  6
-);
-ctx.fill();
-
-// apple body
-ctx.fillStyle = "#8f2f2a"; // maroon
-ctx.beginPath();
-ctx.arc(ax, ay, appleObj.radius, 0, Math.PI * 2);
-ctx.fill();
-
-// copper warmth
-const appleGlow = ctx.createRadialGradient(ax - 4, ay - 6, 2, ax, ay, 18);
-appleGlow.addColorStop(0, "rgba(255,210,160,0.35)");
-appleGlow.addColorStop(1, "rgba(0,0,0,0)");
-ctx.fillStyle = appleGlow;
-ctx.beginPath();
-ctx.arc(ax, ay, 18, 0, Math.PI * 2);
-ctx.fill();
-
-// stem
-ctx.strokeStyle = "#5c3317";
-ctx.lineWidth = 2;
-ctx.beginPath();
-ctx.moveTo(ax, ay - appleObj.radius);
-ctx.lineTo(ax + 3, ay - appleObj.radius - 7);
-ctx.stroke();
-
-    // leaf
-    ctx.fillStyle = "#5f8f63";
-    ctx.beginPath();
-    ctx.ellipse(
-      ax + 6,
-      ay - appleObj.radius - 6,
-      6,
-      3,
-      -0.4,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-
-// apple GLITTER moment
-if (appleObj.glitterTimer > 0) {
-  appleObj.glitterTimer--;
-
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + performance.now() * 0.002;
-    const r = appleObj.radius + 8;
-
-    ctx.strokeStyle = "rgba(255,190,110,0.8)";
-    ctx.lineWidth = 1;
-
-    ctx.beginPath();
-    ctx.moveTo(ax + Math.cos(a) * (r - 3), ay + Math.sin(a) * (r - 3));
-    ctx.lineTo(ax + Math.cos(a) * r, ay + Math.sin(a) * r);
-    ctx.stroke();
-  }
-}
-
-  /* ======================
-     FROG
-     ====================== */
-const frogY =
-  groundY - frog.height - frog.y + Math.sin(frog.bob) * 2;
-
+  /* FROG */
   const fx = frog.x - camX;
-
-  // shadow
-  ctx.fillStyle = "rgba(60,40,20,0.18)";
-  ctx.beginPath();
-  ctx.ellipse(fx + frog.width / 2, groundY + 4, 16, 6, 0, 0, Math.PI * 2);
+  const fy = groundY - frog.height + Math.sin(frog.bob)*2;
+  ctx.fillStyle="#6f8f6a";
+  roundRect(ctx,fx,fy,frog.width,frog.height,10);
   ctx.fill();
 
-  // body
-  ctx.fillStyle = "#6f8f6a";
-  ctx.beginPath();
-  roundRect(ctx,fx, frogY, frog.width, frog.height, 10);
-  ctx.fill();
-
-  // subtle rim light
-  ctx.strokeStyle = "rgba(255,240,220,0.35)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // eyes
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(fx + 14, frogY + 10, 4, 0, Math.PI * 2);
-  ctx.arc(fx + 34, frogY + 10, 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#2b2b2b";
-  ctx.beginPath();
-  ctx.arc(fx + 14, frogY + 11, 2, 0, Math.PI * 2);
-  ctx.arc(fx + 34, frogY + 11, 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // top hat
-  ctx.fillStyle = "#2a2320";
-  ctx.fillRect(fx + 10, frogY - 14, 28, 6);
-  ctx.fillRect(fx + 16, frogY - 28, 16, 14);
-
-  // cane
-  ctx.strokeStyle = "#6b3f2a";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(fx + frog.width + 4, frogY + 8);
-  ctx.lineTo(fx + frog.width + 4, frogY + frog.height + 12);
-  ctx.stroke();
-
-  /* ======================
-     PLAYER
-     ====================== */
+  /* PLAYER */
   const px = player.x - camX;
   const py = groundY - player.height - player.y;
-
-  // shadow
-  ctx.fillStyle = "rgba(60,40,20,0.18)";
-  ctx.beginPath();
-  ctx.ellipse(px + player.width / 2, groundY + 5, 18, 6, 0, 0, Math.PI * 2);
+  ctx.fillStyle="#7a78b8";
+  roundRect(ctx,px,py,player.width,player.height,8);
   ctx.fill();
 
-  // body
-  ctx.fillStyle = "#7a78b8";
-  ctx.beginPath();
-  roundRect(ctx,px, py, player.width, player.height, 8);
-  ctx.fill();
-
-  // subtle rim light
-  ctx.strokeStyle = "rgba(255,240,220,0.35)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // eyes
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(px + 12, py + 14, 3, 0, Math.PI * 2);
-  ctx.arc(px + 26, py + 14, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#2b2b2b";
-  ctx.beginPath();
-  ctx.arc(px + 12, py + 15, 1.5, 0, Math.PI * 2);
-  ctx.arc(px + 26, py + 15, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-
-  /* ======================
-     TOP-DOWN MAP
-     ====================== */
+  /* TOP DOWN MAP */
   if (camera.topDown) {
-    ctx.fillStyle = "rgba(245,245,240,0.94)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = "#2b2b2b";
-    ctx.font = "14px ui-monospace";
-    ctx.fillText("Orchard", 120, 90);
-    ctx.fillText("Path I", 280, 90);
-    ctx.fillText("Path II", 440, 90);
-    ctx.fillText("Path III", 600, 90);
-
-    const nodes = [
-      { x: 110, y: 110, open: true },
-      { x: 270, y: 110 },
-      { x: 430, y: 110 },
-      { x: 590, y: 110 }
-    ];
-
-    nodes.forEach(n => {
-      ctx.fillStyle = n.open ? "#7fa36b" : "#cfcfcf";
-      ctx.beginPath();
-      roundRect(ctx,n.x, n.y, 80, 40, 8);
-      ctx.fill();
-    });
+    ctx.fillStyle="rgba(245,245,240,0.94)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="#2b2b2b";
+    ctx.fillText("Orchard → Paths",120,120);
   }
 }
 
-
-
-window.addEventListener("keydown", (e) => {
-    if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
-    e.preventDefault();
-  }
-  if (e.key === "ArrowLeft") keys.left = true;
-  if (e.key === "ArrowRight") keys.right = true;
-  if (e.key === "ArrowUp") keys.up = true;
-  if (e.key === "ArrowDown") keys.down = true;
-  if (e.key === " ") keys.space = true;
-});
-
-    
-window.addEventListener("keyup", (e) => {
-  if (e.key === "ArrowLeft") keys.left = false;
-  if (e.key === "ArrowRight") keys.right = false;
-  if (e.key === "ArrowUp") keys.up = false;
-  if (e.key === "ArrowDown") keys.down = false;
-  if (e.key === " ") keys.space = false;
-});
-
-
-// frog DOM version code, prob delete
-    //const frog=document.getElementById('frog');
-    //let frogBlinkTimer=0;
-    //const dialogue=document.getElementById('dialogue');
-    //const dialogueText=document.getElementById('dialogueText');
-    //let talked=false;
-
-    //function tryFrogTalk(){
-      //if(talked) return;
-      //const px = player.x;
-      //const fx = frog.offsetLeft;
-      //if(Math.abs(px-fx)<60){
-        //talked=true;
-        //dialogue.style.display='block';
-        //dialogueText.innerHTML="Ah. You found <i>the</i> apple, didn’t you?<br><br>Paths open when things are carried with care.<br><br>I seem to have misplaced my bass…";
-      //}
-    //}
-
-  // spine of update
-function update() {
+/* ======================================================
+   MAIN LOOP
+   ====================================================== */
+function update(){
   handleInput();
   applyPhysics();
   draw();
-  requestAnimationFrame(update);
-  const targetCameraX = player.x - canvas.width * 0.4;
-  cameraX += (targetCameraX - cameraX) * 0.08;
-  if (cameraX < 0) cameraX = 0;
-  checkFrogInteraction();
-}
 
+  const targetCam = player.x - canvas.width*0.4;
+  cameraX += (targetCam - cameraX)*0.08;
+  if (cameraX<0) cameraX=0;
+
+  requestAnimationFrame(update);
+}
 update();
-  
-  </script>
+</script>
+
 </body>
 </html>
 
