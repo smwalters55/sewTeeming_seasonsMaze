@@ -62,6 +62,11 @@ canvas { display:block; }
   </div>
 
 <script>
+/* debug base canvas errors
+window.onerror = (msg, src, line) => {
+  alert(`JS Error:\n${msg}\nLine: ${line}`);
+};
+
 /* ======================================================
    CANVAS + CONTEXT
    ====================================================== */
@@ -263,6 +268,7 @@ function drawAppleTree(x, camX){
 /* ======================================================
    DRAW
    ====================================================== */
+function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const camX = cameraX;
