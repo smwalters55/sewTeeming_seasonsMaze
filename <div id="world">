@@ -111,6 +111,8 @@ canvas { display:block; }
       height: 36,
       bob: 0
     };
+
+// add apple
 const appleObj = {
   x: 420,
   y: 140,
@@ -123,11 +125,30 @@ const appleObj = {
   glitterTimer: 0
 };
 
+// start camera horizontal view
     const camera = {
       topDown: false,
       locked: false
 };
   const groundY = 300;
+
+const crows = [
+  {x: 800, y: 50, speed: 0.3},
+  {x: 600, y: 80, speed: 0.2}
+];
+
+function drawCrows(camX) {
+  ctx.fillStyle = "#2b2b2b";
+  crows.forEach(c => {
+    c.x -= c.speed;
+    if(c.x < -20) c.x = canvas.width + 20;
+    ctx.beginPath();
+    ctx.moveTo(c.x - camX, c.y);
+    ctx.lineTo(c.x - camX + 8, c.y + 4);
+    ctx.lineTo(c.x - camX + 16, c.y);
+    ctx.stroke();
+  });
+}
 
   const platforms = [  {
     x: 560,
@@ -205,20 +226,25 @@ if (!appleObj.collected && !appleObj.landed) {
 
 
   // platforms
-  platforms.forEach(p => {
-    const playerBottom = player.y;
-   if (
-  player.x + player.width > p.x &&
-  player.x < p.x + p.width &&
-  playerBottom <= groundY - p.y &&
-  playerBottom >= groundY - (p.y + p.height) &&
-  player.jumpVelocity <= 0
-) {
-  player.y = groundY - p.y;
-  player.jumping = false;
-  player.jumpVelocity = 0;
-}
-  });
+platforms.forEach(p => {
+  const playerTop = groundY - player.height - player.y;
+  const playerBottom = groundY - player.y;
+
+  // simple AABB collision
+  if (
+    player.x + player.width > p.x &&
+    player.x < p.x + p.width &&
+    playerBottom >= groundY - (p.y + p.height) &&
+    playerBottom <= groundY - p.y &&
+    player.jumpVelocity <= 0
+  ) {
+    // land on platform
+    player.y = groundY - (p.y + p.height);
+    player.jumping = false;
+    player.jumpVelocity = 0;
+  }
+});
+
 
 function drawAppleTree(x, camX) {
   const tx = x - camX;
@@ -252,7 +278,7 @@ function drawAppleTree(x, camX) {
   }
 }
 
-////  DRAW the bois an friends  ////
+////**  DRAW the bois an friends  **////
 function draw() {
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -260,13 +286,19 @@ function draw() {
   /* ======================
      SKY
      ====================== */
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
-  skyGrad.addColorStop(0, "#c9b1a2");   // warm parchment
-  skyGrad.addColorStop(0.45, "#d9b89c"); // amber haze
-  skyGrad.addColorStop(1, "#efe6da");   // faded memory
-
+const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+skyGrad.addColorStop(0, "#ffdab3");   // warm sunrise
+skyGrad.addColorStop(0.35, "#f2c28b"); // golden haze
+skyGrad.addColorStop(0.7, "#bdb0a0");  // soft clouds
+skyGrad.addColorStop(1, "#efe6da");    // ground fade
 ctx.fillStyle = skyGrad;
 ctx.fillRect(0, 0, canvas.width, groundY);
+
+// call draw fog
+drawFog()
+
+// draw crows
+drawCrows(cameraX)
 
   /* ======================
      GROUND
@@ -282,6 +314,14 @@ ctx.fillRect(0, 0, canvas.width, groundY);
   ctx.fillStyle = "rgba(180,120,70,0.12)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+// draw some hay to ground
+ctx.fillStyle = "rgba(210,180,120,0.2)";
+for (let i = 0; i < 80; i++) {
+  const hx = Math.random() * canvas.width;
+  const hy = groundY + 5 + Math.random() * 10;
+  ctx.fillRect(hx, hy, 2, 6);
+}
+
   const camX = cameraX;
 
 // tie some backgroud hues together
@@ -291,15 +331,29 @@ ctx.fillRect(0, 0, canvas.width, groundY);
   /* ======================
      PLATFORMS
      ====================== */
-  platforms.forEach(p => {
-    ctx.fillStyle = "#c7b29a";
-    ctx.fillRect(p.x - camX, p.y + 6, p.width, p.height);
+ platforms.forEach(p => {
+  const px = p.x - camX;
+  const py = p.y;
 
-    ctx.fillStyle = "#c9b59b";
+  // oak wood gradient
+  const woodGrad = ctx.createLinearGradient(px, py, px, py + p.height);
+  woodGrad.addColorStop(0, "#a87c4a"); // lighter oak top
+  woodGrad.addColorStop(1, "#7a5230"); // darker oak bottom
+  ctx.fillStyle = woodGrad;
+  ctx.fillRect(px, groundY - (py + p.height), p.width, p.height);
+
+  // knots
+  ctx.fillStyle = "rgba(50,30,15,0.3)";
+  for (let i = 0; i < 3; i++) {
+    const kx = px + Math.random() * p.width * 0.8;
+    const ky = groundY - (py + p.height) + Math.random() * p.height * 0.6;
+    const kr = 4 + Math.random() * 3;
     ctx.beginPath();
-    roundRect(ctx,p.x - camX, p.y, p.width, p.height, 6);
+    ctx.ellipse(kx, ky, kr, kr * 0.6, Math.random() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
-  });
+  }
+});
+
 
   // draw 2 apple trees
 drawAppleTree(180, camX);   // before platform
@@ -319,6 +373,18 @@ const ay =
 
 if (!appleObj.collected) {
   const sway = Math.sin(performance.now() * 0.002) * 1.5;
+
+// draw fog fx called in draw()
+const fog = {x: 0, speed: 0.1};
+function drawFog() {
+  fog.x += fog.speed;
+  const fogGrad = ctx.createLinearGradient(-100 + fog.x, 0, 400 + fog.x, 0);
+  fogGrad.addColorStop(0, "rgba(255,255,255,0.04)");
+  fogGrad.addColorStop(0.5, "rgba(255,255,255,0.12)");
+  fogGrad.addColorStop(1, "rgba(255,255,255,0.04)");
+  ctx.fillStyle = fogGrad;
+  ctx.fillRect(0, 0, canvas.width, groundY);
+}
 
 // stump
 ctx.fillStyle = "#7a4a2e";
@@ -440,6 +506,21 @@ const frogY =
   ctx.lineTo(fx + frog.width + 4, frogY + frog.height + 12);
   ctx.stroke();
 
+let frogTalked = false;
+
+function checkFrogInteraction() {
+  if (frogTalked) return;
+  const px = player.x + player.width / 2;
+  const fx = frog.x + frog.width / 2;
+  const dist = Math.abs(px - fx);
+
+  if (dist < 60 && keys.down) { // press down to interact
+    frogTalked = true;
+    alert("Frog: Ah, you found *the* apple! Paths open when things are carried with care.");
+    // later: can replace alert with DOM bubble
+  }
+}
+
   /* ======================
      PLAYER
      ====================== */
@@ -556,7 +637,7 @@ function update() {
   const targetCameraX = player.x - canvas.width * 0.4;
   cameraX += (targetCameraX - cameraX) * 0.08;
   if (cameraX < 0) cameraX = 0;
-
+  checkFrogInteraction();
 }
 
 update();
