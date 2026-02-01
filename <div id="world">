@@ -161,7 +161,6 @@ function applyPhysics() {
 
   if (camera.topDown) {
   frog.bob += 0.05;
-  return;
 }
 
   // gravity
@@ -207,18 +206,18 @@ if (!appleObj.collected && !appleObj.landed) {
 
   // platforms
   platforms.forEach(p => {
-    const playerBottom = groundY - player.y;
-    if (
-      player.x + player.width > p.x &&
-      player.x < p.x + p.width &&
-      playerBottom >= p.y &&
-      playerBottom <= p.y + p.height &&
-      player.jumpVelocity <= 0
-    ) {
-      player.y = groundY - p.y;
-      player.jumping = false;
-      player.jumpVelocity = 0;
-    }
+    const playerBottom = player.y;
+   if (
+  player.x + player.width > p.x &&
+  player.x < p.x + p.width &&
+  playerBottom <= groundY - p.y &&
+  playerBottom >= groundY - (p.y + p.height) &&
+  player.jumpVelocity <= 0
+) {
+  player.y = groundY - p.y;
+  player.jumping = false;
+  player.jumpVelocity = 0;
+}
   });
 
 function drawAppleTree(x, camX) {
@@ -316,12 +315,20 @@ drawAppleTree(940, camX);   // after frog
    APPLE + STUMP
    ====================== */
 const ax = appleObj.x - camX;
-const ay = groundY - appleObj.y - appleObj.radius +
+const ay = groundY - appleObj.y +
            Math.sin(performance.now() * 0.002) * 1.5;
 
 // stump
 ctx.fillStyle = "#7a4a2e";
-roundRect(ctx, ax - 22, groundY - 14, 44, 14, 6);
+const STUMP_HEIGHT = 14;
+roundRect(
+  ctx,
+  ax - 22,
+  groundY - STUMP_HEIGHT,
+  44,
+  STUMP_HEIGHT,
+  6
+);
 ctx.fill();
 
 // apple body
