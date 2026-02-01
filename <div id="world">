@@ -202,47 +202,6 @@ function applyPhysics() {
   // gravity
   player.y += player.jumpVelocity;
   player.jumpVelocity -= 0.8;
-}
-
-// APPLE DROP LOGIC
-// APPLE DROP LOGIC
-const STUMP_TOP_Y = 14;
-
-if (!appleObj.collected && !appleObj.landed) {
-  const now = performance.now();
-
-  if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
-    appleObj.falling = true;
-    appleObj.fallSpeed = 0;
-  }
-
-  if (appleObj.falling) {
-    appleObj.fallSpeed += 0.035;
-    appleObj.y -= appleObj.fallSpeed;
-
-    if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
-      appleObj.y = STUMP_TOP_Y + appleObj.radius;
-      appleObj.falling = false;
-      appleObj.landed = true;
-      appleObj.glitterTimer = 160;
-    }
-  }
-}
-
-  if (appleObj.falling) {
-    appleObj.fallSpeed += 0.035; // MUCH slower
-    appleObj.y -= appleObj.fallSpeed;
-
-// apple land on stump
-    if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
-      appleObj.y = STUMP_TOP_Y + appleObj.radius;
-      appleObj.falling = false;
-      appleObj.landed = true;
-      appleObj.glitterTimer = 160;
-    }
-  }
-}
-
 
   // ground collision
   if (player.y <= 0) {
@@ -250,6 +209,35 @@ if (!appleObj.collected && !appleObj.landed) {
     player.jumping = false;
     player.jumpVelocity = 0;
   }
+
+// APPLE DROP LOGIC
+  const STUMP_TOP_Y = 14;
+
+  if (!appleObj.collected && !appleObj.landed) {
+    const now = performance.now();
+
+    if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
+      appleObj.falling = true;
+      appleObj.fallSpeed = 0;
+    }
+
+    if (appleObj.falling) {
+      appleObj.fallSpeed += 0.035;
+      appleObj.y -= appleObj.fallSpeed;
+
+      if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
+        appleObj.y = STUMP_TOP_Y + appleObj.radius;
+        appleObj.falling = false;
+        appleObj.landed = true;
+        appleObj.glitterTimer = 160;
+      }
+    }
+  }
+
+  // FROG BOB
+  frog.bob += 0.05;
+}
+
 
   // platforms
   platforms.forEach(p => {
@@ -266,10 +254,6 @@ if (!appleObj.collected && !appleObj.landed) {
       player.jumpVelocity = 0;
     }
   });
-
-// frog idle animation
-  frog.bob += 0.05;
-}
 
 function drawAppleTree(x, camX) {
   const tx = x - camX;
@@ -305,6 +289,7 @@ function drawAppleTree(x, camX) {
 
 ////  DRAW the bois an friends  ////
 function draw() {
+  camera.topDown = false;
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
