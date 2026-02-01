@@ -159,7 +159,10 @@ function handleInput() {
 ////  motion over time PHYSICS  ////
 function applyPhysics() {
 
-  if (camera.topDown) return;
+  if (camera.topDown) {
+  frog.bob += 0.05;
+  return;
+}
 
   // gravity
   player.y += player.jumpVelocity;
@@ -173,29 +176,29 @@ function applyPhysics() {
   }
 
 // APPLE DROP LOGIC
-  const STUMP_TOP_Y = 14;
+const STUMP_HEIGHT = 14;
 
-  if (!appleObj.collected && !appleObj.landed) {
-    const now = performance.now();
+if (!appleObj.collected && !appleObj.landed) {
+  const now = performance.now();
 
-    if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
-      appleObj.falling = true;
-      appleObj.fallSpeed = 0;
-    }
+  if (!appleObj.falling && now - appleObj.spawnTime > 2600) {
+    appleObj.falling = true;
+    appleObj.fallSpeed = 0;
+  }
 
-   if (appleObj.falling) {
-      appleObj.fallSpeed += 0.015; // slower, gentler
-      appleObj.y -= appleObj.fallSpeed;
+  if (appleObj.falling) {
+    appleObj.fallSpeed += 0.15; // gravity
+    appleObj.y -= appleObj.fallSpeed;
 
-    if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
-      appleObj.y = STUMP_TOP_Y + appleObj.radius;
+    // LAND exactly on stump
+    if (appleObj.y <= STUMP_HEIGHT + appleObj.radius) {
+      appleObj.y = STUMP_HEIGHT + appleObj.radius;
       appleObj.falling = false;
       appleObj.landed = true;
       appleObj.glitterTimer = 160;
+    }
   }
 }
-
-  }
 
   // FROG BOB
   frog.bob += 0.05;
