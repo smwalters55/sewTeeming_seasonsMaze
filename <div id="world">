@@ -13,30 +13,14 @@
     }
     html,body{overflow: hidden;margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:ui-monospace, Menlo, Consolas, monospace;}
     #game{width:100vw; border-bottom:2px dashed var(--ink);}    
-    #world{position:absolute; left:0; bottom:0; height:100%; width:3000px;}
-    .ground{position:absolute; bottom:0; left:0; height:80px; width:100%; border-top:3px solid var(--ink); background:linear-gradient(#0000, #0001);}    
-    .tree{position:absolute; bottom:80px; width:180px; height:260px; border:3px solid var(--ink); border-radius:90px 90px 40px 40px;}
-    .trunk{position:absolute; bottom:80px; width:140px; height:40px; border:3px solid var(--ink); background:#fff;}
-    .apple{position:absolute; width:26px; height:26px; border:3px solid var(--ink); border-radius:50%; background:#fff; cursor:pointer;}
-    .apple.glow{box-shadow:0 0 0 0 rgba(155,183,255,.8); animation:glow 1.2s ease-in-out 2;}
     @keyframes glow{50%{box-shadow:0 0 18px 6px rgba(155,183,255,.8)}}
 
-#world { pointer-events:none; }
 canvas { display:block; }
-#player { display:none; }
-    .path{position:absolute; bottom:80px; width:160px; height:120px; border:3px dashed var(--ink); text-align:center; line-height:120px;}
-    .path.hazy{opacity:.45; filter:blur(1px);}    
-
-    #player{position:absolute; bottom:80px; width:34px; height:54px; border:3px solid var(--ink); background:#fff; transition:bottom .1s;}    
-    #player.jump{animation:jump 0.45s ease-in-out forwards;}
     @keyframes jump{
       0%{transform:translateY(0)}
       50%{transform:translateY(-90px)}
       100%{transform:translateY(0)}
-    }
-
-    .platform{position:absolute; bottom:120px; width:120px; height:16px; border:3px solid var(--ink); background:#fff;}    
-    #player.crouch{height:34px;}
+    } 
 
     #ui{
   position:fixed;
@@ -61,31 +45,6 @@ canvas { display:block; }
   </div>
 
   <canvas id="game" width="800" height="400"></canvas>
-    <div id="world">
-      <div class="ground"></div>
-      <!-- Orchard -->
-      <div class="tree" style="left:200px"></div>
-      <div class="trunk" style="left:220px"></div>
-      <div id="apple1" class="apple" style="left:260px; bottom:240px"></div>
-
-      <!-- Platform near Frog -->
-      <div class="platform" id="frogPlatform" style="left:800px"></div>
-
-      <!-- Paths -->
-      <div id="path1" class="path" style="left:520px">Path I</div>
-      <div id="path2" class="path hazy" style="left:720px">Path II</div>
-      <div id="path3" class="path hazy" style="left:920px">Path III</div>
-
-      <!-- Frog NPC -->
-      <div id="frog" style="position:absolute; left:820px; bottom:80px; width:48px; height:42px; border:3px solid var(--ink); border-radius:20px 20px 16px 16px; background:#fff;">
-        <div style="position:absolute; top:-18px; left:10px; width:26px; height:14px; border:3px solid var(--ink); background:#fff"></div>
-        <div style="position:absolute; right:-10px; bottom:6px; width:20px; height:4px; border-top:3px solid var(--ink)"></div>
-      </div>
-      
-      <!-- Dialogue -->
-      <div id="dialogue" style="display:none; position:absolute; left:760px; bottom:160px; max-width:260px; border:3px solid var(--ink); background:var(--paper); padding:8px;">
-        <div id="dialogueText"></div>
-      </div>
 
       <!-- Player -->
       <div id="player" style="left:120px"></div>
@@ -182,6 +141,7 @@ const appleObj = {
 // arrow keys move, stop when key released; spacebar changes camera angle
     // movement intent
 function handleInput() {
+  if (keys.space) return;
   if (keys.left) player.x -= player.speed;
   if (keys.right) player.x += player.speed;
 
@@ -225,11 +185,11 @@ function applyPhysics() {
       appleObj.fallSpeed += 0.035;
       appleObj.y -= appleObj.fallSpeed;
 
-      if (appleObj.y <= STUMP_TOP_Y + appleObj.radius) {
-        appleObj.y = STUMP_TOP_Y + appleObj.radius;
-        appleObj.falling = false;
-        appleObj.landed = true;
-        appleObj.glitterTimer = 160;
+    if (appleObj.y >= STUMP_TOP_Y) {
+      appleObj.y = STUMP_TOP_Y;
+    appleObj.falling = false;
+    appleObj.landed = true;
+    appleObj.glitterTimer = 160;
       }
     }
   }
@@ -289,7 +249,6 @@ function drawAppleTree(x, camX) {
 
 ////  DRAW the bois an friends  ////
 function draw() {
-  camera.topDown = false;
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
