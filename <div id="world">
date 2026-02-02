@@ -293,13 +293,18 @@ ctx.stroke();
    DRAW
    ====================================================== */
 function draw(){
+// teeeemp debug missing player frog etc
+console.log("groundY:", groundY);
+
 
 //TEMPE Test for if background overlayering player & frog
 camera.topDown = false;
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const camX = cameraX;
+const camX = cameraX;
+const gy = groundY ?? canvas.height - 60;
+
 
   /* SKY */
 const sky = ctx.createLinearGradient(0, 0, 0, groundY);
