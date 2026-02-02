@@ -76,7 +76,7 @@ const ctx = canvas.getContext("2d");
 /* ======================================================
    WORLD CONSTANTS
    ====================================================== */
-const groundY = 300;
+const gy = 300;
 const lowFog = {
   x: 0,
   speed: 0.15,
@@ -300,14 +300,24 @@ console.log("groundY:", groundY);
 //TEMPE Test for if background overlayering player & frog
 camera.topDown = false;
 
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+if (camera.topDown) {
+  ctx.fillStyle="rgba(245,245,240,0.94)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#2b2b2b";
+  ctx.fillText("Orchard → Paths",120,120);
+  return; // ← IMPORTANT
+}
 
 const camX = cameraX;
-const gy = groundY ?? canvas.height - 60;
+const gy = gy ?? canvas.height - 60;
 
 
   /* SKY */
-const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+const sky = ctx.createLinearGradient(0, 0, 0, gy);
 
 sky.addColorStop(0, "#cfd6d1");   // soft cool top
 sky.addColorStop(0.28, "#e8d3a8"); // warm haze
@@ -316,22 +326,22 @@ sky.addColorStop(0.82, "#b28a58"); // near horizon glow
 sky.addColorStop(1, "#8f6b45");    // deep ground blend
 
 ctx.fillStyle = sky;
-ctx.fillRect(0, 0, canvas.width, groundY);
+ctx.fillRect(0, 0, canvas.width, gy);
 
 // orchard horizon glow
-const glow = ctx.createLinearGradient(0, groundY - 120, 0, groundY + 40);
+const glow = ctx.createLinearGradient(0, gy - 120, 0, gy + 40);
 glow.addColorStop(0, "rgba(255,230,180,0)");
 glow.addColorStop(0.4, "rgba(255,210,140,0.12)");
 glow.addColorStop(0.7, "rgba(255,190,110,0.18)");
 glow.addColorStop(1, "rgba(255,190,110,0)");
 
 ctx.fillStyle = glow;
-ctx.fillRect(0, groundY - 140, canvas.width, 220);
+ctx.fillRect(0, gy - 140, canvas.width, 220);
 
 // light shafts
 ctx.fillStyle = "rgba(255,235,190,0.04)";
 for (let i = 0; i < 5; i++) {
-  ctx.fillRect(120 + i*140 - cameraX*0.15, 0, 80, groundY);
+  ctx.fillRect(120 + i*140 - cameraX*0.15, 0, 80, gy);
 }
 
   /* FOG */
@@ -340,14 +350,14 @@ for (let i = 0; i < 5; i++) {
   ctx.fillStyle = "rgba(255,245,230,0.08)";
 // atmospheric haze
   ctx.fillStyle = "rgba(255,245,235,0.04)";
-  ctx.fillRect(0, groundY - 160, canvas.width, 140);
+  ctx.fillRect(0, gy - 160, canvas.width, 140);
 
 /* FAR TREE SILHOUETTES */
 ctx.fillStyle = "rgba(70,85,70,0.25)";
 for (let i = 0; i < 10; i++) {
   const tx = (i * 200) - (cameraX * 0.2);
   ctx.beginPath();
-  ctx.arc(tx, groundY - 140, 110, 0, Math.PI * 2);
+  ctx.arc(tx, gy - 140, 110, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -355,7 +365,7 @@ for (let i = 0; i < 10; i++) {
 for (let i = 0; i < 9; i++) {
   const tx = i * 220 - (cameraX * 0.3);
   const radius = 70 + Math.sin(i * 1.3) * 18;
-  const ty = groundY - 120 + Math.sin(i * 0.9) * 10;
+  const ty = gy - 120 + Math.sin(i * 0.9) * 10;
 
   ctx.fillStyle = "rgba(70,85,55,0.35)";
   ctx.beginPath();
@@ -368,9 +378,9 @@ ctx.fillStyle = "rgba(85,110,70,0.45)";
 for (let i = 0; i < 6; i++) {
   const tx = (i * 320) - (cameraX * 0.45);
   ctx.beginPath();
-  ctx.arc(tx + 40, groundY - 110, 70, 0, Math.PI * 2);
-  ctx.arc(tx + 100, groundY - 115, 65, 0, Math.PI * 2);
-  ctx.arc(tx + 70, groundY - 150, 75, 0, Math.PI * 2);
+  ctx.arc(tx + 40, gy - 110, 70, 0, Math.PI * 2);
+  ctx.arc(tx + 100, gy - 115, 65, 0, Math.PI * 2);
+  ctx.arc(tx + 70, gy - 150, 75, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -390,17 +400,17 @@ for (let i = 0; i < 6; i++) {
 ctx.fillStyle = "rgba(90,65,40,0.18)";
 for (let i = 0; i < 5; i++) {
   const tx = (i * 420) - (cameraX * 0.7);
-  ctx.fillRect(tx + 120, groundY - 60, 16, 60);
+  ctx.fillRect(tx + 120, gy - 60, 16, 60);
 }
 
   /* GROUND */
   ctx.fillStyle = "#6b7046";
-  ctx.fillRect(-camX, groundY, canvas.width+camX, canvas.height-groundY);
+  ctx.fillRect(-camX, gy, canvas.width+camX, canvas.height-gy);
 
 /* LOW MOVING FOG */
 lowFog.x += lowFog.speed;
 
-const fogGrad = ctx.createLinearGradient(0, groundY - lowFog.height, 0, groundY + 20);
+const fogGrad = ctx.createLinearGradient(0, gy - lowFog.height, 0, gy + 20);
 fogGrad.addColorStop(0, "rgba(255,245,235,0)");
 fogGrad.addColorStop(0.4, "rgba(255,245,235,0.12)");
 fogGrad.addColorStop(1, "rgba(255,245,235,0.22)");
@@ -408,7 +418,7 @@ fogGrad.addColorStop(1, "rgba(255,245,235,0.22)");
 ctx.fillStyle = fogGrad;
 ctx.fillRect(
   -((lowFog.x + camX * 0.4) % canvas.width),
-  groundY - lowFog.height,
+  gy - lowFog.height,
   canvas.width * 2,
   lowFog.height + 20
 );
@@ -417,8 +427,8 @@ ctx.fillRect(
 ctx.strokeStyle = "rgba(80,60,30,0.08)";
 for (let i = 0; i < canvas.width; i += 24) {
   ctx.beginPath();
-  ctx.moveTo(i - camX % 24, groundY + 2);
-  ctx.lineTo(i - camX % 24 + 12, groundY + 8);
+  ctx.moveTo(i - camX % 24, gy + 2);
+  ctx.lineTo(i - camX % 24 + 12, gy + 8);
 
   ctx.stroke();
 }
@@ -434,20 +444,20 @@ ctx.fillStyle="rgba(80,60,30,0.12)";
 for(let i=0;i<80;i++){
   ctx.fillRect(
     Math.random()*canvas.width,
-    groundY + Math.random()*30,
+    gy + Math.random()*30,
     1,1
   );
 }
 
 // hay bale
 ctx.fillStyle="#caa76b";
-roundRect(ctx, 360 - camX, groundY - 32, 44, 32, 6);
+roundRect(ctx, 360 - camX, gy - 32, 44, 32, 6);
 ctx.fill();
 
 ctx.strokeStyle="rgba(120,80,40,0.4)";
 ctx.beginPath();
-ctx.moveTo(360-camX, groundY-18);
-ctx.lineTo(404-camX, groundY-18);
+ctx.moveTo(360-camX, gy-18);
+ctx.lineTo(404-camX, gy-18);
 ctx.stroke();
 
 /* LOW GROUND FOG */
@@ -462,12 +472,12 @@ lowFog.addColorStop(0.5, "rgba(240,230,210,0.18)");
 lowFog.addColorStop(1, "rgba(240,230,210,0.05)");
 
 ctx.fillStyle = lowFog;
-ctx.fillRect(0, groundY - 24, canvas.width, 36);
+ctx.fillRect(0, gy - 24, canvas.width, 36);
 
 /* PLATFORM */
 platforms.forEach(p=>{
   const px = p.x - camX;
-  const py = groundY - p.heightAboveGround;
+  const py = gy - p.heightAboveGround;
 
   const wood = ctx.createLinearGradient(px,py,px,py+p.thickness);
   wood.addColorStop(0,"#c89a5a");
@@ -490,12 +500,12 @@ drawAppleTree(980, camX);
 
 /* FROG */
 const fx = frog.x - camX;
-const fy = groundY - frog.height + Math.sin(frog.bob)*2;
+const fy = gy - frog.height + Math.sin(frog.bob)*2;
 
 // frog shadow
 ctx.fillStyle="rgba(40,30,20,0.25)";
 ctx.beginPath();
-ctx.ellipse(fx + frog.width/2, groundY + 4, 20, 6, 0, 0, Math.PI*2);
+ctx.ellipse(fx + frog.width/2, gy + 4, 20, 6, 0, 0, Math.PI*2);
 ctx.fill();
 
 // body
@@ -555,12 +565,12 @@ if (frogActive) {
 
 /* PLAYER */
 const px = player.x - camX;
-const py = groundY - player.height - player.y;
+const py = gy - player.height - player.y;
 
 // shadow
 ctx.fillStyle = "rgba(60,40,20,0.18)";
 ctx.beginPath();
-ctx.ellipse(px + player.width/2, groundY + 5, 18, 6, 0, 0, Math.PI*2);
+ctx.ellipse(px + player.width/2, gy + 5, 18, 6, 0, 0, Math.PI*2);
 ctx.fill();
 
 // body
