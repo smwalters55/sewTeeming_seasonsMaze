@@ -597,6 +597,10 @@ if (camera.topDown) {
   ctx.fillText("Orchard → Paths",120,120);
   return; // ← CRITICAL
   }
+
+//TEST ID DRAW RUNS FULL
+  ctx.fillStyle = "red";
+  ctx.fillRect(0, 0, 40, 40);
 }
 
 /* ======================================================
