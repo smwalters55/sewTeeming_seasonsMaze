@@ -170,7 +170,7 @@ const crows = [
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
   x: Math.random()*canvas.width,
-  y: groundY + 6 + Math.random()*10,
+  y: gy + 6 + Math.random()*10,
   h: 4 + Math.random()*6
 }));
 
@@ -255,25 +255,25 @@ function drawAppleTree(x, camX){
 
   // trunk
   ctx.fillStyle="#6b4026";
-  ctx.fillRect(tx-12, groundY-96, 24, 96);
+  ctx.fillRect(tx-12, gy-96, 24, 96);
 
 // bark lines
 ctx.strokeStyle="rgba(40,20,10,0.25)";
 ctx.beginPath();
-ctx.moveTo(tx-6, groundY-20);
-ctx.lineTo(tx-6, groundY-80);
+ctx.moveTo(tx-6, gy-20);
+ctx.lineTo(tx-6, gy-80);
 ctx.stroke();
 
   // canopy
   ctx.fillStyle="#5a6f3a";
   ctx.beginPath();
-  ctx.arc(tx, groundY-110, 50, 0, Math.PI*2);
+  ctx.arc(tx, gy-110, 50, 0, Math.PI*2);
   ctx.fill();
 
   // apples + apples highlight
   for(let i=0;i<4;i++){
   const ax = tx + Math.cos(i*1.7)*30;
-  const ay = groundY-110 + Math.sin(i*1.3)*20;
+  const ay = gy-110 + Math.sin(i*1.3)*20;
 
   ctx.fillStyle="#8b2e2a";
   ctx.beginPath();
@@ -293,13 +293,6 @@ ctx.stroke();
    DRAW
    ====================================================== */
 function draw(){
-// teeeemp debug missing player frog etc
-console.log("groundY:", groundY);
-
-
-//TEMPE Test for if background overlayering player & frog
-camera.topDown = false;
-
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
 ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -313,7 +306,6 @@ if (camera.topDown) {
 }
 
 const camX = cameraX;
-const gy = gy ?? canvas.height - 60;
 
 
   /* SKY */
@@ -463,7 +455,7 @@ ctx.stroke();
 /* LOW GROUND FOG */
 fog.x += fog.speed * 0.6;
 
-const lowFog = ctx.createLinearGradient(
+const lowFogGrad = ctx.createLinearGradient(
   -200 + fog.x, 0,
   400 + fog.x, 0
 );
@@ -471,7 +463,7 @@ lowFog.addColorStop(0, "rgba(240,230,210,0.05)");
 lowFog.addColorStop(0.5, "rgba(240,230,210,0.18)");
 lowFog.addColorStop(1, "rgba(240,230,210,0.05)");
 
-ctx.fillStyle = lowFog;
+ctx.fillStyle = lowFogGrad;
 ctx.fillRect(0, gy - 24, canvas.width, 36);
 
 /* PLATFORM */
