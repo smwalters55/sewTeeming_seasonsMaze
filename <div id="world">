@@ -285,6 +285,10 @@ ctx.fill();
    DRAW
    ====================================================== */
 function draw(){
+
+//TEMPE Test for if background overlayering player & frog
+camera.topDown = false;
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const camX = cameraX;
