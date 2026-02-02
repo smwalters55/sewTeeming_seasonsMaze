@@ -184,6 +184,9 @@ const apple = {
   vy: 0,
   falling: false,
   landed: false,
+  split: false,
+  splitTimer: 0,
+  halfOffset: 0,
   glitter: 0,
   spawnTime: performance.now()
 };
@@ -571,24 +574,42 @@ drawAppleTree(980, camX);
 /* APPLE */
 if (!apple.collected) {
   const ax = apple.x - camX;
+  const y = apple.y;
 
-  // apple body
-  ctx.fillStyle = "#8b2e2a";
-  ctx.beginPath();
-  ctx.arc(ax, apple.y, apple.r, 0, Math.PI*2);
-  ctx.fill();
+  if (!apple.split) {
+    // whole apple
+    ctx.fillStyle = "#8b2e2a";
+    ctx.beginPath();
+    ctx.arc(ax, y, apple.r, 0, Math.PI*2);
+    ctx.fill();
 
-  // highlight
-  ctx.fillStyle = "rgba(255,220,200,0.5)";
-  ctx.beginPath();
-  ctx.arc(ax-2, apple.y-2, 2, 0, Math.PI*2);
-  ctx.fill();
+    ctx.fillStyle = "rgba(255,220,200,0.5)";
+    ctx.beginPath();
+    ctx.arc(ax-2, y-2, 2, 0, Math.PI*2);
+    ctx.fill();
+  } else {
+    // split halves
+    ctx.fillStyle = "#8b2e2a";
 
-  // stem
+    ctx.beginPath();
+    ctx.arc(ax - apple.halfOffset, y, apple.r, Math.PI/2, Math.PI*1.5);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(ax + apple.halfOffset, y, apple.r, -Math.PI/2, Math.PI/2);
+    ctx.fill();
+
+    // interior flesh
+    ctx.fillStyle = "#f2d6b3";
+    ctx.fillRect(ax - apple.halfOffset, y - apple.r + 2, 2, apple.r*2 - 4);
+    ctx.fillRect(ax + apple.halfOffset - 2, y - apple.r + 2, 2, apple.r*2 - 4);
+  }
+
+  // stem (always)
   ctx.strokeStyle = "#4a2e1c";
   ctx.beginPath();
-  ctx.moveTo(ax, apple.y-apple.r);
-  ctx.lineTo(ax+2, apple.y-apple.r-6);
+  ctx.moveTo(ax, y-apple.r);
+  ctx.lineTo(ax+2, y-apple.r-6);
   ctx.stroke();
 
   // glitter moment
@@ -749,7 +770,16 @@ if (apple.falling) {
   }
 }
 
+if (apple.landed && !apple.split) {
+  apple.split = true;
+  apple.splitTimer = 90;
+}
+
 if (apple.glitter > 0) apple.glitter--;
+if (apple.splitTimer > 0) {
+  apple.splitTimer--;
+  apple.halfOffset += 0.18;
+}
 
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
