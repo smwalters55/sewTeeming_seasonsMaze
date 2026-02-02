@@ -313,6 +313,14 @@ if (camera.topDown) {
 
 const camX = cameraX;
 
+// low fog gradient
+ const lowFogGrad = ctx.createLinearGradient(0, gy - 40, 0, gy + 60);
+  lowFogGrad.addColorStop(0, "rgba(255,255,255,0)");
+  lowFogGrad.addColorStop(0.4, "rgba(240,230,210,0.18)");
+  lowFogGrad.addColorStop(1, "rgba(220,210,190,0.35)");
+
+  ctx.fillStyle = lowFogGrad;
+  ctx.fillRect(0, gy - 40, canvas.width, 100);
 
   /* SKY */
 const sky = ctx.createLinearGradient(0, 0, 0, gy);
