@@ -139,6 +139,7 @@ const frog = {
 };
 let frogTalked = false;
 let frogActive = false;
+let frogNoticedApple = false;
 let frogHatTip = 0; // animation timer
 
 /* ======================================================
@@ -163,9 +164,10 @@ const fog = {
 };
 
 const crows = [
-  { x: 780, y: 60, speed: 0.25 },
-  { x: 620, y: 90, speed: 0.18 }
+  { x: 780, y: 60, speed: 0.25, phase: Math.random()*Math.PI*2 },
+  { x: 620, y: 90, speed: 0.18, phase: Math.random()*Math.PI*2 }
 ];
+
 
 const leaves = Array.from({ length: 8 }, (_, i) => ({
   x: Math.random() * canvas.width,
@@ -174,6 +176,17 @@ const leaves = Array.from({ length: 8 }, (_, i) => ({
   drift: Math.random() * 0.6 + 0.2,
   phase: Math.random() * Math.PI * 2
 }));
+
+const apple = {
+  x: 220,              // under first apple tree
+  y: gy - 140,
+  r: 7,
+  vy: 0,
+  falling: false,
+  landed: false,
+  glitter: 0,
+  spawnTime: performance.now()
+};
 
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
@@ -430,17 +443,22 @@ leaves.forEach(l => {
   ctx.fill();
 });
 
-  /* CROWS */
-  ctx.strokeStyle = "#3b2f28";
-  crows.forEach(c=>{
-    c.x -= c.speed;
-    if (c.x < -20) c.x = canvas.width+20;
-    ctx.beginPath();
-    ctx.moveTo(c.x-cameraX,c.y);
-    ctx.lineTo(c.x-cameraX+8,c.y+4);
-    ctx.lineTo(c.x-cameraX+16,c.y);
-    ctx.stroke();
-  });
+/* CROWS */
+ctx.strokeStyle = "#3b2f28";
+crows.forEach(c=>{
+  c.x -= c.speed;
+  c.phase += 0.18;
+
+  if (c.x < -20) c.x = canvas.width+20;
+
+  const flap = Math.sin(c.phase) * 4;
+
+  ctx.beginPath();
+  ctx.moveTo(c.x - camX, c.y);
+  ctx.lineTo(c.x - camX + 8, c.y + flap);
+  ctx.lineTo(c.x - camX + 16, c.y);
+  ctx.stroke();
+});
 
 /* NEAR TREE TRUNKS */
 ctx.fillStyle = "rgba(90,65,40,0.18)";
@@ -550,6 +568,43 @@ platforms.forEach(p=>{
 drawAppleTree(220, camX);
 drawAppleTree(980, camX);
 
+/* APPLE */
+if (!apple.collected) {
+  const ax = apple.x - camX;
+
+  // apple body
+  ctx.fillStyle = "#8b2e2a";
+  ctx.beginPath();
+  ctx.arc(ax, apple.y, apple.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // highlight
+  ctx.fillStyle = "rgba(255,220,200,0.5)";
+  ctx.beginPath();
+  ctx.arc(ax-2, apple.y-2, 2, 0, Math.PI*2);
+  ctx.fill();
+
+  // stem
+  ctx.strokeStyle = "#4a2e1c";
+  ctx.beginPath();
+  ctx.moveTo(ax, apple.y-apple.r);
+  ctx.lineTo(ax+2, apple.y-apple.r-6);
+  ctx.stroke();
+
+  // glitter moment
+  if (apple.glitter > 0) {
+    ctx.fillStyle = `rgba(255,220,160,${apple.glitter/120})`;
+    for (let i=0;i<4;i++){
+      ctx.fillRect(
+        ax + Math.cos(i*1.6)*10,
+        apple.y - 6 + Math.sin(i*1.6)*6,
+        2,2
+      );
+    }
+  }
+}
+
+
 /* FROG */
 const fx = frog.x - camX;
 const fy = gy - frog.height + Math.sin(frog.bob)*2;
@@ -617,8 +672,13 @@ if (frogActive) {
 
   ctx.fillStyle = "#2b2b2b";
   ctx.font = "12px ui-monospace";
-  ctx.fillText("Ah. You found the apple.", fx - 12, bubbleY + 18);
-  ctx.fillText("Paths open with care.", fx - 12, bubbleY + 34);
+ctx.fillText(
+  apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
+  fx - 12,
+  bubbleY + 18
+);
+ctx.fillText("Some weight unlocks paths.", fx - 12, bubbleY + 34);
+
 }
 
 /* PLAYER */
@@ -668,6 +728,29 @@ function update(){
   handleInput();
   applyPhysics();
 
+// APPLE DROP LOGIC
+const now = performance.now();
+
+if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
+  apple.falling = true;
+  apple.vy = 0;
+}
+
+if (apple.falling) {
+  apple.vy += 0.06;
+  apple.y += apple.vy;
+
+  const stumpTop = gy - 18;
+  if (apple.y >= stumpTop) {
+    apple.y = stumpTop;
+    apple.falling = false;
+    apple.landed = true;
+    apple.glitter = 60;
+  }
+}
+
+if (apple.glitter > 0) apple.glitter--;
+
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
   const playerCenterX = player.x + player.width / 2;
@@ -680,6 +763,11 @@ function update(){
     frogActive = true;
     frogHatTip = 30;
   }
+
+if (apple.landed && !frogNoticedApple) {
+  frogNoticedApple = true;
+  frogHatTip = 40;
+}
 
   draw();
 
