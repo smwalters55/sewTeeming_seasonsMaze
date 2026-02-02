@@ -167,6 +167,14 @@ const crows = [
   { x: 620, y: 90, speed: 0.18 }
 ];
 
+const leaves = Array.from({ length: 8 }, (_, i) => ({
+  x: Math.random() * canvas.width,
+  y: Math.random() * gy * 0.6,
+  speedY: 0.15 + Math.random() * 0.25,
+  drift: Math.random() * 0.6 + 0.2,
+  phase: Math.random() * Math.PI * 2
+}));
+
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
   x: Math.random()*canvas.width,
@@ -257,6 +265,12 @@ function drawAppleTree(x, camX){
   ctx.fillStyle="#6b4026";
   ctx.fillRect(tx-12, gy-96, 24, 96);
 
+// apple gravity shadow
+ctx.fillStyle = "rgba(120,90,60,0.18)";
+ctx.beginPath();
+ctx.ellipse(tx, gy + 2, 22, 6, 0, 0, Math.PI * 2);
+ctx.fill();
+
 // bark lines
 ctx.strokeStyle="rgba(40,20,10,0.25)";
 ctx.beginPath();
@@ -265,7 +279,10 @@ ctx.lineTo(tx-6, gy-80);
 ctx.stroke();
 
   // canopy
-  ctx.fillStyle="#5a6f3a";
+  const applePulse =
+  0.08 + Math.sin(performance.now() * 0.0012) * 0.04;
+ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
+
   ctx.beginPath();
   ctx.arc(tx, gy-110, 50, 0, Math.PI*2);
   ctx.fill();
@@ -278,6 +295,12 @@ ctx.stroke();
   ctx.fillStyle="#8b2e2a";
   ctx.beginPath();
   ctx.arc(ax, ay, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  // apple aura (felt, not seen)
+  ctx.fillStyle = "rgba(180,120,80,0.06)";
+  ctx.beginPath();
+  ctx.arc(tx, gy - 110, 62, 0, Math.PI * 2);
   ctx.fill();
 
   // highlight
@@ -389,6 +412,23 @@ for (let i = 0; i < 6; i++) {
   ctx.arc(tx + 70, gy - 150, 75, 0, Math.PI * 2);
   ctx.fill();
 }
+
+// falling leaves
+ctx.fillStyle = "rgba(155,120,70,0.55)";
+leaves.forEach(l => {
+  l.y += l.speedY;
+  l.x += Math.sin(l.phase) * l.drift;
+  l.phase += 0.01;
+
+  if (l.y > gy - 4) {
+    l.y = -10;
+    l.x = Math.random() * canvas.width;
+  }
+
+  ctx.beginPath();
+  ctx.ellipse(l.x - camX * 0.4, l.y, 3, 2, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+});
 
   /* CROWS */
   ctx.strokeStyle = "#3b2f28";
