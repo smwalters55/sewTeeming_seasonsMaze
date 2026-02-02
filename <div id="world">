@@ -264,22 +264,24 @@ ctx.stroke();
   ctx.arc(tx, groundY-110, 50, 0, Math.PI*2);
   ctx.fill();
 
-  // apples
-  ctx.fillStyle="#8b2e2a"; // maroon apple
+  // apples + apples highlight
   for(let i=0;i<4;i++){
-    const ax = tx + Math.cos(i*1.7)*30;
-    const ay = groundY-110 + Math.sin(i*1.3)*20;
-    ctx.beginPath();
-    ctx.arc(ax, ay, 6, 0, Math.PI*2);
-    ctx.fill();
-  }
+  const ax = tx + Math.cos(i*1.7)*30;
+  const ay = groundY-110 + Math.sin(i*1.3)*20;
 
-// apples in apple try highlight
-ctx.fillStyle="rgba(255,220,200,0.4)";
-ctx.beginPath();
-ctx.arc(ax-2, ay-2, 2, 0, Math.PI*2);
-ctx.fill();
+  ctx.fillStyle="#8b2e2a";
+  ctx.beginPath();
+  ctx.arc(ax, ay, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  // highlight
+  ctx.fillStyle="rgba(255,220,200,0.4)";
+  ctx.beginPath();
+  ctx.arc(ax-2, ay-2, 2, 0, Math.PI*2);
+  ctx.fill();
+  }
 }
+
 
 /* ======================================================
    DRAW
