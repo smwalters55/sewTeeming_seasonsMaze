@@ -293,14 +293,6 @@ ctx.stroke();
    DRAW
    ====================================================== */
 function draw(){
-
-//TEST ID DRAW RUNS FULL
-  ctx.fillStyle = "red";
-  ctx.fillRect(0, 0, 40, 40);
-
-
-ctx.clearRect(0,0,canvas.width,canvas.height);
-
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
 if (camera.topDown) {
@@ -469,13 +461,13 @@ ctx.stroke();
 /* LOW GROUND FOG */
 fog.x += fog.speed * 0.6;
 
-// LOW ORCHARD FOG
-const lowfog = ctx.createLinearGradient(0, gy - 40, 0, gy + 60);
-lowfog.addColorStop(0, "rgba(255,255,255,0)");
-lowfog.addColorStop(0.4, "rgba(240,230,210,0.18)");
-lowfog.addColorStop(1, "rgba(220,210,190,0.35)");
+/* LOW ORCHARD FOG */
+const lowFogGrad2 = ctx.createLinearGradient(0, gy - 40, 0, gy + 60);
+lowFogGrad2.addColorStop(0, "rgba(255,255,255,0)");
+lowFogGrad2.addColorStop(0.4, "rgba(240,230,210,0.18)");
+lowFogGrad2.addColorStop(1, "rgba(220,210,190,0.35)");
 
-ctx.fillStyle = lowfog;
+ctx.fillStyle = lowFogGrad2;
 ctx.fillRect(0, gy - 40, canvas.width, 100);
 
 /* PLATFORM */
@@ -599,16 +591,6 @@ ctx.beginPath();
 ctx.arc(px + 12, py + 17, 1.5, 0, Math.PI*2);
 ctx.arc(px + 28, py + 17, 1.5, 0, Math.PI*2);
 ctx.fill();
-
-  /* TOP DOWN MAP */
-if (camera.topDown) {
-  ctx.fillStyle="rgba(245,245,240,0.96)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#2b2b2b";
-  ctx.font="16px ui-monospace";
-  ctx.fillText("Orchard → Paths",120,120);
-  return; // ← CRITICAL
-  }
 }
 
 /* ======================================================
