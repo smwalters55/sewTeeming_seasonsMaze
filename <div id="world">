@@ -326,6 +326,14 @@ sky.addColorStop(1, "#8f6b45");    // deep ground blend
 ctx.fillStyle = sky;
 ctx.fillRect(0, 0, canvas.width, gy);
 
+// orchard dust motes
+ctx.fillStyle = "rgba(255,240,210,0.06)";
+for (let i = 0; i < 30; i++) {
+  const x = (i * 90 + cameraX * 0.2) % canvas.width;
+  const y = 60 + Math.sin(i + performance.now()*0.0004) * 8;
+  ctx.fillRect(x, y, 2, 2);
+}
+
 // orchard horizon glow
 const glow = ctx.createLinearGradient(0, gy - 120, 0, gy + 40);
 glow.addColorStop(0, "rgba(255,230,180,0)");
@@ -361,7 +369,7 @@ for (let i = 0; i < 10; i++) {
 
 /* DISTANT TREES */
 for (let i = 0; i < 9; i++) {
-  const tx = i * 220 - (cameraX * 0.3);
+  const tx = i * 220 - (cameraX * 0.3) + Math.sin(i * 2.1) * 60;
   const radius = 70 + Math.sin(i * 1.3) * 18;
   const ty = gy - 120 + Math.sin(i * 0.9) * 10;
 
@@ -402,8 +410,16 @@ for (let i = 0; i < 5; i++) {
 }
 
   /* GROUND */
-  ctx.fillStyle = "#6b7046";
+  ctx.fillStyle = "#6a6f4a"; // olive-moss base;
   ctx.fillRect(-camX, gy, canvas.width+camX, canvas.height-gy);
+// ground warmth glaze
+const groundGlow = ctx.createLinearGradient(0, gy, 0, gy + 80);
+groundGlow.addColorStop(0, "rgba(180,150,90,0.12)");
+groundGlow.addColorStop(1, "rgba(120,90,40,0)");
+
+ctx.fillStyle = groundGlow;
+ctx.fillRect(0, gy, canvas.width, 80);
+
 
 /* LOW MOVING FOG */
 lowfog.x += lowfog.speed;
@@ -503,6 +519,12 @@ ctx.fillStyle="rgba(40,30,20,0.25)";
 ctx.beginPath();
 ctx.ellipse(fx + frog.width/2, gy + 4, 20, 6, 0, 0, Math.PI*2);
 ctx.fill();
+// ground contact tint
+ctx.fillStyle = "rgba(90,70,40,0.08)";
+ctx.beginPath();
+ctx.ellipse(fx + frog.width/2, gy + 6, 22, 8, 0, 0, Math.PI*2);
+ctx.fill();
+
 
 // body
 ctx.fillStyle="#6f8f6a";
@@ -568,6 +590,12 @@ ctx.fillStyle = "rgba(60,40,20,0.18)";
 ctx.beginPath();
 ctx.ellipse(px + player.width/2, gy + 5, 18, 6, 0, 0, Math.PI*2);
 ctx.fill();
+// ground contact tint
+ctx.fillStyle = "rgba(90,70,40,0.08)";
+ctx.beginPath();
+ctx.ellipse(px + player.width/2, gy + 6, 22, 8, 0, 0, Math.PI*2);
+ctx.fill();
+
 
 // body
 ctx.fillStyle = "#7a78b8";
