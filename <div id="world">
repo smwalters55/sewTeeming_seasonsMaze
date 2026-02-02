@@ -314,12 +314,6 @@ for (let i = 0; i < 5; i++) {
   ctx.fillStyle = fg;
   ctx.fillRect(0,0,canvas.width,fog.height)
 
-// frog shadow
-ctx.fillStyle="rgba(40,30,20,0.25)";
-ctx.beginPath();
-ctx.ellipse(fx + frog.width/2, groundY + 4, 20, 6, 0, 0, Math.PI*2);
-ctx.fill();
-
   // distant fog layer
   ctx.fillStyle = "rgba(255,245,230,0.08)";
   ctx.fillRect(0, groundY - 80, canvas.width, 100);
@@ -385,6 +379,20 @@ ctx.moveTo(360-camX, groundY-18);
 ctx.lineTo(404-camX, groundY-18);
 ctx.stroke();
 
+/* LOW GROUND FOG */
+fog.x += fog.speed * 0.6;
+
+const lowFog = ctx.createLinearGradient(
+  -200 + fog.x, 0,
+  400 + fog.x, 0
+);
+lowFog.addColorStop(0, "rgba(240,230,210,0.05)");
+lowFog.addColorStop(0.5, "rgba(240,230,210,0.18)");
+lowFog.addColorStop(1, "rgba(240,230,210,0.05)");
+
+ctx.fillStyle = lowFog;
+ctx.fillRect(0, groundY - 24, canvas.width, 36);
+
 /* PLATFORM */
 platforms.forEach(p=>{
   const px = p.x - camX;
@@ -412,6 +420,12 @@ drawAppleTree(980, camX);
 /* FROG */
 const fx = frog.x - camX;
 const fy = groundY - frog.height + Math.sin(frog.bob)*2;
+
+// frog shadow
+ctx.fillStyle="rgba(40,30,20,0.25)";
+ctx.beginPath();
+ctx.ellipse(fx + frog.width/2, groundY + 4, 20, 6, 0, 0, Math.PI*2);
+ctx.fill();
 
 // body
 ctx.fillStyle="#6f8f6a";
