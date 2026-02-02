@@ -297,18 +297,30 @@ camera.topDown = false;
 
   /* SKY */
 const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-sky.addColorStop(0, "#f6d2a2");   // pale amber
-sky.addColorStop(0.35, "#e0b37a"); // warm copper
-sky.addColorStop(0.65, "#c18b55"); // orchard haze
-sky.addColorStop(1, "#8f6b45");    // deep horizon
+
+sky.addColorStop(0, "#cfd6d1");   // soft cool top
+sky.addColorStop(0.28, "#e8d3a8"); // warm haze
+sky.addColorStop(0.55, "#d1b07a"); // orchard amber
+sky.addColorStop(0.82, "#b28a58"); // near horizon glow
+sky.addColorStop(1, "#8f6b45");    // deep ground blend
 
 ctx.fillStyle = sky;
 ctx.fillRect(0, 0, canvas.width, groundY);
 
+// orchard horizon glow
+const glow = ctx.createLinearGradient(0, groundY - 120, 0, groundY + 40);
+glow.addColorStop(0, "rgba(255,230,180,0)");
+glow.addColorStop(0.4, "rgba(255,210,140,0.12)");
+glow.addColorStop(0.7, "rgba(255,190,110,0.18)");
+glow.addColorStop(1, "rgba(255,190,110,0)");
+
+ctx.fillStyle = glow;
+ctx.fillRect(0, groundY - 140, canvas.width, 220);
+
 // light shafts
-ctx.fillStyle = "rgba(255,220,170,0.06)";
+ctx.fillStyle = "rgba(255,235,190,0.04)";
 for (let i = 0; i < 5; i++) {
-  ctx.fillRect(120 + i*140 - cameraX*0.15, 0, 60, groundY);
+  ctx.fillRect(120 + i*140 - cameraX*0.15, 0, 80, groundY);
 }
 
   /* FOG */
@@ -316,6 +328,9 @@ for (let i = 0; i < 5; i++) {
   // distant fog layer
   ctx.fillStyle = "rgba(255,245,230,0.08)";
   
+// atmospheric haze
+ctx.fillStyle = "rgba(255,245,235,0.04)";
+ctx.fillRect(0, groundY - 160, canvas.width, 140);
 
 /* DISTANT TREES */
 for (let i = 0; i < 9; i++) {
