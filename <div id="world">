@@ -77,6 +77,12 @@ const ctx = canvas.getContext("2d");
    WORLD CONSTANTS
    ====================================================== */
 const groundY = 300;
+const lowFog = {
+  x: 0,
+  speed: 0.15,
+  height: 48
+};
+
 
 /* ======================================================
    INPUT
@@ -327,10 +333,18 @@ for (let i = 0; i < 5; i++) {
 // ??? maybe delete except for one line for distand fog layer ?
   // distant fog layer
   ctx.fillStyle = "rgba(255,245,230,0.08)";
-  
 // atmospheric haze
-ctx.fillStyle = "rgba(255,245,235,0.04)";
-ctx.fillRect(0, groundY - 160, canvas.width, 140);
+  ctx.fillStyle = "rgba(255,245,235,0.04)";
+  ctx.fillRect(0, groundY - 160, canvas.width, 140);
+
+/* FAR TREE SILHOUETTES */
+ctx.fillStyle = "rgba(70,85,70,0.25)";
+for (let i = 0; i < 10; i++) {
+  const tx = (i * 200) - (cameraX * 0.2);
+  ctx.beginPath();
+  ctx.arc(tx, groundY - 140, 110, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 /* DISTANT TREES */
 for (let i = 0; i < 9; i++) {
@@ -341,6 +355,17 @@ for (let i = 0; i < 9; i++) {
   ctx.fillStyle = "rgba(70,85,55,0.35)";
   ctx.beginPath();
   ctx.arc(tx, ty, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* MID ORCHARD TREES */
+ctx.fillStyle = "rgba(85,110,70,0.45)";
+for (let i = 0; i < 6; i++) {
+  const tx = (i * 320) - (cameraX * 0.45);
+  ctx.beginPath();
+  ctx.arc(tx + 40, groundY - 110, 70, 0, Math.PI * 2);
+  ctx.arc(tx + 100, groundY - 115, 65, 0, Math.PI * 2);
+  ctx.arc(tx + 70, groundY - 150, 75, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -356,9 +381,33 @@ for (let i = 0; i < 9; i++) {
     ctx.stroke();
   });
 
+/* NEAR TREE TRUNKS */
+ctx.fillStyle = "rgba(90,65,40,0.18)";
+for (let i = 0; i < 5; i++) {
+  const tx = (i * 420) - (cameraX * 0.7);
+  ctx.fillRect(tx + 120, groundY - 60, 16, 60);
+}
+
   /* GROUND */
   ctx.fillStyle = "#6b7046";
   ctx.fillRect(-camX, groundY, canvas.width+camX, canvas.height-groundY);
+
+/* LOW MOVING FOG */
+lowFog.x += lowFog.speed;
+
+const fogGrad = ctx.createLinearGradient(0, groundY - lowFog.height, 0, groundY + 20);
+fogGrad.addColorStop(0, "rgba(255,245,235,0)");
+fogGrad.addColorStop(0.4, "rgba(255,245,235,0.12)");
+fogGrad.addColorStop(1, "rgba(255,245,235,0.22)");
+
+ctx.fillStyle = fogGrad;
+ctx.fillRect(
+  -((lowFog.x + camX * 0.4) % canvas.width),
+  groundY - lowFog.height,
+  canvas.width * 2,
+  lowFog.height + 20
+);
+
 // subtle ground texture
 ctx.strokeStyle = "rgba(80,60,30,0.08)";
 for (let i = 0; i < canvas.width; i += 24) {
