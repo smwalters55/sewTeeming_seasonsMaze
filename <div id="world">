@@ -77,7 +77,7 @@ const ctx = canvas.getContext("2d");
    WORLD CONSTANTS
    ====================================================== */
 const gy = 300;
-const lowFog = {
+const lowFogGrad = {
   x: 0,
   speed: 0.15,
   height: 48
@@ -406,19 +406,19 @@ for (let i = 0; i < 5; i++) {
   ctx.fillRect(-camX, gy, canvas.width+camX, canvas.height-gy);
 
 /* LOW MOVING FOG */
-lowFog.x += lowFog.speed;
+lowFogGrad.x += lowFogGrad.speed;
 
-const fogGrad = ctx.createLinearGradient(0, gy - lowFog.height, 0, gy + 20);
+const fogGrad = ctx.createLinearGradient(0, gy - lowFogGrad.height, 0, gy + 20);
 fogGrad.addColorStop(0, "rgba(255,245,235,0)");
 fogGrad.addColorStop(0.4, "rgba(255,245,235,0.12)");
 fogGrad.addColorStop(1, "rgba(255,245,235,0.22)");
 
 ctx.fillStyle = fogGrad;
 ctx.fillRect(
-  -((lowFog.x + camX * 0.4) % canvas.width),
-  gy - lowFog.height,
+  -((lowFogGrad.x + camX * 0.4) % canvas.width),
+  gy - lowFogGrad.height,
   canvas.width * 2,
-  lowFog.height + 20
+  lowFogGrad.height + 20
 );
 
 // subtle ground texture
@@ -461,16 +461,14 @@ ctx.stroke();
 /* LOW GROUND FOG */
 fog.x += fog.speed * 0.6;
 
-const lowFogGrad = ctx.createLinearGradient(
-  -200 + fog.x, 0,
-  400 + fog.x, 0
-);
-lowFog.addColorStop(0, "rgba(240,230,210,0.05)");
-lowFog.addColorStop(0.5, "rgba(240,230,210,0.18)");
-lowFog.addColorStop(1, "rgba(240,230,210,0.05)");
+// LOW ORCHARD FOG
+const lowFogGrad = ctx.createLinearGradient(0, gy - 40, 0, gy + 60);
+lowFogGrad.addColorStop(0, "rgba(255,255,255,0)");
+lowFogGrad.addColorStop(0.4, "rgba(240,230,210,0.18)");
+lowFogGrad.addColorStop(1, "rgba(220,210,190,0.35)");
 
 ctx.fillStyle = lowFogGrad;
-ctx.fillRect(0, gy - 24, canvas.width, 36);
+ctx.fillRect(0, gy - 40, canvas.width, 100);
 
 /* PLATFORM */
 platforms.forEach(p=>{
