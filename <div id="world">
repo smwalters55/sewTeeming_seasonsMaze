@@ -108,6 +108,9 @@ window.addEventListener("keyup", e => {
   if (e.key===" ") keys.space=false;
 });
 
+// orchard choice 
+let orchardChoice = null; // "left" | "right"
+
 /* ======================================================
    CAMERA
    ====================================================== */
@@ -700,6 +703,10 @@ ctx.fillText(
 );
 ctx.fillText("Some weight unlocks paths.", fx - 12, bubbleY + 34);
 
+if (frogActive && apple.split && orchardChoice === null) {
+  if (keys.left) orchardChoice = "left";
+  if (keys.right) orchardChoice = "right";
+  }
 }
 
 /* PLAYER */
@@ -834,11 +841,23 @@ update();
 - Dialogue appears in sketch-style speech bubble
 
 ### Dialogue (Initial)
-> "Ah. You found *the* apple, didn’t you?"
 
-> "Paths open when things are carried with care."
+if (orchardChoice === null) {
+  ctx.fillText("Two ways now hum.", fx - 12, bubbleY + 18);
+  ctx.fillText("Choose with your feet.", fx - 12, bubbleY + 34);
+} else if (orchardChoice === "left") {
+  ctx.fillText("Ah. The shaded row.", fx - 12, bubbleY + 18);
+  ctx.fillText("Roots remember you.", fx - 12, bubbleY + 34);
+} else {
+  ctx.fillText("Sun-warmed bark.", fx - 12, bubbleY + 18);
+  ctx.fillText("Bold steps echo far.", fx - 12, bubbleY + 34);
+}
 
-> "I seem to have misplaced my bass… perhaps it wandered ahead of me."
+//> "Ah. You found *the* apple, didn’t you?"
+
+//> "Paths open when things are carried with care."
+
+//> "I seem to have misplaced my bass… perhaps it wandered ahead of me."
 
 ### Function
 - Acts as:
