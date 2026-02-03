@@ -587,30 +587,34 @@ if (!apple.collected) {
     // whole apple
     ctx.fillStyle = "#8b2e2a";
     ctx.beginPath();
-    ctx.arc(ax, y, apple.r, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(255,220,200,0.5)";
-    ctx.beginPath();
-    ctx.arc(ax-2, y-2, 2, 0, Math.PI*2);
+    ctx.arc(ax, y, apple.r, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // split halves
-    ctx.fillStyle = "#8b2e2a";
+    const spread = 18;
 
-    ctx.beginPath();
-    ctx.arc(ax - apple.halfOffset, y, apple.r, Math.PI/2, Math.PI*1.5);
-    ctx.fill();
+    for (let i = -1; i <= 1; i++) {
+      ctx.fillStyle = "#8b2e2a";
+      ctx.beginPath();
+      ctx.arc(
+        ax + i * spread,
+        y,
+        apple.r * 0.75,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(ax + apple.halfOffset, y, apple.r, -Math.PI/2, Math.PI/2);
-    ctx.fill();
-
-    // interior flesh
-    ctx.fillStyle = "#f2d6b3";
-    ctx.fillRect(ax - apple.halfOffset, y - apple.r + 2, 2, apple.r*2 - 4);
-    ctx.fillRect(ax + apple.halfOffset - 2, y - apple.r + 2, 2, apple.r*2 - 4);
+      // flesh highlight
+      ctx.fillStyle = "#f2d6b3";
+      ctx.fillRect(
+        ax + i * spread - 2,
+        y - apple.r * 0.5,
+        4,
+        apple.r
+      );
+    }
   }
+}
 
   // stem (always)
   ctx.strokeStyle = "#4a2e1c";
