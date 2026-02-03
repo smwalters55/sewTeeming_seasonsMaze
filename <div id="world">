@@ -903,7 +903,7 @@ update();
 - Mouse click or ↓ + interact range
 - Dialogue appears in sketch-style speech bubble
 
-### Dialogue (Initial)
+// ### Dialogue (Initial)
 
 if (orchardChoice === null) {
   ctx.fillText("Three ways now breathe.", fx - 12, bubbleY + 18);
