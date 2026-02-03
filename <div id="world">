@@ -736,11 +736,14 @@ ctx.fillText(
 );
 ctx.fillText("Some weight unlocks paths.", fx - 12, bubbleY + 34);
 
-if (frogActive && apple.split && orchardChoice === null) {
-  if (keys.left) orchardChoice = "left";
-  if (keys.right) orchardChoice = "right";
-  }
+if (frogActive && apple.split && orchardChoice === null && keys.down) {
+  orchardPaths.forEach(p => {
+    if (Math.abs(player.x - p.x) < 40 && player.y === 0) {
+      orchardChoice = p.id;
+    }
+  });
 }
+
 
 /* PLAYER */
 const px = player.x - camX;
