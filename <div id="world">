@@ -194,6 +194,8 @@ const apple = {
   splitTimer: 0,
   halfOffset: 0,
   glitter: 0,
+  apple.bounce = 0;
+  apple.bounceVy = 0;
   spawnTime: performance.now()
 };
 
@@ -586,6 +588,17 @@ if (!apple.collected) {
   const ax = apple.x - camX;
   const y = apple.y;
 
+// falling shine
+if (apple.falling) {
+  const shineX = ax - 2 + Math.sin(performance.now() * 0.006) * 1.5;
+  const shineY = y - apple.r + 3;
+
+  ctx.fillStyle = "rgba(255,230,200,0.55)";
+  ctx.beginPath();
+  ctx.ellipse(shineX, shineY, 2, 4, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
   if (!apple.split) {
     // whole apple
     ctx.fillStyle = "#8b2e2a";
@@ -606,6 +619,17 @@ if (!apple.collected) {
         Math.PI * 2
       );
       ctx.fill();
+
+// apple split in 3, pieces bounce
+const bounceY = apple.bounce * 0.6;
+
+ctx.arc(
+  ax + i * spread,
+  y - bounceY,
+  apple.r * 0.75,
+  0,
+  Math.PI * 2
+);
 
       // flesh highlight
       ctx.fillStyle = "#f2d6b3";
@@ -774,15 +798,30 @@ if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
 }
 
 if (apple.falling) {
-  apple.vy += 0.06;
+  apple.vy += 0.035;      // gentler gravity
+  apple.vy *= 0.985;     // subtle air resistance
   apple.y += apple.vy;
 
   const stumpTop = gy - 18;
-  if (apple.y >= stumpTop) {
-    apple.y = stumpTop;
-    apple.falling = false;
-    apple.landed = true;
-    apple.glitter = 60;
+if (apple.y >= stumpTop) {
+  apple.y = stumpTop;
+  apple.falling = false;
+  apple.landed = true;
+  apple.glitter = 60;
+
+  apple.bounce = 6;
+  apple.bounceVy = -1.2;
+
+if (apple.bounce > 0) {
+  apple.bounceVy += 0.18;
+  apple.bounce += apple.bounceVy;
+
+  if (apple.bounce < 0) {
+    apple.bounce = 0;
+    apple.bounceVy = 0;
+  }
+}
+
   }
 }
 
