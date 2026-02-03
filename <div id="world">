@@ -110,6 +110,14 @@ window.addEventListener("keyup", e => {
 
 // orchard choice 
 let orchardChoice = null; // "left" | "right"
+const orchardPaths = [
+  { id: "left",  x: 300 },
+  { id: "center", x: 560 },
+  { id: "right", x: 820 }
+];
+
+let orchardChoice = null;
+
 
 /* ======================================================
    CAMERA
@@ -814,6 +822,18 @@ if (apple.landed && !frogNoticedApple) {
   frogHatTip = 40;
 }
 
+if (apple.split && orchardChoice === null) {
+  orchardPaths.forEach(p => {
+    if (
+      Math.abs(player.x - p.x) < 30 &&
+      player.y === 0 &&
+      Math.abs(player.vy) < 0.1
+    ) {
+      orchardChoice = p.id;
+    }
+  });
+}
+
   draw();
 
   const targetCam = player.x - canvas.width*0.4;
@@ -851,15 +871,22 @@ update();
 ### Dialogue (Initial)
 
 if (orchardChoice === null) {
-  ctx.fillText("Two ways now hum.", fx - 12, bubbleY + 18);
-  ctx.fillText("Choose with your feet.", fx - 12, bubbleY + 34);
-} else if (orchardChoice === "left") {
-  ctx.fillText("Ah. The shaded row.", fx - 12, bubbleY + 18);
-  ctx.fillText("Roots remember you.", fx - 12, bubbleY + 34);
-} else {
-  ctx.fillText("Sun-warmed bark.", fx - 12, bubbleY + 18);
-  ctx.fillText("Bold steps echo far.", fx - 12, bubbleY + 34);
+  ctx.fillText("Three ways now breathe.", fx - 12, bubbleY + 18);
+  ctx.fillText("Stand where you belong.", fx - 12, bubbleY + 34);
+} 
+else if (orchardChoice === "left") {
+  ctx.fillText("Roots curl deep here.", fx - 12, bubbleY + 18);
+  ctx.fillText("Careful steps remembered.", fx - 12, bubbleY + 34);
 }
+else if (orchardChoice === "center") {
+  ctx.fillText("The old way holds.", fx - 12, bubbleY + 18);
+  ctx.fillText("Balance walks with you.", fx - 12, bubbleY + 34);
+}
+else {
+  ctx.fillText("Light breaks first ahead.", fx - 12, bubbleY + 18);
+  ctx.fillText("Boldness warms the bark.", fx - 12, bubbleY + 34);
+}
+
 
 //> "Ah. You found *the* apple, didn’t you?"
 
