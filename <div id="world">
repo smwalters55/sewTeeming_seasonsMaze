@@ -194,13 +194,11 @@ const apple = {
   splitTimer: 0,
   halfOffset: 0,
   glitter: 0,
-  apple.bounce = 0;
-  apple.bounceVy = 0;
+  bounce = 0;
+  bounceVy = 0;
   spawnTime: performance.now()
 };
 
-apple.split = false;
-apple.splitTimer = 0;
 apple.fragments = 0; // 0 → 3
 
 // hay positions (generated ONCE)
