@@ -194,6 +194,10 @@ const apple = {
   spawnTime: performance.now()
 };
 
+apple.split = false;
+apple.splitTimer = 0;
+apple.fragments = 0; // 0 → 3
+
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
   x: Math.random()*canvas.width,
