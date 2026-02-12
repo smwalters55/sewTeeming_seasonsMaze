@@ -184,7 +184,7 @@ const leaves = Array.from({ length: 8 }, (_, i) => ({
 }));
 
 const apple = {
-  x: 220,              // under first apple tree
+  x: 220,
   y: gy - 140,
   r: 7,
   vy: 0,
@@ -194,10 +194,11 @@ const apple = {
   splitTimer: 0,
   halfOffset: 0,
   glitter: 0,
-  bounce = 0;
-  bounceVy = 0;
+  bounce: 0,
+  bounceVy: 0,
   spawnTime: performance.now()
 };
+
 
 apple.fragments = 0; // 0 → 3
 
@@ -731,15 +732,8 @@ ctx.fillText(
   apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
   fx - 12,
   bubbleY + 18
-);
+  );
 ctx.fillText("Some weight unlocks paths.", fx - 12, bubbleY + 34);
-
-if (frogActive && apple.split && orchardChoice === null && keys.down) {
-  orchardPaths.forEach(p => {
-    if (Math.abs(player.x - p.x) < 40 && player.y === 0) {
-      orchardChoice = p.id;
-    }
-  });
 }
 
 
@@ -827,8 +821,11 @@ if (apple.bounce > 0) {
 }
 
 if (apple.landed && !apple.split) {
-  apple.split = true;
-  apple.splitTimer = 90;
+  apple.splitTimer++;
+  if (apple.splitTimer > 40) {
+    apple.split = true;
+    apple.splitTimer = 90;
+  }
 }
 
 if (apple.glitter > 0) apple.glitter--;
@@ -863,6 +860,18 @@ if (apple.split && orchardChoice === null) {
       Math.abs(player.vy) < 0.1
     ) {
       orchardChoice = p.id;
+    }
+  });
+}
+
+if (frogActive && apple.split && orchardChoice === null && keys.down) {
+  orchardPaths.forEach(p => {
+    if (
+      Math.abs(player.x + player.width/2 - p.x) < 40 &&
+      player.y === 0
+    ) {
+      orchardChoice = p.id;
+      frogHatTip = 40;
     }
   });
 }
