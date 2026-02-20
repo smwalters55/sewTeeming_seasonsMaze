@@ -121,6 +121,30 @@ let cameraX = 0;
 const camera = { topDown:false, locked:false };
 
 /* ======================================================
+   ORCHARD COLOURS
+   ====================================================== */
+const ORCHARD = {
+  skyTop: "#cfd6d1",
+  skyWarm: "#e8d3a8",
+  skyAmber: "#d1b07a",
+  skyHorizon: "#b28a58",
+
+  leafDark: "rgba(70,85,55,0.45)",
+  leafMid: "rgba(85,110,70,0.45)",
+  leafFar: "rgba(70,85,70,0.25)",
+
+  trunk: "#6b4026",
+  ground: "#6a6f4a",
+
+  fogLight: "rgba(255,245,235,0.12)",
+  fogHeavy: "rgba(220,210,190,0.35)",
+
+  appleRed: "#8b2e2a",
+  appleFlesh: "#f2d6b3",
+  glow: "rgba(255,210,140,0.18)"
+};
+
+/* ======================================================
    PLAYER
    ====================================================== */
 const player = {
