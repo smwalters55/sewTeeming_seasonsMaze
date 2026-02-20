@@ -190,6 +190,7 @@ const apple = {
   vy: 0,
   falling: false,
   landed: false,
+  cracked: false,   // ← NEW
   split: false,
   splitTimer: 0,
   halfOffset: 0,
@@ -622,13 +623,6 @@ if (apple.falling) {
 // apple split in 3, pieces bounce
 const bounceY = apple.bounce * 0.6;
 
-ctx.arc(
-  ax + i * spread,
-  y - bounceY,
-  apple.r * 0.75,
-  0,
-  Math.PI * 2
-);
 
       // flesh highlight
       ctx.fillStyle = "#f2d6b3";
@@ -787,9 +781,18 @@ function update(){
 // APPLE DROP LOGIC
 const now = performance.now();
 
-if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
-  apple.falling = true;
-  apple.vy = 0;
+if (apple.landed && !apple.cracked) {
+  apple.bounceVy += 0.18;
+  apple.bounce += apple.bounceVy;
+
+  if (apple.bounce < 0) {
+    apple.bounce = 0;
+    apple.bounceVy = 0;
+    apple.cracked = true;     // ← crack AFTER bounce
+    apple.split = true;
+    apple.splitTimer = 90;
+    apple.glitter = 90;
+  }
 }
 
 if (apple.falling) {
