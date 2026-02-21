@@ -610,7 +610,7 @@ drawAppleTree(980, camX);
 /* APPLE */
 if (!apple.collected) {
   const ax = apple.x - camX;
-  const y = apple.y;
+  const y = apple.y - apple.bounce;
 
 // falling shine
 if (apple.falling) {
@@ -805,6 +805,18 @@ function update(){
 // APPLE DROP LOGIC
 const now = performance.now();
 
+
+if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
+  apple.falling = true;
+  apple.vy = 0;
+}
+
+if (apple.falling) {
+  apple.vy += 0.12;
+  apple.vy *= 0.985;
+  apple.y += apple.vy;
+}
+
 if (apple.landed && !apple.cracked) {
   apple.bounceVy += 0.18;
   apple.bounce += apple.bounceVy;
@@ -819,31 +831,26 @@ if (apple.landed && !apple.cracked) {
   }
 }
 
-if (apple.falling) {
-  apple.vy += 0.035;      // gentler gravity
-  apple.vy *= 0.985;     // subtle air resistance
-  apple.y += apple.vy;
-
-  const stumpTop = gy - 18;
-if (apple.y >= stumpTop) {
+if (apple.y >= stumpTop && !apple.landed) {
   apple.y = stumpTop;
   apple.falling = false;
   apple.landed = true;
-  apple.glitter = 60;
 
-  apple.bounce = 6;
-  apple.bounceVy = -1.2;
-
-if (apple.bounce > 0) {
-  apple.bounceVy += 0.18;
-  apple.bounce += apple.bounceVy;
-
-  if (apple.bounce < 0) {
-    apple.bounce = 0;
-    apple.bounceVy = 0;
-  }
+  apple.bounce = 8;
+  apple.bounceVy = -1.6;
+  apple.glitter = 90;
 }
 
+if (apple.landed && !apple.cracked) {
+  apple.bounceVy += 0.22;
+  apple.bounce += apple.bounceVy;
+
+  if (apple.bounce <= 0) {
+    apple.bounce = 0;
+    apple.bounceVy = 0;
+    apple.cracked = true;
+    apple.split = true;
+    apple.splitTimer = 90;
   }
 }
 
