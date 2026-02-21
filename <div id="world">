@@ -122,6 +122,11 @@ let cameraX = 0;
 const camera = { topDown:false, locked:false };
 
 /* ======================================================
+   INVENTORY
+   ====================================================== */
+const inventory = [];
+
+/* ======================================================
    ORCHARD COLOURS
    ====================================================== */
 const ORCHARD = {
@@ -222,6 +227,9 @@ const apple = {
   glitter: 0,
   bounce: 0,
   bounceVy: 0,
+  pickupable: false,
+  pickedUp: false,
+  pickupAnim: 0
   spawnTime: performance.now()
 };
 
@@ -334,7 +342,7 @@ ctx.stroke();
   // canopy
   const applePulse =
   0.08 + Math.sin(performance.now() * 0.0012) * 0.04;
-ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
+  ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
 
   ctx.beginPath();
   ctx.arc(tx, gy-120, 50, 0, Math.PI*2);
@@ -613,6 +621,31 @@ if (!apple.collected) {
   const ax = apple.x - camX;
   const y = apple.y - apple.bounce;
 
+if (!apple.pickedUp || apple.pickupAnim > 0) {
+  const t = apple.pickupAnim;
+  const drawX = t
+    ? apple.x * (1 - t) + canvas.width / 2 * t
+    : apple.x - camX;
+
+  const drawY = t
+    ? apple.y * (1 - t) + canvas.height / 2 * t
+    : apple.y;
+
+  const scale = t ? 1 + t * 1.6 : 1;
+
+  ctx.save();
+  ctx.translate(drawX, drawY);
+  ctx.scale(scale, scale);
+
+  // apple body
+  ctx.fillStyle = "#8b2e2a";
+  ctx.beginPath();
+  ctx.arc(0, 0, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // falling shine
 if (apple.falling) {
   const shineX = ax - 2 + Math.sin(performance.now() * 0.006) * 1.5;
@@ -844,6 +877,8 @@ if (apple.bounce <= 0) {
     apple.cracked = true;
     apple.split = true;
     apple.splitTimer = 90;
+    apple.pickupable = true;
+
   }
 }
 }
@@ -893,6 +928,34 @@ if (frogActive && apple.split && orchardChoice === null && keys.down) {
       frogHatTip = 40;
     }
   });
+}
+
+// ================== APPLE PICKUP ==================
+const appleX = apple.x;
+const appleY = stumpTop;
+
+const playerCenterX = player.x + player.width / 2;
+const nearApple =
+  apple.pickupable &&
+  !apple.pickedUp &&
+  Math.abs(playerCenterX - appleX) < 50 &&
+  player.y < 6;
+
+if (nearApple && keys.down) {
+  apple.pickedUp = true;
+  apple.pickupAnim = 1;
+}
+
+if (apple.pickupAnim > 0) {
+  apple.pickupAnim += 0.08;
+
+  if (apple.pickupAnim >= 1.8) {
+    apple.pickupAnim = 0;
+
+    // add to inventory
+    inventory.push("apple");
+    document.getElementById("inv").textContent = inventory.join(", ");
+  }
 }
 
   draw();
