@@ -826,7 +826,7 @@ if (apple.falling) {
     apple.landed = true;
 
     apple.bounce = 8;
-    apple.bounceVy = -1.6;
+    apple.bounceVy = 0.9;
     apple.glitter = 90;
   }
 }
@@ -836,14 +836,16 @@ if (apple.landed && !apple.cracked) {
   apple.bounceVy += 0.22;
   apple.bounce += apple.bounceVy;
 
-  if (apple.bounce <= 0) {
-    apple.bounce = 0;
-    apple.bounceVy = 0;
+if (apple.bounce <= 0) {
+  apple.bounce = 0;
+  apple.bounceVy = 0;
 
+  if (!apple.cracked) {
     apple.cracked = true;
     apple.split = true;
     apple.splitTimer = 90;
   }
+}
 }
 
 
