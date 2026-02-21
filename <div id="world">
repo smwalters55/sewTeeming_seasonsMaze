@@ -75,6 +75,7 @@ const ctx = canvas.getContext("2d");
    WORLD CONSTANTS
    ====================================================== */
 const gy = 300;
+const stumpTop = gy - 18;
 const lowfog = {
   x: 0,
   speed: 0.15,
@@ -336,7 +337,7 @@ ctx.stroke();
 ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
 
   ctx.beginPath();
-  ctx.arc(tx, gy-110, 50, 0, Math.PI*2);
+  ctx.arc(tx, gy-120, 50, 0, Math.PI*2);
   ctx.fill();
 
   // apples + apples highlight
@@ -803,44 +804,34 @@ function update(){
   applyPhysics();
 
 // APPLE DROP LOGIC
+// ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
-
+// trigger fall
 if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
   apple.falling = true;
   apple.vy = 0;
 }
 
+// falling
 if (apple.falling) {
   apple.vy += 0.12;
   apple.vy *= 0.985;
   apple.y += apple.vy;
-}
 
-if (apple.landed && !apple.cracked) {
-  apple.bounceVy += 0.18;
-  apple.bounce += apple.bounceVy;
+  // landing
+  if (apple.y >= stumpTop) {
+    apple.y = stumpTop;
+    apple.falling = false;
+    apple.landed = true;
 
-  if (apple.bounce < 0) {
-    apple.bounce = 0;
-    apple.bounceVy = 0;
-    apple.cracked = true;     // ← crack AFTER bounce
-    apple.split = true;
-    apple.splitTimer = 90;
+    apple.bounce = 8;
+    apple.bounceVy = -1.6;
     apple.glitter = 90;
   }
 }
 
-if (apple.y >= stumpTop && !apple.landed) {
-  apple.y = stumpTop;
-  apple.falling = false;
-  apple.landed = true;
-
-  apple.bounce = 8;
-  apple.bounceVy = -1.6;
-  apple.glitter = 90;
-}
-
+// bounce + crack
 if (apple.landed && !apple.cracked) {
   apple.bounceVy += 0.22;
   apple.bounce += apple.bounceVy;
@@ -848,25 +839,17 @@ if (apple.landed && !apple.cracked) {
   if (apple.bounce <= 0) {
     apple.bounce = 0;
     apple.bounceVy = 0;
+
     apple.cracked = true;
     apple.split = true;
     apple.splitTimer = 90;
   }
 }
 
-if (apple.landed && !apple.split) {
-  apple.splitTimer++;
-  if (apple.splitTimer > 40) {
-    apple.split = true;
-    apple.splitTimer = 90;
-  }
-}
 
+// decay
 if (apple.glitter > 0) apple.glitter--;
-if (apple.splitTimer > 0) {
-  apple.splitTimer--;
-  apple.halfOffset += 0.18;
-}
+if (apple.splitTimer > 0) apple.splitTimer--;
 
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
