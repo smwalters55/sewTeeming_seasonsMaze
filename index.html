@@ -1,271 +1,156 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sketch Maze – Base Prototype</title>
-  <style>
-    :root{
-      --ink:#2b2b2b;
-      --paper:#f7f4ee;
-      --accent:#9bb7ff;
-      --haze:rgba(120,120,120,.35);
-    }
-    html,body{overflow: hidden;margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:ui-monospace, Menlo, Consolas, monospace;}
-    #game{width:100vw; border-bottom:2px dashed var(--ink);}    
-    @keyframes glow{50%{box-shadow:0 0 18px 6px rgba(155,183,255,.8)}}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch Orchard – Restored Build</title>
 
-canvas { display:block; }
-    @keyframes jump{
-      0%{transform:translateY(0)}
-      50%{transform:translateY(-90px)}
-      100%{transform:translateY(0)}
-    } 
-
-    #ui{
+<style>
+:root{
+  --ink:#2b2b2b;
+  --paper:#f7f4ee;
+}
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+}
+canvas{display:block}
+#ui{
   position:fixed;
   top:8px;
   left:8px;
   z-index:10;
-}    
-    #basket{border:3px solid var(--ink); padding:6px 10px;}    
-    #basket { width: fit-content; }
-
-    #overlay{position:absolute; inset:0; background:rgba(247,244,238,.95); display:none;}    
-    #map{margin:20px auto; width:90%; height:60%; border:3px solid var(--ink); position:relative;}    
-    .map-node{position:absolute; width:120px; height:60px; border:3px dashed var(--ink); text-align:center; line-height:60px;}    
-    .locked{opacity:.35;}
-
-    .note{padding:10px; font-size:14px;}
-  </style>
+}
+#basket{
+  border:3px solid var(--ink);
+  padding:6px 10px;
+}
+</style>
 </head>
+
 <body>
-  <div id="ui">
-    <div id="basket">Inventory: <span id="inv">(empty)</span></div>
-  </div>
+<div id="ui">
+  <div id="basket">Inventory: <span id="inv">(empty)</span></div>
+</div>
 
-  <canvas id="game" width="800" height="400"></canvas>
-
-      <!-- Player -->
-
-    <!-- Map Overlay -->
-    <div id="overlay">
-      <div id="map">
-        <div class="map-node" style="left:40px; top:40px">Orchard</div>
-        <div class="map-node" style="left:220px; top:40px">Path I</div>
-        <div class="map-node locked" style="left:400px; top:40px">Path II</div>
-        <div class="map-node locked" style="left:580px; top:40px">Path III</div>
-      </div>
-    </div>
-  </div>
+<canvas id="game" width="960" height="420"></canvas>
 
 <script>
 /* ======================================================
-   CANVAS + CONTEXT
-   ====================================================== */
+   CANVAS
+====================================================== */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 /* ======================================================
-   WORLD CONSTANTS
-   ====================================================== */
+   WORLD
+====================================================== */
 const gy = 300;
 const stumpTop = gy - 18;
 
 /* ======================================================
    INPUT
-   ====================================================== */
-const keys = { left:false, right:false, up:false, down:false, space:false };
+====================================================== */
+const keys = {left:false,right:false,up:false,down:false,space:false};
 
-window.addEventListener("keydown", e => {
-  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
-    e.preventDefault();
-  }
-  if (e.key==="ArrowLeft") keys.left=true;
-  if (e.key==="ArrowRight") keys.right=true;
-  if (e.key==="ArrowUp") keys.up=true;
-  if (e.key==="ArrowDown") keys.down=true;
-  if (e.key===" ") keys.space=true;
+window.addEventListener("keydown",e=>{
+  if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) e.preventDefault();
+  if(e.key==="ArrowLeft")keys.left=true;
+  if(e.key==="ArrowRight")keys.right=true;
+  if(e.key==="ArrowUp")keys.up=true;
+  if(e.key==="ArrowDown")keys.down=true;
+  if(e.key===" ")keys.space=true;
 });
-
-window.addEventListener("keyup", e => {
-  if (e.key==="ArrowLeft") keys.left=false;
-  if (e.key==="ArrowRight") keys.right=false;
-  if (e.key==="ArrowUp") keys.up=false;
-  if (e.key==="ArrowDown") keys.down=false;
-  if (e.key===" ") keys.space=false;
+window.addEventListener("keyup",e=>{
+  if(e.key==="ArrowLeft")keys.left=false;
+  if(e.key==="ArrowRight")keys.right=false;
+  if(e.key==="ArrowUp")keys.up=false;
+  if(e.key==="ArrowDown")keys.down=false;
+  if(e.key===" ")keys.space=false;
 });
 
 /* ======================================================
    CAMERA
-   ====================================================== */
+====================================================== */
 let cameraX = 0;
-const camera = { topDown:false, locked:false };
-
-/* ======================================================
-   INVENTORY
-   ====================================================== */
-const inventory = [];
+const camera = {topDown:false,locked:false};
 
 /* ======================================================
    PLAYER
-   ====================================================== */
+====================================================== */
 const player = {
-  x: 120,
-  y: 0,
-  width: 40,
-  height: 54,
-  speed: 3,
-  jumping: false,
-  vy: 0
+  x:120,
+  y:0,
+  width:40,
+  height:54,
+  speed:3,
+  vy:0,
+  jumping:false
 };
 
 /* ======================================================
    FROG NPC
-   ====================================================== */
+====================================================== */
 const frog = {
-  x: 820,
-  y: 0,
-  width: 48,
-  height: 36,
-  bob: 0
+  x:820,
+  y:0,
+  width:48,
+  height:36,
+  bob:0
 };
-let frogActive = false;
-let frogHatTip = 0;
+let frogActive=false;
+let frogHatTip=0;
 
 /* ======================================================
-   PLATFORM
-   ====================================================== */
-const platforms = [
-  { x: 560, heightAboveGround: 48, width: 120, thickness: 14 }
+   INVENTORY
+====================================================== */
+const inventory=[];
+
+/* ======================================================
+   ATMOSPHERE
+====================================================== */
+const crows=[
+  {x:780,y:60,speed:0.25,phase:Math.random()*Math.PI*2},
+  {x:620,y:90,speed:0.18,phase:Math.random()*Math.PI*2}
+];
+const fog={x:0,speed:0.015,height:180};
+const lowfog={x:0,speed:0.15,height:48};
+
+/* ======================================================
+   PLATFORMS
+====================================================== */
+const platforms=[
+  {x:560,heightAboveGround:48,width:120,thickness:14}
 ];
 
 /* ======================================================
-   APPLE (FIXED STATE MACHINE)
-   ====================================================== */
-const apple = {
-  x: 220,
-  y: gy - 140,
-  r: 7,
-
-  vy: 0,
-  falling: false,
-  landed: false,
-
-  cracked: false,
-  split: false,
-
-  bounce: 0,
-  bounceVy: 0,
-
-  glitter: 0,
-
-  pickupable: false,
-  pickedUp: false,
-  pickupAnim: 0,
-
-  spawnTime: performance.now()
+   APPLE
+====================================================== */
+const apple={
+  x:220,
+  y:gy-140,
+  r:7,
+  vy:0,
+  falling:false,
+  landed:false,
+  cracked:false,
+  split:false,
+  bounce:0,
+  bounceVy:0,
+  glitter:0,
+  pickupable:false,
+  pickedUp:false,
+  pickupAnim:0,
+  spawnTime:performance.now()
 };
 
 /* ======================================================
-   INPUT HANDLING
-   ====================================================== */
-function handleInput(){
-  if (!camera.topDown) {
-    if (keys.left) player.x -= player.speed;
-    if (keys.right) player.x += player.speed;
-    if (keys.up && !player.jumping) {
-      player.jumping = true;
-      player.vy = 12;
-    }
-  }
-}
-
-/* ======================================================
-   PHYSICS
-   ====================================================== */
-function applyPhysics(){
-  // gravity
-  player.y += player.vy;
-  player.vy -= 0.8;
-
-  if (player.y <= 0) {
-    player.y = 0;
-    player.jumping = false;
-    player.vy = 0;
-  }
-
-  platforms.forEach(p => {
-    const platformTop = p.heightAboveGround;
-    if (
-      player.x + player.width > p.x &&
-      player.x < p.x + p.width &&
-      player.y <= platformTop &&
-      player.y >= platformTop - 14 &&
-      player.vy <= 0
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-    }
-  });
-
-  frog.bob += 0.04;
-  if (frogHatTip > 0) frogHatTip--;
-}
-
-/* ======================================================
-   APPLE UPDATE (CORRECT & STABLE)
-   ====================================================== */
-function updateApple(){
-  const now = performance.now();
-
-  // trigger fall
-  if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
-    apple.falling = true;
-    apple.vy = 0;
-  }
-
-  // falling motion
-  if (apple.falling) {
-    apple.vy += 0.12;
-    apple.vy *= 0.985;
-    apple.y += apple.vy;
-
-    if (apple.y >= stumpTop) {
-      apple.y = stumpTop;
-      apple.falling = false;
-      apple.landed = true;
-
-      apple.bounce = 8;
-      apple.bounceVy = -1.2;
-      apple.glitter = 90;
-    }
-  }
-
-  // bounce ONLY until crack
-  if (apple.landed && !apple.cracked) {
-    apple.bounceVy += 0.22;
-    apple.bounce += apple.bounceVy;
-
-    // ---- THIS IS THE CRACK TRIGGER ----
-    if (apple.bounce < 1) {
-      apple.cracked = true;
-      apple.split = true;
-      apple.pickupable = true;
-
-      // ---- BOUNCE FREEZE (IMPORTANT) ----
-      apple.bounce = 0;
-      apple.bounceVy = 0;
-    }
-  }
-
-  if (apple.glitter > 0) apple.glitter--;
-}
-
-/* ======================================================
-   DRAW HELPERS
-   ====================================================== */
+   HELPERS
+====================================================== */
 function roundRect(ctx,x,y,w,h,r){
   ctx.beginPath();
   ctx.moveTo(x+r,y);
@@ -281,150 +166,176 @@ function roundRect(ctx,x,y,w,h,r){
 }
 
 /* ======================================================
+   UPDATE
+====================================================== */
+function update(){
+  // movement
+  if(!camera.topDown){
+    if(keys.left)player.x-=player.speed;
+    if(keys.right)player.x+=player.speed;
+    if(keys.up&&!player.jumping){
+      player.jumping=true;
+      player.vy=12;
+    }
+  }
+
+  // gravity
+  player.y+=player.vy;
+  player.vy-=0.8;
+  if(player.y<=0){
+    player.y=0;
+    player.vy=0;
+    player.jumping=false;
+  }
+
+  // platforms
+  platforms.forEach(p=>{
+    const top=p.heightAboveGround;
+    if(
+      player.x+player.width>p.x &&
+      player.x<p.x+p.width &&
+      player.y<=top &&
+      player.y>=top-14 &&
+      player.vy<=0
+    ){
+      player.y=top;
+      player.vy=0;
+      player.jumping=false;
+    }
+  });
+
+  // apple fall
+  const now=performance.now();
+  if(!apple.falling&&!apple.landed&&now-apple.spawnTime>2400){
+    apple.falling=true;
+    apple.vy=0;
+  }
+  if(apple.falling){
+    apple.vy+=0.12;
+    apple.vy*=0.985;
+    apple.y+=apple.vy;
+    if(apple.y>=stumpTop){
+      apple.y=stumpTop;
+      apple.falling=false;
+      apple.landed=true;
+      apple.bounce=8;
+      apple.bounceVy=0.9;
+      apple.glitter=90;
+    }
+  }
+
+  // bounce → crack
+  if(apple.landed&&!apple.cracked){
+    apple.bounceVy+=0.22;
+    apple.bounce+=apple.bounceVy;
+    if(apple.bounce<=0){
+      apple.bounce=0;
+      apple.bounceVy=0;
+      apple.cracked=true;
+      apple.split=true;
+      apple.pickupable=true;
+    }
+  }
+
+  if(apple.glitter>0)apple.glitter--;
+
+  // pickup
+  const pcx=player.x+player.width/2;
+  if(
+    apple.pickupable&&!apple.pickedUp &&
+    Math.abs(pcx-apple.x)<50 &&
+    player.y<6 &&
+    keys.down
+  ){
+    apple.pickedUp=true;
+    apple.pickupAnim=0.01;
+  }
+  if(apple.pickupAnim>0){
+    apple.pickupAnim+=0.08;
+    if(apple.pickupAnim>=1.8){
+      apple.pickupAnim=0;
+      inventory.push("apple");
+      document.getElementById("inv").textContent=inventory.join(", ");
+    }
+  }
+
+  frog.bob+=0.04;
+  if(frogHatTip>0)frogHatTip--;
+
+  draw();
+  cameraX+=(player.x-canvas.width*0.4-cameraX)*0.08;
+  if(cameraX<0)cameraX=0;
+  requestAnimationFrame(update);
+}
+
+/* ======================================================
    DRAW
-   ====================================================== */
+====================================================== */
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  const camX = cameraX;
+  const camX=cameraX;
 
   // sky
-  const sky = ctx.createLinearGradient(0, 0, 0, gy);
-  sky.addColorStop(0, "#cfd6d1");
-  sky.addColorStop(1, "#b28a58");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  const sky=ctx.createLinearGradient(0,0,0,gy);
+  sky.addColorStop(0,"#cfd6d1");
+  sky.addColorStop(0.3,"#e8d3a8");
+  sky.addColorStop(0.6,"#d1b07a");
+  sky.addColorStop(1,"#8f6b45");
+  ctx.fillStyle=sky;
+  ctx.fillRect(0,0,canvas.width,gy);
 
   // ground
-  ctx.fillStyle = "#6a6f4a";
-  ctx.fillRect(-camX, gy, canvas.width+camX, canvas.height-gy);
+  ctx.fillStyle="#6a6f4a";
+  ctx.fillRect(-camX,gy,canvas.width+camX,canvas.height-gy);
 
-  // apple tree (simplified)
-  ctx.fillStyle="#6b4026";
-  ctx.fillRect(220-camX-12, gy-96, 24, 96);
-
-  ctx.fillStyle="rgba(90,120,70,0.9)";
-  ctx.beginPath();
-  ctx.arc(220-camX, gy-120, 50, 0, Math.PI*2);
-  ctx.fill();
+  // platform
+  platforms.forEach(p=>{
+    const px=p.x-camX;
+    const py=gy-p.heightAboveGround;
+    const g=ctx.createLinearGradient(px,py,px,py+p.thickness);
+    g.addColorStop(0,"#c89a5a");
+    g.addColorStop(1,"#8a5a2e");
+    ctx.fillStyle=g;
+    ctx.fillRect(px,py,p.width,p.thickness);
+  });
 
   // apple
-  if (!apple.pickedUp) {
-    const ax = apple.x - camX;
-    const ay = apple.y - apple.bounce;
-
-    if (!apple.split) {
-      ctx.fillStyle="#8b2e2a";
+  if(!apple.pickedUp){
+    const ax=apple.x-camX;
+    const ay=apple.y-apple.bounce;
+    ctx.fillStyle="#8b2e2a";
+    if(!apple.split){
       ctx.beginPath();
-      ctx.arc(ax, ay, apple.r, 0, Math.PI*2);
+      ctx.arc(ax,ay,apple.r,0,Math.PI*2);
       ctx.fill();
-    } else {
-      const spread = 18;
-      for (let i=-1;i<=1;i++){
-        ctx.fillStyle="#8b2e2a";
+    }else{
+      for(let i=-1;i<=1;i++){
         ctx.beginPath();
-        ctx.arc(ax+i*spread, ay, apple.r*0.75, 0, Math.PI*2);
+        ctx.arc(ax+i*18,ay,apple.r*0.75,0,Math.PI*2);
         ctx.fill();
-
         ctx.fillStyle="#f2d6b3";
-        ctx.fillRect(ax+i*spread-2, ay-3, 4, 6);
+        ctx.fillRect(ax+i*18-2,ay-3,4,6);
+        ctx.fillStyle="#8b2e2a";
       }
     }
   }
 
-  // player
-  const px = player.x - camX;
-  const py = gy - player.height - player.y;
-  ctx.fillStyle="#7a78b8";
-  roundRect(ctx, px, py, player.width, player.height, 8);
+  // frog
+  const fx=frog.x-camX;
+  const fy=gy-frog.height+Math.sin(frog.bob)*2;
+  ctx.fillStyle="#6f8f6a";
+  roundRect(ctx,fx,fy,frog.width,frog.height,10);
   ctx.fill();
-}
 
-/* ======================================================
-   MAIN LOOP
-   ====================================================== */
-function update(){
-  handleInput();
-  applyPhysics();
-  updateApple();
-  draw();
-
-  const targetCam = player.x - canvas.width*0.4;
-  cameraX += (targetCam - cameraX)*0.08;
-  if (cameraX<0) cameraX=0;
-
-  requestAnimationFrame(update);
+  // player
+  const px=player.x-camX;
+  const py=gy-player.height-player.y;
+  ctx.fillStyle="#7a78b8";
+  roundRect(ctx,px,py,player.width,player.height,8);
+  ctx.fill();
 }
 
 update();
 </script>
-
 </body>
 </html>
-
----
-
-## Added NPC: Frog Guide (Top Hat)
-
-### Visual Style
-- Hand-drawn sketch aesthetic
-- Slightly oversized head, long limbs
-- Wears a small **top hat**
-- Carries a **walking stick** (later doubles as bass bow reference)
-- Idle animation: gentle sway, occasional blink
-
-### Location
-- Appears in **Path One**, shortly after entering from orchard
-- Stands near a mild obstacle (rock / stump)
-
-### Interaction
-- Mouse click or ↓ + interact range
-- Dialogue appears in sketch-style speech bubble
-
-// ### Dialogue (Initial)
-
-if (orchardChoice === null) {
-  ctx.fillText("Three ways now breathe.", fx - 12, bubbleY + 18);
-  ctx.fillText("Stand where you belong.", fx - 12, bubbleY + 34);
-} 
-else if (orchardChoice === "left") {
-  ctx.fillText("Roots curl deep here.", fx - 12, bubbleY + 18);
-  ctx.fillText("Careful steps remembered.", fx - 12, bubbleY + 34);
-}
-else if (orchardChoice === "center") {
-  ctx.fillText("The old way holds.", fx - 12, bubbleY + 18);
-  ctx.fillText("Balance walks with you.", fx - 12, bubbleY + 34);
-}
-else {
-  ctx.fillText("Light breaks first ahead.", fx - 12, bubbleY + 18);
-  ctx.fillText("Boldness warms the bark.", fx - 12, bubbleY + 34);
-}
-
-
-//> "Ah. You found *the* apple, didn’t you?"
-
-//> "Paths open when things are carried with care."
-
-//> "I seem to have misplaced my bass… perhaps it wandered ahead of me."
-
-### Function
-- Acts as:
-  - Narrative anchor
-  - Soft hint system
-  - Side quest giver
-
-### Side Quest Hook
-- **Quest:** Help Frog find their stand-up bass
-- Bass appears later in maze (different zone)
-- Returning bass unlocks:
-  - New traversal ability OR
-  - Hidden shortcut OR
-  - Decorative musical moment
-
-### Multiplayer-Future Ready
-- Frog dialogue can change depending on:
-  - Which player interacted first
-  - Whether both players are present
-- Frog acknowledges shared progress subtly
-
----
-
