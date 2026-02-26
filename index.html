@@ -60,10 +60,6 @@ canvas { display:block; }
   </div>
 
 <script>
-/* debug base canvas errors
-window.onerror = (msg, src, line) => {
-  alert(`JS Error:\n${msg}\nLine: ${line}`);
-};
 
 /* ======================================================
    CANVAS + CONTEXT
@@ -217,6 +213,7 @@ const apple = {
   landed: false,
   cracked: false,   // ← NEW
   split: false,
+  collected: false,
   splitTimer: 0,
   halfOffset: 0,
   glitter: 0,
