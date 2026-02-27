@@ -818,12 +818,12 @@ if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
 
 // falling
 if (apple.falling) {
-  apple.vy += 0.12;
+  apple.vy += 0.12;  // gravity pulls DOWN
   apple.vy *= 0.985;
-  apple.y += apple.vy;
+  apple.y += apple.vy; 
 
   // landing
-  if (apple.y >= stumpTop) { // stumpTop MUST be world Y (not camera-relative)
+  if (apple.y <= stumpTop) { // stumpTop MUST be world Y (not camera-relative)
     apple.y = stumpTop;
     apple.falling = false;
     apple.landed = true;
@@ -850,6 +850,17 @@ if (apple.landed && !apple.settled) {
       apple.cracked = true;
       apple.split = true;
       apple.splitTimer = 90;
+
+    // initialize split pieces at rest on stump
+    apple.pieces.forEach(p => {
+    p.y = stumpTop;
+    p.vy = 0;
+    p.bounce = 0;
+    p.settled = true;
+  });
+
+      // apple can now be collected
+    apple.pickupReady = true;
     }
   }
 }
