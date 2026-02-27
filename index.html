@@ -213,6 +213,7 @@ const apple = {
   landed: false,
   cracked: false,   // ← NEW
   split: false,
+  settled: false,
   collected: false,
   splitTimer: 0,
   halfOffset: 0,
@@ -804,6 +805,11 @@ function update(){
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
+  if (apple.settled) {
+  apple.vy = 0;
+  return;
+}
+
 // trigger fall
 if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
   apple.falling = true;
@@ -817,7 +823,7 @@ if (apple.falling) {
   apple.y += apple.vy;
 
   // landing
-  if (apple.y >= stumpTop) {
+  if (apple.y >= stumpTop) { // stumpTop MUST be world Y (not camera-relative)
     apple.y = stumpTop;
     apple.falling = false;
     apple.landed = true;
@@ -829,22 +835,24 @@ if (apple.falling) {
 }
 
 // bounce + crack
-if (apple.landed && !apple.cracked) {
-  apple.bounceVy += 0.22;
+if (apple.landed && !apple.settled) {
+
+  apple.bounceVy -= 0.6;          // pull back toward stump
   apple.bounce += apple.bounceVy;
+  apple.bounceVy *= 0.75;         // damping (energy loss)
 
-if (apple.bounce <= 0) {
-  apple.bounce = 0;
-  apple.bounceVy = 0;
+  if (Math.abs(apple.bounceVy) < 0.15 && apple.bounce <= 0.5) {
+    apple.bounce = 0;
+    apple.bounceVy = 0;
+    apple.settled = true;
 
-  if (!apple.cracked) {
-    apple.cracked = true;
-    apple.split = true;
-    apple.splitTimer = 90;
+    if (!apple.cracked) {
+      apple.cracked = true;
+      apple.split = true;
+      apple.splitTimer = 90;
+    }
   }
 }
-}
-
 
 // decay
 if (apple.glitter > 0) apple.glitter--;
