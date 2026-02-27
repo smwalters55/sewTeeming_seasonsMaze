@@ -220,6 +220,7 @@ const apple = {
   split: false,
   settled: false,
   collected: false,
+  rollingToStump: false,
   splitTimer: 0,
   halfOffset: 0,
   glitter: 0,
@@ -812,7 +813,6 @@ const now = performance.now();
 
   if (apple.settled) {
   apple.vy = 0;
-  return;
 }
 
 // trigger fall
