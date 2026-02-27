@@ -815,6 +815,7 @@ function update(){
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
+  // temp debug stump real check
   if (!stump || stumpTop === undefined) {
   console.warn("stump not ready");
   return;
@@ -835,7 +836,8 @@ if (apple.falling) {
   apple.vy += 0.12;  // gravity pulls DOWN
   apple.vy *= 0.985;
   apple.y += apple.vy; 
-
+}
+  
 // apple landing
 const appleBottom = apple.y + apple.radius * 2;
 const appleCenterX = apple.x + apple.radius;
@@ -847,7 +849,7 @@ const overStump =
 const landingY = overStump ? stumpTop : groundY;
 
 // LAND on either stump OR ground
-if (appleBottom >= landingY) {
+if (!apple.landed && appleBottom >= landingY) {
   apple.y = landingY - apple.radius * 2;
   apple.falling = false;
   apple.landed = true;
@@ -855,7 +857,6 @@ if (appleBottom >= landingY) {
   apple.bounce = 8;
   apple.bounceVy = 0.9;
   apple.glitter = 90;
-}
 }
 
 // bounce + crack
