@@ -833,15 +833,18 @@ if (apple.falling) {
     appleCenterX > stump.x &&
     appleCenterX < stump.x + stump.width;
 
-if (overStump && apple.y >= stump.top) {
-    apple.y = stumpTop;
-    apple.falling = false;
-    apple.landed = true;
+// choose landing surface
+const landingY = overStump ? stumpTop : groundY;
 
-    apple.bounce = 8;
-    apple.bounceVy = 0.9;
-    apple.glitter = 90;
-  }
+if (apple.y >= landingY) {
+  apple.y = landingY;
+  apple.falling = false;
+  apple.landed = true;
+
+  apple.bounce = 8;
+  apple.bounceVy = 0.9;
+  apple.glitter = 90;
+}
 }
 
 // bounce + crack
