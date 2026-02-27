@@ -71,7 +71,11 @@ const ctx = canvas.getContext("2d");
    WORLD CONSTANTS
    ====================================================== */
 const gy = 300;
-const stumpTop = gy - 18;
+const groundY = canvas.height - 80;
+  
+  console.log("groundY =", groundY);
+
+  const stumpTop = gy - 18;
 const stump = {
   x: 360,
   width: 44,
