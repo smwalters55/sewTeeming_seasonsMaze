@@ -72,10 +72,8 @@ const ctx = canvas.getContext("2d");
    ====================================================== */
 const gy = 300;
 const groundY = canvas.height - 80;
-  
-  console.log("groundY =", groundY);
 
-  const stumpTop = gy - 18;
+const stumpTop = gy - 18;
 const stump = {
   x: 360,
   width: 44,
@@ -815,11 +813,7 @@ function update(){
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
-  // temp debug stump real check
-  if (!stump || stumpTop === undefined) {
-  console.warn("stump not ready");
-  return;
-}
+const stumpReady = stump && stumpTop !== undefined;
 
   if (apple.settled) {
   apple.vy = 0;
@@ -846,11 +840,12 @@ const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-const landingY = overStump ? stumpTop : groundY;
+const landingY = (overStump && stumpReady) ? stumpTop : groundY;
 
 // LAND on either stump OR ground
 if (!apple.landed && appleBottom >= landingY) {
   apple.y = landingY - apple.radius * 2;
+  apple.vy = 0;
   apple.falling = false;
   apple.landed = true;
 
