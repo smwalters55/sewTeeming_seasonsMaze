@@ -811,6 +811,11 @@ function update(){
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
+  if (!stump || stumpTop === undefined) {
+  console.warn("stump not ready");
+  return;
+}
+
   if (apple.settled) {
   apple.vy = 0;
 }
@@ -828,15 +833,17 @@ if (apple.falling) {
   apple.y += apple.vy; 
 
   // landing
-  const appleCenterX = apple.x + apple.radius;
-  const overStump =
-    appleCenterX > stump.x &&
-    appleCenterX < stump.x + stump.width;
+const appleBottom = apple.y + apple.radius;
+const appleCenterX = apple.x + apple.radius;
+
+const overStump =
+  appleCenterX > stump.x &&
+  appleCenterX < stump.x + stump.width;
 
 // choose landing surface
 const landingY = overStump ? stumpTop : groundY;
 
-if (apple.y >= landingY) {
+if (overStump && appleBottom >= stumpTop) {
   apple.y = landingY;
   apple.falling = false;
   apple.landed = true;
