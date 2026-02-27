@@ -836,19 +836,19 @@ if (apple.falling) {
   apple.vy *= 0.985;
   apple.y += apple.vy; 
 
-  // landing
-const appleBottom = apple.y + apple.radius;
+// apple landing
+const appleBottom = apple.y + apple.radius * 2;
 const appleCenterX = apple.x + apple.radius;
 
 const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-// choose landing surface
 const landingY = overStump ? stumpTop : groundY;
 
-if (overStump && appleBottom >= stumpTop) {
-  apple.y = landingY;
+// LAND on either stump OR ground
+if (appleBottom >= landingY) {
+  apple.y = landingY - apple.radius * 2;
   apple.falling = false;
   apple.landed = true;
 
