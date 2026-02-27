@@ -813,7 +813,6 @@ function update(){
 
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
-  Try {
 const now = performance.now();
 
   if (!stump || stumpTop === undefined) {
@@ -889,11 +888,7 @@ if (apple.landed && !apple.settled) {
     }
   }
 }
-
-    // super temp to see whats goin on w apple drop freezing all the wurld
-    } catch (e) {
-  console.error("APPLE ERROR", e);
-}
+    
   
 // decay
 if (apple.glitter > 0) apple.glitter--;
