@@ -823,7 +823,7 @@ if (apple.falling) {
   apple.y += apple.vy; 
 
   // landing
-  if (apple.y <= stumpTop) { // stumpTop MUST be world Y (not camera-relative)
+  if (apple.y >= stumpTop) { // stumpTop MUST be world Y (not camera-relative)
     apple.y = stumpTop;
     apple.falling = false;
     apple.landed = true;
