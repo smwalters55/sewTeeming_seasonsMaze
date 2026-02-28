@@ -819,7 +819,6 @@ const stumpReady = stump && stump.top !== undefined;
   if (apple.settled) {
   apple.vy = 0;
   apple.falling = false;
-  return; // ← THIS IS CRITICAL
 }
 
 // trigger fall
@@ -847,7 +846,12 @@ const overStump =
 const landingY = overStump ? stump.top : gy;
 
 // LAND
-if (apple.falling && !apple.landed && appleBottom >= landingY) {
+if (
+  apple.falling &&
+  apple.vy > 0 &&              // ← CRITICAL
+  !apple.landed &&
+  appleBottom >= landingY
+) {
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
