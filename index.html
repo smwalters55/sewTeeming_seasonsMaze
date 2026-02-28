@@ -73,7 +73,6 @@ const ctx = canvas.getContext("2d");
 const gy = 300;
 const groundY = gy;
 
-const stumpTop = gy - 18;
 const stump = {
   x: 360,
   width: 44,
@@ -813,7 +812,7 @@ function update(){
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
 
-const stumpReady = stump && stumpTop !== undefined;
+const stumpReady = stump && stump.top !== undefined;
 
   if (apple.settled) {
   apple.vy = 0;
@@ -831,6 +830,14 @@ if (apple.falling) {
   apple.vy += 0.12;  // gravity pulls DOWN
   apple.vy *= 0.985;
   apple.y += apple.vy; 
+
+  // HARD SAFETY: never fall below ground
+if (apple.y > groundY - apple.r) {
+  apple.y = groundY - apple.r;
+  apple.vy = 0;
+  apple.falling = false;
+  apple.landed = true;
+}
 }
   
 // apple landing
@@ -841,7 +848,7 @@ const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-const landingY = overStump ? stumpTop : groundY;
+const landingY = overStump ? stump.top : groundY;
 
 // LAND
 if (apple.falling && !apple.landed && appleBottom >= landingY) {
@@ -874,7 +881,7 @@ if (apple.landed && !apple.settled) {
 
     // initialize split pieces at rest on stump
   //   apple.pieces.forEach(p => {
-  //   p.y = stumpTop;
+  //   p.y = stump.top;
   //   p.vy = 0;
   //   p.bounce = 0;
   //   p.settled = true;
