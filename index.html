@@ -865,14 +865,22 @@ const landingY = overStump
 // }
   
   // console.log("Y test:", apple.y, apple.vy);
-  console.log("bottom vs ground", appleBottom, landingY);
-  console.log({
-  y: apple.y.toFixed(2),
-  bottom: appleBottom.toFixed(2),
-  landingY,
-  vy: apple.vy.toFixed(2),
-  falling: apple.falling
-});
+//   console.log("bottom vs ground", appleBottom, landingY);
+//   console.log({
+//   y: apple.y.toFixed(2),
+//   bottom: appleBottom.toFixed(2),
+//   landingY,
+//   vy: apple.vy.toFixed(2),
+//   falling: apple.falling
+// });
+
+console.log(
+  "STATE",
+  "falling:", apple.falling,
+  "vy:", apple.vy,
+  "landed:", apple.landed,
+  "bottom>=ground:", appleBottom >= landingY
+);  
   
 if (
   apple.falling &&
@@ -881,7 +889,7 @@ if (
   appleBottom >= landingY
   
 ) {
-  console.log("apple land checks true y =", apple.y);
+  console.log("apple LAND CHECKS true y =", apple.y);
   
   apple.y = landingY - apple.r;
   apple.vy = 0;
