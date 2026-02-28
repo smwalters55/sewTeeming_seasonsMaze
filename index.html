@@ -833,13 +833,6 @@ if (apple.falling) {
   apple.vy *= 0.985;
   apple.y += apple.vy; 
 
-  // HARD SAFETY: never fall below ground
-if (apple.y > groundY - apple.r) {
-  apple.y = groundY - apple.r;
-  apple.vy = 0;
-  apple.falling = false;
-  apple.landed = true;
-}
 }
   
 // apple landing
@@ -854,16 +847,6 @@ const landingY = overStump ? stump.top : groundY;
 
 // LAND
 if (apple.falling && !apple.landed && appleBottom >= landingY) {
-
-// temp infinity fall check
-    console.log("LANDING", {
-    appleBottom,
-    landingY,
-    groundY,
-    stumpTop,
-    appleY: apple.y
-  });
-  
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
