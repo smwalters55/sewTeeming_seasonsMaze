@@ -805,6 +805,9 @@ ctx.fill();
    MAIN LOOP
    ====================================================== */
 function update(){
+
+  console.log("update running", apple.y);
+  
   handleInput();
   applyPhysics();
 
@@ -852,6 +855,16 @@ const landingY = overStump ? stump.top : groundY;
 
 // LAND
 if (apple.falling && !apple.landed && appleBottom >= landingY) {
+
+// temp infinity fall check
+    console.log("LANDING", {
+    appleBottom,
+    landingY,
+    groundY,
+    stumpTop,
+    appleY: apple.y
+  });
+  
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
