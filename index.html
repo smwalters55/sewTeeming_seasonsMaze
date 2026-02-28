@@ -908,6 +908,9 @@ if (apple.landed && !apple.settled) {
   apple.bounce += apple.bounceVy;
   apple.bounceVy *= 0.75;         // damping (energy loss)
 
+  // 🔒 CLAMP
+  if (apple.bounce < 0) apple.bounce = 0;
+
   if (Math.abs(apple.bounceVy) < 0.15 && apple.bounce <= 0.5) {
     apple.bounce = 0;
     apple.bounceVy = 0;
