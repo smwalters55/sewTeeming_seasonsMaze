@@ -817,6 +817,7 @@ const stumpReady = stump && stumpTop !== undefined;
 
   if (apple.settled) {
   apple.vy = 0;
+  apple.falling = false;
 }
 
 // trigger fall
@@ -833,17 +834,17 @@ if (apple.falling) {
 }
   
 // apple landing
-const appleBottom = apple.y + apple.r * 2;
-const appleCenterX = apple.x + apple.r;
-
+const appleBottom = apple.y + apple.r;
+const appleCenterX = apple.x;
+  
 const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-const landingY = (overStump && stumpReady) ? stumpTop : groundY;
+const landingY = overStump ? stumpTop : groundY;
 
-// LAND on either stump OR ground
-if (!apple.landed && appleBottom >= landingY) {
+// LAND
+if (apple.falling && !apple.landed && appleBottom >= landingY) {
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
@@ -853,7 +854,7 @@ if (!apple.landed && appleBottom >= landingY) {
   apple.bounceVy = 0.9;
   apple.glitter = 90;
 }
-
+  
 // bounce + crack
 if (apple.landed && !apple.settled) {
 
@@ -872,12 +873,12 @@ if (apple.landed && !apple.settled) {
       apple.splitTimer = 90;
 
     // initialize split pieces at rest on stump
-    apple.pieces.forEach(p => {
-    p.y = stumpTop;
-    p.vy = 0;
-    p.bounce = 0;
-    p.settled = true;
-  });
+  //   apple.pieces.forEach(p => {
+  //   p.y = stumpTop;
+  //   p.vy = 0;
+  //   p.bounce = 0;
+  //   p.settled = true;
+  // });
 
       // apple can now be collected
     apple.pickupReady = true;
