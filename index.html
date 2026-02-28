@@ -899,6 +899,9 @@ if (apple.landed && !apple.settled) {
 if (apple.glitter > 0) apple.glitter--;
 if (apple.splitTimer > 0) apple.splitTimer--;
 
+  // temp debug apple infinite fall 
+apple.y += 0.01;
+  
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
   const playerCenterX = player.x + player.width / 2;
