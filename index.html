@@ -850,27 +850,33 @@ const landingY = overStump
   : groundY;
 
 // LAND
-
-  console.log("Y test:", apple.y, apple.vy);
-  
-if (
-  apple.falling &&
-  apple.vy > 0 &&
-  !apple.landed &&
-  appleBottom <= landingY
-  
-) {
-  console.log("apple land checks true y =", apple.y);
-  
-  apple.y = landingY - apple.r;
-  apple.vy = 0;
+if (apple.y > 200) {
+  console.log("FORCED LAND");
+  apple.y = 200;
   apple.falling = false;
   apple.landed = true;
-  
-  apple.bounce = 8;
-  apple.bounceVy = 0.9;
-  apple.glitter = 90;
 }
+  
+//   console.log("Y test:", apple.y, apple.vy);
+  
+// if (
+//   apple.falling &&
+//   apple.vy > 0 &&
+//   !apple.landed &&
+//   appleBottom <= landingY
+  
+// ) {
+//   console.log("apple land checks true y =", apple.y);
+  
+//   apple.y = landingY - apple.r;
+//   apple.vy = 0;
+//   apple.falling = false;
+//   apple.landed = true;
+  
+//   apple.bounce = 8;
+//   apple.bounceVy = 0.9;
+//   apple.glitter = 90;
+// }
   
 // bounce + crack
 if (apple.landed && !apple.settled) {
