@@ -868,7 +868,9 @@ if (
   
 // bounce + crack
 if (apple.landed && !apple.settled) {
-
+  
+  console.log("apple landed y =", apple.y);
+  
   apple.bounceVy -= 0.6;          // pull back toward stump
   apple.bounce += apple.bounceVy;
   apple.bounceVy *= 0.75;         // damping (energy loss)
