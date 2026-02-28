@@ -860,7 +860,9 @@ if (
   apple.vy = 0;
   apple.falling = false;
   apple.landed = true;
-
+  
+  console.log("apple landed y =", apple.y);
+  
   apple.bounce = 8;
   apple.bounceVy = 0.9;
   apple.glitter = 90;
@@ -868,8 +870,6 @@ if (
   
 // bounce + crack
 if (apple.landed && !apple.settled) {
-  
-  console.log("apple landed y =", apple.y);
   
   apple.bounceVy -= 0.6;          // pull back toward stump
   apple.bounce += apple.bounceVy;
