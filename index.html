@@ -847,7 +847,7 @@ const overStump =
 const landingY = overStump ? stump.top : gy;
 
 // LAND
-if (apple.falling && appleBottom >= landingY) {
+if (apple.falling && !apple.landed && appleBottom >= landingY) {
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
@@ -869,6 +869,7 @@ if (apple.landed && !apple.settled) {
     apple.bounce = 0;
     apple.bounceVy = 0;
     apple.settled = true;
+    apple.landed = false;
 
     if (!apple.cracked) {
       apple.cracked = true;
