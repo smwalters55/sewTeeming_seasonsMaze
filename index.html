@@ -855,13 +855,14 @@ if (
   apple.vy > 0 &&
   !apple.landed &&
   appleBottom <= landingY
+
+  console.log("apple land checks true y =", apple.y);
+  
 ) {
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
   apple.landed = true;
-  
-  console.log("apple landed y =", apple.y);
   
   apple.bounce = 8;
   apple.bounceVy = 0.9;
