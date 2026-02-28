@@ -808,14 +808,15 @@ ctx.fill();
 function update(){
 
   console.log("UPDATE START y =", apple.y);
-  
+
   handleInput();
   applyPhysics();
 
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
 const now = performance.now();
-
+const groundY = gy
+  
 const stumpReady = stump && stump.top !== undefined;
 
   if (apple.settled) {
@@ -825,8 +826,12 @@ const stumpReady = stump && stump.top !== undefined;
 
 // trigger fall
 if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
+  
+  console.log("NOT FALLING NOT LANDED now =", apple.spawntime);
+  
   apple.falling = true;
   apple.vy = 0;
+  console.log("🍎 FALL TRIGGERED");
 }
 
 // falling
@@ -846,7 +851,7 @@ const overStump =
   appleCenterX < stump.x + stump.width;
 
 const landingY = overStump
-  ? stump.topWorld
+  ? stump.top
   : groundY;
 
 // LAND
