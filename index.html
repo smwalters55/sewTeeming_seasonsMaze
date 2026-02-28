@@ -71,7 +71,7 @@ const ctx = canvas.getContext("2d");
    WORLD CONSTANTS
    ====================================================== */
 const gy = 300;
-const groundY = gy;
+// DELETE ME BRO U MESSY const groundY = gy;
 
 const stump = {
   x: 360,
@@ -843,7 +843,7 @@ const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-const landingY = overStump ? stump.top : groundY;
+const landingY = overStump ? stump.top : gy;
 
 // LAND
 if (apple.falling && !apple.landed && appleBottom >= landingY) {
