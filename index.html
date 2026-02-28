@@ -807,7 +807,7 @@ ctx.fill();
    ====================================================== */
 function update(){
 
-  console.log("UPDATE START y =", apple.y);
+  // console.log("UPDATE START y =", apple.y);
 
   handleInput();
   applyPhysics();
@@ -981,7 +981,7 @@ if (frogActive && apple.split && orchardChoice === null && keys.down) {
   cameraX += (targetCam - cameraX)*0.08;
   if (cameraX<0) cameraX=0;
 
-  console.log("UPDATE END y =", apple.y);
+  // console.log("UPDATE END y =", apple.y);
   
   requestAnimationFrame(update);
 }
