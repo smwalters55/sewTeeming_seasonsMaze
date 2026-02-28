@@ -861,6 +861,13 @@ const landingY = overStump
   
   // console.log("Y test:", apple.y, apple.vy);
   console.log("bottom vs ground", appleBottom, landingY);
+  console.log({
+  y: apple.y.toFixed(2),
+  bottom: appleBottom.toFixed(2),
+  landingY,
+  vy: apple.vy.toFixed(2),
+  falling: apple.falling
+});
   
 if (
   apple.falling &&
