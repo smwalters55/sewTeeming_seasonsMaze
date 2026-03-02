@@ -12,6 +12,7 @@ const ctx = canvas.getContext("2d");
    ====================================================== */
 const gy = 300;
 const groundY = 0;
+let lastTime = performance.now();
 
 const stump = {
   x: 360,
@@ -156,20 +157,33 @@ const apple = {
   x: 220,
   y: gy - 140,
   r: 7,
+
   vy: 0,
+
   falling: false,
   landed: false,
-  cracked: false,   // ← NEW
-  split: false,
   settled: false,
+
+  cracked: false,
+  split: false,
+  splitTimer: 0,
+
   collected: false,
   rollingToStump: false,
-  splitTimer: 0,
-  halfOffset: 0,
+
   glitter: 0,
   bounce: 0,
   bounceVy: 0,
-  spawnTime: performance.now()
+
+  spawnTime: performance.now(),
+  spawnDelay: 2400,
+
+  // physics (time-based, screen-scaled)
+  gravity: canvas.height * 0.75, // px/s² — apple falls ~1/3 screen in ~1s
+  airDrag: 0.995,                // velocity retained per frame
+  terminalVelocity: canvas.height * 1.2,
+
+  canFall: (now) => now - apple.spawnTime > apple.spawnDelay
 };
 
 
@@ -749,51 +763,100 @@ function update(){
 
   // console.log("UPDATE START y =", apple.y);
 
+const now = performance.now();
+const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
+lastTime = now;
+
   handleInput();
   applyPhysics();
 
+
+
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
-const now = performance.now();
-const groundY = gy
-  
-const stumpReady = stump && stump.top !== undefined;
 
-  if (apple.settled) {
+const groundY = gy;
+const dt = deltaTime;
+
+// --- geometry ---
+const appleBottom = apple.y + apple.r;
+const appleCenterX = apple.x;
+
+const overStump =
+  stump &&
+  appleCenterX > stump.x &&
+  appleCenterX < stump.x + stump.width;
+
+const landingY = overStump ? stump.top : groundY;
+
+// --- support check ---
+const supported = appleBottom >= landingY && apple.vy >= 0;
+
+// 🔒 HARD LOCK when supported
+if (supported) {
+  apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
 }
 
-// trigger fall
-if (!apple.falling && !apple.landed && now - apple.spawnTime > 2400) {
-  
-  console.log("NOT FALLING NOT LANDED now =", apple.spawntime);
-  
+// --- falling permission ---
+if (!supported && apple.canFall(performance.now())) {
   apple.falling = true;
-  apple.vy = 0;
-  console.log("🍎 FALL TRIGGERED");
 }
 
-// falling
+// --- falling physics ---
 if (apple.falling) {
-  apple.vy += 0.12;  // gravity pulls DOWN
-  apple.vy *= 0.985;
-  apple.y += apple.vy; 
+  apple.vy += apple.gravity * dt;
 
+  if (apple.vy > apple.terminalVelocity) {
+    apple.vy = apple.terminalVelocity;
+  }
+
+  apple.vy *= apple.airDrag;
+  apple.y += apple.vy * dt;
 }
-  
-// apple landing
-const appleBottom = apple.y + apple.r;
-const appleCenterX = apple.x;
-  
-const overStump =
-  appleCenterX > stump.x &&
-  appleCenterX < stump.x + stump.width;
 
-const landingY = overStump
-  ? stump.top
-  : groundY;
+// const groundY = gy
+  
+// const stumpReady = stump && stump.top !== undefined;
 
+//   if (apple.settled) {
+//   apple.vy = 0;
+//   // apple.falling = false;
+// }
+
+// // trigger fall
+// SUPPORT + FALL PERMISSION (REPLACES FALL TRIGGER)
+// const appleBottom = apple.y + apple.r;
+// const appleCenterX = apple.x;
+
+// const overStump =
+//   appleCenterX > stump.x &&
+//   appleCenterX < stump.x + stump.width;
+
+// const landingY = overStump
+//   ? stump.top
+//   : groundY;
+
+// const supported = appleBottom >= landingY && apple.vy >= 0;
+
+// apple.falling = apple.canFall(now) && !supported;
+
+// // falling
+// if (apple.falling) {
+//   const dt = deltaTime;
+
+//   apple.vy += apple.gravity * dt;
+
+//   // cap fall speed
+//   if (apple.vy > apple.terminalVelocity) {
+//     apple.vy = apple.terminalVelocity;
+//   }
+
+//   apple.vy *= apple.airDrag;
+//   apple.y += apple.vy * dt;
+// }
+  
 // LAND
 
   // temp, prob delete v soon 2.28.26
