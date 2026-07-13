@@ -77,15 +77,10 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn"; // "autumn" | "winter"
+let currentScene = "autumn"; // "autumn" | "spring"
 
-const sceneSpawns = {
-  autumn: { x: 120 },
-  winter: { x: 200 }
-};
-
-// where the "walk back to autumn" trigger sits in the winter stub
-const winterReturn = { x: 200 };
+// where the "walk back to autumn" trigger sits in the spring stub
+const springReturn = { x: 200 };
 
 /* ======================================================
    ORCHARD COLOURS
@@ -216,10 +211,10 @@ const platforms = [
    ====================================================== */
 const ramps = [
   {
-    x: 860,
-    width: 100,
-    heightStart: 0,   // ground height at left edge
-    heightEnd: 60      // ground height at right edge — leads up to the boomerang
+    x: 870,
+    width: 60,
+    heightStart: 25,  // elevated above ground — requires a jump to get onto it
+    heightEnd: 78      // ground height at right edge — leads up to the boomerang
   }
 ];
 
@@ -227,8 +222,8 @@ const ramps = [
    BOOMERANG (static collectible, tucked into tree 2's canopy)
    ====================================================== */
 const boomerang = {
-  x: 955,
-  heightAboveGround: 62, // sits just above the top of the ramp
+  x: 918,
+  heightAboveGround: 82, // sits just above the top of the new, elevated ramp
   collected: false,
   collecting: false
 };
@@ -241,6 +236,13 @@ const doorway = {
   x: 1200,
   width: 56,
   height: 92
+};
+
+// per-scene spawn points — autumn's sits right in front of the doorway
+// (defined here, not up top, so it can reference doorway.x directly)
+const sceneSpawns = {
+  autumn: { x: doorway.x - 25 },
+  spring: { x: 200 }
 };
 
 /* ======================================================
@@ -318,13 +320,39 @@ function drawSeasonTransition(ctx) {
   }
   alpha = Math.min(Math.max(alpha, 0), 1);
 
-  ctx.fillStyle = `rgba(247,244,238,${alpha})`;
+  const target = seasonTransition.targetScene;
+
+  // soft multi-tone wash, blended per target scene — reads as a gentle
+  // blur rather than a flat card, without needing an actual blur filter
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const washRadius = canvas.width * 0.75;
+  const wash = ctx.createRadialGradient(cx, cy, 30, cx, cy, washRadius);
+
+  if (target === "autumn") {
+    wash.addColorStop(0, "#c9a25a");   // warm amber center
+    wash.addColorStop(0.55, "#a98a4a"); // olive-amber
+    wash.addColorStop(1, "#6b5a30");   // deep olive edge
+  } else if (target === "spring") {
+    wash.addColorStop(0, "#d7edb0");   // soft light green center
+    wash.addColorStop(0.55, "#bfe3a0"); // light green
+    wash.addColorStop(1, "#9ccf90");   // deeper green edge
+  } else {
+    wash.addColorStop(0, "#f7f4ee");
+    wash.addColorStop(1, "#f7f4ee");
+  }
+
+  ctx.fillStyle = wash;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
 
   // scene name card, once mostly faded in
-  if (alpha > 0.5 && seasonTransition.targetScene) {
+  if (alpha > 0.5 && target) {
     const textAlpha = (alpha - 0.5) / 0.5;
-    const label = seasonTransition.targetScene[0].toUpperCase() + seasonTransition.targetScene.slice(1);
+    const label = target[0].toUpperCase() + target.slice(1);
     ctx.fillStyle = `rgba(43,43,43,${textAlpha})`;
     ctx.font = "20px ui-monospace";
     const prevAlign = ctx.textAlign;
@@ -424,6 +452,15 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+// Deterministic pseudo-random: same input always gives the same output.
+// Used anywhere something should look "randomized" but stay stable frame
+// to frame (fruit layout per tree, infinite grass/flower scatter, etc.)
+// instead of actually re-rolling every render.
+function pseudoRandom(n) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 function startCollectAnimation(piece, itemType) {
   flyingItems.push({
     mode: "collect",
@@ -456,7 +493,7 @@ function startPlaceAnimation(itemType, targetWorldX, targetWorldY, onArrive) {
     targetY: targetWorldY,
     phase: "fromPlayer",     // "fromPlayer" -> "hold" -> "toTarget"
     t: 0,
-    size: 14,
+    size: 10,
     scale: 1.2,
     rotation: 0,
     onArrive
@@ -601,6 +638,10 @@ function handleInput(){
     }
   }
 
+  // hard left world boundary — the camera also clamps at 0, so this keeps
+  // "camera stops" and "character stops" happening at the same moment
+  if (player.x < 0) player.x = 0;
+
   if (keys.space && !camera.locked && currentScene === "autumn") {
     camera.topDown = !camera.topDown;
     camera.locked = true;
@@ -733,23 +774,123 @@ ctx.stroke();
   ctx.arc(tx, gy-120, 50, 0, Math.PI*2);
   ctx.fill();
 
-  // apples + highlight
-for (let i = 0; i < 4; i++) {
-  const decoX = tx + Math.cos(i * 1.7) * 30;
-  const decoY = gy - 110 + Math.sin(i * 1.3) * 20;
+  // apples + highlight — count and layout vary per tree (seeded by x), but
+  // structured into evenly-divided slots with bounded jitter, so spacing
+  // between fruits always stays within a min/max range instead of fully
+  // random placement risking overlaps or big gaps
+  const appleCount = 5 + Math.floor(pseudoRandom(x * 0.077) * 3); // 5-7
+  const appleAngleStep = (Math.PI * 2) / appleCount;
+  const appleJitterMax = appleAngleStep * 0.25;
 
-  // apple body
-  ctx.fillStyle = "#8b2e2a";
-  ctx.beginPath();
-  ctx.arc(decoX, decoY, 6, 0, Math.PI * 2);
-  ctx.fill();
+  for (let i = 0; i < appleCount; i++) {
+    const jitter = (pseudoRandom(x * 0.31 + i * 1.7) - 0.5) * 2 * appleJitterMax;
+    const angle = appleAngleStep * i + jitter;
+    const radius = 22 + pseudoRandom(x * 0.53 + i * 2.3) * 14; // tighter band = more consistent ring
+    const decoX = tx + Math.cos(angle) * radius;
+    const decoY = (gy - 120) + Math.sin(angle) * radius;
 
-  // highlight
-  ctx.fillStyle = "rgba(255,220,200,0.4)";
-  ctx.beginPath();
-  ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
-  ctx.fill();
+    // apple body
+    ctx.fillStyle = "#8b2e2a";
+    ctx.beginPath();
+    ctx.arc(decoX, decoY, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // highlight
+    ctx.fillStyle = "rgba(255,220,200,0.4)";
+    ctx.beginPath();
+    ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
   }
+}
+
+// spring fruit trees — same trunk+canopy structure as drawAppleTree,
+// generalized by fruit type. "pear" is the round-vs-teardrop distinction:
+// plum/peach are round dots, pear gets an actual teardrop shape.
+const FRUIT_STYLES = {
+  plum:  { color: "#6b3f7a", size: 6, shape: "round" },
+  peach: { color: "#e8935a", size: 7, shape: "round" },
+  pear:  { color: "#c3cf5e", size: 7, shape: "teardrop" }
+};
+
+function drawFruitTree(x, camX, type) {
+  const tx = x - camX;
+  const style = FRUIT_STYLES[type];
+
+  // trunk
+  ctx.fillStyle = "#6b4026";
+  ctx.fillRect(tx - 12, gy - 96, 24, 96);
+
+  // ground shadow
+  ctx.fillStyle = "rgba(120,90,60,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(tx, gy + 2, 22, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // bark line
+  ctx.strokeStyle = "rgba(40,20,10,0.25)";
+  ctx.beginPath();
+  ctx.moveTo(tx - 6, gy - 20);
+  ctx.lineTo(tx - 6, gy - 80);
+  ctx.stroke();
+
+  // canopy — spring green, gentle pulse (x-offset so trees don't pulse in sync)
+  const pulse = 0.08 + Math.sin(performance.now() * 0.0012 + x) * 0.04;
+  ctx.fillStyle = `rgba(120,170,90,${0.9 + pulse})`;
+  ctx.beginPath();
+  ctx.arc(tx, gy - 120, 50, 0, Math.PI * 2);
+  ctx.fill();
+
+  // fruit + highlight — count and layout vary per tree (seeded by x and
+  // type), structured into evenly-divided slots with bounded jitter, so
+  // spacing between fruits stays within a min/max range
+  const typeSeed = { plum: 0, peach: 5, pear: 11 }[type] || 0;
+  const fruitCount = 5 + Math.floor(pseudoRandom(x * 0.077 + typeSeed) * 3); // 5-7
+  const fruitAngleStep = (Math.PI * 2) / fruitCount;
+  const fruitJitterMax = fruitAngleStep * 0.25;
+
+  for (let i = 0; i < fruitCount; i++) {
+    const jitter = (pseudoRandom(x * 0.31 + typeSeed + i * 1.7) - 0.5) * 2 * fruitJitterMax;
+    const angle = fruitAngleStep * i + jitter;
+    const radius = 22 + pseudoRandom(x * 0.53 + typeSeed + i * 2.3) * 14;
+    const decoX = tx + Math.cos(angle) * radius;
+    const decoY = (gy - 120) + Math.sin(angle) * radius;
+
+    ctx.fillStyle = style.color;
+    if (style.shape === "teardrop") {
+      ctx.beginPath();
+      ctx.moveTo(decoX, decoY - style.size);
+      ctx.quadraticCurveTo(decoX + style.size * 0.9, decoY, decoX, decoY + style.size);
+      ctx.quadraticCurveTo(decoX - style.size * 0.9, decoY, decoX, decoY - style.size);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(decoX, decoY, style.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath();
+    ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// simple rounded bush — no trunk, just a canopy cluster at ground level
+function drawBush(x, camX) {
+  const bx = x - camX;
+
+  ctx.fillStyle = "rgba(90,90,50,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(bx + 6, gy + 3, 20, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(100,150,80,0.85)";
+  ctx.beginPath();
+  ctx.arc(bx - 8, gy - 10, 13, 0, Math.PI * 2);
+  ctx.arc(bx + 8, gy - 15, 15, 0, Math.PI * 2);
+  ctx.arc(bx + 22, gy - 9, 11, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // doorway: rounded wooden arch, always present, translucent until its
@@ -1275,7 +1416,7 @@ const bounceY = apple.bounce * 0.6;
   if (!boomerang.collected && !boomerang.collecting) {
     const bx2 = boomerang.x - camX;
     const by2 = gy - boomerang.heightAboveGround;
-    drawBoomerangShape(ctx, bx2, by2, 14, 0);
+    drawBoomerangShape(ctx, bx2, by2, 10, 0);
   }
 
   // DRAW FLYING (collecting) ITEMS
@@ -1366,36 +1507,198 @@ ctx.fillText("Some weight unlocks paths.",
 
 }
 
-function drawWinterScene(camX) {
-  // --- WINTER STUB: minimal placeholder scene, built out next ---
+/* ======================================================
+   SPRING DECORATION
+   ====================================================== */
+const GRASS_SHADES = ["rgba(84,142,66,0.55)", "rgba(122,178,92,0.5)", "rgba(58,104,48,0.55)"];
+const FLOWER_COLORS = ["#e0793f", "#8a5fae", "#4a90c4"];
+
+// Grass and flowers are generated procedurally from camX each frame,
+// rather than a fixed-size array — so they extend infinitely as you walk
+// right instead of running out at some fixed world width. pseudoRandom(x)
+// keeps each position's look stable frame to frame even though nothing is
+// stored.
+function drawSpringGrass(camX) {
+  const step = 14;
+  const startX = Math.floor((camX - 40) / step) * step;
+  const endX = camX + canvas.width + 40;
+
+  ctx.lineWidth = 1.5;
+  for (let x = startX; x < endX; x += step) {
+    const shade = Math.floor(pseudoRandom(x * 0.71 + 3) * GRASS_SHADES.length);
+    const h = 4 + pseudoRandom(x * 0.37 + 7) * 7;
+    const y = gy + 2 + pseudoRandom(x * 0.19 + 11) * 14;
+
+    ctx.strokeStyle = GRASS_SHADES[shade];
+    ctx.beginPath();
+    ctx.moveTo(x - camX, y);
+    ctx.lineTo(x - camX, y - h);
+    ctx.stroke();
+  }
+}
+
+// draws one petal in local space: tip at the origin (flower center),
+// rounded/lobed end pointing outward along +y. Caller rotates/translates.
+function drawPetal(length, width, shape) {
+  ctx.beginPath();
+  if (shape === "heart") {
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(width, length * 0.15, width, length * 0.75, 0, length * 0.6);
+    ctx.bezierCurveTo(-width, length * 0.75, -width, length * 0.15, 0, 0);
+  } else { // "teardrop"
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(width, length * 0.5, 0, length);
+    ctx.quadraticCurveTo(-width, length * 0.5, 0, 0);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSpringFlowers(camX) {
+  const step = 55;
+  const startX = Math.floor((camX - 40) / step) * step;
+  const endX = camX + canvas.width + 40;
+
+  for (let x = startX; x < endX; x += step) {
+    if (pseudoRandom(x * 0.05 + 3) < 0.45) continue; // not every slot gets a flower
+
+    const y = gy + 4 + pseudoRandom(x * 0.23 + 9) * 10;
+    const colorIdx = Math.floor(pseudoRandom(x * 0.61 + 5) * FLOWER_COLORS.length);
+    const petalCount = 2 + Math.floor(pseudoRandom(x * 0.83 + 2) * 3); // 2-4
+    const shape = pseudoRandom(x * 0.97 + 6) < 0.5 ? "teardrop" : "heart";
+    const baseRotation = pseudoRandom(x * 0.44 + 8) * Math.PI * 2;
+    const petalLength = 4 + pseudoRandom(x * 0.29 + 4) * 2.5;
+    const petalWidth = 1.6 + pseudoRandom(x * 0.13 + 10) * 1.1;
+
+    ctx.save();
+    ctx.translate(x - camX, y);
+    ctx.fillStyle = FLOWER_COLORS[colorIdx];
+
+    for (let i = 0; i < petalCount; i++) {
+      const angle = baseRotation + (Math.PI * 2 * i) / petalCount;
+      ctx.save();
+      ctx.rotate(angle);
+      drawPetal(petalLength, petalWidth, shape);
+      ctx.restore();
+    }
+
+    // flower center
+    ctx.fillStyle = "rgba(255,235,180,0.9)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// tree/bush placement — pear is centered as the future-interactive slot,
+// plum/peach sit further out like autumn's decorative background trees
+const springFruitTrees = [
+  { x: 150, type: "plum" },
+  { x: 550, type: "pear" },  // future-interactive slot
+  { x: 950, type: "peach" }
+];
+
+const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
+
+function drawSpringScene(camX) {
+  // --- SKY: 5-stop soft pastel gradient ---
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
-  sky.addColorStop(0, "#dbe9f0");
-  sky.addColorStop(0.5, "#c3d8e6");
-  sky.addColorStop(1, "#eef4f6");
+  sky.addColorStop(0, "#bcdff0");    // soft morning blue
+  sky.addColorStop(0.3, "#d7ecd0");  // pale green haze
+  sky.addColorStop(0.6, "#eaf5c8");  // warm yellow-green
+  sky.addColorStop(0.85, "#fbf0d8"); // cream near horizon
+  sky.addColorStop(1, "#f7e6c9");    // soft ground blend
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, gy);
 
+  // soft horizon glow
+  const glow = ctx.createLinearGradient(0, gy - 130, 0, gy + 30);
+  glow.addColorStop(0, "rgba(255,250,220,0)");
+  glow.addColorStop(0.5, "rgba(255,245,200,0.15)");
+  glow.addColorStop(1, "rgba(255,235,180,0.25)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, gy - 150, canvas.width, 200);
+
+  // far silhouettes (most distant, most translucent)
+  ctx.fillStyle = "rgba(110,150,95,0.22)";
+  for (let i = 0; i < 8; i++) {
+    const tx = (i * 210) - (camX * 0.2);
+    ctx.beginPath();
+    ctx.arc(tx, gy - 130, 100, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // distant trees
+  for (let i = 0; i < 7; i++) {
+    const tx = i * 230 - (camX * 0.3) + Math.sin(i * 2.1) * 55;
+    const radius = 65 + Math.sin(i * 1.3) * 16;
+    const ty = gy - 115 + Math.sin(i * 0.9) * 10;
+    ctx.fillStyle = "rgba(120,165,90,0.32)";
+    ctx.beginPath();
+    ctx.arc(tx, ty, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // mid-distance greenery clusters
+  ctx.fillStyle = "rgba(130,180,95,0.4)";
+  for (let i = 0; i < 5; i++) {
+    const tx = (i * 340) - (camX * 0.45);
+    ctx.beginPath();
+    ctx.arc(tx + 40, gy - 100, 62, 0, Math.PI * 2);
+    ctx.arc(tx + 95, gy - 105, 58, 0, Math.PI * 2);
+    ctx.arc(tx + 65, gy - 135, 65, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   drawCrows(camX); // same birds, consistent across zones
 
-  ctx.fillStyle = "#eef4f6";
+  // --- GROUND ---
+  ctx.fillStyle = "#a8ce85"; // base grass fill
   ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
 
-  ctx.fillStyle = "#2b2b2b";
-  ctx.font = "14px ui-monospace";
-  ctx.fillText("Winter (stub) \u2014 walk to the marker and press \u2193 to return to autumn", 20 - camX, 40);
+  const groundGlow = ctx.createLinearGradient(0, gy, 0, gy + 80);
+  groundGlow.addColorStop(0, "rgba(230,235,150,0.15)");
+  groundGlow.addColorStop(1, "rgba(180,210,120,0)");
+  ctx.fillStyle = groundGlow;
+  ctx.fillRect(0, gy, canvas.width, 80);
+
+  // ground texture strokes
+  ctx.strokeStyle = "rgba(60,100,50,0.08)";
+  for (let i = 0; i < canvas.width; i += 22) {
+    ctx.beginPath();
+    ctx.moveTo(i - camX % 22, gy + 2);
+    ctx.lineTo(i - camX % 22 + 10, gy + 7);
+    ctx.stroke();
+  }
+
+  // grass blades — 3 shades for depth/texture, extends infinitely with camera
+  drawSpringGrass(camX);
+
+  // scattered flowers — same infinite approach
+  drawSpringFlowers(camX);
+
+  // bushes, then fruit trees on top (trees read as taller/foreground)
+  springBushes.forEach(b => drawBush(b.x, camX));
+  springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
 
   // simple return-to-autumn marker
-  const rx = winterReturn.x - camX;
+  const rx = springReturn.x - camX;
   ctx.strokeStyle = "#6b4026";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(rx, gy - 70);
   ctx.lineTo(rx, gy);
   ctx.stroke();
-  ctx.fillStyle = "rgba(150,190,255,0.5)";
+  ctx.fillStyle = "rgba(255,180,210,0.6)";
   ctx.beginPath();
   ctx.arc(rx, gy - 70, 10, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.font = "14px ui-monospace";
+  ctx.fillText("Spring (stub) \u2014 walk to the marker and press \u2193 to return to autumn", 20 - camX, 40);
 }
 
 function draw(){
@@ -1412,8 +1715,8 @@ const camX = cameraX;
 
 if (currentScene === "autumn") {
   drawAutumnScene(camX);
-} else if (currentScene === "winter") {
-  drawWinterScene(camX);
+} else if (currentScene === "spring") {
+  drawSpringScene(camX);
 }
 
 /* PLAYER */
@@ -1636,7 +1939,7 @@ if (apple.split) {
     if (pressedDownNear(boomerang.x, boomerang.heightAboveGround, 26, 20, 20)) {
       boomerang.collecting = true;
       startCollectAnimation(
-        { x: boomerang.x, y: gy - boomerang.heightAboveGround, size: 14, rotation: 0 },
+        { x: boomerang.x, y: gy - boomerang.heightAboveGround, size: 10, rotation: 0 },
         "boomerang"
       );
       pickupHandledThisFrame = true;
@@ -1701,16 +2004,16 @@ if (
   seasonTransition.phase === "idle" &&
   pressedDownNear(doorway.x + doorway.width / 2, 0, 30, 6, 6)
 ) {
-  startSeasonTransition("winter");
+  startSeasonTransition("spring");
 }
 
 }
 
-function updateWinterScene(deltaTime) {
-  // --- WINTER STUB: just a way back to autumn for now ---
+function updateSpringScene(deltaTime) {
+  // --- SPRING STUB: just a way back to autumn for now ---
   if (
     seasonTransition.phase === "idle" &&
-    pressedDownNear(winterReturn.x, 0, 30, 6, 6)
+    pressedDownNear(springReturn.x, 0, 30, 6, 6)
   ) {
     startSeasonTransition("autumn");
   }
@@ -1731,8 +2034,8 @@ lastTime = now;
 
 if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
-} else if (currentScene === "winter") {
-  updateWinterScene(deltaTime);
+} else if (currentScene === "spring") {
+  updateSpringScene(deltaTime);
 }
 
   updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
