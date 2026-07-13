@@ -121,16 +121,54 @@ const ITEM_ICONS = {
   boomerang: "🪃"
 };
 
+// heldItem = the item type currently "picked up" in hand, ready to place
+// into a slot. Click an inventory chip to select/deselect it.
+let heldItem = null;
+
+// World-space position of the held item's floating indicator (above the
+// player's head, gently bobbing). Shared by the draw call AND by the place
+// animation's starting point, so the flight begins exactly where the
+// indicator was hovering — no visual jump.
+function getHeldItemWorldPos() {
+  const bob = Math.sin(performance.now() * 0.005) * 4;
+  return {
+    x: player.x + player.width / 2,
+    y: gy - player.y - player.height - 14 + bob
+  };
+}
+
 function addToInventory(itemType) {
   inventory[itemType] = (inventory[itemType] || 0) + 1;
   updateInventoryUI();
 }
 
+function selectHeldItem(itemType) {
+  if (!inventory[itemType] || inventory[itemType] <= 0) return;
+  heldItem = heldItem === itemType ? null : itemType; // click again to deselect
+  updateInventoryUI();
+}
+
 function updateInventoryUI() {
   const entries = Object.entries(inventory);
-  invEl.textContent = entries.length
-    ? entries.map(([type, count]) => `${ITEM_ICONS[type] || "?"} x${count}`).join("  ")
-    : "(empty)";
+  invEl.innerHTML = "";
+
+  if (!entries.length) {
+    invEl.textContent = "(empty)";
+    return;
+  }
+
+  entries.forEach(([type, count]) => {
+    const chip = document.createElement("span");
+    chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
+    chip.style.cursor = "pointer";
+    chip.style.marginRight = "8px";
+    chip.style.padding = "1px 5px";
+    chip.style.borderRadius = "4px";
+    chip.style.border = heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
+    chip.title = "Click to hold this item";
+    chip.addEventListener("click", () => selectHeldItem(type));
+    invEl.appendChild(chip);
+  });
 }
 
 /* ======================================================
@@ -181,6 +219,89 @@ const boomerang = {
   collected: false,
   collecting: false
 };
+
+/* ======================================================
+   DOORWAY (season transition — always present, translucent
+   until unlocked by placing an item in its slot)
+   ====================================================== */
+const doorway = {
+  x: 1200,
+  width: 56,
+  height: 92
+};
+
+/* ======================================================
+   PLACEMENT SLOTS (generic "hold an item, walk up, press
+   down to place it" — reusable for any future lock/item)
+   ====================================================== */
+const placementSlots = [
+  {
+    id: "doorwaySlot",
+    x: doorway.x + doorway.width / 2,
+    heightAboveGround: 8, // low enough to reach while standing — doorway stays on the ground
+    acceptsItemType: "appleSlice",
+    filled: false,
+    onFill: () => {
+      // hook for anything extra a fill should trigger later
+      // (sound, particles, dialogue, etc.) — empty for now
+    }
+  }
+];
+
+/* ======================================================
+   SEASON TRANSITION (fade -> placeholder card -> fade back)
+   ====================================================== */
+const seasonTransition = {
+  phase: "idle", // "idle" -> "fadeOut" -> "hold" -> "fadeIn" -> back to "idle"
+  t: 0
+};
+
+const TRANSITION_DURATIONS = { fadeOut: 600, hold: 1400, fadeIn: 600 };
+
+function startSeasonTransition() {
+  seasonTransition.phase = "fadeOut";
+  seasonTransition.t = 0;
+}
+
+function updateSeasonTransition(deltaTime) {
+  if (seasonTransition.phase === "idle") return;
+
+  seasonTransition.t += deltaTime * 1000;
+  const dur = TRANSITION_DURATIONS[seasonTransition.phase];
+
+  if (seasonTransition.t >= dur) {
+    seasonTransition.t = 0;
+    if (seasonTransition.phase === "fadeOut") seasonTransition.phase = "hold";
+    else if (seasonTransition.phase === "hold") seasonTransition.phase = "fadeIn";
+    else if (seasonTransition.phase === "fadeIn") seasonTransition.phase = "idle";
+  }
+}
+
+function drawSeasonTransition(ctx) {
+  if (seasonTransition.phase === "idle") return;
+
+  let alpha = 1;
+  if (seasonTransition.phase === "fadeOut") {
+    alpha = seasonTransition.t / TRANSITION_DURATIONS.fadeOut;
+  } else if (seasonTransition.phase === "fadeIn") {
+    alpha = 1 - seasonTransition.t / TRANSITION_DURATIONS.fadeIn;
+  }
+  alpha = Math.min(Math.max(alpha, 0), 1);
+
+  ctx.fillStyle = `rgba(247,244,238,${alpha})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // placeholder card text, once mostly faded in
+  if (alpha > 0.5) {
+    const textAlpha = (alpha - 0.5) / 0.5;
+    ctx.fillStyle = `rgba(43,43,43,${textAlpha})`;
+    ctx.font = "20px ui-monospace";
+    const prevAlign = ctx.textAlign;
+    ctx.textAlign = "center";
+    ctx.fillText("Winter — coming soon", canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = prevAlign;
+  }
+}
 
 /* ======================================================
    ATMOSPHERE
@@ -260,11 +381,13 @@ const apple = {
 const applePieces = [];
 
 /* ======================================================
-   COLLECT ANIMATION (piece -> center -> inventory box)
+   ITEM FLIGHT ANIMATION (collect: piece -> basket, or
+   place: basket -> a placement slot). Both share one system.
    ====================================================== */
 const flyingItems = [];
 
 const COLLECT_DURATIONS = { toCenter: 800, hold: 400, toBasket: 900 };
+const PLACE_DURATIONS = { fromPlayer: 500, hold: 300, toTarget: 700 };
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
@@ -272,6 +395,7 @@ function easeOutCubic(t) {
 
 function startCollectAnimation(piece, itemType) {
   flyingItems.push({
+    mode: "collect",
     itemType,
     x: piece.x,              // world x/y — camera-relative, matches applePieces convention
     y: piece.y,
@@ -285,6 +409,29 @@ function startCollectAnimation(piece, itemType) {
   });
 }
 
+// itemType already deducted from inventory by the caller before this starts —
+// the flight is purely visual at this point.
+function startPlaceAnimation(itemType, targetWorldX, targetWorldY, onArrive) {
+  const startPos = getHeldItemWorldPos(); // begins right where the indicator was hovering
+
+  flyingItems.push({
+    mode: "place",
+    itemType,
+    x: startPos.x,
+    y: startPos.y,
+    startX: startPos.x,
+    startY: startPos.y,
+    targetX: targetWorldX,
+    targetY: targetWorldY,
+    phase: "fromPlayer",     // "fromPlayer" -> "hold" -> "toTarget"
+    t: 0,
+    size: 14,
+    scale: 1.2,
+    rotation: 0,
+    onArrive
+  });
+}
+
 function updateFlyingItems(deltaTime, camX) {
   const dtMs = deltaTime * 1000;
 
@@ -292,50 +439,91 @@ function updateFlyingItems(deltaTime, camX) {
     const f = flyingItems[i];
     f.t += dtMs;
 
-    if (f.phase === "toCenter") {
-      const dur = COLLECT_DURATIONS.toCenter;
-      const p = easeOutCubic(Math.min(f.t / dur, 1));
+    if (f.mode === "collect") {
+      if (f.phase === "toCenter") {
+        const dur = COLLECT_DURATIONS.toCenter;
+        const p = easeOutCubic(Math.min(f.t / dur, 1));
 
-      // target is screen-center, expressed in WORLD space (+ camX)
-      // so it stays consistent with how f.x/f.y are drawn (- camX in draw())
-      const centerWorldX = camX + canvas.width / 2;
-      const centerWorldY = canvas.height / 2;
+        // target is screen-center, expressed in WORLD space (+ camX)
+        // so it stays consistent with how f.x/f.y are drawn (- camX in draw())
+        const centerWorldX = camX + canvas.width / 2;
+        const centerWorldY = canvas.height / 2;
 
-      f.x = f.startX + (centerWorldX - f.startX) * p;
-      f.y = f.startY + (centerWorldY - f.startY) * p;
-      f.scale = 1 + p * 0.6; // grows slightly on the way in
+        f.x = f.startX + (centerWorldX - f.startX) * p;
+        f.y = f.startY + (centerWorldY - f.startY) * p;
+        f.scale = 1 + p * 0.6; // grows slightly on the way in
 
-      if (f.t >= dur) {
-        f.phase = "hold";
-        f.t = 0;
-        f.holdX = f.x;
-        f.holdY = f.y;
+        if (f.t >= dur) {
+          f.phase = "hold";
+          f.t = 0;
+          f.holdX = f.x;
+          f.holdY = f.y;
+        }
+
+      } else if (f.phase === "hold") {
+        if (f.t >= COLLECT_DURATIONS.hold) {
+          f.phase = "toBasket";
+          f.t = 0;
+
+          // basket's real on-screen position, converted into the same
+          // WORLD-space coordinates f.x/f.y already use (+ camX)
+          const rect = document.getElementById("basket").getBoundingClientRect();
+          const canvasRect = canvas.getBoundingClientRect();
+          f.targetX = camX + (rect.left + rect.width / 2 - canvasRect.left);
+          f.targetY = rect.top + rect.height / 2 - canvasRect.top;
+        }
+
+      } else if (f.phase === "toBasket") {
+        const dur = COLLECT_DURATIONS.toBasket;
+        const p = easeOutCubic(Math.min(f.t / dur, 1));
+
+        f.x = f.holdX + (f.targetX - f.holdX) * p;
+        f.y = f.holdY + (f.targetY - f.holdY) * p;
+        f.scale = 1.6 - p * 1.6; // shrinks down as it settles in
+
+        if (f.t >= dur) {
+          addToInventory(f.itemType); // counter updates ONLY on arrival
+          flyingItems.splice(i, 1);
+        }
       }
 
-    } else if (f.phase === "hold") {
-      if (f.t >= COLLECT_DURATIONS.hold) {
-        f.phase = "toBasket";
-        f.t = 0;
+    } else if (f.mode === "place") {
+      if (f.phase === "fromPlayer") {
+        const dur = PLACE_DURATIONS.fromPlayer;
+        const p = easeOutCubic(Math.min(f.t / dur, 1));
 
-        // basket's real on-screen position, converted into the same
-        // WORLD-space coordinates f.x/f.y already use (+ camX)
-        const rect = document.getElementById("basket").getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-        f.targetX = camX + (rect.left + rect.width / 2 - canvasRect.left);
-        f.targetY = rect.top + rect.height / 2 - canvasRect.top;
-      }
+        const centerWorldX = camX + canvas.width / 2;
+        const centerWorldY = canvas.height / 2;
 
-    } else if (f.phase === "toBasket") {
-      const dur = COLLECT_DURATIONS.toBasket;
-      const p = easeOutCubic(Math.min(f.t / dur, 1));
+        f.x = f.startX + (centerWorldX - f.startX) * p;
+        f.y = f.startY + (centerWorldY - f.startY) * p;
+        f.scale = 1.2 - p * 0.2;
 
-      f.x = f.holdX + (f.targetX - f.holdX) * p;
-      f.y = f.holdY + (f.targetY - f.holdY) * p;
-      f.scale = 1.6 - p * 1.6; // shrinks down as it settles in
+        if (f.t >= dur) {
+          f.phase = "hold";
+          f.t = 0;
+          f.holdX = f.x;
+          f.holdY = f.y;
+        }
 
-      if (f.t >= dur) {
-        addToInventory(f.itemType); // counter updates ONLY on arrival
-        flyingItems.splice(i, 1);
+      } else if (f.phase === "hold") {
+        if (f.t >= PLACE_DURATIONS.hold) {
+          f.phase = "toTarget";
+          f.t = 0;
+        }
+
+      } else if (f.phase === "toTarget") {
+        const dur = PLACE_DURATIONS.toTarget;
+        const p = easeOutCubic(Math.min(f.t / dur, 1));
+
+        f.x = f.holdX + (f.targetX - f.holdX) * p;
+        f.y = f.holdY + (f.targetY - f.holdY) * p;
+        f.scale = 1 - p * 0.3; // settles smaller into the slot
+
+        if (f.t >= dur) {
+          if (f.onArrive) f.onArrive();
+          flyingItems.splice(i, 1);
+        }
       }
     }
   }
@@ -373,7 +561,7 @@ function pressedDownNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown)
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown) {
+  if (!camera.topDown && seasonTransition.phase === "idle") {
     if (keys.left) player.x -= player.speed;
     if (keys.right) player.x += player.speed;
     if (keys.up && !player.jumping) {
@@ -524,6 +712,92 @@ for (let i = 0; i < 4; i++) {
   ctx.beginPath();
   ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
   ctx.fill();
+  }
+}
+
+// doorway: rounded wooden arch, always present, translucent until its
+// slot is filled — the warm glow inside is a hint of the next season
+// (summer, for now). The hole where you place an item is always drawn
+// at full opacity, even while locked, so it reads as interactable.
+function drawDoorway(ctx, camX) {
+  const dx = doorway.x - camX;
+  const frameWidth = doorway.width;
+  const frameHeight = doorway.height;
+  const postWidth = 10;
+
+  const slot = placementSlots.find(s => s.id === "doorwaySlot");
+  const unlocked = slot.filled;
+
+  const archRadius = (frameWidth - postWidth * 2) / 2;
+  const archCenterX = dx + frameWidth / 2;
+  const archCenterY = gy - frameHeight + archRadius + postWidth;
+
+  function tracePath(offset) {
+    const left = dx + postWidth - offset;
+    const right = dx + frameWidth - postWidth + offset;
+    const radius = archRadius + offset;
+
+    ctx.beginPath();
+    ctx.moveTo(left, gy);
+    ctx.lineTo(left, archCenterY);
+    ctx.arc(archCenterX, archCenterY, radius, Math.PI, 0, false); // sweeps over the top
+    ctx.lineTo(right, gy);
+    ctx.closePath();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = unlocked ? 1 : 0.35;
+
+  // gentle pulse once unlocked — subtle breathing, not distracting
+  const pulse = unlocked ? Math.sin(performance.now() * 0.0025) * 0.5 + 0.5 : 0;
+
+  // wooden frame (slightly larger than the interior, forms the border)
+  tracePath(postWidth);
+  ctx.fillStyle = "#6b4026";
+  ctx.fill();
+
+  // warm interior glow — visible even while locked, just faint
+  tracePath(0);
+  const glow = ctx.createLinearGradient(dx, gy - frameHeight, dx, gy);
+  glow.addColorStop(0, "rgba(255,205,120,0.95)");
+  glow.addColorStop(0.6, "rgba(255,165,90,0.7)");
+  glow.addColorStop(1, "rgba(255,140,70,0.5)");
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  // light bleeding out around the frame edges themselves
+  tracePath(0);
+  ctx.shadowColor = "rgba(255,190,120,0.95)";
+  ctx.shadowBlur = unlocked ? 14 + pulse * 8 : 6;
+  ctx.strokeStyle = `rgba(255,205,140,${unlocked ? 0.75 + pulse * 0.2 : 0.4})`;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.shadowBlur = 0; // reset so it doesn't bleed into anything drawn after
+
+  // soft outer glow bleeding onto the ground — always present, stronger + pulsing once unlocked
+  const bleedAlpha = unlocked ? 0.45 + pulse * 0.15 : 0.15;
+  const bleed = ctx.createRadialGradient(archCenterX, gy, 4, archCenterX, gy, 70);
+  bleed.addColorStop(0, `rgba(255,180,100,${bleedAlpha})`);
+  bleed.addColorStop(1, "rgba(255,180,100,0)");
+  ctx.fillStyle = bleed;
+  ctx.fillRect(dx - 50, gy - 25, frameWidth + 100, 50);
+
+  ctx.restore();
+
+  // the hole — always fully visible, as the affordance for where to place the item
+  const holeX = dx + frameWidth / 2;
+  const holeY = gy - slot.heightAboveGround;
+
+  ctx.beginPath();
+  ctx.arc(holeX, holeY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = slot.filled ? "rgba(90,60,30,0.9)" : "rgba(30,20,10,0.6)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  if (slot.filled) {
+    drawApplePieceShape(ctx, holeX, holeY, 6, 0); // tiny embedded apple wedge
   }
 }
 
@@ -880,6 +1154,7 @@ ramps.forEach(r => {
 // call draw apple tree 2x
 drawAppleTree(220, camX);
 drawAppleTree(980, camX);
+drawDoorway(ctx, camX);
 
 /* DRAW APPLE */
 
@@ -1094,6 +1369,14 @@ ctx.beginPath();
 ctx.arc(px + 12, py + 17, 1.5, 0, Math.PI*2);
 ctx.arc(px + 28, py + 17, 1.5, 0, Math.PI*2);
 ctx.fill();
+
+// held item — floats above the head while selected, so it's clear it's "in play"
+if (heldItem) {
+  const heldPos = getHeldItemWorldPos();
+  drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
+}
+
+drawSeasonTransition(ctx);
 }
 }
 /* ======================================================
@@ -1315,6 +1598,41 @@ if (frogActive && apple.cracked && inventory.appleSlice > 0 && orchardChoice ===
     }
   });
 }
+
+// PLACEMENT SLOTS: place the currently held item into a matching slot
+placementSlots.forEach(slot => {
+  if (slot.filled) return;
+
+  if (
+    heldItem === slot.acceptsItemType &&
+    inventory[heldItem] > 0 &&
+    pressedDownNear(slot.x, slot.heightAboveGround, 30, 10, 10)
+  ) {
+    const itemToPlace = heldItem;
+
+    inventory[itemToPlace]--;
+    if (inventory[itemToPlace] <= 0) delete inventory[itemToPlace];
+    heldItem = null;
+    updateInventoryUI();
+
+    startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround, () => {
+      slot.filled = true;
+      slot.onFill();
+    });
+  }
+});
+
+// DOORWAY: only enterable once its slot has been filled
+const doorwaySlot = placementSlots.find(s => s.id === "doorwaySlot");
+if (
+  doorwaySlot.filled &&
+  seasonTransition.phase === "idle" &&
+  pressedDownNear(doorway.x + doorway.width / 2, 0, 30, 6, 6)
+) {
+  startSeasonTransition();
+}
+
+updateSeasonTransition(deltaTime);
 
   draw();
 
