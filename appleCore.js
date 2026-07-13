@@ -350,6 +350,26 @@ const hay = Array.from({length: 90}, () => ({
 }));
 
 /* ======================================================
+   TRIGGER ZONES (generic proximity + "press down" helper)
+   ====================================================== */
+// Every interactive thing in the game (frog, pickups, orchard paths, and
+// eventually doorways) is checked against the player the same way: how far
+// horizontally, and how far vertically — using "height above ground" for
+// BOTH, the same units player.y/platforms/ramps/stump/frog already use.
+// This replaced 4 separate hand-rolled proximity checks that had each
+// drifted slightly different from each other.
+function isPlayerNear(targetX, targetHeight, radiusX, radiusYUp = 10, radiusYDown = 10) {
+  const dx = (player.x + player.width / 2) - targetX;
+  const dy = player.y - targetHeight; // positive = player is above the target
+
+  return Math.abs(dx) <= radiusX && dy <= radiusYUp && dy >= -radiusYDown;
+}
+
+function pressedDownNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown) {
+  return keys.down && isPlayerNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown);
+}
+
+/* ======================================================
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
@@ -1246,22 +1266,18 @@ if (apple.split) {
   applePieces.forEach(p => {
     if (!p.settled || p.collected || p.collecting) return;
 
-    const dx = (player.x + player.width / 2) - p.x;
-    const nearGround = player.y < 10; // player.y is jump-height above ground, not world y
+    const pieceHeight = gy - p.y; // piece coords are world-space; convert to height-above-ground
 
-    if (Math.abs(dx) < 26 && nearGround && keys.down) {
+    if (pressedDownNear(p.x, pieceHeight, 26, 10, 10)) {
       p.collecting = true; // stops it being drawn/re-triggered as a ground piece
       startCollectAnimation(p, "appleSlice");
       pickupHandledThisFrame = true;
     }
   });
 
-  // boomerang is elevated, so it checks proximity in height too (same units as player.y)
+  // boomerang: elevated, but same helper — just a different target height
   if (!boomerang.collected && !boomerang.collecting && !pickupHandledThisFrame) {
-    const bdx = (player.x + player.width / 2) - boomerang.x;
-    const bdy = player.y - boomerang.heightAboveGround;
-
-    if (Math.abs(bdx) < 26 && Math.abs(bdy) < 20 && keys.down) {
+    if (pressedDownNear(boomerang.x, boomerang.heightAboveGround, 26, 20, 20)) {
       boomerang.collecting = true;
       startCollectAnimation(
         { x: boomerang.x, y: gy - boomerang.heightAboveGround, size: 14, rotation: 0 },
@@ -1279,13 +1295,8 @@ if (apple.splitTimer > 0) apple.splitTimer--;
 
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
-  const playerCenterX = player.x + player.width / 2;
 
-  const nearFrog =
-    Math.abs(playerCenterX - frogCenterX) < 70 &&
-    player.y < 6;
-
-  if (nearFrog && keys.down && !frogActive && !pickupHandledThisFrame) {
+  if (pressedDownNear(frogCenterX, 0, 70, 6, 999) && !frogActive && !pickupHandledThisFrame) {
     frogActive = true;
     frogHatTip = 30;
   }
@@ -1295,25 +1306,9 @@ if (apple.landed && !frogNoticedApple) {
   frogHatTip = 40;
 }
 
-// check for player location near apple pieces
-// if (apple.split && orchardChoice === null) {
-//   orchardPaths.forEach(p => {
-//     if (
-//       Math.abs(player.x - p.x) < 30 &&
-//       player.y === 0 &&
-//       Math.abs(player.vy) < 0.1
-//     ) {
-//       orchardChoice = p.id;
-//     }
-//   });
-// }
-
 if (frogActive && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.down) {
   orchardPaths.forEach(p => {
-    if (
-      Math.abs(player.x + player.width/2 - p.x) < 40 &&
-      player.y === 0
-    ) {
+    if (isPlayerNear(p.x, 0, 40, 0, 0)) {
       orchardChoice = p.id;
       frogHatTip = 40;
       document.querySelectorAll(".map-node.locked").forEach(el => el.classList.remove("locked"));
