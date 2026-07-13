@@ -8,6 +8,12 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
 /* ======================================================
+   DOM UI (inventory box + map overlay from index.html)
+   ====================================================== */
+const invEl = document.getElementById("inv");
+const overlayEl = document.getElementById("overlay");
+
+/* ======================================================
    WORLD CONSTANTS
    ====================================================== */
 const gy = 300;
@@ -104,6 +110,27 @@ const player = {
   jumping: false,
   vy: 0
 };
+
+/* ======================================================
+   INVENTORY
+   ====================================================== */
+const inventory = {}; // e.g. { appleSlice: 2, feather: 1 }
+
+const ITEM_ICONS = {
+  appleSlice: "🍎"
+};
+
+function addToInventory(itemType) {
+  inventory[itemType] = (inventory[itemType] || 0) + 1;
+  updateInventoryUI();
+}
+
+function updateInventoryUI() {
+  const entries = Object.entries(inventory);
+  invEl.textContent = entries.length
+    ? entries.map(([type, count]) => `${ITEM_ICONS[type] || "?"} x${count}`).join("  ")
+    : "(empty)";
+}
 
 /* ======================================================
    FROG NPC
@@ -209,6 +236,88 @@ const apple = {
 
 const applePieces = [];
 
+/* ======================================================
+   COLLECT ANIMATION (piece -> center -> inventory box)
+   ====================================================== */
+const flyingItems = [];
+
+const COLLECT_DURATIONS = { toCenter: 800, hold: 400, toBasket: 900 };
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function startCollectAnimation(piece, itemType) {
+  flyingItems.push({
+    itemType,
+    x: piece.x,              // world x/y — camera-relative, matches applePieces convention
+    y: piece.y,
+    startX: piece.x,
+    startY: piece.y,
+    phase: "toCenter",       // "toCenter" -> "hold" -> "toBasket"
+    t: 0,
+    size: piece.size,
+    scale: 1,
+    rotation: piece.rotation
+  });
+}
+
+function updateFlyingItems(deltaTime, camX) {
+  const dtMs = deltaTime * 1000;
+
+  for (let i = flyingItems.length - 1; i >= 0; i--) {
+    const f = flyingItems[i];
+    f.t += dtMs;
+
+    if (f.phase === "toCenter") {
+      const dur = COLLECT_DURATIONS.toCenter;
+      const p = easeOutCubic(Math.min(f.t / dur, 1));
+
+      // target is screen-center, expressed in WORLD space (+ camX)
+      // so it stays consistent with how f.x/f.y are drawn (- camX in draw())
+      const centerWorldX = camX + canvas.width / 2;
+      const centerWorldY = canvas.height / 2;
+
+      f.x = f.startX + (centerWorldX - f.startX) * p;
+      f.y = f.startY + (centerWorldY - f.startY) * p;
+      f.scale = 1 + p * 0.6; // grows slightly on the way in
+
+      if (f.t >= dur) {
+        f.phase = "hold";
+        f.t = 0;
+        f.holdX = f.x;
+        f.holdY = f.y;
+      }
+
+    } else if (f.phase === "hold") {
+      if (f.t >= COLLECT_DURATIONS.hold) {
+        f.phase = "toBasket";
+        f.t = 0;
+
+        // basket's real on-screen position, converted into the same
+        // WORLD-space coordinates f.x/f.y already use (+ camX)
+        const rect = document.getElementById("basket").getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        f.targetX = camX + (rect.left + rect.width / 2 - canvasRect.left);
+        f.targetY = rect.top + rect.height / 2 - canvasRect.top;
+      }
+
+    } else if (f.phase === "toBasket") {
+      const dur = COLLECT_DURATIONS.toBasket;
+      const p = easeOutCubic(Math.min(f.t / dur, 1));
+
+      f.x = f.holdX + (f.targetX - f.holdX) * p;
+      f.y = f.holdY + (f.targetY - f.holdY) * p;
+      f.scale = 1.6 - p * 1.6; // shrinks down as it settles in
+
+      if (f.t >= dur) {
+        addToInventory(f.itemType); // counter updates ONLY on arrival
+        flyingItems.splice(i, 1);
+      }
+    }
+  }
+}
+
 
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
@@ -233,6 +342,7 @@ function handleInput(){
   if (keys.space && !camera.locked) {
     camera.topDown = !camera.topDown;
     camera.locked = true;
+    overlayEl.style.display = camera.topDown ? "block" : "none";
   }
   if (!keys.space) camera.locked = false;
 }
@@ -710,8 +820,13 @@ const bounceY = apple.bounce * 0.6;
 
   // DRAW APPLE PIECES
   applePieces.forEach(p => {
-    if (p.collected) return;
+    if (p.collected || p.collecting) return;
     drawApplePieceShape(ctx, p.x - camX, p.y, p.size, p.rotation);
+  });
+
+  // DRAW FLYING (collecting) ITEMS
+  flyingItems.forEach(f => {
+    drawApplePieceShape(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation);
   });
 
 
@@ -998,6 +1113,24 @@ if (apple.split) {
     }
   });
 
+  // PICKUP: press down near a settled apple piece (checked before frog interaction)
+  let pickupHandledThisFrame = false;
+
+  applePieces.forEach(p => {
+    if (!p.settled || p.collected || p.collecting) return;
+
+    const dx = (player.x + player.width / 2) - p.x;
+    const nearGround = player.y < 10; // player.y is jump-height above ground, not world y
+
+    if (Math.abs(dx) < 26 && nearGround && keys.down) {
+      p.collecting = true; // stops it being drawn/re-triggered as a ground piece
+      startCollectAnimation(p, "appleSlice");
+      pickupHandledThisFrame = true;
+    }
+  });
+
+  updateFlyingItems(deltaTime, cameraX);
+
   // apple glitter decay
 if (apple.glitter > 0) apple.glitter--;
 if (apple.splitTimer > 0) apple.splitTimer--;
@@ -1010,7 +1143,7 @@ if (apple.splitTimer > 0) apple.splitTimer--;
     Math.abs(playerCenterX - frogCenterX) < 70 &&
     player.y < 6;
 
-  if (nearFrog && keys.down && !frogActive) {
+  if (nearFrog && keys.down && !frogActive && !pickupHandledThisFrame) {
     frogActive = true;
     frogHatTip = 30;
   }
@@ -1033,7 +1166,7 @@ if (apple.landed && !frogNoticedApple) {
 //   });
 // }
 
-if (frogActive && apple.split && orchardChoice === null && keys.down) {
+if (frogActive && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.down) {
   orchardPaths.forEach(p => {
     if (
       Math.abs(player.x + player.width/2 - p.x) < 40 &&
@@ -1041,6 +1174,7 @@ if (frogActive && apple.split && orchardChoice === null && keys.down) {
     ) {
       orchardChoice = p.id;
       frogHatTip = 40;
+      document.querySelectorAll(".map-node.locked").forEach(el => el.classList.remove("locked"));
     }
   });
 }
