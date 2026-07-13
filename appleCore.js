@@ -12,13 +12,15 @@ const ctx = canvas.getContext("2d");
    ====================================================== */
 const gy = 300;
 const groundY = 0;
+
 let lastTime = performance.now();
 
 const stump = {
   x: 360,
   width: 44,
   topWorld: 0,       // stump sits on world ground, not screen ground
-  height: 32
+  height: 32,
+  top: 0 + 32
 };
   
 const lowfog = {
@@ -144,7 +146,6 @@ const crows = [
   { x: 620, y: 90, speed: 0.18, phase: Math.random()*Math.PI*2 }
 ];
 
-
 const leaves = Array.from({ length: 8 }, (_, i) => ({
   x: Math.random() * canvas.width,
   y: Math.random() * gy * 0.6,
@@ -153,9 +154,25 @@ const leaves = Array.from({ length: 8 }, (_, i) => ({
   phase: Math.random() * Math.PI * 2
 }));
 
+
+/* ======================================================
+   TREE
+   ====================================================== */
+const tree = {
+  x: 400,               // horizontal tree position
+  y: groundY,           // bottom of tree
+  width: 80,
+  height: 180,          // tree height
+  canopyY: gy - 180 // top of tree for apple spawn (screen space, ground = gy)
+
+};
+
+/* ======================================================
+   APPLE
+   ====================================================== */
 const apple = {
-  x: 220,
-  y: gy - 140,
+  x: tree.x,
+  y: tree.canopyY,
   r: 7,
 
   vy: 0,
@@ -183,11 +200,15 @@ const apple = {
   airDrag: 0.995,                // velocity retained per frame
   terminalVelocity: canvas.height * 1.2,
 
+  bounceRestitution: 0.55,       // fraction of speed kept each bounce (material property)
+  targetBounces: 4,              // how many hops before it's considered settled
+  settleThreshold: 0,            // derived at impact from actual fall speed
+
   canFall: (now) => now - apple.spawnTime > apple.spawnDelay
 };
 
+const applePieces = [];
 
-apple.fragments = 0; // 0 → 3
 
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
@@ -293,38 +314,76 @@ ctx.lineTo(tx-6, gy-80);
 ctx.stroke();
 
   // canopy
-  const applePulse =
-  0.08 + Math.sin(performance.now() * 0.0012) * 0.04;
-ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
+  const applePulse = 0.08 + Math.sin(performance.now() * 0.0012) * 0.04;
+  ctx.fillStyle = `rgba(90,120,70,${0.9 + applePulse})`;
 
   ctx.beginPath();
   ctx.arc(tx, gy-120, 50, 0, Math.PI*2);
   ctx.fill();
 
-  // apples + apples highlight
-  for(let i=0;i<4;i++){
-  const ax = tx + Math.cos(i*1.7)*30;
-  const ay = gy-110 + Math.sin(i*1.3)*20;
+  // apples + highlight
+for (let i = 0; i < 4; i++) {
+  const decoX = tx + Math.cos(i * 1.7) * 30;
+  const decoY = gy - 110 + Math.sin(i * 1.3) * 20;
 
-  ctx.fillStyle="#8b2e2a";
+  // apple body
+  ctx.fillStyle = "#8b2e2a";
   ctx.beginPath();
-  ctx.arc(ax, ay, 6, 0, Math.PI*2);
-  ctx.fill();
-
-  // apple aura (felt, not seen)
-  ctx.fillStyle = "rgba(180,120,80,0.06)";
-  ctx.beginPath();
-  ctx.arc(tx, gy - 110, 62, 0, Math.PI * 2);
+  ctx.arc(decoX, decoY, 6, 0, Math.PI * 2);
   ctx.fill();
 
   // highlight
-  ctx.fillStyle="rgba(255,220,200,0.4)";
+  ctx.fillStyle = "rgba(255,220,200,0.4)";
   ctx.beginPath();
-  ctx.arc(ax-2, ay-2, 2, 0, Math.PI*2);
+  ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
   ctx.fill();
   }
 }
 
+// apple pieces for split animation
+function createApplePiece(x, y, angle, speed) {
+  return {
+    x,
+    y,
+    r: 6,
+    size: 9,
+    rotation: angle + Math.PI / 2,
+    spin: (Math.random() - 0.5) * 6,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    gravity: 1200,
+    airDrag: 0.98,
+    settled: false,
+    collected: false,
+  };
+}
+
+// apple-slice wedge: rounded outer edge, pointed inner tip (toward the core)
+function drawApplePieceShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.quadraticCurveTo(size * 0.9, -size * 0.2, size * 0.55, size * 0.85);
+  ctx.quadraticCurveTo(0, size * 0.5, -size * 0.55, size * 0.85);
+  ctx.quadraticCurveTo(-size * 0.9, -size * 0.2, 0, -size);
+  ctx.closePath();
+  ctx.fillStyle = "#8b2e2a";
+  ctx.fill();
+
+  // flesh sliver along the inner edge
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.7);
+  ctx.lineTo(size * 0.18, size * 0.5);
+  ctx.lineTo(-size * 0.18, size * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = "#f2d6b3";
+  ctx.fill();
+
+  ctx.restore();
+}
 
 /* ======================================================
    DRAW
@@ -361,6 +420,10 @@ sky.addColorStop(1, "#8f6b45");    // deep ground blend
 
 ctx.fillStyle = sky;
 ctx.fillRect(0, 0, canvas.width, gy);
+
+// === FALLING APPLE SCREEN SPACE ===
+const appleScreenX = apple.x - camX;
+const appleScreenY = apple.y - apple.bounce;
 
 // orchard dust motes
 ctx.fillStyle = "rgba(255,240,210,0.06)";
@@ -568,52 +631,44 @@ platforms.forEach(p=>{
 drawAppleTree(220, camX);
 drawAppleTree(980, camX);
 
-/* APPLE */
-if (!apple.collected) {
-  const ax = apple.x - camX;
-  const y = apple.y - apple.bounce;
+/* DRAW APPLE */
 
-// falling shine
-if (apple.falling) {
-  const shineX = ax - 2 + Math.sin(performance.now() * 0.006) * 1.5;
-  const shineY = y - apple.r + 3;
-
-  ctx.fillStyle = "rgba(255,230,200,0.55)";
-  ctx.beginPath();
-  ctx.ellipse(shineX, shineY, 2, 4, -0.6, 0, Math.PI * 2);
-  ctx.fill();
+ // debug apple etc not drawing
+if (
+  Number.isNaN(appleScreenX) ||
+  Number.isNaN(appleScreenY)
+) {
+  // console.warn("APPLE SCREEN COORDS NaN", apple);
 }
+
+if (!apple.collected && !apple.cracked) {
 
   if (!apple.split) {
     // whole apple
     ctx.fillStyle = "#8b2e2a";
     ctx.beginPath();
-    ctx.arc(ax, y, apple.r, 0, Math.PI * 2);
+    ctx.arc(appleScreenX, appleScreenY, apple.r, 0, Math.PI * 2);
     ctx.fill();
   } else {
     const spread = 18;
-
+  
     for (let i = -1; i <= 1; i++) {
       ctx.fillStyle = "#8b2e2a";
       ctx.beginPath();
       ctx.arc(
-        ax + i * spread,
-        y,
+        appleScreenX + i * spread,
+        appleScreenY,
         apple.r * 0.75,
         0,
         Math.PI * 2
       );
       ctx.fill();
 
-// apple split in 3, pieces bounce
-const bounceY = apple.bounce * 0.6;
-
-
       // flesh highlight
       ctx.fillStyle = "#f2d6b3";
       ctx.fillRect(
-        ax + i * spread - 2,
-        y - apple.r * 0.5,
+        appleScreenX + i * spread - 2,
+        appleScreenY - apple.r * 0.5,
         4,
         apple.r
       );
@@ -622,8 +677,8 @@ const bounceY = apple.bounce * 0.6;
   // stem (always)
   ctx.strokeStyle = "#4a2e1c";
   ctx.beginPath();
-  ctx.moveTo(ax, y-apple.r);
-  ctx.lineTo(ax+2, y-apple.r-6);
+  ctx.moveTo(appleScreenX, appleScreenY-apple.r);
+  ctx.lineTo(appleScreenX+2, appleScreenY-apple.r-6);
   ctx.stroke();
 
   // glitter moment
@@ -631,13 +686,33 @@ const bounceY = apple.bounce * 0.6;
     ctx.fillStyle = `rgba(255,220,160,${apple.glitter/120})`;
     for (let i=0;i<4;i++){
       ctx.fillRect(
-        ax + Math.cos(i*1.6)*10,
+        appleScreenX + Math.cos(i*1.6)*10,
         apple.y - 6 + Math.sin(i*1.6)*6,
         2,2
       );
     }
   }
 }
+
+// falling apple shine
+if (apple.falling) {
+  const shineX = appleScreenX - 2 + Math.sin(performance.now() * 0.006) * 1.5;
+  const shineY = appleScreenY - apple.r + 3;
+
+  ctx.fillStyle = "rgba(255,230,200,0.55)";
+  ctx.beginPath();
+  ctx.ellipse(shineX, shineY, 2, 4, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// apple split in 3, pieces bounce
+const bounceY = apple.bounce * 0.6;
+
+  // DRAW APPLE PIECES
+  applePieces.forEach(p => {
+    if (p.collected) return;
+    drawApplePieceShape(ctx, p.x - camX, p.y, p.size, p.rotation);
+  });
 
 
 /* FROG */
@@ -711,8 +786,11 @@ ctx.fillText(
   apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
   fx - 12,
   bubbleY + 18
-  );
-ctx.fillText("Some weight unlocks paths.", fx - 12, bubbleY + 34);
+);
+ctx.fillText("Some weight unlocks paths.",
+ fx - 12,
+ bubbleY + 34
+);
 }
 
 
@@ -775,7 +853,6 @@ lastTime = now;
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
 
-const groundY = gy;
 const dt = deltaTime;
 
 // --- geometry ---
@@ -787,17 +864,14 @@ const overStump =
   appleCenterX > stump.x &&
   appleCenterX < stump.x + stump.width;
 
-const landingY = overStump ? stump.top : groundY;
+const landingY = overStump ? gy - stump.height : gy;
 
 // --- support check ---
 const supported = appleBottom >= landingY && apple.vy >= 0;
 
-// 🔒 HARD LOCK when supported
-if (supported) {
-  apple.y = landingY - apple.r;
-  apple.vy = 0;
-  apple.falling = false;
-}
+// The apple comes to rest through the LAND step below, which also
+// kicks off the bounce. (The old hard-lock here pre-empted that and
+// stopped the apple from ever bouncing.)
 
 // --- falling permission ---
 if (!supported && apple.canFall(performance.now())) {
@@ -816,75 +890,18 @@ if (apple.falling) {
   apple.y += apple.vy * dt;
 }
 
-// const groundY = gy
-  
-// const stumpReady = stump && stump.top !== undefined;
 
-//   if (apple.settled) {
-//   apple.vy = 0;
-//   // apple.falling = false;
-// }
+// console.log(
+//   "STATE",
+//   "falling:", apple.falling,
+//   "vy:", apple.vy,
+//   "landed:", apple.landed,
+//   "bottom>=ground:", appleBottom >= landingY
+// );  
 
-// // trigger fall
-// SUPPORT + FALL PERMISSION (REPLACES FALL TRIGGER)
-// const appleBottom = apple.y + apple.r;
-// const appleCenterX = apple.x;
 
-// const overStump =
-//   appleCenterX > stump.x &&
-//   appleCenterX < stump.x + stump.width;
+// LAND 
 
-// const landingY = overStump
-//   ? stump.top
-//   : groundY;
-
-// const supported = appleBottom >= landingY && apple.vy >= 0;
-
-// apple.falling = apple.canFall(now) && !supported;
-
-// // falling
-// if (apple.falling) {
-//   const dt = deltaTime;
-
-//   apple.vy += apple.gravity * dt;
-
-//   // cap fall speed
-//   if (apple.vy > apple.terminalVelocity) {
-//     apple.vy = apple.terminalVelocity;
-//   }
-
-//   apple.vy *= apple.airDrag;
-//   apple.y += apple.vy * dt;
-// }
-  
-// LAND
-
-  // temp, prob delete v soon 2.28.26
-// if (apple.y > 200) {
-//   console.log("FORCED LAND");
-//   apple.y = 200;
-//   apple.falling = false;
-//   apple.landed = true;
-// }
-  
-  // console.log("Y test:", apple.y, apple.vy);
-//   console.log("bottom vs ground", appleBottom, landingY);
-//   console.log({
-//   y: apple.y.toFixed(2),
-//   bottom: appleBottom.toFixed(2),
-//   landingY,
-//   vy: apple.vy.toFixed(2),
-//   falling: apple.falling
-// });
-
-console.log(
-  "STATE",
-  "falling:", apple.falling,
-  "vy:", apple.vy,
-  "landed:", apple.landed,
-  "bottom>=ground:", appleBottom >= landingY
-);  
-  
 if (
   apple.falling &&
   apple.vy > 0 &&
@@ -892,61 +909,99 @@ if (
   appleBottom >= landingY
   
 ) {
-  console.log("apple LAND CHECKS true y =", apple.y);
-  
+  const impactVy = apple.vy;   // how fast it was actually falling on impact
+
   apple.y = landingY - apple.r;
   apple.vy = 0;
   apple.falling = false;
   apple.landed = true;
-  
-  apple.bounce = 8;
-  apple.bounceVy = 0.9;
+
+  apple.bounce = 0;
+  apple.bounceVy = impactVy * apple.bounceRestitution;   // first hop derived from real fall speed
+  apple.settleThreshold =
+    impactVy * Math.pow(apple.bounceRestitution, apple.targetBounces); // velocity floor for ~4 hops
   apple.glitter = 90;
 }
   
 // bounce + crack
 if (apple.landed && !apple.settled) {
   
-  apple.bounceVy -= 0.6;          // pull back toward stump
-  apple.bounce += apple.bounceVy;
-  apple.bounceVy *= 0.75;         // damping (energy loss)
+  apple.bounceVy -= apple.gravity * dt;   // same gravity the apple fell under
+  apple.bounce += apple.bounceVy * dt;    // hop height above the rest surface
 
-  // 🔒 CLAMP
-  if (apple.bounce < 0) apple.bounce = 0;
-
-  if (Math.abs(apple.bounceVy) < 0.15 && apple.bounce <= 0.5) {
+  if (apple.bounce <= 0) {          // came back down to the surface
     apple.bounce = 0;
-    apple.bounceVy = 0;
-    apple.settled = true;
-    apple.landed = false;
+    apple.bounceVy = -apple.bounceVy * apple.bounceRestitution;   // rebound, losing energy
 
-    if (!apple.cracked) {
-      apple.cracked = true;
-      apple.split = true;
-      apple.splitTimer = 90;
+    if (Math.abs(apple.bounceVy) < apple.settleThreshold) {   // hop too weak now — settle and split
+      apple.bounceVy = 0;
+      apple.settled = true;
+      apple.landed = false;
 
-    // initialize split pieces at rest on stump
-  //   apple.pieces.forEach(p => {
-  //   p.y = stump.top;
-  //   p.vy = 0;
-  //   p.bounce = 0;
-  //   p.settled = true;
-  // });
-
-      // apple can now be collected
-    apple.pickupReady = true;
+      if (!apple.cracked) {
+        apple.cracked = true;
+        apple.split = true;
+        apple.splitTimer = 90;
+      }
     }
   }
+} 
+// --- CREATE 3 APPLE PIECES ---
+// ================== APPLE SPLIT SPAWN ==================
+if (apple.split) {
+
+  const appleCenterX = apple.x;
+  const appleCenterY = apple.y;
+
+  const spread = Math.PI / 3;      // total 60° fan
+  const baseAngle = -Math.PI / 2;  // upward
+
+  for (let i = 0; i < 3; i++) {
+    const angle = baseAngle + spread * (i - 1);
+    const speed = 180 + Math.random() * 40;
+
+    applePieces.push(
+      createApplePiece(appleCenterX, appleCenterY, angle, speed));
+  }
+
+  apple.split = false; // 🔒 one-time spawn
+  apple.pickupReady = true;
 }
+
+//       // apple can now be collected
+//     apple.pickupReady = true;
+//     }
+//   }
+// }
     
+
   
-// decay
+
+  // UPDATE APPLE PIECES (E1 GOES HERE)
+  applePieces.forEach(p => {
+    if (p.settled || p.collected) return;
+
+    p.vy += p.gravity * deltaTime;
+    p.vx *= p.airDrag;
+    p.vy *= p.airDrag;
+
+    p.x += p.vx * deltaTime;
+    p.y += p.vy * deltaTime;
+    p.rotation += p.spin * deltaTime;
+
+    if (p.y + p.r >= gy) {
+      p.y = gy - p.r;
+      p.vx *= 0.4;
+      p.vy = 0;
+      p.spin *= 0.3;
+      p.settled = true;
+    }
+  });
+
+  // apple glitter decay
 if (apple.glitter > 0) apple.glitter--;
 if (apple.splitTimer > 0) apple.splitTimer--;
 
-  // temp debug apple infinite fall 
-apple.y += 0.01;
-  
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
   const playerCenterX = player.x + player.width / 2;
@@ -965,17 +1020,18 @@ if (apple.landed && !frogNoticedApple) {
   frogHatTip = 40;
 }
 
-if (apple.split && orchardChoice === null) {
-  orchardPaths.forEach(p => {
-    if (
-      Math.abs(player.x - p.x) < 30 &&
-      player.y === 0 &&
-      Math.abs(player.vy) < 0.1
-    ) {
-      orchardChoice = p.id;
-    }
-  });
-}
+// check for player location near apple pieces
+// if (apple.split && orchardChoice === null) {
+//   orchardPaths.forEach(p => {
+//     if (
+//       Math.abs(player.x - p.x) < 30 &&
+//       player.y === 0 &&
+//       Math.abs(player.vy) < 0.1
+//     ) {
+//       orchardChoice = p.id;
+//     }
+//   });
+// }
 
 if (frogActive && apple.split && orchardChoice === null && keys.down) {
   orchardPaths.forEach(p => {
@@ -999,6 +1055,7 @@ if (frogActive && apple.split && orchardChoice === null && keys.down) {
   
   requestAnimationFrame(update);
 }
+
 
 update();
 
