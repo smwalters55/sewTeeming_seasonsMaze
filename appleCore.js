@@ -114,10 +114,11 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = {}; // e.g. { appleSlice: 2, feather: 1 }
+const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
 
 const ITEM_ICONS = {
-  appleSlice: "🍎"
+  appleSlice: "🍎",
+  boomerang: "🪃"
 };
 
 function addToInventory(itemType) {
@@ -136,7 +137,7 @@ function updateInventoryUI() {
    FROG NPC
    ====================================================== */
 const frog = {
-  x: 820,
+  x: 1090,
   y: 0,
   width: 48,
   height: 36,
@@ -158,6 +159,28 @@ const platforms = [
     thickness: 14
   }
 ];
+
+/* ======================================================
+   RAMP (simple slope, no momentum yet — walk speed only)
+   ====================================================== */
+const ramps = [
+  {
+    x: 860,
+    width: 100,
+    heightStart: 0,   // ground height at left edge
+    heightEnd: 60      // ground height at right edge — leads up to the boomerang
+  }
+];
+
+/* ======================================================
+   BOOMERANG (static collectible, tucked into tree 2's canopy)
+   ====================================================== */
+const boomerang = {
+  x: 955,
+  heightAboveGround: 62, // sits just above the top of the ramp
+  collected: false,
+  collecting: false
+};
 
 /* ======================================================
    ATMOSPHERE
@@ -381,6 +404,40 @@ function applyPhysics(){
   }
 });
 
+  // stump collision — same surface the apple lands on, now jumpable by the player too
+  {
+    const stumpTop = stump.height;
+    const playerBottom = player.y;
+
+    if (
+      player.x + player.width > stump.x &&
+      player.x < stump.x + stump.width &&
+      playerBottom <= stumpTop &&
+      playerBottom >= stumpTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = stumpTop;
+      player.vy = 0;
+      player.jumping = false;
+    }
+  }
+
+  // ramp collision — samples slope height at the player's x each frame
+  ramps.forEach(r => {
+    if (player.x + player.width > r.x && player.x < r.x + r.width) {
+      const t = Math.min(Math.max((player.x + player.width / 2 - r.x) / r.width, 0), 1);
+      const rampHeight = r.heightStart + (r.heightEnd - r.heightStart) * t;
+      const heightDiff = rampHeight - player.y; // positive = ramp surface is above the player
+
+      // only snap if actually near the surface — not just anywhere below it
+      if (heightDiff >= -6 && heightDiff <= 10 && player.vy <= 0) {
+        player.y = rampHeight;
+        player.vy = 0;
+        player.jumping = false;
+      }
+    }
+  });
+
   frog.bob += 0.04;
   if (frogHatTip > 0) frogHatTip--;
 }
@@ -493,6 +550,44 @@ function drawApplePieceShape(ctx, x, y, size, rotation) {
   ctx.fill();
 
   ctx.restore();
+}
+
+// boomerang: emoji glyph, sized to match the wedge pieces' scale
+function drawBoomerangShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.font = `${size * 2.4}px 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+  ctx.fillStyle = "#2b2b2b"; // explicit — otherwise it inherits whatever faint color drew last
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🪃", 0, 0);
+  ctx.restore();
+}
+
+// Cheap "tucked into the canopy" trick — NOT a real layering/z-order system,
+// just a couple of translucent leaf-colored blobs painted on top of the glyph
+// afterward, using the same green/alpha the decorative trees already use.
+// Good enough for "half-hidden in foliage"; would need actual sprite layers
+// or per-object z-index if you want this to generalize to lots of objects.
+function drawFoliageOcclusion(ctx, x, y, size) {
+  ctx.fillStyle = "rgba(90,120,70,0.55)";
+  ctx.beginPath();
+  ctx.ellipse(x - size * 0.5, y - size * 0.6, size * 0.9, size * 0.7, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(x + size * 0.6, y - size * 0.5, size * 0.8, size * 0.6, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// dispatcher: draws the right shape for any collectible by itemType
+function drawCollectible(ctx, x, y, size, rotation, itemType) {
+  if (itemType === "boomerang") {
+    drawBoomerangShape(ctx, x, y, size, rotation);
+  } else {
+    drawApplePieceShape(ctx, x, y, size, rotation);
+  }
 }
 
 /* ======================================================
@@ -737,6 +832,31 @@ platforms.forEach(p=>{
   ctx.fill();
 });
 
+/* RAMP */
+ramps.forEach(r => {
+  const rx = r.x - camX;
+  const yStart = gy - r.heightStart;
+  const yEnd = gy - r.heightEnd;
+  const thickness = 10;
+
+  ctx.beginPath();
+  ctx.moveTo(rx, yStart);
+  ctx.lineTo(rx + r.width, yEnd);
+  ctx.lineTo(rx + r.width, yEnd + thickness);
+  ctx.lineTo(rx, yStart + thickness);
+  ctx.closePath();
+
+  const wood = ctx.createLinearGradient(rx, yStart, rx, yStart + thickness);
+  wood.addColorStop(0, "#c89a5a");
+  wood.addColorStop(1, "#8a5a2e");
+  ctx.fillStyle = wood;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(80,50,30,0.35)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+});
+
 // call draw apple tree 2x
 drawAppleTree(220, camX);
 drawAppleTree(980, camX);
@@ -824,9 +944,16 @@ const bounceY = apple.bounce * 0.6;
     drawApplePieceShape(ctx, p.x - camX, p.y, p.size, p.rotation);
   });
 
+  // DRAW BOOMERANG (static, resting on top of the ramp, until collected)
+  if (!boomerang.collected && !boomerang.collecting) {
+    const bx2 = boomerang.x - camX;
+    const by2 = gy - boomerang.heightAboveGround;
+    drawBoomerangShape(ctx, bx2, by2, 14, 0);
+  }
+
   // DRAW FLYING (collecting) ITEMS
   flyingItems.forEach(f => {
-    drawApplePieceShape(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation);
+    drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
   });
 
 
@@ -1128,6 +1255,21 @@ if (apple.split) {
       pickupHandledThisFrame = true;
     }
   });
+
+  // boomerang is elevated, so it checks proximity in height too (same units as player.y)
+  if (!boomerang.collected && !boomerang.collecting && !pickupHandledThisFrame) {
+    const bdx = (player.x + player.width / 2) - boomerang.x;
+    const bdy = player.y - boomerang.heightAboveGround;
+
+    if (Math.abs(bdx) < 26 && Math.abs(bdy) < 20 && keys.down) {
+      boomerang.collecting = true;
+      startCollectAnimation(
+        { x: boomerang.x, y: gy - boomerang.heightAboveGround, size: 14, rotation: 0 },
+        "boomerang"
+      );
+      pickupHandledThisFrame = true;
+    }
+  }
 
   updateFlyingItems(deltaTime, cameraX);
 
