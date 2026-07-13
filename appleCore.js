@@ -79,9 +79,6 @@ const camera = { topDown:false, locked:false };
    ====================================================== */
 let currentScene = "autumn"; // "autumn" | "spring"
 
-// where the "walk back to autumn" trigger sits in the spring stub
-const springReturn = { x: 200 };
-
 /* ======================================================
    ORCHARD COLOURS
    ====================================================== */
@@ -187,12 +184,13 @@ const frog = {
   y: 0,
   width: 48,
   height: 36,
-  bob: 0
+  bob: 0,
+  bobSpeed: 0.04,
+  active: false,  // generic NPC shell field — has the player approached & activated it
+  tip: 0          // generic NPC shell field — brief "reacted to something" animation timer
 };
 let frogTalked = false;
-let frogActive = false;
-let frogNoticedApple = false;
-let frogHatTip = 0; // animation timer
+let frogNoticedApple = false; // bespoke to frog's story beat, not part of the generic shell
 
 /* ======================================================
    PLATFORM (anchored from ground)
@@ -229,20 +227,43 @@ const boomerang = {
 };
 
 /* ======================================================
-   DOORWAY (season transition — always present, translucent
-   until unlocked by placing an item in its slot)
+   SCENE CONNECTIONS (bidirectional links between scenes —
+   one definition generates a matching door on both sides,
+   so every doorway in the game is visually/behaviorally
+   consistent instead of hand-building each end separately)
    ====================================================== */
-const doorway = {
-  x: 1200,
-  width: 56,
-  height: 92
+
+// glow palette used on a door, keyed by WHICH SCENE IT LEADS TO —
+// so a door hints at its destination regardless of which side you view it from
+const DOOR_GLOW = {
+  spring: { // seen while standing in autumn, leads to spring — light green hint
+    stops: ["rgba(210,235,175,0.95)", "rgba(175,215,140,0.75)", "rgba(140,190,120,0.55)"],
+    bleed: "170,205,130"
+  },
+  autumn: { // seen while standing in spring, leads to autumn — med-dark amber
+    stops: ["rgba(165,115,58,0.92)", "rgba(122,82,42,0.8)", "rgba(80,55,28,0.65)"],
+    bleed: "120,80,40"
+  }
 };
 
-// per-scene spawn points — autumn's sits right in front of the doorway
-// (defined here, not up top, so it can reference doorway.x directly)
+const connections = [
+  {
+    id: "autumn-spring",
+    doors: {
+      autumn: { x: 1200, width: 56, height: 92, leadsTo: "spring" },
+      spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
+    },
+    acceptsItemType: "appleSlice",
+    filled: false,
+    filledItemType: null
+  }
+];
+
+// per-scene spawn points — landing right in front of whichever door you
+// just came through, on either side
 const sceneSpawns = {
-  autumn: { x: doorway.x - 25 },
-  spring: { x: 200 }
+  autumn: { x: connections[0].doors.autumn.x - 25 },
+  spring: { x: connections[0].doors.spring.x - 25 }
 };
 
 /* ======================================================
@@ -252,13 +273,15 @@ const sceneSpawns = {
 const placementSlots = [
   {
     id: "doorwaySlot",
-    x: doorway.x + doorway.width / 2,
+    x: connections[0].doors.autumn.x + connections[0].doors.autumn.width / 2,
     heightAboveGround: 8, // low enough to reach while standing — doorway stays on the ground
-    acceptsItemType: "appleSlice",
+    acceptsItemType: connections[0].acceptsItemType,
     filled: false,
-    onFill: () => {
-      // hook for anything extra a fill should trigger later
-      // (sound, particles, dialogue, etc.) — empty for now
+    onFill: (itemType) => {
+      // unlocking is shared across the whole connection — both doors
+      // reflect it, and both show the item that unlocked them
+      connections[0].filled = true;
+      connections[0].filledItemType = itemType;
     }
   }
 ];
@@ -625,6 +648,13 @@ function pressedDownNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown)
   return keys.down && isPlayerNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown);
 }
 
+// generic NPC shell: idle bob + brief "reacted to something" timer decay.
+// Any NPC with {bob, bobSpeed, tip} can use this — no frog-specific logic here.
+function updateNPCIdle(npc) {
+  npc.bob += npc.bobSpeed;
+  if (npc.tip > 0) npc.tip--;
+}
+
 /* ======================================================
    INPUT HANDLING
    ====================================================== */
@@ -722,8 +752,7 @@ function applyPhysics(){
     }
   });
 
-  frog.bob += 0.04;
-  if (frogHatTip > 0) frogHatTip--;
+  updateNPCIdle(frog);
 
   } // end currentScene === "autumn"
 }
@@ -743,6 +772,24 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.lineTo(x,y+r);
   ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath();
+}
+
+// generic NPC speech bubble — rounded box, border, wrapped lines. Any NPC
+// hands this an anchor point + its own dialogue lines; the bubble itself
+// doesn't know or care who's talking.
+function drawSpeechBubble(ctx, x, y, lines) {
+  ctx.fillStyle = "rgba(255,255,248,0.95)";
+  roundRect(ctx, x - 24, y, 190, 48, 10);
+  ctx.fill();
+
+  ctx.strokeStyle = "#2b2b2b";
+  ctx.stroke();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.font = "12px ui-monospace";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, x - 12, y + 18 + i * 16);
+  });
 }
 
 // draw apple trees
@@ -893,18 +940,19 @@ function drawBush(x, camX) {
   ctx.fill();
 }
 
-// doorway: rounded wooden arch, always present, translucent until its
-// slot is filled — the warm glow inside is a hint of the next season
-// (summer, for now). The hole where you place an item is always drawn
-// at full opacity, even while locked, so it reads as interactable.
-function drawDoorway(ctx, camX) {
-  const dx = doorway.x - camX;
-  const frameWidth = doorway.width;
-  const frameHeight = doorway.height;
+// connection door: rounded wooden arch, always present, translucent until
+// its connection is unlocked. Glow color hints at wherever THIS door leads
+// (not where you currently are), so the same door looks right from either
+// side of a two-way connection. The hole reflects the connection's shared
+// filled state — once unlocked from either side, it shows on both.
+function drawConnectionDoor(ctx, camX, doorDef, connection) {
+  const dx = doorDef.x - camX;
+  const frameWidth = doorDef.width;
+  const frameHeight = doorDef.height;
   const postWidth = 10;
 
-  const slot = placementSlots.find(s => s.id === "doorwaySlot");
-  const unlocked = slot.filled;
+  const unlocked = connection.filled;
+  const glow = DOOR_GLOW[doorDef.leadsTo];
 
   const archRadius = (frameWidth - postWidth * 2) / 2;
   const archCenterX = dx + frameWidth / 2;
@@ -934,20 +982,20 @@ function drawDoorway(ctx, camX) {
   ctx.fillStyle = "#6b4026";
   ctx.fill();
 
-  // warm interior glow — visible even while locked, just faint
+  // interior glow — visible even while locked, just faint; color hints destination
   tracePath(0);
-  const glow = ctx.createLinearGradient(dx, gy - frameHeight, dx, gy);
-  glow.addColorStop(0, "rgba(255,205,120,0.95)");
-  glow.addColorStop(0.6, "rgba(255,165,90,0.7)");
-  glow.addColorStop(1, "rgba(255,140,70,0.5)");
-  ctx.fillStyle = glow;
+  const interiorGlow = ctx.createLinearGradient(dx, gy - frameHeight, dx, gy);
+  interiorGlow.addColorStop(0, glow.stops[0]);
+  interiorGlow.addColorStop(0.6, glow.stops[1]);
+  interiorGlow.addColorStop(1, glow.stops[2]);
+  ctx.fillStyle = interiorGlow;
   ctx.fill();
 
   // light bleeding out around the frame edges themselves
   tracePath(0);
-  ctx.shadowColor = "rgba(255,190,120,0.95)";
+  ctx.shadowColor = glow.stops[0];
   ctx.shadowBlur = unlocked ? 14 + pulse * 8 : 6;
-  ctx.strokeStyle = `rgba(255,205,140,${unlocked ? 0.75 + pulse * 0.2 : 0.4})`;
+  ctx.strokeStyle = glow.stops[0];
   ctx.lineWidth = 3;
   ctx.stroke();
   ctx.shadowBlur = 0; // reset so it doesn't bleed into anything drawn after
@@ -955,27 +1003,28 @@ function drawDoorway(ctx, camX) {
   // soft outer glow bleeding onto the ground — always present, stronger + pulsing once unlocked
   const bleedAlpha = unlocked ? 0.45 + pulse * 0.15 : 0.15;
   const bleed = ctx.createRadialGradient(archCenterX, gy, 4, archCenterX, gy, 70);
-  bleed.addColorStop(0, `rgba(255,180,100,${bleedAlpha})`);
-  bleed.addColorStop(1, "rgba(255,180,100,0)");
+  bleed.addColorStop(0, `rgba(${glow.bleed},${bleedAlpha})`);
+  bleed.addColorStop(1, `rgba(${glow.bleed},0)`);
   ctx.fillStyle = bleed;
   ctx.fillRect(dx - 50, gy - 25, frameWidth + 100, 50);
 
   ctx.restore();
 
-  // the hole — always fully visible, as the affordance for where to place the item
-  const holeX = dx + frameWidth / 2;
-  const holeY = gy - slot.heightAboveGround;
+  // the hole — always fully visible, as the affordance for where to place the
+  // item. Reflects the shared connection state, so both doors show it once unlocked.
+  const holeX = archCenterX;
+  const holeY = gy - 8; // low, reachable while standing
 
   ctx.beginPath();
   ctx.arc(holeX, holeY, 8, 0, Math.PI * 2);
-  ctx.fillStyle = slot.filled ? "rgba(90,60,30,0.9)" : "rgba(30,20,10,0.6)";
+  ctx.fillStyle = unlocked ? "rgba(90,60,30,0.9)" : "rgba(30,20,10,0.6)";
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.4)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  if (slot.filled) {
-    drawApplePieceShape(ctx, holeX, holeY, 6, 0); // tiny embedded apple wedge
+  if (unlocked && connection.filledItemType) {
+    drawCollectible(ctx, holeX, holeY, 6, 0, connection.filledItemType);
   }
 }
 
@@ -1327,7 +1376,7 @@ ramps.forEach(r => {
 // call draw apple tree 2x
 drawAppleTree(220, camX);
 drawAppleTree(980, camX);
-drawDoorway(ctx, camX);
+drawConnectionDoor(ctx, camX, connections[0].doors.autumn, connections[0]);
 
 /* DRAW APPLE */
 
@@ -1466,7 +1515,7 @@ ctx.fill();
 
 // top hat
 ctx.fillStyle="#2a2320";
-const hatLift = frogHatTip > 0 ? Math.sin(frogHatTip * 0.2) * 6 : 0;
+const hatLift = frog.tip > 0 ? Math.sin(frog.tip * 0.2) * 6 : 0;
 
 ctx.fillRect(fx+10, fy-14 - hatLift, 28, 6);
 ctx.fillRect(fx+16, fy-28 - hatLift, 16, 14);
@@ -1480,27 +1529,15 @@ ctx.moveTo(fx+frog.width+4, fy+8);
 ctx.lineTo(fx+frog.width+4, fy+frog.height+12);
 ctx.stroke();
 
-if (frogActive) {
+if (frog.active) {
   const bubbleY = fy - 96; // ← lift bubble above hat
 
-  ctx.fillStyle = "rgba(255,255,248,0.95)";
-  roundRect(ctx, fx - 24, bubbleY, 190, 48, 10);
-  ctx.fill();
-
-  ctx.strokeStyle = "#2b2b2b";
-  ctx.stroke();
-
-  ctx.fillStyle = "#2b2b2b";
-  ctx.font = "12px ui-monospace";
-ctx.fillText(
-  apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
-  fx - 12,
-  bubbleY + 18
-);
-ctx.fillText("Some weight unlocks paths.",
- fx - 12,
- bubbleY + 34
-);
+  // dialogue SELECTION stays frog-specific (knows about apple.landed, etc.)
+  // — only the bubble rendering itself is shared
+  drawSpeechBubble(ctx, fx, bubbleY, [
+    apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
+    "Some weight unlocks paths."
+  ]);
 }
 
 
@@ -1564,7 +1601,7 @@ function drawSpringFlowers(camX) {
 
     const y = gy + 4 + pseudoRandom(x * 0.23 + 9) * 10;
     const colorIdx = Math.floor(pseudoRandom(x * 0.61 + 5) * FLOWER_COLORS.length);
-    const petalCount = 2 + Math.floor(pseudoRandom(x * 0.83 + 2) * 3); // 2-4
+    const petalCount = 3 + Math.floor(pseudoRandom(x * 0.83 + 2) * 3); // 3-5
     const shape = pseudoRandom(x * 0.97 + 6) < 0.5 ? "teardrop" : "heart";
     const baseRotation = pseudoRandom(x * 0.44 + 8) * Math.PI * 2;
     const petalLength = 4 + pseudoRandom(x * 0.29 + 4) * 2.5;
@@ -1683,22 +1720,11 @@ function drawSpringScene(camX) {
   springBushes.forEach(b => drawBush(b.x, camX));
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
 
-  // simple return-to-autumn marker
-  const rx = springReturn.x - camX;
-  ctx.strokeStyle = "#6b4026";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(rx, gy - 70);
-  ctx.lineTo(rx, gy);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,180,210,0.6)";
-  ctx.beginPath();
-  ctx.arc(rx, gy - 70, 10, 0, Math.PI * 2);
-  ctx.fill();
+  drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
 
   ctx.fillStyle = "#2b2b2b";
   ctx.font = "14px ui-monospace";
-  ctx.fillText("Spring (stub) \u2014 walk to the marker and press \u2193 to return to autumn", 20 - camX, 40);
+  ctx.fillText("Spring (stub) \u2014 built out next", 20 - camX, 40);
 }
 
 function draw(){
@@ -1954,21 +1980,21 @@ if (apple.splitTimer > 0) apple.splitTimer--;
   // --- FROG INTERACTION (per-frame, correct place) ---
   const frogCenterX = frog.x + frog.width / 2;
 
-  if (pressedDownNear(frogCenterX, 0, 70, 6, 999) && !frogActive && !pickupHandledThisFrame) {
-    frogActive = true;
-    frogHatTip = 30;
+  if (pressedDownNear(frogCenterX, 0, 70, 6, 999) && !frog.active && !pickupHandledThisFrame) {
+    frog.active = true;
+    frog.tip = 30;
   }
 
 if (apple.landed && !frogNoticedApple) {
   frogNoticedApple = true;
-  frogHatTip = 40;
+  frog.tip = 40;
 }
 
-if (frogActive && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.down) {
+if (frog.active && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.down) {
   orchardPaths.forEach(p => {
     if (isPlayerNear(p.x, 0, 40, 0, 0)) {
       orchardChoice = p.id;
-      frogHatTip = 40;
+      frog.tip = 40;
       document.querySelectorAll(".map-node.locked").forEach(el => el.classList.remove("locked"));
     }
   });
@@ -1992,17 +2018,19 @@ placementSlots.forEach(slot => {
 
     startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround, () => {
       slot.filled = true;
-      slot.onFill();
+      slot.onFill(itemToPlace);
     });
   }
 });
 
-// DOORWAY: only enterable once its slot has been filled
-const doorwaySlot = placementSlots.find(s => s.id === "doorwaySlot");
+// DOORWAY: only enterable once the connection is unlocked
 if (
-  doorwaySlot.filled &&
+  connections[0].filled &&
   seasonTransition.phase === "idle" &&
-  pressedDownNear(doorway.x + doorway.width / 2, 0, 30, 6, 6)
+  pressedDownNear(
+    connections[0].doors.autumn.x + connections[0].doors.autumn.width / 2,
+    0, 30, 6, 6
+  )
 ) {
   startSeasonTransition("spring");
 }
@@ -2010,10 +2038,15 @@ if (
 }
 
 function updateSpringScene(deltaTime) {
-  // --- SPRING STUB: just a way back to autumn for now ---
+  // walk through the same connection, back to autumn — same door,
+  // same unlock state, just approached from the other side
   if (
+    connections[0].filled &&
     seasonTransition.phase === "idle" &&
-    pressedDownNear(springReturn.x, 0, 30, 6, 6)
+    pressedDownNear(
+      connections[0].doors.spring.x + connections[0].doors.spring.width / 2,
+      0, 30, 6, 6
+    )
   ) {
     startSeasonTransition("autumn");
   }
