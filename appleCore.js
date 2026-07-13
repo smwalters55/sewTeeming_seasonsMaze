@@ -39,7 +39,7 @@ const lowfog = {
 /* ======================================================
    INPUT
    ====================================================== */
-const keys = { left:false, right:false, up:false, down:false, space:false };
+const keys = { left:false, right:false, up:false, down:false, space:false, upJustPressed:false };
 
 window.addEventListener("keydown", e => {
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
@@ -47,7 +47,10 @@ window.addEventListener("keydown", e => {
   }
   if (e.key==="ArrowLeft") keys.left=true;
   if (e.key==="ArrowRight") keys.right=true;
-  if (e.key==="ArrowUp") keys.up=true;
+  if (e.key==="ArrowUp") {
+    if (!keys.up) keys.upJustPressed = true; // edge only — ignore key-repeat while held
+    keys.up = true;
+  }
   if (e.key==="ArrowDown") keys.down=true;
   if (e.key===" ") keys.space=true;
 });
@@ -113,6 +116,7 @@ const player = {
   height: 54,
   speed: 3,
   jumping: false,
+  usedDoubleJump: false, // resets whenever player lands on anything
   vy: 0
 };
 
@@ -123,7 +127,8 @@ const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
-  boomerang: "🪃"
+  boomerang: "🪃",
+  tulip: "🌷"
 };
 
 // heldItem = the item type currently "picked up" in hand, ready to place
@@ -320,6 +325,7 @@ function updateSeasonTransition(deltaTime) {
       player.y = 0;
       player.vy = 0;
       player.jumping = false;
+      player.usedDoubleJump = false;
       cameraX = 0;
 
       seasonTransition.phase = "hold";
@@ -659,14 +665,25 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle") {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active) {
     if (keys.left) player.x -= player.speed;
     if (keys.right) player.x += player.speed;
-    if (keys.up && !player.jumping) {
-      player.jumping = true;
-      player.vy = 12;
+
+    if (keys.upJustPressed) {
+      if (!player.jumping) {
+        // first jump
+        player.jumping = true;
+        player.vy = 12;
+        player.usedDoubleJump = false;
+      } else if (!player.usedDoubleJump) {
+        // double jump — a bit weaker than the first, so it reads as a
+        // secondary boost rather than an equally strong second jump
+        player.vy = 9;
+        player.usedDoubleJump = true;
+      }
     }
   }
+  keys.upJustPressed = false; // consume the edge every frame either way
 
   // hard left world boundary — the camera also clamps at 0, so this keeps
   // "camera stops" and "character stops" happening at the same moment
@@ -692,6 +709,7 @@ function applyPhysics(){
   if (player.y <= 0) {
     player.y = 0;
     player.jumping = false;
+    player.usedDoubleJump = false;
     player.vy = 0;
   }
 
@@ -715,6 +733,7 @@ function applyPhysics(){
     player.y = platformTop;
     player.vy = 0;
     player.jumping = false;
+    player.usedDoubleJump = false;
   }
 });
 
@@ -733,6 +752,7 @@ function applyPhysics(){
       player.y = stumpTop;
       player.vy = 0;
       player.jumping = false;
+      player.usedDoubleJump = false;
     }
   }
 
@@ -748,6 +768,7 @@ function applyPhysics(){
         player.y = rampHeight;
         player.vy = 0;
         player.jumping = false;
+        player.usedDoubleJump = false;
       }
     }
   });
@@ -774,21 +795,53 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.closePath();
 }
 
-// generic NPC speech bubble — rounded box, border, wrapped lines. Any NPC
-// hands this an anchor point + its own dialogue lines; the bubble itself
-// doesn't know or care who's talking.
-function drawSpeechBubble(ctx, x, y, lines) {
+// wraps a single sentence into multiple lines that each fit within maxWidth
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(" ");
+  const lines = [];
+  let current = "";
+
+  words.forEach(word => {
+    const test = current ? current + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+// generic NPC speech bubble — rounded box, border, auto-wrapped text sized
+// to fit. Any NPC hands this an anchor point + its own dialogue sentences;
+// the bubble figures out how many lines that actually takes and sizes
+// itself accordingly, so nothing overflows regardless of length.
+function drawSpeechBubble(ctx, x, y, sentences) {
+  const bubbleWidth = 160;
+  const maxTextWidth = bubbleWidth - 34; // padding on both sides
+  const lineHeight = 13;
+
+  ctx.font = "10px ui-monospace"; // set before measuring, so wrapping is accurate
+
+  const allLines = [];
+  sentences.forEach(sentence => {
+    allLines.push(...wrapText(ctx, sentence, maxTextWidth));
+  });
+
+  const bubbleHeight = Math.max(38, allLines.length * lineHeight + 14);
+
   ctx.fillStyle = "rgba(255,255,248,0.95)";
-  roundRect(ctx, x - 24, y, 190, 48, 10);
+  roundRect(ctx, x - 24, y, bubbleWidth, bubbleHeight, 9);
   ctx.fill();
 
   ctx.strokeStyle = "#2b2b2b";
   ctx.stroke();
 
   ctx.fillStyle = "#2b2b2b";
-  ctx.font = "12px ui-monospace";
-  lines.forEach((line, i) => {
-    ctx.fillText(line, x - 12, y + 18 + i * 16);
+  allLines.forEach((line, i) => {
+    ctx.fillText(line, x - 12, y + 15 + i * lineHeight);
   });
 }
 
@@ -940,6 +993,85 @@ function drawBush(x, camX) {
   ctx.fill();
 }
 
+// a gap in the ground — jump it or fall through
+function drawHole(x, width, camX) {
+  const hx = x - camX + width / 2;
+
+  const pit = ctx.createRadialGradient(hx, gy + 2, 2, hx, gy + 2, width / 2 + 4);
+  pit.addColorStop(0, "rgba(20,15,10,0.95)");
+  pit.addColorStop(0.7, "rgba(35,28,18,0.85)");
+  pit.addColorStop(1, "rgba(60,50,30,0)");
+
+  ctx.fillStyle = pit;
+  ctx.beginPath();
+  ctx.ellipse(hx, gy + 2, width / 2 + 4, (width / 2 + 4) * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // rim shadow so it reads as a real gap, not just a dark smudge
+  ctx.strokeStyle = "rgba(20,15,10,0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(hx, gy + 2, width / 2, width / 2 * 0.4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// rabbit NPC — bespoke art (long ears, no hat/cane), but reuses the same
+// idle-bob and speech-bubble mechanics as frog via the shared shell
+function drawRabbit(camX) {
+  const rx = rabbit.x - camX;
+  const ry = gy - rabbit.height + Math.sin(rabbit.bob) * 2;
+
+  // shadow
+  ctx.fillStyle = "rgba(40,30,20,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(rx + rabbit.width / 2, gy + 4, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const earTwitch = rabbit.tip > 0 ? Math.sin(rabbit.tip * 0.3) * 5 : 0;
+
+  // ears (behind body)
+  ctx.fillStyle = "#e8ddc8";
+  ctx.beginPath();
+  ctx.ellipse(rx + 10, ry - 14 + earTwitch, 5, 16, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(rx + 26, ry - 14 - earTwitch, 5, 16, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(200,150,150,0.5)"; // inner ear
+  ctx.beginPath();
+  ctx.ellipse(rx + 10, ry - 14 + earTwitch, 2.2, 11, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(rx + 26, ry - 14 - earTwitch, 2.2, 11, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body
+  ctx.fillStyle = "#efe6d4";
+  roundRect(ctx, rx, ry, rabbit.width, rabbit.height, 12);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(40,30,20,0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // tail
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(rx + rabbit.width + 2, ry + rabbit.height - 8, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eyes
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(rx + 12, ry + 14, 2, 0, Math.PI * 2);
+  ctx.arc(rx + 27, ry + 14, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (rabbit.active && isPlayerNear(rabbit.x + rabbit.width / 2, 0, 70, 6, 999)) {
+    const bubbleX = rx + rabbit.width + 39; // box left edge lands ~15px right of the rabbit
+    const bubbleY = ry - 10;
+    drawSpeechBubble(ctx, bubbleX, bubbleY, [
+      "Not all ground remembers to hold you.",
+      "Leap where the path feels certain."
+    ]);
+  }
+}
+
 // connection door: rounded wooden arch, always present, translucent until
 // its connection is unlocked. Glow color hints at wherever THIS door leads
 // (not where you currently are), so the same door looks right from either
@@ -1086,6 +1218,19 @@ function drawBoomerangShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// tulip: same emoji-glyph approach as the boomerang
+function drawTulipShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.font = `${size * 2.4}px 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif`;
+  ctx.fillStyle = "#2b2b2b";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🌷", 0, 0);
+  ctx.restore();
+}
+
 // Cheap "tucked into the canopy" trick — NOT a real layering/z-order system,
 // just a couple of translucent leaf-colored blobs painted on top of the glyph
 // afterward, using the same green/alpha the decorative trees already use.
@@ -1106,6 +1251,8 @@ function drawFoliageOcclusion(ctx, x, y, size) {
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
+  } else if (itemType === "tulip") {
+    drawTulipShape(ctx, x, y, size, rotation);
   } else {
     drawApplePieceShape(ctx, x, y, size, rotation);
   }
@@ -1468,11 +1615,6 @@ const bounceY = apple.bounce * 0.6;
     drawBoomerangShape(ctx, bx2, by2, 10, 0);
   }
 
-  // DRAW FLYING (collecting) ITEMS
-  flyingItems.forEach(f => {
-    drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
-  });
-
 
 /* FROG */
 const fx = frog.x - camX;
@@ -1529,14 +1671,14 @@ ctx.moveTo(fx+frog.width+4, fy+8);
 ctx.lineTo(fx+frog.width+4, fy+frog.height+12);
 ctx.stroke();
 
-if (frog.active) {
+if (frog.active && isPlayerNear(frog.x + frog.width / 2, 0, 70, 6, 999)) {
   const bubbleY = fy - 96; // ← lift bubble above hat
 
   // dialogue SELECTION stays frog-specific (knows about apple.landed, etc.)
   // — only the bubble rendering itself is shared
   drawSpeechBubble(ctx, fx, bubbleY, [
     apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
-    "Some weight unlocks paths."
+    "What's freshly fallen carries new weight."
   ]);
 }
 
@@ -1639,6 +1781,48 @@ const springFruitTrees = [
 
 const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
 
+/* ======================================================
+   RABBIT NPC — uses the same generic shell as frog
+   (updateNPCIdle, drawSpeechBubble); art + dialogue bespoke
+   ====================================================== */
+const rabbit = {
+  x: 1250,
+  y: 0,
+  width: 40,
+  height: 32,
+  bob: 0,
+  bobSpeed: 0.05,
+  active: false,
+  tip: 0
+};
+
+/* ======================================================
+   HOLES — jump over them or fall through; placed after
+   the rabbit so it can warn you before you reach them
+   ====================================================== */
+const springHoles = [
+  { x: 1550, width: 36 },
+  { x: 1640, width: 68 },  // large — combined with the small one, wider than a single jump can clear
+  { x: 1708, width: 27 },  // small, right after — together they force a double jump
+  { x: 1800, width: 36 }
+];
+
+/* ======================================================
+   TULIP — reward for clearing the holes, static ground
+   collectible using the same shell as boomerang/apple pieces
+   ====================================================== */
+const tulip = {
+  x: 1875, // right after the last hole
+  heightAboveGround: 0, // sits right on the ground
+  collected: false,
+  collecting: false
+};
+
+// falling-through-a-hole sequence: body sinks downward and is clipped
+// away at ground level, then teleport back to spring's entrance.
+const fallState = { active: false, t: 0 };
+const FALL_DURATION = 700; // ms
+
 function drawSpringScene(camX) {
   // --- SKY: 5-stop soft pastel gradient ---
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
@@ -1716,9 +1900,19 @@ function drawSpringScene(camX) {
   // scattered flowers — same infinite approach
   drawSpringFlowers(camX);
 
+  // holes — drawn after grass/flowers so the pit reads as a real gap in the ground
+  springHoles.forEach(h => drawHole(h.x, h.width, camX));
+
+  // tulip — reward sitting right past the holes
+  if (!tulip.collected && !tulip.collecting) {
+    drawTulipShape(ctx, tulip.x - camX, gy - tulip.heightAboveGround, 10, 0);
+  }
+
   // bushes, then fruit trees on top (trees read as taller/foreground)
   springBushes.forEach(b => drawBush(b.x, camX));
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
+
+  drawRabbit(camX);
 
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
 
@@ -1745,47 +1939,68 @@ if (currentScene === "autumn") {
   drawSpringScene(camX);
 }
 
+// flying (collecting/placing) items — shared across scenes, drawn here so
+// a pickup animation started in ANY scene actually renders, not just autumn's
+flyingItems.forEach(f => {
+  drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
+});
+
 /* PLAYER */
 const px = player.x - camX;
 const py = gy - player.height - player.y;
 
-// shadow
-ctx.fillStyle = "rgba(60,40,20,0.18)";
+// while falling through a hole, the body actually MOVES downward — it
+// isn't frozen in place; only what crosses below ground level (gy) gets
+// clipped away, so it reads as sinking into the hole rather than a static cutoff
+const fallProgress = fallState.active ? Math.min(fallState.t / FALL_DURATION, 1) : 0;
+const sinkAmount = fallProgress * (player.height + 20); // how far down the body has moved
+const drawPy = py + sinkAmount;
+
+// shadow shrinks along with the body sinking in
+ctx.fillStyle = `rgba(60,40,20,${0.18 * (1 - fallProgress)})`;
 ctx.beginPath();
-ctx.ellipse(px + player.width/2, gy + 5, 18, 6, 0, 0, Math.PI*2);
+ctx.ellipse(px + player.width/2, gy + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
 ctx.fill();
 // ground contact tint
-ctx.fillStyle = "rgba(90,70,40,0.08)";
+ctx.fillStyle = `rgba(90,70,40,${0.08 * (1 - fallProgress)})`;
 ctx.beginPath();
 ctx.ellipse(px + player.width/2, gy + 6, 22, 8, 0, 0, Math.PI*2);
 ctx.fill();
 
+if (drawPy < gy) { // still at least partly above ground — worth drawing
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(px - 2, 0, player.width + 4, gy); // only the region above ground level is visible
+  ctx.clip();
 
-// body
-ctx.fillStyle = "#7a78b8";
-roundRect(ctx, px, py, player.width, player.height, 8);
-ctx.fill();
+  // body
+  ctx.fillStyle = "#7a78b8";
+  roundRect(ctx, px, drawPy, player.width, player.height, 8);
+  ctx.fill();
 
-// outline body
-ctx.strokeStyle = "rgba(40,30,20,0.6)";
-ctx.lineWidth = 1.5;
-ctx.stroke();
+  // outline body
+  ctx.strokeStyle = "rgba(40,30,20,0.6)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 
-// eyes
-ctx.fillStyle = "#ffffff";
-ctx.beginPath();
-ctx.arc(px + 12, py + 16, 3, 0, Math.PI*2);
-ctx.arc(px + 28, py + 16, 3, 0, Math.PI*2);
-ctx.fill();
+  // eyes
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(px + 12, drawPy + 16, 3, 0, Math.PI*2);
+  ctx.arc(px + 28, drawPy + 16, 3, 0, Math.PI*2);
+  ctx.fill();
 
-ctx.fillStyle = "#2b2b2b";
-ctx.beginPath();
-ctx.arc(px + 12, py + 17, 1.5, 0, Math.PI*2);
-ctx.arc(px + 28, py + 17, 1.5, 0, Math.PI*2);
-ctx.fill();
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(px + 12, drawPy + 17, 1.5, 0, Math.PI*2);
+  ctx.arc(px + 28, drawPy + 17, 1.5, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+}
 
 // held item — floats above the head while selected, so it's clear it's "in play"
-if (heldItem) {
+if (heldItem && !fallState.active) {
   const heldPos = getHeldItemWorldPos();
   drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
 }
@@ -2038,6 +2253,57 @@ if (
 }
 
 function updateSpringScene(deltaTime) {
+
+  // if mid-fall, freeze everything else and just run the fall timer
+  if (fallState.active) {
+    fallState.t += deltaTime * 1000;
+
+    if (fallState.t >= FALL_DURATION) {
+      fallState.active = false;
+      fallState.t = 0;
+
+      // faze back to the start of the spring zone
+      player.x = sceneSpawns.spring.x;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      cameraX = 0;
+    }
+    return; // nothing else runs while falling
+  }
+
+  // RABBIT INTERACTION — same shape as frog's trigger
+  const rabbitCenterX = rabbit.x + rabbit.width / 2;
+  if (pressedDownNear(rabbitCenterX, 0, 70, 6, 999) && !rabbit.active) {
+    rabbit.active = true;
+    rabbit.tip = 30;
+  }
+  updateNPCIdle(rabbit);
+
+  // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
+  // over it; jumping keeps player.y > 0 while crossing the hole's x-range
+  if (player.y <= 0) {
+    const playerCenterX = player.x + player.width / 2;
+    const overHole = springHoles.some(h => playerCenterX > h.x && playerCenterX < h.x + h.width);
+
+    if (overHole) {
+      fallState.active = true;
+      fallState.t = 0;
+    }
+  }
+
+  // TULIP PICKUP — same shape as boomerang's pickup in autumn
+  if (!tulip.collected && !tulip.collecting) {
+    if (pressedDownNear(tulip.x, tulip.heightAboveGround, 26, 10, 10)) {
+      tulip.collecting = true;
+      startCollectAnimation(
+        { x: tulip.x, y: gy - tulip.heightAboveGround, size: 10, rotation: 0 },
+        "tulip"
+      );
+    }
+  }
+
   // walk through the same connection, back to autumn — same door,
   // same unlock state, just approached from the other side
   if (
