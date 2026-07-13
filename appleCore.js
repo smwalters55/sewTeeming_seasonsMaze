@@ -75,6 +75,19 @@ let cameraX = 0;
 const camera = { topDown:false, locked:false };
 
 /* ======================================================
+   SCENE STATE (which world the player is currently in)
+   ====================================================== */
+let currentScene = "autumn"; // "autumn" | "winter"
+
+const sceneSpawns = {
+  autumn: { x: 120 },
+  winter: { x: 200 }
+};
+
+// where the "walk back to autumn" trigger sits in the winter stub
+const winterReturn = { x: 200 };
+
+/* ======================================================
    ORCHARD COLOURS
    ====================================================== */
 const ORCHARD = {
@@ -249,18 +262,20 @@ const placementSlots = [
 ];
 
 /* ======================================================
-   SEASON TRANSITION (fade -> placeholder card -> fade back)
+   SEASON TRANSITION (fade -> scene swap -> fade back)
    ====================================================== */
 const seasonTransition = {
   phase: "idle", // "idle" -> "fadeOut" -> "hold" -> "fadeIn" -> back to "idle"
-  t: 0
+  t: 0,
+  targetScene: null
 };
 
 const TRANSITION_DURATIONS = { fadeOut: 600, hold: 1400, fadeIn: 600 };
 
-function startSeasonTransition() {
+function startSeasonTransition(targetScene) {
   seasonTransition.phase = "fadeOut";
   seasonTransition.t = 0;
+  seasonTransition.targetScene = targetScene;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -271,9 +286,24 @@ function updateSeasonTransition(deltaTime) {
 
   if (seasonTransition.t >= dur) {
     seasonTransition.t = 0;
-    if (seasonTransition.phase === "fadeOut") seasonTransition.phase = "hold";
-    else if (seasonTransition.phase === "hold") seasonTransition.phase = "fadeIn";
-    else if (seasonTransition.phase === "fadeIn") seasonTransition.phase = "idle";
+
+    if (seasonTransition.phase === "fadeOut") {
+      // screen is fully white now — swap the actual scene behind it
+      currentScene = seasonTransition.targetScene;
+      const spawn = sceneSpawns[currentScene];
+      player.x = spawn.x;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      cameraX = 0;
+
+      seasonTransition.phase = "hold";
+    } else if (seasonTransition.phase === "hold") {
+      seasonTransition.phase = "fadeIn";
+    } else if (seasonTransition.phase === "fadeIn") {
+      seasonTransition.phase = "idle";
+      seasonTransition.targetScene = null;
+    }
   }
 }
 
@@ -291,14 +321,15 @@ function drawSeasonTransition(ctx) {
   ctx.fillStyle = `rgba(247,244,238,${alpha})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // placeholder card text, once mostly faded in
-  if (alpha > 0.5) {
+  // scene name card, once mostly faded in
+  if (alpha > 0.5 && seasonTransition.targetScene) {
     const textAlpha = (alpha - 0.5) / 0.5;
+    const label = seasonTransition.targetScene[0].toUpperCase() + seasonTransition.targetScene.slice(1);
     ctx.fillStyle = `rgba(43,43,43,${textAlpha})`;
     ctx.font = "20px ui-monospace";
     const prevAlign = ctx.textAlign;
     ctx.textAlign = "center";
-    ctx.fillText("Winter — coming soon", canvas.width / 2, canvas.height / 2);
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
     ctx.textAlign = prevAlign;
   }
 }
@@ -570,7 +601,7 @@ function handleInput(){
     }
   }
 
-  if (keys.space && !camera.locked) {
+  if (keys.space && !camera.locked && currentScene === "autumn") {
     camera.topDown = !camera.topDown;
     camera.locked = true;
     overlayEl.style.display = camera.topDown ? "block" : "none";
@@ -592,6 +623,10 @@ function applyPhysics(){
     player.jumping = false;
     player.vy = 0;
   }
+
+  // everything below is autumn-specific (its platforms, ramp, stump, frog) —
+  // guarded so future scenes don't inherit autumn's solid surfaces
+  if (currentScene === "autumn") {
 
   // platform collision
   platforms.forEach(p => {
@@ -648,6 +683,8 @@ function applyPhysics(){
 
   frog.bob += 0.04;
   if (frogHatTip > 0) frogHatTip--;
+
+  } // end currentScene === "autumn"
 }
 
 /* ======================================================
@@ -887,17 +924,27 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
 /* ======================================================
    DRAW
    ====================================================== */
-function draw(){
-ctx.clearRect(0,0,canvas.width,canvas.height);
+function drawCrows(camX) {
+ctx.strokeStyle = "#3b2f28";
+crows.forEach(c=>{
+  c.x -= c.speed;
+  c.phase += 0.18;
 
-if (camera.topDown) {
-  ctx.fillStyle="rgba(245,245,240,0.94)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#2b2b2b";
-  ctx.fillText("Orchard → Paths",120,120);
-} else {
+  if (c.x < -20) c.x = canvas.width+20;
 
-const camX = cameraX;
+  const flap = Math.sin(c.phase) * 4;
+
+  ctx.beginPath();
+  ctx.moveTo(c.x - camX, c.y);
+  ctx.lineTo(c.x - camX + 8, c.y + flap);
+  ctx.lineTo(c.x - camX + 16, c.y);
+  ctx.stroke();
+});
+
+}
+
+function drawAutumnScene(camX) {
+
 
 // low fog gradient
  const lowFogGrad = ctx.createLinearGradient(0, gy - 40, 0, gy + 60);
@@ -1005,22 +1052,7 @@ leaves.forEach(l => {
   ctx.fill();
 });
 
-/* CROWS */
-ctx.strokeStyle = "#3b2f28";
-crows.forEach(c=>{
-  c.x -= c.speed;
-  c.phase += 0.18;
-
-  if (c.x < -20) c.x = canvas.width+20;
-
-  const flap = Math.sin(c.phase) * 4;
-
-  ctx.beginPath();
-  ctx.moveTo(c.x - camX, c.y);
-  ctx.lineTo(c.x - camX + 8, c.y + flap);
-  ctx.lineTo(c.x - camX + 16, c.y);
-  ctx.stroke();
-});
+drawCrows(camX);
 
 /* NEAR TREE TRUNKS */
 ctx.fillStyle = "rgba(90,65,40,0.18)";
@@ -1331,6 +1363,59 @@ ctx.fillText("Some weight unlocks paths.",
 }
 
 
+
+}
+
+function drawWinterScene(camX) {
+  // --- WINTER STUB: minimal placeholder scene, built out next ---
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#dbe9f0");
+  sky.addColorStop(0.5, "#c3d8e6");
+  sky.addColorStop(1, "#eef4f6");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  drawCrows(camX); // same birds, consistent across zones
+
+  ctx.fillStyle = "#eef4f6";
+  ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.font = "14px ui-monospace";
+  ctx.fillText("Winter (stub) \u2014 walk to the marker and press \u2193 to return to autumn", 20 - camX, 40);
+
+  // simple return-to-autumn marker
+  const rx = winterReturn.x - camX;
+  ctx.strokeStyle = "#6b4026";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(rx, gy - 70);
+  ctx.lineTo(rx, gy);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(150,190,255,0.5)";
+  ctx.beginPath();
+  ctx.arc(rx, gy - 70, 10, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function draw(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+if (camera.topDown) {
+  ctx.fillStyle="rgba(245,245,240,0.94)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#2b2b2b";
+  ctx.fillText("Orchard → Paths",120,120);
+} else {
+
+const camX = cameraX;
+
+if (currentScene === "autumn") {
+  drawAutumnScene(camX);
+} else if (currentScene === "winter") {
+  drawWinterScene(camX);
+}
+
 /* PLAYER */
 const px = player.x - camX;
 const py = gy - player.height - player.y;
@@ -1382,19 +1467,7 @@ drawSeasonTransition(ctx);
 /* ======================================================
    MAIN LOOP
    ====================================================== */
-function update(){
-
-  // console.log("UPDATE START y =", apple.y);
-
-const now = performance.now();
-const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
-lastTime = now;
-
-  handleInput();
-  applyPhysics();
-
-
-
+function updateAutumnScene(deltaTime) {
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
 
@@ -1570,7 +1643,6 @@ if (apple.split) {
     }
   }
 
-  updateFlyingItems(deltaTime, cameraX);
 
   // apple glitter decay
 if (apple.glitter > 0) apple.glitter--;
@@ -1629,8 +1701,41 @@ if (
   seasonTransition.phase === "idle" &&
   pressedDownNear(doorway.x + doorway.width / 2, 0, 30, 6, 6)
 ) {
-  startSeasonTransition();
+  startSeasonTransition("winter");
 }
+
+}
+
+function updateWinterScene(deltaTime) {
+  // --- WINTER STUB: just a way back to autumn for now ---
+  if (
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(winterReturn.x, 0, 30, 6, 6)
+  ) {
+    startSeasonTransition("autumn");
+  }
+}
+
+function update(){
+
+  // console.log("UPDATE START y =", apple.y);
+
+const now = performance.now();
+const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
+lastTime = now;
+
+  handleInput();
+  applyPhysics();
+
+
+
+if (currentScene === "autumn") {
+  updateAutumnScene(deltaTime);
+} else if (currentScene === "winter") {
+  updateWinterScene(deltaTime);
+}
+
+  updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
 
 updateSeasonTransition(deltaTime);
 
