@@ -89,7 +89,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn"; // "autumn" | "spring"
+let currentScene = "spring"; // TEMP for testing — normally "autumn" | "spring" | "clouds"
 
 /* ======================================================
    ORCHARD COLOURS
@@ -119,7 +119,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 120,
+  x: 2270, // TEMP for testing (right in front of the wiggle bush at x:2300) — normally 120
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -140,8 +140,16 @@ const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
 const ITEM_ICONS = {
   appleSlice: "🍎",
   boomerang: "🪃",
-  tulip: "🌷"
+  tulip: "🌷",
+  crystal: "💎",
+  bucket: "🪣"
 };
+
+// the bucket is stateful (empty/filling/full), unlike every other item
+// which is just a count — tracked separately from the inventory dict
+let bucketDropCount = 0;
+let bucketFilled = false;
+const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
 // into a slot. Click an inventory chip to select/deselect it.
@@ -181,13 +189,17 @@ function updateInventoryUI() {
 
   entries.forEach(([type, count]) => {
     const chip = document.createElement("span");
-    chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
+    chip.textContent = type === "bucket"
+      ? (bucketFilled ? "🪣💧" : "🪣")
+      : `${ITEM_ICONS[type] || "?"} x${count}`;
     chip.style.cursor = "pointer";
     chip.style.marginRight = "8px";
     chip.style.padding = "1px 5px";
     chip.style.borderRadius = "4px";
     chip.style.border = heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
-    chip.title = "Click to hold this item";
+    chip.title = type === "bucket"
+      ? (bucketFilled ? "Full — carry it down to spring" : `${bucketDropCount}/${BUCKET_DROPS_NEEDED} drops collected`)
+      : "Click to hold this item";
     chip.addEventListener("click", () => selectHeldItem(type));
     invEl.appendChild(chip);
   });
@@ -273,6 +285,20 @@ const connections = [
     acceptsItemType: "appleSlice",
     filled: false,
     filledItemType: null
+  },
+  {
+    // map-only entry — spring<->clouds travel is already handled by the
+    // swing (up) and the cloud-hole (down), not a door pair. This exists
+    // purely so updateMapUI() draws an edge between the two nodes; the
+    // "doors" data here is never used for anything physical.
+    id: "spring-clouds",
+    doors: {
+      spring: { leadsTo: "clouds" },
+      clouds: { leadsTo: "spring" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -287,7 +313,7 @@ const sceneMapInfo = {
   clouds: { label: "Clouds", x: 400, y: 40 }
 };
 
-const discoveredScenes = { autumn: true }; // autumn is where you start
+const discoveredScenes = { autumn: true, spring: true }; // TEMP: spring added for testing — normally just autumn
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -393,7 +419,7 @@ updateMapUI(); // populate once at load, so autumn shows up immediately
 const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
-  clouds: { x: 200 } // no door here — you arrive by launch, not by walking in
+  clouds: { x: 420 } // no door here — you arrive by launch; positioned right of the return hole (300-360)
 };
 
 /* ======================================================
@@ -800,7 +826,7 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted) {
     if (keys.left) player.x -= player.speed;
     if (keys.right) player.x += player.speed;
 
@@ -850,6 +876,9 @@ function applyPhysics(){
   // while on the swing, position is fully driven by updateSwing() —
   // no normal gravity/ground physics applies at all
   if (swing.mounted) return;
+
+  // same idea for the rabbit-shuttle — position is driven by updateRabbitShuttle()
+  if (rabbitShuttle.mounted) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -970,7 +999,30 @@ function applyPhysics(){
 
   updateNPCIdle(frog);
 
-  } // end currentScene === "autumn"
+  } else if (currentScene === "clouds") {
+
+  // hop-cloud platform collision — same pattern as autumn's platforms.
+  // Missing a jump just means falling through to the base cloud-ground,
+  // no hazard — these are stepping stones, not another set of holes.
+  hopClouds.forEach(p => {
+    const platformTop = p.height;
+    const playerBottom = player.y;
+
+    if (
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
+  } // end currentScene checks
 }
 
 /* ======================================================
@@ -1227,10 +1279,72 @@ function drawCloudStack(x, y, scale, camX) {
   ctx.fill();
 }
 
+// decorative-only animal silhouettes — background clouds shaped like
+// animals, not walkable. Simpler than the interactive platform versions.
+function drawCloudBunnyBg(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(cx - 10 * scale, y - 20 * scale, 6 * scale, 16 * scale, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(cx + 6 * scale, y - 20 * scale, 6 * scale, 16 * scale, 0.15, 0, Math.PI * 2);
+  ctx.ellipse(cx, y, 26 * scale, 16 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCloudWhaleBg(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 38 * scale, 18 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx - 34 * scale, y - 10 * scale, 10 * scale, 14 * scale, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCloudAlligatorBg(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 42 * scale, 12 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 40 * scale, y + 2 * scale, 10 * scale, 7 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCloudHummingbirdBg(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+  const wingFlap = Math.sin(performance.now() * 0.02) * 0.4;
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  // body
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 14 * scale, 7 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // beak
+  ctx.beginPath();
+  ctx.moveTo(cx + 13 * scale, y);
+  ctx.lineTo(cx + 23 * scale, y - 1 * scale);
+  ctx.lineTo(cx + 13 * scale, y + 2 * scale);
+  ctx.closePath();
+  ctx.fill();
+
+  // flapping wing
+  ctx.save();
+  ctx.translate(cx - 2 * scale, y - 4 * scale);
+  ctx.rotate(wingFlap);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 11 * scale, 4 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // dispatcher — picks the right silhouette by type, "puffy" (drawCloud) is the default
 function drawBackgroundCloud(x, y, scale, type, camX) {
   if (type === "wisp") drawCloudWisp(x, y, scale, camX);
   else if (type === "stack") drawCloudStack(x, y, scale, camX);
+  else if (type === "bunny") drawCloudBunnyBg(x, y, scale, camX);
+  else if (type === "whale") drawCloudWhaleBg(x, y, scale, camX);
+  else if (type === "alligator") drawCloudAlligatorBg(x, y, scale, camX);
+  else if (type === "hummingbird") drawCloudHummingbirdBg(x, y, scale, camX);
   else drawCloud(x, y, scale, camX);
 }
 
@@ -1488,12 +1602,122 @@ function drawFoliageOcclusion(ctx, x, y, size) {
   ctx.fill();
 }
 
+// crystal: hand-drawn blue gem, not an emoji — guarantees the color, plus
+// a pulsing glow and a couple sparkle accents for the "sparkling" feel
+function drawCrystalShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const pulse = Math.sin(performance.now() * 0.005) * 0.5 + 0.5;
+
+  // soft glow behind it
+  ctx.fillStyle = `rgba(120,180,255,${0.25 + pulse * 0.25})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // gem body
+  ctx.fillStyle = "#4a90e2";
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(size * 0.7, -size * 0.2);
+  ctx.lineTo(size * 0.4, size);
+  ctx.lineTo(-size * 0.4, size);
+  ctx.lineTo(-size * 0.7, -size * 0.2);
+  ctx.closePath();
+  ctx.fill();
+
+  // facet highlight
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(size * 0.3, -size * 0.1);
+  ctx.lineTo(0, size * 0.3);
+  ctx.lineTo(-size * 0.2, -size * 0.1);
+  ctx.closePath();
+  ctx.fill();
+
+  // sparkle accents
+  ctx.fillStyle = `rgba(255,255,255,${0.6 + pulse * 0.4})`;
+  ctx.beginPath();
+  ctx.arc(size * 0.55, -size * 0.7, 1.6, 0, Math.PI * 2);
+  ctx.arc(-size * 0.5, size * 0.4, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// bucket: always drawn empty in-world — the only time it's ever rendered
+// on canvas is sitting in the bush and flying to the basket on pickup,
+// both of which happen before it's ever been filled. Fill state only
+// matters for the inventory chip's display, handled in updateInventoryUI.
+// bucket — now reflects its REAL fill state (checks the global bucketDropCount/
+// bucketFilled directly), so the world sprite and the held-item indicator
+// both show actual progress, not always the empty look. Water rises inside
+// as drops are caught. Top ellipse gives a slight "looking down into it" read.
+function drawBucketShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const fillRatio = bucketFilled ? 1 : Math.min(bucketDropCount / BUCKET_DROPS_NEEDED, 1);
+
+  const bucketPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.6, -size * 0.5);
+    ctx.lineTo(size * 0.6, -size * 0.5);
+    ctx.lineTo(size * 0.45, size * 0.7);
+    ctx.lineTo(-size * 0.45, size * 0.7);
+    ctx.closePath();
+  };
+
+  ctx.fillStyle = "#c9b896";
+  bucketPath();
+  ctx.fill();
+
+  // water level, clipped to the bucket's silhouette, rising from the bottom
+  if (fillRatio > 0) {
+    ctx.save();
+    bucketPath();
+    ctx.clip();
+    const waterTop = size * 0.7 - size * 1.2 * fillRatio;
+    ctx.fillStyle = "rgba(90,160,230,0.88)";
+    ctx.fillRect(-size * 0.7, waterTop, size * 1.4, size * 1.5);
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = "#6b5a40";
+  ctx.lineWidth = 1.5;
+  bucketPath();
+  ctx.stroke();
+
+  // slight top opening, viewed a little from above — makes it read as a
+  // container you can see into, not just a flat silhouette
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.5, size * 0.6, size * 0.16, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(107,90,64,0.7)";
+  ctx.stroke();
+
+  // handle
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.5, size * 0.5, Math.PI, 0);
+  ctx.strokeStyle = "#6b5a40";
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
   } else if (itemType === "tulip") {
     drawTulipShape(ctx, x, y, size, rotation);
+  } else if (itemType === "crystal") {
+    drawCrystalShape(ctx, x, y, size, rotation);
+  } else if (itemType === "bucket") {
+    drawBucketShape(ctx, x, y, size, rotation);
   } else {
     drawApplePieceShape(ctx, x, y, size, rotation);
   }
@@ -2072,6 +2296,27 @@ const goalCloud = {
   radius: 80
 };
 
+/* ======================================================
+   WIGGLE BUSH — periodic idle wiggle just to catch your eye
+   (purely cosmetic, runs on its own clock). Separately, mashing
+   spacebar while standing in front of it — with presses spaced
+   at least half a second apart, so holding it down doesn't just
+   finish it instantly — gradually parts the branches. A bucket
+   sits inside once fully open.
+   ====================================================== */
+const WIGGLE_BUSH_PRESS_GAP = 500;   // ms — minimum spacing between presses that count
+const WIGGLE_BUSH_REQUIRED = 9;      // presses needed to fully open
+
+const wiggleBush = {
+  x: 2300, // well past the swing/goal cloud — a real "keep exploring" find
+  noticeTimer: 3000 + Math.random() * 3000,
+  noticeWiggle: 0,     // >0 while the idle "notice me" shake plays
+  presses: 0,
+  pressCooldown: 0,
+  opened: false,
+  bucketTaken: false
+};
+
 function swingBobPosition(angle) {
   return {
     x: swing.pivotX + SWING_ROPE_LENGTH * Math.sin(angle),
@@ -2333,6 +2578,8 @@ function drawSpringScene(camX) {
 
   drawGoalCloud(camX);
 
+  drawWiggleBush(camX);
+
   drawRabbit(camX);
 
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
@@ -2395,7 +2642,80 @@ function drawGoalCloud(camX) {
   ctx.restore();
 }
 
-// --- CLOUDS: minimal stub, reached only by a successful swing launch ---
+// the two halves visibly split apart as progress builds; a notice-wiggle
+// shake plays on its own clock, independent of player interaction
+function drawWiggleBush(camX) {
+  const bx = wiggleBush.x - camX;
+  const progress = wiggleBush.opened ? 1 : wiggleBush.presses / WIGGLE_BUSH_REQUIRED;
+  const gap = progress * 26;
+  const shake = wiggleBush.noticeWiggle > 0 ? Math.sin(wiggleBush.noticeWiggle * 0.4) * 1.5 : 0;
+
+  // left half
+  ctx.save();
+  ctx.translate(-gap + shake, 0);
+  ctx.fillStyle = "rgba(90,90,50,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(bx - 6, gy + 3, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(95,145,75,0.9)";
+  ctx.beginPath();
+  ctx.arc(bx - 14, gy - 9, 13, 0, Math.PI * 2);
+  ctx.arc(bx - 2, gy - 14, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // right half
+  ctx.save();
+  ctx.translate(gap + shake, 0);
+  ctx.fillStyle = "rgba(95,145,75,0.9)";
+  ctx.beginPath();
+  ctx.arc(bx + 14, gy - 9, 13, 0, Math.PI * 2);
+  ctx.arc(bx + 2, gy - 14, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // bucket visible in the gap once open, until taken
+  if (wiggleBush.opened && !wiggleBush.bucketTaken) {
+    drawBucketShape(ctx, bx, gy - 18, 12, 0);
+  }
+}
+
+function updateWiggleBush(deltaTime) {
+  // cosmetic notice-wiggle — runs on its own clock, regardless of the player
+  wiggleBush.noticeTimer -= deltaTime * 1000;
+  if (wiggleBush.noticeTimer <= 0) {
+    wiggleBush.noticeWiggle = 100;
+    wiggleBush.noticeTimer = 7000 + Math.random() * 4000;
+  }
+  if (wiggleBush.noticeWiggle > 0) wiggleBush.noticeWiggle--;
+
+  if (wiggleBush.pressCooldown > 0) wiggleBush.pressCooldown -= deltaTime * 1000;
+
+  if (!wiggleBush.opened) {
+    const nearBush = isPlayerNear(wiggleBush.x, 0, 40, 10, 10);
+
+    if (!nearBush) {
+      wiggleBush.presses = 0; // reset if you walk away mid-attempt
+    } else if (keys.space && wiggleBush.pressCooldown <= 0) {
+      wiggleBush.presses++;
+      wiggleBush.pressCooldown = WIGGLE_BUSH_PRESS_GAP;
+
+      if (wiggleBush.presses >= WIGGLE_BUSH_REQUIRED) {
+        wiggleBush.opened = true;
+      }
+    }
+  } else if (!wiggleBush.bucketTaken) {
+    if (pressedDownNear(wiggleBush.x, 18, 30, 15, 25)) {
+      wiggleBush.bucketTaken = true;
+      startCollectAnimation(
+        { x: wiggleBush.x, y: gy - 18, size: 12, rotation: 0 },
+        "bucket"
+      );
+    }
+  }
+}
+
+// --- CLOUDS ---
 const cloudsDecor = [
   { x: 60,   y: 100, scale: 1.4, type: "puffy" },
   { x: 280,  y: 60,  scale: 1.0, type: "wisp" },
@@ -2403,12 +2723,289 @@ const cloudsDecor = [
   { x: 780,  y: 80,  scale: 1.1, type: "puffy" },
   { x: 950,  y: 150, scale: 1.3, type: "wisp" },
   { x: 1150, y: 55,  scale: 0.9, type: "stack" },
-  { x: 1400, y: 110, scale: 1.5, type: "puffy" }
+  { x: 1400, y: 110, scale: 1.5, type: "puffy" },
+  { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
+  { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
+  { x: 1550, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
+  { x: 900,  y: 140, scale: 1.3, type: "hummingbird" } // decorative — not walkable
 ];
 
 // the way back down — same fall-through mechanic as spring's holes, just
 // leads to a scene switch + floaty descent instead of a same-scene respawn
 const cloudHole = { x: 300, width: 60 };
+
+// the main hop-path — a real mix of single-jump, double-jump, and climbing
+// gaps. Missing a jump just drops you to the base cloud-ground, no hazard.
+// Ends at a shuttle dock — the alligator beyond it is NOT reachable by
+// jumping; the gap is deliberately wider than anything jump/double-jump can cross.
+const hopClouds = [
+  { x: 480,  height: 45,  width: 70 },
+  { x: 580,  height: 90,  width: 60 },
+  { x: 690,  height: 95,  width: 130, type: "whale" },      // big stationary anchor
+  { x: 860,  height: 60,  width: 60 },
+  { x: 960,  height: 60,  width: 60 },
+  { x: 1060, height: 150, width: 60 },                      // big gap — needs the double jump
+  { x: 1160, height: 190, width: 60 },
+  { x: 1250, height: 200, width: 60 },                      // shuttle's near dock — last normally-reachable cloud
+
+  // --- everything below is only reachable via the shuttle ---
+  { x: 1550, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
+  { x: 1680, height: 200, width: 60 },
+  { x: 1780, height: 170, width: 60 },
+  { x: 1880, height: 140, width: 70 },
+
+  // --- two lower tiers under the shuttle zone — reachable without ever
+  // touching the shuttle, so that whole horizontal stretch isn't just empty air ---
+  { x: 1300, height: 40,  width: 60 },
+  { x: 1420, height: 90,  width: 60 },
+  { x: 1550, height: 40,  width: 60 },
+  { x: 1680, height: 90,  width: 60 },
+  { x: 1800, height: 40,  width: 70 }
+];
+
+// rabbit-shuttle — travels between two docks (a real destination, not a
+// patrol going nowhere). Docks for 4s at each end so you can mount without
+// needing to time a moving target; the crossing itself is a gentle
+// multi-hop sequence, not a smooth glide or a rigid stop-start.
+const rabbitShuttle = {
+  dockA: { x: 1250, height: 200 }, // matches the last normally-reachable hop-cloud
+  dockB: { x: 1550, height: 220 }, // matches the alligator — otherwise unreachable
+  state: "docked",   // "docked" | "traveling"
+  dockedAt: "A",
+  t: 0,
+  DOCK_TIME: 4000,
+  TRAVEL_TIME: 4500,  // slow, deliberate crossing
+  HOP_COUNT: 5,        // how many gentle hops the crossing is broken into
+  mounted: false,
+  currentX: 1250,
+  currentHeight: 200,
+  width: 64
+};
+
+// the crystal — sits on the alligator cloud, only reachable via the shuttle
+const crystal = {
+  x: 1645, // right-of-center on the alligator platform (spans 1550-1690), not its left edge
+  heightAboveGround: 240, // just above the alligator platform's surface (height 220)
+  collected: false,
+  collecting: false
+};
+
+function drawCrystalOnCloud(camX) {
+  if (crystal.collected || crystal.collecting) return;
+  drawCrystalShape(ctx, crystal.x - camX, gy - crystal.heightAboveGround, 11, 0);
+}
+
+/* ======================================================
+   WATER DRIPS — a few clouds periodically release a single
+   falling drop. Purely visual for now; this is the setup for
+   a future bucket-collection mechanic (pinned, not built yet).
+   ====================================================== */
+const WATER_DRIP_INTERVAL_MIN = 7000;  // ms
+const WATER_DRIP_INTERVAL_MAX = 11000; // ms — "every 7 seconds or so, maybe longer"
+const WATER_DRIP_FALL_SPEED = 40;      // height units per second
+
+const waterDrips = [
+  { x: 1680, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
+  { x: 1780, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
+];
+
+function updateWaterDrips(deltaTime) {
+  waterDrips.forEach(drip => {
+    if (drip.dropHeight === null) {
+      drip.timer -= deltaTime * 1000;
+      if (drip.timer <= 0) {
+        drip.dropHeight = drip.sourceHeight;
+        drip.timer = WATER_DRIP_INTERVAL_MIN + Math.random() * (WATER_DRIP_INTERVAL_MAX - WATER_DRIP_INTERVAL_MIN);
+      }
+    } else {
+      drip.dropHeight -= WATER_DRIP_FALL_SPEED * deltaTime;
+
+      // auto-catch: bucket must be actively HELD (clicked/selected), not
+      // just sitting uncollected-from in inventory — "in play" means equipped.
+      // Position matters, timing doesn't — no button press needed.
+      if (heldItem === "bucket" && !bucketFilled) {
+        const playerCenterX = player.x + player.width / 2;
+        const nearX = Math.abs(playerCenterX - drip.x) < 40;
+        const nearHeight = Math.abs(player.y - drip.dropHeight) < 20;
+
+        if (nearX && nearHeight) {
+          bucketDropCount++;
+          drip.dropHeight = null; // caught — gone until the next cycle
+          if (bucketDropCount >= BUCKET_DROPS_NEEDED) {
+            bucketFilled = true;
+          }
+          updateInventoryUI(); // refresh the chip immediately
+          return;
+        }
+      }
+
+      if (drip.dropHeight <= 0) {
+        drip.dropHeight = null; // reached the ground, gone until the next cycle
+      }
+    }
+  });
+}
+
+function drawWaterDrips(camX) {
+  waterDrips.forEach(drip => {
+    if (drip.dropHeight === null) return;
+
+    const dx = drip.x - camX;
+    const dy = gy - drip.dropHeight;
+
+    ctx.fillStyle = "rgba(120,180,255,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(dx, dy, 3, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// generic hop-cloud platform — flatter/more elongated than the puffy
+// decorative shape, reads more clearly as "a thing you stand on"
+function drawPlatformCloud(x, height, width, camX) {
+  const cx = x - camX;
+  const cy = gy - height;
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.2, cy, width * 0.32, 14, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + width * 0.6, cy - 4, width * 0.28, 13, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + width * 0.85, cy, width * 0.22, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.98)";
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.5, cy - 6, width * 0.45, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// whale anchor platform — long body, tail flip, small spout
+function drawWhaleCloud(x, height, width, camX) {
+  const cx = x - camX;
+  const cy = gy - height;
+
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.45, cy, width * 0.42, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(cx + width * 0.02, cy);
+  ctx.quadraticCurveTo(cx - width * 0.08, cy - 26, cx - width * 0.02, cy - 30);
+  ctx.quadraticCurveTo(cx + width * 0.06, cy - 10, cx + width * 0.1, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.75, cy - 24, 8, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(cx + width * 0.75, cy - 6, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// alligator anchor platform — long low body, snout, back-ridge bumps
+function drawAlligatorCloud(x, height, width, camX) {
+  const cx = x - camX;
+  const cy = gy - height;
+
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.5, cy, width * 0.48, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(cx + width * 0.95, cy + 2, width * 0.12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.ellipse(cx + width * (0.25 + i * 0.15), cy - 12, 8, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(cx + width * 0.85, cy - 2, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// dispatcher for the interactive hop-clouds
+function drawHopCloud(cloud, camX) {
+  if (cloud.type === "whale") drawWhaleCloud(cloud.x, cloud.height, cloud.width, camX);
+  else if (cloud.type === "alligator") drawAlligatorCloud(cloud.x, cloud.height, cloud.width, camX);
+  else drawPlatformCloud(cloud.x, cloud.height, cloud.width, camX);
+}
+
+// the shuttle itself — same rabbit silhouette as before
+function drawRabbitShuttleCloud(camX) {
+  const cx = rabbitShuttle.currentX - camX;
+  const cy = gy - rabbitShuttle.currentHeight;
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.beginPath();
+  ctx.ellipse(cx - 10, cy - 22, 7, 20, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(cx + 6, cy - 22, 7, 20, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 30, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(cx + 28, cy + 4, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(cx - 14, cy - 2, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// docked: gentle idle bob in place, not a rigid stop. traveling: a real
+// multi-hop sequence across the gap (bounces along the way, not a glide),
+// trending from one dock's height to the other's as it goes.
+function updateRabbitShuttle(deltaTime) {
+  rabbitShuttle.t += deltaTime * 1000;
+
+  if (rabbitShuttle.state === "docked") {
+    const dock = rabbitShuttle.dockedAt === "A" ? rabbitShuttle.dockA : rabbitShuttle.dockB;
+    rabbitShuttle.currentX = dock.x;
+    rabbitShuttle.currentHeight = dock.height + Math.abs(Math.sin(rabbitShuttle.t * 0.0025)) * 6;
+
+    if (rabbitShuttle.t >= rabbitShuttle.DOCK_TIME) {
+      rabbitShuttle.state = "traveling";
+      rabbitShuttle.t = 0;
+    }
+  } else {
+    const from = rabbitShuttle.dockedAt === "A" ? rabbitShuttle.dockA : rabbitShuttle.dockB;
+    const to = rabbitShuttle.dockedAt === "A" ? rabbitShuttle.dockB : rabbitShuttle.dockA;
+
+    const progress = Math.min(rabbitShuttle.t / rabbitShuttle.TRAVEL_TIME, 1);
+    const hopPhase = (progress * rabbitShuttle.HOP_COUNT) % 1;
+    const hopArc = Math.abs(Math.sin(hopPhase * Math.PI)) * 35; // gentle bounce per hop
+
+    rabbitShuttle.currentX = from.x + (to.x - from.x) * progress;
+    rabbitShuttle.currentHeight = from.height + (to.height - from.height) * progress + hopArc;
+
+    if (rabbitShuttle.mounted) {
+      player.x = rabbitShuttle.currentX;
+      player.y = rabbitShuttle.currentHeight;
+    }
+
+    if (progress >= 1) {
+      rabbitShuttle.state = "docked";
+      rabbitShuttle.dockedAt = rabbitShuttle.dockedAt === "A" ? "B" : "A";
+      rabbitShuttle.t = 0;
+    }
+  }
+
+  if (rabbitShuttle.mounted && keys.down) {
+    rabbitShuttle.mounted = false; // dismount wherever it currently is, even mid-crossing
+  }
+}
 
 function drawCloudsScene(camX) {
   // multi-stop sky — deeper blue up top, fading toward near-white
@@ -2449,10 +3046,39 @@ function drawCloudsScene(camX) {
   }
 
   drawHole(cloudHole.x, cloudHole.width, camX); // same visual language as spring's holes
+
+  hopClouds.forEach(c => drawHopCloud(c, camX));
+  drawCrystalOnCloud(camX);
+  drawWaterDrips(camX);
+  drawRabbitShuttleCloud(camX);
 }
 
 function updateCloudsScene(deltaTime) {
   if (fallState.active) return; // handled globally by updateFallState
+
+  updateWaterDrips(deltaTime);
+  updateRabbitShuttle(deltaTime);
+
+  // mount via spacebar — same interact key as everything else, so it
+  // stays free for picking things up while riding, not claimed by mounting.
+  // Only mountable while DOCKED — that's the whole point of the dock pause,
+  // so you never have to time a moving target
+  if (!rabbitShuttle.mounted && !player.launched && rabbitShuttle.state === "docked") {
+    if (pressedDownNear(rabbitShuttle.currentX, rabbitShuttle.currentHeight, 40, 30, 30)) {
+      rabbitShuttle.mounted = true;
+    }
+  }
+
+  // CRYSTAL PICKUP — same shape as tulip/boomerang's pickup
+  if (!crystal.collected && !crystal.collecting) {
+    if (pressedDownNear(crystal.x, crystal.heightAboveGround, 26, 15, 25)) {
+      crystal.collecting = true;
+      startCollectAnimation(
+        { x: crystal.x, y: gy - crystal.heightAboveGround, size: 11, rotation: 0 },
+        "crystal"
+      );
+    }
+  }
 
   if (player.y <= 0) {
     const playerCenterX = player.x + player.width / 2;
@@ -2828,7 +3454,9 @@ function updateFallState(deltaTime) {
       discoveredScenes.spring = true;
       updateMapUI();
 
-      player.x = 400; // fixed landing spot for now — precise x-correspondence is a later problem
+      // direct x-correspondence: player.x hasn't moved since falling in
+      // (movement is frozen during the fall), so it's already sitting
+      // exactly where the cloud-hole was — landing directly below it
       player.y = 200;
       player.vy = 0;
       player.vx = 0;
@@ -2866,6 +3494,8 @@ function updateSpringScene(deltaTime) {
 
   // mounting the swing now happens via jump, in handleInput — just run its physics here
   updateSwing(deltaTime);
+
+  updateWiggleBush(deltaTime);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
