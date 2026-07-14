@@ -129,7 +129,9 @@ const player = {
   vy: 0,
   vx: 0,               // horizontal momentum — only used during a swing launch
   launched: false,     // true while mid-flight from a swing release
-  launchPeakHeight: 0  // tracks how high THIS launch has reached, for the cloud threshold check
+  launchPeakHeight: 0, // tracks how high THIS launch has reached, for the cloud threshold check
+  facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
+  cloudLandingImmunity: 0 // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
 };
 
 /* ======================================================
@@ -142,7 +144,9 @@ const ITEM_ICONS = {
   boomerang: "🪃",
   tulip: "🌷",
   crystal: "💎",
-  bucket: "🪣"
+  bucket: "🪣",
+  honey: "🍯",
+  cloudPiece: "☁️"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -207,18 +211,26 @@ function updateInventoryUI() {
     chip.style.border = heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
     chip.style.display = "inline-flex";
     chip.style.alignItems = "center";
+    chip.style.verticalAlign = "middle"; // overrides default baseline alignment, which differed between text-only and canvas-backed chips
 
     if (ITEM_CANVAS_RENDER[type]) {
       const iconCanvas = document.createElement("canvas");
       iconCanvas.width = 20;
       iconCanvas.height = 20;
-      iconCanvas.style.verticalAlign = "middle";
+      iconCanvas.style.display = "block"; // removes the inline element's baseline gap, so flex centering is exact
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
+
+      const label = document.createElement("span");
+      label.textContent = ` x${count}`;
+      chip.appendChild(label);
 
       chip.title = type === "bucket"
         ? (bucketFilled ? "Full — carry it down to spring" : `${bucketDropCount}/${BUCKET_DROPS_NEEDED} drops collected`)
         : "Click to hold this item";
+    } else if (type === "cloudPiece") {
+      chip.textContent = `${ITEM_ICONS[type]} x${count}/8`;
+      chip.title = "Click to hold this item";
     } else {
       chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
       chip.title = "Click to hold this item";
@@ -254,6 +266,15 @@ const platforms = [
     heightAboveGround: 48,
     width: 120,
     thickness: 14
+  },
+  {
+    // required to reach the (raised) hive. At the tightened radius, only
+    // ~1130-1190 (the right portion) is actually in range — verified the
+    // left ~50px genuinely misses, so it's not "anywhere on the platform"
+    x: 1080,
+    heightAboveGround: 60,
+    width: 110,
+    thickness: 14
   }
 ];
 
@@ -275,7 +296,7 @@ const ramps = [
 const boomerang = {
   x: 918,
   heightAboveGround: 82, // sits just above the top of the new, elevated ramp
-  collected: false,
+  collected: false, // normally false
   collecting: false
 };
 
@@ -303,7 +324,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 1200, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 1400, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -607,7 +628,7 @@ const tree = {
   y: groundY,           // bottom of tree
   width: 80,
   height: 180,          // tree height
-  canopyY: gy - 180 // top of tree for apple spawn (screen space, ground = gy)
+  canopyY: gy - 170 // top of tree for apple spawn — matches the drawn canopy's actual top edge (circle center gy-120, radius 50)
 
 };
 
@@ -811,6 +832,112 @@ function updateFlyingItems(deltaTime, camX) {
   }
 }
 
+/* ======================================================
+   BOOMERANG THROW — spacebar while held, launches in the
+   direction you're currently facing. Does a real out-and-back
+   arc in open air; if it passes near a valid target (the hive,
+   for now), it redirects into a hit instead of continuing past.
+   ====================================================== */
+const BOOMERANG_OUT_DISTANCE = 250;
+const BOOMERANG_OUT_DURATION = 850;     // ms — slower, matches the game's slower pace
+const BOOMERANG_RETURN_DURATION = 1000; // ms
+const BOOMERANG_HIT_RADIUS = 15; // tightened further — verified honey/vault windows narrow to ~40-60px real zones, not "anywhere"
+
+let boomerangThrow = null; // null when not in flight
+
+function throwBoomerang() {
+  boomerangThrow = {
+    startX: player.x + player.width / 2,
+    startY: player.y + player.height * 0.6,
+    x: player.x + player.width / 2,
+    y: player.y + player.height * 0.6,
+    facing: player.facing,
+    phase: "out", // "out" -> "returning"
+    t: 0,
+    rotation: 0,
+    thrownWhileAirborne: player.jumping // general flag — any target can require this, not just one vault
+  };
+  heldItem = null; // no longer sitting in your hand — it's in the air
+}
+
+function updateBoomerangThrow(deltaTime) {
+  if (!boomerangThrow) return;
+  const b = boomerangThrow;
+  b.t += deltaTime * 1000;
+  b.rotation += deltaTime * 20; // fast visual spin, purely cosmetic
+
+  if (b.phase === "out") {
+    const p = Math.min(b.t / BOOMERANG_OUT_DURATION, 1);
+    const eased = 1 - Math.pow(1 - p, 2); // ease-out — fast start, settles at the far point
+    b.x = b.startX + b.facing * BOOMERANG_OUT_DISTANCE * eased;
+    b.y = b.startY + Math.sin(p * Math.PI) * 90; // real upward arc — has to reach the hive's height
+
+    // check for a redirect — the hive in autumn, or a vault cloud in clouds
+    if (currentScene === "autumn" && !beehive.knocked) {
+      const dx = b.x - beehive.x;
+      const dy = b.y - beehive.heightAboveGround;
+      if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+        beehive.knocked = true;
+        honey.x = beehive.x;
+        honey.heightAboveGround = beehive.heightAboveGround; // starts falling from the hive's actual height
+        honey.available = true;
+        honey.falling = true;
+
+        b.phase = "returning";
+        b.t = 0;
+        b.returnFromX = b.x;
+        b.returnFromY = b.y;
+      }
+    } else if (currentScene === "clouds") {
+      for (let i = 0; i < vaultClouds.length; i++) {
+        const v = vaultClouds[i];
+        if (v.phase !== "closed") continue;
+        if (v.requiresAirborne && !b.thrownWhileAirborne) continue;
+        const dx = b.x - v.x;
+        const dy = b.y - v.heightAboveGround;
+        if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+          v.phase = "opening";
+          v.phaseT = 0;
+
+          b.phase = "returning";
+          b.t = 0;
+          b.returnFromX = b.x;
+          b.returnFromY = b.y;
+          break;
+        }
+      }
+    }
+
+    if (b.phase === "out" && p >= 1) {
+      b.phase = "returning";
+      b.t = 0;
+      b.returnFromX = b.x;
+      b.returnFromY = b.y;
+    }
+  } else {
+    // returning — curves back to wherever it was originally thrown from
+    const p = Math.min(b.t / BOOMERANG_RETURN_DURATION, 1);
+    const eased = p * p; // ease-in, accelerating back toward you
+    b.x = b.returnFromX + (b.startX - b.returnFromX) * eased;
+    b.y = b.returnFromY + (b.startY - b.returnFromY) * eased;
+
+    if (p >= 1) {
+      // it was never actually removed from inventory when thrown — just
+      // un-held. Restore it as held instead of calling addToInventory(),
+      // which would incorrectly count it as a second boomerang.
+      heldItem = "boomerang";
+      updateInventoryUI();
+      boomerangThrow = null;
+    }
+  }
+}
+
+function drawBoomerangThrow(camX) {
+  if (!boomerangThrow) return;
+  const b = boomerangThrow;
+  drawBoomerangShape(ctx, b.x - camX, gy - b.y, 12, b.rotation);
+}
+
 
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
@@ -851,8 +978,8 @@ function updateNPCIdle(npc) {
    ====================================================== */
 function handleInput(){
   if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted) {
-    if (keys.left) player.x -= player.speed;
-    if (keys.right) player.x += player.speed;
+    if (keys.left) { player.x -= player.speed; player.facing = -1; }
+    if (keys.right) { player.x += player.speed; player.facing = 1; }
 
     if (keys.upJustPressed) {
       const nearSwing = currentScene === "spring" &&
@@ -926,7 +1053,7 @@ function applyPhysics(){
     const dy = player.y - goalCloud.height;
     const hitGoalCloud = Math.sqrt(dx * dx + dy * dy) < goalCloud.radius;
 
-    if (hitGoalCloud && seasonTransition.phase === "idle" && !cloudLanding.active) {
+    if (hitGoalCloud && seasonTransition.phase === "idle" && !cloudLanding.active && player.cloudLandingImmunity <= 0) {
       // land ON the cloud, don't just clip through it — freeze here briefly
       player.launched = false;
       player.vx = 0;
@@ -1117,6 +1244,36 @@ function drawSpeechBubble(ctx, x, y, sentences) {
 }
 
 // draw apple trees
+// the stump — has always had real collision (the apple's landing target,
+// a jumpable platform), but was never actually drawn until now
+function drawStump(camX) {
+  const sx = stump.x - camX;
+  const stumpTop = gy - stump.height;
+
+  // sides
+  ctx.fillStyle = "#7a5738";
+  ctx.fillRect(sx, stumpTop, stump.width, stump.height);
+
+  // subtle shading down the side
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  ctx.fillRect(sx, stumpTop + 6, stump.width, stump.height - 6);
+
+  // top surface
+  ctx.fillStyle = "#c9a06c";
+  ctx.beginPath();
+  ctx.ellipse(sx + stump.width / 2, stumpTop, stump.width / 2, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // tree rings
+  ctx.strokeStyle = "rgba(120,80,40,0.4)";
+  ctx.lineWidth = 1.5;
+  for (let r = 5; r < stump.width / 2; r += 6) {
+    ctx.beginPath();
+    ctx.ellipse(sx + stump.width / 2, stumpTop, r, r * (8 / (stump.width / 2)), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
 function drawAppleTree(x, camX){
   const tx = x - camX;
 
@@ -1170,6 +1327,94 @@ ctx.stroke();
     ctx.fillStyle = "rgba(255,220,200,0.4)";
     ctx.beginPath();
     ctx.arc(decoX - 2, decoY - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/* ======================================================
+   BEEHIVE TREE — a standalone new tree with an extra branch
+   sticking out and a hive hanging off it. The boomerang's target.
+   ====================================================== */
+const hiveTree = { x: 1322 };
+
+const beehive = {
+  x: 1370, // matches the branch's offset from the tree
+  heightAboveGround: 170, // raised beyond ground-level throw reach — verified via simulation
+  knocked: false
+};
+
+const honey = {
+  x: 0,
+  heightAboveGround: 0,
+  available: false, // only true once the hive's been knocked
+  collected: false,
+  collecting: false,
+  falling: false
+};
+
+const HONEY_FALL_SPEED = 55; // height units/sec — a bit slower than the cloud pieces' fall
+
+function drawHiveTree(camX) {
+  const tx = hiveTree.x - camX;
+
+  // trunk
+  ctx.fillStyle = "#6b4026";
+  ctx.fillRect(tx - 12, gy - 96, 24, 96);
+
+  ctx.fillStyle = "rgba(120,90,60,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(tx, gy + 2, 22, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(40,20,10,0.25)";
+  ctx.beginPath();
+  ctx.moveTo(tx - 6, gy - 20);
+  ctx.lineTo(tx - 6, gy - 80);
+  ctx.stroke();
+
+  // canopy — same green pulse language as the other trees
+  const pulse = 0.08 + Math.sin(performance.now() * 0.0012 + hiveTree.x) * 0.04;
+  ctx.fillStyle = `rgba(90,120,70,${0.9 + pulse})`;
+  ctx.beginPath();
+  ctx.arc(tx, gy - 120, 50, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the extra branch, sticking out and reaching up toward the hive's height
+  ctx.strokeStyle = "#5a3d20";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(tx + 6, gy - 100);
+  ctx.lineTo(tx + 45, gy - 160);
+  ctx.stroke();
+
+  if (!beehive.knocked) {
+    drawHiveShape(tx + 48, gy - beehive.heightAboveGround + 8);
+  }
+}
+
+function drawHiveShape(hx, hy) {
+  ctx.fillStyle = "#d4a24c";
+  ctx.strokeStyle = "#8a6220";
+  ctx.lineWidth = 1.5;
+
+  const layers = [{ w: 22, h: 8 }, { w: 18, h: 8 }, { w: 14, h: 8 }, { w: 10, h: 7 }];
+  let yOff = 0;
+  layers.forEach(l => {
+    roundRect(ctx, hx - l.w / 2, hy + yOff, l.w, l.h, 3);
+    ctx.fill();
+    ctx.stroke();
+    yOff += l.h - 1;
+  });
+
+  // a few bees buzzing around it
+  const buzzT = performance.now() * 0.006;
+  ctx.fillStyle = "#2b2b2b";
+  for (let i = 0; i < 3; i++) {
+    const a = buzzT + i * 2.1;
+    const bx = hx + Math.cos(a) * 14;
+    const by = hy + Math.sin(a) * 6 - 5;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -1732,16 +1977,67 @@ function drawBucketShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// honey — a small dripping-jar shape
+function drawHoneyShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.fillStyle = "#e8a838";
+  ctx.strokeStyle = "#a86b18";
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.quadraticCurveTo(size * 0.8, -size * 0.3, size * 0.5, size * 0.6);
+  ctx.quadraticCurveTo(0, size, -size * 0.5, size * 0.6);
+  ctx.quadraticCurveTo(-size * 0.8, -size * 0.3, 0, -size);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.2, -size * 0.3, size * 0.15, size * 0.3, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// cloud piece — a small, round puff, distinct from the fluffy background clouds
+function drawCloudPieceShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "rgba(200,215,230,0.6)";
+  ctx.lineWidth = 1;
+
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.arc(size * 0.55, -size * 0.15, size * 0.65, 0, Math.PI * 2);
+  ctx.arc(-size * 0.55, -size * 0.1, size * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
+  } else if (itemType === "cloudPiece") {
+    drawCloudPieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "tulip") {
     drawTulipShape(ctx, x, y, size, rotation);
   } else if (itemType === "crystal") {
     drawCrystalShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
     drawBucketShape(ctx, x, y, size, rotation);
+  } else if (itemType === "honey") {
+    drawHoneyShape(ctx, x, y, size, rotation);
   } else {
     drawApplePieceShape(ctx, x, y, size, rotation);
   }
@@ -2017,7 +2313,10 @@ ramps.forEach(r => {
 
 // call draw apple tree 2x
 drawAppleTree(220, camX);
+drawStump(camX); // the apple's actual landing target — visible for the first time
+drawAppleTree(tree.x, camX); // the actual source tree — apple spawns/falls from here, was previously empty ground
 drawAppleTree(980, camX);
+drawHiveTree(camX);
 drawConnectionDoor(ctx, camX, connections[0].doors.autumn, connections[0]);
 
 /* DRAW APPLE */
@@ -2108,6 +2407,11 @@ const bounceY = apple.bounce * 0.6;
     const bx2 = boomerang.x - camX;
     const by2 = gy - boomerang.heightAboveGround;
     drawBoomerangShape(ctx, bx2, by2, 10, 0);
+  }
+
+  // DRAW HONEY (once the hive's been knocked, until collected)
+  if (honey.available && !honey.collected && !honey.collecting) {
+    drawHoneyShape(ctx, honey.x - camX, gy - honey.heightAboveGround, 10, 0);
   }
 
 
@@ -2292,9 +2596,9 @@ const SWING_GRAVITY = 0.03;          // frame-based, tuned small like the rest o
 const SWING_MAX_ANGLE = 1.45;        // ~83° — hard amplitude clamp, prevents looping over the top
                                       // regardless of how much energy pumping adds
 const SWING_MAX_ANGULAR_VEL = 0.2;   // safety cap on raw angular speed (secondary to the angle clamp)
-const SWING_PUMP_BOOST = 0.02;       // base boost — actual effect is weighted by current momentum, see updateSwing
-const SWING_PUMP_MIN_MULT = 0.3;     // pump effectiveness at zero momentum (slow start)
-const SWING_PUMP_MULT_RANGE = 1.4;   // grows up to (MIN_MULT + this) at max momentum — compounds faster once swinging
+const SWING_PUMP_BOOST = 0.024;      // base boost — actual effect is weighted by current momentum, see updateSwing
+const SWING_PUMP_MIN_MULT = 0.08;    // pump effectiveness at zero momentum (very weak start — genuinely has to build)
+const SWING_PUMP_MULT_RANGE = 2.0;   // grows up to (MIN_MULT + this) at max momentum — compounds much faster once swinging
 const SWING_PUMP_COOLDOWN = 6;       // frames between pumps, so holding doesn't spam
 const LAUNCH_GRAVITY = 0.3;          // ascent — lighter than a normal jump; you're being FLUNG, not hopping
 const FLOATY_FALL_GRAVITY = 0.13;    // descent, if under threshold — the "slow drop"
@@ -2457,10 +2761,10 @@ function releaseSwing() {
 }
 
 const springClouds = [
-  { x: 150, y: 70, scale: 1 },
-  { x: 500, y: 45, scale: 0.8 },
-  { x: 850, y: 90, scale: 1.2 },
-  { x: 1400, y: 60, scale: 0.9 }
+  { x: 150, y: 70, scale: 1,   type: "puffy" },
+  { x: 500, y: 45, scale: 0.8, type: "wisp" },
+  { x: 850, y: 90, scale: 1.2, type: "stack" },
+  { x: 1400, y: 60, scale: 0.9, type: "puffy" }
 ];
 
 /* ======================================================
@@ -2526,7 +2830,7 @@ function drawSpringScene(camX) {
   ctx.fillStyle = glow;
   ctx.fillRect(0, gy - 150, canvas.width, 200);
 
-  springClouds.forEach(c => drawCloud(c.x, c.y, c.scale, camX));
+  springClouds.forEach(c => drawBackgroundCloud(c.x, c.y, c.scale, c.type, camX));
 
   // far silhouettes (most distant, most translucent)
   ctx.fillStyle = "rgba(110,150,95,0.22)";
@@ -2707,13 +3011,16 @@ function drawWiggleBush(camX) {
 }
 
 function updateWiggleBush(deltaTime) {
-  // cosmetic notice-wiggle — runs on its own clock, regardless of the player
-  wiggleBush.noticeTimer -= deltaTime * 1000;
-  if (wiggleBush.noticeTimer <= 0) {
-    wiggleBush.noticeWiggle = 180;
-    wiggleBush.noticeTimer = 7000 + Math.random() * 4000;
+  // cosmetic notice-wiggle — runs on its own clock, but stops for good
+  // once the bush has actually been used (nothing left to draw attention to)
+  if (!wiggleBush.bucketTaken) {
+    wiggleBush.noticeTimer -= deltaTime * 1000;
+    if (wiggleBush.noticeTimer <= 0) {
+      wiggleBush.noticeWiggle = 180;
+      wiggleBush.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (wiggleBush.noticeWiggle > 0) wiggleBush.noticeWiggle--;
   }
-  if (wiggleBush.noticeWiggle > 0) wiggleBush.noticeWiggle--;
 
   if (wiggleBush.pressCooldown > 0) wiggleBush.pressCooldown -= deltaTime * 1000;
 
@@ -2752,13 +3059,70 @@ const cloudsDecor = [
   { x: 1400, y: 110, scale: 1.5, type: "puffy" },
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
   { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
-  { x: 1770, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
+  { x: 1860, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
   { x: 900,  y: 140, scale: 1.3, type: "hummingbird" } // decorative — not walkable
 ];
 
 // the way back down — same fall-through mechanic as spring's holes, just
 // leads to a scene switch + floaty descent instead of a same-scene respawn
 const cloudHole = { x: 300, width: 60 };
+
+// a small plane, drifting passively across the sky — purely atmospheric,
+// same camera-relative recycling as the crows, just heading the OPPOSITE
+// direction for a bit of visual contrast (birds one way, plane the other)
+const clouds_plane = { x: 400, y: 90, speed: 0.35 };
+
+function drawPlane(camX) {
+  const px = clouds_plane.x - camX;
+  const py = clouds_plane.y;
+
+  // contrail trailing behind (behind = left, since it flies rightward)
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - 40, py);
+  ctx.lineTo(px - 8, py);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(80,80,95,0.85)";
+
+  // body
+  ctx.beginPath();
+  ctx.ellipse(px, py, 16, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // wings
+  ctx.beginPath();
+  ctx.moveTo(px - 2, py);
+  ctx.lineTo(px - 10, py - 10);
+  ctx.lineTo(px - 6, py);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(px - 2, py);
+  ctx.lineTo(px - 10, py + 10);
+  ctx.lineTo(px - 6, py);
+  ctx.closePath();
+  ctx.fill();
+
+  // tail fin
+  ctx.beginPath();
+  ctx.moveTo(px + 12, py);
+  ctx.lineTo(px + 16, py - 6);
+  ctx.lineTo(px + 14, py);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function updatePlane(camX) {
+  clouds_plane.x += clouds_plane.speed;
+
+  if (clouds_plane.x - camX > canvas.width + 60) {
+    clouds_plane.x = camX - 200 - Math.random() * 400; // staggered re-entry from the left
+    clouds_plane.y = 60 + Math.random() * 80;
+  }
+}
 
 // the main hop-path — a real mix of single-jump, double-jump, and climbing
 // gaps. Missing a jump just drops you to the base cloud-ground, no hazard.
@@ -2777,24 +3141,23 @@ const hopClouds = [
   { x: 690,  height: 95,  width: 130, type: "whale" },      // big stationary anchor
   { x: 860,  height: 60,  width: 60 },
   { x: 960,  height: 60,  width: 60 },
-  { x: 1100, height: 150, width: 60 },                      // GAP 1 — 80px edge gap, genuinely needs the double jump
-  { x: 1200, height: 190, width: 60 },
-  { x: 1370, height: 220, width: 60 },                      // GAP 2 — 110px edge gap, also genuinely needs the double jump
-  { x: 1470, height: 230, width: 60 },                      // shuttle's near dock — last normally-reachable cloud
+  { x: 1150, height: 150, width: 60 },                      // GAP 1 — 130px edge gap, verified double-jump-only INCLUDING player width forgiveness
+  { x: 1250, height: 190, width: 60 },
+  { x: 1460, height: 220, width: 60 },                      // GAP 2 — 150px edge gap, same verification
+  { x: 1560, height: 230, width: 60 },                      // shuttle's near dock — last normally-reachable cloud
 
   // --- everything below is only reachable via the shuttle ---
-  { x: 1770, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
-  { x: 1900, height: 200, width: 60 },
-  { x: 2000, height: 170, width: 60 },
-  { x: 2100, height: 140, width: 70 },
+  { x: 1860, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
+  { x: 1990, height: 200, width: 60 },
+  { x: 2090, height: 170, width: 60 },
+  { x: 2190, height: 140, width: 70 },
 
   // --- two lower tiers under the shuttle zone — reachable without ever
   // touching the shuttle, so that whole horizontal stretch isn't just empty air ---
-  { x: 1520, height: 40,  width: 60 },
-  { x: 1640, height: 90,  width: 60 },
-  { x: 1770, height: 40,  width: 60 },
-  { x: 1900, height: 90,  width: 60 },
-  { x: 2020, height: 40,  width: 70 }
+  { x: 1610, height: 40,  width: 60 },
+  { x: 1860, height: 40,  width: 60 },
+  { x: 1990, height: 90,  width: 60 },
+  { x: 2110, height: 40,  width: 70 }
 ];
 
 // rabbit-shuttle — travels between two docks (a real destination, not a
@@ -2802,8 +3165,8 @@ const hopClouds = [
 // needing to time a moving target; the crossing itself is a gentle
 // multi-hop sequence, not a smooth glide or a rigid stop-start.
 const rabbitShuttle = {
-  dockA: { x: 1470, height: 230 }, // matches the last normally-reachable hop-cloud
-  dockB: { x: 1770, height: 220 }, // matches the alligator — otherwise unreachable
+  dockA: { x: 1600, height: 230 }, // near the right side of the landing cloud (spans 1560-1620), not its left edge
+  dockB: { x: 1860, height: 220 }, // matches the alligator — otherwise unreachable
   state: "docked",   // "docked" | "traveling"
   dockedAt: "A",
   t: 0,
@@ -2811,14 +3174,14 @@ const rabbitShuttle = {
   TRAVEL_TIME: 4500,  // slow, deliberate crossing
   HOP_COUNT: 5,        // how many gentle hops the crossing is broken into
   mounted: false,
-  currentX: 1470,
+  currentX: 1600,
   currentHeight: 230,
   width: 64
 };
 
 // the crystal — sits on the alligator cloud, only reachable via the shuttle
 const crystal = {
-  x: 1865, // right-of-center on the alligator platform (spans 1770-1910), not its left edge
+  x: 1955, // right-of-center on the alligator platform (spans 1860-2000), not its left edge
   heightAboveGround: 240, // just above the alligator platform's surface (height 220)
   collected: false,
   collecting: false
@@ -2827,6 +3190,355 @@ const crystal = {
 function drawCrystalOnCloud(camX) {
   if (crystal.collected || crystal.collecting) return;
   drawCrystalShape(ctx, crystal.x - camX, gy - crystal.heightAboveGround, 11, 0);
+}
+
+/* ======================================================
+   CLOUD PIECES — 8 total. 6 sit as simple static pickups
+   scattered across existing clouds; 2 are locked inside larger
+   "vault" clouds that only open when hit by a thrown boomerang.
+   Collect all 8, then place them one at a time (click to hold,
+   walk to the gold oval, spacebar) to build an elephant.
+   ====================================================== */
+const cloudPieces = [
+  { x: 480,  heightAboveGround: 60,  collected: false, collecting: false, active: true },
+  { x: 690,  heightAboveGround: 115, collected: false, collecting: false, active: true },
+  { x: 960,  heightAboveGround: 75,  collected: false, collecting: false, active: true },
+  { x: 1560, heightAboveGround: 245, collected: false, collecting: false, active: true },
+  { x: 1460, heightAboveGround: 235, collected: false, collecting: false, active: true },
+  { x: 2110, heightAboveGround: 55,  collected: false, collecting: false, active: true },
+  // these two are released by the vault clouds below — inactive (invisible,
+  // unpickable) until then, and land at ground level once released, same
+  // as honey, since the vault clouds themselves sit way too high to reach
+  { x: 1350, heightAboveGround: 280, collected: false, collecting: false, active: false, falling: false },
+  { x: 2200, heightAboveGround: 180, collected: false, collecting: false, active: false, falling: false }
+];
+
+// vault clouds — same notice-wiggle language as the wiggle bush. Hitting
+// one with the boomerang starts a real sequence: parts open, pauses so you
+// actually see the piece revealed inside, then closes back up as the piece
+// drops out and falls. Once used, it stays closed and never wiggles again.
+const VAULT_OPENING_DURATION = 500;  // ms — branches visibly parting
+const VAULT_REVEALED_DURATION = 700; // ms — pause, piece visible in the gap
+const VAULT_CLOSING_DURATION = 500;  // ms — closes back up as the piece drops
+
+const vaultClouds = [
+  { x: 1350, heightAboveGround: 280, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 3000 + Math.random() * 3000, requiresAirborne: true },
+  { x: 2200, heightAboveGround: 180, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 4000 + Math.random() * 3000 }
+];
+
+const CLOUD_PIECE_FALL_SPEED = 80; // height units/sec — pushed faster again per feedback
+
+function drawSimpleCloudPieces(camX) {
+  cloudPieces.forEach(p => {
+    if (!p.active || p.collected || p.collecting) return;
+    drawCloudPieceShape(ctx, p.x - camX, gy - p.heightAboveGround, 9, 0);
+  });
+}
+
+function updateFallingCloudPieces(deltaTime) {
+  cloudPieces.forEach(p => {
+    if (!p.falling) return;
+    p.heightAboveGround -= CLOUD_PIECE_FALL_SPEED * deltaTime;
+    if (p.heightAboveGround <= 15) {
+      p.heightAboveGround = 15;
+      p.falling = false; // settled — now pickupable
+    }
+  });
+}
+
+function updateSimpleCloudPiecePickups() {
+  cloudPieces.forEach(p => {
+    if (!p.active || p.collected || p.collecting || p.falling) return;
+    if (pressedDownNear(p.x, p.heightAboveGround, 26, 15, 25)) {
+      p.collecting = true;
+      startCollectAnimation({ x: p.x, y: gy - p.heightAboveGround, size: 9, rotation: 0 }, "cloudPiece");
+    }
+  });
+}
+
+// vault clouds each have a matching piece in cloudPieces (last two entries,
+// same order) — hitting the vault just activates its piece
+const vaultReleasePieces = [cloudPieces[6], cloudPieces[7]];
+
+function drawVaultCloud(v, camX) {
+  if (v.phase === "done") return; // permanently closed, empty — gone for good
+
+  const vx = v.x - camX;
+  const vy = gy - v.heightAboveGround;
+
+  let gap = 0;
+  if (v.phase === "opening") gap = (v.phaseT / VAULT_OPENING_DURATION) * 18;
+  else if (v.phase === "revealed") gap = 18;
+  else if (v.phase === "closing") gap = 18 * (1 - v.phaseT / VAULT_CLOSING_DURATION);
+
+  // notice-wiggle only plays while fully closed and unused
+  const shake = (v.phase === "closed" && v.noticeWiggle > 0) ? Math.sin(v.noticeWiggle * 0.4) * 2 : 0;
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+
+  // left half
+  ctx.save();
+  ctx.translate(-gap + shake, 0);
+  ctx.beginPath();
+  ctx.arc(vx - 6, vy, 24, 0, Math.PI * 2);
+  ctx.arc(vx - 20, vy - 3, 17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // right half
+  ctx.save();
+  ctx.translate(gap + shake, 0);
+  ctx.beginPath();
+  ctx.arc(vx + 14, vy - 5, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // the piece, visible sitting in the gap during the reveal pause
+  if (v.phase === "revealed") {
+    drawCloudPieceShape(ctx, vx, vy, 9, 0);
+  }
+}
+
+function updateVaultCloud(v, index, deltaTime) {
+  if (v.phase === "closed") {
+    v.noticeTimer -= deltaTime * 1000;
+    if (v.noticeTimer <= 0) {
+      v.noticeWiggle = 120;
+      v.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (v.noticeWiggle > 0) v.noticeWiggle--;
+  } else if (v.phase === "opening") {
+    v.phaseT += deltaTime * 1000;
+    if (v.phaseT >= VAULT_OPENING_DURATION) {
+      v.phase = "revealed";
+      v.phaseT = 0;
+    }
+  } else if (v.phase === "revealed") {
+    v.phaseT += deltaTime * 1000;
+    if (v.phaseT >= VAULT_REVEALED_DURATION) {
+      v.phase = "closing";
+      v.phaseT = 0;
+      // the piece detaches and starts falling right as the vault begins closing
+      vaultReleasePieces[index].active = true;
+      vaultReleasePieces[index].falling = true;
+    }
+  } else if (v.phase === "closing") {
+    v.phaseT += deltaTime * 1000;
+    if (v.phaseT >= VAULT_CLOSING_DURATION) {
+      v.phase = "done"; // permanently closed and empty, no more wiggle
+    }
+  }
+}
+
+/* ======================================================
+   ELEPHANT SPOT — a dedicated high cloud, always visible, that
+   gains a gold rim once all 8 pieces are collected. A gold oval
+   appears on the ground beneath it; stand there, hold a cloud
+   piece, press spacebar to place it — repeat 8 times to build
+   the elephant, one part revealed per placement. No doorway here —
+   it's a capstone, not a gate.
+   ====================================================== */
+const elephantSpot = {
+  cloudX: 2400,
+  cloudY: 55,       // background-layer style screen-ish y, matches cloudsDecor convention
+  groundOvalX: 2400, // directly under the cloud — elephant now builds on top of it, same center
+  unlocked: false,   // set once, stays true — true fog-of-war-style reveal
+  piecesPlaced: 0
+};
+
+// second exit hole — forms once the elephant is fully built, sits just
+// right of the ground oval, and leads to the exact same spot in spring as
+// the original cloud-hole does
+const elephantHole = { x: 2470, width: 60 };
+
+// shifted +55 right of center so the assembly builds ADJACENT to the base
+// cloud (which now sits small, off to the left) rather than on top of it —
+// the old design had the body piece almost exactly duplicate the base
+// cloud's own circle, making the first placement invisible
+// reordered so the shape stays ambiguous as long as possible — body/legs/
+// tail could be almost any animal; the trunk (split across two pieces, so
+// even ITS first half doesn't give it away) and head+ears land last,
+// which is the moment it actually becomes unmistakably an elephant
+const ELEPHANT_PARTS = [
+  { dx: 0,   dy: 5,   r: 30 },                 // body
+  { dx: -14, dy: 31,  r: 9  },                 // front leg
+  { dx: 14,  dy: 31,  r: 9  },                 // back leg
+  { dx: 32,  dy: 17,  r: 7  },                 // tail
+  { dx: 0,   dy: 0,   r: 0, type: "trunk1" },  // trunk — first half, ambiguous alone
+  { dx: 0,   dy: 0,   r: 0, type: "trunk2" },  // trunk — completes the curl, reads as a trunk now
+  { dx: -40, dy: -7,  r: 20 },                 // head
+  { dx: 0,   dy: 0,   r: 0, type: "ears" }     // both ears together — the "oh, it's an elephant" moment
+];
+
+// the base cloud — sized to roughly cover the WHOLE elephant's footprint,
+// gold-tinted, and pieces land directly on top of it. Overlap is the
+// point this time: white-on-gold has real contrast (unlike the old
+// white-on-white bug), and the gold visibly fades as more of it gets
+// covered, so the mystery cloud reads as "resolving into" the shape.
+const BASE_CLOUD_CIRCLES = [
+  { dx: 0,   dy: 0,  r: 14 },
+  { dx: 10,  dy: -4, r: 10 },
+  { dx: -10, dy: -3, r: 9  }
+];
+
+// trunk points — segment 1 draws the stub near the head (points 0-1,
+// ambiguous alone), segment 2 completes the hanging curl (points 1-3)
+const TRUNK_POINTS = [
+  { x: -40, y: -5,  w: 11 },
+  { x: -50, y: 5,   w: 9  },
+  { x: -56, y: 15,  w: 7  },
+  { x: -54, y: 25,  w: 5  }
+];
+
+function drawTrunkSegment(cx, cy, segment) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.97)";
+  ctx.lineCap = "round";
+
+  const range = segment === 1 ? [0, 1] : [1, 2, 3];
+  for (let i = 0; i < range.length - 1; i++) {
+    const a = TRUNK_POINTS[range[i]];
+    const b = TRUNK_POINTS[range[i + 1]];
+    ctx.lineWidth = a.w;
+    ctx.beginPath();
+    ctx.moveTo(cx + a.x, cy + a.y);
+    ctx.lineTo(cx + b.x, cy + b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawEarsPart(cx, cy) {
+  ctx.fillStyle = "rgba(255,255,255,0.97)";
+  ctx.beginPath();
+  ctx.arc(cx - 52, cy - 21, 12, 0, Math.PI * 2);
+  ctx.arc(cx - 34, cy - 23, 12, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawElephantSpot(camX) {
+  const cx = elephantSpot.cloudX - camX;
+  const cy = elephantSpot.cloudY;
+
+  // gold fades as more pieces get placed — the mystery cloud visibly
+  // "resolving into" the shape underneath, not a per-patch mask (simpler,
+  // same overall feel)
+  const goldOpacity = Math.max(0.06, 1 - elephantSpot.piecesPlaced / 8);
+
+  if (elephantSpot.unlocked) {
+    const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+
+    // the gold cloud body itself — sized to the elephant's footprint
+    ctx.save();
+    ctx.globalAlpha = goldOpacity * (0.75 + pulse * 0.2);
+    ctx.fillStyle = "#e8c34a";
+    ctx.beginPath();
+    BASE_CLOUD_CIRCLES.forEach(c => ctx.arc(cx + c.dx, cy + c.dy, c.r, 0, Math.PI * 2));
+    ctx.fill();
+    ctx.restore();
+
+    // rim — a SINGLE enclosing ellipse, not one arc() per circle. Stroking
+    // multiple arc() calls in one path draws each as its own full circle
+    // outline, which is exactly what was reading as jarring before — this
+    // is the actual fix, not just a style change.
+    ctx.save();
+    ctx.globalAlpha = goldOpacity * (0.7 + pulse * 0.3);
+    ctx.strokeStyle = "#fff3c4";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 1, 24, 20, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // glitter — small, bright, genuinely noticeable twinkling points
+    const rimSparkles = [
+      { dx: -15, dy: -10 }, { dx: 14, dy: -8 }, { dx: 18, dy: 6 },
+      { dx: -18, dy: 4 }, { dx: 2, dy: -14 }, { dx: -4, dy: 12 }
+    ];
+    rimSparkles.forEach((s, i) => {
+      const twinkle = Math.sin(performance.now() * 0.007 + i * 1.9) * 0.5 + 0.5;
+      ctx.globalAlpha = goldOpacity;
+      ctx.fillStyle = `rgba(255,250,210,${0.6 + twinkle * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(cx + s.dx, cy + s.dy, 0.8 + twinkle * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  } else {
+    // not yet unlocked — plain white cloud, no gold at all
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    BASE_CLOUD_CIRCLES.forEach(c => ctx.arc(cx + c.dx, cy + c.dy, c.r, 0, Math.PI * 2));
+    ctx.fill();
+  }
+
+  // the elephant itself, built from placed parts, directly on top of the gold cloud
+  for (let i = 0; i < elephantSpot.piecesPlaced; i++) {
+    const part = ELEPHANT_PARTS[i];
+    if (part.type === "trunk1") {
+      drawTrunkSegment(cx, cy, 1);
+    } else if (part.type === "trunk2") {
+      drawTrunkSegment(cx, cy, 2);
+    } else if (part.type === "ears") {
+      drawEarsPart(cx, cy);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.97)";
+      ctx.beginPath();
+      ctx.arc(cx + part.dx, cy + part.dy, part.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // the gold ground oval, only once unlocked
+  if (elephantSpot.unlocked) {
+    const ox = elephantSpot.groundOvalX - camX;
+    const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.6 + pulse * 0.3;
+    ctx.strokeStyle = "#e8c34a";
+    ctx.fillStyle = "rgba(232,195,74,0.25)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(ox, gy + 3, 26, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // glitter accents — smaller, brighter, more noticeable
+    const ovalSparkles = [
+      { dx: -14, dy: 2 }, { dx: 8, dy: -2 }, { dx: 16, dy: 3 }, { dx: -6, dy: 4 }
+    ];
+    ovalSparkles.forEach((s, i) => {
+      const twinkle = Math.sin(performance.now() * 0.008 + i * 2.3) * 0.5 + 0.5;
+      ctx.fillStyle = `rgba(255,250,210,${0.6 + twinkle * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(ox + s.dx, gy + 3 + s.dy, 0.6 + twinkle * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+}
+
+function updateElephantSpot() {
+  if (!elephantSpot.unlocked) {
+    if ((inventory.cloudPiece || 0) >= 8) {
+      elephantSpot.unlocked = true; // one-time reveal — stays true even as pieces get placed
+    }
+    return;
+  }
+
+  if (elephantSpot.piecesPlaced >= 8) return; // fully built
+
+  if (heldItem === "cloudPiece" && inventory.cloudPiece > 0) {
+    // must actually be standing IN the oval now, not just generally nearby —
+    // small wiggle room (radiusX 20 vs the oval's own visual radius of 26)
+    if (pressedDownNear(elephantSpot.groundOvalX, 0, 20, 12, 12)) {
+      inventory.cloudPiece--;
+      if (inventory.cloudPiece <= 0) delete inventory.cloudPiece;
+      heldItem = null;
+      updateInventoryUI();
+      elephantSpot.piecesPlaced++;
+    }
+  }
 }
 
 /* ======================================================
@@ -2839,8 +3551,8 @@ const WATER_DRIP_INTERVAL_MAX = 11000; // ms — "every 7 seconds or so, maybe l
 const WATER_DRIP_FALL_SPEED = 40;      // height units per second
 
 const waterDrips = [
-  { x: 1900, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
-  { x: 2000, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
+  { x: 1990, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
+  { x: 2150, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
 ];
 
 function updateWaterDrips(deltaTime) {
@@ -3055,6 +3767,7 @@ function drawCloudsScene(camX) {
   cloudsDecor.forEach(c => drawBackgroundCloud(c.x, c.y, c.scale, c.type, camX * 0.3));
 
   drawCrows(camX); // same birds, consistent across every zone
+  drawPlane(camX);
 
   // ground here IS cloud — soft and pale, not the usual grass/dirt
   const groundGrad = ctx.createLinearGradient(0, gy, 0, gy + 60);
@@ -3080,11 +3793,17 @@ function drawCloudsScene(camX) {
   }
 
   drawHole(cloudHole.x, cloudHole.width, camX); // same visual language as spring's holes
+  if (elephantSpot.piecesPlaced >= 8) {
+    drawHole(elephantHole.x, elephantHole.width, camX);
+  }
 
   hopClouds.forEach(c => drawHopCloud(c, camX));
   drawCrystalOnCloud(camX);
   drawWaterDrips(camX);
   drawRabbitShuttleCloud(camX);
+  drawSimpleCloudPieces(camX);
+  vaultClouds.forEach(v => drawVaultCloud(v, camX));
+  drawElephantSpot(camX);
 }
 
 function updateCloudsScene(deltaTime) {
@@ -3092,6 +3811,11 @@ function updateCloudsScene(deltaTime) {
 
   updateWaterDrips(deltaTime);
   updateRabbitShuttle(deltaTime);
+  updatePlane(cameraX);
+  updateFallingCloudPieces(deltaTime);
+  updateSimpleCloudPiecePickups();
+  vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
+  updateElephantSpot();
 
   // mount via spacebar — same interact key as everything else, so it
   // stays free for picking things up while riding, not claimed by mounting.
@@ -3116,7 +3840,11 @@ function updateCloudsScene(deltaTime) {
 
   if (player.y <= 0) {
     const playerCenterX = player.x + player.width / 2;
-    if (playerCenterX > cloudHole.x && playerCenterX < cloudHole.x + cloudHole.width) {
+    const overOriginalHole = playerCenterX > cloudHole.x && playerCenterX < cloudHole.x + cloudHole.width;
+    const overElephantHole = elephantSpot.piecesPlaced >= 8 &&
+      playerCenterX > elephantHole.x && playerCenterX < elephantHole.x + elephantHole.width;
+
+    if (overOriginalHole || overElephantHole) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "cloudHole";
@@ -3149,6 +3877,8 @@ if (currentScene === "autumn") {
 flyingItems.forEach(f => {
   drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
 });
+
+drawBoomerangThrow(camX); // the boomerang itself, while it's in the air
 
 /* PLAYER */
 const px = player.x - camX;
@@ -3217,6 +3947,15 @@ drawSeasonTransition(ctx);
    MAIN LOOP
    ====================================================== */
 function updateAutumnScene(deltaTime) {
+// honey falling from the hive, once knocked
+if (honey.falling) {
+  honey.heightAboveGround -= HONEY_FALL_SPEED * deltaTime;
+  if (honey.heightAboveGround <= 15) {
+    honey.heightAboveGround = 15;
+    honey.falling = false; // settled — now pickupable
+  }
+}
+
 // APPLE DROP LOGIC
 // ================== APPLE STATE MACHINE ==================
 
@@ -3392,6 +4131,18 @@ if (apple.split) {
     }
   }
 
+  // honey: only pickable once the hive's actually been knocked down AND it's settled
+  if (honey.available && !honey.collected && !honey.collecting && !honey.falling && !pickupHandledThisFrame) {
+    if (pressedDownNear(honey.x, honey.heightAboveGround, 26, 20, 20)) {
+      honey.collecting = true;
+      startCollectAnimation(
+        { x: honey.x, y: gy - honey.heightAboveGround, size: 10, rotation: 0 },
+        "honey"
+      );
+      pickupHandledThisFrame = true;
+    }
+  }
+
 
   // apple glitter decay
 if (apple.glitter > 0) apple.glitter--;
@@ -3488,15 +4239,16 @@ function updateFallState(deltaTime) {
       discoveredScenes.spring = true;
       updateMapUI();
 
-      // direct x-correspondence: player.x hasn't moved since falling in
-      // (movement is frozen during the fall), so it's already sitting
-      // exactly where the cloud-hole was — landing directly below it
+      // close to, visually under the goal cloud — the immunity window
+      // below (not distance) is what actually prevents an instant retrigger
+      player.x = goalCloud.x + 5;
       player.y = 200;
       player.vy = 0;
       player.vx = 0;
       player.jumping = true;
       player.launched = true;       // reuses the same floaty-descent physics as a failed swing launch
       player.launchPeakHeight = player.y;
+      player.cloudLandingImmunity = 1500; // ms grace period before the goal-cloud hit check can fire again
       cameraX = Math.max(0, player.x - canvas.width * 0.4);
     } else {
       // faze back to the start of the spring zone
@@ -3592,6 +4344,15 @@ if (currentScene === "autumn") {
 } else if (currentScene === "clouds") {
   updateCloudsScene(deltaTime);
 }
+
+  // throw the boomerang — spacebar while it's held, works in any scene.
+  // !boomerangThrow guards against re-triggering while holding the key down.
+  if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
+    throwBoomerang();
+  }
+  updateBoomerangThrow(deltaTime);
+
+  if (player.cloudLandingImmunity > 0) player.cloudLandingImmunity -= deltaTime * 1000;
 
   updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
 
