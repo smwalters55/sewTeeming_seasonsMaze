@@ -146,7 +146,8 @@ const ITEM_ICONS = {
   crystal: "💎",
   bucket: "🪣",
   honey: "🍯",
-  cloudPiece: "☁️"
+  cloudPiece: "☁️",
+  peanut: "🥜"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -245,7 +246,7 @@ function updateInventoryUI() {
    FROG NPC
    ====================================================== */
 const frog = {
-  x: 1090,
+  x: 1207,
   y: 0,
   width: 48,
   height: 36,
@@ -284,9 +285,9 @@ const platforms = [
 const ramps = [
   {
     x: 870,
-    width: 60,
-    heightStart: 25,  // elevated above ground — requires a jump to get onto it
-    heightEnd: 78      // ground height at right edge — leads up to the boomerang
+    width: 90,          // widened — same rise, spread over more distance, so the slope reads as gentler
+    heightStart: 45,     // raised well clear of walking-snap tolerance — unambiguously requires a jump
+    heightEnd: 78         // ground height at right edge — leads up to the boomerang
   }
 ];
 
@@ -294,8 +295,8 @@ const ramps = [
    BOOMERANG (static collectible, tucked into tree 2's canopy)
    ====================================================== */
 const boomerang = {
-  x: 918,
-  heightAboveGround: 82, // sits just above the top of the new, elevated ramp
+  x: 1025, // offset from tree(980)'s center so the canopy occludes part of it, not dead-center under it
+  heightAboveGround: 120, // unreachable from a ground jump (~90 max) or stepping off the ramp — needs a jump from the ramp's peak
   collected: false, // normally false
   collecting: false
 };
@@ -324,7 +325,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 1400, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 1500, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -628,7 +629,7 @@ const tree = {
   y: groundY,           // bottom of tree
   width: 80,
   height: 180,          // tree height
-  canopyY: gy - 170 // top of tree for apple spawn — matches the drawn canopy's actual top edge (circle center gy-120, radius 50)
+  canopyY: (gy - 120) - 28 // same ring-radius logic as decorative apples (center gy-120, radius 28), straight up
 
 };
 
@@ -872,8 +873,14 @@ function updateBoomerangThrow(deltaTime) {
     b.x = b.startX + b.facing * BOOMERANG_OUT_DISTANCE * eased;
     b.y = b.startY + Math.sin(p * Math.PI) * 90; // real upward arc — has to reach the hive's height
 
+    // hit-checking only counts near the PEAK of the flight (p=0.45-0.55), not
+    // anywhere along the whole arc. The peak is also the slowest, most visually
+    // readable moment (velocity ~0 there, same as a real arc's high point), so
+    // a hit reads as "caught it at the top" rather than a lucky graze anywhere.
+    const withinPeakWindow = p >= 0.45 && p <= 0.55;
+
     // check for a redirect — the hive in autumn, or a vault cloud in clouds
-    if (currentScene === "autumn" && !beehive.knocked) {
+    if (withinPeakWindow && currentScene === "autumn" && !beehive.knocked) {
       const dx = b.x - beehive.x;
       const dy = b.y - beehive.heightAboveGround;
       if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
@@ -888,7 +895,7 @@ function updateBoomerangThrow(deltaTime) {
         b.returnFromX = b.x;
         b.returnFromY = b.y;
       }
-    } else if (currentScene === "clouds") {
+    } else if (withinPeakWindow && currentScene === "clouds") {
       for (let i = 0; i < vaultClouds.length; i++) {
         const v = vaultClouds[i];
         if (v.phase !== "closed") continue;
@@ -904,6 +911,24 @@ function updateBoomerangThrow(deltaTime) {
           b.returnFromX = b.x;
           b.returnFromY = b.y;
           break;
+        }
+      }
+
+      // the elephant's tail — only hittable once fully built, releases the peanut bonus
+      if (b.phase === "out" && elephantSpot.piecesPlaced >= 8 && !peanut.available) {
+        const tailPart = ELEPHANT_PARTS[3]; // tail
+        const tailX = elephantSpot.cloudX + tailPart.dx;
+        const tailHeight = 300 - (elephantSpot.cloudY + tailPart.dy); // screen y -> heightAboveGround
+        const tdx = b.x - tailX;
+        const tdy = b.y - tailHeight;
+        if (Math.sqrt(tdx * tdx + tdy * tdy) < BOOMERANG_HIT_RADIUS + 7) { // slightly more forgiving than the shared radius
+          peanut.available = true;
+          peanut.falling = true;
+
+          b.phase = "returning";
+          b.t = 0;
+          b.returnFromX = b.x;
+          b.returnFromY = b.y;
         }
       }
     }
@@ -991,6 +1016,7 @@ function handleInput(){
         swing.angularVelocity = 0;
         swing.mountTime = 0;
         swing.peakAngularVelocity = 0;
+        swing.displayedCharge = 0;
       } else if (!player.jumping) {
         // first jump
         player.jumping = true;
@@ -1578,32 +1604,75 @@ function drawCloudAlligatorBg(x, y, scale, camX) {
   ctx.fill();
 }
 
-function drawCloudHummingbirdBg(x, y, scale, camX) {
+function drawCloudLobsterBg(x, y, scale, camX) {
   const cx = x - camX * 0.15;
-  const wingFlap = Math.sin(performance.now() * 0.02) * 0.4;
 
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.fillStyle = "rgba(198,72,52,0.92)";
+
+  // segmented tail, curling under toward the back
+  for (let i = 0; i < 4; i++) {
+    const segX = cx - 10 * scale - i * 7 * scale;
+    const segY = y + i * 2 * scale;
+    ctx.beginPath();
+    ctx.ellipse(segX, segY, 6 * scale, 5 * scale, 0.3 + i * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // body
   ctx.beginPath();
-  ctx.ellipse(cx, y, 14 * scale, 7 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, y, 14 * scale, 8 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // beak
+  // head
   ctx.beginPath();
-  ctx.moveTo(cx + 13 * scale, y);
-  ctx.lineTo(cx + 23 * scale, y - 1 * scale);
-  ctx.lineTo(cx + 13 * scale, y + 2 * scale);
+  ctx.ellipse(cx + 14 * scale, y - 1 * scale, 8 * scale, 6 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // large raised claw, now genuinely dominant — a real lobster's defining feature
+  ctx.beginPath();
+  ctx.ellipse(cx + 25 * scale, y - 11 * scale, 14 * scale, 9 * scale, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx + 35 * scale, y - 17 * scale);
+  ctx.lineTo(cx + 44 * scale, y - 20 * scale);
+  ctx.lineTo(cx + 38 * scale, y - 13 * scale);
   ctx.closePath();
   ctx.fill();
 
-  // flapping wing
-  ctx.save();
-  ctx.translate(cx - 2 * scale, y - 4 * scale);
-  ctx.rotate(wingFlap);
+  // ridge lines across the big claw's shell
+  ctx.strokeStyle = "rgba(120,35,25,0.5)";
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 11 * scale, 4 * scale, 0, 0, Math.PI * 2);
+  ctx.arc(cx + 22 * scale, y - 10 * scale, 9 * scale, -1.0, 0.6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx + 24 * scale, y - 9 * scale, 5 * scale, -1.0, 0.6);
+  ctx.stroke();
+
+  // smaller second claw
+  ctx.fillStyle = "rgba(198,72,52,0.92)";
+  ctx.beginPath();
+  ctx.ellipse(cx + 20 * scale, y + 5 * scale, 8 * scale, 5.5 * scale, 0.3, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
+
+  // ridge line on the smaller claw
+  ctx.strokeStyle = "rgba(120,35,25,0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx + 20 * scale, y + 5 * scale, 4 * scale, -0.8, 0.8);
+  ctx.stroke();
+
+  // antennae
+  ctx.strokeStyle = "rgba(160,55,40,0.75)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx + 18 * scale, y - 5 * scale);
+  ctx.lineTo(cx + 34 * scale, y - 20 * scale);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + 18 * scale, y - 3 * scale);
+  ctx.lineTo(cx + 30 * scale, y - 14 * scale);
+  ctx.stroke();
 }
 
 // dispatcher — picks the right silhouette by type, "puffy" (drawCloud) is the default
@@ -1613,7 +1682,7 @@ function drawBackgroundCloud(x, y, scale, type, camX) {
   else if (type === "bunny") drawCloudBunnyBg(x, y, scale, camX);
   else if (type === "whale") drawCloudWhaleBg(x, y, scale, camX);
   else if (type === "alligator") drawCloudAlligatorBg(x, y, scale, camX);
-  else if (type === "hummingbird") drawCloudHummingbirdBg(x, y, scale, camX);
+  else if (type === "lobster") drawCloudLobsterBg(x, y, scale, camX);
   else drawCloud(x, y, scale, camX);
 }
 
@@ -2024,12 +2093,41 @@ function drawCloudPieceShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// peanut — the classic figure-8 shell silhouette
+function drawPeanutShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.fillStyle = "#d4a86a";
+  ctx.strokeStyle = "#a87c40";
+  ctx.lineWidth = 1.2;
+
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.45, 0, size * 0.55, size * 0.4, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(size * 0.45, 0, size * 0.55, size * 0.4, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // shell texture lines
+  ctx.strokeStyle = "rgba(140,100,50,0.4)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.7, -size * 0.15);
+  ctx.lineTo(size * 0.7, size * 0.15);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
   } else if (itemType === "cloudPiece") {
     drawCloudPieceShape(ctx, x, y, size, rotation);
+  } else if (itemType === "peanut") {
+    drawPeanutShape(ctx, x, y, size, rotation);
   } else if (itemType === "tulip") {
     drawTulipShape(ctx, x, y, size, rotation);
   } else if (itemType === "crystal") {
@@ -2313,8 +2411,16 @@ ramps.forEach(r => {
 
 // call draw apple tree 2x
 drawAppleTree(220, camX);
-drawStump(camX); // the apple's actual landing target — visible for the first time
 drawAppleTree(tree.x, camX); // the actual source tree — apple spawns/falls from here, was previously empty ground
+drawStump(camX); // drawn AFTER the tree so it renders in front, not covered by it
+
+// boomerang drawn BEFORE the tree it sticks out of, so the canopy renders
+// on top and partially occludes it — sitting IN the tree, not floating
+if (!boomerang.collected && !boomerang.collecting) {
+  const bx2 = boomerang.x - camX;
+  const by2 = gy - boomerang.heightAboveGround;
+  drawBoomerangShape(ctx, bx2, by2, 10, 0);
+}
 drawAppleTree(980, camX);
 drawHiveTree(camX);
 drawConnectionDoor(ctx, camX, connections[0].doors.autumn, connections[0]);
@@ -2382,14 +2488,12 @@ if (!apple.collected && !apple.cracked) {
   }
 }
 
-// falling apple shine
-if (apple.falling) {
-  const shineX = appleScreenX - 2 + Math.sin(performance.now() * 0.006) * 1.5;
-  const shineY = appleScreenY - apple.r + 3;
-
-  ctx.fillStyle = "rgba(255,230,200,0.55)";
+// apple shine — matches the simple round highlight dot used on every
+// decorative apple in the trees, instead of a mismatched ellipse shape
+{
+  ctx.fillStyle = "rgba(255,220,200,0.4)";
   ctx.beginPath();
-  ctx.ellipse(shineX, shineY, 2, 4, -0.6, 0, Math.PI * 2);
+  ctx.arc(appleScreenX - 2, appleScreenY - apple.r * 0.5, 2, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -2402,12 +2506,7 @@ const bounceY = apple.bounce * 0.6;
     drawApplePieceShape(ctx, p.x - camX, p.y, p.size, p.rotation);
   });
 
-  // DRAW BOOMERANG (static, resting on top of the ramp, until collected)
-  if (!boomerang.collected && !boomerang.collecting) {
-    const bx2 = boomerang.x - camX;
-    const by2 = gy - boomerang.heightAboveGround;
-    drawBoomerangShape(ctx, bx2, by2, 10, 0);
-  }
+  // (boomerang now drawn earlier, before the tree it sticks out of)
 
   // DRAW HONEY (once the hive's been knocked, until collected)
   if (honey.available && !honey.collected && !honey.collecting) {
@@ -2611,7 +2710,10 @@ const swing = {
   mounted: false,
   pumpCooldown: 0,
   mountTime: 0,            // ms since mounting — release is ignored before SWING_MIN_MOUNT_TIME
-  peakAngularVelocity: 0   // best speed reached this session, used as a release fallback
+  peakAngularVelocity: 0,  // best speed reached this session, used as a release fallback
+  displayedCharge: 0       // the bar's VISUAL value — deliberately lags the real momentum via
+                            // smoothing, so it keeps visibly climbing toward ~4s even after
+                            // real momentum has already plateaued (which it reliably does, physically)
 };
 
 // the actual target — you have to hit THIS, not just clear an invisible
@@ -2712,6 +2814,20 @@ function updateSwing(deltaTime) {
     if (Math.abs(swing.angularVelocity) > Math.abs(swing.peakAngularVelocity)) {
       swing.peakAngularVelocity = swing.angularVelocity;
     }
+
+    // the bar's DISPLAYED value deliberately lags the real momentum via
+    // continuous smoothing (closes ~2/3 of the remaining gap per second,
+    // not per frame — per-frame would converge almost instantly). Since
+    // real momentum reliably plateaus early (a known property of this
+    // pendulum physics), the lag keeps the bar visibly creeping upward
+    // toward the plateaued value for a while after it's stopped changing —
+    // giving a smooth ~4-second climb without needing the physics itself
+    // to cooperate.
+    const SWING_REALISTIC_MAX_ANGULAR_VEL = 0.09; // recalibrated — 0.105 still needed near-perfect play to look full; this makes good/realistic play (~70-75% correct timing) read as visually near-100%
+    const realMomentumProgress = Math.min(Math.abs(swing.peakAngularVelocity) / SWING_REALISTIC_MAX_ANGULAR_VEL, 1);
+    const realTimeProgress = Math.min(swing.mountTime / SWING_MIN_MOUNT_TIME, 1);
+    const realTarget = Math.min(realMomentumProgress, realTimeProgress);
+    swing.displayedCharge += (realTarget - swing.displayedCharge) * (1 - Math.pow(1 / 3, deltaTime));
 
     // player position is just the bob's position while mounted
     const bob = swingBobPosition(swing.angle);
@@ -2903,6 +3019,7 @@ function drawSpringScene(camX) {
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
 
   drawSwing(camX);
+  drawSwingChargeBar(camX);
 
   drawGoalCloud(camX);
 
@@ -2935,6 +3052,49 @@ function drawSwing(camX) {
   ctx.fillStyle = "#8a5a2e";
   ctx.fillRect(-14, 0, 28, 6);
   ctx.restore();
+}
+
+// charge bar — fixed below the swing's base (not tracking the player), with
+// its own opaque backing panel so the fill color never has to fight
+// spring's green background directly. Orange -> green as charge builds,
+// gentle sparkle once fully charged.
+function drawSwingChargeBar(camX) {
+  if (!swing.mounted) return;
+
+  const barWidth = 60;
+  const barHeight = 8;
+  const barX = swing.pivotX - camX - barWidth / 2;
+  const barY = gy + 15;
+
+  // reads the smoothed value maintained in updateSwing — deliberately lags
+  // the real (plateauing) momentum so it keeps visibly climbing toward ~4s
+  const chargeProgress = swing.displayedCharge;
+
+  // backing panel
+  ctx.fillStyle = "rgba(30,30,30,0.6)";
+  ctx.fillRect(barX - 3, barY - 3, barWidth + 6, barHeight + 6);
+
+  // fill — orange to green
+  const r = Math.round(230 - chargeProgress * 150);
+  const g = Math.round(140 + chargeProgress * 90);
+  ctx.fillStyle = `rgb(${r},${g},60)`;
+  ctx.fillRect(barX, barY, barWidth * chargeProgress, barHeight);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+  if (chargeProgress >= 0.9) {
+    for (let i = 0; i < 3; i++) {
+      const sx = barX + (barWidth / 3) * i + barWidth / 6;
+      const sy = barY + barHeight / 2 + Math.sin(performance.now() * 0.008 + i) * 2;
+      const twinkle = Math.sin(performance.now() * 0.01 + i * 2) * 0.5 + 0.5;
+      ctx.fillStyle = `rgba(255,255,255,${0.5 + twinkle * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 // the goal cloud — bigger than decorative clouds, with a soft pulsing glow,
@@ -3060,7 +3220,7 @@ const cloudsDecor = [
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
   { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
   { x: 1860, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
-  { x: 900,  y: 140, scale: 1.3, type: "hummingbird" } // decorative — not walkable
+  { x: 900,  y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable, real color + big scale for visibility
 ];
 
 // the way back down — same fall-through mechanic as spring's holes, just
@@ -3151,6 +3311,7 @@ const hopClouds = [
   { x: 1990, height: 200, width: 60 },
   { x: 2090, height: 170, width: 60 },
   { x: 2190, height: 140, width: 70 },
+  { x: 2260, height: 105, width: 60 }, // required standing spot for the elephant tail-hit — verified via windowed arc
 
   // --- two lower tiers under the shuttle zone — reachable without ever
   // touching the shuttle, so that whole horizontal stretch isn't just empty air ---
@@ -3209,8 +3370,8 @@ const cloudPieces = [
   // these two are released by the vault clouds below — inactive (invisible,
   // unpickable) until then, and land at ground level once released, same
   // as honey, since the vault clouds themselves sit way too high to reach
-  { x: 1350, heightAboveGround: 280, collected: false, collecting: false, active: false, falling: false },
-  { x: 2200, heightAboveGround: 180, collected: false, collecting: false, active: false, falling: false }
+  { x: 1146, heightAboveGround: 222, collected: false, collecting: false, active: false, falling: false },
+  { x: 2176, heightAboveGround: 211, collected: false, collecting: false, active: false, falling: false }
 ];
 
 // vault clouds — same notice-wiggle language as the wiggle bush. Hitting
@@ -3222,8 +3383,8 @@ const VAULT_REVEALED_DURATION = 700; // ms — pause, piece visible in the gap
 const VAULT_CLOSING_DURATION = 500;  // ms — closes back up as the piece drops
 
 const vaultClouds = [
-  { x: 1350, heightAboveGround: 280, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 3000 + Math.random() * 3000, requiresAirborne: true },
-  { x: 2200, heightAboveGround: 180, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 4000 + Math.random() * 3000 }
+  { x: 1146, heightAboveGround: 222, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 3000 + Math.random() * 3000, requiresAirborne: true },
+  { x: 2176, heightAboveGround: 211, phase: "closed", phaseT: 0, noticeWiggle: 0, noticeTimer: 4000 + Math.random() * 3000 }
 ];
 
 const CLOUD_PIECE_FALL_SPEED = 80; // height units/sec — pushed faster again per feedback
@@ -3244,6 +3405,28 @@ function updateFallingCloudPieces(deltaTime) {
       p.falling = false; // settled — now pickupable
     }
   });
+}
+
+function updatePeanutFall(deltaTime) {
+  if (!peanut.falling) return;
+  peanut.heightAboveGround -= PEANUT_FALL_SPEED * deltaTime;
+  if (peanut.heightAboveGround <= 15) {
+    peanut.heightAboveGround = 15;
+    peanut.falling = false;
+  }
+}
+
+function drawPeanut(camX) {
+  if (!peanut.available || peanut.collected || peanut.collecting) return;
+  drawPeanutShape(ctx, peanut.x - camX, gy - peanut.heightAboveGround, 9, 0);
+}
+
+function updatePeanutPickup() {
+  if (!peanut.available || peanut.collected || peanut.collecting || peanut.falling) return;
+  if (pressedDownNear(peanut.x, peanut.heightAboveGround, 26, 15, 25)) {
+    peanut.collecting = true;
+    startCollectAnimation({ x: peanut.x, y: gy - peanut.heightAboveGround, size: 9, rotation: 0 }, "peanut");
+  }
 }
 
 function updateSimpleCloudPiecePickups() {
@@ -3343,8 +3526,26 @@ const elephantSpot = {
   cloudY: 55,       // background-layer style screen-ish y, matches cloudsDecor convention
   groundOvalX: 2400, // directly under the cloud — elephant now builds on top of it, same center
   unlocked: false,   // set once, stays true — true fog-of-war-style reveal
-  piecesPlaced: 0
+  piecesPlaced: 0,
+  appearT: 9999,     // ms since the newest piece was placed — starts high so nothing animates before the first placement
+  tailNoticeTimer: 3000 + Math.random() * 3000,
+  tailNoticeWiggle: 0
 };
+
+const ELEPHANT_APPEAR_DURATION = 3000; // ms — 3 seconds per piece, particles gather in over this long
+
+// bonus collectible — released by hitting the elephant's tail with the
+// boomerang, but only once it's fully built. Falls from the middle of the
+// cloud once triggered, same falling pattern as honey/vault pieces.
+const peanut = {
+  x: 2400,
+  heightAboveGround: 245, // falls from the middle of the cloud
+  available: false,
+  collected: false,
+  collecting: false,
+  falling: false
+};
+const PEANUT_FALL_SPEED = 60;
 
 // second exit hole — forms once the elephant is fully built, sits just
 // right of the ground oval, and leads to the exact same spot in spring as
@@ -3473,8 +3674,32 @@ function drawElephantSpot(camX) {
   }
 
   // the elephant itself, built from placed parts, directly on top of the gold cloud
+  const appearProgress = Math.min(elephantSpot.appearT / ELEPHANT_APPEAR_DURATION, 1);
+  // the actual shape only resolves into visibility in the final 40% —
+  // before that, it's just the particles gathering, not a fading shape
+  const shapeAlpha = Math.max(0, (appearProgress - 0.6) / 0.4);
+
   for (let i = 0; i < elephantSpot.piecesPlaced; i++) {
     const part = ELEPHANT_PARTS[i];
+    const isNewest = i === elephantSpot.piecesPlaced - 1;
+
+    // gathering particles — small white dots converging toward the piece's
+    // final position, visible for the whole duration, fading as they arrive
+    if (isNewest && elephantSpot.appearParticles) {
+      const ease = 1 - Math.pow(1 - appearProgress, 2);
+      const particleAlpha = Math.max(0, 1 - appearProgress * 1.3);
+      ctx.fillStyle = `rgba(255,255,255,${particleAlpha * 0.9})`;
+      elephantSpot.appearParticles.forEach(pt => {
+        const curDx = pt.startDx * (1 - ease);
+        const curDy = pt.startDy * (1 - ease);
+        ctx.beginPath();
+        ctx.arc(cx + part.dx + curDx, cy + part.dy + curDy, 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    ctx.globalAlpha = isNewest ? shapeAlpha : 1;
+
     if (part.type === "trunk1") {
       drawTrunkSegment(cx, cy, 1);
     } else if (part.type === "trunk2") {
@@ -3482,12 +3707,17 @@ function drawElephantSpot(camX) {
     } else if (part.type === "ears") {
       drawEarsPart(cx, cy);
     } else {
+      // the tail (index 3) gets a gentle notice-wiggle once it's a real target
+      const tailShake = (i === 3 && elephantSpot.tailNoticeWiggle > 0)
+        ? Math.sin(elephantSpot.tailNoticeWiggle * 0.4) * 2
+        : 0;
       ctx.fillStyle = "rgba(255,255,255,0.97)";
       ctx.beginPath();
-      ctx.arc(cx + part.dx, cy + part.dy, part.r, 0, Math.PI * 2);
+      ctx.arc(cx + part.dx + tailShake, cy + part.dy, part.r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
+  ctx.globalAlpha = 1;
 
   // the gold ground oval, only once unlocked
   if (elephantSpot.unlocked) {
@@ -3518,12 +3748,25 @@ function drawElephantSpot(camX) {
   }
 }
 
-function updateElephantSpot() {
+function updateElephantSpot(deltaTime) {
+  elephantSpot.appearT += deltaTime * 1000;
+
   if (!elephantSpot.unlocked) {
     if ((inventory.cloudPiece || 0) >= 8) {
       elephantSpot.unlocked = true; // one-time reveal — stays true even as pieces get placed
     }
     return;
+  }
+
+  // tail notice-wiggle — only once the elephant is fully built (the tail
+  // is a real target then) and only until the peanut's been claimed
+  if (elephantSpot.piecesPlaced >= 8 && !peanut.available) {
+    elephantSpot.tailNoticeTimer -= deltaTime * 1000;
+    if (elephantSpot.tailNoticeTimer <= 0) {
+      elephantSpot.tailNoticeWiggle = 120;
+      elephantSpot.tailNoticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (elephantSpot.tailNoticeWiggle > 0) elephantSpot.tailNoticeWiggle--;
   }
 
   if (elephantSpot.piecesPlaced >= 8) return; // fully built
@@ -3537,6 +3780,12 @@ function updateElephantSpot() {
       heldItem = null;
       updateInventoryUI();
       elephantSpot.piecesPlaced++;
+      elephantSpot.appearT = 0; // starts the newest piece's slow-appear animation
+      elephantSpot.appearParticles = Array.from({ length: 8 }, () => {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 25 + Math.random() * 30;
+        return { startDx: Math.cos(angle) * dist, startDy: Math.sin(angle) * dist };
+      });
     }
   }
 }
@@ -3802,6 +4051,7 @@ function drawCloudsScene(camX) {
   drawWaterDrips(camX);
   drawRabbitShuttleCloud(camX);
   drawSimpleCloudPieces(camX);
+  drawPeanut(camX);
   vaultClouds.forEach(v => drawVaultCloud(v, camX));
   drawElephantSpot(camX);
 }
@@ -3813,9 +4063,11 @@ function updateCloudsScene(deltaTime) {
   updateRabbitShuttle(deltaTime);
   updatePlane(cameraX);
   updateFallingCloudPieces(deltaTime);
+  updatePeanutFall(deltaTime);
+  updatePeanutPickup();
   updateSimpleCloudPiecePickups();
   vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
-  updateElephantSpot();
+  updateElephantSpot(deltaTime);
 
   // mount via spacebar — same interact key as everything else, so it
   // stays free for picking things up while riding, not claimed by mounting.
@@ -3845,6 +4097,8 @@ function updateCloudsScene(deltaTime) {
       playerCenterX > elephantHole.x && playerCenterX < elephantHole.x + elephantHole.width;
 
     if (overOriginalHole || overElephantHole) {
+      const hole = overOriginalHole ? cloudHole : elephantHole;
+      player.x = hole.x + hole.width / 2 - player.width / 2; // center on the hole, not wherever the trigger fired
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "cloudHole";
@@ -4119,9 +4373,11 @@ if (apple.split) {
     }
   });
 
-  // boomerang: elevated, but same helper — just a different target height
+  // boomerang: elevated, requires catching it on the way down from a jump —
+  // same "must be descending" logic platform-landing already uses, generous
+  // vertical tolerance so most of the descent counts, not a single frame
   if (!boomerang.collected && !boomerang.collecting && !pickupHandledThisFrame) {
-    if (pressedDownNear(boomerang.x, boomerang.heightAboveGround, 26, 20, 20)) {
+    if (player.vy <= 0 && pressedDownNear(boomerang.x, boomerang.heightAboveGround, 26, 20, 20)) {
       boomerang.collecting = true;
       startCollectAnimation(
         { x: boomerang.x, y: gy - boomerang.heightAboveGround, size: 10, rotation: 0 },
@@ -4287,9 +4543,10 @@ function updateSpringScene(deltaTime) {
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
   if (player.y <= 0) {
     const playerCenterX = player.x + player.width / 2;
-    const overHole = springHoles.some(h => playerCenterX > h.x && playerCenterX < h.x + h.width);
+    const matchedHole = springHoles.find(h => playerCenterX > h.x && playerCenterX < h.x + h.width);
 
-    if (overHole) {
+    if (matchedHole) {
+      player.x = matchedHole.x + matchedHole.width / 2 - player.width / 2;
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "hole";
