@@ -89,7 +89,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "spring"; // TEMP for testing — normally "autumn" | "spring" | "clouds"
+let currentScene = "autumn"; // "autumn" | "spring" | "clouds"
 
 /* ======================================================
    ORCHARD COLOURS
@@ -119,7 +119,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 2270, // TEMP for testing (right in front of the wiggle bush at x:2300) — normally 120
+  x: 120,
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -178,6 +178,17 @@ function selectHeldItem(itemType) {
   updateInventoryUI();
 }
 
+// items whose inventory chip should show the ACTUAL drawn world-shape
+// (with live state) instead of an emoji — for anything stateful, or
+// anything without a good emoji match. Bucket is the first user; any
+// future item can opt in the same way.
+const ITEM_CANVAS_RENDER = {
+  bucket: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawBucketShape(iconCtx, 10, 12, 7, 0);
+  }
+};
+
 function updateInventoryUI() {
   const entries = Object.entries(inventory);
   invEl.innerHTML = "";
@@ -189,17 +200,30 @@ function updateInventoryUI() {
 
   entries.forEach(([type, count]) => {
     const chip = document.createElement("span");
-    chip.textContent = type === "bucket"
-      ? (bucketFilled ? "🪣💧" : "🪣")
-      : `${ITEM_ICONS[type] || "?"} x${count}`;
     chip.style.cursor = "pointer";
     chip.style.marginRight = "8px";
     chip.style.padding = "1px 5px";
     chip.style.borderRadius = "4px";
     chip.style.border = heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
-    chip.title = type === "bucket"
-      ? (bucketFilled ? "Full — carry it down to spring" : `${bucketDropCount}/${BUCKET_DROPS_NEEDED} drops collected`)
-      : "Click to hold this item";
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+
+    if (ITEM_CANVAS_RENDER[type]) {
+      const iconCanvas = document.createElement("canvas");
+      iconCanvas.width = 20;
+      iconCanvas.height = 20;
+      iconCanvas.style.verticalAlign = "middle";
+      ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
+      chip.appendChild(iconCanvas);
+
+      chip.title = type === "bucket"
+        ? (bucketFilled ? "Full — carry it down to spring" : `${bucketDropCount}/${BUCKET_DROPS_NEEDED} drops collected`)
+        : "Click to hold this item";
+    } else {
+      chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
+      chip.title = "Click to hold this item";
+    }
+
     chip.addEventListener("click", () => selectHeldItem(type));
     invEl.appendChild(chip);
   });
@@ -313,7 +337,7 @@ const sceneMapInfo = {
   clouds: { label: "Clouds", x: 400, y: 40 }
 };
 
-const discoveredScenes = { autumn: true, spring: true }; // TEMP: spring added for testing — normally just autumn
+const discoveredScenes = { autumn: true }; // autumn is where you start
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -2265,10 +2289,10 @@ const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
    ====================================================== */
 const SWING_ROPE_LENGTH = 100;       // height units
 const SWING_GRAVITY = 0.03;          // frame-based, tuned small like the rest of player physics
-const SWING_MAX_ANGLE = 1.3;         // ~75° — hard amplitude clamp, prevents looping over the top
+const SWING_MAX_ANGLE = 1.45;        // ~83° — hard amplitude clamp, prevents looping over the top
                                       // regardless of how much energy pumping adds
 const SWING_MAX_ANGULAR_VEL = 0.2;   // safety cap on raw angular speed (secondary to the angle clamp)
-const SWING_PUMP_BOOST = 0.035;      // base boost — actual effect is weighted by current momentum, see updateSwing
+const SWING_PUMP_BOOST = 0.02;       // base boost — actual effect is weighted by current momentum, see updateSwing
 const SWING_PUMP_MIN_MULT = 0.3;     // pump effectiveness at zero momentum (slow start)
 const SWING_PUMP_MULT_RANGE = 1.4;   // grows up to (MIN_MULT + this) at max momentum — compounds faster once swinging
 const SWING_PUMP_COOLDOWN = 6;       // frames between pumps, so holding doesn't spam
@@ -2324,7 +2348,7 @@ function swingBobPosition(angle) {
   };
 }
 
-const SWING_MIN_MOUNT_TIME = 4500; // ms — must stay on for at least this long before release does anything
+const SWING_MIN_MOUNT_TIME = 4000; // ms — must stay on for at least this long before release does anything
 
 function updateSwing(deltaTime) {
   if (swing.mounted) {
@@ -2674,9 +2698,11 @@ function drawWiggleBush(camX) {
   ctx.fill();
   ctx.restore();
 
-  // bucket visible in the gap once open, until taken
+  // bucket visible in the gap once open, until taken — sits up in the
+  // parted canopy (peak ~28), not at chest height where your own
+  // character would block the view of it
   if (wiggleBush.opened && !wiggleBush.bucketTaken) {
-    drawBucketShape(ctx, bx, gy - 18, 12, 0);
+    drawBucketShape(ctx, bx, gy - 26, 12, 0);
   }
 }
 
@@ -2684,7 +2710,7 @@ function updateWiggleBush(deltaTime) {
   // cosmetic notice-wiggle — runs on its own clock, regardless of the player
   wiggleBush.noticeTimer -= deltaTime * 1000;
   if (wiggleBush.noticeTimer <= 0) {
-    wiggleBush.noticeWiggle = 100;
+    wiggleBush.noticeWiggle = 180;
     wiggleBush.noticeTimer = 7000 + Math.random() * 4000;
   }
   if (wiggleBush.noticeWiggle > 0) wiggleBush.noticeWiggle--;
@@ -2705,10 +2731,10 @@ function updateWiggleBush(deltaTime) {
       }
     }
   } else if (!wiggleBush.bucketTaken) {
-    if (pressedDownNear(wiggleBush.x, 18, 30, 15, 25)) {
+    if (pressedDownNear(wiggleBush.x, 26, 30, 15, 30)) {
       wiggleBush.bucketTaken = true;
       startCollectAnimation(
-        { x: wiggleBush.x, y: gy - 18, size: 12, rotation: 0 },
+        { x: wiggleBush.x, y: gy - 26, size: 12, rotation: 0 },
         "bucket"
       );
     }
@@ -2726,7 +2752,7 @@ const cloudsDecor = [
   { x: 1400, y: 110, scale: 1.5, type: "puffy" },
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
   { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
-  { x: 1550, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
+  { x: 1770, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
   { x: 900,  y: 140, scale: 1.3, type: "hummingbird" } // decorative — not walkable
 ];
 
@@ -2738,29 +2764,37 @@ const cloudHole = { x: 300, width: 60 };
 // gaps. Missing a jump just drops you to the base cloud-ground, no hazard.
 // Ends at a shuttle dock — the alligator beyond it is NOT reachable by
 // jumping; the gap is deliberately wider than anything jump/double-jump can cross.
+//
+// The two "GAP" clouds below were verified against actual jump physics
+// (frame-based simulation, landing only counts while descending — vy<=0 —
+// same as the real platform collision code), not just eyeballed distance:
+// single-jump's real max reach at a ~90-height climb is ~50-57px, so an
+// 80px edge gap is genuinely single-jump-impossible; double-jump reaches
+// ~120px there, comfortably clearing it.
 const hopClouds = [
   { x: 480,  height: 45,  width: 70 },
   { x: 580,  height: 90,  width: 60 },
   { x: 690,  height: 95,  width: 130, type: "whale" },      // big stationary anchor
   { x: 860,  height: 60,  width: 60 },
   { x: 960,  height: 60,  width: 60 },
-  { x: 1060, height: 150, width: 60 },                      // big gap — needs the double jump
-  { x: 1160, height: 190, width: 60 },
-  { x: 1250, height: 200, width: 60 },                      // shuttle's near dock — last normally-reachable cloud
+  { x: 1100, height: 150, width: 60 },                      // GAP 1 — 80px edge gap, genuinely needs the double jump
+  { x: 1200, height: 190, width: 60 },
+  { x: 1370, height: 220, width: 60 },                      // GAP 2 — 110px edge gap, also genuinely needs the double jump
+  { x: 1470, height: 230, width: 60 },                      // shuttle's near dock — last normally-reachable cloud
 
   // --- everything below is only reachable via the shuttle ---
-  { x: 1550, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
-  { x: 1680, height: 200, width: 60 },
-  { x: 1780, height: 170, width: 60 },
-  { x: 1880, height: 140, width: 70 },
+  { x: 1770, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
+  { x: 1900, height: 200, width: 60 },
+  { x: 2000, height: 170, width: 60 },
+  { x: 2100, height: 140, width: 70 },
 
   // --- two lower tiers under the shuttle zone — reachable without ever
   // touching the shuttle, so that whole horizontal stretch isn't just empty air ---
-  { x: 1300, height: 40,  width: 60 },
-  { x: 1420, height: 90,  width: 60 },
-  { x: 1550, height: 40,  width: 60 },
-  { x: 1680, height: 90,  width: 60 },
-  { x: 1800, height: 40,  width: 70 }
+  { x: 1520, height: 40,  width: 60 },
+  { x: 1640, height: 90,  width: 60 },
+  { x: 1770, height: 40,  width: 60 },
+  { x: 1900, height: 90,  width: 60 },
+  { x: 2020, height: 40,  width: 70 }
 ];
 
 // rabbit-shuttle — travels between two docks (a real destination, not a
@@ -2768,8 +2802,8 @@ const hopClouds = [
 // needing to time a moving target; the crossing itself is a gentle
 // multi-hop sequence, not a smooth glide or a rigid stop-start.
 const rabbitShuttle = {
-  dockA: { x: 1250, height: 200 }, // matches the last normally-reachable hop-cloud
-  dockB: { x: 1550, height: 220 }, // matches the alligator — otherwise unreachable
+  dockA: { x: 1470, height: 230 }, // matches the last normally-reachable hop-cloud
+  dockB: { x: 1770, height: 220 }, // matches the alligator — otherwise unreachable
   state: "docked",   // "docked" | "traveling"
   dockedAt: "A",
   t: 0,
@@ -2777,14 +2811,14 @@ const rabbitShuttle = {
   TRAVEL_TIME: 4500,  // slow, deliberate crossing
   HOP_COUNT: 5,        // how many gentle hops the crossing is broken into
   mounted: false,
-  currentX: 1250,
-  currentHeight: 200,
+  currentX: 1470,
+  currentHeight: 230,
   width: 64
 };
 
 // the crystal — sits on the alligator cloud, only reachable via the shuttle
 const crystal = {
-  x: 1645, // right-of-center on the alligator platform (spans 1550-1690), not its left edge
+  x: 1865, // right-of-center on the alligator platform (spans 1770-1910), not its left edge
   heightAboveGround: 240, // just above the alligator platform's surface (height 220)
   collected: false,
   collecting: false
@@ -2805,8 +2839,8 @@ const WATER_DRIP_INTERVAL_MAX = 11000; // ms — "every 7 seconds or so, maybe l
 const WATER_DRIP_FALL_SPEED = 40;      // height units per second
 
 const waterDrips = [
-  { x: 1680, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
-  { x: 1780, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
+  { x: 1900, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
+  { x: 2000, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
 ];
 
 function updateWaterDrips(deltaTime) {
