@@ -12,6 +12,7 @@ const ctx = canvas.getContext("2d");
    ====================================================== */
 const invEl = document.getElementById("inv");
 const overlayEl = document.getElementById("overlay");
+const mapEl = document.getElementById("map");
 
 /* ======================================================
    WORLD CONSTANTS
@@ -39,20 +40,27 @@ const lowfog = {
 /* ======================================================
    INPUT
    ====================================================== */
-const keys = { left:false, right:false, up:false, down:false, space:false, upJustPressed:false };
+const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false };
 
 window.addEventListener("keydown", e => {
-  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(e.key)) {
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Control"].includes(e.key)) {
     e.preventDefault();
   }
-  if (e.key==="ArrowLeft") keys.left=true;
-  if (e.key==="ArrowRight") keys.right=true;
+  if (e.key==="ArrowLeft") {
+    if (!keys.left) keys.leftJustPressed = true;
+    keys.left=true;
+  }
+  if (e.key==="ArrowRight") {
+    if (!keys.right) keys.rightJustPressed = true;
+    keys.right=true;
+  }
   if (e.key==="ArrowUp") {
     if (!keys.up) keys.upJustPressed = true; // edge only — ignore key-repeat while held
     keys.up = true;
   }
   if (e.key==="ArrowDown") keys.down=true;
   if (e.key===" ") keys.space=true;
+  if (e.key==="Control") keys.ctrl=true;
 });
 
 window.addEventListener("keyup", e => {
@@ -61,6 +69,7 @@ window.addEventListener("keyup", e => {
   if (e.key==="ArrowUp") keys.up=false;
   if (e.key==="ArrowDown") keys.down=false;
   if (e.key===" ") keys.space=false;
+  if (e.key==="Control") keys.ctrl=false;
 });
 
 // orchard choice 
@@ -117,7 +126,10 @@ const player = {
   speed: 3,
   jumping: false,
   usedDoubleJump: false, // resets whenever player lands on anything
-  vy: 0
+  vy: 0,
+  vx: 0,               // horizontal momentum — only used during a swing launch
+  launched: false,     // true while mid-flight from a swing release
+  launchPeakHeight: 0  // tracks how high THIS launch has reached, for the cloud threshold check
 };
 
 /* ======================================================
@@ -264,11 +276,124 @@ const connections = [
   }
 ];
 
+/* ======================================================
+   MAP (fog-of-war, graph-driven — replaces the old
+   hardcoded HTML nodes). Nodes = scenes, edges = connections.
+   A scene only appears once you've actually been there.
+   ====================================================== */
+const sceneMapInfo = {
+  autumn: { label: "Autumn", x: 40,  y: 40 },
+  spring: { label: "Spring", x: 220, y: 40 },
+  clouds: { label: "Clouds", x: 400, y: 40 }
+};
+
+const discoveredScenes = { autumn: true }; // autumn is where you start
+
+// a thin rotated div connecting two node centers — same visual language
+// (dashed border) as the existing .map-node CSS, no new stylesheet needed
+function createEdgeLine(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
+  const line = document.createElement("div");
+  line.style.position = "absolute";
+  line.style.left = x1 + "px";
+  line.style.top = y1 + "px";
+  line.style.width = length + "px";
+  line.style.height = "0";
+  line.style.borderTop = "3px dashed #2b2b2b";
+  line.style.opacity = "0.55";
+  line.style.transformOrigin = "0 0";
+  line.style.transform = `rotate(${angle}deg)`;
+  return line;
+}
+
+// where a ray from a rectangle's center, heading in a given direction,
+// exits that rectangle — used to clip edges to node boundaries instead
+// of running straight through their centers
+function rectEdgeIntersection(cx, cy, halfW, halfH, dirX, dirY) {
+  const tX = dirX !== 0 ? halfW / Math.abs(dirX) : Infinity;
+  const tY = dirY !== 0 ? halfH / Math.abs(dirY) : Infinity;
+  const t = Math.min(tX, tY);
+  return { x: cx + dirX * t, y: cy + dirY * t };
+}
+
+// rebuilds the map from scratch each time — cheap, and guarantees it never
+// drifts out of sync with discoveredScenes/currentScene
+function updateMapUI() {
+  if (!mapEl) return;
+  mapEl.innerHTML = "";
+
+  const NODE_W = 120, NODE_H = 60; // matches .map-node's CSS dimensions
+
+  // edges first, so nodes render on top of them
+  connections.forEach(conn => {
+    const [sceneA, sceneB] = Object.keys(conn.doors);
+    if (!discoveredScenes[sceneA] || !discoveredScenes[sceneB]) return;
+
+    const a = sceneMapInfo[sceneA];
+    const b = sceneMapInfo[sceneB];
+    if (!a || !b) return;
+
+    const aCenterX = a.x + NODE_W / 2, aCenterY = a.y + NODE_H / 2;
+    const bCenterX = b.x + NODE_W / 2, bCenterY = b.y + NODE_H / 2;
+
+    const dx = bCenterX - aCenterX, dy = bCenterY - aCenterY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return;
+    const dirX = dx / dist, dirY = dy / dist;
+
+    const start = rectEdgeIntersection(aCenterX, aCenterY, NODE_W / 2, NODE_H / 2, dirX, dirY);
+    const end = rectEdgeIntersection(bCenterX, bCenterY, NODE_W / 2, NODE_H / 2, -dirX, -dirY);
+
+    mapEl.appendChild(createEdgeLine(start.x, start.y, end.x, end.y));
+  });
+
+  // nodes — only discovered scenes appear at all (true fog-of-war, not
+  // "visible but greyed out" like the old .locked approach)
+  Object.entries(discoveredScenes).forEach(([scene, discovered]) => {
+    if (!discovered) return;
+    const info = sceneMapInfo[scene];
+    if (!info) return;
+
+    const node = document.createElement("div");
+    node.className = "map-node";
+    node.style.left = info.x + "px";
+    node.style.top = info.y + "px";
+    node.textContent = info.label;
+
+    if (scene === "spring") {
+      node.style.background = "rgba(180,222,150,0.35)"; // slight light green
+    }
+
+    if (scene === currentScene) {
+      node.style.borderStyle = "solid";
+      node.style.borderColor = "#c9a25a";
+      if (scene !== "spring") {
+        node.style.background = "rgba(201,162,90,0.15)";
+      }
+    }
+
+    mapEl.appendChild(node);
+  });
+}
+
+// push the map down below the inventory box (#ui sits at top:8px) so they
+// don't overlap — done here in JS rather than editing index.html's CSS
+if (mapEl) {
+  mapEl.style.marginTop = "70px";
+}
+
+updateMapUI(); // populate once at load, so autumn shows up immediately
+
 // per-scene spawn points — landing right in front of whichever door you
 // just came through, on either side
 const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
-  spring: { x: connections[0].doors.spring.x - 25 }
+  spring: { x: connections[0].doors.spring.x - 25 },
+  clouds: { x: 200 } // no door here — you arrive by launch, not by walking in
 };
 
 /* ======================================================
@@ -320,6 +445,8 @@ function updateSeasonTransition(deltaTime) {
     if (seasonTransition.phase === "fadeOut") {
       // screen is fully white now — swap the actual scene behind it
       currentScene = seasonTransition.targetScene;
+      discoveredScenes[currentScene] = true;
+      updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
       const spawn = sceneSpawns[currentScene];
       player.x = spawn.x;
       player.y = 0;
@@ -402,7 +529,10 @@ const fog = {
 
 const crows = [
   { x: 780, y: 60, speed: 0.25, phase: Math.random()*Math.PI*2 },
-  { x: 620, y: 90, speed: 0.18, phase: Math.random()*Math.PI*2 }
+  { x: 620, y: 90, speed: 0.18, phase: Math.random()*Math.PI*2 },
+  { x: 1050, y: 140, speed: 0.22, phase: Math.random()*Math.PI*2 },
+  { x: 900, y: 170, speed: 0.15, phase: Math.random()*Math.PI*2 },
+  { x: 1300, y: 115, speed: 0.3, phase: Math.random()*Math.PI*2 }
 ];
 
 const leaves = Array.from({ length: 8 }, (_, i) => ({
@@ -651,7 +781,7 @@ function isPlayerNear(targetX, targetHeight, radiusX, radiusYUp = 10, radiusYDow
 }
 
 function pressedDownNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown) {
-  return keys.down && isPlayerNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown);
+  return keys.space && isPlayerNear(targetX, targetHeight, radiusX, radiusYUp, radiusYDown);
 }
 
 // generic NPC shell: idle bob + brief "reacted to something" timer decay.
@@ -665,7 +795,7 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched) {
     if (keys.left) player.x -= player.speed;
     if (keys.right) player.x += player.speed;
 
@@ -689,18 +819,55 @@ function handleInput(){
   // "camera stops" and "character stops" happening at the same moment
   if (player.x < 0) player.x = 0;
 
-  if (keys.space && !camera.locked && currentScene === "autumn") {
+  if (keys.ctrl && !camera.locked) {
     camera.topDown = !camera.topDown;
     camera.locked = true;
     overlayEl.style.display = camera.topDown ? "block" : "none";
   }
-  if (!keys.space) camera.locked = false;
+  if (!keys.ctrl) camera.locked = false;
 }
 
 /* ======================================================
    PHYSICS
    ====================================================== */
 function applyPhysics(){
+  // while on the swing, position is fully driven by updateSwing() —
+  // no normal gravity/ground physics applies at all
+  if (swing.mounted) return;
+
+  if (player.launched) {
+    // horizontal momentum from the swing release, plus gravity that's
+    // stricter on the way up (normal jump feel) and floatier on the way
+    // down if the launch didn't clear the cloud threshold
+    player.x += player.vx;
+
+    const ascending = player.vy > 0;
+    player.y += player.vy;
+    player.vy -= ascending ? LAUNCH_GRAVITY : FLOATY_FALL_GRAVITY;
+
+    if (player.y > player.launchPeakHeight) {
+      player.launchPeakHeight = player.y;
+    }
+
+    if (player.launchPeakHeight >= CLOUD_HEIGHT_THRESHOLD && seasonTransition.phase === "idle") {
+      player.launched = false;
+      player.vx = 0;
+      startSeasonTransition("clouds");
+      return;
+    }
+
+    if (player.y <= 0) {
+      player.y = 0;
+      player.vy = 0;
+      player.vx = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.launched = false;
+    }
+
+    return; // launched flight ignores platforms/ramp/stump entirely — spring has none anyway
+  }
+
   // gravity
   player.y += player.vy;
   player.vy -= 0.8;
@@ -993,6 +1160,20 @@ function drawBush(x, camX) {
   ctx.fill();
 }
 
+// soft cloud — a cluster of overlapping ellipses, slow parallax (further
+// back than the tree layers) since it sits high in the sky
+function drawCloud(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 30 * scale, 14 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 22 * scale, y - 6 * scale, 20 * scale, 12 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx - 22 * scale, y - 4 * scale, 18 * scale, 11 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 8 * scale, y - 12 * scale, 16 * scale, 10 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // a gap in the ground — jump it or fall through
 function drawHole(x, width, camX) {
   const hx = x - camX + width / 2;
@@ -1267,7 +1448,13 @@ crows.forEach(c=>{
   c.x -= c.speed;
   c.phase += 0.18;
 
-  if (c.x < -20) c.x = canvas.width+20;
+  // recycle relative to the CAMERA, not a fixed world position — otherwise
+  // crows only ever exist near world x=0 and vanish forever once you scroll past
+  if (c.x - camX < -20) {
+    c.x = camX + canvas.width + Math.random() * 500; // staggered re-entry, not a synchronized clump
+    c.y = 50 + Math.random() * 150;                   // spread vertically too
+    c.speed = 0.15 + Math.random() * 0.2;
+  }
 
   const flap = Math.sin(c.phase) * 4;
 
@@ -1678,7 +1865,7 @@ if (frog.active && isPlayerNear(frog.x + frog.width / 2, 0, 70, 6, 999)) {
   // — only the bubble rendering itself is shared
   drawSpeechBubble(ctx, fx, bubbleY, [
     apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
-    "What's freshly fallen carries new weight."
+    "What's freshly fallen opens new paths."
   ]);
 }
 
@@ -1776,10 +1963,118 @@ function drawSpringFlowers(camX) {
 const springFruitTrees = [
   { x: 150, type: "plum" },
   { x: 550, type: "pear" },  // future-interactive slot
-  { x: 950, type: "peach" }
+  { x: 950, type: "peach" },
+  { x: 1975, type: "plum" }  // the swing's tree, past the tulip
 ];
 
 const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
+
+/* ======================================================
+   SWING — real pendulum physics. Pump with left/right timed
+   to the direction it's already moving; release with up to
+   launch. Clear the height threshold and you're flung into
+   the clouds; otherwise a slow, floaty drop back to the ground.
+
+   NOTE: pendulum feel is genuinely hard to hand-tune without
+   playtesting — these are first-pass numbers, expect to retune
+   rope length / gravity / thresholds once you've actually swung on it.
+   ====================================================== */
+const SWING_ROPE_LENGTH = 100;       // height units
+const SWING_GRAVITY = 0.03;          // frame-based, tuned small like the rest of player physics
+const SWING_MAX_ANGLE = 1.3;         // ~75° — hard amplitude clamp, prevents looping over the top
+                                      // regardless of how much energy pumping adds
+const SWING_MAX_ANGULAR_VEL = 0.2;   // safety cap on raw angular speed (secondary to the angle clamp)
+const SWING_PUMP_BOOST = 0.03;
+const SWING_PUMP_COOLDOWN = 6;       // frames between pumps, so holding doesn't spam
+const CLOUD_HEIGHT_THRESHOLD = 220;  // higher than any jump can reach — requires real, sustained pumping
+const LAUNCH_GRAVITY = 0.3;          // ascent — lighter than a normal jump; you're being FLUNG, not hopping
+const FLOATY_FALL_GRAVITY = 0.13;    // descent, if under threshold — the "slow drop"
+
+const swing = {
+  pivotX: 1975,
+  pivotHeightAboveGround: 150, // where the rope attaches, up in the plum tree — idle seat rests at height 50
+  angle: 0,          // radians from straight down
+  angularVelocity: 0,
+  mounted: false,
+  pumpCooldown: 0
+};
+
+function swingBobPosition(angle) {
+  return {
+    x: swing.pivotX + SWING_ROPE_LENGTH * Math.sin(angle),
+    height: swing.pivotHeightAboveGround - SWING_ROPE_LENGTH * Math.cos(angle)
+  };
+}
+
+function updateSwing() {
+  if (swing.mounted) {
+    // real pendulum restoring force toward straight-down
+    const angularAccel = -(SWING_GRAVITY / SWING_ROPE_LENGTH) * Math.sin(swing.angle);
+    swing.angularVelocity += angularAccel;
+    swing.angle += swing.angularVelocity;
+
+    if (swing.pumpCooldown > 0) swing.pumpCooldown--;
+
+    // pump: pressing the direction it's ALREADY moving adds energy —
+    // forgiving on purpose, no tight phase-locked timing required
+    if (swing.pumpCooldown <= 0) {
+      if (keys.leftJustPressed && swing.angularVelocity <= 0) {
+        swing.angularVelocity -= SWING_PUMP_BOOST;
+        swing.pumpCooldown = SWING_PUMP_COOLDOWN;
+      } else if (keys.rightJustPressed && swing.angularVelocity >= 0) {
+        swing.angularVelocity += SWING_PUMP_BOOST;
+        swing.pumpCooldown = SWING_PUMP_COOLDOWN;
+      }
+    }
+
+    swing.angularVelocity = Math.max(-SWING_MAX_ANGULAR_VEL, Math.min(SWING_MAX_ANGULAR_VEL, swing.angularVelocity));
+
+    // hard amplitude clamp — this, not the velocity cap, is what actually
+    // prevents looping over the top: energy conservation means a capped
+    // velocity can still loop if it's enough to carry past 90°, so the
+    // angle itself has to be the real ceiling
+    if (swing.angle > SWING_MAX_ANGLE) {
+      swing.angle = SWING_MAX_ANGLE;
+      swing.angularVelocity = 0;
+    } else if (swing.angle < -SWING_MAX_ANGLE) {
+      swing.angle = -SWING_MAX_ANGLE;
+      swing.angularVelocity = 0;
+    }
+
+    // player position is just the bob's position while mounted
+    const bob = swingBobPosition(swing.angle);
+    player.x = bob.x;
+    player.y = bob.height;
+
+    if (keys.upJustPressed) {
+      releaseSwing();
+    }
+  } else {
+    // idle sway — purely cosmetic, so the swing reads as alive even unmounted
+    swing.angle = Math.sin(performance.now() * 0.001) * 0.08;
+  }
+}
+
+function releaseSwing() {
+  const vx = SWING_ROPE_LENGTH * Math.cos(swing.angle) * swing.angularVelocity;
+  const vHeight = SWING_ROPE_LENGTH * Math.sin(swing.angle) * swing.angularVelocity;
+
+  swing.mounted = false;
+  swing.angularVelocity = 0;
+
+  player.vx = vx;
+  player.vy = vHeight;
+  player.launched = true;
+  player.launchPeakHeight = player.y;
+  player.jumping = true;
+}
+
+const springClouds = [
+  { x: 150, y: 70, scale: 1 },
+  { x: 500, y: 45, scale: 0.8 },
+  { x: 850, y: 90, scale: 1.2 },
+  { x: 1400, y: 60, scale: 0.9 }
+];
 
 /* ======================================================
    RABBIT NPC — uses the same generic shell as frog
@@ -1841,6 +2136,8 @@ function drawSpringScene(camX) {
   glow.addColorStop(1, "rgba(255,235,180,0.25)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, gy - 150, canvas.width, 200);
+
+  springClouds.forEach(c => drawCloud(c.x, c.y, c.scale, camX));
 
   // far silhouettes (most distant, most translucent)
   ctx.fillStyle = "rgba(110,150,95,0.22)";
@@ -1912,13 +2209,67 @@ function drawSpringScene(camX) {
   springBushes.forEach(b => drawBush(b.x, camX));
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
 
+  drawSwing(camX);
+
   drawRabbit(camX);
 
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
+}
 
-  ctx.fillStyle = "#2b2b2b";
-  ctx.font = "14px ui-monospace";
-  ctx.fillText("Spring (stub) \u2014 built out next", 20 - camX, 40);
+// swing: rope + wooden seat, position derived from its current angle
+function drawSwing(camX) {
+  const bob = swingBobPosition(swing.angle);
+  const pivotScreenX = swing.pivotX - camX;
+  const pivotScreenY = gy - swing.pivotHeightAboveGround;
+  const bobScreenX = bob.x - camX;
+  const bobScreenY = gy - bob.height;
+
+  ctx.strokeStyle = "#5a4530";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pivotScreenX, pivotScreenY);
+  ctx.lineTo(bobScreenX, bobScreenY);
+  ctx.stroke();
+
+  // seat, perpendicular to the rope so it reads as hanging naturally
+  ctx.save();
+  ctx.translate(bobScreenX, bobScreenY);
+  ctx.rotate(swing.angle);
+  ctx.fillStyle = "#8a5a2e";
+  ctx.fillRect(-14, 0, 28, 6);
+  ctx.restore();
+}
+
+// --- CLOUDS: minimal stub, reached only by a successful swing launch ---
+const cloudsDecor = [
+  { x: 100, y: 90, scale: 1.3 },
+  { x: 400, y: 60, scale: 1 },
+  { x: 700, y: 120, scale: 1.5 },
+  { x: 1000, y: 80, scale: 1.1 }
+];
+
+function drawCloudsScene(camX) {
+  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  sky.addColorStop(0, "#dcefff");
+  sky.addColorStop(1, "#f6fbff");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  cloudsDecor.forEach(c => drawCloud(c.x, c.y, c.scale, camX * 0.3));
+
+  // ground here IS cloud — soft and pale, not the usual grass/dirt
+  ctx.fillStyle = "#eaf4ff";
+  ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  for (let i = -2; i < 6; i++) {
+    ctx.beginPath();
+    ctx.ellipse(i * 200 - camX % 200, gy + 6, 90, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function updateCloudsScene(deltaTime) {
+  // nothing here yet — arrival is the whole point of this stub for now
 }
 
 function draw(){
@@ -1937,6 +2288,8 @@ if (currentScene === "autumn") {
   drawAutumnScene(camX);
 } else if (currentScene === "spring") {
   drawSpringScene(camX);
+} else if (currentScene === "clouds") {
+  drawCloudsScene(camX);
 }
 
 // flying (collecting/placing) items — shared across scenes, drawn here so
@@ -2205,12 +2558,11 @@ if (apple.landed && !frogNoticedApple) {
   frog.tip = 40;
 }
 
-if (frog.active && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.down) {
+if (frog.active && apple.cracked && inventory.appleSlice > 0 && orchardChoice === null && keys.space) {
   orchardPaths.forEach(p => {
     if (isPlayerNear(p.x, 0, 40, 0, 0)) {
       orchardChoice = p.id;
       frog.tip = 40;
-      document.querySelectorAll(".map-node.locked").forEach(el => el.classList.remove("locked"));
     }
   });
 }
@@ -2281,6 +2633,15 @@ function updateSpringScene(deltaTime) {
   }
   updateNPCIdle(rabbit);
 
+  // SWING — mount when near its resting position, not already launched
+  if (!swing.mounted && !player.launched) {
+    if (pressedDownNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55)) {
+      swing.mounted = true;
+      swing.angularVelocity = 0;
+    }
+  }
+  updateSwing();
+
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
   if (player.y <= 0) {
@@ -2335,6 +2696,8 @@ if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
 } else if (currentScene === "spring") {
   updateSpringScene(deltaTime);
+} else if (currentScene === "clouds") {
+  updateCloudsScene(deltaTime);
 }
 
   updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
@@ -2346,6 +2709,9 @@ updateSeasonTransition(deltaTime);
   const targetCam = player.x - canvas.width*0.4;
   cameraX += (targetCam - cameraX)*0.08;
   if (cameraX<0) cameraX=0;
+
+  keys.leftJustPressed = false;
+  keys.rightJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
   
