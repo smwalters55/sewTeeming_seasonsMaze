@@ -425,6 +425,11 @@ const seasonTransition = {
   targetScene: null
 };
 
+// the brief moment of visibly landing/settling on the goal cloud before
+// the actual fade-to-clouds transition kicks in — contact isn't instant fade
+const cloudLanding = { active: false, t: 0 };
+const CLOUD_LANDING_HOLD = 550; // ms
+
 const TRANSITION_DURATIONS = { fadeOut: 600, hold: 1400, fadeIn: 600 };
 
 function startSeasonTransition(targetScene) {
@@ -795,12 +800,21 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active) {
     if (keys.left) player.x -= player.speed;
     if (keys.right) player.x += player.speed;
 
     if (keys.upJustPressed) {
-      if (!player.jumping) {
+      const nearSwing = currentScene === "spring" &&
+        isPlayerNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55);
+
+      if (nearSwing) {
+        // jumping onto the swing takes priority over a normal jump here
+        swing.mounted = true;
+        swing.angularVelocity = 0;
+        swing.mountTime = 0;
+        swing.peakAngularVelocity = 0;
+      } else if (!player.jumping) {
         // first jump
         player.jumping = true;
         player.vy = 12;
@@ -813,7 +827,9 @@ function handleInput(){
       }
     }
   }
-  keys.upJustPressed = false; // consume the edge every frame either way
+  // NOTE: upJustPressed is NOT consumed here — updateSwing() (called later
+  // this same frame, for the release action) still needs to see it. It gets
+  // consumed once, at the very end of the frame, alongside left/right.
 
   // hard left world boundary — the camera also clamps at 0, so this keeps
   // "camera stops" and "character stops" happening at the same moment
@@ -835,10 +851,13 @@ function applyPhysics(){
   // no normal gravity/ground physics applies at all
   if (swing.mounted) return;
 
+  // frozen in place during the brief "settled on the cloud" beat
+  if (cloudLanding.active) return;
+
   if (player.launched) {
     // horizontal momentum from the swing release, plus gravity that's
     // stricter on the way up (normal jump feel) and floatier on the way
-    // down if the launch didn't clear the cloud threshold
+    // down if the launch didn't reach the goal cloud
     player.x += player.vx;
 
     const ascending = player.vy > 0;
@@ -849,10 +868,19 @@ function applyPhysics(){
       player.launchPeakHeight = player.y;
     }
 
-    if (player.launchPeakHeight >= CLOUD_HEIGHT_THRESHOLD && seasonTransition.phase === "idle") {
+    // hit the actual visible cloud — not an invisible number
+    const dx = (player.x + player.width / 2) - goalCloud.x;
+    const dy = player.y - goalCloud.height;
+    const hitGoalCloud = Math.sqrt(dx * dx + dy * dy) < goalCloud.radius;
+
+    if (hitGoalCloud && seasonTransition.phase === "idle" && !cloudLanding.active) {
+      // land ON the cloud, don't just clip through it — freeze here briefly
       player.launched = false;
       player.vx = 0;
-      startSeasonTransition("clouds");
+      player.vy = 0;
+      player.y = goalCloud.height;
+      cloudLanding.active = true;
+      cloudLanding.t = 0;
       return;
     }
 
@@ -1172,6 +1200,38 @@ function drawCloud(x, y, scale, camX) {
   ctx.ellipse(cx - 22 * scale, y - 4 * scale, 18 * scale, 11 * scale, 0, 0, Math.PI * 2);
   ctx.ellipse(cx + 8 * scale, y - 12 * scale, 16 * scale, 10 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
+}
+
+// wisp — long, flat, stretched horizontal streak
+function drawCloudWisp(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 55 * scale, 8 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 42 * scale, y - 2 * scale, 30 * scale, 6 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx - 46 * scale, y + 2 * scale, 32 * scale, 7 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// stack — taller, layered, more vertical prominence
+function drawCloudStack(x, y, scale, camX) {
+  const cx = x - camX * 0.15;
+
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 26 * scale, 16 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx - 14 * scale, y - 14 * scale, 20 * scale, 14 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 6 * scale, y - 27 * scale, 16 * scale, 12 * scale, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 18 * scale, y - 8 * scale, 18 * scale, 13 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// dispatcher — picks the right silhouette by type, "puffy" (drawCloud) is the default
+function drawBackgroundCloud(x, y, scale, type, camX) {
+  if (type === "wisp") drawCloudWisp(x, y, scale, camX);
+  else if (type === "stack") drawCloudStack(x, y, scale, camX);
+  else drawCloud(x, y, scale, camX);
 }
 
 // a gap in the ground — jump it or fall through
@@ -1984,9 +2044,10 @@ const SWING_GRAVITY = 0.03;          // frame-based, tuned small like the rest o
 const SWING_MAX_ANGLE = 1.3;         // ~75° — hard amplitude clamp, prevents looping over the top
                                       // regardless of how much energy pumping adds
 const SWING_MAX_ANGULAR_VEL = 0.2;   // safety cap on raw angular speed (secondary to the angle clamp)
-const SWING_PUMP_BOOST = 0.03;
+const SWING_PUMP_BOOST = 0.035;      // base boost — actual effect is weighted by current momentum, see updateSwing
+const SWING_PUMP_MIN_MULT = 0.3;     // pump effectiveness at zero momentum (slow start)
+const SWING_PUMP_MULT_RANGE = 1.4;   // grows up to (MIN_MULT + this) at max momentum — compounds faster once swinging
 const SWING_PUMP_COOLDOWN = 6;       // frames between pumps, so holding doesn't spam
-const CLOUD_HEIGHT_THRESHOLD = 220;  // higher than any jump can reach — requires real, sustained pumping
 const LAUNCH_GRAVITY = 0.3;          // ascent — lighter than a normal jump; you're being FLUNG, not hopping
 const FLOATY_FALL_GRAVITY = 0.13;    // descent, if under threshold — the "slow drop"
 
@@ -1996,7 +2057,19 @@ const swing = {
   angle: 0,          // radians from straight down
   angularVelocity: 0,
   mounted: false,
-  pumpCooldown: 0
+  pumpCooldown: 0,
+  mountTime: 0,            // ms since mounting — release is ignored before SWING_MIN_MOUNT_TIME
+  peakAngularVelocity: 0   // best speed reached this session, used as a release fallback
+};
+
+// the actual target — you have to hit THIS, not just clear an invisible
+// height number. Positioned up and to the RIGHT of the swing, not
+// straight above it — horizontal velocity never decays mid-flight, so a
+// real launch arc drifts sideways well before it gets this high.
+const goalCloud = {
+  x: 2150,
+  height: 220,
+  radius: 80
 };
 
 function swingBobPosition(angle) {
@@ -2006,23 +2079,39 @@ function swingBobPosition(angle) {
   };
 }
 
-function updateSwing() {
+const SWING_MIN_MOUNT_TIME = 4500; // ms — must stay on for at least this long before release does anything
+
+function updateSwing(deltaTime) {
   if (swing.mounted) {
+    swing.mountTime += deltaTime * 1000;
+
     // real pendulum restoring force toward straight-down
     const angularAccel = -(SWING_GRAVITY / SWING_ROPE_LENGTH) * Math.sin(swing.angle);
     swing.angularVelocity += angularAccel;
     swing.angle += swing.angularVelocity;
 
+    // gentle damping — without continued pumping, amplitude decays back
+    // toward hanging still, instead of swinging forever like a frictionless pendulum
+    swing.angularVelocity *= 0.997;
+
     if (swing.pumpCooldown > 0) swing.pumpCooldown--;
 
     // pump: pressing the direction it's ALREADY moving adds energy —
-    // forgiving on purpose, no tight phase-locked timing required
+    // forgiving on purpose, no tight phase-locked timing required.
+    // Effectiveness is WEIGHTED by current momentum: starting from a dead
+    // hang, pumps add relatively little (matches how hard it actually is
+    // to start a swing from rest); once you've got real motion going,
+    // each pump compounds faster — a visible build-up, not a flat rate.
     if (swing.pumpCooldown <= 0) {
+      const momentumRatio = Math.min(Math.abs(swing.angularVelocity) / SWING_MAX_ANGULAR_VEL, 1);
+      const pumpMultiplier = SWING_PUMP_MIN_MULT + momentumRatio * SWING_PUMP_MULT_RANGE;
+      const boost = SWING_PUMP_BOOST * pumpMultiplier;
+
       if (keys.leftJustPressed && swing.angularVelocity <= 0) {
-        swing.angularVelocity -= SWING_PUMP_BOOST;
+        swing.angularVelocity -= boost;
         swing.pumpCooldown = SWING_PUMP_COOLDOWN;
       } else if (keys.rightJustPressed && swing.angularVelocity >= 0) {
-        swing.angularVelocity += SWING_PUMP_BOOST;
+        swing.angularVelocity += boost;
         swing.pumpCooldown = SWING_PUMP_COOLDOWN;
       }
     }
@@ -2030,9 +2119,12 @@ function updateSwing() {
     swing.angularVelocity = Math.max(-SWING_MAX_ANGULAR_VEL, Math.min(SWING_MAX_ANGULAR_VEL, swing.angularVelocity));
 
     // hard amplitude clamp — this, not the velocity cap, is what actually
-    // prevents looping over the top: energy conservation means a capped
-    // velocity can still loop if it's enough to carry past 90°, so the
-    // angle itself has to be the real ceiling
+    // prevents looping over the top. NOTE: this zeros angularVelocity right
+    // at the visual extreme of the swing — the exact moment that LOOKS like
+    // the best time to release. Real pendulum velocity actually bottoms out
+    // there too, but releasing right after a clamp-zero would give a
+    // launch of essentially nothing, which is why peak tracking (below)
+    // exists — it's what actually fixes that trap.
     if (swing.angle > SWING_MAX_ANGLE) {
       swing.angle = SWING_MAX_ANGLE;
       swing.angularVelocity = 0;
@@ -2041,13 +2133,28 @@ function updateSwing() {
       swing.angularVelocity = 0;
     }
 
+    // track the best speed reached this session — release uses this as a
+    // fallback so releasing near the (momentarily zero-velocity) top of
+    // the arc still gives you the launch your pumping actually earned
+    if (Math.abs(swing.angularVelocity) > Math.abs(swing.peakAngularVelocity)) {
+      swing.peakAngularVelocity = swing.angularVelocity;
+    }
+
     // player position is just the bob's position while mounted
     const bob = swingBobPosition(swing.angle);
     player.x = bob.x;
     player.y = bob.height;
 
     if (keys.upJustPressed) {
-      releaseSwing();
+      if (swing.mountTime >= SWING_MIN_MOUNT_TIME) {
+        releaseSwing();
+      }
+      // too early — press is just ignored, you have to stay on a bit longer
+    } else if (keys.down) {
+      // safe dismount — no launch, just step off wherever you are and
+      // let normal gravity carry you down
+      swing.mounted = false;
+      swing.angularVelocity = 0;
     }
   } else {
     // idle sway — purely cosmetic, so the swing reads as alive even unmounted
@@ -2056,11 +2163,22 @@ function updateSwing() {
 }
 
 function releaseSwing() {
-  const vx = SWING_ROPE_LENGTH * Math.cos(swing.angle) * swing.angularVelocity;
-  const vHeight = SWING_ROPE_LENGTH * Math.sin(swing.angle) * swing.angularVelocity;
+  // if the instant-of-release speed is small relative to the best speed
+  // this session reached (e.g. released right at the amplitude clamp,
+  // where velocity is always momentarily zero), use the tracked peak
+  // instead — otherwise a "perfectly maxed out" swing could launch you
+  // with essentially nothing, which is exactly backwards
+  const useVelocity =
+    Math.abs(swing.angularVelocity) > Math.abs(swing.peakAngularVelocity) * 0.3
+      ? swing.angularVelocity
+      : swing.peakAngularVelocity;
+
+  const vx = SWING_ROPE_LENGTH * Math.cos(swing.angle) * useVelocity;
+  const vHeight = SWING_ROPE_LENGTH * Math.sin(swing.angle) * useVelocity;
 
   swing.mounted = false;
   swing.angularVelocity = 0;
+  swing.peakAngularVelocity = 0;
 
   player.vx = vx;
   player.vy = vHeight;
@@ -2114,8 +2232,10 @@ const tulip = {
 };
 
 // falling-through-a-hole sequence: body sinks downward and is clipped
-// away at ground level, then teleport back to spring's entrance.
-const fallState = { active: false, t: 0 };
+// away at ground level. mode determines what happens on completion —
+// "hole" = respawn in the same scene (spring's own holes), "cloudHole" =
+// switch to spring and arrive mid-air, floating down (the clouds' return route)
+const fallState = { active: false, t: 0, mode: "hole" };
 const FALL_DURATION = 700; // ms
 
 function drawSpringScene(camX) {
@@ -2211,6 +2331,8 @@ function drawSpringScene(camX) {
 
   drawSwing(camX);
 
+  drawGoalCloud(camX);
+
   drawRabbit(camX);
 
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
@@ -2240,36 +2362,106 @@ function drawSwing(camX) {
   ctx.restore();
 }
 
+// the goal cloud — bigger than decorative clouds, with a soft pulsing glow,
+// so it clearly reads as "aim here" rather than blending into the sky
+function drawGoalCloud(camX) {
+  const gx = goalCloud.x - camX;
+  const gy2 = gy - goalCloud.height;
+  const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+
+  const glow = ctx.createRadialGradient(gx, gy2, 10, gx, gy2, goalCloud.radius + 20 + pulse * 10);
+  glow.addColorStop(0, "rgba(255,250,220,0.5)");
+  glow.addColorStop(1, "rgba(255,250,220,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, goalCloud.radius + 20 + pulse * 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // draw the cloud shape itself directly at the goal's actual screen position
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.ellipse(gx, gy2, 42, 20, 0, 0, Math.PI * 2);
+  ctx.ellipse(gx + 32, gy2 - 8, 28, 17, 0, 0, Math.PI * 2);
+  ctx.ellipse(gx - 32, gy2 - 6, 26, 16, 0, 0, Math.PI * 2);
+  ctx.ellipse(gx + 10, gy2 - 18, 24, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // --- CLOUDS: minimal stub, reached only by a successful swing launch ---
 const cloudsDecor = [
-  { x: 100, y: 90, scale: 1.3 },
-  { x: 400, y: 60, scale: 1 },
-  { x: 700, y: 120, scale: 1.5 },
-  { x: 1000, y: 80, scale: 1.1 }
+  { x: 60,   y: 100, scale: 1.4, type: "puffy" },
+  { x: 280,  y: 60,  scale: 1.0, type: "wisp" },
+  { x: 520,  y: 130, scale: 1.6, type: "stack" },
+  { x: 780,  y: 80,  scale: 1.1, type: "puffy" },
+  { x: 950,  y: 150, scale: 1.3, type: "wisp" },
+  { x: 1150, y: 55,  scale: 0.9, type: "stack" },
+  { x: 1400, y: 110, scale: 1.5, type: "puffy" }
 ];
 
+// the way back down — same fall-through mechanic as spring's holes, just
+// leads to a scene switch + floaty descent instead of a same-scene respawn
+const cloudHole = { x: 300, width: 60 };
+
 function drawCloudsScene(camX) {
+  // multi-stop sky — deeper blue up top, fading toward near-white
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  sky.addColorStop(0, "#dcefff");
-  sky.addColorStop(1, "#f6fbff");
+  sky.addColorStop(0, "#a9d4f0");
+  sky.addColorStop(0.35, "#c9e6f5");
+  sky.addColorStop(0.65, "#e8f5fc");
+  sky.addColorStop(1, "#fbfdff");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  cloudsDecor.forEach(c => drawCloud(c.x, c.y, c.scale, camX * 0.3));
+  // varied background cloud shapes, not just repeats of one silhouette
+  cloudsDecor.forEach(c => drawBackgroundCloud(c.x, c.y, c.scale, c.type, camX * 0.3));
+
+  drawCrows(camX); // same birds, consistent across every zone
 
   // ground here IS cloud — soft and pale, not the usual grass/dirt
-  ctx.fillStyle = "#eaf4ff";
+  const groundGrad = ctx.createLinearGradient(0, gy, 0, gy + 60);
+  groundGrad.addColorStop(0, "#f0f8ff");
+  groundGrad.addColorStop(1, "#dceef8");
+  ctx.fillStyle = groundGrad;
   ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  for (let i = -2; i < 6; i++) {
+
+  // soft rolling texture so the surface doesn't read as flat
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  for (let i = -2; i < 8; i++) {
+    const bx = i * 180 - camX % 180;
     ctx.beginPath();
-    ctx.ellipse(i * 200 - camX % 200, gy + 6, 90, 16, 0, 0, Math.PI * 2);
+    ctx.ellipse(bx, gy + 4, 95, 18, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.fillStyle = "rgba(200,225,245,0.35)";
+  for (let i = -2; i < 8; i++) {
+    const bx = i * 180 - camX % 180 + 60;
+    ctx.beginPath();
+    ctx.ellipse(bx, gy + 14, 60, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawHole(cloudHole.x, cloudHole.width, camX); // same visual language as spring's holes
 }
 
 function updateCloudsScene(deltaTime) {
-  // nothing here yet — arrival is the whole point of this stub for now
+  if (fallState.active) return; // handled globally by updateFallState
+
+  if (player.y <= 0) {
+    const playerCenterX = player.x + player.width / 2;
+    if (playerCenterX > cloudHole.x && playerCenterX < cloudHole.x + cloudHole.width) {
+      fallState.active = true;
+      fallState.t = 0;
+      fallState.mode = "cloudHole";
+    }
+  }
 }
 
 function draw(){
@@ -2604,16 +2796,47 @@ if (
 
 }
 
-function updateSpringScene(deltaTime) {
+// shared — the brief "settled on the cloud" beat, then the real transition fires
+function updateCloudLanding(deltaTime) {
+  if (!cloudLanding.active) return;
 
-  // if mid-fall, freeze everything else and just run the fall timer
-  if (fallState.active) {
-    fallState.t += deltaTime * 1000;
+  cloudLanding.t += deltaTime * 1000;
 
-    if (fallState.t >= FALL_DURATION) {
-      fallState.active = false;
-      fallState.t = 0;
+  if (cloudLanding.t >= CLOUD_LANDING_HOLD) {
+    cloudLanding.active = false;
+    cloudLanding.t = 0;
+    startSeasonTransition("clouds");
+  }
+}
 
+// shared — runs regardless of which scene initiated the fall, so a fall
+// started in the clouds (via cloudHole) completes correctly even though
+// updateCloudsScene, not updateSpringScene, is what's running that frame
+function updateFallState(deltaTime) {
+  if (!fallState.active) return;
+
+  fallState.t += deltaTime * 1000;
+
+  if (fallState.t >= FALL_DURATION) {
+    fallState.active = false;
+    fallState.t = 0;
+
+    if (fallState.mode === "cloudHole") {
+      // switch scenes and arrive mid-air — floating down out of the clouds,
+      // not teleported straight to the ground
+      currentScene = "spring";
+      discoveredScenes.spring = true;
+      updateMapUI();
+
+      player.x = 400; // fixed landing spot for now — precise x-correspondence is a later problem
+      player.y = 200;
+      player.vy = 0;
+      player.vx = 0;
+      player.jumping = true;
+      player.launched = true;       // reuses the same floaty-descent physics as a failed swing launch
+      player.launchPeakHeight = player.y;
+      cameraX = Math.max(0, player.x - canvas.width * 0.4);
+    } else {
       // faze back to the start of the spring zone
       player.x = sceneSpawns.spring.x;
       player.y = 0;
@@ -2622,7 +2845,15 @@ function updateSpringScene(deltaTime) {
       player.usedDoubleJump = false;
       cameraX = 0;
     }
-    return; // nothing else runs while falling
+  }
+}
+
+function updateSpringScene(deltaTime) {
+
+  // mid-fall — timer/completion handled globally now, just don't run
+  // anything else in this scene while it's happening
+  if (fallState.active) {
+    return;
   }
 
   // RABBIT INTERACTION — same shape as frog's trigger
@@ -2633,14 +2864,8 @@ function updateSpringScene(deltaTime) {
   }
   updateNPCIdle(rabbit);
 
-  // SWING — mount when near its resting position, not already launched
-  if (!swing.mounted && !player.launched) {
-    if (pressedDownNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55)) {
-      swing.mounted = true;
-      swing.angularVelocity = 0;
-    }
-  }
-  updateSwing();
+  // mounting the swing now happens via jump, in handleInput — just run its physics here
+  updateSwing(deltaTime);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
@@ -2651,6 +2876,7 @@ function updateSpringScene(deltaTime) {
     if (overHole) {
       fallState.active = true;
       fallState.t = 0;
+      fallState.mode = "hole";
     }
   }
 
@@ -2692,6 +2918,9 @@ lastTime = now;
 
 
 
+updateFallState(deltaTime); // shared — runs before scene dispatch, regardless of which scene started the fall
+updateCloudLanding(deltaTime);
+
 if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
 } else if (currentScene === "spring") {
@@ -2712,6 +2941,7 @@ updateSeasonTransition(deltaTime);
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
+  keys.upJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
   
