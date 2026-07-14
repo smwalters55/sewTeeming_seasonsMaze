@@ -43,7 +43,7 @@ const lowfog = {
 const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false };
 
 window.addEventListener("keydown", e => {
-  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Control"].includes(e.key)) {
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Control","Tab"].includes(e.key)) {
     e.preventDefault();
   }
   if (e.key==="ArrowLeft") {
@@ -61,6 +61,7 @@ window.addEventListener("keydown", e => {
   if (e.key==="ArrowDown") keys.down=true;
   if (e.key===" ") keys.space=true;
   if (e.key==="Control") keys.ctrl=true;
+  if (e.key==="Tab" && !e.repeat) cycleHeldItem();
 });
 
 window.addEventListener("keyup", e => {
@@ -89,7 +90,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn"; // "autumn" | "spring" | "clouds"
+let currentScene = "clouds"; // TEMP for testing — normally "autumn" | "spring" | "clouds"
 
 /* ======================================================
    ORCHARD COLOURS
@@ -119,7 +120,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 120,
+  x: 420, // TEMP for testing (matches sceneSpawns.clouds.x) — normally 120
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -137,7 +138,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
+const inventory = { boomerang: 1 }; // TEMP for testing — normally {} (e.g. { appleSlice: 2, boomerang: 1 })
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -172,14 +173,30 @@ function getHeldItemWorldPos() {
   };
 }
 
+let cloudPieceBurstPending = false; // consumed once by the chip's one-time grow+sparkle animation
+
 function addToInventory(itemType) {
   inventory[itemType] = (inventory[itemType] || 0) + 1;
+  if (itemType === "cloudPiece" && inventory[itemType] === 8) {
+    cloudPieceBurstPending = true;
+  }
   updateInventoryUI();
 }
 
 function selectHeldItem(itemType) {
   if (!inventory[itemType] || inventory[itemType] <= 0) return;
   heldItem = heldItem === itemType ? null : itemType; // click again to deselect
+  updateInventoryUI();
+}
+
+// Tab cycles through held items — a keyboard-only way to select, since
+// everything else in this game is keyboard-driven except clicking chips
+function cycleHeldItem() {
+  const types = Object.keys(inventory).filter(t => inventory[t] > 0);
+  if (types.length === 0) return;
+  const currentIdx = types.indexOf(heldItem);
+  const nextIdx = (currentIdx + 1) % types.length;
+  heldItem = types[nextIdx];
   updateInventoryUI();
 }
 
@@ -232,6 +249,14 @@ function updateInventoryUI() {
     } else if (type === "cloudPiece") {
       chip.textContent = `${ITEM_ICONS[type]} x${count}/8`;
       chip.title = "Click to hold this item";
+      if (cloudPieceBurstPending) {
+        cloudPieceBurstPending = false;
+        chip.animate([
+          { transform: "scale(1)", filter: "brightness(1)" },
+          { transform: "scale(1.8)", filter: "brightness(1.6)" },
+          { transform: "scale(1)", filter: "brightness(1)" }
+        ], { duration: 500, easing: "ease-out" });
+      }
     } else {
       chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
       chip.title = "Click to hold this item";
@@ -297,7 +322,7 @@ const ramps = [
 const boomerang = {
   x: 1025, // offset from tree(980)'s center so the canopy occludes part of it, not dead-center under it
   heightAboveGround: 120, // unreachable from a ground jump (~90 max) or stepping off the ramp — needs a jump from the ramp's peak
-  collected: false, // normally false
+  collected: true, // TEMP for testing (matches pre-loaded inventory) — normally false
   collecting: false
 };
 
@@ -359,7 +384,7 @@ const sceneMapInfo = {
   clouds: { label: "Clouds", x: 400, y: 40 }
 };
 
-const discoveredScenes = { autumn: true }; // autumn is where you start
+const discoveredScenes = { autumn: true, clouds: true }; // TEMP: clouds added for testing — normally just autumn
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -1607,7 +1632,7 @@ function drawCloudAlligatorBg(x, y, scale, camX) {
 function drawCloudLobsterBg(x, y, scale, camX) {
   const cx = x - camX * 0.15;
 
-  ctx.fillStyle = "rgba(198,72,52,0.92)";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
 
   // segmented tail, curling under toward the back
   for (let i = 0; i < 4; i++) {
@@ -1640,7 +1665,7 @@ function drawCloudLobsterBg(x, y, scale, camX) {
   ctx.fill();
 
   // ridge lines across the big claw's shell
-  ctx.strokeStyle = "rgba(120,35,25,0.5)";
+  ctx.strokeStyle = "rgba(210,220,225,0.6)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.arc(cx + 22 * scale, y - 10 * scale, 9 * scale, -1.0, 0.6);
@@ -1650,20 +1675,20 @@ function drawCloudLobsterBg(x, y, scale, camX) {
   ctx.stroke();
 
   // smaller second claw
-  ctx.fillStyle = "rgba(198,72,52,0.92)";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
   ctx.beginPath();
   ctx.ellipse(cx + 20 * scale, y + 5 * scale, 8 * scale, 5.5 * scale, 0.3, 0, Math.PI * 2);
   ctx.fill();
 
   // ridge line on the smaller claw
-  ctx.strokeStyle = "rgba(120,35,25,0.5)";
+  ctx.strokeStyle = "rgba(210,220,225,0.6)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(cx + 20 * scale, y + 5 * scale, 4 * scale, -0.8, 0.8);
   ctx.stroke();
 
   // antennae
-  ctx.strokeStyle = "rgba(160,55,40,0.75)";
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(cx + 18 * scale, y - 5 * scale);
@@ -3220,7 +3245,7 @@ const cloudsDecor = [
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
   { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
   { x: 1860, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
-  { x: 900,  y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable, real color + big scale for visibility
+  { x: 700,  y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable, separated from the stack cloud at 520
 ];
 
 // the way back down — same fall-through mechanic as spring's holes, just
@@ -3300,7 +3325,7 @@ const hopClouds = [
   { x: 580,  height: 90,  width: 60 },
   { x: 690,  height: 95,  width: 130, type: "whale" },      // big stationary anchor
   { x: 860,  height: 60,  width: 60 },
-  { x: 960,  height: 60,  width: 60 },
+  { x: 920,  height: 60,  width: 100 }, // widened for comfortable positioning — the actual hit-window stays as tight as before
   { x: 1150, height: 150, width: 60 },                      // GAP 1 — 130px edge gap, verified double-jump-only INCLUDING player width forgiveness
   { x: 1250, height: 190, width: 60 },
   { x: 1460, height: 220, width: 60 },                      // GAP 2 — 150px edge gap, same verification
@@ -3310,8 +3335,8 @@ const hopClouds = [
   { x: 1860, height: 220, width: 140, type: "alligator" },  // shuttle's far dock — the destination
   { x: 1990, height: 200, width: 60 },
   { x: 2090, height: 170, width: 60 },
-  { x: 2190, height: 140, width: 70 },
-  { x: 2260, height: 105, width: 60 }, // required standing spot for the elephant tail-hit — verified via windowed arc
+  { x: 2140, height: 140, width: 90 },
+  { x: 2250, height: 105, width: 80 }, // required standing spot for the elephant tail-hit — widened for comfort, verified via windowed arc
 
   // --- two lower tiers under the shuttle zone — reachable without ever
   // touching the shuttle, so that whole horizontal stretch isn't just empty air ---
@@ -3534,6 +3559,125 @@ const elephantSpot = {
 
 const ELEPHANT_APPEAR_DURATION = 3000; // ms — 3 seconds per piece, particles gather in over this long
 
+/* ======================================================
+   BALLOON NPC — a hot air balloon that rises up from behind the
+   clouds once you've collected at least 4 pieces AND are nearby.
+   Two-stage dialogue (some pieces vs. all 8 collected), same
+   shared speech-bubble system as the frog/rabbit. Retires once
+   the elephant's fully built — nothing left to hint about.
+   ====================================================== */
+const BALLOON_RISE_DURATION = 4500; // ms — slower, more gradual rise
+const BALLOON_ELIGIBLE_PIECES = 4;
+
+const balloonNPC = {
+  x: elephantSpot.cloudX + 120, // opposite side from vault2 (x:2176) — was only 44 units apart before
+  restHeight: 140,
+  active: false, // becomes true once eligible+nearby, stays true forever after
+  riseT: 0,
+  colors: ["#e05c4a", "#f0a830", "#5aa8d8"]
+};
+
+function totalCloudProgress() {
+  return (inventory.cloudPiece || 0) + elephantSpot.piecesPlaced;
+}
+
+function updateBalloonNPC(deltaTime) {
+  if (!balloonNPC.active) {
+    if (totalCloudProgress() >= BALLOON_ELIGIBLE_PIECES &&
+        isPlayerNear(elephantSpot.cloudX, 0, 400, 300, 300)) {
+      balloonNPC.active = true;
+      balloonNPC.riseT = 0;
+    }
+    return;
+  }
+  if (balloonNPC.riseT < BALLOON_RISE_DURATION) {
+    balloonNPC.riseT += deltaTime * 1000;
+  }
+}
+
+function drawBalloonNPC(camX) {
+  if (!balloonNPC.active) return;
+
+  const riseProgress = Math.min(balloonNPC.riseT / BALLOON_RISE_DURATION, 1);
+  const currentHeight = (balloonNPC.restHeight - 150) + 150 * riseProgress;
+  const bx = balloonNPC.x - camX;
+  const by = gy - currentHeight;
+
+  // envelope — teardrop shape (rounded top, pointed bottom), with the
+  // same radial color wedges clipped to that silhouette instead of a plain circle
+  const radius = 20;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bx, by - 4, radius, Math.PI, 0); // rounded top half
+  ctx.quadraticCurveTo(bx + radius * 0.55, by + 10, bx, by + radius * 1.15); // taper to point, right side
+  ctx.quadraticCurveTo(bx - radius * 0.55, by + 10, bx - radius, by - 4); // taper back up, left side
+  ctx.closePath();
+  ctx.clip();
+
+  const wedgeCount = 8;
+  for (let i = 0; i < wedgeCount; i++) {
+    const startAngle = (i / wedgeCount) * Math.PI * 2 - Math.PI / 2;
+    const endAngle = ((i + 1) / wedgeCount) * Math.PI * 2 - Math.PI / 2;
+    ctx.fillStyle = balloonNPC.colors[i % balloonNPC.colors.length];
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.arc(bx, by, radius * 1.6, startAngle, endAngle); // oversized, safely clipped to the teardrop
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // basket
+  ctx.fillStyle = "#8a5a2e";
+  ctx.fillRect(bx - 10, by + 24, 20, 12);
+
+  // ropes
+  ctx.strokeStyle = "rgba(80,60,30,0.6)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(bx - 10, by + 18); ctx.lineTo(bx - 8, by + 24);
+  ctx.moveTo(bx + 10, by + 18); ctx.lineTo(bx + 8, by + 24);
+  ctx.stroke();
+
+  // tiny stick-figure passengers, peeking up over the basket rim
+  ctx.strokeStyle = "#5a4530";
+  ctx.lineWidth = 1;
+  [-4, 4].forEach(offsetX => {
+    const px = bx + offsetX;
+    const py = by + 24; // basket rim
+    // head
+    ctx.beginPath();
+    ctx.arc(px, py - 6, 1.4, 0, Math.PI * 2);
+    ctx.stroke();
+    // body
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.5);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+    // arms
+    ctx.beginPath();
+    ctx.moveTo(px - 2, py - 2);
+    ctx.lineTo(px + 2, py - 2);
+    ctx.stroke();
+  });
+
+  // staged dialogue, only once fully risen and player's nearby
+  if (riseProgress >= 1 && isPlayerNear(balloonNPC.x, currentHeight, 150, 200, 999)) {
+    const progress = totalCloudProgress();
+    if (progress >= 8 && elephantSpot.piecesPlaced < 8) {
+      drawSpeechBubble(ctx, bx - 30, by - 50, [
+        "All eight! My, what a haul.",
+        "That glowing circle down there is waiting for you."
+      ]);
+    } else if (progress >= BALLOON_ELIGIBLE_PIECES && progress < 8) {
+      drawSpeechBubble(ctx, bx - 30, by - 50, [
+        "Ooh, a few little clouds already!",
+        "More are scattered about — some shaking ones keep theirs locked tight."
+      ]);
+    }
+  }
+}
+
 // bonus collectible — released by hitting the elephant's tail with the
 // boomerang, but only once it's fully built. Falls from the middle of the
 // cloud once triggered, same falling pattern as honey/vault pieces.
@@ -3627,28 +3771,23 @@ function drawElephantSpot(camX) {
   const goldOpacity = Math.max(0.06, 1 - elephantSpot.piecesPlaced / 8);
 
   if (elephantSpot.unlocked) {
-    const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+    // genuine white <-> gold color cycle (real RGB interpolation, not just
+    // an opacity shimmer on a fixed color) — a slower cycle than the
+    // sparkle twinkle below, so it reads as a deliberate breathing pulse
+    const colorCycle = Math.sin(performance.now() * 0.0008) * 0.5 + 0.5;
+    const cycleR = Math.round(255 - colorCycle * (255 - 232));
+    const cycleG = Math.round(255 - colorCycle * (255 - 147));
+    const cycleB = Math.round(255 - colorCycle * (255 - 90));
 
-    // the gold cloud body itself — sized to the elephant's footprint
+    // the gold cloud body itself — sized to the elephant's footprint.
+    // No separate rim anymore — the pulsing fill alone carries the
+    // "this is special" signal, a thin outline on top just added clutter.
     ctx.save();
-    ctx.globalAlpha = goldOpacity * (0.75 + pulse * 0.2);
-    ctx.fillStyle = "#e8c34a";
+    ctx.globalAlpha = goldOpacity;
+    ctx.fillStyle = `rgb(${cycleR},${cycleG},${cycleB})`;
     ctx.beginPath();
     BASE_CLOUD_CIRCLES.forEach(c => ctx.arc(cx + c.dx, cy + c.dy, c.r, 0, Math.PI * 2));
     ctx.fill();
-    ctx.restore();
-
-    // rim — a SINGLE enclosing ellipse, not one arc() per circle. Stroking
-    // multiple arc() calls in one path draws each as its own full circle
-    // outline, which is exactly what was reading as jarring before — this
-    // is the actual fix, not just a style change.
-    ctx.save();
-    ctx.globalAlpha = goldOpacity * (0.7 + pulse * 0.3);
-    ctx.strokeStyle = "#fff3c4";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 1, 24, 20, 0, 0, Math.PI * 2);
-    ctx.stroke();
     ctx.restore();
 
     // glitter — small, bright, genuinely noticeable twinkling points
@@ -3659,7 +3798,7 @@ function drawElephantSpot(camX) {
     rimSparkles.forEach((s, i) => {
       const twinkle = Math.sin(performance.now() * 0.007 + i * 1.9) * 0.5 + 0.5;
       ctx.globalAlpha = goldOpacity;
-      ctx.fillStyle = `rgba(255,250,210,${0.6 + twinkle * 0.4})`;
+      ctx.fillStyle = `rgba(255,225,195,${0.6 + twinkle * 0.4})`;
       ctx.beginPath();
       ctx.arc(cx + s.dx, cy + s.dy, 0.8 + twinkle * 0.7, 0, Math.PI * 2);
       ctx.fill();
@@ -3678,6 +3817,14 @@ function drawElephantSpot(camX) {
   // the actual shape only resolves into visibility in the final 40% —
   // before that, it's just the particles gathering, not a fading shape
   const shapeAlpha = Math.max(0, (appearProgress - 0.6) / 0.4);
+
+  // hop-float: once the shape starts resolving, it also settles down into
+  // place from slightly above — faster than the water droplets (80/sec)
+  // but still a gentle float, not an instant snap
+  const HOP_FLOAT_START_OFFSET = 35;
+  const HOP_FLOAT_SPEED = 130; // units/sec
+  const hopPhaseMs = Math.max(0, elephantSpot.appearT - ELEPHANT_APPEAR_DURATION * 0.6);
+  const hopOffsetY = Math.max(0, HOP_FLOAT_START_OFFSET - (hopPhaseMs / 1000) * HOP_FLOAT_SPEED);
 
   for (let i = 0; i < elephantSpot.piecesPlaced; i++) {
     const part = ELEPHANT_PARTS[i];
@@ -3699,6 +3846,8 @@ function drawElephantSpot(camX) {
     }
 
     ctx.globalAlpha = isNewest ? shapeAlpha : 1;
+    ctx.save();
+    if (isNewest) ctx.translate(0, -hopOffsetY);
 
     if (part.type === "trunk1") {
       drawTrunkSegment(cx, cy, 1);
@@ -3716,6 +3865,7 @@ function drawElephantSpot(camX) {
       ctx.arc(cx + part.dx + tailShake, cy + part.dy, part.r, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
 
@@ -3725,8 +3875,8 @@ function drawElephantSpot(camX) {
     const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
     ctx.save();
     ctx.globalAlpha = 0.6 + pulse * 0.3;
-    ctx.strokeStyle = "#e8c34a";
-    ctx.fillStyle = "rgba(232,195,74,0.25)";
+    ctx.strokeStyle = "#e8935a";
+    ctx.fillStyle = "rgba(232,147,90,0.25)";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.ellipse(ox, gy + 3, 26, 8, 0, 0, Math.PI * 2);
@@ -3740,7 +3890,7 @@ function drawElephantSpot(camX) {
     ];
     ovalSparkles.forEach((s, i) => {
       const twinkle = Math.sin(performance.now() * 0.008 + i * 2.3) * 0.5 + 0.5;
-      ctx.fillStyle = `rgba(255,250,210,${0.6 + twinkle * 0.4})`;
+      ctx.fillStyle = `rgba(255,225,195,${0.6 + twinkle * 0.4})`;
       ctx.beginPath();
       ctx.arc(ox + s.dx, gy + 3 + s.dy, 0.6 + twinkle * 0.6, 0, Math.PI * 2);
       ctx.fill();
@@ -4054,6 +4204,7 @@ function drawCloudsScene(camX) {
   drawPeanut(camX);
   vaultClouds.forEach(v => drawVaultCloud(v, camX));
   drawElephantSpot(camX);
+  drawBalloonNPC(camX);
 }
 
 function updateCloudsScene(deltaTime) {
@@ -4068,6 +4219,7 @@ function updateCloudsScene(deltaTime) {
   updateSimpleCloudPiecePickups();
   vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
   updateElephantSpot(deltaTime);
+  updateBalloonNPC(deltaTime);
 
   // mount via spacebar — same interact key as everything else, so it
   // stays free for picking things up while riding, not claimed by mounting.
