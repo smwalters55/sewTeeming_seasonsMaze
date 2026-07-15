@@ -158,6 +158,9 @@ const ITEM_ICONS = {
   plumStick: "🌿",
   pearStick: "🌿",
   peachStick: "🌿",
+  apple: "🍏",
+  roundLeaf: "🍂",
+  mapleLeaf: "🍁",
   goldPile: "🪙"
 };
 
@@ -185,7 +188,7 @@ function getHeldItemWorldPos() {
 
 let cloudPieceBurstPending = false; // consumed once by the chip's one-time grow+sparkle animation
 
-let honeyScoops = 0; // set to 6 on collection
+let honeyScoops = 0; // set to 8 on collection
 
 function addToInventory(itemType) {
   inventory[itemType] = (inventory[itemType] || 0) + 1;
@@ -193,7 +196,7 @@ function addToInventory(itemType) {
     cloudPieceBurstPending = true;
   }
   if (itemType === "honey") {
-    honeyScoops = 6; // reusable tool — exactly enough for all 6 graft combinations
+    honeyScoops = 8; // reusable tool — 6 needed for the graft combinations, extra for sticking other items on honey
   }
   updateInventoryUI();
 }
@@ -234,7 +237,7 @@ const ITEM_CANVAS_RENDER = {
   },
   honey: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
-    drawHoneyPotShape(iconCtx, 10, 11, 8, honeyScoops / 6);
+    drawHoneyPotShape(iconCtx, 10, 11, 8, honeyScoops / 8);
   },
   plumStick: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
@@ -259,6 +262,34 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.beginPath();
     iconCtx.arc(6, 6, 3.5, 0, Math.PI * 2);
     iconCtx.fill();
+  },
+  apple: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawWholeAppleShape(iconCtx, 10, 11, 8, 0);
+  },
+  appleSlice: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawApplePieceShape(iconCtx, 10, 11, 8, 0);
+  },
+  Pearchy: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawPearchyFruit(iconCtx, 10, 11, 8);
+  },
+  Peachum: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawPeachumFruit(iconCtx, 10, 11, 8);
+  },
+  Plear: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawPlearFruit(iconCtx, 10, 11, 8);
+  },
+  roundLeaf: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawLeafShape(iconCtx, 10, 11, 7, 0, "round", "#e0722a");
+  },
+  mapleLeaf: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawLeafShape(iconCtx, 10, 11, 7, 0, "maple", "#e8481f");
   }
 };
 
@@ -290,7 +321,7 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick"];
+      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf"];
       if (!NO_COUNT_LABEL.includes(type)) {
         const label = document.createElement("span");
         label.textContent = ` x${count}`;
@@ -600,6 +631,14 @@ function updateSeasonTransition(deltaTime) {
 
     if (seasonTransition.phase === "fadeOut") {
       // screen is fully white now — swap the actual scene behind it
+      if (currentScene === "spring" && seasonTransition.targetScene !== "spring") {
+        // graft sticks only matter in spring — clear them out once you leave
+        delete inventory.plumStick;
+        delete inventory.pearStick;
+        delete inventory.peachStick;
+        if (heldItem === "plumStick" || heldItem === "pearStick" || heldItem === "peachStick") heldItem = null;
+        updateInventoryUI();
+      }
       currentScene = seasonTransition.targetScene;
       discoveredScenes[currentScene] = true;
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
@@ -991,6 +1030,19 @@ function updateBoomerangThrow(deltaTime) {
         b.returnFromX = b.x;
         b.returnFromY = b.y;
       }
+    } else if (withinPeakWindow && currentScene === "spring") {
+      ["plum", "pear", "peach"].forEach(type => {
+        if (!graftState[type].hybrid) return; // only knockable once grafted
+        knockableFruits[type].forEach(fruit => {
+          if (fruit.knocked) return;
+          const dx = b.x - fruit.x;
+          const dy = b.y - fruit.heightAboveGround;
+          if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+            fruit.knocked = true;
+            fruit.falling = true;
+          }
+        });
+      });
     } else if (withinPeakWindow && currentScene === "clouds") {
       for (let i = 0; i < vaultClouds.length; i++) {
         const v = vaultClouds[i];
@@ -1402,6 +1454,53 @@ function drawStump(camX) {
   }
 }
 
+/* ======================================================
+   BUMP APPLE — the purely-decorative tree at x:220 gets one
+   distinctly obvious apple, knocked down by jumping up into it
+   from below (not the boomerang, not the same as the source
+   tree's scripted fall) — an early, separate toolkit moment.
+   ====================================================== */
+const bumpApple = {
+  x: 175,
+  heightAboveGround: 128,
+  knocked: false,
+  falling: false,
+  collected: false,
+  collecting: false
+};
+const BUMP_APPLE_FALL_SPEED = 60;
+
+function drawBumpApple(camX) {
+  if (bumpApple.collected || bumpApple.collecting) return;
+  const bx = bumpApple.x - camX;
+  const by = gy - bumpApple.heightAboveGround;
+  drawWholeAppleShape(ctx, bx, by, bumpApple.knocked ? 9 : 11, 0);
+}
+
+function updateBumpApple(deltaTime) {
+  if (!bumpApple.knocked) {
+    if (player.vy > 0 && isPlayerNear(bumpApple.x, bumpApple.heightAboveGround, 20, 15, 15)) {
+      bumpApple.knocked = true;
+      bumpApple.falling = true;
+    }
+    return;
+  }
+
+  if (bumpApple.falling) {
+    bumpApple.heightAboveGround -= BUMP_APPLE_FALL_SPEED * deltaTime;
+    if (bumpApple.heightAboveGround <= 15) {
+      bumpApple.heightAboveGround = 15;
+      bumpApple.falling = false;
+    }
+    return;
+  }
+
+  if (!bumpApple.collected && !bumpApple.collecting && pressedDownNear(bumpApple.x, bumpApple.heightAboveGround, 26, 20, 20)) {
+    bumpApple.collecting = true;
+    startCollectAnimation({ x: bumpApple.x, y: gy - bumpApple.heightAboveGround, size: 9, rotation: 0 }, "apple");
+  }
+}
+
 function drawAppleTree(x, camX){
   const tx = x - camX;
 
@@ -1478,7 +1577,7 @@ const LEAF_COLORS = ["#e8481f", "#ff9518", "#ffcc18", "#e0722a", "#d4381f"];
 const LEAF_FALL_MIN = 6000;
 const LEAF_FALL_MAX = 12000;
 const LEAF_FALL_SPEED = 35;
-const CROWN_LEAVES_NEEDED = 10;
+const CROWN_LEAVES_NEEDED = 8;
 const CROWN_SPARKLE_DURATION = 1200;
 
 const leafTreeTimers = {
@@ -1510,13 +1609,19 @@ function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
 
   if (shape === "maple") {
     ctx.beginPath();
-    ctx.moveTo(0, -size * 1.15);
-    for (let i = 0; i < 5; i++) {
-      const a1 = (-0.9 + i * 0.45);
-      const a2 = (-0.68 + i * 0.45);
-      ctx.lineTo(Math.sin(a1) * size * 0.62, -Math.cos(a1) * size * 0.62);
-      ctx.lineTo(Math.sin(a2) * size * 1.15, -Math.cos(a2) * size * 1.15);
-    }
+    ctx.moveTo(0, -size * 1.1);
+    ctx.quadraticCurveTo(size * 0.15, -size * 0.75, size * 0.42, -size * 0.65);
+    ctx.quadraticCurveTo(size * 0.55, -size * 0.55, size * 0.75, -size * 0.35);
+    ctx.quadraticCurveTo(size * 0.55, -size * 0.22, size * 0.42, -size * 0.05);
+    ctx.quadraticCurveTo(size * 0.62, size * 0.05, size * 0.85, size * 0.15);
+    ctx.quadraticCurveTo(size * 0.55, size * 0.2, size * 0.35, size * 0.35);
+    ctx.quadraticCurveTo(size * 0.2, size * 0.55, 0, size * 0.65);
+    ctx.quadraticCurveTo(-size * 0.2, size * 0.55, -size * 0.35, size * 0.35);
+    ctx.quadraticCurveTo(-size * 0.55, size * 0.2, -size * 0.85, size * 0.15);
+    ctx.quadraticCurveTo(-size * 0.62, size * 0.05, -size * 0.42, -size * 0.05);
+    ctx.quadraticCurveTo(-size * 0.55, -size * 0.22, -size * 0.75, -size * 0.35);
+    ctx.quadraticCurveTo(-size * 0.55, -size * 0.55, -size * 0.42, -size * 0.65);
+    ctx.quadraticCurveTo(-size * 0.15, -size * 0.75, 0, -size * 1.1);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -1534,8 +1639,8 @@ function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
   ctx.strokeStyle = "rgba(0,0,0,0.15)";
   ctx.lineWidth = 0.6;
   ctx.beginPath();
-  ctx.moveTo(0, shape === "maple" ? -size * 0.9 : -size * 0.8);
-  ctx.lineTo(0, shape === "maple" ? size * 0.25 : size * 0.6);
+  ctx.moveTo(0, shape === "maple" ? -size * 1.0 : -size * 0.8);
+  ctx.lineTo(0, shape === "maple" ? size * 0.5 : size * 0.6);
   ctx.stroke();
   ctx.restore();
 }
@@ -1638,20 +1743,19 @@ function updateLeafTrees(deltaTime) {
 
   fallingLeaves = fallingLeaves.filter(leaf => {
     if (leaf.height <= 0) return false; // hit the ground, missed
+    if (crownState.ready) return true; // crown's done — no use case yet for further leaves, so they just fall past harmlessly
 
-    if (crownLeaves.length < CROWN_LEAVES_NEEDED) {
-      const driftX = leaf.x + Math.sin(performance.now() * 0.0015 + leaf.driftSeed) * 25;
-      const playerCenterX = player.x + player.width / 2;
-      const nearX = Math.abs(playerCenterX - driftX) < 30;
-      const nearHeight = Math.abs(player.y - leaf.height) < 20;
-      if (nearX && nearHeight) {
-        startCollectAnimation(
-          { x: driftX, y: gy - leaf.height, size: leaf.shape === "maple" ? 11 : 8, rotation: 0 },
-          "leaf",
-          { shape: leaf.shape, color: leaf.color }
-        );
-        return false;
-      }
+    const driftX = leaf.x + Math.sin(performance.now() * 0.0015 + leaf.driftSeed) * 25;
+    const playerCenterX = player.x + player.width / 2;
+    const nearX = Math.abs(playerCenterX - driftX) < 30;
+    const nearHeight = Math.abs(player.y - leaf.height) < 20;
+    if (nearX && nearHeight) {
+      startCollectAnimation(
+        { x: driftX, y: gy - leaf.height, size: leaf.shape === "maple" ? 11 : 8, rotation: 0 },
+        "leaf",
+        { shape: leaf.shape, color: leaf.color }
+      );
+      return false;
     }
     return true;
   });
@@ -1667,7 +1771,7 @@ function drawFallingLeaves(camX) {
 // draws the crown procedurally from whatever leaves have actually been
 // caught — used both while in-progress and once complete
 function drawCrownProcedural(ctx, cx, cy, radius, progressOverride) {
-  const shown = progressOverride != null ? Math.round(progressOverride * CROWN_LEAVES_NEEDED) : crownLeaves.length;
+  const shown = progressOverride != null ? Math.round(progressOverride * CROWN_LEAVES_NEEDED) : Math.min(crownLeaves.length, CROWN_LEAVES_NEEDED);
   ctx.strokeStyle = "#5a4020";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1685,30 +1789,64 @@ function drawCrownProcedural(ctx, cx, cy, radius, progressOverride) {
 
 // worn crown — dense, overlapping leaves following the top curve of the
 // player's actual shape (a single rounded rectangle, not a separate head)
-function drawCrownOnHead(camX) {
+// reorders leaves for DISPLAY only (catch order in crownLeaves itself is
+// untouched) — interleaves both types and maps them center-outward, so
+// the front-facing middle of the crown always shows a mix, never one
+// type dominating just because of catch-order luck
+function getCrownDisplayLeaves() {
+  const maples = crownLeaves.filter(l => l.shape === "maple");
+  const rounds = crownLeaves.filter(l => l.shape === "round");
+  const interleaved = [];
+  const pairCount = Math.min(maples.length, rounds.length);
+  for (let i = 0; i < pairCount; i++) interleaved.push(maples[i], rounds[i]);
+  interleaved.push(...maples.slice(pairCount), ...rounds.slice(pairCount));
+
+  const slots = new Array(CROWN_LEAVES_NEEDED);
+  const mid = (CROWN_LEAVES_NEEDED - 1) / 2;
+  let li = 0, step = 0;
+  while (li < interleaved.length && step <= mid) {
+    const leftIdx = Math.floor(mid - step);
+    const rightIdx = Math.ceil(mid + step);
+    if (li < interleaved.length) slots[leftIdx] = interleaved[li++];
+    if (step > 0 && li < interleaved.length) slots[rightIdx] = interleaved[li++];
+    step++;
+  }
+  return slots;
+}
+
+function drawCrownOnHead(camX, sinkAmount) {
   const px = player.x - camX + player.width / 2;
-  const topY = gy - player.height - player.y;
+  const lowerOffset = 7; // sits closer to the head, more like a resting crown than perched at the peak
+  const topY = gy - player.height - player.y + (sinkAmount || 0) + lowerOffset;
+
+  const isFalling = fallState.active;
+  const widthScale = isFalling ? 0.85 : 1; // narrower while falling through a hole, so it stays inside the hole's own width — but still close to the player's own body width, not tiny
 
   ctx.fillStyle = "#7a4a28";
   ctx.beginPath();
-  ctx.moveTo(px - player.width * 0.55, topY + 4);
-  ctx.quadraticCurveTo(px, topY - 10, px + player.width * 0.55, topY + 4);
-  ctx.quadraticCurveTo(px + player.width * 0.44, topY - 2, px, topY - 4);
-  ctx.quadraticCurveTo(px - player.width * 0.44, topY - 2, px - player.width * 0.55, topY + 4);
+  ctx.moveTo(px - player.width * 0.55 * widthScale, topY + 4);
+  ctx.quadraticCurveTo(px, topY - 10, px + player.width * 0.55 * widthScale, topY + 4);
+  ctx.quadraticCurveTo(px + player.width * 0.44 * widthScale, topY - 2, px, topY - 4);
+  ctx.quadraticCurveTo(px - player.width * 0.44 * widthScale, topY - 2, px - player.width * 0.55 * widthScale, topY + 4);
   ctx.closePath();
   ctx.fill();
 
-  const leafCount = Math.max(crownLeaves.length, 10);
+  const leafCount = CROWN_LEAVES_NEEDED;
+  const displayLeaves = getCrownDisplayLeaves();
   for (let i = 0; i < leafCount; i++) {
-    const leaf = crownLeaves[i % crownLeaves.length] || { shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] };
-    const t = i / leafCount;
-    const lx = px - player.width * 0.5 + t * player.width;
+    const leaf = displayLeaves[i] || { shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] };
+    const spacingJitter = (pseudoRandom(i * 3.7) - 0.5) * 0.16; // stable per-leaf, not flickering — some overlap, some gaps
+    const t = i / leafCount + spacingJitter;
+    const lx = px - player.width * 0.5 * widthScale + t * player.width * widthScale;
     const ly = topY - 1 - Math.sin(t * Math.PI) * 1;
     drawLeafShape(ctx, lx, ly, leaf.shape === "maple" ? 6.5 : 5, (t - 0.5) * 1.4, leaf.shape, leaf.color);
   }
-  // a couple peeking near the back, suggesting it wraps around
-  drawLeafShape(ctx, px - player.width * 0.5, topY + 2, 5, -1.2, "maple", LEAF_COLORS[1]);
-  drawLeafShape(ctx, px + player.width * 0.5, topY + 2, 5, 1.2, "round", LEAF_COLORS[3]);
+  // a couple peeking near the back, suggesting it wraps around — dropped
+  // entirely while falling, since these are what stuck out past the hole
+  if (!isFalling) {
+    drawLeafShape(ctx, px - player.width * 0.5, topY + 2, 5, -1.2, "maple", LEAF_COLORS[1]);
+    drawLeafShape(ctx, px + player.width * 0.5, topY + 2, 5, 1.2, "round", LEAF_COLORS[3]);
+  }
 }
 
 const CROWN_PROMPT_MATERIALIZE_DURATION = 1400;
@@ -1742,11 +1880,14 @@ function updateCrown(deltaTime) {
 function drawCrown(camX) {
   if (crownLeaves.length === 0) return;
 
+  const fallProgress = fallState.active ? Math.min(fallState.t / FALL_DURATION, 1) : 0;
+  const sinkAmount = fallProgress * (player.height + 20);
+
   const px = player.x - camX + player.width / 2;
-  const py = gy - player.height - player.y + 6;
+  const py = gy - player.height - player.y + 6 + sinkAmount;
 
   if (crownState.worn) {
-    drawCrownOnHead(camX);
+    drawCrownOnHead(camX, sinkAmount);
   } else if (!crownState.ready) {
     // in-progress — visible beside the player so catching a leaf feels
     // like real, immediate progress. Moves to the Special UI slot once
@@ -1833,15 +1974,14 @@ function drawCarvedWoodPrompt(px, py) {
   ctx.arc(px + 128, py + 15, 1.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // deeper engraved effect — larger shadow/highlight offsets, text still fully legible
+  // single-direction shadow only — a light highlight sandwiched against
+  // the shadow was adding noise around the letterforms, not clarity
   ctx.font = "10px sans-serif";
   ctx.textAlign = "center";
   CROWN_PROMPT_LINES.forEach((line, i) => {
     const ly = py - 4 + i * 13;
-    ctx.fillStyle = "rgba(30,18,8,0.75)";
-    ctx.fillText(line, px + 1.2, ly + 1.2);
-    ctx.fillStyle = "rgba(235,212,168,0.55)";
-    ctx.fillText(line, px - 1.2, ly - 1.2);
+    ctx.fillStyle = "rgba(30,18,8,0.6)";
+    ctx.fillText(line, px + 1, ly + 1);
     ctx.fillStyle = "#2e2010";
     ctx.fillText(line, px, ly);
   });
@@ -2439,6 +2579,42 @@ function createApplePiece(x, y, angle, speed) {
 }
 
 // apple-slice wedge: rounded outer edge, pointed inner tip (toward the core)
+// whole apple — round body, stem, small leaf, genuinely distinct from the
+// slice's wedge-with-visible-flesh design, not just a recolor
+function drawWholeAppleShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.fillStyle = "#8b2e2a";
+  ctx.strokeStyle = "#6a1f1c";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, size * 0.05, size * 0.75, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "#5a3a1a";
+  ctx.lineWidth = size * 0.12;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.68);
+  ctx.lineTo(size * 0.08, -size * 0.95);
+  ctx.stroke();
+
+  ctx.fillStyle = "#5a8a3e";
+  ctx.beginPath();
+  ctx.ellipse(size * 0.22, -size * 0.85, size * 0.22, size * 0.12, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,220,200,0.4)";
+  ctx.beginPath();
+  ctx.arc(-size * 0.25, -size * 0.15, size * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 function drawApplePieceShape(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
@@ -2842,6 +3018,12 @@ function drawGoldPileShape(ctx, x, y, size, rotation) {
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
+  } else if (itemType === "roundLeaf" || itemType === "mapleLeaf") {
+    drawLeafShape(ctx, x, y, size, rotation, itemType === "mapleLeaf" ? "maple" : "round", itemType === "mapleLeaf" ? "#e8481f" : "#e0722a");
+  } else if (HYBRID_DRAW_FN[itemType]) {
+    HYBRID_DRAW_FN[itemType](ctx, x, y, size);
+  } else if (itemType === "apple") {
+    drawWholeAppleShape(ctx, x, y, size, rotation);
   } else if (itemType === "shovel") {
     drawShovelShape(ctx, x, y, size, rotation);
   } else if (itemType === "plumStick" || itemType === "pearStick" || itemType === "peachStick") {
@@ -3180,6 +3362,7 @@ ramps.forEach(r => {
 
 // call draw apple tree 2x
 drawAppleTree(220, camX);
+drawBumpApple(camX);
 drawAppleTree(tree.x, camX); // the actual source tree — apple spawns/falls from here, was previously empty ground
 drawStump(camX); // drawn AFTER the tree so it renders in front, not covered by it
 
@@ -3734,6 +3917,27 @@ const SNAIL_SLIME_SPEED = 8; // much slower than the squirrel's walk
    different stick later. Sticks are never consumed.
    ====================================================== */
 const GRAFT_TREE_X = { plum: 330, pear: 550, peach: 950 };
+
+// each tree gets its own distinct layout (not the same offsets copy-pasted
+// three times) — independently verified via arc simulation: in-canopy,
+// each fruit individually reachable, and the pair separated well past the
+// ~55-unit effective single-throw band so it genuinely takes two throws
+const knockableFruits = {
+  plum: [
+    { x: GRAFT_TREE_X.plum - 42, heightAboveGround: 120, knocked: false, falling: false, collected: false, collecting: false },
+    { x: GRAFT_TREE_X.plum + 30, heightAboveGround: 145, knocked: false, falling: false, collected: false, collecting: false }
+  ],
+  pear: [
+    { x: GRAFT_TREE_X.pear - 36, heightAboveGround: 140, knocked: false, falling: false, collected: false, collecting: false },
+    { x: GRAFT_TREE_X.pear + 39, heightAboveGround: 120, knocked: false, falling: false, collected: false, collecting: false }
+  ],
+  peach: [
+    { x: GRAFT_TREE_X.peach + 42, heightAboveGround: 120, knocked: false, falling: false, collected: false, collecting: false },
+    { x: GRAFT_TREE_X.peach - 30, heightAboveGround: 145, knocked: false, falling: false, collected: false, collecting: false }
+  ]
+};
+const KNOCK_FRUIT_FALL_SPEED = 60;
+
 const GRAFT_MORPH_DURATION = 3000;
 
 const graftState = {
@@ -3779,6 +3983,7 @@ function drawPearchyFruit(ctx, x, y, size) {
 
   ctx.strokeStyle = "#8a4520";
   ctx.lineWidth = 0.9;
+  const shimmerPhase = performance.now() * 0.0025 + x * 0.02;
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
     const r = size * 0.55;
@@ -3786,6 +3991,14 @@ function drawPearchyFruit(ctx, x, y, size) {
     ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r * 1.05);
     ctx.lineTo(Math.cos(a) * (r + size * 0.3), Math.sin(a) * (r + size * 0.3) * 1.05);
     ctx.stroke();
+
+    const glint = Math.sin(shimmerPhase + i * 1.5);
+    if (glint > 0.75) {
+      ctx.fillStyle = `rgba(255,245,220,${(glint - 0.75) * 3})`;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * (r + size * 0.3), Math.sin(a) * (r + size * 0.3) * 1.05, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.beginPath();
@@ -3816,14 +4029,31 @@ function drawPeachumFruit(ctx, x, y, size) {
   });
 
   ctx.fillStyle = "rgba(240,201,222,0.9)";
-  const bloomSeed = x + y;
-  for (let i = 0; i < 16; i++) {
+  const bloomSeed = 42; // fully stable now — dot positions never jitter, only the glint animates
+  const bloomPositions = [];
+  for (let i = 0; i < 10; i++) {
     const a = pseudoRandom(bloomSeed + i * 3.1) * Math.PI * 2;
     const r = pseudoRandom(bloomSeed + i * 2.3) * size * 0.55;
+    const dx = Math.cos(a) * r, dy = Math.sin(a) * r;
+    bloomPositions.push([dx, dy]);
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, size * 0.09, 0, Math.PI * 2);
+    ctx.arc(dx, dy, size * 0.09, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // continuous time-based hazy glint — same mechanism as Pearchy's shimmer,
+  // but diffuse/soft rather than a sharp dot, matching bloom dust's chalky quality
+  const glintPhase = performance.now() * 0.0025 + x * 0.02;
+  bloomPositions.forEach(([dx, dy], i) => {
+    const glint = Math.sin(glintPhase + i * 1.7);
+    if (glint > 0.68) {
+      const a2 = (glint - 0.68) * 3.1;
+      ctx.fillStyle = `rgba(225,210,240,${a2 * 0.85})`;
+      ctx.beginPath();
+      ctx.arc(dx, dy, size * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
 
   ctx.strokeStyle = "#4a3320";
   ctx.lineWidth = size * 0.1;
@@ -3839,8 +4069,13 @@ function drawPlearFruit(ctx, x, y, size) {
   ctx.translate(x, y);
   ctx.rotate(-0.18);
 
-  ctx.fillStyle = "#6b1f2e";
-  ctx.strokeStyle = "#4a1420";
+  const pulsePhase = performance.now() * 0.0018 + x * 0.01;
+  const wholePulse = 1 + Math.sin(pulsePhase) * 0.035;
+  const dimplePulse = 1 + Math.sin(pulsePhase) * 0.18;
+  ctx.scale(wholePulse, wholePulse);
+
+  ctx.fillStyle = "#a02f42";
+  ctx.strokeStyle = "#7a1f2e";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, -size * 0.85);
@@ -3851,15 +4086,32 @@ function drawPlearFruit(ctx, x, y, size) {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#3d1119";
+  ctx.fillStyle = "#5d1a28";
   const bumps = [
     [-0.2, -0.1, 0.16], [0.18, -0.28, 0.14], [0.28, 0.08, 0.16],
     [-0.12, 0.28, 0.14], [-0.32, 0.32, 0.12], [0.1, 0.55, 0.16], [-0.05, -0.4, 0.12]
   ];
   bumps.forEach(b => {
     ctx.beginPath();
-    ctx.arc(b[0] * size, b[1] * size, b[2] * size, 0, Math.PI * 2);
+    ctx.arc(b[0] * size, b[1] * size, b[2] * size * dimplePulse, 0, Math.PI * 2);
     ctx.fill();
+  });
+
+  // continuous time-based star-flare glint — sharp cross shape, cool pink,
+  // matching a smooth bulging surface rather than fuzz or chalky bloom
+  const glintPhase = performance.now() * 0.0025 + x * 0.02;
+  bumps.forEach((b, i) => {
+    const glint = Math.sin(glintPhase + i * 1.9);
+    if (glint > 0.78) {
+      const a2 = (glint - 0.78) * (1 / 0.22);
+      const gx = b[0] * size, gy2 = b[1] * size, flareLen = size * 0.13;
+      ctx.strokeStyle = `rgba(240,170,200,${a2 * 0.85})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(gx - flareLen, gy2); ctx.lineTo(gx + flareLen, gy2);
+      ctx.moveTo(gx, gy2 - flareLen); ctx.lineTo(gx, gy2 + flareLen);
+      ctx.stroke();
+    }
   });
 
   ctx.strokeStyle = "#4a3320";
@@ -3873,6 +4125,43 @@ function drawPlearFruit(ctx, x, y, size) {
 
 const HYBRID_DRAW_FN = { Pearchy: drawPearchyFruit, Peachum: drawPeachumFruit, Plear: drawPlearFruit };
 
+function updateKnockableFruits(deltaTime) {
+  ["plum", "pear", "peach"].forEach(type => {
+    knockableFruits[type].forEach(fruit => {
+      if (fruit.collected || fruit.collecting) return;
+
+      if (fruit.knocked && fruit.falling) {
+        fruit.heightAboveGround -= KNOCK_FRUIT_FALL_SPEED * deltaTime;
+        if (fruit.heightAboveGround <= 15) {
+          fruit.heightAboveGround = 15;
+          fruit.falling = false;
+        }
+        return;
+      }
+
+      if (fruit.knocked && !fruit.falling &&
+          pressedDownNear(fruit.x, fruit.heightAboveGround, 26, 20, 20)) {
+        fruit.collecting = true;
+        startCollectAnimation({ x: fruit.x, y: gy - fruit.heightAboveGround, size: 9, rotation: 0 }, graftState[type].hybrid);
+      }
+    });
+  });
+}
+
+function drawKnockableFruits(camX) {
+  ["plum", "pear", "peach"].forEach(type => {
+    if (!graftState[type].hybrid) return; // not visible until grafted
+    const hybrid = graftState[type].hybrid;
+    const unknockedSize = hybrid === "Pearchy" ? 16 : 13; // Pearchy's warm color blends into the canopy more than the other two's, needs more size to read as distinct
+    knockableFruits[type].forEach(fruit => {
+      if (fruit.collected || fruit.collecting) return;
+      const fx = fruit.x - camX;
+      const fy = gy - fruit.heightAboveGround;
+      HYBRID_DRAW_FN[hybrid](ctx, fx, fy, fruit.knocked ? 9 : unknockedSize);
+    });
+  });
+}
+
 function updateGraftTrees(deltaTime) {
   Object.keys(graftState).forEach(treeType => {
     const state = graftState[treeType];
@@ -3883,6 +4172,14 @@ function updateGraftTrees(deltaTime) {
       if (state.morphT >= GRAFT_MORPH_DURATION) {
         state.morphing = false;
         state.hybrid = state.morphTo;
+        // fresh fruit to knock down on the new hybrid, regardless of
+        // whether the old hybrid's fruit had already been harvested
+        knockableFruits[treeType].forEach(fruit => {
+          fruit.knocked = false;
+          fruit.falling = false;
+          fruit.collected = false;
+          fruit.collecting = false;
+        });
       }
       return;
     }
@@ -3991,6 +4288,33 @@ function drawGraftEffects(camX) {
 
     if (state.stuckItem) {
       drawCollectible(ctx, tx, ty - 12, 10, 0, state.stuckItem);
+    }
+
+    if (state.hybrid && !state.morphing) {
+      // hanging wooden name sign — below the scar with real separation,
+      // never overlapping it. Redraws automatically since it just reads
+      // state.hybrid fresh every frame, so a regraft updates it for free.
+      const signY = ty + 30;
+      ctx.strokeStyle = "#5a4020";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty + 8);
+      ctx.lineTo(tx, signY);
+      ctx.stroke();
+
+      ctx.fillStyle = "#8a6a45";
+      ctx.strokeStyle = "#5a4020";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(tx - 24, signY, 48, 18, 3) : ctx.rect(tx - 24, signY, 48, 18);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#2e2010";
+      ctx.font = "9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(state.hybrid, tx, signY + 12);
+      ctx.textAlign = "left";
     }
   });
 }
@@ -4515,6 +4839,7 @@ function drawSpringScene(camX) {
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
   drawTreeSticks(camX);
   drawGraftEffects(camX);
+  drawKnockableFruits(camX);
   drawSnail(camX);
 
   drawSwing(camX);
@@ -5232,12 +5557,26 @@ function drawSimpleCloudPieces(camX) {
   });
 }
 
+// finds the highest hopCloud platform genuinely below a given x/startHeight,
+// so falling pieces can rest on an intermediate cloud instead of always
+// dropping all the way to the ground
+function findRestHeightBelow(x, startHeight) {
+  let best = 15; // ground-level default if nothing else qualifies
+  hopClouds.forEach(c => {
+    if (x < c.x - c.width / 2 || x > c.x + c.width / 2) return;
+    if (c.height >= startHeight) return; // must be genuinely below the start point
+    if (c.height > best) best = c.height + 6; // land just on top of the platform's surface
+  });
+  return best;
+}
+
 function updateFallingCloudPieces(deltaTime) {
   cloudPieces.forEach(p => {
     if (!p.falling) return;
+    if (p.restHeight == null) p.restHeight = findRestHeightBelow(p.x, p.heightAboveGround);
     p.heightAboveGround -= CLOUD_PIECE_FALL_SPEED * deltaTime;
-    if (p.heightAboveGround <= 15) {
-      p.heightAboveGround = 15;
+    if (p.heightAboveGround <= p.restHeight) {
+      p.heightAboveGround = p.restHeight;
       p.falling = false; // settled — now pickupable
     }
   });
@@ -5641,15 +5980,21 @@ function drawElephantSpot(camX) {
     const part = ELEPHANT_PARTS[i];
     const isNewest = i === elephantSpot.piecesPlaced - 1;
 
-    // gathering particles — small white dots converging toward the piece's
-    // final position, visible for the whole duration, fading as they arrive
+    // gathering particles — a little snowy whirlwind spiraling inward
+    // toward the piece's final position, not a straight-line converge
     if (isNewest && elephantSpot.appearParticles) {
       const ease = 1 - Math.pow(1 - appearProgress, 2);
       const particleAlpha = Math.max(0, 1 - appearProgress * 1.3);
-      ctx.fillStyle = `rgba(255,255,255,${particleAlpha * 0.9})`;
-      elephantSpot.appearParticles.forEach(pt => {
-        const curDx = pt.startDx * (1 - ease);
-        const curDy = pt.startDy * (1 - ease);
+      elephantSpot.appearParticles.forEach((pt, idx) => {
+        const startRadius = Math.hypot(pt.startDx, pt.startDy);
+        const startAngle = Math.atan2(pt.startDy, pt.startDx);
+        const curRadius = startRadius * (1 - ease);
+        const spin = (1 - ease) * Math.PI * 2.5;
+        const curAngle = startAngle + spin + idx * 0.4;
+        const curDx = Math.cos(curAngle) * curRadius;
+        const curDy = Math.sin(curAngle) * curRadius;
+        const twinkle = 0.7 + Math.sin(performance.now() * 0.01 + idx * 2) * 0.3;
+        ctx.fillStyle = `rgba(255,255,255,${particleAlpha * 0.9 * twinkle})`;
         ctx.beginPath();
         ctx.arc(cx + part.dx + curDx, cy + part.dy + curDy, 2, 0, Math.PI * 2);
         ctx.fill();
@@ -5737,8 +6082,9 @@ function updateElephantSpot(deltaTime) {
     // small wiggle room (radiusX 20 vs the oval's own visual radius of 26)
     if (pressedDownNear(elephantSpot.groundOvalX, 0, 20, 12, 12)) {
       inventory.cloudPiece--;
-      if (inventory.cloudPiece <= 0) delete inventory.cloudPiece;
-      heldItem = null;
+      const morePiecesRemain = inventory.cloudPiece > 0;
+      if (!morePiecesRemain) delete inventory.cloudPiece;
+      heldItem = morePiecesRemain ? "cloudPiece" : null;
       updateInventoryUI();
       elephantSpot.piecesPlaced++;
       elephantSpot.appearT = 0; // starts the newest piece's slow-appear animation
@@ -6091,7 +6437,6 @@ if (currentScene === "autumn") {
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
 // (and C keeps working) no matter which zone you're actually standing in
-drawCrown(camX);
 
 // flying (collecting/placing) items — shared across scenes, drawn here so
 // a pickup animation started in ANY scene actually renders, not just autumn's
@@ -6159,11 +6504,13 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
   ctx.restore();
 }
 
+drawCrown(camX);
+
 // held item — floats above the head while selected, so it's clear it's "in play"
 if (heldItem && !fallState.active) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
-    drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 6);
+    drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 8);
   } else {
     drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
   }
@@ -6177,6 +6524,7 @@ drawSeasonTransition(ctx);
    ====================================================== */
 function updateAutumnScene(deltaTime) {
 updateLeafTrees(deltaTime);
+updateBumpApple(deltaTime);
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
@@ -6523,6 +6871,7 @@ function updateSpringScene(deltaTime) {
   updateTreeSticks(deltaTime);
   updateSnailWander(deltaTime);
   updateGraftTrees(deltaTime);
+  updateKnockableFruits(deltaTime);
   updateNPCIdle(squirrel);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
