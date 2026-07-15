@@ -93,8 +93,8 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "clouds"; // TEMP for testing — normally "autumn" | "spring" | "clouds"
-let hasReturnedFromClouds = true; // TEMP for testing — normally false; set true the moment a cloud-hole fall completes
+let currentScene = "autumn"; // "autumn" | "spring" | "clouds"
+let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
    ORCHARD COLOURS
@@ -124,7 +124,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 420, // TEMP for testing (matches sceneSpawns.clouds.x) — normally 120
+  x: 120,
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -142,7 +142,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { boomerang: 1, peanut: 1, bucket: 1, shovel: 1 }; // TEMP for testing — normally {} (e.g. { appleSlice: 2, boomerang: 1 })
+const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -154,13 +154,16 @@ const ITEM_ICONS = {
   cloudPiece: "☁️",
   peanut: "🥜",
   shovel: "🛠️",
+  plumStick: "🌿",
+  pearStick: "🌿",
+  peachStick: "🌿",
   goldPile: "🪙"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
 // which is just a count — tracked separately from the inventory dict
-let bucketDropCount = 3; // TEMP for testing — normally 0
-let bucketFilled = true; // TEMP for testing — normally false
+let bucketDropCount = 0;
+let bucketFilled = false;
 const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
@@ -181,10 +184,15 @@ function getHeldItemWorldPos() {
 
 let cloudPieceBurstPending = false; // consumed once by the chip's one-time grow+sparkle animation
 
+let honeyScoops = 0; // set to 6 on collection
+
 function addToInventory(itemType) {
   inventory[itemType] = (inventory[itemType] || 0) + 1;
   if (itemType === "cloudPiece" && inventory[itemType] === 8) {
     cloudPieceBurstPending = true;
+  }
+  if (itemType === "honey") {
+    honeyScoops = 6; // reusable tool — exactly enough for all 6 graft combinations
   }
   updateInventoryUI();
 }
@@ -222,6 +230,34 @@ const ITEM_CANVAS_RENDER = {
   goldPile: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawGoldPileShape(iconCtx, 10, 11, 9, 0);
+  },
+  honey: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawHoneyPotShape(iconCtx, 10, 11, 8, honeyScoops / 6);
+  },
+  plumStick: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawStickShape(iconCtx, 10, 13, 13, 0.5, sticks.plum.color);
+    iconCtx.fillStyle = FRUIT_STYLES.plum.color;
+    iconCtx.beginPath();
+    iconCtx.arc(6, 6, 3.5, 0, Math.PI * 2);
+    iconCtx.fill();
+  },
+  pearStick: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawStickShape(iconCtx, 10, 13, 13, 0.5, sticks.pear.color);
+    iconCtx.fillStyle = FRUIT_STYLES.pear.color;
+    iconCtx.beginPath();
+    iconCtx.ellipse(6, 6, 3, 4, 0, 0, Math.PI * 2);
+    iconCtx.fill();
+  },
+  peachStick: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawStickShape(iconCtx, 10, 13, 13, 0.5, sticks.peach.color);
+    iconCtx.fillStyle = FRUIT_STYLES.peach.color;
+    iconCtx.beginPath();
+    iconCtx.arc(6, 6, 3.5, 0, Math.PI * 2);
+    iconCtx.fill();
   }
 };
 
@@ -253,9 +289,12 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const label = document.createElement("span");
-      label.textContent = ` x${count}`;
-      chip.appendChild(label);
+      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick"];
+      if (!NO_COUNT_LABEL.includes(type)) {
+        const label = document.createElement("span");
+        label.textContent = ` x${count}`;
+        chip.appendChild(label);
+      }
 
       chip.title = type === "bucket"
         ? (bucketFilled ? "Full — carry it down to spring" : `${bucketDropCount}/${BUCKET_DROPS_NEEDED} drops collected`)
@@ -336,7 +375,7 @@ const ramps = [
 const boomerang = {
   x: 1025, // offset from tree(980)'s center so the canopy occludes part of it, not dead-center under it
   heightAboveGround: 120, // unreachable from a ground jump (~90 max) or stepping off the ramp — needs a jump from the ramp's peak
-  collected: true, // TEMP for testing (matches pre-loaded inventory) — normally false
+  collected: false, // normally false
   collecting: false
 };
 
@@ -398,7 +437,7 @@ const sceneMapInfo = {
   clouds: { label: "Clouds", x: 400, y: 40 }
 };
 
-const discoveredScenes = { autumn: true, clouds: true }; // TEMP: clouds added for testing — normally just autumn
+const discoveredScenes = { autumn: true }; // autumn is where you start
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -1499,9 +1538,24 @@ const FRUIT_STYLES = {
   pear:  { color: "#c3cf5e", size: 7, shape: "teardrop" }
 };
 
+function blendHexColors(hexA, hexB, t) {
+  const a = [parseInt(hexA.slice(1, 3), 16), parseInt(hexA.slice(3, 5), 16), parseInt(hexA.slice(5, 7), 16)];
+  const b = [parseInt(hexB.slice(1, 3), 16), parseInt(hexB.slice(3, 5), 16), parseInt(hexB.slice(5, 7), 16)];
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
 function drawFruitTree(x, camX, type) {
   const tx = x - camX;
-  const style = FRUIT_STYLES[type];
+  const graftedState = graftState[type] && GRAFT_TREE_X[type] === x ? graftState[type] : null;
+  const targetHybridName = graftedState ? (graftedState.hybrid || (graftedState.morphing ? graftedState.morphTo : null)) : null;
+  const morphAlpha = graftedState && graftedState.morphing ? graftedState.morphT / GRAFT_MORPH_DURATION : (targetHybridName ? 1 : 0);
+  let style = FRUIT_STYLES[type];
+  if (targetHybridName) {
+    style = HYBRID_STYLES[targetHybridName];
+  }
 
   // trunk
   ctx.fillStyle = "#6b4026";
@@ -1531,16 +1585,45 @@ function drawFruitTree(x, camX, type) {
   // type), structured into evenly-divided slots with bounded jitter, so
   // spacing between fruits stays within a min/max range
   const typeSeed = { plum: 0, peach: 5, pear: 11 }[type] || 0;
-  const fruitCount = 5 + Math.floor(pseudoRandom(x * 0.077 + typeSeed) * 3); // 5-7
+  const isHybridPattern = !!targetHybridName;
+  const fruitCount = 5 + Math.floor(pseudoRandom(x * 0.077 + typeSeed) * 3); // 5-7, same as normal
   const fruitAngleStep = (Math.PI * 2) / fruitCount;
   const fruitJitterMax = fruitAngleStep * 0.25;
 
   for (let i = 0; i < fruitCount; i++) {
-    const jitter = (pseudoRandom(x * 0.31 + typeSeed + i * 1.7) - 0.5) * 2 * fruitJitterMax;
-    const angle = fruitAngleStep * i + jitter;
-    const radius = 22 + pseudoRandom(x * 0.53 + typeSeed + i * 2.3) * 14;
+    let angle, radius;
+    if (isHybridPattern) {
+      // same evenly-spaced base as normal trees, but much looser jitter —
+      // distributed all around the canopy, not clumped to one or two sides,
+      // while still reading as organically different from a uniform ring
+      const looseJitter = (pseudoRandom(x * 0.31 + typeSeed + i * 1.7) - 0.5) * fruitAngleStep * 1.3;
+      angle = fruitAngleStep * i + looseJitter;
+      radius = 18 + pseudoRandom(x * 0.53 + typeSeed + i * 2.3) * 20;
+    } else {
+      const jitter = (pseudoRandom(x * 0.31 + typeSeed + i * 1.7) - 0.5) * 2 * fruitJitterMax;
+      angle = fruitAngleStep * i + jitter;
+      radius = 22 + pseudoRandom(x * 0.53 + typeSeed + i * 2.3) * 14;
+    }
     const decoX = tx + Math.cos(angle) * radius;
     const decoY = (gy - 120) + Math.sin(angle) * radius;
+
+    if (isHybridPattern && HYBRID_DRAW_FN[targetHybridName]) {
+      if (morphAlpha < 1) {
+        // cross-fade: fading original dot underneath the emerging hybrid
+        ctx.save();
+        ctx.globalAlpha = 1 - morphAlpha;
+        ctx.fillStyle = FRUIT_STYLES[type].color;
+        ctx.beginPath();
+        ctx.arc(decoX, decoY, FRUIT_STYLES[type].size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.globalAlpha = morphAlpha;
+      HYBRID_DRAW_FN[targetHybridName](ctx, decoX, decoY, style.size);
+      ctx.restore();
+      continue;
+    }
 
     ctx.fillStyle = style.color;
     if (style.shape === "teardrop") {
@@ -2104,6 +2187,56 @@ function drawHoneyShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// honey pot — the reusable graft tool, fill level visibly drops with each
+// of its 6 scoops used, both in-world and in the inventory chip
+function drawHoneyPotShape(ctx, x, y, size, fillRatio) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  // rounded classic pot body
+  ctx.fillStyle = "#c9915a";
+  ctx.strokeStyle = "#8a5f34";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.35, -size * 0.5);
+  ctx.bezierCurveTo(-size * 0.75, -size * 0.4, -size * 0.75, size * 0.6, -size * 0.45, size * 0.85);
+  ctx.bezierCurveTo(-size * 0.25, size * 1.0, size * 0.25, size * 1.0, size * 0.45, size * 0.85);
+  ctx.bezierCurveTo(size * 0.75, size * 0.6, size * 0.75, -size * 0.4, size * 0.35, -size * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // label band
+  ctx.fillStyle = "rgba(255,248,235,0.65)";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.15, size * 0.55, size * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // honey visible through the open top, level drops as scoops deplete
+  const fillDepth = size * 0.3 * (1 - Math.max(0, fillRatio));
+  ctx.fillStyle = "#e8a838";
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.48 + fillDepth, size * 0.28, size * 0.09, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // lid
+  ctx.fillStyle = "#a86b18";
+  ctx.strokeStyle = "#6a4318";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.55, size * 0.4, size * 0.12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // knob on top
+  ctx.fillStyle = "#8a5f34";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.66, size * 0.09, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // cloud piece — a small, round puff, distinct from the fluffy background clouds
 function drawCloudPieceShape(ctx, x, y, size, rotation) {
   ctx.save();
@@ -2249,6 +2382,9 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawBoomerangShape(ctx, x, y, size, rotation);
   } else if (itemType === "shovel") {
     drawShovelShape(ctx, x, y, size, rotation);
+  } else if (itemType === "plumStick" || itemType === "pearStick" || itemType === "peachStick") {
+    const treeType = itemType.replace("Stick", "");
+    drawStickShape(ctx, x, y, size * 1.3, rotation + 0.5, sticks[treeType].color);
   } else if (itemType === "goldPile") {
     drawGoldPileShape(ctx, x, y, size, rotation);
   } else if (itemType === "cloudPiece") {
@@ -2799,11 +2935,114 @@ function drawSpringFlowers(camX) {
 // tree/bush placement — pear is centered as the future-interactive slot,
 // plum/peach sit further out like autumn's decorative background trees
 const springFruitTrees = [
-  { x: 150, type: "plum" },
+  { x: 330, type: "plum" },
   { x: 550, type: "pear" },  // future-interactive slot
   { x: 950, type: "peach" },
   { x: 1975, type: "plum" }  // the swing's tree, past the tulip
 ];
+
+/* ======================================================
+   GRAFT STICKS — one per fruit tree, reusable once collected
+   (never consumed — the 6 honey scoops are what limits total
+   graft attempts, not the sticks themselves). Visibly cracking
+   while attached, requires a jump to reach, consistent across
+   all three.
+   ====================================================== */
+const STICK_HEIGHT_ABOVE_GROUND = 65;
+
+const sticks = {
+  plum: { x: 330, collected: false, color: "#5a3a5e", cracking: false, crackT: 0 },
+  pear: { x: 550, collected: false, color: "#7a9a4a", cracking: false, crackT: 0 },
+  peach: { x: 950, collected: false, color: "#c98a4a", cracking: false, crackT: 0 }
+};
+const STICK_CRACK_DURATION = 700; // ms — a real delay before it actually detaches
+const STICK_BURST_DURATION = 500; // ms — wood-bit particles fly off and fade
+
+function drawStickShape(ctx, x, y, size, rotation, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.strokeStyle = color || "#7a5a3a";
+  ctx.lineWidth = size * 0.22;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.6, -size * 0.3);
+  ctx.lineTo(size * 0.5, size * 0.4);
+  ctx.stroke();
+  ctx.lineWidth = size * 0.12;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.1, 0);
+  ctx.lineTo(size * 0.15, -size * 0.25);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTreeSticks(camX) {
+  Object.entries(sticks).forEach(([treeType, stick]) => {
+    const sx = stick.x - camX;
+    const sy = gy - STICK_HEIGHT_ABOVE_GROUND;
+
+    if (stick.collected) {
+      // permanent scar — a small mark showing exactly where to bring honey
+      ctx.strokeStyle = "#4a3020";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx - 4, sy + 3);
+      ctx.lineTo(sx + 1, sy - 2);
+      ctx.lineTo(sx - 2, sy - 6);
+      ctx.stroke();
+
+      // wood-bit particles, only while the burst is still playing
+      if (stick.crackT < STICK_BURST_DURATION) {
+        const p = stick.crackT / STICK_BURST_DURATION;
+        for (let i = 0; i < 6; i++) {
+          const angle = (i / 6) * Math.PI * 2;
+          const dist = p * 16;
+          ctx.fillStyle = `rgba(120,90,60,${1 - p})`;
+          ctx.fillRect(sx + Math.cos(angle) * dist - 1, sy - p * 10 + Math.sin(angle) * dist * 0.4 - 1, 2, 2);
+        }
+      }
+      return;
+    }
+
+    const shake = stick.cracking ? Math.sin(stick.crackT * 0.05) * (stick.crackT / STICK_CRACK_DURATION) * 2 : 0;
+
+    ctx.strokeStyle = "#4a3020";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx - 4 + shake, sy + 3);
+    ctx.lineTo(sx + 1 + shake, sy - 2);
+    ctx.lineTo(sx - 2 + shake, sy - 6);
+    ctx.stroke();
+
+    drawStickShape(ctx, sx + shake, sy, 16, 0.5, stick.color);
+  });
+}
+
+function updateTreeSticks(deltaTime) {
+  Object.entries(sticks).forEach(([treeType, stick]) => {
+    if (stick.collected) {
+      if (stick.crackT < STICK_BURST_DURATION) stick.crackT += deltaTime * 1000;
+      return;
+    }
+
+    if (stick.cracking) {
+      stick.crackT += deltaTime * 1000;
+      if (stick.crackT >= STICK_CRACK_DURATION) {
+        stick.collected = true;
+        stick.crackT = 0; // reused as the burst-particle timer now
+        inventory[treeType + "Stick"] = 1;
+        updateInventoryUI();
+      }
+      return;
+    }
+
+    if (player.jumping && pressedDownNear(stick.x, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+      stick.cracking = true;
+      stick.crackT = 0;
+    }
+  });
+}
 
 const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
 
@@ -2896,7 +3135,7 @@ const willow = {
 const shovel = {
   x: 2500,
   heightAboveGround: 30,
-  collected: true, // TEMP for testing (matches pre-loaded inventory) — normally false
+  collected: false, // normally false
   collecting: false
 };
 
@@ -2941,6 +3180,376 @@ const VINE_FIRST_DROP_DELAY = 6000; // short — lands while the bucket is still
 const VINE_DROP_MIN = 220000; // ~4 minutes-ish, with natural variance
 const VINE_DROP_MAX = 260000;
 let fallingVinePeanuts = []; // {x, heightAboveGround, falling}
+
+/* ======================================================
+   SNAIL NPC — drives the graft interaction. Slimes slowly near
+   the graft trees, same wander behavior as the other spring
+   animals (direction switches, brief pauses) but sliding instead
+   of hopping. Dialogue content pending — visual first.
+   ====================================================== */
+const snail = {
+  homeX: 680, // clear of the pear tree (550) — verified: even at closest wander point, well outside its own reveal radius
+  x: 680,
+  y: 0,
+  bob: 0,
+  bobSpeed: 0.04,
+  tip: 0,
+  direction: 1,
+  walkState: "sliding", // "sliding" | "paused"
+  pauseTimer: 0,
+  wanderRange: 20,
+  dialogueRevealed: false // requires an actual press, not just proximity
+};
+const SNAIL_SLIME_SPEED = 8; // much slower than the squirrel's walk
+
+/* ======================================================
+   GRAFT SYSTEM — honey (reusable, 6 scoops) placed first at a
+   tree's stick-break point, leaving a visible gloop, then a
+   DIFFERENT tree's stick placed on top triggers a slow morph
+   into the hybrid. Re-graftable: honeyGloop resets after each
+   successful graft, so any tree can be re-grafted with a
+   different stick later. Sticks are never consumed.
+   ====================================================== */
+const GRAFT_TREE_X = { plum: 330, pear: 550, peach: 950 };
+const GRAFT_MORPH_DURATION = 3000;
+
+const graftState = {
+  plum: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null },
+  pear: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null },
+  peach: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null }
+};
+
+const HYBRID_NAMES = {
+  "peach+pear": "Pearchy",
+  "peach+plum": "Peachum",
+  "pear+plum": "Plear"
+};
+
+const HYBRID_STYLES = {
+  Pearchy: { color: "#e8a05a", size: 10, shape: "teardrop" },
+  Peachum: { color: "#9c2f66", size: 9, shape: "round" },
+  Plear:   { color: "#6b1f2e", size: 9, shape: "teardrop" }
+};
+
+function drawPearchyFruit(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#e8a05a";
+  ctx.strokeStyle = "#c9793a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.9);
+  ctx.bezierCurveTo(-size * 0.5, -size * 0.6, -size * 0.7, size * 0.1, -size * 0.55, size * 0.6);
+  ctx.bezierCurveTo(-size * 0.4, size * 1.1, size * 0.4, size * 1.1, size * 0.55, size * 0.6);
+  ctx.bezierCurveTo(size * 0.7, size * 0.1, size * 0.5, -size * 0.6, 0, -size * 0.9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "#a85a28";
+  ctx.lineWidth = size * 0.12;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.55);
+  ctx.lineTo(0, size * 0.85);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#8a4520";
+  ctx.lineWidth = 0.9;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const r = size * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r * 1.05);
+    ctx.lineTo(Math.cos(a) * (r + size * 0.3), Math.sin(a) * (r + size * 0.3) * 1.05);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.05, -size * 0.95);
+  ctx.quadraticCurveTo(-size * 0.15, -size * 1.15, -size * 0.02, -size * 1.1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPeachumFruit(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#9c2f66";
+  ctx.strokeStyle = "#6e1f49";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.68, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(110,31,73,0.5)";
+  ctx.lineWidth = size * 0.06;
+  [-0.15, 0, 0.15].forEach(offset => {
+    ctx.beginPath();
+    ctx.moveTo(offset * size, -size * 0.6);
+    ctx.quadraticCurveTo(offset * size * 1.5, 0, offset * size, size * 0.6);
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = "rgba(240,201,222,0.9)";
+  const bloomSeed = x + y;
+  for (let i = 0; i < 16; i++) {
+    const a = pseudoRandom(bloomSeed + i * 3.1) * Math.PI * 2;
+    const r = pseudoRandom(bloomSeed + i * 2.3) * size * 0.55;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, size * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = "#4a3320";
+  ctx.lineWidth = size * 0.1;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.68);
+  ctx.lineTo(0, -size * 0.8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlearFruit(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.18);
+
+  ctx.fillStyle = "#6b1f2e";
+  ctx.strokeStyle = "#4a1420";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.85);
+  ctx.bezierCurveTo(-size * 0.45, -size * 0.55, -size * 0.6, size * 0.05, -size * 0.5, size * 0.55);
+  ctx.bezierCurveTo(-size * 0.35, size * 1.0, size * 0.35, size * 1.0, size * 0.5, size * 0.55);
+  ctx.bezierCurveTo(size * 0.6, size * 0.05, size * 0.45, -size * 0.55, 0, -size * 0.85);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#3d1119";
+  const bumps = [
+    [-0.2, -0.1, 0.16], [0.18, -0.28, 0.14], [0.28, 0.08, 0.16],
+    [-0.12, 0.28, 0.14], [-0.32, 0.32, 0.12], [0.1, 0.55, 0.16], [-0.05, -0.4, 0.12]
+  ];
+  bumps.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b[0] * size, b[1] * size, b[2] * size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.strokeStyle = "#4a3320";
+  ctx.lineWidth = size * 0.14;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.85);
+  ctx.lineTo(0, -size * 0.95);
+  ctx.stroke();
+  ctx.restore();
+}
+
+const HYBRID_DRAW_FN = { Pearchy: drawPearchyFruit, Peachum: drawPeachumFruit, Plear: drawPlearFruit };
+
+function updateGraftTrees(deltaTime) {
+  Object.keys(graftState).forEach(treeType => {
+    const state = graftState[treeType];
+    const treeX = GRAFT_TREE_X[treeType];
+
+    if (state.morphing) {
+      state.morphT += deltaTime * 1000;
+      if (state.morphT >= GRAFT_MORPH_DURATION) {
+        state.morphing = false;
+        state.hybrid = state.morphTo;
+      }
+      return;
+    }
+
+    // honey placement — requires the reusable pot, still has scoops left
+    if (!state.honeyGloop && heldItem === "honey" && honeyScoops > 0 && player.jumping &&
+        pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+      state.honeyGloop = true;
+      honeyScoops--;
+      updateInventoryUI();
+      return;
+    }
+
+    // stick placement — only once honey's down, only a DIFFERENT tree's stick
+    let graftTriggered = false;
+    if (state.honeyGloop) {
+      for (const stickType of ["plum", "pear", "peach"]) {
+        if (stickType === treeType) continue; // can't graft a tree's own stick onto itself
+        const itemKey = stickType + "Stick";
+        if (heldItem === itemKey && inventory[itemKey] > 0 && player.jumping &&
+            pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+          const comboKey = [treeType, stickType].sort().join("+");
+          state.morphing = true;
+          state.morphT = 0;
+          state.morphTo = HYBRID_NAMES[comboKey];
+          state.honeyGloop = false; // consumed for this graft — tree can be re-grafted later
+          graftTriggered = true;
+          break;
+        }
+      }
+    }
+
+    // STICK ANYTHING — whimsy feature, no restrictions. Any held item can be
+    // stuck to a honey-gloop'd tree (doesn't change the tree at all), and
+    // retrieved later with an empty-handed jump+interact at the same spot.
+    if (state.honeyGloop && !graftTriggered && !state.stuckItem && heldItem && heldItem !== "honey" &&
+        player.jumping && pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+      state.stuckItem = heldItem;
+      inventory[heldItem]--;
+      if (inventory[heldItem] <= 0) delete inventory[heldItem];
+      heldItem = null;
+      updateInventoryUI();
+    } else if (state.stuckItem && !heldItem && player.jumping &&
+        pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+      inventory[state.stuckItem] = (inventory[state.stuckItem] || 0) + 1;
+      heldItem = state.stuckItem;
+      state.stuckItem = null;
+      updateInventoryUI();
+    }
+  });
+}
+
+function drawGraftEffects(camX) {
+  Object.keys(graftState).forEach(treeType => {
+    const state = graftState[treeType];
+    const tx = GRAFT_TREE_X[treeType] - camX;
+    const ty = gy - STICK_HEIGHT_ABOVE_GROUND;
+
+    if (state.honeyGloop) {
+      ctx.fillStyle = "#c98a1a";
+
+      // irregular bumpy main blob — varying radius around the circle, not a smooth curve
+      ctx.beginPath();
+      const splatPoints = 10;
+      for (let i = 0; i <= splatPoints; i++) {
+        const a = (i / splatPoints) * Math.PI * 2;
+        const r = 6 + pseudoRandom(GRAFT_TREE_X[treeType] * 0.7 + i * 3.3) * 5;
+        const px = tx + Math.cos(a) * r;
+        const py = ty + Math.sin(a) * r * 0.8;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // scattered satellite droplets, thrown-paint style
+      const dropletCount = 7;
+      for (let i = 0; i < dropletCount; i++) {
+        const a = pseudoRandom(GRAFT_TREE_X[treeType] * 1.3 + i * 2.1) * Math.PI * 2;
+        const dist = 9 + pseudoRandom(GRAFT_TREE_X[treeType] * 0.9 + i * 4.7) * 14;
+        const dropSize = 1 + pseudoRandom(GRAFT_TREE_X[treeType] * 1.7 + i * 3.9) * 2.5;
+        const dx = tx + Math.cos(a) * dist;
+        const dy = ty + Math.sin(a) * dist * 0.75;
+        ctx.beginPath();
+        ctx.ellipse(dx, dy, dropSize, dropSize * 0.8, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = "rgba(255,235,180,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(tx - 2, ty - 3, 2, 1.3, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (state.morphing) {
+      const p = state.morphT / GRAFT_MORPH_DURATION;
+      for (let i = 0; i < 5; i++) {
+        const angle = performance.now() * 0.002 + i * 1.3;
+        const r = 14 + Math.sin(performance.now() * 0.003 + i) * 4;
+        const twinkle = Math.sin(performance.now() * 0.01 + i * 2) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255,240,180,${0.4 + twinkle * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(tx + Math.cos(angle) * r, ty - 10 + Math.sin(angle) * r * 0.6, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (state.stuckItem) {
+      drawCollectible(ctx, tx, ty - 12, 10, 0, state.stuckItem);
+    }
+  });
+}
+
+function updateSnailWander(deltaTime) {
+  if (keys.spaceJustPressed && isPlayerNear(snail.x, 0, 70, 15, 15)) {
+    snail.dialogueRevealed = true;
+  }
+
+  if (snail.walkState === "paused") {
+    snail.pauseTimer -= deltaTime * 1000;
+    if (snail.pauseTimer <= 0) {
+      snail.walkState = "sliding";
+      if (Math.random() < 0.4) snail.direction *= -1;
+    }
+    return;
+  }
+
+  snail.x += snail.direction * SNAIL_SLIME_SPEED * deltaTime;
+
+  if (snail.x <= snail.homeX - snail.wanderRange) snail.direction = 1;
+  else if (snail.x >= snail.homeX + snail.wanderRange) snail.direction = -1;
+
+  if (Math.random() < 0.002) {
+    snail.walkState = "paused";
+    snail.pauseTimer = 2000 + Math.random() * 3000;
+  }
+}
+
+function drawSnail(camX) {
+  const nx = snail.x - camX;
+  const ny = gy - 10 + Math.sin(snail.bob) * 1.5;
+
+  // slime trail
+  ctx.strokeStyle = "rgba(200,220,200,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(nx - snail.direction * 14, ny + 4);
+  ctx.lineTo(nx - snail.direction * 4, ny + 4);
+  ctx.stroke();
+
+  // shell
+  ctx.fillStyle = "#c98a4a";
+  ctx.strokeStyle = "#8a5a28";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(nx, ny - 5, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(140,90,40,0.5)";
+  ctx.beginPath();
+  ctx.arc(nx, ny - 5, 5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // body
+  ctx.fillStyle = "#8ba876";
+  ctx.beginPath();
+  ctx.ellipse(nx + snail.direction * 6, ny + 3, 11, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye stalks
+  ctx.strokeStyle = "#8ba876";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(nx + snail.direction * 14, ny + 1);
+  ctx.lineTo(nx + snail.direction * 17, ny - 4);
+  ctx.stroke();
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(nx + snail.direction * 17, ny - 4, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (snail.dialogueRevealed && isPlayerNear(snail.x, 0, 70, 15, 15)) {
+    const anyHoneyWaiting = Object.values(graftState).some(s => s.honeyGloop);
+    drawSpeechBubble(ctx, nx - 20, ny - 30, anyHoneyWaiting ? [
+      "I know you love your graph-ts, don't you?",
+      "A branch might stick nicely there now."
+    ] : [
+      "You may want some sticky fingers for a new surprise."
+    ]);
+  }
+}
 
 /* ======================================================
    SQUIRREL NPC — wanders near the dig site, staged dialogue
@@ -3383,6 +3992,9 @@ function drawSpringScene(camX) {
   // bushes, then fruit trees on top (trees read as taller/foreground)
   springBushes.forEach(b => drawBush(b.x, camX));
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
+  drawTreeSticks(camX);
+  drawGraftEffects(camX);
+  drawSnail(camX);
 
   drawSwing(camX);
   drawSwingChargeBar(camX);
@@ -5021,7 +5633,11 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 // held item — floats above the head while selected, so it's clear it's "in play"
 if (heldItem && !fallState.active) {
   const heldPos = getHeldItemWorldPos();
-  drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
+  if (heldItem === "honey") {
+    drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 6);
+  } else {
+    drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
+  }
 }
 
 drawSeasonTransition(ctx);
@@ -5373,6 +5989,9 @@ function updateSpringScene(deltaTime) {
   updateWillow(deltaTime);
   updateDigPlantVine(deltaTime);
   updateSquirrelWander(deltaTime);
+  updateTreeSticks(deltaTime);
+  updateSnailWander(deltaTime);
+  updateGraftTrees(deltaTime);
   updateNPCIdle(squirrel);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
