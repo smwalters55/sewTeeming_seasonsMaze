@@ -65,6 +65,7 @@ window.addEventListener("keydown", e => {
   }
   if (e.key==="Control") keys.ctrl=true;
   if (e.key==="Tab" && !e.repeat) cycleHeldItem();
+  if ((e.key==="c" || e.key==="C") && !e.repeat) keys.cJustPressed = true;
 });
 
 window.addEventListener("keyup", e => {
@@ -403,7 +404,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 1500, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 2020, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -775,7 +776,7 @@ function pseudoRandom(n) {
   return x - Math.floor(x);
 }
 
-function startCollectAnimation(piece, itemType) {
+function startCollectAnimation(piece, itemType, extra) {
   flyingItems.push({
     mode: "collect",
     itemType,
@@ -787,7 +788,8 @@ function startCollectAnimation(piece, itemType) {
     t: 0,
     size: piece.size,
     scale: 1,
-    rotation: piece.rotation
+    rotation: piece.rotation,
+    extra: extra || null
   });
 }
 
@@ -847,12 +849,18 @@ function updateFlyingItems(deltaTime, camX) {
           f.phase = "toBasket";
           f.t = 0;
 
-          // basket's real on-screen position, converted into the same
-          // WORLD-space coordinates f.x/f.y already use (+ camX)
-          const rect = document.getElementById("basket").getBoundingClientRect();
-          const canvasRect = canvas.getBoundingClientRect();
-          f.targetX = camX + (rect.left + rect.width / 2 - canvasRect.left);
-          f.targetY = rect.top + rect.height / 2 - canvasRect.top;
+          if (f.itemType === "leaf") {
+            // leaves fly to the crown-in-progress, not the fixed basket
+            f.targetX = player.x + player.width / 2;
+            f.targetY = gy - player.height - player.y + 6;
+          } else {
+            // basket's real on-screen position, converted into the same
+            // WORLD-space coordinates f.x/f.y already use (+ camX)
+            const rect = document.getElementById("basket").getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            f.targetX = camX + (rect.left + rect.width / 2 - canvasRect.left);
+            f.targetY = rect.top + rect.height / 2 - canvasRect.top;
+          }
         }
 
       } else if (f.phase === "toBasket") {
@@ -864,7 +872,17 @@ function updateFlyingItems(deltaTime, camX) {
         f.scale = 1.6 - p * 1.6; // shrinks down as it settles in
 
         if (f.t >= dur) {
-          addToInventory(f.itemType); // counter updates ONLY on arrival
+          if (f.itemType === "leaf" && f.extra) {
+            crownLeaves.push({ shape: f.extra.shape, color: f.extra.color });
+            if (crownLeaves.length >= CROWN_LEAVES_NEEDED && !crownState.ready) {
+              crownState.ready = true;
+              crownState.completeSparkleT = 0;
+              crownState.completeAnimT = 0;
+              crownState.promptAnimT = 0;
+            }
+          } else {
+            addToInventory(f.itemType); // counter updates ONLY on arrival
+          }
           flyingItems.splice(i, 1);
         }
       }
@@ -1446,6 +1464,441 @@ ctx.stroke();
    sticking out and a hive hanging off it. The boomerang's target.
    ====================================================== */
 const hiveTree = { x: 1322 };
+
+/* ======================================================
+   LEAF TREES + WREATH — two new trees, one shedding rounded
+   leaves, one shedding classic maple-shaped leaves. Colors vary
+   independently. Side-to-side drift as they fall, proximity-based
+   catch (no jump restriction, matches the water drips). Wreath
+   builds procedurally from your actual caught leaves — visible
+   growing in real time on both the held indicator and the
+   inventory chip — then hangs on an old wooden board.
+   ====================================================== */
+const LEAF_COLORS = ["#e8481f", "#ff9518", "#ffcc18", "#e0722a", "#d4381f"];
+const LEAF_FALL_MIN = 6000;
+const LEAF_FALL_MAX = 12000;
+const LEAF_FALL_SPEED = 35;
+const CROWN_LEAVES_NEEDED = 10;
+const CROWN_SPARKLE_DURATION = 1200;
+
+const leafTreeTimers = {
+  round: LEAF_FALL_MIN + Math.random() * (LEAF_FALL_MAX - LEAF_FALL_MIN),
+  maple: LEAF_FALL_MIN + Math.random() * (LEAF_FALL_MAX - LEAF_FALL_MIN)
+};
+
+let fallingLeaves = []; // {x, height, shape, color, driftSeed}
+let crownLeaves = []; // {shape, color} — the actual leaves you've caught, in order
+
+const crownState = {
+  ready: false,   // true once needed leaves collected — crown exists, waiting to be worn
+  worn: false,
+  completeSparkleT: 9999, // plays once, on reaching the needed count
+  completeAnimT: 9999,     // drives the crown assembling into view, not an instant pop
+  wearSparkleT: 9999,      // plays each time C is pressed to put it on
+  promptAnimT: 9999,       // drives the carved-plank materialize animation — once maxed, stays maxed and the plank just stays visible
+  promptEverShown: false   // true once you've worn it for the first time — the prompt never shows again after that, regardless of later toggles
+};
+const CROWN_COMPLETE_ANIM_DURATION = 1500;
+
+function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 0.7;
+
+  if (shape === "maple") {
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 1.15);
+    for (let i = 0; i < 5; i++) {
+      const a1 = (-0.9 + i * 0.45);
+      const a2 = (-0.68 + i * 0.45);
+      ctx.lineTo(Math.sin(a1) * size * 0.62, -Math.cos(a1) * size * 0.62);
+      ctx.lineTo(Math.sin(a2) * size * 1.15, -Math.cos(a2) * size * 1.15);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.quadraticCurveTo(size * 0.8, -size * 0.3, size * 0.5, size * 0.6);
+    ctx.quadraticCurveTo(0, size * 0.9, -size * 0.5, size * 0.6);
+    ctx.quadraticCurveTo(-size * 0.8, -size * 0.3, 0, -size);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(0, shape === "maple" ? -size * 0.9 : -size * 0.8);
+  ctx.lineTo(0, shape === "maple" ? size * 0.25 : size * 0.6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// prettier layered trees — multiple overlapping canopy clusters instead of
+// one flat circle, warm autumn tones pulled from the same palette their
+// own leaves use, instead of a mismatched green
+function drawLeafTree(x, camX, shape) {
+  const tx = x - camX;
+  const baseColor = shape === "maple" ? "#e8481f" : "#ffcc18";
+  const shadeColor = shape === "maple" ? "#ff9518" : "#e0722a";
+
+  // wavy organic trunk outline, not a plain rectangle
+  ctx.fillStyle = "#6b4026";
+  ctx.beginPath();
+  ctx.moveTo(tx - 10, gy);
+  ctx.quadraticCurveTo(tx - 12, gy - 60, tx - 8, gy - 90);
+  ctx.quadraticCurveTo(tx - 10, gy - 115, tx - 6, gy - 130);
+  ctx.lineTo(tx + 6, gy - 130);
+  ctx.quadraticCurveTo(tx + 10, gy - 115, tx + 8, gy - 90);
+  ctx.quadraticCurveTo(tx + 12, gy - 60, tx + 10, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  // subtle wavy bark texture lines
+  ctx.strokeStyle = "rgba(74,44,20,0.4)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tx - 3, gy - 125);
+  ctx.quadraticCurveTo(tx - 5, gy - 75, tx - 2, gy - 20);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tx + 4, gy - 100);
+  ctx.quadraticCurveTo(tx + 6, gy - 60, tx + 4, gy - 15);
+  ctx.stroke();
+
+  // a small knot-hole for character
+  ctx.fillStyle = "rgba(50,30,14,0.6)";
+  ctx.beginPath();
+  const knotX = tx + (pseudoRandom(x * 0.9) - 0.5) * 10;
+  const knotY = gy - 40 - pseudoRandom(x * 1.3) * 45;
+  ctx.ellipse(knotX, knotY, 3, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // layered canopy clusters — extended lower to genuinely cover the trunk
+  // top (was only ~3px overlap, an easily-visible seam)
+  const clusters = [
+    { dx: -20, dy: -8, r: 26 }, { dx: 18, dy: -12, r: 28 },
+    { dx: 0, dy: -30, r: 30 }, { dx: -8, dy: -2, r: 24 }, { dx: 22, dy: 8, r: 20 },
+    { dx: 0, dy: 22, r: 26 }, { dx: -14, dy: 16, r: 20 }
+  ];
+  clusters.forEach((c, i) => {
+    ctx.fillStyle = i % 2 === 0 ? baseColor : shadeColor;
+    ctx.globalAlpha = 0.88;
+    ctx.beginPath();
+    ctx.arc(tx + c.dx, gy - 155 + c.dy, c.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // dense individual leaf accents on the canopy, not sparse/pasted-on
+  for (let i = 0; i < 16; i++) {
+    const a = pseudoRandom(x * 0.4 + i * 2.1) * Math.PI * 2;
+    const r = 18 + pseudoRandom(x * 0.7 + i * 1.3) * 24;
+    const accentX = tx + Math.cos(a) * r;
+    const accentY = gy - 155 + Math.sin(a) * r * 0.7;
+    const isMaple = shape === "maple";
+    drawLeafShape(ctx, accentX, accentY, isMaple ? 7 : 5,
+      pseudoRandom(x * 1.1 + i) * Math.PI, shape, LEAF_COLORS[i % LEAF_COLORS.length]);
+    if (isMaple) {
+      ctx.fillStyle = "rgba(255,240,200,0.35)";
+      ctx.beginPath();
+      ctx.arc(accentX, accentY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+const LEAF_MIN_STAGGER = 2500; // minimum gap enforced between the two trees' falls, prevents coincidental clustering
+
+function updateLeafTrees(deltaTime) {
+  ["round", "maple"].forEach(shape => {
+    leafTreeTimers[shape] -= deltaTime * 1000;
+    if (leafTreeTimers[shape] <= 0) {
+      const treeX = shape === "maple" ? 1820 : 1620;
+      const color = LEAF_COLORS[Math.floor(Math.random() * LEAF_COLORS.length)];
+      fallingLeaves.push({ x: treeX, height: gy - (gy - 155), shape, color, driftSeed: Math.random() * 100 });
+      leafTreeTimers[shape] = LEAF_FALL_MIN + Math.random() * (LEAF_FALL_MAX - LEAF_FALL_MIN);
+
+      const otherShape = shape === "maple" ? "round" : "maple";
+      if (leafTreeTimers[otherShape] < LEAF_MIN_STAGGER) {
+        leafTreeTimers[otherShape] += LEAF_MIN_STAGGER;
+      }
+    }
+  });
+
+  fallingLeaves.forEach(leaf => {
+    leaf.height -= LEAF_FALL_SPEED * deltaTime;
+  });
+
+  fallingLeaves = fallingLeaves.filter(leaf => {
+    if (leaf.height <= 0) return false; // hit the ground, missed
+
+    if (crownLeaves.length < CROWN_LEAVES_NEEDED) {
+      const driftX = leaf.x + Math.sin(performance.now() * 0.0015 + leaf.driftSeed) * 25;
+      const playerCenterX = player.x + player.width / 2;
+      const nearX = Math.abs(playerCenterX - driftX) < 30;
+      const nearHeight = Math.abs(player.y - leaf.height) < 20;
+      if (nearX && nearHeight) {
+        startCollectAnimation(
+          { x: driftX, y: gy - leaf.height, size: leaf.shape === "maple" ? 11 : 8, rotation: 0 },
+          "leaf",
+          { shape: leaf.shape, color: leaf.color }
+        );
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function drawFallingLeaves(camX) {
+  fallingLeaves.forEach(leaf => {
+    const driftX = leaf.x + Math.sin(performance.now() * 0.0015 + leaf.driftSeed) * 25;
+    drawLeafShape(ctx, driftX - camX, gy - leaf.height, leaf.shape === "maple" ? 11 : 8, performance.now() * 0.001 + leaf.driftSeed, leaf.shape, leaf.color);
+  });
+}
+
+// draws the crown procedurally from whatever leaves have actually been
+// caught — used both while in-progress and once complete
+function drawCrownProcedural(ctx, cx, cy, radius, progressOverride) {
+  const shown = progressOverride != null ? Math.round(progressOverride * CROWN_LEAVES_NEEDED) : crownLeaves.length;
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
+  ctx.stroke();
+
+  for (let i = 0; i < shown; i++) {
+    const leaf = crownLeaves[i] || { shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] };
+    const angle = (i / CROWN_LEAVES_NEEDED) * Math.PI * 2 - Math.PI / 2;
+    const lx = cx + Math.cos(angle) * radius * 0.75;
+    const ly = cy + Math.sin(angle) * radius * 0.75;
+    drawLeafShape(ctx, lx, ly, radius * (leaf.shape === "maple" ? 0.36 : 0.28), angle + Math.PI / 2, leaf.shape, leaf.color);
+  }
+}
+
+// worn crown — dense, overlapping leaves following the top curve of the
+// player's actual shape (a single rounded rectangle, not a separate head)
+function drawCrownOnHead(camX) {
+  const px = player.x - camX + player.width / 2;
+  const topY = gy - player.height - player.y;
+
+  ctx.fillStyle = "#7a4a28";
+  ctx.beginPath();
+  ctx.moveTo(px - player.width * 0.55, topY + 4);
+  ctx.quadraticCurveTo(px, topY - 10, px + player.width * 0.55, topY + 4);
+  ctx.quadraticCurveTo(px + player.width * 0.44, topY - 2, px, topY - 4);
+  ctx.quadraticCurveTo(px - player.width * 0.44, topY - 2, px - player.width * 0.55, topY + 4);
+  ctx.closePath();
+  ctx.fill();
+
+  const leafCount = Math.max(crownLeaves.length, 10);
+  for (let i = 0; i < leafCount; i++) {
+    const leaf = crownLeaves[i % crownLeaves.length] || { shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] };
+    const t = i / leafCount;
+    const lx = px - player.width * 0.5 + t * player.width;
+    const ly = topY - 1 - Math.sin(t * Math.PI) * 1;
+    drawLeafShape(ctx, lx, ly, leaf.shape === "maple" ? 6.5 : 5, (t - 0.5) * 1.4, leaf.shape, leaf.color);
+  }
+  // a couple peeking near the back, suggesting it wraps around
+  drawLeafShape(ctx, px - player.width * 0.5, topY + 2, 5, -1.2, "maple", LEAF_COLORS[1]);
+  drawLeafShape(ctx, px + player.width * 0.5, topY + 2, 5, 1.2, "round", LEAF_COLORS[3]);
+}
+
+const CROWN_PROMPT_MATERIALIZE_DURATION = 1400;
+const CROWN_PROMPT_LINES = [
+  "A crown of leaves, freshly grown \u2014",
+  "press C, and make it your own!"
+];
+
+function updateCrown(deltaTime) {
+  if (crownState.completeSparkleT < CROWN_SPARKLE_DURATION) crownState.completeSparkleT += deltaTime * 1000;
+  if (crownState.completeAnimT < CROWN_COMPLETE_ANIM_DURATION) crownState.completeAnimT += deltaTime * 1000;
+  if (crownState.wearSparkleT < CROWN_SPARKLE_DURATION) crownState.wearSparkleT += deltaTime * 1000;
+  if (crownState.ready && !crownState.worn && crownState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
+    crownState.promptAnimT += deltaTime * 1000;
+  }
+
+  if (crownState.ready && keys.cJustPressed) {
+    crownState.worn = !crownState.worn;
+    if (crownState.worn) {
+      crownState.wearSparkleT = 0;
+      crownState.promptEverShown = true; // once worn for the first time, the prompt is retired for good
+    }
+  }
+
+  updateCrownUI();
+}
+
+// world-space: worn crown on the head, and the one-time sparkle/prompt
+// moments — everything else (in-progress, ready-unworn) lives in the
+// Special UI slot instead, so nothing sits beside the player at all
+function drawCrown(camX) {
+  if (crownLeaves.length === 0) return;
+
+  const px = player.x - camX + player.width / 2;
+  const py = gy - player.height - player.y + 6;
+
+  if (crownState.worn) {
+    drawCrownOnHead(camX);
+  } else if (!crownState.ready) {
+    // in-progress — visible beside the player so catching a leaf feels
+    // like real, immediate progress. Moves to the Special UI slot once
+    // complete, so it doesn't linger in the world indefinitely after that.
+    drawCrownProcedural(ctx, px + 24, py, 13);
+  }
+
+  if (crownState.ready && !crownState.worn && !crownState.promptEverShown) {
+    drawCarvedWoodPrompt(px, py - 46);
+  }
+
+  if (crownState.completeSparkleT < CROWN_SPARKLE_DURATION) {
+    const p = crownState.completeSparkleT / CROWN_SPARKLE_DURATION;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + performance.now() * 0.003;
+      const r = 20 + Math.sin(performance.now() * 0.005 + i) * 5;
+      ctx.fillStyle = `rgba(255,240,180,${(1 - p) * 0.9})`;
+      ctx.beginPath();
+      ctx.arc(px + Math.cos(a) * r, py + Math.sin(a) * r * 0.7, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (crownState.wearSparkleT < CROWN_SPARKLE_DURATION) {
+    const p = crownState.wearSparkleT / CROWN_SPARKLE_DURATION;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - performance.now() * 0.004;
+      const r = 18 + Math.sin(performance.now() * 0.006 + i) * 3;
+      ctx.fillStyle = `rgba(255,250,210,${(1 - p) * 0.95})`;
+      ctx.beginPath();
+      ctx.arc(px + Math.cos(a) * r, py - 10 + Math.sin(a) * r * 0.6, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// carved-wood-plank prompt — materializes slowly via wood-chip particles
+// converging inward, then a wider plank sized to actually fit the text,
+// deeper engraved shading. Materializes once, then stays visible the whole time you're ready-but-unworn.
+function drawCarvedWoodPrompt(px, py) {
+  const p = Math.min(crownState.promptAnimT / CROWN_PROMPT_MATERIALIZE_DURATION, 1);
+  const ease = 1 - Math.pow(1 - p, 2);
+
+  if (p < 1) {
+    ctx.fillStyle = "rgba(120,84,50,0.85)";
+    for (let i = 0; i < 14; i++) {
+      const seed = i * 7.3;
+      const startX = px + (pseudoRandom(seed) - 0.5) * 160;
+      const startY = py + (pseudoRandom(seed + 1) - 0.5) * 70;
+      const endX = px + (pseudoRandom(seed + 2) - 0.5) * 200;
+      const endY = py + (pseudoRandom(seed + 3) - 0.5) * 30;
+      const cx2 = startX + (endX - startX) * ease;
+      const cy2 = startY + (endY - startY) * ease;
+      ctx.beginPath();
+      ctx.arc(cx2, cy2, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (p < 0.25) return;
+
+  const plankAlpha = Math.min((p - 0.25) / 0.5, 1);
+  ctx.save();
+  ctx.globalAlpha = plankAlpha;
+
+  ctx.fillStyle = "#8a6a45";
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(px - 130, py - 20, 260, 38, 4) : ctx.rect(px - 130, py - 20, 260, 38);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(90,64,32,0.35)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(px - 118, py - 12); ctx.lineTo(px + 110, py - 10);
+  ctx.moveTo(px - 100, py + 12); ctx.lineTo(px + 122, py + 14);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(60,42,20,0.4)";
+  ctx.beginPath();
+  ctx.arc(px - 126, py - 14, 2, 0, Math.PI * 2);
+  ctx.arc(px + 128, py + 15, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // deeper engraved effect — larger shadow/highlight offsets, text still fully legible
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "center";
+  CROWN_PROMPT_LINES.forEach((line, i) => {
+    const ly = py - 4 + i * 13;
+    ctx.fillStyle = "rgba(30,18,8,0.75)";
+    ctx.fillText(line, px + 1.2, ly + 1.2);
+    ctx.fillStyle = "rgba(235,212,168,0.55)";
+    ctx.fillText(line, px - 1.2, ly - 1.2);
+    ctx.fillStyle = "#2e2010";
+    ctx.fillText(line, px, ly);
+  });
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
+/* ======================================================
+   SPECIAL UI SLOT — a small dedicated row under the main
+   inventory for the crown, so it's always reachable without
+   ever cluttering the world next to the player. C is still the
+   only control; this is purely a display location.
+   ====================================================== */
+let crownUIEl = null;
+
+function initCrownUI() {
+  if (crownUIEl) return;
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "6px";
+  const label = document.createElement("div");
+  label.textContent = "Special";
+  label.style.fontSize = "11px";
+  label.style.color = "#888";
+  label.style.marginBottom = "2px";
+  wrapper.appendChild(label);
+
+  crownUIEl = document.createElement("canvas");
+  crownUIEl.width = 20;
+  crownUIEl.height = 20;
+  crownUIEl.style.borderRadius = "4px";
+  crownUIEl.style.transition = "border 0.2s";
+  wrapper.appendChild(crownUIEl);
+  crownUIEl._wrapper = wrapper;
+
+  invEl.insertAdjacentElement("afterend", wrapper);
+}
+
+function updateCrownUI() {
+  if (crownLeaves.length === 0) return;
+  if (!crownUIEl) initCrownUI();
+
+  const iconCtx = crownUIEl.getContext("2d");
+  iconCtx.clearRect(0, 0, 20, 20);
+  const progress = crownState.ready ? 1 : crownLeaves.length / CROWN_LEAVES_NEEDED;
+  drawCrownProcedural(iconCtx, 10, 11, 9, progress);
+
+  if (crownState.worn) {
+    crownUIEl.style.border = "2px solid #2b2b2b";
+  } else if (crownState.ready) {
+    // gentle idle animation so it's not easy to forget about
+    const pulse = 0.5 + Math.sin(performance.now() * 0.003) * 0.5;
+    crownUIEl.style.border = `2px solid rgba(200,120,30,${0.4 + pulse * 0.6})`;
+  } else {
+    crownUIEl.style.border = "2px solid transparent";
+  }
+}
 
 const beehive = {
   x: 1370, // matches the branch's offset from the tree
@@ -2193,30 +2646,39 @@ function drawHoneyPotShape(ctx, x, y, size, fillRatio) {
   ctx.save();
   ctx.translate(x, y);
 
+  const potPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.35, -size * 0.5);
+    ctx.bezierCurveTo(-size * 0.75, -size * 0.4, -size * 0.75, size * 0.6, -size * 0.45, size * 0.85);
+    ctx.bezierCurveTo(-size * 0.25, size * 1.0, size * 0.25, size * 1.0, size * 0.45, size * 0.85);
+    ctx.bezierCurveTo(size * 0.75, size * 0.6, size * 0.75, -size * 0.4, size * 0.35, -size * 0.5);
+    ctx.closePath();
+  };
+
   // rounded classic pot body
   ctx.fillStyle = "#c9915a";
   ctx.strokeStyle = "#8a5f34";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(-size * 0.35, -size * 0.5);
-  ctx.bezierCurveTo(-size * 0.75, -size * 0.4, -size * 0.75, size * 0.6, -size * 0.45, size * 0.85);
-  ctx.bezierCurveTo(-size * 0.25, size * 1.0, size * 0.25, size * 1.0, size * 0.45, size * 0.85);
-  ctx.bezierCurveTo(size * 0.75, size * 0.6, size * 0.75, -size * 0.4, size * 0.35, -size * 0.5);
-  ctx.closePath();
+  potPath();
   ctx.fill();
   ctx.stroke();
+
+  // honey level, clipped to the whole pot silhouette, semi-transparent —
+  // same technique as the bucket's water, clearly rising and falling
+  if (fillRatio > 0) {
+    ctx.save();
+    potPath();
+    ctx.clip();
+    const honeyTop = size * 0.85 - size * 1.35 * Math.max(0, fillRatio);
+    ctx.fillStyle = "rgba(232,168,56,0.82)";
+    ctx.fillRect(-size * 0.8, honeyTop, size * 1.6, size * 1.9);
+    ctx.restore();
+  }
 
   // label band
   ctx.fillStyle = "rgba(255,248,235,0.65)";
   ctx.beginPath();
   ctx.ellipse(0, size * 0.15, size * 0.55, size * 0.14, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // honey visible through the open top, level drops as scoops deplete
-  const fillDepth = size * 0.3 * (1 - Math.max(0, fillRatio));
-  ctx.fillStyle = "#e8a838";
-  ctx.beginPath();
-  ctx.ellipse(0, -size * 0.48 + fillDepth, size * 0.28, size * 0.09, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // lid
@@ -2409,6 +2871,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
    ====================================================== */
 function drawCrows(camX) {
 ctx.strokeStyle = "#3b2f28";
+ctx.lineWidth = 1;
+ctx.fillStyle = "#3b2f28";
 crows.forEach(c=>{
   c.x -= c.speed;
   c.phase += 0.18;
@@ -2421,12 +2885,27 @@ crows.forEach(c=>{
     c.speed = 0.15 + Math.random() * 0.2;
   }
 
-  const flap = Math.sin(c.phase) * 4;
+  // tip-led flap — the tip moves first, the mid-wing trails behind with a
+  // phase lag, so the motion propagates outward-in instead of the whole
+  // wing rotating as one rigid unit
+  const tipFlap = Math.sin(c.phase) * 5;
+  const midFlap = Math.sin(c.phase - 0.5) * 3;
+  const cx = c.x - camX;
 
   ctx.beginPath();
-  ctx.moveTo(c.x - camX, c.y);
-  ctx.lineTo(c.x - camX + 8, c.y + flap);
-  ctx.lineTo(c.x - camX + 16, c.y);
+  ctx.ellipse(cx + 8, c.y, 3, 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(cx + 8, c.y);
+  ctx.lineTo(cx + 4, c.y + midFlap);
+  ctx.lineTo(cx, c.y + tipFlap);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx + 8, c.y);
+  ctx.lineTo(cx + 12, c.y + midFlap);
+  ctx.lineTo(cx + 16, c.y + tipFlap);
   ctx.stroke();
 });
 
@@ -2493,12 +2972,21 @@ for (let i = 0; i < 5; i++) {
   ctx.fillRect(0, gy - 160, canvas.width, 140);
 
 /* FAR TREE SILHOUETTES */
-ctx.fillStyle = "rgba(70,85,70,0.25)";
 for (let i = 0; i < 10; i++) {
   const tx = (i * 200) - (cameraX * 0.2);
-  ctx.beginPath();
-  ctx.arc(tx, gy - 140, 110, 0, Math.PI * 2);
-  ctx.fill();
+  if (i % 3 === 1) {
+    ctx.fillStyle = "rgba(200,90,50,0.22)";
+    ctx.beginPath();
+    ctx.arc(tx - 20, gy - 148, 60, 0, Math.PI * 2);
+    ctx.arc(tx + 22, gy - 140, 65, 0, Math.PI * 2);
+    ctx.arc(tx, gy - 168, 58, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "rgba(70,85,70,0.25)";
+    ctx.beginPath();
+    ctx.arc(tx, gy - 140, 110, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /* DISTANT TREES */
@@ -2507,21 +2995,39 @@ for (let i = 0; i < 9; i++) {
   const radius = 70 + Math.sin(i * 1.3) * 18;
   const ty = gy - 120 + Math.sin(i * 0.9) * 10;
 
-  ctx.fillStyle = "rgba(70,85,55,0.35)";
-  ctx.beginPath();
-  ctx.arc(tx, ty, radius, 0, Math.PI * 2);
-  ctx.fill();
+  if (i % 3 === 2) {
+    ctx.fillStyle = "rgba(230,150,30,0.3)";
+    ctx.beginPath();
+    ctx.arc(tx - radius * 0.3, ty + 6, radius * 0.72, 0, Math.PI * 2);
+    ctx.arc(tx + radius * 0.32, ty, radius * 0.78, 0, Math.PI * 2);
+    ctx.arc(tx, ty - radius * 0.4, radius * 0.68, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "rgba(70,85,55,0.35)";
+    ctx.beginPath();
+    ctx.arc(tx, ty, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /* MID ORCHARD TREES */
-ctx.fillStyle = "rgba(85,110,70,0.45)";
 for (let i = 0; i < 6; i++) {
   const tx = (i * 320) - (cameraX * 0.45);
-  ctx.beginPath();
-  ctx.arc(tx + 40, gy - 110, 70, 0, Math.PI * 2);
-  ctx.arc(tx + 100, gy - 115, 65, 0, Math.PI * 2);
-  ctx.arc(tx + 70, gy - 150, 75, 0, Math.PI * 2);
-  ctx.fill();
+  if (i % 3 === 0) {
+    ctx.fillStyle = "rgba(220,110,30,0.4)";
+    ctx.beginPath();
+    ctx.arc(tx + 40, gy - 118, 55, 0, Math.PI * 2);
+    ctx.arc(tx + 100, gy - 122, 52, 0, Math.PI * 2);
+    ctx.arc(tx + 70, gy - 158, 58, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "rgba(85,110,70,0.45)";
+    ctx.beginPath();
+    ctx.arc(tx + 40, gy - 110, 70, 0, Math.PI * 2);
+    ctx.arc(tx + 100, gy - 115, 65, 0, Math.PI * 2);
+    ctx.arc(tx + 70, gy - 150, 75, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 // falling leaves
@@ -2686,6 +3192,9 @@ if (!boomerang.collected && !boomerang.collecting) {
 }
 drawAppleTree(980, camX);
 drawHiveTree(camX);
+drawLeafTree(1620, camX, "round");
+drawLeafTree(1820, camX, "maple");
+drawFallingLeaves(camX);
 drawConnectionDoor(ctx, camX, connections[0].doors.autumn, connections[0]);
 
 /* DRAW APPLE */
@@ -2983,13 +3492,27 @@ function drawTreeSticks(camX) {
     const sy = gy - STICK_HEIGHT_ABOVE_GROUND;
 
     if (stick.collected) {
-      // permanent scar — a small mark showing exactly where to bring honey
-      ctx.strokeStyle = "#4a3020";
-      ctx.lineWidth = 2;
+      // visible broken stub — a real stump of branch, not an abstract
+      // crack line, in a bright freshly-broken-wood color that stands
+      // out against the darker bark instead of blending into it
+      ctx.fillStyle = "#e8d4a8";
+      ctx.strokeStyle = "#c9a860";
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(sx - 4, sy + 3);
-      ctx.lineTo(sx + 1, sy - 2);
-      ctx.lineTo(sx - 2, sy - 6);
+      ctx.moveTo(sx - 5, sy + 4);
+      ctx.lineTo(sx + 2, sy + 1);
+      ctx.lineTo(sx + 3, sy - 4);
+      ctx.lineTo(sx - 4, sy - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // jagged snap-line detail across the stub's broken face
+      ctx.strokeStyle = "#a8863c";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(sx - 3, sy);
+      ctx.lineTo(sx, sy - 2);
+      ctx.lineTo(sx - 1, sy - 4);
       ctx.stroke();
 
       // wood-bit particles, only while the burst is still playing
@@ -3546,7 +4069,7 @@ function drawSnail(camX) {
       "I know you love your graph-ts, don't you?",
       "A branch might stick nicely there now."
     ] : [
-      "You may want some sticky fingers for a new surprise."
+      "Something sweet and sappy goes a long way."
     ]);
   }
 }
@@ -3577,14 +4100,12 @@ const squirrel = {
 const SQUIRREL_WALK_SPEED = 20;
 
 function getSquirrelStage() {
-  if (inventory.shovel > 0 && !digSite.dug) return "shovel";
   if (digSite.dug && !digSite.planted) return "dug";
   if (digSite.planted && !digSite.watered) return "planted";
   return null;
 }
 
 const SQUIRREL_DIALOGUE = {
-  shovel: ["That's some swell dirt just sittin' there."],
   dug: ["Now THAT'S a hole.", "A circus snack might do well in there."],
   planted: ["All planted and patient.", "Thirsty dirt doesn't grow much."]
 };
@@ -5568,10 +6089,18 @@ if (currentScene === "autumn") {
   drawCloudsScene(camX);
 }
 
+// worn/in-progress crown — shared across scenes, drawn here so it shows
+// (and C keeps working) no matter which zone you're actually standing in
+drawCrown(camX);
+
 // flying (collecting/placing) items — shared across scenes, drawn here so
 // a pickup animation started in ANY scene actually renders, not just autumn's
 flyingItems.forEach(f => {
-  drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
+  if (f.itemType === "leaf" && f.extra) {
+    drawLeafShape(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.extra.shape, f.extra.color);
+  } else {
+    drawCollectible(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.itemType);
+  }
 });
 
 drawBoomerangThrow(camX); // the boomerang itself, while it's in the air
@@ -5647,6 +6176,8 @@ drawSeasonTransition(ctx);
    MAIN LOOP
    ====================================================== */
 function updateAutumnScene(deltaTime) {
+updateLeafTrees(deltaTime);
+
 // honey falling from the hive, once knocked
 if (honey.falling) {
   honey.heightAboveGround -= HONEY_FALL_SPEED * deltaTime;
@@ -6048,6 +6579,7 @@ lastTime = now;
 
 updateFallState(deltaTime); // shared — runs before scene dispatch, regardless of which scene started the fall
 updateCloudLanding(deltaTime);
+updateCrown(deltaTime); // scene-independent — C should work anywhere, not just autumn
 
 if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
@@ -6080,6 +6612,7 @@ updateSeasonTransition(deltaTime);
   keys.rightJustPressed = false;
   keys.upJustPressed = false;
   keys.spaceJustPressed = false;
+  keys.cJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
   
