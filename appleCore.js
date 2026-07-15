@@ -161,6 +161,8 @@ const ITEM_ICONS = {
   apple: "🍏",
   roundLeaf: "🍂",
   mapleLeaf: "🍁",
+  acorn: "🌰",
+  pumpkin: "🎃",
   goldPile: "🪙"
 };
 
@@ -435,7 +437,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 2020, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 2500, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -575,7 +577,8 @@ updateMapUI(); // populate once at load, so autumn shows up immediately
 const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
-  clouds: { x: 420 } // no door here — you arrive by launch; positioned right of the return hole (300-360)
+  clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
+  oak: { x: 400 } // arrives via seesaw launch, lands just past the arch entrance
 };
 
 /* ======================================================
@@ -1772,7 +1775,7 @@ function drawFallingLeaves(camX) {
 // caught — used both while in-progress and once complete
 function drawCrownProcedural(ctx, cx, cy, radius, progressOverride) {
   const shown = progressOverride != null ? Math.round(progressOverride * CROWN_LEAVES_NEEDED) : Math.min(crownLeaves.length, CROWN_LEAVES_NEEDED);
-  ctx.strokeStyle = "#5a4020";
+  ctx.strokeStyle = "#2e1c0a";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
@@ -1953,8 +1956,8 @@ function drawCarvedWoodPrompt(px, py) {
   ctx.save();
   ctx.globalAlpha = plankAlpha;
 
-  ctx.fillStyle = "#8a6a45";
-  ctx.strokeStyle = "#5a4020";
+  ctx.fillStyle = "#4a3018";
+  ctx.strokeStyle = "#2e1c0a";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.roundRect ? ctx.roundRect(px - 130, py - 20, 260, 38, 4) : ctx.rect(px - 130, py - 20, 260, 38);
@@ -3022,6 +3025,10 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafShape(ctx, x, y, size, rotation, itemType === "mapleLeaf" ? "maple" : "round", itemType === "mapleLeaf" ? "#e8481f" : "#e0722a");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
+  } else if (itemType === "acorn") {
+    drawAcornShape(ctx, x, y, size, rotation);
+  } else if (itemType === "pumpkin") {
+    drawPumpkinShape(ctx, x, y, size, rotation);
   } else if (itemType === "apple") {
     drawWholeAppleShape(ctx, x, y, size, rotation);
   } else if (itemType === "shovel") {
@@ -3363,6 +3370,11 @@ ramps.forEach(r => {
 // call draw apple tree 2x
 drawAppleTree(220, camX);
 drawBumpApple(camX);
+drawVines(camX);
+drawAcorns(camX);
+drawVinePumpkin(camX);
+drawSeesawNPC(camX);
+drawSeesaw(camX);
 drawAppleTree(tree.x, camX); // the actual source tree — apple spawns/falls from here, was previously empty ground
 drawStump(camX); // drawn AFTER the tree so it renders in front, not covered by it
 
@@ -3783,10 +3795,286 @@ const swing = {
   pumpCooldown: 0,
   mountTime: 0,            // ms since mounting — release is ignored before SWING_MIN_MOUNT_TIME
   peakAngularVelocity: 0,  // best speed reached this session, used as a release fallback
-  displayedCharge: 0       // the bar's VISUAL value — deliberately lags the real momentum via
+  displayedCharge: 0,      // the bar's VISUAL value — deliberately lags the real momentum via
                             // smoothing, so it keeps visibly climbing toward ~4s even after
                             // real momentum has already plateaued (which it reliably does, physically)
+  settleBounceT: 9999,     // drives a purely cosmetic wobble when the amplitude clamp is hit — never affects real angle/velocity
+  lastClampedHigh: false,
+  lastClampedLow: false
 };
+
+const SWING_SETTLE_BOUNCE_DURATION = 350;
+
+/* ======================================================
+   BITTERSWEET VINES — autumn-flavored swing-from-vine-to-vine
+   stretch between the crown trees and the seesaw. Genuinely
+   new movement (grab-and-swing), not a reskin of the rope
+   swing. Idle sway at rest. A pumpkin and a few acorns to
+   grab along the way — pure "that felt good," no payoff for
+   the acorns, the pumpkin feeds into carving later.
+   ====================================================== */
+const vines = [
+  { x: 1950, anchorHeight: 170, length: 90, angle: 0, mounted: false },
+  { x: 2080, anchorHeight: 180, length: 95, angle: 0, mounted: false },
+  { x: 2200, anchorHeight: 170, length: 90, angle: 0, mounted: false }
+];
+const VINE_GRAVITY = 0.035;
+const VINE_SWING_INPUT = 0.02;
+
+const acorns = [
+  { x: 1990, heightAboveGround: 100, collected: false, collecting: false },
+  { x: 2120, heightAboveGround: 110, collected: false, collecting: false },
+  { x: 2240, heightAboveGround: 100, collected: false, collecting: false }
+];
+
+const vinePumpkin = { x: 2160, heightAboveGround: 60, collected: false, collecting: false };
+
+function updateVines(deltaTime) {
+  vines.forEach((v, i) => {
+    if (!v.mounted) {
+      v.angle = Math.sin(performance.now() * 0.0012 + i * 1.7) * 0.12; // idle sway
+      if (keys.up && isPlayerNear(v.x, v.anchorHeight - v.length, 22, 20, 20)) {
+        v.mounted = true;
+        v.angle = 0;
+      }
+      return;
+    }
+
+    if (keys.left) v.angle -= VINE_SWING_INPUT;
+    if (keys.right) v.angle += VINE_SWING_INPUT;
+    v.angle += -Math.sin(v.angle) * VINE_GRAVITY;
+    v.angle = Math.max(-1.1, Math.min(1.1, v.angle));
+
+    const vx = v.x + Math.sin(v.angle) * v.length;
+    const vh = v.anchorHeight - Math.cos(v.angle) * v.length;
+    player.x = vx - player.width / 2;
+    player.y = vh;
+
+    if (keys.spaceJustPressed) {
+      v.mounted = false;
+      player.vy = Math.abs(Math.sin(v.angle)) * 8 + 3;
+      player.jumping = true;
+    }
+  });
+}
+
+function drawVines(camX) {
+  vines.forEach(v => {
+    const ax = v.x - camX, ay = gy - v.anchorHeight;
+    const vx = v.x + Math.sin(v.angle) * v.length - camX;
+    const vy = gy - (v.anchorHeight - Math.cos(v.angle) * v.length);
+
+    ctx.strokeStyle = "#8a3a1a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(vx, vy);
+    ctx.stroke();
+
+    ctx.fillStyle = "#c9481f";
+    for (let t = 0.3; t < 1; t += 0.35) {
+      const bx = ax + (vx - ax) * t, by = ay + (vy - ay) * t;
+      ctx.beginPath();
+      ctx.arc(bx, by, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function updateAcorns() {
+  acorns.forEach(a => {
+    if (a.collected || a.collecting) return;
+    if (pressedDownNear(a.x, a.heightAboveGround, 20, 15, 15)) {
+      a.collecting = true;
+      startCollectAnimation({ x: a.x, y: gy - a.heightAboveGround, size: 6, rotation: 0 }, "acorn");
+    }
+  });
+}
+
+function drawAcorns(camX) {
+  acorns.forEach(a => {
+    if (a.collected || a.collecting) return;
+    drawAcornShape(ctx, a.x - camX, gy - a.heightAboveGround, 6, 0);
+  });
+}
+
+function drawAcornShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = "#a8622e";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.15, size * 0.55, size * 0.65, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#5a3a1a";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.35, size * 0.6, Math.PI, 0);
+  ctx.fill();
+  ctx.restore();
+}
+
+function updateVinePumpkin() {
+  if (vinePumpkin.collected || vinePumpkin.collecting) return;
+  if (pressedDownNear(vinePumpkin.x, vinePumpkin.heightAboveGround, 24, 18, 18)) {
+    vinePumpkin.collecting = true;
+    startCollectAnimation({ x: vinePumpkin.x, y: gy - vinePumpkin.heightAboveGround, size: 10, rotation: 0 }, "pumpkin");
+  }
+}
+
+function drawVinePumpkin(camX) {
+  if (vinePumpkin.collected || vinePumpkin.collecting) return;
+  drawPumpkinShape(ctx, vinePumpkin.x - camX, gy - vinePumpkin.heightAboveGround, 10, 0);
+}
+
+function drawPumpkinShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = "#e0722a";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.85, size * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#c9501a";
+  ctx.lineWidth = 1;
+  [-0.4, 0, 0.4].forEach(off => {
+    ctx.beginPath();
+    ctx.moveTo(off * size, -size * 0.65);
+    ctx.quadraticCurveTo(off * size * 1.3, 0, off * size, size * 0.65);
+    ctx.stroke();
+  });
+  ctx.strokeStyle = "#5a3a1a";
+  ctx.lineWidth = size * 0.15;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.65);
+  ctx.lineTo(0, -size * 0.9);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ======================================================
+   SEESAW — talk to the NPC first, they hop onto the fixed
+   end, mount the other side and pump (repeated space) to
+   build charge, then launch up into the oak.
+   ====================================================== */
+const seesawNPC = {
+  x: 2280,
+  homeX: 2280,
+  talkedTo: false,
+  hopping: false,
+  onSeesaw: false,
+  bob: 0
+};
+
+const seesaw = {
+  x: 2340,
+  pivotHeightAboveGround: 10,
+  angle: 0,       // current tilt, radians — positive means player's side down
+  charge: 0,
+  mounted: false,
+  launching: false,
+  launchT: 0
+};
+const SEESAW_CHARGE_NEEDED = 6;
+const SEESAW_LAUNCH_DURATION = 900;
+
+function updateSeesaw(deltaTime) {
+  // talk to the NPC first
+  if (!seesawNPC.talkedTo && keys.spaceJustPressed && isPlayerNear(seesawNPC.x, 0, 30, 15, 15)) {
+    seesawNPC.talkedTo = true;
+    seesawNPC.hopping = true;
+  }
+
+  if (seesawNPC.hopping) {
+    const targetX = seesaw.x + 20; // fixed end
+    if (Math.abs(seesawNPC.x - targetX) < 2) {
+      seesawNPC.x = targetX;
+      seesawNPC.hopping = false;
+      seesawNPC.onSeesaw = true;
+    } else {
+      seesawNPC.x += Math.sign(targetX - seesawNPC.x) * 60 * deltaTime;
+    }
+  }
+
+  seesawNPC.bob = Math.sin(performance.now() * 0.004) * 3;
+
+  if (!seesawNPC.onSeesaw) return; // can't use the seesaw until the NPC is actually on it
+
+  // mount — same UP-key priority pattern as the swing
+  if (!seesaw.mounted && !seesaw.launching && keys.up &&
+      isPlayerNear(seesaw.x - 20, 0, 20, 15, 15)) {
+    seesaw.mounted = true;
+    seesaw.charge = 0;
+  }
+
+  if (seesaw.mounted) {
+    if (keys.spaceJustPressed) {
+      seesaw.charge = Math.min(seesaw.charge + 1, SEESAW_CHARGE_NEEDED);
+    }
+    // tilt follows charge — a sudden pop per press, not a gradual pendulum build
+    const targetAngle = -0.28 * (seesaw.charge / SEESAW_CHARGE_NEEDED);
+    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 10, 1);
+
+    if (seesaw.charge >= SEESAW_CHARGE_NEEDED) {
+      seesaw.mounted = false;
+      seesaw.launching = true;
+      seesaw.launchT = 0;
+    }
+  }
+
+  if (seesaw.launching) {
+    seesaw.launchT += deltaTime * 1000;
+    if (seesaw.launchT >= SEESAW_LAUNCH_DURATION) {
+      seesaw.launching = false;
+      seesaw.charge = 0;
+      seesaw.angle = 0;
+      startSeasonTransition("oak");
+    }
+  }
+}
+
+function drawSeesawNPC(camX) {
+  const nx = seesawNPC.x - camX;
+  const ny = gy - 10 + seesawNPC.bob;
+  ctx.fillStyle = "#c9793a";
+  ctx.beginPath();
+  ctx.ellipse(nx, ny, 9, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a4a20";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(nx - 3, ny - 2, 1.3, 0, Math.PI * 2);
+  ctx.arc(nx + 3, ny - 2, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (seesawNPC.talkedTo && !seesawNPC.onSeesaw) return;
+  if (!seesawNPC.talkedTo) {
+    drawSpeechBubble(ctx, nx - 15, ny - 22, ["..."]);
+  }
+}
+
+function drawSeesaw(camX) {
+  const sx = seesaw.x - camX;
+  const sy = gy - seesaw.pivotHeightAboveGround;
+
+  // fulcrum
+  ctx.fillStyle = "#4a3018";
+  ctx.beginPath();
+  ctx.moveTo(sx - 10, gy);
+  ctx.lineTo(sx + 10, gy);
+  ctx.lineTo(sx, sy - 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // plank, tilts with seesaw.angle
+  ctx.save();
+  ctx.translate(sx, sy - 10);
+  ctx.rotate(seesaw.angle);
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(-60, -4, 120, 8);
+  ctx.restore();
+}
 
 // the actual target — you have to hit THIS, not just clear an invisible
 // height number. Positioned up and to the RIGHT of the swing, not
@@ -4295,15 +4583,15 @@ function drawGraftEffects(camX) {
       // never overlapping it. Redraws automatically since it just reads
       // state.hybrid fresh every frame, so a regraft updates it for free.
       const signY = ty + 30;
-      ctx.strokeStyle = "#5a4020";
+      ctx.strokeStyle = "#2e1c0a";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, ty + 8);
       ctx.lineTo(tx, signY);
       ctx.stroke();
 
-      ctx.fillStyle = "#8a6a45";
-      ctx.strokeStyle = "#5a4020";
+      ctx.fillStyle = "#4a3018";
+      ctx.strokeStyle = "#2e1c0a";
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.roundRect ? ctx.roundRect(tx - 24, signY, 48, 18, 3) : ctx.rect(tx - 24, signY, 48, 18);
@@ -4574,11 +4862,21 @@ function updateSwing(deltaTime) {
     // launch of essentially nothing, which is why peak tracking (below)
     // exists — it's what actually fixes that trap.
     if (swing.angle > SWING_MAX_ANGLE) {
+      if (!swing.lastClampedHigh) swing.settleBounceT = 0;
+      swing.lastClampedHigh = true;
       swing.angle = SWING_MAX_ANGLE;
       swing.angularVelocity = 0;
     } else if (swing.angle < -SWING_MAX_ANGLE) {
+      if (!swing.lastClampedLow) swing.settleBounceT = 0;
+      swing.lastClampedLow = true;
       swing.angle = -SWING_MAX_ANGLE;
       swing.angularVelocity = 0;
+    } else {
+      swing.lastClampedHigh = false;
+      swing.lastClampedLow = false;
+    }
+    if (swing.settleBounceT !== undefined && swing.settleBounceT < SWING_SETTLE_BOUNCE_DURATION) {
+      swing.settleBounceT += deltaTime * 1000;
     }
 
     // track the best speed reached this session — release uses this as a
@@ -4859,7 +5157,17 @@ function drawSpringScene(camX) {
 
 // swing: rope + wooden seat, position derived from its current angle
 function drawSwing(camX) {
-  const bob = swingBobPosition(swing.angle);
+  // purely cosmetic settle-bounce — a quick decaying wobble right when the
+  // amplitude clamp is hit, so it reads as a soft bounce instead of an
+  // instant wall-stop. Never touches the real swing.angle/angularVelocity.
+  let displayAngle = swing.angle;
+  if (swing.settleBounceT < SWING_SETTLE_BOUNCE_DURATION) {
+    const bp = swing.settleBounceT / SWING_SETTLE_BOUNCE_DURATION;
+    const wobble = Math.sin(bp * Math.PI * 3) * 0.07 * (1 - bp);
+    displayAngle = swing.angle - wobble * Math.sign(swing.angle || 1);
+  }
+
+  const bob = swingBobPosition(displayAngle);
   const pivotScreenX = swing.pivotX - camX;
   const pivotScreenY = gy - swing.pivotHeightAboveGround;
   const bobScreenX = bob.x - camX;
@@ -4875,7 +5183,7 @@ function drawSwing(camX) {
   // seat, perpendicular to the rope so it reads as hanging naturally
   ctx.save();
   ctx.translate(bobScreenX, bobScreenY);
-  ctx.rotate(swing.angle);
+  ctx.rotate(displayAngle);
   ctx.fillStyle = "#8a5a2e";
   ctx.fillRect(-14, 0, 28, 6);
   ctx.restore();
@@ -6309,6 +6617,105 @@ function updateRabbitShuttle(deltaTime) {
   }
 }
 
+/* ======================================================
+   OAK SCENE — a cozy little room inside a tall oak, reached
+   via the seesaw launch. Books, cushions, an owl. Full
+   interaction with the owl deliberately deferred for later —
+   for now this is just the space existing.
+   ====================================================== */
+const oakReturnDoor = { x: 200, width: 50, height: 90 };
+const owl = { x: 550, bob: 0 };
+
+function drawOakScene(camX) {
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#3a2818");
+  sky.addColorStop(1, "#5a4028");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // interior wood-grain walls
+  ctx.strokeStyle = "rgba(74,48,24,0.3)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const gx = i * 150 - camX * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(gx, 0);
+    ctx.quadraticCurveTo(gx + 20, gy * 0.5, gx, gy);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#2e1c0a";
+  ctx.fillRect(0, gy, canvas.width, 40);
+
+  // arch entrance/exit door
+  const dx = oakReturnDoor.x - camX;
+  ctx.fillStyle = "#8a3428";
+  ctx.beginPath();
+  ctx.moveTo(dx - oakReturnDoor.width / 2, gy);
+  ctx.lineTo(dx - oakReturnDoor.width / 2, gy - oakReturnDoor.height * 0.6);
+  ctx.quadraticCurveTo(dx - oakReturnDoor.width / 2, gy - oakReturnDoor.height, dx, gy - oakReturnDoor.height);
+  ctx.quadraticCurveTo(dx + oakReturnDoor.width / 2, gy - oakReturnDoor.height, dx + oakReturnDoor.width / 2, gy - oakReturnDoor.height * 0.6);
+  ctx.lineTo(dx + oakReturnDoor.width / 2, gy);
+  ctx.closePath();
+  ctx.fill();
+  // door slightly ajar
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(dx + 6, gy - oakReturnDoor.height * 0.45, 10, oakReturnDoor.height * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a scatter of books
+  const bookColors = ["#7a2f2f", "#2f5a3a", "#4a3a7a"];
+  [350, 380, 410].forEach((bx, i) => {
+    ctx.fillStyle = bookColors[i];
+    ctx.fillRect(bx - camX, gy - 14 - i, 22, 14);
+  });
+
+  // cushions
+  [450, 500].forEach((cx, i) => {
+    ctx.fillStyle = i % 2 ? "#c9793a" : "#8a4a5a";
+    ctx.beginPath();
+    ctx.ellipse(cx - camX, gy - 8, 22, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  drawOwl(camX);
+}
+
+function drawOwl(camX) {
+  const ox = owl.x - camX;
+  const oy = gy - 40 + owl.bob;
+  ctx.fillStyle = "#8a6a45";
+  ctx.beginPath();
+  ctx.ellipse(ox, oy, 16, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f0e0c0";
+  ctx.beginPath();
+  ctx.arc(ox - 6, oy - 5, 5, 0, Math.PI * 2);
+  ctx.arc(ox + 6, oy - 5, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(ox - 6, oy - 5, 2, 0, Math.PI * 2);
+  ctx.arc(ox + 6, oy - 5, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e0a020";
+  ctx.beginPath();
+  ctx.moveTo(ox - 2, oy - 1);
+  ctx.lineTo(ox + 2, oy - 1);
+  ctx.lineTo(ox, oy + 3);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function updateOakScene(deltaTime) {
+  owl.bob = Math.sin(performance.now() * 0.0025) * 2;
+
+  if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
+    startSeasonTransition("autumn");
+  }
+}
+
 function drawCloudsScene(camX) {
   // multi-stop sky — deeper blue up top, fading toward near-white
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -6433,6 +6840,8 @@ if (currentScene === "autumn") {
   drawSpringScene(camX);
 } else if (currentScene === "clouds") {
   drawCloudsScene(camX);
+} else if (currentScene === "oak") {
+  drawOakScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -6525,6 +6934,10 @@ drawSeasonTransition(ctx);
 function updateAutumnScene(deltaTime) {
 updateLeafTrees(deltaTime);
 updateBumpApple(deltaTime);
+updateSeesaw(deltaTime);
+updateVines(deltaTime);
+updateAcorns();
+updateVinePumpkin();
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
@@ -6936,6 +7349,8 @@ if (currentScene === "autumn") {
   updateSpringScene(deltaTime);
 } else if (currentScene === "clouds") {
   updateCloudsScene(deltaTime);
+} else if (currentScene === "oak") {
+  updateOakScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
