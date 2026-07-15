@@ -59,7 +59,10 @@ window.addEventListener("keydown", e => {
     keys.up = true;
   }
   if (e.key==="ArrowDown") keys.down=true;
-  if (e.key===" ") keys.space=true;
+  if (e.key===" ") {
+    if (!keys.space) keys.spaceJustPressed = true;
+    keys.space=true;
+  }
   if (e.key==="Control") keys.ctrl=true;
   if (e.key==="Tab" && !e.repeat) cycleHeldItem();
 });
@@ -91,6 +94,7 @@ const camera = { topDown:false, locked:false };
    SCENE STATE (which world the player is currently in)
    ====================================================== */
 let currentScene = "clouds"; // TEMP for testing — normally "autumn" | "spring" | "clouds"
+let hasReturnedFromClouds = true; // TEMP for testing — normally false; set true the moment a cloud-hole fall completes
 
 /* ======================================================
    ORCHARD COLOURS
@@ -138,7 +142,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { boomerang: 1 }; // TEMP for testing — normally {} (e.g. { appleSlice: 2, boomerang: 1 })
+const inventory = { boomerang: 1, peanut: 1, bucket: 1, shovel: 1 }; // TEMP for testing — normally {} (e.g. { appleSlice: 2, boomerang: 1 })
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -148,13 +152,15 @@ const ITEM_ICONS = {
   bucket: "🪣",
   honey: "🍯",
   cloudPiece: "☁️",
-  peanut: "🥜"
+  peanut: "🥜",
+  shovel: "🛠️",
+  goldPile: "🪙"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
 // which is just a count — tracked separately from the inventory dict
-let bucketDropCount = 0;
-let bucketFilled = false;
+let bucketDropCount = 3; // TEMP for testing — normally 0
+let bucketFilled = true; // TEMP for testing — normally false
 const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
@@ -208,6 +214,14 @@ const ITEM_CANVAS_RENDER = {
   bucket: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawBucketShape(iconCtx, 10, 12, 7, 0);
+  },
+  shovel: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawShovelShape(iconCtx, 10, 12, 7, 0.3);
+  },
+  goldPile: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawGoldPileShape(iconCtx, 10, 11, 9, 0);
   }
 };
 
@@ -1027,13 +1041,15 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted) {
     if (keys.left) { player.x -= player.speed; player.facing = -1; }
     if (keys.right) { player.x += player.speed; player.facing = 1; }
 
     if (keys.upJustPressed) {
       const nearSwing = currentScene === "spring" &&
         isPlayerNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55);
+      const nearVine = currentScene === "spring" && peanutVine.grown && !peanutVine.mounted &&
+        isPlayerNear(peanutVine.x, 0, 30, 10, 10);
 
       if (nearSwing) {
         // jumping onto the swing takes priority over a normal jump here
@@ -1042,6 +1058,10 @@ function handleInput(){
         swing.mountTime = 0;
         swing.peakAngularVelocity = 0;
         swing.displayedCharge = 0;
+      } else if (nearVine) {
+        // same priority pattern as the swing — mounting takes precedence over a normal jump
+        peanutVine.mounted = true;
+        peanutVine.playerClimbHeight = 0;
       } else if (!player.jumping) {
         // first jump
         player.jumping = true;
@@ -1631,73 +1651,58 @@ function drawCloudAlligatorBg(x, y, scale, camX) {
 
 function drawCloudLobsterBg(x, y, scale, camX) {
   const cx = x - camX * 0.15;
-
   ctx.fillStyle = "rgba(255,255,255,0.9)";
 
-  // segmented tail, curling under toward the back
-  for (let i = 0; i < 4; i++) {
-    const segX = cx - 10 * scale - i * 7 * scale;
-    const segY = y + i * 2 * scale;
+  // central oblong body, running through the middle
+  ctx.beginPath();
+  ctx.ellipse(cx, y, 22 * scale, 9 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // fanned tail at the back (left) end — several segments spreading out symmetrically
+  for (let i = -1; i <= 1; i++) {
     ctx.beginPath();
-    ctx.ellipse(segX, segY, 6 * scale, 5 * scale, 0.3 + i * 0.15, 0, Math.PI * 2);
+    ctx.moveTo(cx - 20 * scale, y);
+    ctx.lineTo(cx - 34 * scale, y + i * 8 * scale);
+    ctx.lineTo(cx - 27 * scale, y + i * 3 * scale);
+    ctx.closePath();
     ctx.fill();
   }
 
-  // body
-  ctx.beginPath();
-  ctx.ellipse(cx, y, 14 * scale, 8 * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // small paired legs along both sides of the body — perfectly symmetric
+  for (let i = 0; i < 3; i++) {
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.ellipse(cx - 8 * scale + i * 8 * scale, y + side * 10 * scale, 5 * scale, 2 * scale, side * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
 
-  // head
-  ctx.beginPath();
-  ctx.ellipse(cx + 14 * scale, y - 1 * scale, 8 * scale, 6 * scale, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // two symmetric claws at the front (right) end, each with a pincer
+  [-1, 1].forEach(side => {
+    ctx.save();
+    ctx.translate(cx + 20 * scale, y + side * 11 * scale);
+    ctx.rotate(side * 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 11 * scale, 6 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(9 * scale, -3 * scale);
+    ctx.lineTo(18 * scale, -5 * scale);
+    ctx.lineTo(11 * scale, 2 * scale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
 
-  // large raised claw, now genuinely dominant — a real lobster's defining feature
-  ctx.beginPath();
-  ctx.ellipse(cx + 25 * scale, y - 11 * scale, 14 * scale, 9 * scale, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(cx + 35 * scale, y - 17 * scale);
-  ctx.lineTo(cx + 44 * scale, y - 20 * scale);
-  ctx.lineTo(cx + 38 * scale, y - 13 * scale);
-  ctx.closePath();
-  ctx.fill();
-
-  // ridge lines across the big claw's shell
-  ctx.strokeStyle = "rgba(210,220,225,0.6)";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.arc(cx + 22 * scale, y - 10 * scale, 9 * scale, -1.0, 0.6);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(cx + 24 * scale, y - 9 * scale, 5 * scale, -1.0, 0.6);
-  ctx.stroke();
-
-  // smaller second claw
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.beginPath();
-  ctx.ellipse(cx + 20 * scale, y + 5 * scale, 8 * scale, 5.5 * scale, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // ridge line on the smaller claw
-  ctx.strokeStyle = "rgba(210,220,225,0.6)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(cx + 20 * scale, y + 5 * scale, 4 * scale, -0.8, 0.8);
-  ctx.stroke();
-
-  // antennae
+  // antennae, extending forward between the claws — also symmetric
   ctx.strokeStyle = "rgba(255,255,255,0.7)";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cx + 18 * scale, y - 5 * scale);
-  ctx.lineTo(cx + 34 * scale, y - 20 * scale);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(cx + 18 * scale, y - 3 * scale);
-  ctx.lineTo(cx + 30 * scale, y - 14 * scale);
-  ctx.stroke();
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(cx + 22 * scale, y + side * 4 * scale);
+    ctx.lineTo(cx + 38 * scale, y + side * 15 * scale);
+    ctx.stroke();
+  });
 }
 
 // dispatcher — picks the right silhouette by type, "puffy" (drawCloud) is the default
@@ -1737,7 +1742,8 @@ function drawHole(x, width, camX) {
 // idle-bob and speech-bubble mechanics as frog via the shared shell
 function drawRabbit(camX) {
   const rx = rabbit.x - camX;
-  const ry = gy - rabbit.height + Math.sin(rabbit.bob) * 2;
+  const hopBounce = rabbit.hopState === "hopping" ? Math.sin(rabbit.hopPhase * Math.PI) * RABBIT_HOP_HEIGHT : 0;
+  const ry = gy - rabbit.height + Math.sin(rabbit.bob) * 2 - hopBounce;
 
   // shadow
   ctx.fillStyle = "rgba(40,30,20,0.22)";
@@ -2145,10 +2151,106 @@ function drawPeanutShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// shovel — simple diagonal handle + a rounded blade
+function drawShovelShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  // handle shaft
+  ctx.strokeStyle = "#8a6a3e";
+  ctx.lineWidth = size * 0.22;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.75, -size * 0.85);
+  ctx.lineTo(size * 0.2, size * 0.3);
+  ctx.stroke();
+
+  // D-handle grip at the top
+  ctx.strokeStyle = "#6a4e2a";
+  ctx.lineWidth = size * 0.16;
+  ctx.beginPath();
+  ctx.arc(-size * 0.85, -size * 0.95, size * 0.22, 0.3, Math.PI * 1.5);
+  ctx.stroke();
+
+  // foot-ridge, where you'd step to drive it into the ground
+  ctx.strokeStyle = "#5a5a5a";
+  ctx.lineWidth = size * 0.14;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(size * 0.02, size * 0.18);
+  ctx.lineTo(size * 0.24, size * 0.1);
+  ctx.stroke();
+
+  // tapered spade blade, pointed at the tip instead of a rounded blob
+  ctx.fillStyle = "#9a9a9a";
+  ctx.strokeStyle = "#6a6a6a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.05, size * 0.2);
+  ctx.lineTo(size * 0.62, size * 0.32);
+  ctx.quadraticCurveTo(size * 0.78, size * 0.6, size * 0.5, size * 1.0);
+  ctx.quadraticCurveTo(size * 0.4, size * 1.12, size * 0.3, size * 1.0);
+  ctx.quadraticCurveTo(size * 0.16, size * 0.68, size * 0.05, size * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// gold pile — a small stack of overlapping coins, with a soft glow and
+// shine accents like the crystal, matching the "treasure find" language
+function drawGoldPileShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const pulse = Math.sin(performance.now() * 0.004) * 0.5 + 0.5;
+
+  // soft glow
+  ctx.fillStyle = `rgba(255,215,120,${0.2 + pulse * 0.2})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stacked square gold pieces, not round coins
+  const squarePositions = [
+    { dx: -size * 0.4, dy: size * 0.3, s: size * 0.5, rot: -0.15 },
+    { dx: size * 0.25, dy: size * 0.35, s: size * 0.48, rot: 0.2 },
+    { dx: -size * 0.05, dy: 0, s: size * 0.55, rot: 0.05 },
+    { dx: size * 0.15, dy: -size * 0.3, s: size * 0.45, rot: -0.1 }
+  ];
+  squarePositions.forEach(sq => {
+    ctx.save();
+    ctx.translate(sq.dx, sq.dy);
+    ctx.rotate(sq.rot);
+    ctx.fillStyle = "#e8c44a";
+    ctx.strokeStyle = "#b8912a";
+    ctx.lineWidth = 1;
+    ctx.fillRect(-sq.s / 2, -sq.s / 2, sq.s, sq.s);
+    ctx.strokeRect(-sq.s / 2, -sq.s / 2, sq.s, sq.s);
+    ctx.restore();
+  });
+
+  // shine accents
+  ctx.fillStyle = `rgba(255,250,220,${0.7 + pulse * 0.3})`;
+  ctx.beginPath();
+  ctx.arc(size * 0.1, -size * 0.3, 1.3, 0, Math.PI * 2);
+  ctx.arc(-size * 0.3, size * 0.2, 1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
     drawBoomerangShape(ctx, x, y, size, rotation);
+  } else if (itemType === "shovel") {
+    drawShovelShape(ctx, x, y, size, rotation);
+  } else if (itemType === "goldPile") {
+    drawGoldPileShape(ctx, x, y, size, rotation);
   } else if (itemType === "cloudPiece") {
     drawCloudPieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "peanut") {
@@ -2772,6 +2874,198 @@ const wiggleBush = {
   bucketTaken: false
 };
 
+/* ======================================================
+   WILLOW TREE — hides a shovel behind its drooping branches.
+   Positioned past the wiggle bush, further right of the cloud
+   drop-off, so it's naturally found after a trip to the clouds
+   rather than on a first pass through spring. Reveal is a
+   continuous HOLD (not discrete taps like the bush) — a slower,
+   more deliberate "parting the branches" feel.
+   ====================================================== */
+const WILLOW_HOLD_DURATION = 2500; // ms — continuous hold to fully part the branches
+
+const willow = {
+  x: 2500, // moved further right
+  noticeTimer: 6500 + Math.random() * 3000, // offset from the bush's 3000-6000 range so they don't sync
+  noticeWiggle: 0,
+  holdProgress: 0, // ms held so far — resets if you let go or walk away
+  opened: false, // reverted — the pre-loaded shovel doesn't need this, and it was disabling the wiggle entirely
+  shovelTaken: false
+};
+
+const shovel = {
+  x: 2500,
+  heightAboveGround: 30,
+  collected: true, // TEMP for testing (matches pre-loaded inventory) — normally false
+  collecting: false
+};
+
+/* ======================================================
+   DIG SITE / PEANUT VINE — dig with the shovel, plant a
+   peanut, water with a full bucket, grow a climbable vine
+   that genuinely reaches height a double-jump cannot
+   (verified max double-jump ~140.6; vine climbs to 300).
+   Once grown, periodically drops peanuts — a renewable
+   resource, rarer cadence than the water drips.
+   ====================================================== */
+const digSite = {
+  x: 2680, // verified clear of squirrel's max wander position
+  dug: false,
+  digAnimT: 9999, // ms since dig animation started — high so nothing plays before the first dig
+  planted: false,
+  plantAnimT: 9999, // ms since planting — drives the peanut's gentle fall into the pit
+  watered: false
+};
+const PEANUT_PIT_DEPTH = 14; // how far below the flat ground line the peanut/vine base sits
+const PLANT_FALL_DURATION = 700; // ms — gentle fall, not instant
+const DIG_ANIM_DURATION = 1800;
+
+const peanutVine = {
+  x: 2680,
+  growProgress: 0, // 0 to 1 over GROW_DURATION
+  grown: false,
+  climbHeight: 250, // reduced — verified: 50px margin below screen top, still well beyond double-jump max (~140.6)
+  mounted: false,
+  playerClimbHeight: 0
+};
+const VINE_GROW_DURATION = 4000;
+const VINE_CLIMB_SPEED = 70; // units/sec while holding up
+
+const vineGoldPile = {
+  collected: false,
+  collecting: false
+};
+
+let vineDropTimer = 0;
+const VINE_FIRST_DROP_DELAY = 6000; // short — lands while the bucket is still freshly empty from watering
+const VINE_DROP_MIN = 220000; // ~4 minutes-ish, with natural variance
+const VINE_DROP_MAX = 260000;
+let fallingVinePeanuts = []; // {x, heightAboveGround, falling}
+
+/* ======================================================
+   SQUIRREL NPC — wanders near the dig site, staged dialogue
+   matching real progress (dug-not-planted, planted-not-watered).
+   No line yet for "shovel found" (dirt pile redesign might make
+   that obvious on its own) or "fully grown" (untested for now).
+   ====================================================== */
+const squirrel = {
+  homeX: 2590,
+  x: 2590,
+  y: 0,
+  width: 26,
+  height: 20,
+  bob: 0,
+  bobSpeed: 0.05,
+  tip: 0,
+  tailTwitch: 0,
+  direction: 1,
+  walkState: "walking", // "walking" | "paused"
+  pauseTimer: 0,
+  wanderRange: 25,
+  dialogueRevealed: false, // requires an actual press, not just proximity
+  lastStage: null // tracks stage changes so dialogueRevealed resets per new advice
+};
+const SQUIRREL_WALK_SPEED = 20;
+
+function getSquirrelStage() {
+  if (inventory.shovel > 0 && !digSite.dug) return "shovel";
+  if (digSite.dug && !digSite.planted) return "dug";
+  if (digSite.planted && !digSite.watered) return "planted";
+  return null;
+}
+
+const SQUIRREL_DIALOGUE = {
+  shovel: ["That's some swell dirt just sittin' there."],
+  dug: ["Now THAT'S a hole.", "A circus snack might do well in there."],
+  planted: ["All planted and patient.", "Thirsty dirt doesn't grow much."]
+};
+
+function updateSquirrelWander(deltaTime) {
+  squirrel.tailTwitch += deltaTime * 1000 * 0.15;
+
+  const currentStage = getSquirrelStage();
+  if (currentStage !== squirrel.lastStage) {
+    squirrel.lastStage = currentStage;
+    squirrel.dialogueRevealed = false; // new advice — needs a fresh press again
+  }
+  if (currentStage && keys.spaceJustPressed && isPlayerNear(squirrel.x, 0, 90, 20, 20)) {
+    squirrel.dialogueRevealed = true;
+  }
+
+  if (squirrel.walkState === "paused") {
+    squirrel.pauseTimer -= deltaTime * 1000;
+    if (squirrel.pauseTimer <= 0) {
+      squirrel.walkState = "walking";
+      if (Math.random() < 0.4) squirrel.direction *= -1;
+    }
+    return;
+  }
+
+  squirrel.x += squirrel.direction * SQUIRREL_WALK_SPEED * deltaTime;
+
+  if (squirrel.x <= squirrel.homeX - squirrel.wanderRange) squirrel.direction = 1;
+  else if (squirrel.x >= squirrel.homeX + squirrel.wanderRange) squirrel.direction = -1;
+
+  if (Math.random() < 0.003) {
+    squirrel.walkState = "paused";
+    squirrel.pauseTimer = 1500 + Math.random() * 2500;
+  }
+}
+
+function drawSquirrel(camX) {
+  const sx = squirrel.x - camX;
+  const sy = gy - squirrel.height + Math.sin(squirrel.bob) * 2;
+  const twitch = Math.sin(squirrel.tailTwitch * 0.3) * 4;
+
+  // fuzzy tail — thick curved stroke, upside-down J shape curling up behind
+  ctx.strokeStyle = "#a0693a";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx - 8, sy + 10);
+  ctx.quadraticCurveTo(sx - 24, sy - 6, sx - 15 + twitch * 0.3, sy - 18);
+  ctx.quadraticCurveTo(sx - 9 + twitch, sy - 22, sx - 4 + twitch, sy - 17);
+  ctx.stroke();
+  // softer overlaid stroke for a fuzzy edge
+  ctx.strokeStyle = "rgba(160,115,70,0.5)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx - 8, sy + 10);
+  ctx.quadraticCurveTo(sx - 24, sy - 6, sx - 15 + twitch * 0.3, sy - 18);
+  ctx.quadraticCurveTo(sx - 9 + twitch, sy - 22, sx - 4 + twitch, sy - 17);
+  ctx.stroke();
+
+  // body
+  ctx.fillStyle = "#a0693a";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 10, 10, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head
+  ctx.beginPath();
+  ctx.arc(sx + 8, sy + 3, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ears
+  ctx.beginPath();
+  ctx.arc(sx + 5, sy - 3, 2, 0, Math.PI * 2);
+  ctx.arc(sx + 11, sy - 3, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye — same simple dot style as the rabbit
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(sx + 10, sy + 2, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // staged dialogue — requires an actual press to reveal (not just being
+  // nearby), and stays visible while nearby as long as the stage hasn't
+  // changed. A fresh press is needed again once real progress happens.
+  if (squirrel.dialogueRevealed && squirrel.lastStage && isPlayerNear(squirrel.x, 0, 90, 20, 20)) {
+    drawSpeechBubble(ctx, sx + 15, sy - 40, SQUIRREL_DIALOGUE[squirrel.lastStage]);
+  }
+}
+
 function swingBobPosition(angle) {
   return {
     x: swing.pivotX + SWING_ROPE_LENGTH * Math.sin(angle),
@@ -2920,8 +3214,55 @@ const rabbit = {
   bob: 0,
   bobSpeed: 0.05,
   active: false,
-  tip: 0
+  tip: 0,
+  // gentle wander-hop — bounded range stays well clear of the holes (1550+),
+  // so there's no need for any special hole-avoidance logic
+  hopState: "hopping", // "hopping" | "paused"
+  hopDirection: 1,
+  hopsRemaining: 3 + Math.floor(Math.random() * 3),
+  hopPhase: 0,
+  pauseTimer: 0,
+  wanderMinX: 900,
+  wanderMaxX: 1450
 };
+
+const RABBIT_HOP_DURATION = 500;   // ms per individual hop
+const RABBIT_HOP_DISTANCE = 25;    // horizontal distance per hop
+const RABBIT_HOP_HEIGHT = 8;       // vertical bounce height, visual only
+const RABBIT_PAUSE_MIN = 2000;
+const RABBIT_PAUSE_MAX = 4000;
+
+function updateRabbitWander(deltaTime) {
+  if (rabbit.hopState === "paused") {
+    rabbit.pauseTimer -= deltaTime * 1000;
+    if (rabbit.pauseTimer <= 0) {
+      rabbit.hopState = "hopping";
+      rabbit.hopsRemaining = 3 + Math.floor(Math.random() * 3);
+      rabbit.hopPhase = 0;
+      if (Math.random() < 0.4) rabbit.hopDirection *= -1; // sometimes switches direction
+    }
+    return;
+  }
+
+  rabbit.hopPhase += (deltaTime * 1000) / RABBIT_HOP_DURATION;
+
+  if (rabbit.hopPhase >= 1) {
+    rabbit.hopPhase = 0;
+    rabbit.hopsRemaining--;
+
+    if (rabbit.x <= rabbit.wanderMinX) rabbit.hopDirection = 1;
+    else if (rabbit.x >= rabbit.wanderMaxX) rabbit.hopDirection = -1;
+
+    if (rabbit.hopsRemaining <= 0) {
+      rabbit.hopState = "paused";
+      rabbit.pauseTimer = RABBIT_PAUSE_MIN + Math.random() * (RABBIT_PAUSE_MAX - RABBIT_PAUSE_MIN);
+    }
+  }
+
+  // horizontal movement scaled by a bounce curve — fastest mid-hop, slows at landing
+  const bounceCurve = Math.sin(rabbit.hopPhase * Math.PI);
+  rabbit.x += rabbit.hopDirection * bounceCurve * (RABBIT_HOP_DISTANCE / (RABBIT_HOP_DURATION / 1000)) * deltaTime;
+}
 
 /* ======================================================
    HOLES — jump over them or fall through; placed after
@@ -3049,6 +3390,9 @@ function drawSpringScene(camX) {
   drawGoalCloud(camX);
 
   drawWiggleBush(camX);
+  drawWillow(camX);
+  drawDigSitePlantVine(camX);
+  drawSquirrel(camX);
 
   drawRabbit(camX);
 
@@ -3230,6 +3574,340 @@ function updateWiggleBush(deltaTime) {
         "bucket"
       );
     }
+  }
+}
+
+function drawWillow(camX) {
+  if (!hasReturnedFromClouds) return;
+
+  const wx = willow.x - camX;
+  const progress = willow.opened ? 1 : (willow.holdProgress > 0 ? 0.15 + (willow.holdProgress / WILLOW_HOLD_DURATION) * 0.85 : 0);
+  const gap = progress * 22;
+  const shake = willow.noticeWiggle > 0 ? Math.sin(willow.noticeWiggle * 0.4) * 1.5 : 0;
+
+  // trunk
+  ctx.fillStyle = "#6b4a30";
+  ctx.fillRect(wx - 9, gy - 95, 18, 95);
+
+  // canopy top — unified with the strand color so the whole plant blends as one green
+  ctx.fillStyle = "rgba(85,120,70,0.85)";
+  ctx.beginPath();
+  ctx.arc(wx, gy - 125, 40, 0, Math.PI * 2);
+  ctx.fill();
+
+  // drooping strands — origins stay fixed at the canopy; only the TIPS
+  // spread outward as the willow opens, forming a genuine teepee shape
+  // rather than the whole strand sliding sideways. Each strand is a wavy
+  // S-curve (two connected quadratics), with a gentle sway for life.
+  ctx.strokeStyle = "rgba(85,120,70,0.85)";
+  ctx.lineWidth = 2;
+  const sway = Math.sin(performance.now() * 0.0012) * 3;
+
+  function drawStrandHalf(sideSign) {
+    const strandCount = 7;
+    for (let i = 0; i < strandCount; i++) {
+      // spread origins along the canopy's lower curve, not a flat row
+      const originAngle = sideSign > 0
+        ? (0.15 + (i / strandCount) * 0.55) * Math.PI
+        : (1 - 0.15 - (i / strandCount) * 0.55) * Math.PI;
+      const originX = wx + Math.cos(originAngle) * 36;
+      const originY = (gy - 125) + Math.sin(originAngle) * 20;
+
+      const droop = 85 + Math.sin(i * 1.3) * 15; // nearly double the old length
+      const strandSway = sway * (0.5 + (i / strandCount) * 0.8) * sideSign;
+      const tipSpread = gap * sideSign; // ONLY the tip moves as the willow opens
+
+      const midX = originX + strandSway * 0.6 + Math.sin(i * 2.1) * 4 + tipSpread * 0.5 + shake * 0.5;
+      const midY = originY + droop * 0.5;
+      const endX = originX + strandSway + Math.sin(i * 1.7) * 3 + tipSpread + shake;
+      const endY = originY + droop;
+
+      ctx.beginPath();
+      ctx.moveTo(originX, originY);
+      ctx.quadraticCurveTo(originX + 5 * sideSign, originY + droop * 0.28, midX, midY);
+      ctx.quadraticCurveTo(midX - 3 * sideSign, midY + droop * 0.28, endX, endY);
+      ctx.stroke();
+    }
+  }
+
+  drawStrandHalf(-1);
+  drawStrandHalf(1);
+
+  // shovel visible in the gap once fully parted, until taken — soft glow
+  // and gentle bob so it actually catches the eye against the strand lines
+  if (willow.opened && !willow.shovelTaken) {
+    const shovelBob = Math.sin(performance.now() * 0.003) * 3;
+    const glowPulse = Math.sin(performance.now() * 0.004) * 0.5 + 0.5;
+
+    ctx.fillStyle = `rgba(255,225,150,${0.25 + glowPulse * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(wx, gy - 50 + shovelBob, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawShovelShape(ctx, wx, gy - 50 + shovelBob, 17, 0.3);
+  }
+}
+
+function drawDigSitePlantVine(camX) {
+  if (!hasReturnedFromClouds) return;
+
+  const dx = digSite.x - camX;
+
+  // visually distinct turned-earth patch — visible even before digging,
+  // an "already sitting there, waiting to be noticed" element like the stump.
+  // Built from a cluster of small irregular clumps for a granular, actually
+  // dirt-like texture instead of one flat smooth shape.
+  const dirtClumps = [
+    { dx: -16, dy: 1, r: 5 }, { dx: -9, dy: -2, r: 4 }, { dx: -3, dy: 2, r: 5.5 },
+    { dx: 4, dy: -1, r: 4.5 }, { dx: 11, dy: 2, r: 5 }, { dx: 17, dy: -1, r: 4 },
+    { dx: -12, dy: 3, r: 3.5 }, { dx: 0, dy: -3, r: 3.5 }, { dx: 8, dy: 3, r: 3.5 },
+    { dx: 15, dy: 1, r: 3 }, { dx: -18, dy: -1, r: 3 }, { dx: 20, dy: 2, r: 3 }
+  ];
+  dirtClumps.forEach((c, i) => {
+    ctx.fillStyle = i % 2 === 0 ? "rgba(100,72,44,0.75)" : "rgba(80,56,34,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(dx + c.dx, gy + 2 + c.dy, c.r, c.r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // a small partial indent, visible even before digging — suggests
+  // "diggable" through the environment itself, no dialogue needed
+  if (!digSite.dug) {
+    ctx.fillStyle = "rgba(50,36,22,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(dx, gy + 2, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const pitDepth = gy + PEANUT_PIT_DEPTH; // the below-ground anchor everything shares
+
+  if (digSite.dug) {
+    // the hole itself — genuinely deep now, real radial-gradient shading
+    const pit = ctx.createRadialGradient(dx, gy + 8, 1, dx, gy + 8, 28);
+    pit.addColorStop(0, "rgba(15,11,7,0.97)");
+    pit.addColorStop(0.6, "rgba(30,24,15,0.9)");
+    pit.addColorStop(1, "rgba(60,50,30,0)");
+    ctx.fillStyle = pit;
+    ctx.beginPath();
+    ctx.ellipse(dx, gy + 8, 22, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // one-shot dirt-flourish animation — slower, full circle, bigger and more visible
+    if (digSite.digAnimT < DIG_ANIM_DURATION) {
+      const p = digSite.digAnimT / DIG_ANIM_DURATION;
+      for (let i = 0; i < 10; i++) {
+        const angle = (i / 10) * Math.PI * 2;
+        const dist = p * 30;
+        ctx.fillStyle = `rgba(120,88,55,${1 - p})`;
+        ctx.beginPath();
+        ctx.arc(dx + Math.cos(angle) * dist, gy - p * 20 + Math.sin(angle) * dist * 0.4, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // water pooled around the planted peanut, once watered
+    if (digSite.watered) {
+      ctx.fillStyle = "rgba(90,150,210,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(dx, gy + 5, 17, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(150,200,230,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(dx - 4, gy + 3, 5, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // the peanut itself — falls gently from hand height down into the pit,
+  // settling below the flat ground line, until it's watered and grows
+  if (digSite.planted && !peanutVine.grown) {
+    const fallP = Math.min(digSite.plantAnimT / PLANT_FALL_DURATION, 1);
+    const startY = gy - 25;
+    const peanutY = startY + (pitDepth - startY) * fallP;
+    drawPeanutShape(ctx, dx, peanutY, 9, fallP * 0.5);
+  }
+
+  if (peanutVine.grown || digSite.watered) {
+    // growing/grown — the sprout scales continuously from the pit all the
+    // way to full climbHeight, so there's no sudden jump once "grown" flips
+    const currentHeight = peanutVine.grown ? peanutVine.climbHeight : peanutVine.growProgress * peanutVine.climbHeight;
+    ctx.strokeStyle = "#5a8a4a";
+    ctx.lineWidth = peanutVine.grown ? 6 : 3 + (currentHeight / peanutVine.climbHeight) * 3;
+    ctx.beginPath();
+    ctx.moveTo(dx, pitDepth); // anchored below ground, at the peanut's depth
+    const segments = Math.max(2, Math.round((currentHeight / peanutVine.climbHeight) * 12));
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const segH = t * currentHeight;
+      const segX = dx + Math.sin(segH * 0.05) * 15;
+      ctx.lineTo(segX, pitDepth - segH);
+    }
+    ctx.stroke();
+
+    // a few leaves along the way, only once there's enough height for them to make sense
+    if (currentHeight > 40) {
+      ctx.fillStyle = "rgba(90,140,70,0.85)";
+      for (let i = 1; i < segments; i += 2) {
+        const t = i / segments;
+        const segH = t * currentHeight;
+        const segX = dx + Math.sin(segH * 0.05) * 15;
+        ctx.beginPath();
+        ctx.ellipse(segX + 8, pitDepth - segH, 7, 4, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // gold pile near the top, until collected — only once FULLY grown
+    if (peanutVine.grown && !vineGoldPile.collected) {
+      const topX = dx + Math.sin(peanutVine.climbHeight * 0.05) * 15;
+      drawGoldPileShape(ctx, topX, pitDepth - (peanutVine.climbHeight - 20), 12, 0);
+    }
+  }
+
+  // falling / settled vine-dropped peanuts
+  fallingVinePeanuts.forEach(p => {
+    drawPeanutShape(ctx, p.x - camX, gy - p.heightAboveGround, 9, 0);
+  });
+}
+
+function updateWillow(deltaTime) {
+  if (!hasReturnedFromClouds) return; // locked entirely until a genuine clouds round-trip
+
+  // notice-wiggle — same "runs until actually used" behavior as the bush
+  if (!willow.shovelTaken) {
+    willow.noticeTimer -= deltaTime * 1000;
+    if (willow.noticeTimer <= 0) {
+      willow.noticeWiggle = 180;
+      willow.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (willow.noticeWiggle > 0) willow.noticeWiggle--;
+  }
+
+  if (!willow.opened) {
+    const nearWillow = isPlayerNear(willow.x, 0, 40, 10, 10);
+
+    if (!nearWillow) {
+      willow.holdProgress = 0; // resets if you walk away mid-hold
+    } else if (keys.space) {
+      willow.holdProgress += deltaTime * 1000;
+      if (willow.holdProgress >= WILLOW_HOLD_DURATION) {
+        willow.opened = true;
+      }
+    } else {
+      willow.holdProgress = 0; // letting go also resets — a genuine continuous hold, not accumulated taps
+    }
+  } else if (!willow.shovelTaken) {
+    if (pressedDownNear(willow.x, 50, 30, 20, 25)) {
+      willow.shovelTaken = true;
+      startCollectAnimation(
+        { x: willow.x, y: gy - 50, size: 14, rotation: 0.3 },
+        "shovel"
+      );
+    }
+  }
+}
+
+function updateDigPlantVine(deltaTime) {
+  if (digSite.digAnimT < DIG_ANIM_DURATION) digSite.digAnimT += deltaTime * 1000;
+  if (digSite.plantAnimT < PLANT_FALL_DURATION) digSite.plantAnimT += deltaTime * 1000;
+
+  // DIG — requires the shovel, one simple flourish, no multi-stage digging.
+  // Requires a FRESH press (spaceJustPressed), not just being near while
+  // already holding space — otherwise walking in with space held from a
+  // prior action triggers it instantly with no visible anticipation.
+  if (!digSite.dug) {
+    if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(digSite.x, 0, 30, 10, 10)) {
+      digSite.dug = true;
+      digSite.digAnimT = 0;
+    }
+    return;
+  }
+
+  // PLANT — separate step, requires holding a peanut, the hole must exist first
+  if (digSite.dug && !digSite.planted) {
+    if (heldItem === "peanut" && inventory.peanut > 0 && keys.spaceJustPressed && isPlayerNear(digSite.x, 0, 30, 10, 10)) {
+      digSite.planted = true;
+      digSite.plantAnimT = 0;
+      inventory.peanut--;
+      if (inventory.peanut <= 0) { delete inventory.peanut; heldItem = null; }
+      updateInventoryUI();
+    }
+    return;
+  }
+
+  // WATER — separate step, requires a genuinely FULL bucket
+  if (digSite.planted && !digSite.watered) {
+    if (heldItem === "bucket" && bucketFilled && keys.spaceJustPressed && isPlayerNear(digSite.x, 0, 30, 10, 10)) {
+      digSite.watered = true;
+      bucketFilled = false;
+      bucketDropCount = 0; // bucket empties — same "pour it out, refillable" pattern as everywhere else
+      updateInventoryUI();
+    }
+    return;
+  }
+
+  // GROWTH — once watered, grows over a few seconds into the climbable vine
+  if (digSite.watered && !peanutVine.grown) {
+    peanutVine.growProgress = Math.min(peanutVine.growProgress + deltaTime * 1000 / VINE_GROW_DURATION, 1);
+    if (peanutVine.growProgress >= 1) {
+      peanutVine.grown = true;
+      vineDropTimer = VINE_FIRST_DROP_DELAY; // first drop comes soon, while the bucket's still freshly empty
+    }
+  }
+
+  // CLIMBING — mounting is handled in handleInput (same priority block as
+  // the swing); this just drives movement once mounted
+  if (peanutVine.grown) {
+    if (peanutVine.mounted) {
+      if (keys.up) {
+        peanutVine.playerClimbHeight = Math.min(peanutVine.playerClimbHeight + VINE_CLIMB_SPEED * deltaTime, peanutVine.climbHeight);
+      } else if (keys.down) {
+        peanutVine.playerClimbHeight = Math.max(peanutVine.playerClimbHeight - VINE_CLIMB_SPEED * deltaTime, 0);
+      }
+      if (peanutVine.playerClimbHeight <= 0) {
+        peanutVine.mounted = false;
+        player.y = 0;
+      } else {
+        player.x = peanutVine.x + Math.sin(peanutVine.playerClimbHeight * 0.05) * 15; // spiral
+        player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
+      }
+    }
+  }
+
+  // GOLD PILE — sits near the vine's top, collectible once grown.
+  // Wider tolerance than a typical pickup, since the spiral climb motion
+  // drifts the player left-right — needs real forgiveness to reliably reach.
+  if (peanutVine.grown && !vineGoldPile.collected && !vineGoldPile.collecting) {
+    if (pressedDownNear(peanutVine.x, peanutVine.climbHeight - 20, 40, 30, 30)) {
+      vineGoldPile.collecting = true;
+      startCollectAnimation(
+        { x: peanutVine.x, y: gy + PEANUT_PIT_DEPTH - (peanutVine.climbHeight - 20), size: 12, rotation: 0 },
+        "goldPile"
+      );
+      vineGoldPile.collected = true;
+    }
+  }
+
+  // PERIODIC PEANUT DROPS — a real renewable resource, rarer than water drips
+  if (peanutVine.grown) {
+    vineDropTimer -= deltaTime * 1000;
+    if (vineDropTimer <= 0) {
+      fallingVinePeanuts.push({ x: peanutVine.x, heightAboveGround: peanutVine.climbHeight - 30, falling: true });
+      vineDropTimer = VINE_DROP_MIN + Math.random() * (VINE_DROP_MAX - VINE_DROP_MIN);
+    }
+    fallingVinePeanuts.forEach(p => {
+      if (!p.falling) return;
+      p.heightAboveGround -= 60 * deltaTime;
+      if (p.heightAboveGround <= 15) { p.heightAboveGround = 15; p.falling = false; }
+    });
+    fallingVinePeanuts = fallingVinePeanuts.filter(p => {
+      if (p.falling) return true;
+      if (pressedDownNear(p.x, p.heightAboveGround, 26, 15, 15)) {
+        startCollectAnimation({ x: p.x, y: gy - p.heightAboveGround, size: 9, rotation: 0 }, "peanut");
+        return false; // collected, remove from the array
+      }
+      return true;
+    });
   }
 }
 
@@ -4646,6 +5324,7 @@ function updateFallState(deltaTime) {
       currentScene = "spring";
       discoveredScenes.spring = true;
       updateMapUI();
+      hasReturnedFromClouds = true; // the willow's real unlock condition
 
       // close to, visually under the goal cloud — the immunity window
       // below (not distance) is what actually prevents an instant retrigger
@@ -4685,11 +5364,16 @@ function updateSpringScene(deltaTime) {
     rabbit.tip = 30;
   }
   updateNPCIdle(rabbit);
+  updateRabbitWander(deltaTime);
 
   // mounting the swing now happens via jump, in handleInput — just run its physics here
   updateSwing(deltaTime);
 
   updateWiggleBush(deltaTime);
+  updateWillow(deltaTime);
+  updateDigPlantVine(deltaTime);
+  updateSquirrelWander(deltaTime);
+  updateNPCIdle(squirrel);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
@@ -4776,6 +5460,7 @@ updateSeasonTransition(deltaTime);
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
   keys.upJustPressed = false;
+  keys.spaceJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
   
