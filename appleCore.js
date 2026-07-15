@@ -136,6 +136,7 @@ const player = {
   vx: 0,               // horizontal momentum — only used during a swing launch
   launched: false,     // true while mid-flight from a swing release
   launchPeakHeight: 0, // tracks how high THIS launch has reached, for the cloud threshold check
+  vineFlying: false,   // true while mid-flight from a vine release — real horizontal+vertical momentum, checks for grabbing the NEXT vine
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
   cloudLandingImmunity: 0 // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
 };
@@ -292,6 +293,14 @@ const ITEM_CANVAS_RENDER = {
   mapleLeaf: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawLeafShape(iconCtx, 10, 11, 7, 0, "maple", "#e8481f");
+  },
+  acorn: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawAcornShape(iconCtx, 10, 12, 7, 0);
+  },
+  pumpkin: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawPumpkinShape(iconCtx, 10, 11, 8, 0);
   }
 };
 
@@ -388,7 +397,25 @@ const platforms = [
     heightAboveGround: 60,
     width: 110,
     thickness: 14
-  }
+  },
+
+  // vine-area stepping stones — the mid-tier platform is now only reachable
+  // via the ground-tier vine's swing, not a paved jump-chain (removed the
+  // lower stepping-stone that was providing an unintended easy shortcut)
+  { x: 2300, heightAboveGround: 190, width: 70, thickness: 14 }, // under mid-tier vine 1
+
+  { x: 2530, heightAboveGround: 80, width: 60, thickness: 14 },
+  { x: 2500, heightAboveGround: 190, width: 70, thickness: 14 }, // under mid-tier vine 2
+
+  // new jump-around platforms, purely for breathing room — no payoff,
+  // just something to hop between, positioned left of the oak after the crown trees
+  { x: 1900, heightAboveGround: 60, width: 60, thickness: 14 },
+  { x: 1970, heightAboveGround: 110, width: 60, thickness: 14 },
+  { x: 2040, heightAboveGround: 70, width: 60, thickness: 14 },
+  { x: 2110, heightAboveGround: 130, width: 60, thickness: 14 },
+  { x: 2180, heightAboveGround: 90, width: 60, thickness: 14 },
+  { x: 2250, heightAboveGround: 150, width: 60, thickness: 14 },
+  { x: 2260, heightAboveGround: 250, width: 60, thickness: 14 } // genuinely requires a double-jump from the platform below
 ];
 
 /* ======================================================
@@ -437,7 +464,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 2500, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 2900, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -1259,6 +1286,32 @@ function applyPhysics(){
     return; // launched flight ignores platforms/ramp/stump entirely — spring has none anyway
   }
 
+  if (player.vineFlying) {
+    player.x += player.vx;
+    player.y += player.vy;
+    player.vy -= 0.8; // normal jump gravity — vine flight should feel like a natural arc, not the swing's special launch
+
+    // mid-flight: grab the next vine if close enough — this IS the vine-to-vine mechanic
+    for (const v2 of vines) {
+      if (v2.mounted) continue;
+      const grabX = v2.x + Math.sin(v2.angle) * v2.length;
+      const grabH = v2.anchorHeight - Math.cos(v2.angle) * v2.length;
+      const dx = (player.x + player.width / 2) - grabX;
+      const dy = player.y - grabH;
+      if (Math.sqrt(dx * dx + dy * dy) < VINE_GRAB_RADIUS) {
+        player.vineFlying = false;
+        v2.mounted = true;
+        v2.angle = Math.atan2(dx, v2.length); // pick up the swing roughly where it was grabbed, not reset to zero
+        v2.angularVel = 0;
+        break;
+      }
+    }
+
+    if (player.y <= 0) {
+      player.vineFlying = false; // missed everything — falls to the ground, no penalty
+    }
+  }
+
   // gravity
   player.y += player.vy;
   player.vy -= 0.8;
@@ -1775,7 +1828,7 @@ function drawFallingLeaves(camX) {
 // caught — used both while in-progress and once complete
 function drawCrownProcedural(ctx, cx, cy, radius, progressOverride) {
   const shown = progressOverride != null ? Math.round(progressOverride * CROWN_LEAVES_NEEDED) : Math.min(crownLeaves.length, CROWN_LEAVES_NEEDED);
-  ctx.strokeStyle = "#2e1c0a";
+  ctx.strokeStyle = "#5a4020";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
@@ -1956,8 +2009,8 @@ function drawCarvedWoodPrompt(px, py) {
   ctx.save();
   ctx.globalAlpha = plankAlpha;
 
-  ctx.fillStyle = "#4a3018";
-  ctx.strokeStyle = "#2e1c0a";
+  ctx.fillStyle = "#8a6a45";
+  ctx.strokeStyle = "#5a4020";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.roundRect ? ctx.roundRect(px - 130, py - 20, 260, 38, 4) : ctx.rect(px - 130, py - 20, 260, 38);
@@ -3370,6 +3423,7 @@ ramps.forEach(r => {
 // call draw apple tree 2x
 drawAppleTree(220, camX);
 drawBumpApple(camX);
+drawTallOak(camX);
 drawVines(camX);
 drawAcorns(camX);
 drawVinePumpkin(camX);
@@ -3806,6 +3860,88 @@ const swing = {
 const SWING_SETTLE_BOUNCE_DURATION = 350;
 
 /* ======================================================
+   TALL OAK TRUNK — real physical presence towering over the
+   vine section, extending well above the canopy line. The
+   vines hang from its actual branches, and the seesaw launches
+   into this same tree (the oak scene reached via that launch).
+   ====================================================== */
+const TALL_OAK_X = 2400;
+const TALL_OAK_TOP = 300;
+
+function drawTallOak(camX) {
+  const tx = TALL_OAK_X - camX;
+
+  ctx.fillStyle = "#3a2412";
+  ctx.beginPath();
+  ctx.moveTo(tx - 30, gy);
+  ctx.quadraticCurveTo(tx - 26, gy - 120, tx - 16, gy - 220);
+  ctx.quadraticCurveTo(tx - 10, gy - 270, tx - 7, gy - TALL_OAK_TOP);
+  ctx.lineTo(tx + 7, gy - TALL_OAK_TOP);
+  ctx.quadraticCurveTo(tx + 10, gy - 270, tx + 16, gy - 220);
+  ctx.quadraticCurveTo(tx + 26, gy - 120, tx + 30, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(20,12,6,0.4)";
+  ctx.lineWidth = 1;
+  [-16, -5, 7, 18].forEach(off => {
+    ctx.beginPath();
+    ctx.moveTo(tx + off, gy - 20);
+    ctx.quadraticCurveTo(tx + off * 0.8, gy - 130, tx + off * 0.4, gy - 260);
+    ctx.stroke();
+  });
+
+  // long, curving branches — reach out well beyond the trunk so multiple
+  // vines can hang at the SAME height along one branch, not one short
+  // straight line per vine
+  ctx.strokeStyle = "#3a2412";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  // ground tier branch — one long curve spanning both ground-tier vines
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - 190);
+  ctx.quadraticCurveTo(tx - 100, gy - 205, tx - 80, gy - 200);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - 190);
+  ctx.quadraticCurveTo(tx + 100, gy - 205, tx + 80, gy - 200);
+  ctx.stroke();
+  // mid tier branch
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - 260);
+  ctx.quadraticCurveTo(tx - 100, gy - 275, tx - 80, gy - 280);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - 260);
+  ctx.quadraticCurveTo(tx + 100, gy - 275, tx + 80, gy - 280);
+  ctx.stroke();
+  // upper tier branch — shorter, tighter curve since those vines cluster close together
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - TALL_OAK_TOP + 15);
+  ctx.quadraticCurveTo(tx - 40, gy - 258, tx - 40, gy - 260);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tx, gy - TALL_OAK_TOP + 15);
+  ctx.quadraticCurveTo(tx + 30, gy - 258, tx + 30, gy - 260);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(190,110,40,0.9)";
+  const cy0 = gy - TALL_OAK_TOP;
+  ctx.beginPath();
+  ctx.moveTo(tx - 140, cy0 + 10);
+  ctx.quadraticCurveTo(tx - 150, cy0 - 40, tx - 90, cy0 - 60);
+  ctx.quadraticCurveTo(tx - 60, cy0 - 95, tx - 10, cy0 - 90);
+  ctx.quadraticCurveTo(tx + 30, cy0 - 100, tx + 70, cy0 - 75);
+  ctx.quadraticCurveTo(tx + 130, cy0 - 60, tx + 135, cy0 - 5);
+  ctx.quadraticCurveTo(tx + 145, cy0 + 35, tx + 90, cy0 + 45);
+  ctx.quadraticCurveTo(tx + 40, cy0 + 60, tx - 20, cy0 + 45);
+  ctx.quadraticCurveTo(tx - 80, cy0 + 55, tx - 120, cy0 + 35);
+  ctx.quadraticCurveTo(tx - 145, cy0 + 25, tx - 140, cy0 + 10);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/* ======================================================
    BITTERSWEET VINES — autumn-flavored swing-from-vine-to-vine
    stretch between the crown trees and the seesaw. Genuinely
    new movement (grab-and-swing), not a reskin of the rope
@@ -3814,35 +3950,149 @@ const SWING_SETTLE_BOUNCE_DURATION = 350;
    the acorns, the pumpkin feeds into carving later.
    ====================================================== */
 const vines = [
-  { x: 1950, anchorHeight: 170, length: 90, angle: 0, mounted: false },
-  { x: 2080, anchorHeight: 180, length: 95, angle: 0, mounted: false },
-  { x: 2200, anchorHeight: 170, length: 90, angle: 0, mounted: false }
+  // two small trees' vines — NOT ground-accessible (grab height 160
+  // genuinely exceeds double-jump range even with tolerance), reached via
+  // the tall jump-around platform instead. Real open air between them,
+  // no platform underneath — the actual tree-to-tree crossing.
+  { x: 2000, anchorHeight: 220, length: 60, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
+  { x: 2130, anchorHeight: 220, length: 60, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
+
+  // ground tier — grab point 110, genuinely requires double-jump (110 < 140.6 double-jump max,
+  // and 110-15(tolerance) still exceeds the 90 single-jump max)
+  { x: 2320, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
+  { x: 2480, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
+
+  // mid tier — grab point 190, same Y, matches the platforms directly beneath them
+  { x: 2320, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
+  { x: 2480, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
+
+  // upper tier — vine-to-vine ONLY, no platform or ground access. Same Y,
+  // tightly clustered — re-verified against the slowed swing's real
+  // reach (~25-35 units at realistic release), not the old faster values
+  { x: 2360, anchorHeight: 260, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" },
+  { x: 2430, anchorHeight: 260, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" }
 ];
-const VINE_GRAVITY = 0.035;
-const VINE_SWING_INPUT = 0.02;
+const VINE_GRAVITY = 0.015; // slowed substantially — genuinely gentle back-and-forth now, not a brisk pendulum
+const VINE_SWING_INPUT = 0.025;
+const VINE_PUMP_COOLDOWN = 120; // ms between pumps
+const VINE_HOP_MIN_CYCLES = 2; // real back-and-forth swings needed before a hop is even available
+const VINE_HOP_STRONG_ANGLE = 0.8; // out of max 1.1 — how strong the swing needs to be at commit for a FULL-distance hop
+const VINE_HOP_ARC_FRAMES = 40; // standardized hop arc duration
+
+// finds the nearest OTHER vine reasonably near this one's height, in
+// either direction — the hop's actual target, not a fixed physics result
+function findVineHopTarget(v) {
+  let best = null, bestDist = Infinity;
+  vines.forEach(v2 => {
+    if (v2 === v || v2.mounted) return;
+    if (v2.tier !== v.tier) return; // same tier only — a nearby different tier is NOT a valid hop target
+    const dist = Math.abs(v2.x - v.x);
+    if (dist < 160 && dist < bestDist) { // reasonable hop range, not the whole map
+      best = v2;
+      bestDist = dist;
+    }
+  });
+  return best;
+}
+const VINE_GRAB_RADIUS = 38; // forgiving — vine-to-vine grabs are a moving target, needs real margin
 
 const acorns = [
-  { x: 1990, heightAboveGround: 100, collected: false, collecting: false },
-  { x: 2120, heightAboveGround: 110, collected: false, collecting: false },
-  { x: 2240, heightAboveGround: 100, collected: false, collecting: false }
+  { x: 2400, heightAboveGround: 130, collected: false, collecting: false }, // ground tier, scattered
+  { x: 2320, heightAboveGround: 240, collected: false, collecting: false }, // between mid-tier vines
+  { x: 2480, heightAboveGround: 240, collected: false, collecting: false }, // between mid-tier vines
+  { x: 2395, heightAboveGround: 270, collected: false, collecting: false }, // upper tier, between the two vines
+  { x: 2260, heightAboveGround: 262, collected: false, collecting: false }  // reward on the new high double-jump platform
 ];
 
-const vinePumpkin = { x: 2160, heightAboveGround: 60, collected: false, collecting: false };
+const vinePumpkin = { x: 2430, heightAboveGround: 260, collected: false, collecting: false }; // the last upper-tier vine — the real prize, gated behind vine-to-vine only
 
 function updateVines(deltaTime) {
+  // idle sway for everything not mounted
   vines.forEach((v, i) => {
     if (!v.mounted) {
-      v.angle = Math.sin(performance.now() * 0.0012 + i * 1.7) * 0.12; // idle sway
-      if (keys.up && isPlayerNear(v.x, v.anchorHeight - v.length, 22, 20, 20)) {
-        v.mounted = true;
-        v.angle = 0;
+      v.angle = Math.sin(performance.now() * 0.0012 + i * 1.7) * 0.12;
+      v.angularVel = 0;
+    }
+  });
+
+  // mount — find the SINGLE closest in-range vine, not "every vine within
+  // radius." Previously each vine checked independently, so overlapping
+  // grab-zones (closely spaced vines) could mount more than one at once,
+  // which is what caused them to visibly fight over the player's position.
+  if (keys.up && !vines.some(v => v.mounted)) {
+    let closest = null, closestDist = Infinity;
+    vines.forEach(v => {
+      const grabHeight = v.anchorHeight - v.length;
+      const dx = (player.x + player.width / 2) - v.x;
+      const dy = player.y - grabHeight;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < VINE_GRAB_RADIUS && dist < closestDist) {
+        closest = v;
+        closestDist = dist;
       }
+    });
+    if (closest) {
+      closest.mounted = true;
+      closest.angle = 0;
+      closest.angularVel = 0;
+      closest.pumpCooldown = 0;
+      closest.swingCycles = 0;
+      closest.lastSign = 0;
+    }
+  }
+
+  vines.forEach((v, i) => {
+    if (!v.mounted) return;
+
+    if (v.pumpCooldown > 0) v.pumpCooldown -= deltaTime * 1000;
+
+    // track genuine swing rhythm — real zero-crossings, not just "some
+    // velocity happened." A hop is only available after actually swinging
+    // back and forth a couple of real cycles, not the instant you mount.
+    const sign = Math.sign(v.angle);
+    if (v.lastSign && sign && sign !== v.lastSign) {
+      v.swingCycles = (v.swingCycles || 0) + 1;
+    }
+    if (sign) v.lastSign = sign;
+
+    const hopReady = (v.swingCycles || 0) >= VINE_HOP_MIN_CYCLES;
+    const target = hopReady ? findVineHopTarget(v) : null;
+    const wantsHopLeft = keys.leftJustPressed && v.angle < -0.15;
+    const wantsHopRight = keys.rightJustPressed && v.angle > 0.15;
+
+    if (target && ((wantsHopLeft && target.x < v.x) || (wantsHopRight && target.x > v.x))) {
+      // committed to a real hop — strength depends on how strong the swing
+      // actually is right now, not just "correct key at correct time."
+      // Weak swing at commit = genuinely falls short, same as whiffing a jump.
+      const strength = Math.min(Math.abs(v.angle) / VINE_HOP_STRONG_ANGLE, 1);
+      const direction = target.x > v.x ? 1 : -1;
+      const fullDistance = Math.abs(target.x - v.x);
+      const achievedDistance = fullDistance * strength;
+
+      v.mounted = false;
+      player.vx = (direction * achievedDistance) / VINE_HOP_ARC_FRAMES;
+      player.vy = 6;
+      player.vineFlying = true;
+      player.jumping = true;
       return;
     }
 
-    if (keys.left) v.angle -= VINE_SWING_INPUT;
-    if (keys.right) v.angle += VINE_SWING_INPUT;
-    v.angle += -Math.sin(v.angle) * VINE_GRAVITY;
+    // edge-triggered pump, matching the swing's gentle-pump pattern — was
+    // previously continuous (keys.left/right held) with no cooldown,
+    // meaning every single held frame added force, causing the wild
+    // erratic swinging instead of a real gentle pendulum feel
+    if (v.pumpCooldown <= 0) {
+      if (keys.leftJustPressed) {
+        v.angularVel -= VINE_SWING_INPUT;
+        v.pumpCooldown = VINE_PUMP_COOLDOWN;
+      } else if (keys.rightJustPressed) {
+        v.angularVel += VINE_SWING_INPUT;
+        v.pumpCooldown = VINE_PUMP_COOLDOWN;
+      }
+    }
+    v.angularVel += -Math.sin(v.angle) * VINE_GRAVITY;
+    v.angularVel *= 0.995; // slight damping
+    v.angle += v.angularVel;
     v.angle = Math.max(-1.1, Math.min(1.1, v.angle));
 
     const vx = v.x + Math.sin(v.angle) * v.length;
@@ -3850,12 +4100,31 @@ function updateVines(deltaTime) {
     player.x = vx - player.width / 2;
     player.y = vh;
 
-    if (keys.spaceJustPressed) {
+    if (keys.down) {
+      // safe dismount — no launch, just step off and let normal gravity take over
       v.mounted = false;
-      player.vy = Math.abs(Math.sin(v.angle)) * 8 + 3;
-      player.jumping = true;
+      player.vx = 0;
+      player.vy = 0;
     }
   });
+}
+
+function drawSmallTree(tx, canopyScreenY) {
+  ctx.fillStyle = "#4a2e18";
+  ctx.beginPath();
+  ctx.moveTo(tx - 12, gy);
+  ctx.quadraticCurveTo(tx - 10, gy - 100, tx - 6, gy - 180);
+  ctx.lineTo(tx + 6, gy - 180);
+  ctx.quadraticCurveTo(tx + 10, gy - 100, tx + 12, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(200,120,45,0.9)";
+  ctx.beginPath();
+  ctx.arc(tx, gy - 205, 45, 0, Math.PI * 2);
+  ctx.arc(tx - 25, gy - 190, 32, 0, Math.PI * 2);
+  ctx.arc(tx + 25, gy - 195, 34, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawVines(camX) {
@@ -3863,6 +4132,10 @@ function drawVines(camX) {
     const ax = v.x - camX, ay = gy - v.anchorHeight;
     const vx = v.x + Math.sin(v.angle) * v.length - camX;
     const vy = gy - (v.anchorHeight - Math.cos(v.angle) * v.length);
+
+    if (v.tier === "standalone") {
+      drawSmallTree(v.x - camX, ay + v.length * 0.3);
+    }
 
     ctx.strokeStyle = "#8a3a1a";
     ctx.lineWidth = 3;
@@ -3957,8 +4230,8 @@ function drawPumpkinShape(ctx, x, y, size, rotation) {
    build charge, then launch up into the oak.
    ====================================================== */
 const seesawNPC = {
-  x: 2280,
-  homeX: 2280,
+  x: 2650,
+  homeX: 2650,
   talkedTo: false,
   hopping: false,
   onSeesaw: false,
@@ -3966,7 +4239,7 @@ const seesawNPC = {
 };
 
 const seesaw = {
-  x: 2340,
+  x: 2710,
   pivotHeightAboveGround: 10,
   angle: 0,       // current tilt, radians — positive means player's side down
   charge: 0,
@@ -4583,15 +4856,15 @@ function drawGraftEffects(camX) {
       // never overlapping it. Redraws automatically since it just reads
       // state.hybrid fresh every frame, so a regraft updates it for free.
       const signY = ty + 30;
-      ctx.strokeStyle = "#2e1c0a";
+      ctx.strokeStyle = "#5a4020";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, ty + 8);
       ctx.lineTo(tx, signY);
       ctx.stroke();
 
-      ctx.fillStyle = "#4a3018";
-      ctx.strokeStyle = "#2e1c0a";
+      ctx.fillStyle = "#8a6a45";
+      ctx.strokeStyle = "#5a4020";
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       ctx.roundRect ? ctx.roundRect(tx - 24, signY, 48, 18, 3) : ctx.rect(tx - 24, signY, 48, 18);
