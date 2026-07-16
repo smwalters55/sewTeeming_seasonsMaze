@@ -7674,10 +7674,31 @@ function drawOakScene(camX) {
 
       if (isLeftShelf && row === rowCount - 1) {
         // left shelf: lowest row is mixed -- vertical books on the left,
-        // a shorter horizontal stack on the right
+        // a shorter horizontal stack on the right. First book is the
+        // visible "apple" storybook, matching the manual's pattern.
         const standCount = 3;
         let vx = sx - shelfWidth / 2 + 7;
         for (let v = 0; v < standCount; v++) {
+          if (v === 0) {
+            const aw = 10, ah = rowHeight - 10;
+            ctx.fillStyle = "#7a2f2f";
+            ctx.fillRect(vx, rowY + rowHeight - 3 - ah, aw, ah);
+            ctx.fillStyle = "#d4a520";
+            ctx.beginPath();
+            ctx.arc(vx + aw / 2, rowY + rowHeight - 3 - ah + 6, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.save();
+            ctx.translate(vx + aw / 2, rowY + rowHeight - 3 - ah / 2 + 6);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = "#e8ddc8";
+            ctx.font = "6px monospace";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("apple", 0, 0);
+            ctx.restore();
+            vx += aw + 3;
+            continue;
+          }
           const bw = 5 + (v % 2) * 2;
           const bh = rowHeight - 8 - (v % 3);
           ctx.fillStyle = style.colors[(rowSeed + v) % style.colors.length];
@@ -7751,23 +7772,29 @@ function drawOakScene(camX) {
       for (let b = 0; b < 5 && bx < sx + shelfWidth / 2 - 6; b++) {
         if (!isLeftShelf && row === 3 && b === 0) {
           // the manual — explicit blue book with a tooth icon and label,
-          // second row from the bottom of the right shelf. Widened for
-          // more room, text switched to black for readability.
-          const mw = 12, mh = rowHeight - 10;
+          // second row from the bottom of the right shelf. Widened
+          // further, larger font, bright cream text for real contrast,
+          // and a proper tooth-shaped icon (crown + two root prongs).
+          const mw = 18, mh = rowHeight - 10;
           ctx.fillStyle = "#2f5a6a";
           ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
-          ctx.fillStyle = "#e8ddc8";
+          const toothX = bx + mw / 2, toothCrownY = rowY + rowHeight - 3 - mh + 8;
+          ctx.fillStyle = "#f5f0e0";
           ctx.beginPath();
-          const toothX = bx + mw / 2, toothY = rowY + rowHeight - 3 - mh + 6;
-          ctx.arc(toothX - 1.2, toothY, 1.4, 0, Math.PI * 2);
-          ctx.arc(toothX + 1.2, toothY, 1.4, 0, Math.PI * 2);
+          ctx.moveTo(toothX - 4, toothCrownY - 3);
+          ctx.quadraticCurveTo(toothX - 5, toothCrownY - 7, toothX, toothCrownY - 7);
+          ctx.quadraticCurveTo(toothX + 5, toothCrownY - 7, toothX + 4, toothCrownY - 3);
+          ctx.quadraticCurveTo(toothX + 4.5, toothCrownY + 1, toothX + 2, toothCrownY + 6);
+          ctx.quadraticCurveTo(toothX + 1, toothCrownY + 8, toothX, toothCrownY + 5);
+          ctx.quadraticCurveTo(toothX - 1, toothCrownY + 8, toothX - 2, toothCrownY + 6);
+          ctx.quadraticCurveTo(toothX - 4.5, toothCrownY + 1, toothX - 4, toothCrownY - 3);
+          ctx.closePath();
           ctx.fill();
-          ctx.fillRect(toothX - 1, toothY, 2, 2.5);
           ctx.save();
-          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh / 2 + 6);
+          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh / 2 + 10);
           ctx.rotate(-Math.PI / 2);
-          ctx.fillStyle = "#111111";
-          ctx.font = "6px monospace";
+          ctx.fillStyle = "#f5f0e0";
+          ctx.font = "bold 8px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText("MANUAL", 0, 0);
@@ -7828,7 +7855,8 @@ function drawOakScene(camX) {
   function drawBookPile(baseX, baseY, seed, count) {
     let dy = 0;
     for (let i = 0; i < count; i++) {
-      const w = 20 + ((seed + i * 5) % 10); // wide and thin -- lying flat, not standing on spine
+      const isLong = (seed + i * 7) % 5 === 0; // some books noticeably longer, matching the shelf's horizontal-stack book width
+      const w = isLong ? 42 + ((seed + i * 3) % 10) : 20 + ((seed + i * 5) % 10);
       const h = 4 + ((seed + i * 3) % 3);
       const rot = (((seed + i * 7) % 20) - 10) / 80;
       const dx = (((seed + i * 4) % 6) - 3);
@@ -8199,7 +8227,7 @@ function updateOakScene(deltaTime) {
   // apple storybook — grab-to-read trigger. Positioned at the tall book
   // pile for now (a stand-in "this is the book" spot); space opens it.
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(560, 66, 26, 20, 20)) {
+      keys.spaceJustPressed && isPlayerNear(90, 27, 20, 25, 25)) {
     bookReader.book = "apple";
     bookReader.opening = true;
     bookReader.openT = 0;
