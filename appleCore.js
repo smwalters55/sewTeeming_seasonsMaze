@@ -616,7 +616,8 @@ const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
-  oak: { x: 400 } // arrives via seesaw launch, lands just past the arch entrance
+  oak: { x: 400 }, // arrives via seesaw launch, lands just past the arch entrance
+  ratroom: { x: 310 } // arrives via the trap door, lands near the base of the stairs
 };
 
 /* ======================================================
@@ -7760,10 +7761,36 @@ const nookSeat = { x: 1150, heightAboveGround: 32, width: 100 }; // +2 to accoun
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
 // visual and unremarkable at this stage so it doesn't telegraph anything.
-const nookRug = { x: 1350, width: 100, height: 16 };
+const nookRug = { x: 1350, width: 100, height: 28 };
+
+// trap door sequence -- space while standing on the rug triggers a
+// multi-stage reveal: the rug rolls up, the trap door underneath opens,
+// then a normal scene transition carries the player down into the room
+// below (currently a placeholder, stairs coming down with light from
+// the oak room above).
+const trapDoor = {
+  active: false,
+  t: 0,
+  opened: false // stays true once opened, so the door doesn't reset each visit
+};
+const TRAPDOOR_ROLLUP_MS = 1200;
+const TRAPDOOR_OPEN_MS = 900;
+const TRAPDOOR_PAUSE_MS = 400;
+const TRAPDOOR_TOTAL_MS = TRAPDOOR_ROLLUP_MS + TRAPDOOR_OPEN_MS + TRAPDOOR_PAUSE_MS;
+
+function updateTrapDoor(deltaTime) {
+  if (!trapDoor.active) return;
+  trapDoor.t += deltaTime * 1000;
+  if (trapDoor.t >= TRAPDOOR_TOTAL_MS) {
+    trapDoor.active = false;
+    trapDoor.opened = true;
+    startSeasonTransition("ratroom");
+  }
+}
+
 function drawNookRug(camX) {
   const rx = nookRug.x - camX;
-  const ry = gy + 8;
+  const ry = gy + 14;
   const w = nookRug.width, h = nookRug.height;
 
   // subtle tell when the player is actually standing on it -- a gentle
@@ -7797,8 +7824,8 @@ function drawNookRug(camX) {
   // abstract arrangement of varied geometric shapes -- not one repeated
   // motif, a genuine mix of triangle/circle/square/diamond in different
   // sizes, still contained cleanly within the border
-  const innerLeft = left + 8, innerTop = top + 8;
-  const innerW = w - 16, innerH = h - 16;
+  const innerLeft = left + 6, innerTop = top + 6;
+  const innerW = w - 12, innerH = h - 12;
   const accent1 = "#c9a860", accent2 = "#3a1818", accent3 = "#8a5040";
 
   // triangle, left side
@@ -7847,10 +7874,10 @@ function drawNookRug(camX) {
   ctx.fill();
 
   // one corner slightly turned up when the player is standing on it --
-  // a tiny triangular peel showing the darker floor underneath
+  // a tiny corner peeled up, showing the rug's own lighter underside/backing
   if (onRug) {
     const liftAmt = 6.5 + Math.sin(performance.now() * 0.006) * 1.8;
-    ctx.fillStyle = "#2e1c0a";
+    ctx.fillStyle = "#d8c8a0";
     ctx.beginPath();
     ctx.moveTo(left, top);
     ctx.lineTo(left + liftAmt, top);
@@ -7866,6 +7893,74 @@ function drawNookRug(camX) {
   }
 
   ctx.restore();
+}
+
+function easeInOutTrap(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
+
+function drawTrapDoorSequence(camX) {
+  const rx = nookRug.x - camX;
+  const ry = gy + 14;
+  const w = nookRug.width, h = nookRug.height;
+  const t = trapDoor.t;
+
+  if (t < TRAPDOOR_ROLLUP_MS) {
+    // the rug rolls up from the right edge toward the left, like a
+    // scroll closing -- shrinking width, with a small rolled cylinder
+    // shape at the leading edge
+    const p = easeInOutTrap(t / TRAPDOOR_ROLLUP_MS);
+    const remainingW = w * (1 - p);
+    const rollX = rx + w / 2 - remainingW;
+    if (remainingW > 1) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rollX, ry - h / 2, remainingW, h);
+      ctx.clip();
+      ctx.translate(camX, 0);
+      drawNookRug(camX);
+      ctx.restore();
+    }
+    // the rolled-up portion, drawn as a small cylinder
+    const rollWidth = 6 + Math.sin(p * Math.PI) * 4;
+    const cyl = ctx.createLinearGradient(rollX - rollWidth, 0, rollX, 0);
+    cyl.addColorStop(0, "#4a2020");
+    cyl.addColorStop(0.5, "#8a4038");
+    cyl.addColorStop(1, "#4a2020");
+    ctx.fillStyle = cyl;
+    ctx.beginPath();
+    ctx.ellipse(rollX - rollWidth / 2, ry, rollWidth / 2, h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (t < TRAPDOOR_ROLLUP_MS + TRAPDOOR_OPEN_MS) {
+    // the trap door itself splits open, two halves swinging outward
+    const p = easeInOutTrap((t - TRAPDOOR_ROLLUP_MS) / TRAPDOOR_OPEN_MS);
+    const doorW = w * 0.9, doorH = 6;
+    const openAmt = p; // 0 = closed flat, 1 = fully open (foreshortened to a sliver)
+
+    // dark pit beneath, growing more visible as the door opens
+    ctx.fillStyle = "#0a0604";
+    ctx.fillRect(rx - doorW / 2, ry - doorH, doorW, doorH + 4);
+
+    [-1, 1].forEach(side => {
+      const halfW = doorW / 2;
+      const scaleX = Math.max(0.06, 1 - openAmt);
+      ctx.save();
+      ctx.translate(rx + side * halfW / 2 * (1 + openAmt * 0.15), ry - doorH / 2);
+      ctx.scale(scaleX, 1);
+      ctx.fillStyle = "#6a4028";
+      ctx.fillRect(-halfW / 2, -doorH / 2, halfW, doorH);
+      ctx.strokeStyle = "#3a2010";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-halfW / 2, -doorH / 2, halfW, doorH);
+      ctx.restore();
+    });
+  } else {
+    // brief pause on the fully-open door before the scene transition
+    const doorW = w * 0.9;
+    ctx.fillStyle = "#0a0604";
+    ctx.fillRect(rx - doorW / 2, ry - 8, doorW, 12);
+    ctx.strokeStyle = "#3a2010";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rx - doorW / 2, ry - 8, doorW, 12);
+  }
 }
 
 // short, wide shelf -- right of the rug, breathing room from it. Deliberately
@@ -8390,7 +8485,19 @@ function drawOakScene(camX) {
     ctx.restore();
   });
 
-  drawNookRug(camX);
+  if (trapDoor.active) {
+    drawTrapDoorSequence(camX);
+  } else if (trapDoor.opened) {
+    const rx = nookRug.x - camX, ry = gy + 14;
+    const doorW = nookRug.width * 0.9;
+    ctx.fillStyle = "#0a0604";
+    ctx.fillRect(rx - doorW / 2, ry - 8, doorW, 12);
+    ctx.strokeStyle = "#3a2010";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rx - doorW / 2, ry - 8, doorW, 12);
+  } else {
+    drawNookRug(camX);
+  }
   drawShortShelf(camX);
   drawOwl(camX);
 }
@@ -8490,6 +8597,13 @@ function updateOakScene(deltaTime) {
 
   if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
     startSeasonTransition("autumn");
+  }
+
+  updateTrapDoor(deltaTime);
+  if (!trapDoor.active && keys.spaceJustPressed &&
+      isPlayerNear(nookRug.x, 0, nookRug.width / 2, 20, 10)) {
+    trapDoor.active = true;
+    trapDoor.t = 0;
   }
 
   // book pile collision — same landing pattern as regular platforms
@@ -9065,6 +9179,73 @@ function drawBookReader() {
   }
 }
 
+/* ======================================================
+   RAT ROOM — beneath the oak room's trap door. Currently a
+   placeholder: old wooden stairs coming down from above,
+   with a shaft of light spilling in from the oak room where
+   the stairs begin. Rat NPC and the rest of the room's
+   content come in a later pass.
+   ====================================================== */
+const ratRoomStairsTop = { x: 400, y: 20 };
+const ratRoomReturnSpot = { x: 400, y: 40 };
+
+function drawRatRoomScene(camX) {
+  ctx.fillStyle = "#100a06";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
+  const stairBottomX = stairTopX - 90, stairBottomY = gy - 10;
+
+  // light shaft spilling down from the opening above, widest at the top
+  const shaft = ctx.createLinearGradient(0, stairTopY - 10, 0, stairTopY + 140);
+  shaft.addColorStop(0, "rgba(220,190,140,0.55)");
+  shaft.addColorStop(1, "rgba(220,190,140,0)");
+  ctx.fillStyle = shaft;
+  ctx.beginPath();
+  ctx.moveTo(stairTopX - 30, stairTopY - 10);
+  ctx.lineTo(stairTopX + 30, stairTopY - 10);
+  ctx.lineTo(stairTopX + 70, stairTopY + 140);
+  ctx.lineTo(stairTopX - 70, stairTopY + 140);
+  ctx.closePath();
+  ctx.fill();
+
+  // the opening itself -- a small bright patch at the very top
+  ctx.fillStyle = "#e8d9b8";
+  ctx.beginPath();
+  ctx.ellipse(stairTopX, stairTopY - 6, 26, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // old wooden stairs, descending diagonally from the opening
+  const stepCount = 8;
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(stairTopX, stairTopY);
+  ctx.lineTo(stairBottomX, stairBottomY);
+  ctx.stroke();
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 2;
+  for (let i = 0; i <= stepCount; i++) {
+    const p = i / stepCount;
+    const sx = stairTopX + (stairBottomX - stairTopX) * p;
+    const sy = stairTopY + (stairBottomY - stairTopY) * p;
+    ctx.beginPath();
+    ctx.moveTo(sx - 14, sy);
+    ctx.lineTo(sx + 14, sy);
+    ctx.stroke();
+  }
+
+  // floor
+  ctx.fillStyle = "#1a1208";
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+}
+
+function updateRatRoomScene(deltaTime) {
+  if (isPlayerNear(ratRoomReturnSpot.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+    startSeasonTransition("oak");
+  }
+}
+
 function drawCloudsScene(camX) {
   // multi-stop sky — deeper blue up top, fading toward near-white
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -9193,6 +9374,8 @@ if (currentScene === "autumn") {
   drawCloudsScene(camX);
 } else if (currentScene === "oak") {
   drawOakScene(camX);
+} else if (currentScene === "ratroom") {
+  drawRatRoomScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -9715,6 +9898,8 @@ if (currentScene === "autumn") {
   updateCloudsScene(deltaTime);
 } else if (currentScene === "oak") {
   updateOakScene(deltaTime);
+} else if (currentScene === "ratroom") {
+  updateRatRoomScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
