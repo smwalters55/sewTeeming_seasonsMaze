@@ -696,11 +696,16 @@ function updateSeasonTransition(deltaTime) {
         if (heldItem === "plumStick" || heldItem === "pearStick" || heldItem === "peachStick") heldItem = null;
         updateInventoryUI();
       }
+      const previousScene = currentScene;
       currentScene = seasonTransition.targetScene;
       discoveredScenes[currentScene] = true;
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
-      const spawn = sceneSpawns[currentScene];
-      player.x = spawn.x;
+      if (currentScene === "oak" && previousScene === "ratroom") {
+        player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
+      } else {
+        const spawn = sceneSpawns[currentScene];
+        player.x = spawn.x;
+      }
       player.y = 0;
       player.vy = 0;
       player.jumping = false;
@@ -9208,6 +9213,8 @@ function drawRatRoomScene(camX) {
   ctx.fillStyle = "#100a06";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  drawRatRoomEyes(camX);
+
   const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
 
   // light shaft spilling down from the opening above, widest at the top
@@ -9258,6 +9265,7 @@ function drawRatRoomScene(camX) {
   ctx.fillStyle = "#1a1208";
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
 
+  drawHayGroundCover(camX);
   drawHayPiles(camX);
   drawRatNPC(camX);
 }
@@ -9277,64 +9285,94 @@ function updateRatNPC(deltaTime) {
 }
 function drawRatNPC(camX) {
   const nx = ratNPC.x - camX;
-  const ny = gy - 14;
-  const sway = Math.sin(ratNPC.tailSwayT * 1.8) * 10;
+  const groundY = gy - 2;
+  const sway = Math.sin(ratNPC.tailSwayT * 1.8) * 12;
+  const s = 1.7; // overall scale -- bigger, standing character
 
-  // tail -- long, tapering, segmented, dragging and swaying on the
-  // ground behind the body, base fixed near the body while the tip sways
-  const tailBaseX = nx - 12, tailBaseY = ny + 8;
+  // tail -- extends out behind (to the right, since he now faces left),
+  // base fixed near the body while the tip sways on the ground
+  const tailBaseX = nx + 8 * s, tailBaseY = groundY - 2;
   ctx.strokeStyle = "#7a7268";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(tailBaseX, tailBaseY);
-  ctx.quadraticCurveTo(tailBaseX - 16 + sway * 0.4, tailBaseY + 6, tailBaseX - 32 + sway, tailBaseY + 2);
+  ctx.quadraticCurveTo(tailBaseX + 16 * s * 0.6 + sway * 0.4, tailBaseY - 2, tailBaseX + 30 * s * 0.6 + sway, tailBaseY - 4);
   ctx.stroke();
-  // faint ring segments along the tail's length, a few evenly spaced
   ctx.strokeStyle = "rgba(50,45,40,0.4)";
   ctx.lineWidth = 1;
   for (let i = 1; i < 5; i++) {
     const p = i / 5;
-    const tx = tailBaseX + (tailBaseX - 32 + sway - tailBaseX) * p;
-    const ty = tailBaseY + 4 * p;
+    const tx = tailBaseX + (tailBaseX + 30 * s * 0.6 + sway - tailBaseX) * p;
+    const ty = tailBaseY - 3 * p;
     ctx.beginPath();
     ctx.arc(tx, ty, 1.6, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  // body -- grey, rounded
-  ctx.fillStyle = "#8a8880";
+  // legs/feet -- standing, small and planted
+  ctx.fillStyle = "#7a7268";
   ctx.beginPath();
-  ctx.ellipse(nx, ny, 15, 11, 0, 0, Math.PI * 2);
+  ctx.ellipse(nx - 5 * s * 0.35, groundY - 2, 3.2, 2.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(nx + 5 * s * 0.35, groundY - 2, 3.2, 2.2, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // vest -- small, open/unbuttoned, two flaps over the body, warm teal
+  // body -- upright oval, taller than wide, standing on the legs
+  const bodyH = 26 * s * 0.6, bodyW = 15 * s * 0.6;
+  const bodyCenterY = groundY - bodyH / 2 - 3;
+  ctx.fillStyle = "#8a8880";
+  ctx.beginPath();
+  ctx.ellipse(nx, bodyCenterY, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // arms -- small, at the sides
+  ctx.strokeStyle = "#7a7268";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(nx - bodyW / 2 + 1, bodyCenterY);
+  ctx.lineTo(nx - bodyW / 2 - 3, bodyCenterY + 6);
+  ctx.moveTo(nx + bodyW / 2 - 1, bodyCenterY);
+  ctx.lineTo(nx + bodyW / 2 + 3, bodyCenterY + 6);
+  ctx.stroke();
+
+  // vest -- drapes down the front of the upright body, two open flaps
+  // with a visible chest gap between them, not a closed garment
+  const vestTop = bodyCenterY - bodyH / 2 + 3, vestBottom = bodyCenterY + bodyH / 2 - 2;
   ctx.fillStyle = "#2f6a5a";
   ctx.beginPath();
-  ctx.moveTo(nx - 10, ny - 6);
-  ctx.lineTo(nx - 2, ny - 4);
-  ctx.lineTo(nx - 4, ny + 8);
-  ctx.lineTo(nx - 11, ny + 6);
+  ctx.moveTo(nx - bodyW / 2 + 1, vestTop);
+  ctx.lineTo(nx - 2, vestTop + 3);
+  ctx.lineTo(nx - 3, vestBottom);
+  ctx.lineTo(nx - bodyW / 2 + 2, vestBottom - 2);
   ctx.closePath();
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(nx + 10, ny - 6);
-  ctx.lineTo(nx + 2, ny - 4);
-  ctx.lineTo(nx + 4, ny + 8);
-  ctx.lineTo(nx + 11, ny + 6);
+  ctx.moveTo(nx + bodyW / 2 - 1, vestTop);
+  ctx.lineTo(nx + 2, vestTop + 3);
+  ctx.lineTo(nx + 3, vestBottom);
+  ctx.lineTo(nx + bodyW / 2 - 2, vestBottom - 2);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#1a4a3c";
   ctx.lineWidth = 1;
   ctx.stroke();
+  // a visible sliver of chest fur between the two flaps
+  ctx.fillStyle = "#9a988e";
+  ctx.beginPath();
+  ctx.moveTo(nx - 2, vestTop + 3);
+  ctx.lineTo(nx + 2, vestTop + 3);
+  ctx.lineTo(nx + 1.5, vestBottom - 1);
+  ctx.lineTo(nx - 1.5, vestBottom - 1);
+  ctx.closePath();
+  ctx.fill();
 
-  // head -- smaller oval, forward of the body
-  const hx = nx + 16, hy = ny - 3;
+  // head -- on top of the body, facing left
+  const hx = nx - 2 * s * 0.5, hy = bodyCenterY - bodyH / 2 - 6;
   ctx.fillStyle = "#8a8880";
   ctx.beginPath();
   ctx.ellipse(hx, hy, 8, 6.5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ears -- two rounded circles
+  // ears
   ctx.fillStyle = "#7a7268";
   ctx.beginPath();
   ctx.arc(hx - 2, hy - 6, 3.2, 0, Math.PI * 2);
@@ -9346,34 +9384,95 @@ function drawRatNPC(camX) {
   ctx.arc(hx + 5, hy - 6, 1.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // eyes
+  // eye -- facing left, so positioned toward the left side of the head
   ctx.fillStyle = "#1a1a1a";
   ctx.beginPath();
-  ctx.arc(hx + 4, hy - 1, 1.3, 0, Math.PI * 2);
+  ctx.arc(hx - 4, hy - 1, 1.3, 0, Math.PI * 2);
   ctx.fill();
 
-  // nose -- small pink tip at the front
+  // nose -- at the front (left side, since he faces left)
   ctx.fillStyle = "#d89a9a";
   ctx.beginPath();
-  ctx.arc(hx + 8, hy + 1, 1.6, 0, Math.PI * 2);
+  ctx.arc(hx - 8, hy + 1, 1.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // whiskers
+  // whiskers, extending left from the snout
   ctx.strokeStyle = "rgba(230,230,230,0.6)";
   ctx.lineWidth = 0.5;
   [-1.5, 0, 1.5].forEach(dy => {
     ctx.beginPath();
-    ctx.moveTo(hx + 7, hy + 1 + dy * 0.5);
-    ctx.lineTo(hx + 15, hy + dy);
+    ctx.moveTo(hx - 7, hy + 1 + dy * 0.5);
+    ctx.lineTo(hx - 15, hy + dy);
     ctx.stroke();
   });
+}
 
-  // feet -- small, beneath the body
-  ctx.fillStyle = "#7a7268";
-  ctx.beginPath();
-  ctx.ellipse(nx - 4, ny + 10, 3, 2, 0, 0, Math.PI * 2);
-  ctx.ellipse(nx + 6, ny + 10, 3, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
+// widespread thin ground-covering hay, scattered across most of the
+// floor -- distinct from the discrete piles below, which stay as
+// denser clusters standing out against this thinner background layer
+const hayGroundCover = Array.from({ length: 140 }, (_, i) => {
+  const seed = i * 11 + 7;
+  return {
+    x: (seed * 37) % 780,
+    dy: ((seed * 13) % 8) - 2,
+    len: 6 + (seed % 9),
+    angle: (((seed * 5) % 100) - 50) / 90,
+    colorIdx: seed % 4
+  };
+});
+function drawHayGroundCover(camX) {
+  const hayColors = ["#c9a03a", "#e8c258", "#a8822a", "#d4ac48"];
+  const baseY = gy - 2;
+  hayGroundCover.forEach(h => {
+    ctx.save();
+    ctx.translate(h.x - camX, baseY + h.dy);
+    ctx.rotate(h.angle);
+    ctx.strokeStyle = hayColors[h.colorIdx];
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-h.len / 2, 0);
+    ctx.lineTo(h.len / 2, 0);
+    ctx.stroke();
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// watching eyes in the shadows -- mostly clustered in the bottom-left
+// third of the room, a couple on the right, and one pair perched high
+// up left of the stairs as if watching from above. Each blinks on its
+// own staggered timing, not synchronized, for a more alive, curious
+// feel rather than a single ominous effect.
+const ratRoomEyes = [
+  { x: 60, y: 260, phase: 0.2, blinkSpeed: 0.9 },
+  { x: 110, y: 275, phase: 1.8, blinkSpeed: 1.1 },
+  { x: 90, y: 240, phase: 3.1, blinkSpeed: 0.8 },
+  { x: 150, y: 265, phase: 0.6, blinkSpeed: 1.3 },
+  { x: 180, y: 245, phase: 2.4, blinkSpeed: 1.0 },
+  { x: 45, y: 285, phase: 4.0, blinkSpeed: 0.95 },
+  { x: 130, y: 288, phase: 1.2, blinkSpeed: 1.05 },
+  { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
+  { x: 730, y: 250, phase: 0.4, blinkSpeed: 1.15 },
+  { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 } // high up, left of the stairs, perched on top of something
+];
+let ratRoomEyeT = 0;
+function updateRatRoomEyes(deltaTime) {
+  ratRoomEyeT += deltaTime;
+}
+function drawRatRoomEyes(camX) {
+  ratRoomEyes.forEach(eye => {
+    const ex = eye.x - camX, ey = eye.y;
+    const cycle = (ratRoomEyeT * eye.blinkSpeed + eye.phase) % 6;
+    const blinking = cycle > 5.5; // brief closed moment within each cycle
+    if (blinking) return;
+    const openness = cycle > 5.2 ? (5.5 - cycle) / 0.3 : 1;
+    ctx.fillStyle = "rgba(220,190,120,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(ex - 2.2, ey, 1.3, 1.3 * openness, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex + 2.2, ey, 1.3, 1.3 * openness, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawHayPiles(camX) {
@@ -9402,6 +9501,7 @@ function drawHayPiles(camX) {
 
 function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
+  updateRatRoomEyes(deltaTime);
   const topStep = ratRoomStairs[0];
   if (isPlayerNear(topStep.x, topStep.heightAboveGround, 20, 20, 15) && keys.spaceJustPressed) {
     startSeasonTransition("oak");
