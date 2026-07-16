@@ -9187,14 +9187,28 @@ function drawBookReader() {
    content come in a later pass.
    ====================================================== */
 const ratRoomStairsTop = { x: 400, y: 20 };
-const ratRoomReturnSpot = { x: 400, y: 40 };
+// individual hoppable steps -- computed once from the same top/bottom
+// points the visual stringer uses, so drawing and collision never drift
+const ratRoomStairs = (() => {
+  const topX = 400, topY = 20;
+  const bottomX = 400 - 90, bottomY = gy - 10;
+  const stepCount = 8;
+  const steps = [];
+  for (let i = 0; i <= stepCount; i++) {
+    const p = i / stepCount;
+    const sx = topX + (bottomX - topX) * p;
+    const sy = topY + (bottomY - topY) * p;
+    steps.push({ x: sx, heightAboveGround: gy - sy });
+  }
+  return steps;
+})();
+
 
 function drawRatRoomScene(camX) {
   ctx.fillStyle = "#100a06";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
-  const stairBottomX = stairTopX - 90, stairBottomY = gy - 10;
 
   // light shaft spilling down from the opening above, widest at the top
   const shaft = ctx.createLinearGradient(0, stairTopY - 10, 0, stairTopY + 140);
@@ -9215,35 +9229,202 @@ function drawRatRoomScene(camX) {
   ctx.ellipse(stairTopX, stairTopY - 6, 26, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // old wooden stairs, descending diagonally from the opening
-  const stepCount = 8;
-  ctx.strokeStyle = "#5a4028";
-  ctx.lineWidth = 4;
+  // old wooden stairs -- a real diagonal stringer, with individual
+  // hoppable step-blocks (not just tick marks on a line)
+  ctx.strokeStyle = "#2e1c10";
+  ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.moveTo(stairTopX, stairTopY);
-  ctx.lineTo(stairBottomX, stairBottomY);
+  ctx.moveTo(stairTopX, stairTopY + 6);
+  ctx.lineTo(ratRoomStairs[ratRoomStairs.length - 1].x - camX, gy - 10);
   ctx.stroke();
-  ctx.strokeStyle = "#3a2818";
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= stepCount; i++) {
-    const p = i / stepCount;
-    const sx = stairTopX + (stairBottomX - stairTopX) * p;
-    const sy = stairTopY + (stairBottomY - stairTopY) * p;
-    ctx.beginPath();
-    ctx.moveTo(sx - 14, sy);
-    ctx.lineTo(sx + 14, sy);
-    ctx.stroke();
-  }
+
+  ratRoomStairs.forEach((step, i) => {
+    const sx = step.x - camX, sy = gy - step.heightAboveGround;
+    const stepW = 26, stepH = 7;
+    // shadow/depth beneath the step
+    ctx.fillStyle = "#241608";
+    ctx.fillRect(sx - stepW / 2, sy + 1, stepW, stepH);
+    // the step surface itself
+    ctx.fillStyle = "#6a4a28";
+    ctx.fillRect(sx - stepW / 2, sy - stepH, stepW, stepH);
+    ctx.fillStyle = "#5a3a1c";
+    ctx.fillRect(sx - stepW / 2, sy - 2, stepW, 2);
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx - stepW / 2, sy - stepH, stepW, stepH);
+  });
 
   // floor
   ctx.fillStyle = "#1a1208";
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+
+  drawHayPiles(camX);
+  drawRatNPC(camX);
+}
+
+// messy hay piles, splattered across the floor -- individual straw
+// pieces much larger than autumn's subtle background hay, clustered
+// unevenly rather than neat bundles
+const hayPiles = [
+  { x: 260, seed: 3, count: 9 },
+  { x: 500, seed: 17, count: 7 },
+  { x: 620, seed: 29, count: 11 }
+];
+
+const ratNPC = { x: 460, tailSwayT: 0 };
+function updateRatNPC(deltaTime) {
+  ratNPC.tailSwayT += deltaTime;
+}
+function drawRatNPC(camX) {
+  const nx = ratNPC.x - camX;
+  const ny = gy - 14;
+  const sway = Math.sin(ratNPC.tailSwayT * 1.8) * 10;
+
+  // tail -- long, tapering, segmented, dragging and swaying on the
+  // ground behind the body, base fixed near the body while the tip sways
+  const tailBaseX = nx - 12, tailBaseY = ny + 8;
+  ctx.strokeStyle = "#7a7268";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(tailBaseX, tailBaseY);
+  ctx.quadraticCurveTo(tailBaseX - 16 + sway * 0.4, tailBaseY + 6, tailBaseX - 32 + sway, tailBaseY + 2);
+  ctx.stroke();
+  // faint ring segments along the tail's length, a few evenly spaced
+  ctx.strokeStyle = "rgba(50,45,40,0.4)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 5; i++) {
+    const p = i / 5;
+    const tx = tailBaseX + (tailBaseX - 32 + sway - tailBaseX) * p;
+    const ty = tailBaseY + 4 * p;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 1.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // body -- grey, rounded
+  ctx.fillStyle = "#8a8880";
+  ctx.beginPath();
+  ctx.ellipse(nx, ny, 15, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // vest -- small, open/unbuttoned, two flaps over the body, warm teal
+  ctx.fillStyle = "#2f6a5a";
+  ctx.beginPath();
+  ctx.moveTo(nx - 10, ny - 6);
+  ctx.lineTo(nx - 2, ny - 4);
+  ctx.lineTo(nx - 4, ny + 8);
+  ctx.lineTo(nx - 11, ny + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(nx + 10, ny - 6);
+  ctx.lineTo(nx + 2, ny - 4);
+  ctx.lineTo(nx + 4, ny + 8);
+  ctx.lineTo(nx + 11, ny + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#1a4a3c";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // head -- smaller oval, forward of the body
+  const hx = nx + 16, hy = ny - 3;
+  ctx.fillStyle = "#8a8880";
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, 8, 6.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ears -- two rounded circles
+  ctx.fillStyle = "#7a7268";
+  ctx.beginPath();
+  ctx.arc(hx - 2, hy - 6, 3.2, 0, Math.PI * 2);
+  ctx.arc(hx + 5, hy - 6, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c98a8a";
+  ctx.beginPath();
+  ctx.arc(hx - 2, hy - 6, 1.6, 0, Math.PI * 2);
+  ctx.arc(hx + 5, hy - 6, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eyes
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.arc(hx + 4, hy - 1, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // nose -- small pink tip at the front
+  ctx.fillStyle = "#d89a9a";
+  ctx.beginPath();
+  ctx.arc(hx + 8, hy + 1, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // whiskers
+  ctx.strokeStyle = "rgba(230,230,230,0.6)";
+  ctx.lineWidth = 0.5;
+  [-1.5, 0, 1.5].forEach(dy => {
+    ctx.beginPath();
+    ctx.moveTo(hx + 7, hy + 1 + dy * 0.5);
+    ctx.lineTo(hx + 15, hy + dy);
+    ctx.stroke();
+  });
+
+  // feet -- small, beneath the body
+  ctx.fillStyle = "#7a7268";
+  ctx.beginPath();
+  ctx.ellipse(nx - 4, ny + 10, 3, 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(nx + 6, ny + 10, 3, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawHayPiles(camX) {
+  const hayColors = ["#c9a03a", "#e8c258", "#a8822a", "#d4ac48"];
+  hayPiles.forEach(pile => {
+    const baseX = pile.x - camX, baseY = gy - 2;
+    for (let i = 0; i < pile.count; i++) {
+      const seed = pile.seed + i * 7;
+      const dx = ((seed * 13) % 70) - 35;
+      const dy = ((seed * 7) % 6) - 2;
+      const len = 14 + (seed % 14);
+      const angle = (((seed * 5) % 100) - 50) / 60;
+      ctx.save();
+      ctx.translate(baseX + dx, baseY + dy);
+      ctx.rotate(angle);
+      ctx.strokeStyle = hayColors[seed % hayColors.length];
+      ctx.lineWidth = 2 + (seed % 3);
+      ctx.beginPath();
+      ctx.moveTo(-len / 2, 0);
+      ctx.lineTo(len / 2, (seed % 5) - 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
 }
 
 function updateRatRoomScene(deltaTime) {
-  if (isPlayerNear(ratRoomReturnSpot.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+  updateRatNPC(deltaTime);
+  const topStep = ratRoomStairs[0];
+  if (isPlayerNear(topStep.x, topStep.heightAboveGround, 20, 20, 15) && keys.spaceJustPressed) {
     startSeasonTransition("oak");
   }
+
+  // stair collision — same landing pattern as the oak room's platforms,
+  // making each step a genuine hoppable surface
+  ratRoomStairs.forEach(step => {
+    const stepTop = step.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > step.x - 13 &&
+      player.x < step.x + 13 &&
+      playerBottom <= stepTop &&
+      playerBottom >= stepTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = stepTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
 }
 
 function drawCloudsScene(camX) {
