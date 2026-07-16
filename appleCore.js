@@ -482,6 +482,18 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // map-only entry — autumn<->oak travel is handled by the seesaw
+    // launch and the oak scene's return door, not a standard door pair.
+    id: "autumn-oak",
+    doors: {
+      autumn: { leadsTo: "oak" },
+      oak: { leadsTo: "autumn" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -491,9 +503,10 @@ const connections = [
    A scene only appears once you've actually been there.
    ====================================================== */
 const sceneMapInfo = {
-  autumn: { label: "Autumn", x: 40,  y: 40 },
-  spring: { label: "Spring", x: 220, y: 40 },
-  clouds: { label: "Clouds", x: 400, y: 40 }
+  autumn: { label: "Autumn", x: 40,  y: 110 },
+  spring: { label: "Spring", x: 220, y: 110 },
+  clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
+  oak:    { label: "Oak",    x: 40,  y: 20 }   // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
 };
 
 const discoveredScenes = { autumn: true }; // autumn is where you start
@@ -7614,18 +7627,158 @@ function updateRabbitShuttle(deltaTime) {
    for now this is just the space existing.
    ====================================================== */
 const oakReturnDoor = { x: 200, width: 50, height: 90 };
+
+/* ======================================================
+   WALL ART — the player's own paintings, hung in the oak
+   room. Loaded once as real image assets (base64-embedded
+   so they travel with this single file), drawn with a
+   simple antique-style frame per piece, each slightly
+   different so they don't read as a template repeated.
+   Sized relatively small and specific, like real framed
+   pieces, not room-filling murals. Positioned high on the
+   walls, clear of the shelves/piles/owl below.
+   ====================================================== */
+const wallArtWaterBird = new Image();
+wallArtWaterBird.src = "data:image/jpeg;base64,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";
+const wallArtArch = new Image();
+wallArtArch.src = "data:image/jpeg;base64,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";
+const wallArtCircles = new Image();
+wallArtCircles.src = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3Ojo6Iys/RD84QzQ5Ojf/2wBDAQoKCg0MDRoPDxo3JR8lNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzf/wAARCAB+AF8DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwC9cz2tnHcPNMIlkPAI3OQW7AVmHX7aN2kt7KV9uT88gUt1zgYPTHrWFazEkgt5m45Yk5b8ala3YgSxSBQ3GQfujjP49/wrz7Xdmd17bI1bbXMQQr5U0AWXYoRhJxjlsEAHk44PrWmkysFe5AliOSrquAp9wemawrcNaxgMiNtX5U5wg6gY/E1LFJc2kqyRxlo2wZomGGZT324/Kk432KjK25fvYribc3lrEhXakgG7B9j3+o/CoSjxkMu5Rnbhjgnj6da2NJjZdTfT5AyoyM8QXnBHPIPqK1H0hQYm3xF34BdM4/SlaUtkNyjF2ZzJtTNh48qsg4JXBHqDUtnoyMqERBIIyWZ3O3J7n2rp10mFZPNnld1AzzgLgdQRXM+INbk+zrHbRL5Zb9zBwN4B4Zh1P0qlBxtcjnTvykdwkMMge3bCHq9wdij29TVC41GOMHNyXCfM3kQZ7+rVQkl+1lZLrzTMWAyeinr8vTDD06Hp71MLdFRtwChSN/bAJ6+3bH1OelaNvqyEo9ETPr1vnbuvscfNtQZz6VIbgy/PDejoP3dygU4rJvgEubiICP5CFXjqAcZP+eauuYYImuJh5gTYoDdXGMcAj6n1qW2tmUrdUC6XbqkLXBkVmYBUA3HcegGO/wCVX4DDHEFit87QN/mjLHJ2/MR7kHioIIliKl498yRmRt33goz8o9M4A45560pneNJJlIZyAjHHBJbJ/wDZsemKyd2aaFXEyKrSSSKiNswijcpHUN/j9D3qewe8mkBhaQQnO1pAFz6ZPc+/Nalmsbo9xcxoI4lMdxu/jGf19se4qRr9Z8iFAIlX7+/D/wD1hjt+dHtGlsPlT3Lmlb7fU7eeZXdI4ijHGGdiMZwe1bo1C3kVT+8jK9N64x+VefRS4jMsuxnwYyzAk4yevpV+1SOKNJDPLbBVIURkjjOcc9eeMn8KqMpR2IlFTep1uuZl0tikgKMu35EyW56E1yV/Yxzyu1wYmkz8ilgSBngY7Hv3+lW4Nbaa5kt5LdooZDgSqcgD/bHYe9RvbvFcOjRBgTkHg/lkH+RpTm3LsKMUo23M4RbA0cib9wyDjByO4OcZFRSwt5THzDtfJRmGCp64bjofyrVKmRW8wzlD8uFhAB9e3NJdW+B5KB0cDaglPOfzJoTYWMmSLdqsUaToIrlhvJf7uM45xkg5z9eKhuo4ZSbe5d/KjJAjhzvOD1wc8Z7+1aM0MKzRiVGEqvkAHauQcgjPr6e9QXlnKqDZFctE4DZtyMhu4Kqf1H41qmrJiemhveVvvmiYo+1FTa65wSM4z+XFINLgKRxT2wPzq+xZGUYweaqT6jPc3d79gxDAH+ad8DaAMAkngDj61kT3VlHM7vNc3reU2XRtoyOuCck1nJQvoXHnt7xvTuqRwkr5SOpYyDqT2Ge9VZRC0kWQJS4bG0deOenUfnVi6YXejiS1cM9nguFbjaw57duv51UtrMRE7iQsuCyx4JC9c+gzgcdaw5VvfUuUtSKO2JLrAC5bbkseBg5HXr/Pt0qVIHnnG0RbVOWOcFvYDsPc1OsiSERQv5USDO5D9046/U5Ax71TuARISqf6hG8yNCffv169/etY3JZemjVYHSQlAeoQgg5Ht6ZqZWiv9NhltlLMkYwgHLAZH9Kx4ZGvbUwoApJJKuxyD1x7Y/zkV1+jaUn2Z1Vgp2LGsnuBnNTy66bg5K2uxgrI4VizwxR4Awpxs/EdDTYw22OVnIUEHfgDcPp2z69atatoztcqxUBlJJiLYQt/eHr9KztZuPsdqomEhYcglerY4z/hVJXdiG9LkGp3rCNbueFfPRjlc9FJBAz7c4P9KZDdtbqJPK32xdgrcqQR24+o/wA9ZHxdWNucEtcRDHOfmB9/xqjpsqQI6o5MoAZ1POV7HA5yMgfjWkErWJk3e5DfXUt2DDbLsgRzi3HDLj+I/wB5j3/KqaRuivk58sZCnjIxjp/StJSsqtI2xX6BuvPpyOaJoFkjPm7UXCgEe56+oFZqVtDXcm06/uNNgMsSxyR+ZGWAP3ww29fwz+daXlxahKXgvpYTOpVIpcbARkEgjkHAPHTmsFw0WyR5CGWUFnQAnKsPmde4HqPXrU9swEkccxG5HfA5AwSctg8jGTx/jVOKbutwv0ZsfZb23hEMBhYAAkmUZ6ht2PTA/P6UPZzSPDcTtFayEDzQGzzuDDGOMdaqAzSmIQzyum04Ck7uB3Pfp09hUVy82xGjUGfIAkcknPr1yB7YqVF31Y3axbE1npzySLG0srjEkrcMwJyD6fgAOldPoV4ZlgSAL5WCV4xwcda4swzbGMm0TMeWkYY57gfh6Vv+HJltlh8t1cRyYYg54PP+NWrRdzOXvKx1VxbrLEuTub7xHXIwarSW9rDB5jSMEzjPXBPTI/SrM8RlZMylVwHUA4I+g/oaztRnBmKSY8uEbnK/dzjrj6VvVcVG7RhS5nKyZVuYLV182WCM+XzuZRlR6+1UvtmmWMsZtrdIw+f3qRgBTjPJPPNUtRvzNtG7apO6MdMEdPrVN7iGR5Y5VKxs/Ab+fHTt+vrXJys6ubUz4LhQSDEc9wSGX3PIz+NI98q27xxuoRmADyRHgj+6f6VWWSN96K5GMiSTqD6YB5x06+/BpHQxwQRkFw7/ALvc3B47A9M/hVqCFzE0E0mySJnG04bfCcMrdM89eD071p27rBMs1yrkHeDMo+YMOjYPr6+wrKtI2efZZPkN78qRxn82698H2rWuyyqyKGa1jURIgzv64zkfQfTNKSSHFsdeiE7GRsIF2l4jzjpkgdfy/Kq8exs+cmM4WOaMnGMdNwPBPrTZpBYsokUT20yrmZSVdT03EdjSWzfYr2V0O6Hdw+cjp0dMEEHPX+VEbpA2m9Rp08wqzQLJ5RP+r3nrjjPOevr+eK1NK3QNNC24s6LLktkDnp16+1N87fyoAPUMACpB7D29DWhZwyNFJI6gdAOeTjvTc21YUUlK52GRIqF0yQOPyzXPaoV33Sn5stgV0Hmx+YMkYOAfxFYHiAkmd9hwVU4U9xwfwrSom0jKja7OdljSUhCCp5UDGSfcVGkHl3TERIo2/d3FgDx6g/lV2OZUX5I5SznlYuSR6nPvTnmM8OIoCk4PDFww9wR3P16VKTeho2jl4IonleIjzmH3PmIBPtj6d+OKG8uRYwHVSkrSFwCd2Bzx6849hzVm70meydry0i3QOu3zYyTs553Dt9ajkVZxbqxU7FY7gcb/AJuPwJxxRGStdCas7Mu2aPb2t7dqg+SJSisDlVB+QH1z1z6YqXUCiyIFxsWMEqD1JO79dvWqs0krwXDyvkuXVlJ+X2KkfTGKlvFVZWiDh1KZjB6gqRwfQ9qzl8RS2I7jbCVifc0ZdjFLjcjA84J7HPH459aazQyW8XJjYOUwOCO4z+tWIZ4m0qWzWMeXnKSDgkk/cYeuePxFR2tmby8YICY9o8wnjoD/AJzRF6ajt2LVhBPcZj8tZIuik8EY/u/4Vqrdwwh7dLpFCL5f7oZKkgnBPr/jXPa1qfmQC1g3CyQmNmj43sPmBz/dI6VY0+0/fM0R2u7ASBuQ3cMPwquS6uHNZ2RsvqMbJHIfPdGKhWLd8H/CnnWLaUGCYyoVG7DrkDtzjpnmsa4kKpCiqF2T5Kt0x6gfUmpILItMcoWD/KXLHIHp6jj+tOME92Jya2JtQb7A5VtxiYjZIF7eh/Liq1pqBSRzAUgCgs0zpnbkgAfj0z9aRLiWwtrme/lL2DzqDaSj5/mzkD6Dkj69Knk8O2GoWcUthdSi3IyPK+fJ6d/bselUmo7ia5ti7DcPaySrHz+82AAZB49Kr6ppFnehWgcW1wY9xUfcOT6dulQxXsAvDbyyBpmLOyrggHPQ+hP40j6wBd74tLYx+WVVhcAbwncADr/PmueaXNenuVG9rTKP9hahFDNFHGkrMwyI5QBtHJIz3JqSfTry4ubeZbOSMmEeYxIGHz359utaenahZXMshjnMNw4OIbgBS2c9D0NTRuIbtFnUCLyVU5XgHnmhOTdmVyq11qZVvpNzumkuXjjjZ23qrb26ccDjNWL+4trG3gtfMMU94PmfbkgZyTgevT/HFa17KhsYkiODcz7Sm37rAAnB9q57UrW0vL55JRIJQAikv8oCnHyjGTWjjaVnqTFuUfdRHJaxpHsnwInICzITtwOOQRzx9CKUNMfsssTqGmXyjl9xYg4U+xwBjp3qeC3H2iWK31WB7hQRHGhOZWHVSvO7j1HFWI7cbvLksjHJIdyLKwVU53ZBPYHPHXmrTezHykTbJbneHdQGQopHJYAYHoCcVYnu082FbKKR5pBvdwMNgHsOnBGM+1Nlhu1mQwqrrI+JAW2lcADI46c96Y1tLGAsF1tCZ3pgsrZ528gFeecZx3ojom2J7liZ7OE5eASsCQieXv2sTz/wL171T8N6g9vrU6SKUspy3zdAjjnPbryPyp1tbxGckiASYwNpaM+vJx83tnP1qeZVXBG1mf5ixJOe33jQ5pqxNm3c5xLdInsinCu21J07Hrn+YNaNvKIIfNOI9rhl3fdYFmyM9j96sqKZ7W3VZTuhuG8sbfvI2OGFKLkvpkwAwYLiMv6SDkdPxNQ1oXHcsXoi8+W0VFIjbAdv4RvIwfw5/Kp7bVjCfKmffbHCqCdxX3B9BxUomh1KeS5WIx+Z8/uDtIA9+Tn8BUX2HzYYri7fiREVEjGPlAwAT2/CplKKVmPld7o6C4kQRW7fe8uXgZ6ZX098fpXIid57vzopJ7No/njfLAsd3Pt09q6XQZzdxmGQHzYFJD567Tx+lczPby3N3NE0gWOGTbnJYkYzj6UU5atMVR2SaNZriK5j3fI+GJ8xkwST1z3P4U7Di1X7wiDq3lyPuKsB2HYc0aeqTwx4yEP3VwOMDPP+HFQSXAbfIc+Z06cFRk8/kPyqotydgeiuWrhsSYjdwJJF2BX7dOnf7vIqW3vHFnGTcSpdLM0YlIBA9A394YIqrHGt0rrKBut7ZLgFeOcjI/8AHjSWNw0GotEWJFyFU4UYB2nBx68U5CT6mhcaq623mPZKsoGSYRweeSFzjI57f/Wzbe5D3Mhto8KygkZ3Bz/ex0H0FOuY3jkUOwdGG9OxB3ANz68j64/Nxt1iuvLwFZ13FkGM+/1pqWlmD3P/2Q==";
+
+const wallArtPieces = [
+  { img: wallArtWaterBird, x: 280, y: 60, w: 95, h: 63, frame: "ornate" },
+  { img: wallArtArch, x: 730, y: 40, w: 130, h: 173, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, bigger per request
+  { img: wallArtCircles, x: 1050, y: 55, w: 95, h: 126, frame: "oval" } // right side of the nook
+];
+
+function drawAntiqueFrame(x, y, w, h, style) {
+  const pad = 6;
+  if (style === "ornate") {
+    ctx.fillStyle = "#7a5a2e";
+    ctx.fillRect(x - pad, y - pad, w + pad * 2, h + pad * 2);
+    ctx.strokeStyle = "#c9a84a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - pad + 2, y - pad + 2, w + pad * 2 - 4, h + pad * 2 - 4);
+    // small corner flourishes
+    [[x - pad, y - pad], [x + w + pad, y - pad], [x - pad, y + h + pad], [x + w + pad, y + h + pad]].forEach(([cx, cy]) => {
+      ctx.fillStyle = "#c9a84a";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  } else if (style === "oval") {
+    ctx.fillStyle = "#4a3420";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, w / 2 + pad + 4, h / 2 + pad + 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8a6a3a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, w / 2 + pad, h / 2 + pad, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    // plain -- simple dark wood, slightly thicker for the bigger piece
+    ctx.fillStyle = "#3a2818";
+    ctx.fillRect(x - pad, y - pad, w + pad * 2, h + pad * 2);
+    ctx.strokeStyle = "#5a4028";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - pad + 3, y - pad + 3, w + pad * 2 - 6, h + pad * 2 - 6);
+  }
+}
+
+function drawWallArt(camX) {
+  wallArtPieces.forEach(piece => {
+    const px = piece.x - camX;
+    if (piece.frame === "oval") {
+      drawAntiqueFrame(px, piece.y, piece.w, piece.h, piece.frame);
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(px + piece.w / 2, piece.y + piece.h / 2, piece.w / 2, piece.h / 2, 0, 0, Math.PI * 2);
+      ctx.clip();
+      if (piece.img.complete && piece.img.naturalWidth) {
+        ctx.drawImage(piece.img, px, piece.y, piece.w, piece.h);
+      }
+      ctx.restore();
+    } else {
+      drawAntiqueFrame(px, piece.y, piece.w, piece.h, piece.frame);
+      if (piece.img.complete && piece.img.naturalWidth) {
+        ctx.drawImage(piece.img, px, piece.y, piece.w, piece.h);
+      }
+    }
+  });
+}
+
 const owl = { x: 480, bob: 0 };
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
+  { x: 230, seed: 41, count: 3, heightAboveGround: 22 }, // new -- door area is now clear
   { x: 330, seed: 2, count: 4, heightAboveGround: 30 },
   { x: 405, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
-  { x: 770, seed: 13, count: 2, heightAboveGround: 16 } // moved off the door, now between the right shelf and the nook
+  { x: 770, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
+  { x: 870, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
 ];
 const BOOK_PILE_WIDTH = 24; // rough horizontal footprint for collision purposes
+const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
+
+// a book pile spread across the floor -- low, wide, several separate
+// small clusters rather than one tall stack, opening up the space and
+// giving a broader, gentler hop option alongside the taller piles
+const bookSpreads = [
+  { x: 480, width: 90, height: 12, seed: 7 }
+];
+function drawBookSpread(spread, camX) {
+  const baseX = spread.x - camX, baseY = gy - 4;
+  const clusterCount = 4;
+  for (let c = 0; c < clusterCount; c++) {
+    const cx = baseX - spread.width / 2 + (c + 0.5) * (spread.width / clusterCount);
+    const seed = spread.seed + c * 5;
+    const bookCount = 1 + (c % 2);
+    let dy = 0;
+    for (let i = 0; i < bookCount; i++) {
+      const w = 16 + ((seed + i * 4) % 8);
+      const h = 4 + ((seed + i * 3) % 2);
+      const rot = (((seed + i * 6) % 16) - 8) / 90;
+      ctx.save();
+      ctx.translate(cx, baseY - dy);
+      ctx.rotate(rot);
+      ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
+      ctx.fillRect(-w / 2, -h, w, h);
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-w / 2, -h, w, h);
+      ctx.restore();
+      dy += h;
+    }
+  }
+}
+const BOOK_SPREAD_HEIGHT = 13; // max cluster height (9) + the 4-unit base offset used in drawBookSpread, verified against the actual drawing formula
 const nookSeat = { x: 950, heightAboveGround: 32, width: 100 }; // +2 to account for nookBottom being gy-2, not gy, matching the drawn surface exactly
+
+// rug — right side of the nook, ordinary-looking floor decoration for now.
+// Future home of a trap door reveal (rolls up on interact), kept purely
+// visual and unremarkable at this stage so it doesn't telegraph anything.
+const nookRug = { x: 1080, width: 90, height: 34 };
+function drawNookRug(camX) {
+  const rx = nookRug.x - camX;
+  const ry = gy - 3;
+  ctx.fillStyle = "#7a4038";
+  ctx.beginPath();
+  ctx.ellipse(rx, ry, nookRug.width / 2, nookRug.height / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a2828";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(rx, ry, nookRug.width / 2 - 6, nookRug.height / 2 - 4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#9a5a48";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(rx, ry, nookRug.width / 2 - 12, nookRug.height / 2 - 8, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
 
 function drawOakScene(camX) {
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
@@ -7644,6 +7797,8 @@ function drawOakScene(camX) {
     ctx.quadraticCurveTo(gx + 20, gy * 0.5, gx, gy);
     ctx.stroke();
   }
+
+  drawWallArt(camX);
 
   // tall bookshelves along the walls, reaching nearly to the top of the
   // screen — two genuinely different styles, not the same shelf mirrored
@@ -7781,20 +7936,20 @@ function drawOakScene(camX) {
           const toothX = bx + mw / 2, toothCrownY = rowY + rowHeight - 3 - mh + 8;
           ctx.fillStyle = "#f5f0e0";
           ctx.beginPath();
-          ctx.moveTo(toothX - 4, toothCrownY - 3);
-          ctx.quadraticCurveTo(toothX - 5, toothCrownY - 7, toothX, toothCrownY - 7);
-          ctx.quadraticCurveTo(toothX + 5, toothCrownY - 7, toothX + 4, toothCrownY - 3);
-          ctx.quadraticCurveTo(toothX + 4.5, toothCrownY + 1, toothX + 2, toothCrownY + 6);
-          ctx.quadraticCurveTo(toothX + 1, toothCrownY + 8, toothX, toothCrownY + 5);
-          ctx.quadraticCurveTo(toothX - 1, toothCrownY + 8, toothX - 2, toothCrownY + 6);
-          ctx.quadraticCurveTo(toothX - 4.5, toothCrownY + 1, toothX - 4, toothCrownY - 3);
+          ctx.moveTo(toothX - 2.5, toothCrownY - 1.5);
+          ctx.quadraticCurveTo(toothX - 3, toothCrownY - 4, toothX, toothCrownY - 4);
+          ctx.quadraticCurveTo(toothX + 3, toothCrownY - 4, toothX + 2.5, toothCrownY - 1.5);
+          ctx.quadraticCurveTo(toothX + 2.7, toothCrownY + 0.5, toothX + 1.2, toothCrownY + 3);
+          ctx.quadraticCurveTo(toothX + 0.6, toothCrownY + 4, toothX, toothCrownY + 2.5);
+          ctx.quadraticCurveTo(toothX - 0.6, toothCrownY + 4, toothX - 1.2, toothCrownY + 3);
+          ctx.quadraticCurveTo(toothX - 2.7, toothCrownY + 0.5, toothX - 2.5, toothCrownY - 1.5);
           ctx.closePath();
           ctx.fill();
           ctx.save();
-          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh / 2 + 10);
+          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh + 28.8);
           ctx.rotate(-Math.PI / 2);
           ctx.fillStyle = "#f5f0e0";
-          ctx.font = "bold 8px monospace";
+          ctx.font = "7px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText("MANUAL", 0, 0);
@@ -7813,22 +7968,12 @@ function drawOakScene(camX) {
         ctx.restore();
         bx += bw + 1.5 + ((rowSeed + b) % 3 === 0 ? 2.5 : 0); // occasional slightly wider gap
 
-        // every so often, lean a lone book flat on top of this one
-        if ((rowSeed + b) % 4 === 2 && b < 4) {
-          const lw = shelfWidth / 5;
-          ctx.save();
-          ctx.translate(bx - bw / 2, rowY + rowHeight - 3 - bh - 3);
-          ctx.rotate(-0.12);
-          ctx.fillStyle = style.colors[(rowSeed + b + 2) % style.colors.length];
-          ctx.fillRect(-lw / 2, -4, lw, 4);
-          ctx.restore();
-        }
       }
     }
   });
 
   ctx.fillStyle = "#2e1c0a";
-  ctx.fillRect(0, gy, canvas.width, 40);
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
 
   // arch entrance/exit door
   const dx = oakReturnDoor.x - camX;
@@ -7851,7 +7996,6 @@ function drawOakScene(camX) {
   // genuinely different colors, not perfectly stacked uniform rectangles.
   // Scattered at several spots around the room, each pile shaped
   // differently via its own seed rather than being identical copies.
-  const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
   function drawBookPile(baseX, baseY, seed, count) {
     let dy = 0;
     for (let i = 0; i < count; i++) {
@@ -7874,6 +8018,7 @@ function drawOakScene(camX) {
   }
   // drawn from the shared bookPiles array (also used for collision below)
   bookPiles.forEach(pile => drawBookPile(pile.x, gy - 6, pile.seed, pile.count));
+  bookSpreads.forEach(spread => drawBookSpread(spread, camX));
 
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
   // out slightly, with a small window. Moved way right of the second
@@ -8092,6 +8237,7 @@ function drawOakScene(camX) {
     ctx.restore();
   });
 
+  drawNookRug(camX);
   drawOwl(camX);
 }
 
@@ -8166,6 +8312,8 @@ function drawOwl(camX) {
   ctx.lineWidth = 1.3;
   ctx.beginPath();
   ctx.arc(ox - 6, oy - 5, 6.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
   ctx.arc(ox + 6, oy - 5, 6.5, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
@@ -8208,6 +8356,24 @@ function updateOakScene(deltaTime) {
     }
   });
 
+  // book spread collision — wide and low, same landing pattern
+  bookSpreads.forEach(spread => {
+    const spreadTop = BOOK_SPREAD_HEIGHT;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > spread.x - spread.width / 2 &&
+      player.x < spread.x + spread.width / 2 &&
+      playerBottom <= spreadTop &&
+      playerBottom >= spreadTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = spreadTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
   // nook seat collision — jumpable, same pattern
   const seatTop = nookSeat.heightAboveGround;
   const playerBottom = player.y;
@@ -8229,6 +8395,14 @@ function updateOakScene(deltaTime) {
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
       keys.spaceJustPressed && isPlayerNear(90, 27, 20, 25, 25)) {
     bookReader.book = "apple";
+    bookReader.opening = true;
+    bookReader.openT = 0;
+  }
+
+  // manual — its own trigger at its actual shelf position
+  if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
+      keys.spaceJustPressed && isPlayerNear(620, 20, 25, 30, 30)) {
+    bookReader.book = "manual";
     bookReader.opening = true;
     bookReader.openT = 0;
   }
@@ -8333,7 +8507,8 @@ const appleBookPages = [
 ];
 
 const manualBookPages = [
-  { num: null, isToothPage: true, lines: [] }
+  { num: null, isToothPage: true, lines: [] },
+  { num: null, isEndPage: true, lines: [] }
 ];
 
 function getActivePages() {
@@ -8342,20 +8517,20 @@ function getActivePages() {
 
 function drawBookVine(cx, y, textWidth) {
   const vineWidth = textWidth + 16;
-  ctx.strokeStyle = "#6a8a4a";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#5a7a3a";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(cx - vineWidth / 2, y);
-  ctx.quadraticCurveTo(cx - vineWidth / 4, y - 4, cx, y);
-  ctx.quadraticCurveTo(cx + vineWidth / 4, y + 4, cx + vineWidth / 2, y);
+  ctx.quadraticCurveTo(cx - vineWidth / 4, y - 5, cx, y);
+  ctx.quadraticCurveTo(cx + vineWidth / 4, y + 5, cx + vineWidth / 2, y);
   ctx.stroke();
-  ctx.fillStyle = "#5a8a3a";
+  ctx.fillStyle = "#4a7a2a";
   [-vineWidth * 0.32, -vineWidth * 0.08, vineWidth * 0.14, vineWidth * 0.34].forEach((dx, i) => {
     ctx.save();
-    ctx.translate(cx + dx, y + (i % 2 === 0 ? -3 : 3));
+    ctx.translate(cx + dx, y + (i % 2 === 0 ? -4 : 4));
     ctx.rotate(i % 2 === 0 ? -0.5 : 0.5);
     ctx.beginPath();
-    ctx.ellipse(0, 0, 3, 1.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 4, 2.2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   });
@@ -8426,35 +8601,78 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
   const frX = x + pw / 2;
 
   if (page.isEndPage) {
-    ctx.strokeStyle = "#8a6a3a";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(frX - 90, ph / 2 - 55);
-    ctx.lineTo(frX + 90, ph / 2 - 55);
-    ctx.stroke();
     ctx.fillStyle = "#3a2c18";
-    ctx.font = "44px Georgia, serif";
+    ctx.font = "italic 44px Georgia, serif";
     ctx.textAlign = "center";
     ctx.save();
-    ctx.letterSpacing = "6px";
-    ctx.fillText("the end", frX, ph / 2 + 6);
+    ctx.letterSpacing = "4px";
+    ctx.fillText("the end", frX, ph / 2 + 10);
     ctx.restore();
-    ctx.beginPath();
-    ctx.moveTo(frX - 90, ph / 2 + 55);
-    ctx.lineTo(frX + 90, ph / 2 + 55);
-    ctx.stroke();
+
+    const drawFlourish = (side) => {
+      ctx.strokeStyle = "#8a6a3a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const startX = frX + side * 95, endX = frX + side * 20;
+      const y = ph / 2 - 45;
+      ctx.moveTo(startX, y);
+      ctx.bezierCurveTo(startX - side * 25, y - 10, startX - side * 45, y + 8, endX, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(startX, y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = "#8a6a3a";
+      ctx.fill();
+      const y2 = ph / 2 + 55;
+      ctx.beginPath();
+      ctx.moveTo(startX, y2);
+      ctx.bezierCurveTo(startX - side * 25, y2 + 10, startX - side * 45, y2 - 8, endX, y2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(startX, y2, 2, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    drawFlourish(-1);
+    drawFlourish(1);
+
+    ctx.fillStyle = "#a8862f";
+    ctx.font = "16px Georgia, serif";
+    ctx.fillText("\u2766", frX, ph / 2 - 20);
     ctx.restore();
     return;
   }
 
   if (page.isToothPage) {
-    const frY = ph / 2;
-    ctx.fillStyle = "#e8ddc8";
+    const frX2 = frX, frY = ph / 2 - 10;
+    const s = 13; // scale factor for the big page version — much bigger per request
+    ctx.fillStyle = "#f5f0e0";
     ctx.beginPath();
-    ctx.arc(frX - 14, frY, 20, 0, Math.PI * 2);
-    ctx.arc(frX + 14, frY, 20, 0, Math.PI * 2);
+    ctx.moveTo(frX2 - 2.5 * s, frY - 1.5 * s);
+    ctx.quadraticCurveTo(frX2 - 3 * s, frY - 4 * s, frX2, frY - 4 * s);
+    ctx.quadraticCurveTo(frX2 + 3 * s, frY - 4 * s, frX2 + 2.5 * s, frY - 1.5 * s);
+    ctx.quadraticCurveTo(frX2 + 2.7 * s, frY + 0.5 * s, frX2 + 1.2 * s, frY + 3 * s);
+    ctx.quadraticCurveTo(frX2 + 0.6 * s, frY + 4 * s, frX2, frY + 2.5 * s);
+    ctx.quadraticCurveTo(frX2 - 0.6 * s, frY + 4 * s, frX2 - 1.2 * s, frY + 3 * s);
+    ctx.quadraticCurveTo(frX2 - 2.7 * s, frY + 0.5 * s, frX2 - 2.5 * s, frY - 1.5 * s);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillRect(frX - 12, frY, 24, 30);
+    ctx.strokeStyle = "#c9c0a8";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // shine highlight -- a bright ellipse plus a couple sparkle glints
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(frX2 - 0.9 * s, frY - 2.2 * s, 0.6 * s, 1.1 * s, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+    [[1.6 * s, -3.2 * s], [2.3 * s, -1 * s]].forEach(([dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(frX2 + dx - 4, frY + dy);
+      ctx.lineTo(frX2 + dx + 4, frY + dy);
+      ctx.moveTo(frX2 + dx, frY + dy - 4);
+      ctx.lineTo(frX2 + dx, frY + dy + 4);
+      ctx.stroke();
+    });
     ctx.restore();
     return;
   }
@@ -8475,11 +8693,11 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
   let ty = 168;
   page.lines.forEach(line => { ctx.fillText(line, frX, ty); ty += 17; });
 
-  ctx.font = "11px Georgia, serif";
+  ctx.font = "14px Georgia, serif";
   const numStr = String(page.num);
   const numWidth = ctx.measureText(numStr).width;
-  drawBookVine(frX, ph - 30, numWidth);
-  ctx.fillStyle = "#7a6438";
+  drawBookVine(frX, ph - 34, numWidth);
+  ctx.fillStyle = "#4a3018";
   ctx.fillText(numStr, frX, ph - 18);
   ctx.restore();
 }
@@ -8497,7 +8715,7 @@ function drawBookCover(centerX, centerY, alpha) {
   ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
   ctx.font = "italic 13px Georgia, serif";
   ctx.textAlign = "center";
-  ctx.fillText(isManual ? "manual" : "apple", centerX, centerY);
+  ctx.fillText(isManual ? "MANUAL" : "apple", centerX, centerY);
   ctx.restore();
 }
 
