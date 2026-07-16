@@ -7614,18 +7614,18 @@ function updateRabbitShuttle(deltaTime) {
    for now this is just the space existing.
    ====================================================== */
 const oakReturnDoor = { x: 200, width: 50, height: 90 };
-const owl = { x: 550, bob: 0 };
+const owl = { x: 480, bob: 0 };
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
-  { x: 190, seed: 13, count: 2, heightAboveGround: 10 },
-  { x: 330, seed: 2, count: 4, heightAboveGround: 24 },
-  { x: 405, seed: 23, count: 3, heightAboveGround: 15 },
-  { x: 560, seed: 31, count: 12, heightAboveGround: 60 } // much taller than the others
+  { x: 330, seed: 2, count: 4, heightAboveGround: 30 },
+  { x: 405, seed: 23, count: 3, heightAboveGround: 24 },
+  { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
+  { x: 770, seed: 13, count: 2, heightAboveGround: 16 } // moved off the door, now between the right shelf and the nook
 ];
 const BOOK_PILE_WIDTH = 24; // rough horizontal footprint for collision purposes
-const nookSeat = { x: 950, heightAboveGround: 30, width: 100 };
+const nookSeat = { x: 950, heightAboveGround: 32, width: 100 }; // +2 to account for nookBottom being gy-2, not gy, matching the drawn surface exactly
 
 function drawOakScene(camX) {
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
@@ -7751,8 +7751,9 @@ function drawOakScene(camX) {
       for (let b = 0; b < 5 && bx < sx + shelfWidth / 2 - 6; b++) {
         if (!isLeftShelf && row === 3 && b === 0) {
           // the manual — explicit blue book with a tooth icon and label,
-          // second row from the bottom of the right shelf
-          const mw = 8, mh = rowHeight - 10;
+          // second row from the bottom of the right shelf. Widened for
+          // more room, text switched to black for readability.
+          const mw = 12, mh = rowHeight - 10;
           ctx.fillStyle = "#2f5a6a";
           ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
           ctx.fillStyle = "#e8ddc8";
@@ -7765,7 +7766,7 @@ function drawOakScene(camX) {
           ctx.save();
           ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh / 2 + 6);
           ctx.rotate(-Math.PI / 2);
-          ctx.fillStyle = "#e8ddc8";
+          ctx.fillStyle = "#111111";
           ctx.font = "6px monospace";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
@@ -7949,7 +7950,7 @@ function drawOakScene(camX) {
   ctx.quadraticCurveTo(bx + 4, by, bx - 8, by - 6);
   ctx.stroke();
   const leafColors = ["#c96a1e", "#a83a2a", "#d4a520"];
-  [[bx - 6, by - 8, 0.3, 0], [bx - 1, by - 2, -0.2, 1], [bx + 5, by + 3, 0.5, 2], [bx - 10, by - 4, -0.4, 1]].forEach(([lx, ly, rot, colorIdx]) => {
+  [[bx - 6, by - 8, 0.3, 0], [bx - 1, by - 2, -0.2, 1], [bx + 5, by - 1, 0.5, 2], [bx - 10, by - 4, -0.4, 1]].forEach(([lx, ly, rot, colorIdx]) => {
     ctx.fillStyle = leafColors[colorIdx];
     ctx.save();
     ctx.translate(lx, ly);
@@ -8194,6 +8195,474 @@ function updateOakScene(deltaTime) {
     player.jumping = false;
     player.usedDoubleJump = false;
   }
+
+  // apple storybook — grab-to-read trigger. Positioned at the tall book
+  // pile for now (a stand-in "this is the book" spot); space opens it.
+  if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
+      keys.spaceJustPressed && isPlayerNear(560, 66, 26, 20, 20)) {
+    bookReader.book = "apple";
+    bookReader.opening = true;
+    bookReader.openT = 0;
+  }
+}
+
+/* ======================================================
+   BOOK READER — a full-overlay reading mode, stepping
+   outside the normal scene entirely. Grab a book, read it
+   with arrow keys turning pages, space exits any time.
+   Pages transition via a sparkle-particle dissolve matching
+   the existing cloud/elephant-appear visual language, not a
+   flat wipe or pixel-shatter effect.
+   ====================================================== */
+const bookReader = {
+  active: false,
+  book: null,           // "apple" | "manual"
+  currentPage: 0,
+  opening: false,
+  openT: 0,
+  closing: false,
+  closeT: 0,
+  transitioning: false,
+  transitionT: 0,
+  sparkles: []
+};
+
+const BOOK_READER_OUT_MS = 1500;
+const BOOK_READER_PAUSE_MS = 500;
+const BOOK_READER_IN_MS = 1500;
+const BOOK_READER_TRANSITION_TOTAL = BOOK_READER_OUT_MS + BOOK_READER_PAUSE_MS + BOOK_READER_IN_MS;
+const BOOK_OPEN_CLOSE_MS = 2800; // matches the previewed flourish timing
+
+const appleBookPages = [
+  {
+    num: 1,
+    lines: ["There once was an apple tree who grew tired of choosing.", "", "Every apple she'd ever dropped had rolled toward exactly one", "place, and lived exactly one small life, and that had always", "seemed like such a waste of a good apple.", "", "So one autumn evening, she decided to try something different."],
+    draw: (frX, frY) => {
+      ctx.strokeStyle = "#5a4028"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(frX, frY + 38); ctx.lineTo(frX, frY - 6); ctx.stroke();
+      ctx.fillStyle = "#5a8a3a";
+      [[-20, -30], [18, -26], [-10, -38], [6, -14], [-30, -15], [26, -10]].forEach(([dx, dy]) => {
+        ctx.save(); ctx.translate(frX + dx, frY + dy); ctx.rotate(dx * 0.02);
+        ctx.beginPath(); ctx.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      });
+      ctx.fillStyle = "#c9384a"; ctx.beginPath(); ctx.arc(frX - 4, frY + 12, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#d4a520"; ctx.beginPath(); ctx.arc(frX + 4, frY + 12, 7, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+  {
+    num: 2,
+    lines: ["She let go of her very last apple of the season, a plump,", "unremarkable thing, red on one cheek and gold on the other,", "and let it fall.", "", "It struck a stone at just the right angle, and broke clean", "into three.", "", "The tree hadn't planned that part. But she found she rather", "liked it."],
+    draw: (frX, frY) => {
+      ctx.strokeStyle = "#8a8074"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(frX, frY + 30, 16, 6, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.save(); ctx.translate(frX - 14, frY - 4); ctx.rotate(-0.3);
+      ctx.fillStyle = "#c9384a"; ctx.beginPath(); ctx.moveTo(-10, -6); ctx.quadraticCurveTo(-14, 4, -6, 10); ctx.quadraticCurveTo(0, 14, 4, 6); ctx.lineTo(-2, -8); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(frX + 12, frY - 2); ctx.rotate(0.4);
+      ctx.fillStyle = "#d4a520"; ctx.beginPath(); ctx.moveTo(8, -6); ctx.quadraticCurveTo(14, 2, 6, 10); ctx.quadraticCurveTo(0, 12, -4, 4); ctx.lineTo(2, -8); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(frX, frY + 12);
+      ctx.fillStyle = "#e8a840"; ctx.beginPath(); ctx.moveTo(-6, 4); ctx.quadraticCurveTo(-4, -4, 2, -2); ctx.quadraticCurveTo(6, 2, 2, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.fillStyle = "#e8ddc8";
+      [[frX - 1, frY - 9], [frX + 13, frY - 11], [frX - 2, frY + 6]].forEach(([sx, sy]) => { ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI * 2); ctx.fill(); });
+    }
+  },
+  {
+    num: 3,
+    lines: ["One piece rolled toward the orchard's edge, where the fences", "had never quite kept anything in, or out.", "", "One piece caught in a gust and went tumbling somewhere higher", "than fruit is meant to go.", "", "One piece simply sat still, deciding that perhaps the adventure", "would come find it, thank you very much."],
+    draw: (frX, frY) => {
+      ctx.fillStyle = "#c9384a"; ctx.beginPath(); ctx.arc(frX - 32, frY + 22, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(90,64,40,0.4)"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(frX, frY); ctx.quadraticCurveTo(frX - 20, frY + 15, frX - 32, frY + 22); ctx.stroke();
+      ctx.fillStyle = "#d4a520"; ctx.beginPath(); ctx.arc(frX + 18, frY - 30, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(frX, frY); ctx.quadraticCurveTo(frX + 10, frY - 20, frX + 18, frY - 30); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#e8a840"; ctx.beginPath(); ctx.arc(frX, frY + 2, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#8a6a3a"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(frX - 6, frY + 18); ctx.lineTo(frX + 6, frY + 18); ctx.stroke();
+    }
+  },
+  {
+    num: 4,
+    lines: ["Where do the three pieces go from here? Even the tree", "couldn't say.", "", "The future was never really hers to promise. But the whimsy,", "the whimsy she could grow every single year, and that was", "enough."],
+    draw: (frX, frY) => {
+      ctx.strokeStyle = "#8a6a3a"; ctx.lineWidth = 1.2;
+      for (let i = 0; i < 3; i++) { const r = 14 + i * 12; ctx.beginPath(); ctx.arc(frX, frY, r, 0.3 + i, 2.5 + i); ctx.stroke(); }
+      ctx.fillStyle = "#d4a520";
+      [[0, -38], [24, 10], [-22, 14], [10, 32]].forEach(([dx, dy], i) => {
+        ctx.save(); ctx.translate(frX + dx, frY + dy);
+        const s = 3 + (i % 2) * 1.5;
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const a = (Math.PI / 2) * k; const ox = Math.cos(a) * s, oy = Math.sin(a) * s;
+          const ia = a + Math.PI / 4; const ix = Math.cos(ia) * s * 0.35, iy = Math.sin(ia) * s * 0.35;
+          if (k === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
+          ctx.lineTo(ix, iy);
+        }
+        ctx.closePath(); ctx.fill(); ctx.restore();
+      });
+    }
+  },
+  { num: null, isEndPage: true, lines: [] }
+];
+
+const manualBookPages = [
+  { num: null, isToothPage: true, lines: [] }
+];
+
+function getActivePages() {
+  return bookReader.book === "manual" ? manualBookPages : appleBookPages;
+}
+
+function drawBookVine(cx, y, textWidth) {
+  const vineWidth = textWidth + 16;
+  ctx.strokeStyle = "#6a8a4a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - vineWidth / 2, y);
+  ctx.quadraticCurveTo(cx - vineWidth / 4, y - 4, cx, y);
+  ctx.quadraticCurveTo(cx + vineWidth / 4, y + 4, cx + vineWidth / 2, y);
+  ctx.stroke();
+  ctx.fillStyle = "#5a8a3a";
+  [-vineWidth * 0.32, -vineWidth * 0.08, vineWidth * 0.14, vineWidth * 0.34].forEach((dx, i) => {
+    ctx.save();
+    ctx.translate(cx + dx, y + (i % 2 === 0 ? -3 : 3));
+    ctx.rotate(i % 2 === 0 ? -0.5 : 0.5);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 3, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawBookStar(cx, cy, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = (Math.PI / 2) * i;
+    const ox = cx + Math.cos(a) * r, oy = cy + Math.sin(a) * r;
+    const ia = a + Math.PI / 4;
+    const ix = cx + Math.cos(ia) * r * 0.35, iy = cy + Math.sin(ia) * r * 0.35;
+    if (i === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
+    ctx.lineTo(ix, iy);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+const BOOK_SPARK_COLORS = ["255,250,230", "255,225,150", "255,255,255"];
+function buildBookSparkles(count) {
+  return Array.from({ length: count }, () => {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 20 + Math.random() * 150;
+    return {
+      dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist,
+      spinDir: Math.random() < 0.5 ? 1 : -1,
+      spinAmount: 1.2 + Math.random() * 1.6,
+      seed: Math.random(),
+      radius: 0.9 + Math.random() * 1.6,
+      isStar: Math.random() < 0.3,
+      color: BOOK_SPARK_COLORS[Math.floor(Math.random() * BOOK_SPARK_COLORS.length)],
+      twinkleSpeed: 0.006 + Math.random() * 0.01,
+      twinklePhase: Math.random() * Math.PI * 2,
+      wobbleSpeed: 1.5 + Math.random() * 2,
+      wobbleAmt: 3 + Math.random() * 6
+    };
+  });
+}
+
+function drawBookSparkles(centerX, centerY, alpha, progress, now) {
+  const ease = 1 - Math.pow(1 - progress, 2);
+  bookReader.sparkles.forEach((pt, idx) => {
+    const radius = Math.hypot(pt.dx, pt.dy) * ease;
+    const baseAngle = Math.atan2(pt.dy, pt.dx);
+    const spin = ease * Math.PI * pt.spinAmount * pt.spinDir;
+    const angle = baseAngle + spin;
+    const wobble = Math.sin(now * 0.001 * pt.wobbleSpeed + pt.seed * 10) * pt.wobbleAmt * ease;
+    const px = centerX + Math.cos(angle) * radius + Math.cos(angle + Math.PI / 2) * wobble;
+    const py = centerY + Math.sin(angle) * radius + Math.sin(angle + Math.PI / 2) * wobble;
+    const twinkle = 0.4 + Math.sin(now * pt.twinkleSpeed + pt.twinklePhase) * 0.6;
+    const sizeTwinkle = pt.radius * (0.7 + twinkle * 0.5);
+    ctx.fillStyle = `rgba(${pt.color},${Math.max(0, alpha * twinkle)})`;
+    if (pt.isStar) drawBookStar(px, py, sizeTwinkle * 2.2);
+    else { ctx.beginPath(); ctx.arc(px, py, sizeTwinkle, 0, Math.PI * 2); ctx.fill(); }
+  });
+}
+
+function drawBookPageBackground(x, pw, ph) {
+  ctx.fillStyle = "#e8d9b8";
+  ctx.fillRect(x, 0, pw, ph);
+}
+
+function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const page = pages[pageIdx];
+  const frX = x + pw / 2;
+
+  if (page.isEndPage) {
+    ctx.strokeStyle = "#8a6a3a";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(frX - 90, ph / 2 - 55);
+    ctx.lineTo(frX + 90, ph / 2 - 55);
+    ctx.stroke();
+    ctx.fillStyle = "#3a2c18";
+    ctx.font = "44px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.save();
+    ctx.letterSpacing = "6px";
+    ctx.fillText("the end", frX, ph / 2 + 6);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(frX - 90, ph / 2 + 55);
+    ctx.lineTo(frX + 90, ph / 2 + 55);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (page.isToothPage) {
+    const frY = ph / 2;
+    ctx.fillStyle = "#e8ddc8";
+    ctx.beginPath();
+    ctx.arc(frX - 14, frY, 20, 0, Math.PI * 2);
+    ctx.arc(frX + 14, frY, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(frX - 12, frY, 24, 30);
+    ctx.restore();
+    return;
+  }
+
+  const frY = 92, frR = 55;
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(frX, frY, frR, 0, Math.PI * 2); ctx.stroke();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(frX, frY, frR - 4, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = "#f0e6cc"; ctx.fillRect(frX - frR, frY - frR, frR * 2, frR * 2);
+  page.draw(frX, frY);
+  ctx.restore();
+
+  ctx.fillStyle = "#3a2c18";
+  ctx.font = "italic 11px Georgia, serif";
+  ctx.textAlign = "center";
+  let ty = 168;
+  page.lines.forEach(line => { ctx.fillText(line, frX, ty); ty += 17; });
+
+  ctx.font = "11px Georgia, serif";
+  const numStr = String(page.num);
+  const numWidth = ctx.measureText(numStr).width;
+  drawBookVine(frX, ph - 30, numWidth);
+  ctx.fillStyle = "#7a6438";
+  ctx.fillText(numStr, frX, ph - 18);
+  ctx.restore();
+}
+
+function drawBookCover(centerX, centerY, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const isManual = bookReader.book === "manual";
+  const coverW = isManual ? 90 : 110, coverH = 130;
+  ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
+  ctx.fillRect(centerX - coverW / 2, centerY - coverH / 2, coverW, coverH);
+  ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(centerX - coverW / 2, centerY - coverH / 2, coverW, coverH);
+  ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
+  ctx.font = "italic 13px Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText(isManual ? "manual" : "apple", centerX, centerY);
+  ctx.restore();
+}
+
+function easeInOutBook(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
+function easeOutBook(p) { return 1 - Math.pow(1 - p, 3); }
+
+function updateBookReader(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  const w = canvas.width, h = canvas.height;
+  const spineX = 90, pageRight = w - 40, pageW = pageRight - spineX;
+  const centerX = spineX + pageW / 2, centerY = h / 2;
+
+  if (bookReader.opening) {
+    bookReader.openT += dtMs;
+    if (bookReader.openT >= BOOK_OPEN_CLOSE_MS) {
+      bookReader.opening = false;
+      bookReader.active = true;
+      bookReader.currentPage = 0;
+    }
+    return;
+  }
+
+  if (bookReader.closing) {
+    bookReader.closeT += dtMs;
+    if (bookReader.closeT >= BOOK_OPEN_CLOSE_MS) {
+      bookReader.closing = false;
+      bookReader.book = null;
+    }
+    return;
+  }
+
+  if (!bookReader.active) return;
+
+  const pages = getActivePages();
+
+  if (bookReader.transitioning) {
+    bookReader.transitionT += dtMs;
+    if (bookReader.transitionT >= BOOK_READER_TRANSITION_TOTAL) {
+      bookReader.transitioning = false;
+      bookReader.currentPage = bookReader.pendingPage;
+    }
+    return;
+  }
+
+  if (keys.spaceJustPressed) {
+    bookReader.active = false;
+    bookReader.closing = true;
+    bookReader.closeT = 0;
+    return;
+  }
+
+  if (keys.rightJustPressed) {
+    if (bookReader.currentPage >= pages.length - 1) {
+      bookReader.active = false;
+      bookReader.closing = true;
+      bookReader.closeT = 0;
+      return;
+    }
+    bookReader.pendingPage = bookReader.currentPage + 1;
+    bookReader.sparkles = buildBookSparkles(pages.length <= 1 ? 40 : 90);
+    bookReader.transitioning = true;
+    bookReader.transitionT = 0;
+  } else if (keys.leftJustPressed && bookReader.currentPage > 0) {
+    bookReader.pendingPage = bookReader.currentPage - 1;
+    bookReader.sparkles = buildBookSparkles(90);
+    bookReader.transitioning = true;
+    bookReader.transitionT = 0;
+  }
+}
+
+function drawBookReader() {
+  const w = canvas.width, h = canvas.height;
+  const spineX = 90, pageRight = w - 40, pageW = pageRight - spineX;
+  const centerX = spineX + pageW / 2, centerY = h / 2;
+  const now = performance.now();
+  const pages = getActivePages();
+
+  ctx.fillStyle = "#dccba0";
+  ctx.fillRect(0, 0, w, h);
+
+  if (bookReader.opening) {
+    const t = bookReader.openT;
+    const PHASE_FLYIN = 1000, PHASE_HOLD = 400, PHASE_BURST = 500, PHASE_OPEN = 900;
+    if (t < PHASE_FLYIN) {
+      const fp = easeOutBook(t / PHASE_FLYIN);
+      const scale = 0.3 + fp * 0.7;
+      ctx.save();
+      ctx.globalAlpha = fp;
+      ctx.translate(centerX, centerY);
+      ctx.scale(scale, scale);
+      ctx.translate(-centerX, -centerY);
+      drawBookCover(centerX, centerY, 1);
+      ctx.restore();
+    } else if (t < PHASE_FLYIN + PHASE_HOLD) {
+      drawBookCover(centerX, centerY, 1);
+    } else if (t < PHASE_FLYIN + PHASE_HOLD + PHASE_BURST) {
+      const bp = (t - PHASE_FLYIN - PHASE_HOLD) / PHASE_BURST;
+      if (bp < 0.05 && bookReader.sparkles.length === 0) bookReader.sparkles = buildBookSparkles(60);
+      drawBookCover(centerX, centerY, 1);
+      drawBookSparkles(centerX, centerY, 1 - bp, bp, now);
+    } else {
+      const op = easeInOutBook((t - PHASE_FLYIN - PHASE_HOLD - PHASE_BURST) / PHASE_OPEN);
+      const leftEdge = spineX + (pageW / 2) * (1 - op);
+      const rightEdge = pageRight - (pageW / 2) * (1 - op);
+      ctx.fillStyle = "#d8c8a0"; ctx.fillRect(spineX - 20, 0, 20, h);
+      ctx.fillStyle = "#4a3018"; ctx.fillRect(spineX - 3, 0, 3, h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(spineX, 0, Math.max(0, leftEdge - spineX), h);
+      ctx.clip();
+      drawBookPageBackground(spineX, pageW, h);
+      drawBookPageContent(pages, 0, spineX, pageW, h, op);
+      ctx.restore();
+      if (rightEdge < pageRight) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rightEdge, 0, pageRight - rightEdge, h);
+        ctx.clip();
+        drawBookPageBackground(spineX, pageW, h);
+        ctx.restore();
+      }
+      if (bookReader.sparkles.length) bookReader.sparkles = [];
+    }
+    return;
+  }
+
+  if (bookReader.closing) {
+    const t = bookReader.closeT;
+    const PHASE_CLOSE = 900, PHASE_BURST = 500, PHASE_HOLD = 400, PHASE_FLYAWAY = 1000;
+    if (t < PHASE_CLOSE) {
+      const p = easeInOutBook(t / PHASE_CLOSE);
+      const leftEdge = spineX + (pageW / 2) * p;
+      const rightEdge = pageRight - (pageW / 2) * p;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(spineX, 0, Math.max(0, leftEdge - spineX), h);
+      ctx.clip();
+      drawBookPageBackground(spineX, pageW, h);
+      drawBookPageContent(pages, pages.length - 1, spineX, pageW, h, 1 - p * 0.6);
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rightEdge, 0, Math.max(0, pageRight - rightEdge), h);
+      ctx.clip();
+      ctx.fillStyle = "#e0d0a8"; ctx.fillRect(spineX, 0, pageW, h);
+      ctx.restore();
+      ctx.fillStyle = "#4a3018"; ctx.fillRect(leftEdge - 1.5, 0, 3, h);
+      ctx.fillStyle = "#d8c8a0"; ctx.fillRect(spineX - 20, 0, 20, h);
+      ctx.fillStyle = "#4a3018"; ctx.fillRect(spineX - 3, 0, 3, h);
+    } else if (t < PHASE_CLOSE + PHASE_BURST) {
+      const bp = (t - PHASE_CLOSE) / PHASE_BURST;
+      if (bp < 0.05 && bookReader.sparkles.length === 0) bookReader.sparkles = buildBookSparkles(60);
+      drawBookCover(centerX, centerY, 1);
+      drawBookSparkles(centerX, centerY, 1, bp, now);
+    } else if (t < PHASE_CLOSE + PHASE_BURST + PHASE_HOLD) {
+      drawBookCover(centerX, centerY, 1);
+    } else {
+      const fp = easeOutBook((t - PHASE_CLOSE - PHASE_BURST - PHASE_HOLD) / PHASE_FLYAWAY);
+      const scale = 1 - fp * 0.7;
+      const driftY = -fp * 140, driftX = fp * 60;
+      ctx.save();
+      ctx.globalAlpha = 1 - fp;
+      ctx.translate(centerX + driftX, centerY + driftY);
+      ctx.scale(scale, scale);
+      ctx.translate(-centerX, -centerY);
+      drawBookCover(centerX, centerY, 1);
+      ctx.restore();
+      if (bookReader.sparkles.length) bookReader.sparkles = [];
+    }
+    return;
+  }
+
+  ctx.fillStyle = "#d8c8a0"; ctx.fillRect(spineX - 20, 0, 20, h);
+  ctx.fillStyle = "#4a3018"; ctx.fillRect(spineX - 3, 0, 3, h);
+  drawBookPageBackground(spineX, pageW, h);
+
+  if (!bookReader.transitioning) {
+    drawBookPageContent(pages, bookReader.currentPage, spineX, pageW, h, 1);
+    return;
+  }
+
+  const t = bookReader.transitionT;
+  if (t < BOOK_READER_OUT_MS) {
+    const p = t / BOOK_READER_OUT_MS;
+    drawBookPageContent(pages, bookReader.currentPage, spineX, pageW, h, 1 - p);
+    drawBookSparkles(centerX, centerY, 1, p, now);
+  } else if (t < BOOK_READER_OUT_MS + BOOK_READER_PAUSE_MS) {
+    // quiet pause on the blank page
+  } else {
+    const p = (t - BOOK_READER_OUT_MS - BOOK_READER_PAUSE_MS) / BOOK_READER_IN_MS;
+    drawBookPageContent(pages, bookReader.pendingPage, spineX, pageW, h, p);
+    drawBookSparkles(centerX, centerY, 1, 1 - p, now);
+  }
 }
 
 function drawCloudsScene(camX) {
@@ -8305,7 +8774,9 @@ function updateCloudsScene(deltaTime) {
 function draw(){
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
-if (camera.topDown) {
+if (bookReader.active || bookReader.opening || bookReader.closing) {
+  drawBookReader();
+} else if (camera.topDown) {
   ctx.fillStyle="rgba(245,245,240,0.94)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle="#2b2b2b";
@@ -8815,6 +9286,17 @@ function update(){
 const now = performance.now();
 const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
 lastTime = now;
+
+  if (bookReader.active || bookReader.opening || bookReader.closing) {
+    updateBookReader(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
 
   handleInput();
   applyPhysics();
