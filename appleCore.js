@@ -7760,10 +7760,10 @@ const nookSeat = { x: 1150, heightAboveGround: 32, width: 100 }; // +2 to accoun
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
 // visual and unremarkable at this stage so it doesn't telegraph anything.
-const nookRug = { x: 1350, width: 100, height: 30 };
+const nookRug = { x: 1350, width: 100, height: 16 };
 function drawNookRug(camX) {
   const rx = nookRug.x - camX;
-  const ry = gy - 3;
+  const ry = gy + 8;
   const w = nookRug.width, h = nookRug.height;
 
   // subtle tell when the player is actually standing on it -- a gentle
@@ -7849,7 +7849,7 @@ function drawNookRug(camX) {
   // one corner slightly turned up when the player is standing on it --
   // a tiny triangular peel showing the darker floor underneath
   if (onRug) {
-    const liftAmt = 4 + Math.sin(performance.now() * 0.006) * 1.5;
+    const liftAmt = 6.5 + Math.sin(performance.now() * 0.006) * 1.8;
     ctx.fillStyle = "#2e1c0a";
     ctx.beginPath();
     ctx.moveTo(left, top);
@@ -7858,7 +7858,7 @@ function drawNookRug(camX) {
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#3a1818";
-    ctx.lineWidth = 0.5;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(left + liftAmt, top);
     ctx.lineTo(left, top + liftAmt);
@@ -7877,21 +7877,21 @@ function drawShortShelf(camX) {
   const w = shortShelf.width;
   const top = shortShelf.top, bottom = shortShelf.bottom;
 
-  ctx.fillStyle = "#4a3018";
+  ctx.fillStyle = "#6a4a28";
   ctx.fillRect(sx - w / 2, top, w, bottom - top);
-  ctx.fillStyle = "#3a2410";
+  ctx.fillStyle = "#5a3a1c";
   ctx.fillRect(sx - w / 2 + 4, top + 4, w - 8, bottom - top - 8);
 
   const rowCount = 3;
   const rowHeight = (bottom - top - 8) / rowCount;
-  const colors = ["#7a4a2f", "#3a5a3a", "#5a3a5a", "#b8862f", "#2f5a6a"];
+  const colors = ["#c9863a", "#8a5a2f", "#a83a4a", "#6a8a3a", "#4a6a8a"];
   for (let row = 0; row < rowCount; row++) {
     const rowY = top + 4 + row * rowHeight;
     ctx.fillStyle = "#5a3a1a";
     ctx.fillRect(sx - w / 2 + 4, rowY + rowHeight - 3, w - 8, 3);
 
     let bx = sx - w / 2 + 7;
-    const rowSeed = row * 5;
+    const rowSeed = row * 3;
     for (let b = 0; b < 7 && bx < sx + w / 2 - 6; b++) {
       const bw = 5 + ((rowSeed + b * 2) % 5);
       const bh = rowHeight - 8 - ((rowSeed + b) % 4);
