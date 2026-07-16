@@ -94,7 +94,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn"; // "autumn" | "spring" | "clouds"
+let currentScene = "oak"; // TEMPORARY — was "autumn", switched for easy viewing of oak scene changes
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -125,7 +125,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 120,
+  x: 400, // TEMPORARY — was 120, matched to oak's spawn point
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -137,6 +137,7 @@ const player = {
   launched: false,     // true while mid-flight from a swing release
   launchPeakHeight: 0, // tracks how high THIS launch has reached, for the cloud threshold check
   vineFlying: false,   // true while mid-flight from a vine release — real horizontal+vertical momentum, checks for grabbing the NEXT vine
+  onSeesawBounce: false, // true while airborne from a seesaw jump-pump — uses its own slower gravity instead of standard physics
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
   cloudLandingImmunity: 0 // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
 };
@@ -163,6 +164,7 @@ const ITEM_ICONS = {
   roundLeaf: "🍂",
   mapleLeaf: "🍁",
   acorn: "🌰",
+  worm: "🪱",
   pumpkin: "🎃",
   goldPile: "🪙"
 };
@@ -298,6 +300,10 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.clearRect(0, 0, 20, 20);
     drawAcornShape(iconCtx, 10, 12, 7, 0);
   },
+  worm: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawWormShape(iconCtx, 10, 10, 7, 0);
+  },
   pumpkin: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawPumpkinShape(iconCtx, 10, 11, 8, 0);
@@ -332,7 +338,7 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf"];
+      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang"];
       if (!NO_COUNT_LABEL.includes(type)) {
         const label = document.createElement("span");
         label.textContent = ` x${count}`;
@@ -404,18 +410,10 @@ const platforms = [
   // lower stepping-stone that was providing an unintended easy shortcut)
   { x: 2300, heightAboveGround: 190, width: 70, thickness: 14 }, // under mid-tier vine 1
 
-  { x: 2530, heightAboveGround: 80, width: 60, thickness: 14 },
-  { x: 2500, heightAboveGround: 190, width: 70, thickness: 14 }, // under mid-tier vine 2
-
   // new jump-around platforms, purely for breathing room — no payoff,
   // just something to hop between, positioned left of the oak after the crown trees
-  { x: 1900, heightAboveGround: 60, width: 60, thickness: 14 },
-  { x: 1970, heightAboveGround: 110, width: 60, thickness: 14 },
-  { x: 2040, heightAboveGround: 70, width: 60, thickness: 14 },
-  { x: 2110, heightAboveGround: 130, width: 60, thickness: 14 },
   { x: 2180, heightAboveGround: 90, width: 60, thickness: 14 },
-  { x: 2250, heightAboveGround: 150, width: 60, thickness: 14 },
-  { x: 2260, heightAboveGround: 250, width: 60, thickness: 14 } // genuinely requires a double-jump from the platform below
+  { x: 2250, heightAboveGround: 150, width: 60, thickness: 14 }
 ];
 
 /* ======================================================
@@ -464,7 +462,7 @@ const connections = [
   {
     id: "autumn-spring",
     doors: {
-      autumn: { x: 2900, width: 56, height: 92, leadsTo: "spring" },
+      autumn: { x: 3400, width: 56, height: 92, leadsTo: "spring" },
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
@@ -648,6 +646,21 @@ function startSeasonTransition(targetScene) {
   seasonTransition.phase = "fadeOut";
   seasonTransition.t = 0;
   seasonTransition.targetScene = targetScene;
+
+  // clear every special-movement state — a transition firing mid-vine,
+  // mid-swing, etc. was leaving that state permanently true, which
+  // silently blocks all input in the new scene since handleInput's guard
+  // checks these flags before allowing any movement at all
+  vines.forEach(v => { v.mounted = false; });
+  swing.mounted = false;
+  player.launched = false;
+  player.vineFlying = false;
+  player.vineFlyingSource = null;
+  player.onSeesawBounce = false;
+  if (typeof rabbitShuttle !== "undefined") rabbitShuttle.mounted = false;
+  if (typeof peanutVine !== "undefined") peanutVine.mounted = false;
+  seesaw.mounted = false;
+  seesaw.playerOnPlank = false;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -1180,11 +1193,19 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted) {
+  const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
+    Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted) {
     if (keys.left) { player.x -= player.speed; player.facing = -1; }
     if (keys.right) { player.x += player.speed; player.facing = 1; }
 
-    if (keys.upJustPressed) {
+    // CONFIRMED BUG FIX: aboutToMountSeesaw was excluding the entire
+    // movement block above (left/right included), not just the jump —
+    // meaning a player standing near the mount zone lost ALL movement,
+    // effectively locking them in place if they weren't mounting.
+    // Now it only guards the jump-trigger specifically, which was the
+    // actual thing that needed suppressing.
+    if (keys.upJustPressed && !aboutToMountSeesaw) {
       const nearSwing = currentScene === "spring" &&
         isPlayerNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55);
       const nearVine = currentScene === "spring" && peanutVine.grown && !peanutVine.mounted &&
@@ -1238,6 +1259,13 @@ function applyPhysics(){
   // no normal gravity/ground physics applies at all
   if (swing.mounted) return;
 
+  // same idea for the vines — position is fully driven by updateVines()
+  if (vines.some(v => v.mounted)) return;
+
+  // while mid-bounce off the seesaw, gravity is handled inside updateSeesaw
+  // itself (slower descent than standard) — skip normal gravity here
+  if (player.onSeesawBounce) return;
+
   // same idea for the rabbit-shuttle — position is driven by updateRabbitShuttle()
   if (rabbitShuttle.mounted) return;
 
@@ -1289,26 +1317,53 @@ function applyPhysics(){
   if (player.vineFlying) {
     player.x += player.vx;
     player.y += player.vy;
-    player.vy -= 0.8; // normal jump gravity — vine flight should feel like a natural arc, not the swing's special launch
+    const vineAscending = player.vy > 0;
+    player.vy -= vineAscending ? 0.22 : 0.12; // reverted to last known-working value — the further slowdown broke hop reachability across most vine pairs
 
-    // mid-flight: grab the next vine if close enough — this IS the vine-to-vine mechanic
+    // mid-flight: grab the next vine if close enough — this IS the vine-to-vine mechanic.
+    // Excludes the vine just released from until the player has actually
+    // moved outside its own grab radius — otherwise the very next frame
+    // could immediately re-catch the SAME vine you just left, which is
+    // what was causing the "snap back to neutral" symptom.
     for (const v2 of vines) {
       if (v2.mounted) continue;
+      if (player.vineFlyingSource && v2.tier !== player.vineFlyingSource.tier) continue; // don't snag a different tier's vine just because it's nearby
       const grabX = v2.x + Math.sin(v2.angle) * v2.length;
       const grabH = v2.anchorHeight - Math.cos(v2.angle) * v2.length;
       const dx = (player.x + player.width / 2) - grabX;
       const dy = player.y - grabH;
-      if (Math.sqrt(dx * dx + dy * dy) < VINE_GRAB_RADIUS) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (v2 === player.vineFlyingSource && dist < VINE_GRAB_RADIUS) continue; // haven't left the source vine's reach yet
+      if (dist < VINE_GRAB_RADIUS) {
         player.vineFlying = false;
         v2.mounted = true;
         v2.angle = Math.atan2(dx, v2.length); // pick up the swing roughly where it was grabbed, not reset to zero
         v2.angularVel = 0;
+        v2.pumpCooldown = 0;
+        v2.swingCycles = 0;
+
+        // collect any acorn tied to this specific vine pair — the hop
+        // itself succeeded, so it's collected regardless of the exact
+        // arc shape or height at any point during the flight
+        const source = player.vineFlyingSource;
+        if (source) {
+          hopAcorns.forEach(ha => {
+            if (ha.collected || ha.collecting) return;
+            const matchesForward = ha.vineA.x === source.x && ha.vineA.tier === source.tier && ha.vineB.x === v2.x && ha.vineB.tier === v2.tier;
+            const matchesBackward = ha.vineB.x === source.x && ha.vineB.tier === source.tier && ha.vineA.x === v2.x && ha.vineA.tier === v2.tier;
+            if (matchesForward || matchesBackward) {
+              ha.collecting = true;
+              startCollectAnimation({ x: ha.displayX, y: gy - ha.displayHeight, size: 6, rotation: 0 }, "acorn");
+            }
+          });
+        }
         break;
       }
     }
 
     if (player.y <= 0) {
       player.vineFlying = false; // missed everything — falls to the ground, no penalty
+      player.vineFlyingSource = null;
     }
   }
 
@@ -1479,6 +1534,27 @@ function drawSpeechBubble(ctx, x, y, sentences) {
   });
 }
 
+// sized to fit the actual text, not the fixed 160-wide default — for
+// short NPC lines where the standard bubble was wasting half its width
+function drawFittedSpeechBubble(ctx, x, y, sentences) {
+  const lineHeight = 13;
+  ctx.font = "10px ui-monospace";
+  const widths = sentences.map(s => ctx.measureText(s).width);
+  const bubbleWidth = Math.max(...widths) + 24; // padding on both sides
+  const bubbleHeight = Math.max(30, sentences.length * lineHeight + 14);
+
+  ctx.fillStyle = "rgba(255,255,248,0.95)";
+  roundRect(ctx, x, y, bubbleWidth, bubbleHeight, 9);
+  ctx.fill();
+  ctx.strokeStyle = "#2b2b2b";
+  ctx.stroke();
+
+  ctx.fillStyle = "#2b2b2b";
+  sentences.forEach((line, i) => {
+    ctx.fillText(line, x + 12, y + 15 + i * lineHeight);
+  });
+}
+
 // draw apple trees
 // the stump — has always had real collision (the apple's landing target,
 // a jumpable platform), but was never actually drawn until now
@@ -1507,53 +1583,6 @@ function drawStump(camX) {
     ctx.beginPath();
     ctx.ellipse(sx + stump.width / 2, stumpTop, r, r * (8 / (stump.width / 2)), 0, 0, Math.PI * 2);
     ctx.stroke();
-  }
-}
-
-/* ======================================================
-   BUMP APPLE — the purely-decorative tree at x:220 gets one
-   distinctly obvious apple, knocked down by jumping up into it
-   from below (not the boomerang, not the same as the source
-   tree's scripted fall) — an early, separate toolkit moment.
-   ====================================================== */
-const bumpApple = {
-  x: 175,
-  heightAboveGround: 128,
-  knocked: false,
-  falling: false,
-  collected: false,
-  collecting: false
-};
-const BUMP_APPLE_FALL_SPEED = 60;
-
-function drawBumpApple(camX) {
-  if (bumpApple.collected || bumpApple.collecting) return;
-  const bx = bumpApple.x - camX;
-  const by = gy - bumpApple.heightAboveGround;
-  drawWholeAppleShape(ctx, bx, by, bumpApple.knocked ? 9 : 11, 0);
-}
-
-function updateBumpApple(deltaTime) {
-  if (!bumpApple.knocked) {
-    if (player.vy > 0 && isPlayerNear(bumpApple.x, bumpApple.heightAboveGround, 20, 15, 15)) {
-      bumpApple.knocked = true;
-      bumpApple.falling = true;
-    }
-    return;
-  }
-
-  if (bumpApple.falling) {
-    bumpApple.heightAboveGround -= BUMP_APPLE_FALL_SPEED * deltaTime;
-    if (bumpApple.heightAboveGround <= 15) {
-      bumpApple.heightAboveGround = 15;
-      bumpApple.falling = false;
-    }
-    return;
-  }
-
-  if (!bumpApple.collected && !bumpApple.collecting && pressedDownNear(bumpApple.x, bumpApple.heightAboveGround, 26, 20, 20)) {
-    bumpApple.collecting = true;
-    startCollectAnimation({ x: bumpApple.x, y: gy - bumpApple.heightAboveGround, size: 9, rotation: 0 }, "apple");
   }
 }
 
@@ -1805,7 +1834,7 @@ function updateLeafTrees(deltaTime) {
     const playerCenterX = player.x + player.width / 2;
     const nearX = Math.abs(playerCenterX - driftX) < 30;
     const nearHeight = Math.abs(player.y - leaf.height) < 20;
-    if (nearX && nearHeight) {
+    if (nearX && nearHeight && keys.space) {
       startCollectAnimation(
         { x: driftX, y: gy - leaf.height, size: leaf.shape === "maple" ? 11 : 8, rotation: 0 },
         "leaf",
@@ -3078,6 +3107,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafShape(ctx, x, y, size, rotation, itemType === "mapleLeaf" ? "maple" : "round", itemType === "mapleLeaf" ? "#e8481f" : "#e0722a");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
+  } else if (itemType === "worm") {
+    drawWormShape(ctx, x, y, size, rotation);
   } else if (itemType === "acorn") {
     drawAcornShape(ctx, x, y, size, rotation);
   } else if (itemType === "pumpkin") {
@@ -3422,13 +3453,16 @@ ramps.forEach(r => {
 
 // call draw apple tree 2x
 drawAppleTree(220, camX);
-drawBumpApple(camX);
 drawTallOak(camX);
 drawVines(camX);
 drawAcorns(camX);
+drawHopAcorns(camX);
 drawVinePumpkin(camX);
-drawSeesawNPC(camX);
+drawWormRock(camX);
 drawSeesaw(camX);
+drawSeesawNPC(camX);
+drawWoodpecker(camX);
+drawSeesawProjectile(camX);
 drawAppleTree(tree.x, camX); // the actual source tree — apple spawns/falls from here, was previously empty ground
 drawStump(camX); // drawn AFTER the tree so it renders in front, not covered by it
 
@@ -3803,7 +3837,7 @@ function updateTreeSticks(deltaTime) {
       if (stick.crackT >= STICK_CRACK_DURATION) {
         stick.collected = true;
         stick.crackT = 0; // reused as the burst-particle timer now
-        inventory[treeType + "Stick"] = 1;
+        inventory[treeType + "Stick"] = 2; // grants 2 automatically per collection, not just 1
         updateInventoryUI();
       }
       return;
@@ -3882,6 +3916,16 @@ function drawTallOak(camX) {
   ctx.closePath();
   ctx.fill();
 
+  // a visible hollow high up — foreshadows the owl's room, reasonable to
+  // notice now, without knowing yet what it actually is
+  ctx.fillStyle = "rgba(20,12,6,0.85)";
+  ctx.beginPath();
+  ctx.ellipse(tx - 3, gy - 240, 6, 9, 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(60,36,16,0.5)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
   ctx.strokeStyle = "rgba(20,12,6,0.4)";
   ctx.lineWidth = 1;
   [-16, -5, 7, 18].forEach(off => {
@@ -3900,22 +3944,22 @@ function drawTallOak(camX) {
   // ground tier branch — one long curve spanning both ground-tier vines
   ctx.beginPath();
   ctx.moveTo(tx, gy - 190);
-  ctx.quadraticCurveTo(tx - 100, gy - 205, tx - 80, gy - 200);
+  ctx.quadraticCurveTo(tx - 100, gy - 205, tx - 100, gy - 200);
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(tx, gy - 190);
-  ctx.quadraticCurveTo(tx + 100, gy - 205, tx + 80, gy - 200);
+  ctx.quadraticCurveTo(tx + 100, gy - 205, tx + 100, gy - 200);
   ctx.stroke();
   // mid tier branch
   ctx.beginPath();
   ctx.moveTo(tx, gy - 260);
-  ctx.quadraticCurveTo(tx - 100, gy - 275, tx - 80, gy - 280);
+  ctx.quadraticCurveTo(tx - 100, gy - 275, tx - 100, gy - 280);
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(tx, gy - 260);
-  ctx.quadraticCurveTo(tx + 100, gy - 275, tx + 80, gy - 280);
+  ctx.quadraticCurveTo(tx + 100, gy - 275, tx + 100, gy - 280);
   ctx.stroke();
-  // upper tier branch — shorter, tighter curve since those vines cluster close together
+  // upper tier branch — left side unchanged (tight, close vines)
   ctx.beginPath();
   ctx.moveTo(tx, gy - TALL_OAK_TOP + 15);
   ctx.quadraticCurveTo(tx - 40, gy - 258, tx - 40, gy - 260);
@@ -3925,18 +3969,32 @@ function drawTallOak(camX) {
   ctx.quadraticCurveTo(tx + 30, gy - 258, tx + 30, gy - 260);
   ctx.stroke();
 
+  // right side — extended significantly further, genuine wavy twists and
+  // turns (multiple alternating curve segments, not one smooth arc) to
+  // reach the two new vines further out on the branch
+  ctx.beginPath();
+  ctx.moveTo(tx + 30, gy - 260);
+  ctx.quadraticCurveTo(tx + 70, gy - 245, tx + 100, gy - 262);
+  ctx.quadraticCurveTo(tx + 118, gy - 275, tx + 130, gy - 265);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tx + 130, gy - 265);
+  ctx.quadraticCurveTo(tx + 165, gy - 250, tx + 190, gy - 260);
+  ctx.quadraticCurveTo(tx + 200, gy - 266, tx + 210, gy - 258);
+  ctx.stroke();
+
   ctx.fillStyle = "rgba(190,110,40,0.9)";
   const cy0 = gy - TALL_OAK_TOP;
   ctx.beginPath();
-  ctx.moveTo(tx - 140, cy0 + 10);
-  ctx.quadraticCurveTo(tx - 150, cy0 - 40, tx - 90, cy0 - 60);
-  ctx.quadraticCurveTo(tx - 60, cy0 - 95, tx - 10, cy0 - 90);
-  ctx.quadraticCurveTo(tx + 30, cy0 - 100, tx + 70, cy0 - 75);
-  ctx.quadraticCurveTo(tx + 130, cy0 - 60, tx + 135, cy0 - 5);
-  ctx.quadraticCurveTo(tx + 145, cy0 + 35, tx + 90, cy0 + 45);
-  ctx.quadraticCurveTo(tx + 40, cy0 + 60, tx - 20, cy0 + 45);
-  ctx.quadraticCurveTo(tx - 80, cy0 + 55, tx - 120, cy0 + 35);
-  ctx.quadraticCurveTo(tx - 145, cy0 + 25, tx - 140, cy0 + 10);
+  ctx.moveTo(tx - 180, cy0 + 13);
+  ctx.quadraticCurveTo(tx - 195, cy0 - 52, tx - 115, cy0 - 78);
+  ctx.quadraticCurveTo(tx - 78, cy0 - 124, tx - 13, cy0 - 117);
+  ctx.quadraticCurveTo(tx + 40, cy0 - 130, tx + 90, cy0 - 98);
+  ctx.quadraticCurveTo(tx + 170, cy0 - 78, tx + 175, cy0 - 7);
+  ctx.quadraticCurveTo(tx + 190, cy0 + 45, tx + 115, cy0 + 58);
+  ctx.quadraticCurveTo(tx + 52, cy0 + 78, tx - 26, cy0 + 58);
+  ctx.quadraticCurveTo(tx - 104, cy0 + 72, tx - 155, cy0 + 45);
+  ctx.quadraticCurveTo(tx - 188, cy0 + 33, tx - 180, cy0 + 13);
   ctx.closePath();
   ctx.fill();
 }
@@ -3950,29 +4008,32 @@ function drawTallOak(camX) {
    the acorns, the pumpkin feeds into carving later.
    ====================================================== */
 const vines = [
-  // two small trees' vines — NOT ground-accessible (grab height 160
-  // genuinely exceeds double-jump range even with tolerance), reached via
-  // the tall jump-around platform instead. Real open air between them,
-  // no platform underneath — the actual tree-to-tree crossing.
-  { x: 2000, anchorHeight: 220, length: 60, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
-  { x: 2130, anchorHeight: 220, length: 60, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
+  // two small trees' vines — an isolated, self-contained teaching moment
+  // for the whole hop mechanic, positioned clear of the bigger oak
+  // complex. Both reachable via a genuine double-jump straight from the
+  // ground (grab height 110, matching the same established pattern as
+  // the ground-tier vine and the bump apple), no platform dependency.
+  { x: 1950, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
+  { x: 2065, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "standalone" },
 
   // ground tier — grab point 110, genuinely requires double-jump (110 < 140.6 double-jump max,
   // and 110-15(tolerance) still exceeds the 90 single-jump max)
-  { x: 2320, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
-  { x: 2480, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
+  { x: 2300, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
+  { x: 2410, anchorHeight: 200, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "ground" },
 
   // mid tier — grab point 190, same Y, matches the platforms directly beneath them
-  { x: 2320, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
-  { x: 2480, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
+  { x: 2300, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
+  { x: 2410, anchorHeight: 280, length: 90, angle: 0, angularVel: 0, mounted: false, tier: "mid" },
 
   // upper tier — vine-to-vine ONLY, no platform or ground access. Same Y,
   // tightly clustered — re-verified against the slowed swing's real
   // reach (~25-35 units at realistic release), not the old faster values
   { x: 2360, anchorHeight: 260, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" },
-  { x: 2430, anchorHeight: 260, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" }
+  { x: 2430, anchorHeight: 260, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" },
+  { x: 2520, anchorHeight: 265, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" },
+  { x: 2610, anchorHeight: 258, length: 65, angle: 0, angularVel: 0, mounted: false, tier: "upper" }
 ];
-const VINE_GRAVITY = 0.015; // slowed substantially — genuinely gentle back-and-forth now, not a brisk pendulum
+const VINE_GRAVITY = 0.01; // reverted to last known-working value — the further slowdown broke hop reachability
 const VINE_SWING_INPUT = 0.025;
 const VINE_PUMP_COOLDOWN = 120; // ms between pumps
 const VINE_HOP_MIN_CYCLES = 2; // real back-and-forth swings needed before a hop is even available
@@ -3987,24 +4048,38 @@ function findVineHopTarget(v) {
     if (v2 === v || v2.mounted) return;
     if (v2.tier !== v.tier) return; // same tier only — a nearby different tier is NOT a valid hop target
     const dist = Math.abs(v2.x - v.x);
-    if (dist < 160 && dist < bestDist) { // reasonable hop range, not the whole map
+    if (dist < 260 && dist < bestDist) { // generous — the hop is self-scaling to whatever distance is configured anyway
       best = v2;
       bestDist = dist;
     }
   });
   return best;
 }
-const VINE_GRAB_RADIUS = 38; // forgiving — vine-to-vine grabs are a moving target, needs real margin
+const VINE_GRAB_RADIUS = 50; // widened further — the oscillating near-miss pattern in testing showed even moderate strength swings could narrowly miss with the old radius
 
-const acorns = [
-  { x: 2400, heightAboveGround: 130, collected: false, collecting: false }, // ground tier, scattered
-  { x: 2320, heightAboveGround: 240, collected: false, collecting: false }, // between mid-tier vines
-  { x: 2480, heightAboveGround: 240, collected: false, collecting: false }, // between mid-tier vines
-  { x: 2395, heightAboveGround: 270, collected: false, collecting: false }, // upper tier, between the two vines
-  { x: 2260, heightAboveGround: 262, collected: false, collecting: false }  // reward on the new high double-jump platform
+// hop-tied acorns — collected the instant a successful vine-to-vine hop
+// connects the two referenced vines, regardless of the exact arc shape
+// or height at any given moment. Display position is purely cosmetic
+// (drawn at the visual midpoint), not used for collision anymore — this
+// was the actual fix for the narrow-window bug: different successful
+// swing strengths produce different arc heights at the same x, so
+// checking spatial proximity during flight could never reliably cover
+// every valid hop. Tying it to the hop event itself sidesteps that
+// entirely: any successful hop between these two vines collects it.
+const hopAcorns = [
+  { vineA: { x: 1950, tier: "standalone" }, vineB: { x: 2065, tier: "standalone" }, displayX: 2008, displayHeight: 190, collected: false, collecting: false },
+  { vineA: { x: 2300, tier: "ground" }, vineB: { x: 2410, tier: "ground" }, displayX: 2355, displayHeight: 180, collected: false, collecting: false },
+  { vineA: { x: 2300, tier: "mid" }, vineB: { x: 2410, tier: "mid" }, displayX: 2355, displayHeight: 265, collected: false, collecting: false },
+  { vineA: { x: 2360, tier: "upper" }, vineB: { x: 2430, tier: "upper" }, displayX: 2395, displayHeight: 170, collected: false, collecting: false },
+  { vineA: { x: 2430, tier: "upper" }, vineB: { x: 2520, tier: "upper" }, displayX: 2475, displayHeight: 255, collected: false, collecting: false },
+  { vineA: { x: 2520, tier: "upper" }, vineB: { x: 2610, tier: "upper" }, displayX: 2565, displayHeight: 260, collected: false, collecting: false }
 ];
 
-const vinePumpkin = { x: 2430, heightAboveGround: 260, collected: false, collecting: false }; // the last upper-tier vine — the real prize, gated behind vine-to-vine only
+const acorns = [
+  { x: 2180, heightAboveGround: 220, collected: false, collecting: false } // double-jump straight up from platform 5 (h:90), verified 130-unit gap -- unrelated to vines, keeps the original spatial-proximity collection
+];
+
+const vinePumpkin = { x: 2641, heightAboveGround: 232, collected: false, collecting: false }; // genuinely requires the vine now — previous position (h:102) was comfortably within double-jump range (140.6), reachable by simply walking up and jumping, never checked against that. This one is safely beyond it (232), verified with a real generous margin: moderate-strong swing closest approach 0.4, weak swing closest approach 26.2
 
 function updateVines(deltaTime) {
   // idle sway for everything not mounted
@@ -4046,32 +4121,19 @@ function updateVines(deltaTime) {
 
     if (v.pumpCooldown > 0) v.pumpCooldown -= deltaTime * 1000;
 
-    // track genuine swing rhythm — real zero-crossings, not just "some
-    // velocity happened." A hop is only available after actually swinging
-    // back and forth a couple of real cycles, not the instant you mount.
-    const sign = Math.sign(v.angle);
-    if (v.lastSign && sign && sign !== v.lastSign) {
-      v.swingCycles = (v.swingCycles || 0) + 1;
-    }
-    if (sign) v.lastSign = sign;
-
-    const hopReady = (v.swingCycles || 0) >= VINE_HOP_MIN_CYCLES;
-    const target = hopReady ? findVineHopTarget(v) : null;
-    const wantsHopLeft = keys.leftJustPressed && v.angle < -0.15;
-    const wantsHopRight = keys.rightJustPressed && v.angle > 0.15;
-
-    if (target && ((wantsHopLeft && target.x < v.x) || (wantsHopRight && target.x > v.x))) {
-      // committed to a real hop — strength depends on how strong the swing
-      // actually is right now, not just "correct key at correct time."
-      // Weak swing at commit = genuinely falls short, same as whiffing a jump.
-      const strength = Math.min(Math.abs(v.angle) / VINE_HOP_STRONG_ANGLE, 1);
-      const direction = target.x > v.x ? 1 : -1;
-      const fullDistance = Math.abs(target.x - v.x);
-      const achievedDistance = fullDistance * strength;
-
+    if (keys.upJustPressed) {
+      // pure momentum release — no rhythm gate, no target requirement.
+      // Real arc driven by your actual angular velocity right now. A weak
+      // swing naturally produces a short arc and falls short of any
+      // neighboring vine (or just lands on the ground/a platform); a
+      // strong swing naturally reaches far enough to get auto-caught.
+      const tangentSpeed = v.angularVel * v.length;
+      const releaseVx = Math.cos(v.angle) * tangentSpeed;
+      const releaseVy = Math.sin(v.angle) * tangentSpeed + 2;
       v.mounted = false;
-      player.vx = (direction * achievedDistance) / VINE_HOP_ARC_FRAMES;
-      player.vy = 6;
+      player.vineFlyingSource = v;
+      player.vx = releaseVx;
+      player.vy = releaseVy;
       player.vineFlying = true;
       player.jumping = true;
       return;
@@ -4154,10 +4216,22 @@ function drawVines(camX) {
   });
 }
 
+const VINE_CATCH_GRACE_MS = 350; // coyote-time window — once genuinely in range, space still counts for a bit after, even if you've drifted slightly further by the time you react
+
 function updateAcorns() {
   acorns.forEach(a => {
     if (a.collected || a.collecting) return;
-    if (pressedDownNear(a.x, a.heightAboveGround, 20, 15, 15)) {
+    const inRange = isPlayerNear(a.x, a.heightAboveGround, 20, 15, 15);
+    if (player.vineFlying && inRange) {
+      // auto-collect on contact during vine-to-vine flight — no space
+      // press needed, removes the mid-air timing problem entirely
+      a.collecting = true;
+      startCollectAnimation({ x: a.x, y: gy - a.heightAboveGround, size: 6, rotation: 0 }, "acorn");
+      return;
+    }
+    if (inRange) a.graceUntil = performance.now() + VINE_CATCH_GRACE_MS;
+    const withinGrace = a.graceUntil && performance.now() < a.graceUntil;
+    if (keys.space && (inRange || withinGrace)) {
       a.collecting = true;
       startCollectAnimation({ x: a.x, y: gy - a.heightAboveGround, size: 6, rotation: 0 }, "acorn");
     }
@@ -4168,6 +4242,13 @@ function drawAcorns(camX) {
   acorns.forEach(a => {
     if (a.collected || a.collecting) return;
     drawAcornShape(ctx, a.x - camX, gy - a.heightAboveGround, 6, 0);
+  });
+}
+
+function drawHopAcorns(camX) {
+  hopAcorns.forEach(ha => {
+    if (ha.collected || ha.collecting) return;
+    drawAcornShape(ctx, ha.displayX - camX, gy - ha.displayHeight, 6, 0);
   });
 }
 
@@ -4188,7 +4269,16 @@ function drawAcornShape(ctx, x, y, size, rotation) {
 
 function updateVinePumpkin() {
   if (vinePumpkin.collected || vinePumpkin.collecting) return;
-  if (pressedDownNear(vinePumpkin.x, vinePumpkin.heightAboveGround, 24, 18, 18)) {
+  const inRange = isPlayerNear(vinePumpkin.x, vinePumpkin.heightAboveGround, 24, 20, 20);
+  if (player.vineFlying && inRange) {
+    // auto-collect on contact, matching the acorns — no space press needed
+    vinePumpkin.collecting = true;
+    startCollectAnimation({ x: vinePumpkin.x, y: gy - vinePumpkin.heightAboveGround, size: 10, rotation: 0 }, "pumpkin");
+    return;
+  }
+  if (inRange) vinePumpkin.graceUntil = performance.now() + VINE_CATCH_GRACE_MS;
+  const withinGrace = vinePumpkin.graceUntil && performance.now() < vinePumpkin.graceUntil;
+  if (keys.space && (inRange || withinGrace)) {
     vinePumpkin.collecting = true;
     startCollectAnimation({ x: vinePumpkin.x, y: gy - vinePumpkin.heightAboveGround, size: 10, rotation: 0 }, "pumpkin");
   }
@@ -4224,41 +4314,518 @@ function drawPumpkinShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+function drawWormShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.strokeStyle = "#c9705a";
+  ctx.lineWidth = size * 0.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.7, size * 0.2);
+  ctx.quadraticCurveTo(-size * 0.2, -size * 0.5, 0, 0);
+  ctx.quadraticCurveTo(size * 0.2, size * 0.5, size * 0.7, -size * 0.1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ======================================================
+   WORM UNDER A ROCK — found at ground level near the
+   ground-tier right vine. Two-stage: space lifts the rock,
+   space again collects the wiggling worm underneath.
+   ====================================================== */
+const wormRock = {
+  x: 2530,
+  lifted: false,
+  liftProgress: 0, // 0 = resting flat, 1 = fully tipped up on its edge
+  settling: false, // true once worm is collected, animating back down
+  wormCollected: false,
+  wormCollecting: false
+};
+
+function updateWormRock() {
+  if (wormRock.wormCollecting) {
+    if (!wormRock.settling) wormRock.settling = true;
+    if (wormRock.liftProgress > 0) {
+      wormRock.liftProgress = Math.max(wormRock.liftProgress - 0.03, 0);
+    }
+    return;
+  }
+
+  if (!wormRock.lifted) {
+    if (keys.spaceJustPressed && isPlayerNear(wormRock.x, 10, 24, 18, 18)) {
+      wormRock.lifted = true;
+    }
+    return;
+  }
+
+  if (wormRock.liftProgress < 1) {
+    wormRock.liftProgress = Math.min(wormRock.liftProgress + 0.04, 1);
+  }
+
+  if (keys.spaceJustPressed && isPlayerNear(wormRock.x, 8, 24, 15, 15)) {
+    wormRock.wormCollecting = true;
+    startCollectAnimation({ x: wormRock.x, y: gy - 8, size: 7, rotation: 0 }, "worm");
+  }
+}
+
+function drawWormRock(camX) {
+  const rx = wormRock.x - camX;
+
+  if (wormRock.lifted && !wormRock.wormCollecting) {
+    // more wiggly, genuinely looks embedded — most of it still "in" the
+    // ground, only the top curling up and out
+    const t = performance.now() * 0.005;
+    const wiggle1 = Math.sin(t) * 4;
+    const wiggle2 = Math.sin(t * 1.7 + 1) * 3;
+    ctx.strokeStyle = "#c9705a";
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(rx - 20, gy + 3); // starts below ground level — genuinely embedded, under the side that's now lifting
+    ctx.quadraticCurveTo(rx - 22 + wiggle1, gy - 6, rx - 18 + wiggle2, gy - 9);
+    ctx.quadraticCurveTo(rx - 14 + wiggle1 * 0.6, gy - 12, rx - 16 - wiggle2 * 0.4, gy - 15);
+    ctx.stroke();
+  }
+
+  // rock pivots around its grounded left edge — rotates up like tipping
+  // over, rather than floating straight up. Settles back down (liftProgress
+  // decaying) once the worm is collected, instead of staying suspended.
+  const lift = wormRock.liftProgress;
+  const pivotX = rx + 20, pivotY = gy;
+  ctx.save();
+  ctx.translate(pivotX, pivotY);
+  ctx.rotate(lift * 0.9);
+  ctx.fillStyle = "#5a5548";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-4, -14);
+  ctx.lineTo(-14, -20);
+  ctx.lineTo(-28, -18);
+  ctx.lineTo(-38, -9);
+  ctx.lineTo(-40, 2);
+  ctx.lineTo(-32, 6);
+  ctx.lineTo(-10, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a3830";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-14, -20);
+  ctx.lineTo(-17, -6);
+  ctx.moveTo(-28, -18);
+  ctx.lineTo(-24, -4);
+  ctx.stroke();
+
+  if (!wormRock.lifted) {
+    const glintT = performance.now() * 0.003;
+    [[-12, -10, 0], [-25, -13, 1.4], [-18, -3, 2.8]].forEach(([gx, gyOff, phase]) => {
+      const twinkle = (Math.sin(glintT + phase) + 1) / 2;
+      if (twinkle > 0.5) {
+        ctx.fillStyle = `rgba(220,230,255,${(twinkle - 0.5) * 1.4})`;
+        ctx.beginPath();
+        ctx.arc(gx, gyOff, 1.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  ctx.restore();
+}
+
+const seesawProjectile = { active: false, type: null, x: 0, y: 0, vx: 0, vy: 0 };
+
+function launchSeesawItem(itemType, energy) {
+  const scale = energy / 0.5;
+  seesawProjectile.active = true;
+  seesawProjectile.type = itemType;
+  seesawProjectile.x = seesaw.x - 90;
+  seesawProjectile.y = 64; // was 10 -- near ground, well below where the worm actually sits on the seat (~64, matching the seesaw's base surface height)
+  seesawProjectile.vx = 1.2 * scale; // tightened and slowed further — less sweeping, more direct arc
+  seesawProjectile.vy = 8 * scale;
+}
+
+function updateSeesawProjectile() {
+  if (!seesawProjectile.active) return;
+  seesawProjectile.x += seesawProjectile.vx;
+  seesawProjectile.y += seesawProjectile.vy;
+  seesawProjectile.vy -= 0.1;
+
+  if (seesawProjectile.type === "worm" && !woodpecker.fed &&
+      Math.abs(seesawProjectile.x - woodpeckerPlatform.x) < woodpeckerPlatform.width / 2 + 8 &&
+      Math.abs(seesawProjectile.y - woodpeckerPlatform.heightAboveGround) < 12) {
+    seesawProjectile.active = false;
+    // snap precisely to the nest's actual visual center — previously
+    // could register as "landed" anywhere within a fairly wide window,
+    // which could visually look like it landed near/past the nest
+    // rather than genuinely in it
+    seesawProjectile.x = woodpeckerPlatform.x;
+    seesawProjectile.y = woodpeckerPlatform.heightAboveGround;
+    woodpecker.fed = true;
+    woodpecker.danceT = -1;
+    woodpecker.landedT = 0;
+    woodpecker.eatingT = 0;
+    return;
+  }
+
+  if (seesawProjectile.y <= 0) {
+    seesawProjectile.active = false;
+  }
+}
+
+function drawSeesawProjectile(camX) {
+  if (!seesawProjectile.active) return;
+  const px = seesawProjectile.x - camX;
+  const py = gy - seesawProjectile.y;
+  if (seesawProjectile.type === "worm") {
+    drawWormShape(ctx, px, py, 7, Math.atan2(-seesawProjectile.vy, seesawProjectile.vx));
+  }
+}
+
+/* ======================================================
+   BABY WOODPECKER — lives on a branch-perch near the seesaw,
+   reachable only via the worm catapult. Verified: height 290
+   is well above the double-jump-safe threshold (160.6), and
+   matches the seesaw catapult's real verified arc.
+   ====================================================== */
+const woodpeckerPlatform = { x: 2977, heightAboveGround: 250, width: 55, thickness: 12 }; // lowered from 290 -- the bird's own crest/wings extended past the top of the screen at that height. Re-verified: the existing arc passes within ~3 units of this height at x_offset=57 from launch, and 250 still comfortably clears the double-jump-safe threshold (160.6)
+const woodpecker = {
+  fed: false,
+  beakOpen: 0,
+  landedT: 0,  // worm has landed and is visible, bird hasn't started eating yet
+  eatingT: 0,  // brief lean-over-and-eat animation, plays after the landed pause
+  danceT: -1   // -1 = hasn't started yet (still landed/eating)
+};
+
+function updateWoodpecker(deltaTime) {
+  if (!woodpecker.fed) {
+    woodpecker.beakOpen = (Math.sin(performance.now() * 0.0035) + 1) / 2;
+  } else if (woodpecker.landedT < 1400) {
+    woodpecker.landedT += deltaTime * 1000; // worm visibly landed, brief beat before the bird reacts
+  } else if (woodpecker.danceT < 0) {
+    woodpecker.eatingT += deltaTime * 1000;
+    if (woodpecker.eatingT >= 2200) {
+      woodpecker.danceT = 0; // eating done, worm consumed, now dance
+    }
+  } else if (woodpecker.danceT < 2000) {
+    woodpecker.danceT += deltaTime * 1000;
+  }
+}
+
+function drawWoodpecker(camX) {
+  const wx = woodpeckerPlatform.x - camX;
+  const wy = gy - woodpeckerPlatform.heightAboveGround - 6;
+
+  ctx.strokeStyle = "#3a2412";
+  ctx.lineWidth = 8;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(wx - 45, wy + 14);
+  ctx.quadraticCurveTo(wx - 10, wy + 20, wx + 30, wy + 12);
+  ctx.stroke();
+
+  // small woven nest — makes it read as a baby bird's home, not just a perch
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < 3; i++) {
+    const ny = wy + 8 + i * 1.3;
+    const spread = 15 - i * 1.5;
+    ctx.beginPath();
+    ctx.ellipse(wx, ny, spread, 4, 0, Math.PI, Math.PI * 2); // back half only — front half drawn after the bird
+    ctx.stroke();
+  }
+
+  const landed = woodpecker.fed && woodpecker.landedT < 1400;
+  const eating = woodpecker.fed && !landed && woodpecker.danceT < 0;
+  const dance = woodpecker.fed && woodpecker.danceT >= 0 && woodpecker.danceT < 2000;
+  const danceWobble = dance ? Math.sin(woodpecker.danceT * 0.012) * 6 : 0;
+  const eatLean = eating ? Math.min(woodpecker.eatingT / 200, 1) * 6 : 0; // leans down toward the worm
+  const bodyX = wx + danceWobble;
+  const bodyY = wy + eatLean;
+
+  ctx.fillStyle = "#3a3a3a";
+  ctx.beginPath();
+  ctx.moveTo(bodyX - 10, bodyY + 4);
+  ctx.lineTo(bodyX - 18, bodyY + 14);
+  ctx.lineTo(bodyX - 6, bodyY + 8);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#e8e2d0";
+  ctx.beginPath();
+  ctx.ellipse(bodyX, bodyY, 11, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // crest — real woodpecker crests sweep back in a pointed ridge along the
+  // top of the head, not a simple oval blob
+  ctx.fillStyle = "#c9382a";
+  ctx.beginPath();
+  ctx.moveTo(bodyX - 5, bodyY - 10);
+  ctx.quadraticCurveTo(bodyX - 7, bodyY - 20, bodyX - 1, bodyY - 24);
+  ctx.quadraticCurveTo(bodyX + 4, bodyY - 20, bodyX + 3, bodyY - 12);
+  ctx.quadraticCurveTo(bodyX + 6, bodyY - 17, bodyX + 8, bodyY - 10);
+  ctx.quadraticCurveTo(bodyX + 2, bodyY - 8, bodyX - 5, bodyY - 10);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#3a3a3a";
+  ctx.beginPath();
+  ctx.ellipse(bodyX + 6, bodyY, 6, 9, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#e8e2d0";
+  if (dance) {
+    const flap = Math.sin(woodpecker.danceT * 0.025) * 0.5; // genuine up-down flapping motion
+    ctx.beginPath();
+    ctx.ellipse(bodyX - 9, bodyY + 3 - flap * 4, 4, 6, -0.4 - flap, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(bodyX + 10, bodyY + 3 - flap * 4, 4, 6, 0.4 + flap, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const beakGap = woodpecker.fed ? 1 : woodpecker.beakOpen;
+  // beak specifically bends down toward the worm during eating -- distinct
+  // from the whole-body lean, gives a real "pecking down at it" read
+  const beakBend = eating ? Math.min(woodpecker.eatingT / 300, 1) * 8 : 0;
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(bodyX - 4, bodyY - 8, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#e0a020";
+  ctx.beginPath();
+  ctx.moveTo(bodyX - 10, bodyY - 9);
+  ctx.lineTo(bodyX - 18, bodyY - 9 - beakGap * 3 + beakBend);
+  ctx.lineTo(bodyX - 11, bodyY - 6);
+  ctx.closePath();
+  ctx.fill();
+  if (beakGap > 0.15) {
+    ctx.beginPath();
+    ctx.moveTo(bodyX - 10, bodyY - 9);
+    ctx.lineTo(bodyX - 18, bodyY - 9 + beakGap * 2 + beakBend);
+    ctx.lineTo(bodyX - 11, bodyY - 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = "#e0a020";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(bodyX - 4, bodyY + 12);
+  ctx.lineTo(bodyX - 4, bodyY + 13.5);
+  ctx.moveTo(bodyX + 4, bodyY + 12);
+  ctx.lineTo(bodyX + 4, bodyY + 13.5);
+  ctx.stroke();
+
+  // front nest rim — drawn after the bird so it visibly wraps up around
+  // the legs, not just sits behind as a flat backdrop
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < 4; i++) {
+    const ny = wy + 8 + i * 1.6;
+    const spread = 15 - i * 1.5;
+    ctx.beginPath();
+    ctx.ellipse(wx, ny, spread, 4, 0, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  if (landed) {
+    // worm has landed, fully visible, bird hasn't started eating yet
+    drawWormShape(ctx, bodyX - 15, wy + 7, 8, 0.32);
+  } else if (eating) {
+    const shrink = 1 - Math.min(woodpecker.eatingT / 2200, 1); // worm gets consumed, shrinks over the eating duration
+    if (shrink > 0.05) {
+      drawWormShape(ctx, bodyX - 15, wy + 7, 8 * shrink, 0.32);
+    }
+  }
+
+  if (!woodpecker.fed && inventory.worm > 0) {
+    drawFittedSpeechBubble(ctx, bodyX + 16, bodyY - 15, ["tweet tweet!", "hungry!"]);
+  }
+  if (eating) {
+    drawFittedSpeechBubble(ctx, bodyX + 16, bodyY - 15, ["yum yum!"]);
+  }
+}
+
 /* ======================================================
    SEESAW — talk to the NPC first, they hop onto the fixed
    end, mount the other side and pump (repeated space) to
    build charge, then launch up into the oak.
    ====================================================== */
 const seesawNPC = {
-  x: 2650,
-  homeX: 2650,
+  x: 3180,
+  homeX: 3180,
   talkedTo: false,
   hopping: false,
   onSeesaw: false,
-  bob: 0
+  bob: 0,
+  hopT: 9999 // tracks her own hop-bounce, triggered each time the player charges
 };
 
 const seesaw = {
-  x: 2710,
-  pivotHeightAboveGround: 10,
+  x: 3010,
+  pivotHeightAboveGround: 40,
   angle: 0,       // current tilt, radians — positive means player's side down
   charge: 0,
   mounted: false,
   launching: false,
-  launchT: 0
+  launchT: 0,
+  playerOnPlank: false, // must jump to activate; walking near it alone does nothing
+  heldItemPlaced: null, // item type currently sitting on the far end, ready to launch
+  pumpEnergy: 0
 };
 const SEESAW_CHARGE_NEEDED = 6;
-const SEESAW_LAUNCH_DURATION = 900;
+const SEESAW_LAUNCH_DURATION = 2600; // slowed substantially for a gentle, whimsical arc
 
 function updateSeesaw(deltaTime) {
+  // bounce-gravity now runs completely unconditionally, regardless of
+  // playerOnPlank's state — this was the actual root cause of the
+  // frozen-player bug. It used to be nested inside the playerOnPlank
+  // block, so clearing that flag mid-bounce (e.g. right when the worm
+  // launches) silently stopped this from ever running again, leaving the
+  // player permanently stuck at whatever height they were at.
+  if (player.onSeesawBounce) {
+    player.y += player.vy;
+    player.vy -= 0.65;
+    // safety net — the precise seesaw-surface landing check below only
+    // runs while genuinely on the plank; this ensures the player can
+    // never fall through the ground indefinitely if that's ever skipped
+    if (player.y <= 0 && player.vy <= 0) {
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.onSeesawBounce = false;
+    }
+  }
+
+  // walk-on platform physics — works anytime, independent of the NPC/
+  // launch sequence. Continuous tilt: whichever side you're standing on
+  // goes down, proportional to how far from center; standing dead center
+  // keeps it flat like a normal platform.
+  const seesawHalfWidth = 100;
+  const px = player.x + player.width / 2;
+  const onPlank = px > seesaw.x - seesawHalfWidth && px < seesaw.x + seesawHalfWidth &&
+                  !seesaw.mounted && !seesaw.launching; // don't fight with the NPC charge-sequence
+
+  if (onPlank) {
+    const relX = px - seesaw.x;
+    const t = relX / seesawHalfWidth; // -1 to 1
+
+    // CONFIRMED BUG FIX, properly this time: my last fix excluded the
+    // entire left half from onPlank itself, which also broke normal
+    // walking/standing physics on that side, not just the thing I meant
+    // to block. Now onPlank stays intact everywhere (so standing/walking
+    // works normally across the whole plank), and only the JUMP-
+    // ACTIVATION specifically is blocked near the mount target while
+    // she's waiting there — that's the only part that was ever actually
+    // causing the false-tilt/hop-illusion bug.
+    const nearMountTarget = seesawNPC.onSeesaw && seesawNPC.talkedTo && px < seesaw.x;
+    if (nearMountTarget && seesaw.playerOnPlank) {
+      // CONFIRMED BUG FIX: this flag can be stuck true from earlier use
+      // elsewhere (e.g. the worm-catapult on the right side) — my
+      // previous fix only blocked NEW activation, but never cleared an
+      // already-true value, so the tilt/hop-illusion bug could still
+      // happen whenever this was left over from something unrelated.
+      seesaw.playerOnPlank = false;
+      player.onSeesawBounce = false;
+    }
+    if (!seesaw.playerOnPlank && !nearMountTarget) {
+      // not yet activated — only landing via a genuine jump counts
+      const currentSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - relX * Math.sin(seesaw.angle);
+      if (player.jumping && player.vy <= 0 && player.y <= currentSurfaceHeight + 12 && player.y >= currentSurfaceHeight - 20) {
+        seesaw.playerOnPlank = true;
+      }
+    }
+
+    // CONFIRMED BUG FIX: the tilt formula was responding purely to
+    // horizontal position, with no check on whether the player was
+    // actually near the plank vertically — so simply standing at ground
+    // level anywhere in the horizontal zone (even well below the actual
+    // seat height) still tilted the seesaw as if they were on it.
+    // Verified directly against two reported screenshots (both matched
+    // the pure-horizontal formula exactly). Now checks vertical
+    // proximity against the surface height BEFORE this frame's update,
+    // using the same tolerance as the support-snap below.
+    const currentSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - relX * Math.sin(seesaw.angle);
+    const nearPlankVertically = player.y >= currentSurfaceHeight - 30 && player.y <= currentSurfaceHeight + 40;
+    const pumpBoost = (seesaw.playerOnPlank && !nearMountTarget) ? Math.sign(t || 1) * (seesaw.pumpEnergy || 0) : 0;
+    const targetAngle = nearPlankVertically ? (t * 0.25 + pumpBoost) : 0; // settles back toward flat if nobody's genuinely near it
+    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 8, 1);
+    const surfaceHeight = (seesaw.pivotHeightAboveGround + 24) - relX * Math.sin(seesaw.angle);
+    if (player.vy <= 0 && player.y <= surfaceHeight && player.y >= surfaceHeight - 30) {
+      player.y = surfaceHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.onSeesawBounce = false;
+    }
+
+    // place an item — space while standing near the far (empty) end,
+    // holding something, places it there ready to be launched. Works via
+    // simple proximity, no jump required — this was incorrectly gated
+    // behind playerOnPlank before, which meant you had to jump onto the
+    // seesaw before placement would even register at all.
+    if (keys.spaceJustPressed && !seesaw.heldItemPlaced && heldItem && Math.abs(relX) > 60) {
+      seesaw.heldItemPlaced = heldItem;
+      // CONFIRMED BUG FIX: inventory was never decremented on use, so
+      // placed/launched items stayed in the inventory count forever
+      if (inventory[heldItem]) {
+        inventory[heldItem] -= 1;
+        if (inventory[heldItem] <= 0) delete inventory[heldItem];
+      }
+      heldItem = null;
+    }
+
+    if (seesaw.playerOnPlank && !nearMountTarget) {
+      // auto-fires once pump energy reaches near-max (96% of the 0.5 cap)
+      // — no space press needed anymore. Using a near-max threshold
+      // rather than the exact max avoids a single-frame timing window,
+      // since energy decays slightly every frame even at the peak.
+      if (seesaw.heldItemPlaced && seesaw.pumpEnergy >= 0.35) {
+        launchSeesawItem(seesaw.heldItemPlaced, 0.5); // always full-send strength
+        seesaw.heldItemPlaced = null;
+        seesaw.pumpEnergy = 0;
+        seesaw.playerOnPlank = false; // CONFIRMED BUG FIX: this was staying true after launch, silently blocking the NPC-launch mount-check's !playerOnPlank requirement since the two systems share this flag
+      }
+
+      // jump to pump — genuine accumulation, each jump adds more energy
+      // rather than just a single bounce
+      if (keys.upJustPressed && !player.onSeesawBounce) {
+        seesaw.pumpEnergy = Math.min((seesaw.pumpEnergy || 0) + 0.12, 0.5);
+        player.vy = 8; // reduced from 12 -- combined with the base seesaw height, 12 was still reaching ~160-180 total peak, nearly double a normal jump. This targets a real, normal-feeling jump height instead.
+        player.onSeesawBounce = true;
+      } else if (!player.onSeesawBounce) {
+        seesaw.pumpEnergy = (seesaw.pumpEnergy || 0) * 0.96; // decays over time
+      }
+    }
+  } else if (!seesaw.mounted && !seesaw.launching) {
+    seesaw.playerOnPlank = false; // walked off — deactivated, must jump again to reactivate
+    player.onSeesawBounce = false; // CONFIRMED BUG FIX: this was never clearing if you left the zone mid-bounce, permanently blocking all gravity (the "floating in oblivion" bug)
+    // nobody on it — settle back toward flat
+    seesaw.angle += (0 - seesaw.angle) * Math.min(deltaTime * 4, 1);
+  }
+
   // talk to the NPC first
   if (!seesawNPC.talkedTo && keys.spaceJustPressed && isPlayerNear(seesawNPC.x, 0, 30, 15, 15)) {
     seesawNPC.talkedTo = true;
+  }
+
+  // she only starts walking over once you're near the seesaw AND the worm
+  // has genuinely been delivered to the woodpecker — makes that content a
+  // real prerequisite, not just an optional side thing available in parallel.
+  // CONFIRMED BUG FIX: this used to check seesaw.playerOnPlank, but that
+  // flag belongs to the worm-catapult system and gets cleared the instant
+  // the worm launches — exactly the moment a player would try to get her
+  // moving, so the hop could never actually trigger. Simple proximity
+  // instead, since this doesn't need to know about the other system at all.
+  if (seesawNPC.talkedTo && !seesawNPC.hopping && !seesawNPC.onSeesaw && isPlayerNear(seesaw.x, 0, 110, 40, 40) && woodpecker.fed) {
     seesawNPC.hopping = true;
   }
 
   if (seesawNPC.hopping) {
-    const targetX = seesaw.x + 20; // fixed end
+    const targetX = seesaw.x + 90; // fixed end, matches the wider plank
     if (Math.abs(seesawNPC.x - targetX) < 2) {
       seesawNPC.x = targetX;
       seesawNPC.hopping = false;
@@ -4269,19 +4836,59 @@ function updateSeesaw(deltaTime) {
   }
 
   seesawNPC.bob = Math.sin(performance.now() * 0.004) * 3;
+  if (seesawNPC.hopT < 700) seesawNPC.hopT += deltaTime * 1000; // slowed for a gentler bounce
 
   if (!seesawNPC.onSeesaw) return; // can't use the seesaw until the NPC is actually on it
 
-  // mount — same UP-key priority pattern as the swing
-  if (!seesaw.mounted && !seesaw.launching && keys.up &&
-      isPlayerNear(seesaw.x - 20, 0, 20, 15, 15)) {
+  // mount — same UP-key priority pattern as the swing. Edge-triggered
+  // (was held), and explicitly excludes the walk-on/jump-pump system —
+  // these were conflicting: holding UP near this spot while trying to
+  // jump-activate the platform would silently steal the interaction,
+  // blocking worm placement and the jump-pump entirely.
+  const mountTargetSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - (-90) * Math.sin(seesaw.angle);
+  const nearMountHorizontally = Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
+  if (!seesaw.mounted && !seesaw.launching && !seesaw.playerOnPlank && keys.upJustPressed &&
+      nearMountHorizontally) {
     seesaw.mounted = true;
     seesaw.charge = 0;
+    // CONFIRMED BUG FIX: handleInput runs before updateSeesaw in the real
+    // game loop, so on this exact frame the jump-suppression check ran
+    // BEFORE seesaw.mounted became true — meaning a real jump could
+    // already be triggered from the very same keypress that just
+    // mounted. Cancel it explicitly now that mounting has actually happened.
+    player.jumping = false;
+    player.vy = 0;
   }
 
   if (seesaw.mounted) {
-    if (keys.spaceJustPressed) {
+    // CONFIRMED BUG FIX: if you walk away mid-charge, this needs to clear
+    // — previously nothing ever reset it except reaching full charge, so
+    // falling off early permanently blocked re-mounting. Only checks
+    // horizontal distance — this mount sequence is stationary (charge via
+    // space, no jumping), so a y<=0 check was wrong: standing normally at
+    // ground level also satisfies that, which was un-mounting immediately
+    // on the same frame as a successful mount.
+    if (!nearMountHorizontally) {
+      seesaw.mounted = false;
+      seesaw.charge = 0;
+    }
+  }
+
+  if (seesaw.mounted) {
+    // CONFIRMED BUG FIX: hold the player's position fixed for the whole
+    // duration of being mounted, not just cancel one jump on the mount
+    // frame — this is meant to be a stationary interaction (press up
+    // repeatedly while seated), but nothing was otherwise stopping
+    // normal gravity from continuing to apply every subsequent frame,
+    // since onPlank support logic doesn't run while mounted.
+    player.y = mountTargetSurfaceHeight;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+
+    if (keys.upJustPressed) {
       seesaw.charge = Math.min(seesaw.charge + 1, SEESAW_CHARGE_NEEDED);
+      seesawNPC.hopT = 0; // triggers her own hop animation, synced to the player's jump
     }
     // tilt follows charge — a sudden pop per press, not a gradual pendulum build
     const targetAngle = -0.28 * (seesaw.charge / SEESAW_CHARGE_NEEDED);
@@ -4295,7 +4902,22 @@ function updateSeesaw(deltaTime) {
   }
 
   if (seesaw.launching) {
+    const prevT = seesaw.launchT;
     seesaw.launchT += deltaTime * 1000;
+
+    // purely visual arc — not physically simulated, just a convincing
+    // parabolic path from the seesaw toward the oak's hollow
+    const launchProgress = Math.min(seesaw.launchT / SEESAW_LAUNCH_DURATION, 1);
+    if (prevT === 0) {
+      seesaw.launchStartX = seesaw.x - 90;
+      seesaw.launchStartY = 0;
+    }
+    const arcTargetX = TALL_OAK_X - 3;
+    const arcTargetY = 280; // raised into the canopy proper — was 240, which visually landed near the hollow/trunk level rather than up in the leaves
+    const arcPeak = 90; // extra height at the midpoint, for a real arc shape
+    player.x = seesaw.launchStartX + (arcTargetX - seesaw.launchStartX) * launchProgress - player.width / 2;
+    player.y = seesaw.launchStartY + (arcTargetY - seesaw.launchStartY) * launchProgress + Math.sin(launchProgress * Math.PI) * arcPeak;
+
     if (seesaw.launchT >= SEESAW_LAUNCH_DURATION) {
       seesaw.launching = false;
       seesaw.charge = 0;
@@ -4306,24 +4928,104 @@ function updateSeesaw(deltaTime) {
 }
 
 function drawSeesawNPC(camX) {
-  const nx = seesawNPC.x - camX;
-  const ny = gy - 10 + seesawNPC.bob;
-  ctx.fillStyle = "#c9793a";
+  let nx = seesawNPC.x - camX;
+  let ny;
+  if (seesawNPC.onSeesaw) {
+    // match the seat bump's ACTUAL rotated position, not a fixed x with
+    // only y adjusted — the real seat moves in both x and y as the plank tilts
+    const sx = seesaw.x - camX, sy = gy - seesaw.pivotHeightAboveGround;
+    const localX = 90, localY = -8; // matches the seat bump's own local coordinates
+    const cos = Math.cos(seesaw.angle), sin = Math.sin(seesaw.angle);
+    nx = sx + localX * cos - localY * sin;
+    ny = (sy - 10) + localX * sin + localY * cos + seesawNPC.bob - 6; // -6 lifts her to sit ON the seat, not centered on it
+  } else {
+    ny = gy - 12 + seesawNPC.bob;
+  }
+
+  // her own hop-bounce, synced to each charge-building jump — a real
+  // two-person seesaw effort, not just passively following the tilt
+  if (seesawNPC.hopT < 700) {
+    const hopProgress = seesawNPC.hopT / 700;
+    ny -= Math.sin(hopProgress * Math.PI) * 20;
+  }
+
+  // spikes — single shared drawing function for both edge and on-body
+  // spikes, guaranteeing truly identical shape and width (the previous
+  // version used two different formulas -- angular offset at a radius
+  // for edge spikes, direct perpendicular offset for on-body ones --
+  // which don't actually produce the same visual width even with
+  // matching color, despite looking like they should on paper).
+  const drawSpike = (baseX, baseY, angle, length) => {
+    const baseHalfWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(baseX + Math.cos(angle + 1.5708) * baseHalfWidth, baseY + Math.sin(angle + 1.5708) * baseHalfWidth);
+    ctx.lineTo(baseX + Math.cos(angle) * length, baseY + Math.sin(angle) * length);
+    ctx.lineTo(baseX + Math.cos(angle - 1.5708) * baseHalfWidth, baseY + Math.sin(angle - 1.5708) * baseHalfWidth);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  ctx.fillStyle = "#2e2314";
+  for (let i = -11; i <= 8; i++) {
+    const ang = -Math.PI / 2 + i * 0.28;
+    const spikeLen = 13 + Math.sin(i * 0.9) * 4; // 9-17, verified clear of the body radius (15) at every value
+    drawSpike(nx + Math.cos(ang) * 7, ny + Math.sin(ang) * 7, ang, spikeLen);
+  }
+
+  // body — larger, rounder than before, sized up slightly per request
+  ctx.fillStyle = "#c9a878";
   ctx.beginPath();
-  ctx.ellipse(nx, ny, 9, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(nx, ny, 15, 13, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#8a4a20";
+  ctx.strokeStyle = "#8a6a4a";
   ctx.lineWidth = 1;
   ctx.stroke();
+
+  ctx.fillStyle = "#2e2314";
+  const onBodySpikes = [
+    [-7, -7, 0.3], [-3, -9, -0.5], [2, -8, 0.8], [-9, -1, -1.2],
+    [-5, 2, 0.4], [0, -3, -0.7], [3, 4, 1.1], [-8, 5, -0.3], [-2, 7, 0.6],
+    [-6, -4, 1.0], [4, -5, -1.0], [-4, -1, 1.3], [6, 1, -0.6], [1, 6, -1.3],
+    [-7, 2, 0.9], [5, -1, 0.2]
+  ];
+  onBodySpikes.forEach(([dx, dy, tilt], idx) => {
+    const len = 6 + (idx % 4) * 1.5; // 6-10.5, comparable visual scale to edge spikes given the different starting offset
+    drawSpike(nx + dx, ny + dy, tilt, len);
+  });
+
+  // small feet
+  ctx.fillStyle = "#8a6a4a";
+  [-6, 6].forEach(fx => {
+    ctx.beginPath();
+    ctx.ellipse(nx + fx, ny + 12, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // little pale face/snout
+  ctx.fillStyle = "#e8ddc8";
+  ctx.beginPath();
+  ctx.ellipse(nx + 8, ny + 2, 6, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = "#2b2b2b";
   ctx.beginPath();
-  ctx.arc(nx - 3, ny - 2, 1.3, 0, Math.PI * 2);
-  ctx.arc(nx + 3, ny - 2, 1.3, 0, Math.PI * 2);
+  ctx.arc(nx + 13, ny + 2, 1.5, 0, Math.PI * 2); // nose
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(nx + 6, ny - 1, 1.2, 0, Math.PI * 2);
+  ctx.arc(nx + 10, ny - 1, 1.2, 0, Math.PI * 2); // eyes
   ctx.fill();
 
-  if (seesawNPC.talkedTo && !seesawNPC.onSeesaw) return;
-  if (!seesawNPC.talkedTo) {
-    drawSpeechBubble(ctx, nx - 15, ny - 22, ["..."]);
+  // real dialogue, positioned to genuinely sit on her right — removed the
+  // blank "..." placeholder entirely, it wasn't adding anything and was
+  // confusingly positioned
+  if (seesawNPC.talkedTo && !seesawNPC.onSeesaw) {
+    drawFittedSpeechBubble(ctx, nx + 26, ny - 20, ["ready to fly high?", "hop on the other", "side of the seesaw!"]);
+  }
+
+  // hint once both are on the seesaw but the player hasn't started
+  // pumping yet — the "keep pressing up" mechanic wasn't obvious enough
+  if (seesaw.mounted && seesaw.charge === 0) {
+    drawFittedSpeechBubble(ctx, nx + 26, ny - 20, ["jump up to", "pump up!"]);
   }
 }
 
@@ -4331,21 +5033,57 @@ function drawSeesaw(camX) {
   const sx = seesaw.x - camX;
   const sy = gy - seesaw.pivotHeightAboveGround;
 
-  // fulcrum
-  ctx.fillStyle = "#4a3018";
+  // rounder, friendlier fulcrum — red as the primary color now, dark walnut as the outline accent
+  ctx.fillStyle = "#a8402e";
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(sx - 10, gy);
-  ctx.lineTo(sx + 10, gy);
-  ctx.lineTo(sx, sy - 10);
+  ctx.moveTo(sx - 12, gy);
+  ctx.quadraticCurveTo(sx - 12, sy - 6, sx - 4, sy - 12);
+  ctx.quadraticCurveTo(sx, sy - 15, sx + 4, sy - 12);
+  ctx.quadraticCurveTo(sx + 12, sy - 6, sx + 12, gy);
   ctx.closePath();
   ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#4a3018";
+  ctx.beginPath();
+  ctx.arc(sx, sy - 12, 4, 0, Math.PI * 2);
+  ctx.fill();
 
-  // plank, tilts with seesaw.angle
+  // plank — red as the primary body color, wider, rounded ends
   ctx.save();
   ctx.translate(sx, sy - 10);
   ctx.rotate(seesaw.angle);
+
+  ctx.fillStyle = "#a8402e";
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(-100, -5, 200, 10, 5) : ctx.fillRect(-100, -5, 200, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-70, -1);
+  ctx.lineTo(70, -1);
+  ctx.stroke();
+
+  // little seat bumps at each end, so it reads as somewhere to actually sit
   ctx.fillStyle = "#4a3018";
-  ctx.fillRect(-60, -4, 120, 8);
+  [-90, 90].forEach(ex => {
+    ctx.beginPath();
+    ctx.ellipse(ex, -8, 12, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // the placed item itself — was being tracked in state but never actually
+  // drawn, so placing it looked like it just vanished with no confirmation
+  if (seesaw.heldItemPlaced === "worm") {
+    drawWormShape(ctx, -90, -14, 7, 0.3);
+  }
+
   ctx.restore();
 }
 
@@ -4502,9 +5240,9 @@ const KNOCK_FRUIT_FALL_SPEED = 60;
 const GRAFT_MORPH_DURATION = 3000;
 
 const graftState = {
-  plum: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null },
-  pear: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null },
-  peach: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null, stuckItem: null }
+  plum: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null },
+  pear: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null },
+  peach: { honeyGloop: false, hybrid: null, morphing: false, morphT: 0, morphTo: null }
 };
 
 const HYBRID_NAMES = {
@@ -4773,23 +5511,6 @@ function updateGraftTrees(deltaTime) {
       }
     }
 
-    // STICK ANYTHING — whimsy feature, no restrictions. Any held item can be
-    // stuck to a honey-gloop'd tree (doesn't change the tree at all), and
-    // retrieved later with an empty-handed jump+interact at the same spot.
-    if (state.honeyGloop && !graftTriggered && !state.stuckItem && heldItem && heldItem !== "honey" &&
-        player.jumping && pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
-      state.stuckItem = heldItem;
-      inventory[heldItem]--;
-      if (inventory[heldItem] <= 0) delete inventory[heldItem];
-      heldItem = null;
-      updateInventoryUI();
-    } else if (state.stuckItem && !heldItem && player.jumping &&
-        pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
-      inventory[state.stuckItem] = (inventory[state.stuckItem] || 0) + 1;
-      heldItem = state.stuckItem;
-      state.stuckItem = null;
-      updateInventoryUI();
-    }
   });
 }
 
@@ -4845,10 +5566,6 @@ function drawGraftEffects(camX) {
         ctx.arc(tx + Math.cos(angle) * r, ty - 10 + Math.sin(angle) * r * 0.6, 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
-    }
-
-    if (state.stuckItem) {
-      drawCollectible(ctx, tx, ty - 12, 10, 0, state.stuckItem);
     }
 
     if (state.hybrid && !state.morphing) {
@@ -6898,6 +7615,17 @@ function updateRabbitShuttle(deltaTime) {
    ====================================================== */
 const oakReturnDoor = { x: 200, width: 50, height: 90 };
 const owl = { x: 550, bob: 0 };
+// book piles — hoppable platforms. heightAboveGround pre-computed to match
+// the actual drawn stack height (matches drawBookPile's own accumulation
+// formula), so collision lines up with what's visually there.
+const bookPiles = [
+  { x: 190, seed: 13, count: 2, heightAboveGround: 10 },
+  { x: 330, seed: 2, count: 4, heightAboveGround: 24 },
+  { x: 405, seed: 23, count: 3, heightAboveGround: 15 },
+  { x: 560, seed: 31, count: 12, heightAboveGround: 60 } // much taller than the others
+];
+const BOOK_PILE_WIDTH = 24; // rough horizontal footprint for collision purposes
+const nookSeat = { x: 950, heightAboveGround: 30, width: 100 };
 
 function drawOakScene(camX) {
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
@@ -6916,6 +7644,160 @@ function drawOakScene(camX) {
     ctx.quadraticCurveTo(gx + 20, gy * 0.5, gx, gy);
     ctx.stroke();
   }
+
+  // tall bookshelves along the walls, reaching nearly to the top of the
+  // screen — two genuinely different styles, not the same shelf mirrored
+  const shelfStyles = [
+    { x: 90, frameColor: "#3a2818", innerColor: "#2a1c0e", boardColor: "#4a3018", rowCount: 6, colors: ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f"], sideways: false },
+    { x: 620, frameColor: "#241a12", innerColor: "#160f0a", boardColor: "#2e2015", rowCount: 5, colors: ["#7a4a2f", "#5a3a5a", "#2f5a6a", "#9a5a3a", "#3a6a4a"], sideways: true }
+  ];
+  shelfStyles.forEach(style => {
+    const sx = style.x - camX;
+    const shelfTop = 12, shelfBottom = gy - 2, shelfWidth = 70;
+
+    // shelf frame — sides and back
+    ctx.fillStyle = style.frameColor;
+    ctx.fillRect(sx - shelfWidth / 2, shelfTop, shelfWidth, shelfBottom - shelfTop);
+    ctx.fillStyle = style.innerColor;
+    ctx.fillRect(sx - shelfWidth / 2 + 4, shelfTop + 4, shelfWidth - 8, shelfBottom - shelfTop - 8);
+
+    // horizontal shelf boards
+    const rowCount = style.rowCount;
+    const rowHeight = (shelfBottom - shelfTop - 8) / rowCount;
+    for (let row = 0; row < rowCount; row++) {
+      const rowY = shelfTop + 4 + row * rowHeight;
+      ctx.fillStyle = style.boardColor;
+      ctx.fillRect(sx - shelfWidth / 2 + 4, rowY + rowHeight - 3, shelfWidth - 8, 3);
+
+      const rowSeed = row * 3;
+      const isLeftShelf = !style.sideways;
+
+      if (isLeftShelf && row === rowCount - 1) {
+        // left shelf: lowest row is mixed -- vertical books on the left,
+        // a shorter horizontal stack on the right
+        const standCount = 3;
+        let vx = sx - shelfWidth / 2 + 7;
+        for (let v = 0; v < standCount; v++) {
+          const bw = 5 + (v % 2) * 2;
+          const bh = rowHeight - 8 - (v % 3);
+          ctx.fillStyle = style.colors[(rowSeed + v) % style.colors.length];
+          ctx.fillRect(vx, rowY + rowHeight - 3 - bh, bw, bh);
+          vx += bw + 1.5;
+        }
+        let stackY = rowY + rowHeight - 4;
+        for (let s = 0; s < 2; s++) {
+          const sh = 3 + (s % 2); // shorter than the right shelf's stack
+          ctx.save();
+          ctx.translate(vx + 2, stackY - sh);
+          ctx.rotate((s - 1) * 0.03);
+          ctx.fillStyle = style.colors[(rowSeed + s + 2) % style.colors.length];
+          ctx.fillRect(0, 0, sx + shelfWidth / 2 - 6 - (vx + 2), sh);
+          ctx.restore();
+          stackY -= sh + 1;
+        }
+        continue;
+      }
+
+      if (!isLeftShelf && row === 1) {
+        // right shelf: a mixed row -- 2-3 vertical books next to a
+        // horizontal stack, not a full row of just one or the other
+        const standCount = 3;
+        let vx = sx - shelfWidth / 2 + 7;
+        for (let v = 0; v < standCount; v++) {
+          const bw = 5 + (v % 2) * 2;
+          const bh = rowHeight - 8 - (v % 3);
+          ctx.fillStyle = style.colors[(rowSeed + v) % style.colors.length];
+          ctx.fillRect(vx, rowY + rowHeight - 3 - bh, bw, bh);
+          vx += bw + 1.5;
+        }
+        let stackY = rowY + rowHeight - 4;
+        for (let s = 0; s < 3; s++) {
+          const sh = 4 + (s % 2);
+          ctx.save();
+          ctx.translate(vx + 2, stackY - sh);
+          ctx.rotate((s - 1) * 0.03);
+          ctx.fillStyle = style.colors[(rowSeed + s + 2) % style.colors.length];
+          ctx.fillRect(0, 0, sx + shelfWidth / 2 - 6 - (vx + 2), sh);
+          ctx.restore();
+          stackY -= sh + 1;
+        }
+        continue;
+      }
+
+      if (row % 3 === 1) {
+        // remaining horizontal-stack rows elsewhere on the right shelf
+        let stackY = rowY + rowHeight - 4;
+        const stackCount = style.sideways ? 3 : 2;
+        for (let s = 0; s < stackCount; s++) {
+          const sh = 4 + (s % 2);
+          const slideOffset = (s % 2) * 3; // slightly offset stacks, not perfectly aligned edges
+          ctx.save();
+          ctx.translate(sx - shelfWidth / 2 + 8 + slideOffset, stackY - sh);
+          ctx.rotate((s - 1) * 0.03);
+          ctx.fillStyle = style.colors[(rowSeed + s) % style.colors.length];
+          ctx.fillRect(0, 0, shelfWidth - 20, sh);
+          ctx.restore();
+          stackY -= sh + 1;
+        }
+        continue;
+      }
+
+      // books standing on this shelf — varied width/height/color, slight
+      // lean per book (not perfectly vertical), occasional gaps and a
+      // leaning stack of 2 lying on top of the row for real messiness.
+      // Shortened overall and given more height variety — real shelves
+      // don't have every book reaching the full row height.
+      let bx = sx - shelfWidth / 2 + 7;
+      for (let b = 0; b < 5 && bx < sx + shelfWidth / 2 - 6; b++) {
+        if (!isLeftShelf && row === 3 && b === 0) {
+          // the manual — explicit blue book with a tooth icon and label,
+          // second row from the bottom of the right shelf
+          const mw = 8, mh = rowHeight - 10;
+          ctx.fillStyle = "#2f5a6a";
+          ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
+          ctx.fillStyle = "#e8ddc8";
+          ctx.beginPath();
+          const toothX = bx + mw / 2, toothY = rowY + rowHeight - 3 - mh + 6;
+          ctx.arc(toothX - 1.2, toothY, 1.4, 0, Math.PI * 2);
+          ctx.arc(toothX + 1.2, toothY, 1.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillRect(toothX - 1, toothY, 2, 2.5);
+          ctx.save();
+          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh / 2 + 6);
+          ctx.rotate(-Math.PI / 2);
+          ctx.fillStyle = "#e8ddc8";
+          ctx.font = "6px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("MANUAL", 0, 0);
+          ctx.restore();
+          bx += mw + 3;
+          continue;
+        }
+        const bw = 5 + ((rowSeed + b * 2) % 4);
+        const bh = rowHeight - 8 - ((rowSeed + b) % 5); // shorter, more varied -- doesn't fill all the way to the shelf above
+        const lean = (((rowSeed + b * 5) % 7) - 3) / 60; // slight per-book tilt
+        ctx.save();
+        ctx.translate(bx + bw / 2, rowY + rowHeight - 3);
+        ctx.rotate(lean);
+        ctx.fillStyle = style.colors[(rowSeed + b) % style.colors.length];
+        ctx.fillRect(-bw / 2, -bh, bw, bh);
+        ctx.restore();
+        bx += bw + 1.5 + ((rowSeed + b) % 3 === 0 ? 2.5 : 0); // occasional slightly wider gap
+
+        // every so often, lean a lone book flat on top of this one
+        if ((rowSeed + b) % 4 === 2 && b < 4) {
+          const lw = shelfWidth / 5;
+          ctx.save();
+          ctx.translate(bx - bw / 2, rowY + rowHeight - 3 - bh - 3);
+          ctx.rotate(-0.12);
+          ctx.fillStyle = style.colors[(rowSeed + b + 2) % style.colors.length];
+          ctx.fillRect(-lw / 2, -4, lw, 4);
+          ctx.restore();
+        }
+      }
+    }
+  });
 
   ctx.fillStyle = "#2e1c0a";
   ctx.fillRect(0, gy, canvas.width, 40);
@@ -6937,19 +7819,248 @@ function drawOakScene(camX) {
   ctx.ellipse(dx + 6, gy - oakReturnDoor.height * 0.45, 10, oakReturnDoor.height * 0.4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // a scatter of books
-  const bookColors = ["#7a2f2f", "#2f5a3a", "#4a3a7a"];
-  [350, 380, 410].forEach((bx, i) => {
-    ctx.fillStyle = bookColors[i];
-    ctx.fillRect(bx - camX, gy - 14 - i, 22, 14);
-  });
+  // real, messy piles of books — varied sizes, slight rotation and offset,
+  // genuinely different colors, not perfectly stacked uniform rectangles.
+  // Scattered at several spots around the room, each pile shaped
+  // differently via its own seed rather than being identical copies.
+  const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
+  function drawBookPile(baseX, baseY, seed, count) {
+    let dy = 0;
+    for (let i = 0; i < count; i++) {
+      const w = 20 + ((seed + i * 5) % 10); // wide and thin -- lying flat, not standing on spine
+      const h = 4 + ((seed + i * 3) % 3);
+      const rot = (((seed + i * 7) % 20) - 10) / 80;
+      const dx = (((seed + i * 4) % 6) - 3);
+      ctx.save();
+      ctx.translate(baseX - camX + dx, baseY - dy);
+      ctx.rotate(rot);
+      ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
+      ctx.fillRect(-w / 2, -h, w, h);
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-w / 2, -h, w, h);
+      ctx.restore();
+      dy += h;
+    }
+  }
+  // drawn from the shared bookPiles array (also used for collision below)
+  bookPiles.forEach(pile => drawBookPile(pile.x, gy - 6, pile.seed, pile.count));
 
-  // cushions
-  [450, 500].forEach((cx, i) => {
-    ctx.fillStyle = i % 2 ? "#c9793a" : "#8a4a5a";
+  // book-nook — a cozy sitting alcove cut into the tree wall, extending
+  // out slightly, with a small window. Moved way right of the second
+  // bookshelf, with a real seat you can jump onto after grabbing a book.
+  const nookX = 950 - camX;
+  const nookWidth = 130, nookTop = gy - 150, nookBottom = gy - 2;
+
+  // the alcove itself — a genuine arch shape: straight sides up to the
+  // spring line, then a true semi-circular arch top, recessed into the
+  // wall (darker), with a lighter interior showing it's a real cut-in
+  // space, not just a flat panel
+  ctx.fillStyle = "#241608";
+  const archOuterRadius = (nookWidth + 12) / 2;
+  const archTop = nookTop - 10;
+  const archSpringY = archTop + archOuterRadius;
+  ctx.beginPath();
+  ctx.moveTo(nookX - archOuterRadius, archSpringY);
+  ctx.lineTo(nookX - archOuterRadius, nookBottom + 6);
+  ctx.lineTo(nookX + archOuterRadius, nookBottom + 6);
+  ctx.lineTo(nookX + archOuterRadius, archSpringY);
+  ctx.arc(nookX, archSpringY, archOuterRadius, 0, Math.PI, true);
+  ctx.closePath();
+  ctx.fill();
+
+  // subtle wood-grain texture, matching the walls' rustic character --
+  // clipped to the arch shape so it stays contained within the recess
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(nookX - archOuterRadius, archSpringY);
+  ctx.lineTo(nookX - archOuterRadius, nookBottom + 6);
+  ctx.lineTo(nookX + archOuterRadius, nookBottom + 6);
+  ctx.lineTo(nookX + archOuterRadius, archSpringY);
+  ctx.arc(nookX, archSpringY, archOuterRadius, 0, Math.PI, true);
+  ctx.closePath();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(90,64,40,0.25)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const gx = nookX - archOuterRadius + 10 + i * (archOuterRadius * 2 - 20) / 3;
     ctx.beginPath();
-    ctx.ellipse(cx - camX, gy - 8, 22, 10, 0, 0, Math.PI * 2);
+    ctx.moveTo(gx, archTop - 5);
+    ctx.quadraticCurveTo(gx + 6, (archTop + nookBottom) / 2, gx, nookBottom + 6);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // the extending-out part — a slightly protruding floor/ledge, like a
+  // bay window bulging out from the trunk's inner wall
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.moveTo(nookX - nookWidth / 2, nookBottom - 30);
+  ctx.quadraticCurveTo(nookX - nookWidth / 2 - 18, nookBottom - 5, nookX - nookWidth / 2 - 4, nookBottom + 10);
+  ctx.lineTo(nookX + nookWidth / 2 + 4, nookBottom + 10);
+  ctx.quadraticCurveTo(nookX + nookWidth / 2 + 18, nookBottom - 5, nookX + nookWidth / 2, nookBottom - 30);
+  ctx.closePath();
+  ctx.fill();
+
+  // interior back wall of the nook — warm, lighter than the recess
+  // shadow, now arch-shaped to match the outer recess instead of a
+  // clashing rectangle
+  ctx.fillStyle = "#4a3420";
+  const backArchRadius = archOuterRadius - 6;
+  const backArchSpringY = archTop + 6 + backArchRadius;
+  ctx.beginPath();
+  ctx.moveTo(nookX - backArchRadius, backArchSpringY);
+  ctx.lineTo(nookX - backArchRadius, nookBottom - 20);
+  ctx.lineTo(nookX + backArchRadius, nookBottom - 20);
+  ctx.lineTo(nookX + backArchRadius, backArchSpringY);
+  ctx.arc(nookX, backArchSpringY, backArchRadius, 0, Math.PI, true);
+  ctx.closePath();
+  ctx.fill();
+
+  // small window — arched, with a pale sky-blue showing through, sitting
+  // near the top of the nook
+  const winX = nookX, winY = nookTop + 34, winR = 25;
+  ctx.fillStyle = "#bfe0ec";
+  ctx.beginPath();
+  ctx.arc(winX, winY, winR, Math.PI, 0);
+  ctx.lineTo(winX + winR, winY + winR * 0.7);
+  ctx.lineTo(winX - winR, winY + winR * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2a1c0e";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // a small branch with leaves, glimpsed through the window as if from
+  // outside — near the bottom right of the pane, clipped so it never
+  // spills past the window's own arched shape
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(winX, winY, winR, Math.PI, 0);
+  ctx.lineTo(winX + winR, winY + winR * 0.7);
+  ctx.lineTo(winX - winR, winY + winR * 0.7);
+  ctx.closePath();
+  ctx.clip();
+  const bx = winX + winR * 0.55, by = winY + winR * 0.5;
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(bx + 14, by + 12);
+  ctx.quadraticCurveTo(bx + 4, by, bx - 8, by - 6);
+  ctx.stroke();
+  const leafColors = ["#c96a1e", "#a83a2a", "#d4a520"];
+  [[bx - 6, by - 8, 0.3, 0], [bx - 1, by - 2, -0.2, 1], [bx + 5, by + 3, 0.5, 2], [bx - 10, by - 4, -0.4, 1]].forEach(([lx, ly, rot, colorIdx]) => {
+    ctx.fillStyle = leafColors[colorIdx];
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.5, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // window cross-bars
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(winX, winY - winR);
+  ctx.lineTo(winX, winY + winR * 0.7);
+  ctx.moveTo(winX - winR, winY);
+  ctx.lineTo(winX + winR, winY);
+  ctx.stroke();
+
+  // the seat itself — a real bench/ledge, jumpable, fully opaque and
+  // clearly distinct in color from the wall behind it. Widened to
+  // actually match the protruding ledge shape beneath it -- it was
+  // narrower than the ledge, leaving the ledge's darker color visibly
+  // showing past the seat's edges on both sides.
+  const seatHeight = nookBottom - nookSeat.heightAboveGround;
+  const seatLeft = nookX - nookWidth / 2 - 2, seatWidth = nookWidth + 4;
+  ctx.fillStyle = "#6a2e2e";
+  ctx.fillRect(seatLeft, seatHeight, seatWidth, nookBottom - seatHeight);
+  ctx.fillStyle = "#8a4040";
+  ctx.fillRect(seatLeft, seatHeight, seatWidth, 5);
+  ctx.strokeStyle = "#3a1818";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(seatLeft, seatHeight, seatWidth, nookBottom - seatHeight);
+
+  // cushions — genuine variety: ovals big and small, squares, rectangles,
+  // different colors, with real dimensional shading (darker underside,
+  // lighter highlight) and subtle wrinkle lines so they read as soft
+  // fabric, not flat shapes. Leftmost one leans against the corner wall.
+  const cushionSet = [
+    { shape: "oval", dx: -48, dy: -12, w: 24, h: 32, color: "#c9793a", rot: -0.85, wrinkles: 2 },
+    { shape: "square", dx: 2, dy: -3, w: 24, h: 18, color: "#5a7a8a", rot: 0, wrinkles: 1 },
+    { shape: "oval", dx: 38, dy: 2, w: 26, h: 13, color: "#8a4a5a", rot: 0.08, wrinkles: 1 },
+    { shape: "rect", dx: -14, dy: 4, w: 22, h: 11, color: "#6a8a4a", rot: -0.05, wrinkles: 2 }
+  ];
+  function shadeColor(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 0xff) + amt));
+    const b = Math.max(0, Math.min(255, (n & 0xff) + amt));
+    return `rgb(${r},${g},${b})`;
+  }
+  cushionSet.forEach(c => {
+    const ccx = nookX + c.dx, ccy = seatHeight - 4 + c.dy;
+    ctx.save();
+    ctx.translate(ccx, ccy);
+    ctx.rotate(c.rot);
+
+    const drawShape = (fillStyle) => {
+      ctx.fillStyle = fillStyle;
+      if (c.shape === "oval") {
+        ctx.beginPath();
+        ctx.ellipse(0, 0, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const cornerR = 4;
+        ctx.beginPath();
+        ctx.moveTo(-c.w / 2 + cornerR, -c.h / 2);
+        ctx.lineTo(c.w / 2 - cornerR, -c.h / 2);
+        ctx.quadraticCurveTo(c.w / 2, -c.h / 2, c.w / 2, -c.h / 2 + cornerR);
+        ctx.lineTo(c.w / 2, c.h / 2 - cornerR);
+        ctx.quadraticCurveTo(c.w / 2, c.h / 2, c.w / 2 - cornerR, c.h / 2);
+        ctx.lineTo(-c.w / 2 + cornerR, c.h / 2);
+        ctx.quadraticCurveTo(-c.w / 2, c.h / 2, -c.w / 2, c.h / 2 - cornerR);
+        ctx.lineTo(-c.w / 2, -c.h / 2 + cornerR);
+        ctx.quadraticCurveTo(-c.w / 2, -c.h / 2, -c.w / 2 + cornerR, -c.h / 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+    };
+
+    // base fill, then a darker underside shadow, then a lighter highlight
+    // near the top — gives real dimensional roundness, not a flat shape
+    drawShape(c.color);
+    ctx.save();
+    ctx.beginPath();
+    if (c.shape === "oval") ctx.ellipse(0, 0, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+    else ctx.rect(-c.w / 2, -c.h / 2, c.w, c.h);
+    ctx.clip();
+    ctx.fillStyle = shadeColor(c.color, -35);
+    ctx.beginPath();
+    ctx.ellipse(0, c.h * 0.28, c.w * 0.55, c.h * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shadeColor(c.color, 30);
+    ctx.beginPath();
+    ctx.ellipse(-c.w * 0.15, -c.h * 0.28, c.w * 0.3, c.h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // subtle wrinkle lines — a couple of short curved strokes
+    ctx.strokeStyle = shadeColor(c.color, -50);
+    ctx.lineWidth = 0.8;
+    for (let w = 0; w < c.wrinkles; w++) {
+      const wy = -c.h * 0.1 + w * c.h * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(-c.w * 0.25, wy);
+      ctx.quadraticCurveTo(0, wy + 2, c.w * 0.25, wy - 1);
+      ctx.stroke();
+    }
+
+    ctx.restore();
   });
 
   drawOwl(camX);
@@ -6958,20 +8069,82 @@ function drawOakScene(camX) {
 function drawOwl(camX) {
   const ox = owl.x - camX;
   const oy = gy - 40 + owl.bob;
+
+  // feet — small, perched-looking, drawn first so the body sits over them
+  ctx.strokeStyle = "#c98a30";
+  ctx.lineWidth = 2;
+  [-6, 6].forEach(fx => {
+    ctx.beginPath();
+    ctx.moveTo(ox + fx, oy + 18);
+    ctx.lineTo(ox + fx - 3, oy + 23);
+    ctx.moveTo(ox + fx, oy + 18);
+    ctx.lineTo(ox + fx, oy + 24);
+    ctx.moveTo(ox + fx, oy + 18);
+    ctx.lineTo(ox + fx + 3, oy + 23);
+    ctx.stroke();
+  });
+
+  // body
   ctx.fillStyle = "#8a6a45";
   ctx.beginPath();
   ctx.ellipse(ox, oy, 16, 20, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // wings — folded at the sides, suggesting real feather layering
+  ctx.fillStyle = "#6e5236";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(ox + side * 13, oy + 4, 7, 15, side * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // wing feather lines — a few scalloped strokes per wing
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1;
+  [-1, 1].forEach(side => {
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(ox + side * 13, oy - 2 + i * 6, 5, side > 0 ? Math.PI * 0.9 : -Math.PI * 0.1, side > 0 ? Math.PI * 1.6 : Math.PI * 0.6);
+      ctx.stroke();
+    }
+  });
+
+  // body feather texture — small scalloped rows across the chest
+  ctx.strokeStyle = "#6e5236";
+  ctx.lineWidth = 1;
+  for (let row = 0; row < 3; row++) {
+    for (let col = -1; col <= 1; col++) {
+      ctx.beginPath();
+      ctx.arc(ox + col * 6, oy + 4 + row * 5, 3, 0, Math.PI);
+      ctx.stroke();
+    }
+  }
+
+  // face disc — pale, behind the eyes
   ctx.fillStyle = "#f0e0c0";
   ctx.beginPath();
   ctx.arc(ox - 6, oy - 5, 5, 0, Math.PI * 2);
   ctx.arc(ox + 6, oy - 5, 5, 0, Math.PI * 2);
   ctx.fill();
+
   ctx.fillStyle = "#2b2b2b";
   ctx.beginPath();
   ctx.arc(ox - 6, oy - 5, 2, 0, Math.PI * 2);
   ctx.arc(ox + 6, oy - 5, 2, 0, Math.PI * 2);
   ctx.fill();
+
+  // glasses — round frames around each eye, plus a bridge
+  ctx.strokeStyle = "#2b2b2b";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(ox - 6, oy - 5, 6.5, 0, Math.PI * 2);
+  ctx.arc(ox + 6, oy - 5, 6.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ox - 0.5, oy - 5);
+  ctx.lineTo(ox + 0.5, oy - 5);
+  ctx.stroke();
+
+  // beak
   ctx.fillStyle = "#e0a020";
   ctx.beginPath();
   ctx.moveTo(ox - 2, oy - 1);
@@ -6986,6 +8159,40 @@ function updateOakScene(deltaTime) {
 
   if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
     startSeasonTransition("autumn");
+  }
+
+  // book pile collision — same landing pattern as regular platforms
+  bookPiles.forEach(pile => {
+    const pileTop = pile.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > pile.x - BOOK_PILE_WIDTH / 2 &&
+      player.x < pile.x + BOOK_PILE_WIDTH / 2 &&
+      playerBottom <= pileTop &&
+      playerBottom >= pileTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = pileTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
+  // nook seat collision — jumpable, same pattern
+  const seatTop = nookSeat.heightAboveGround;
+  const playerBottom = player.y;
+  if (
+    player.x + player.width > nookSeat.x - nookSeat.width / 2 &&
+    player.x < nookSeat.x + nookSeat.width / 2 &&
+    playerBottom <= seatTop &&
+    playerBottom >= seatTop - 14 &&
+    player.vy <= 0
+  ) {
+    player.y = seatTop;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
   }
 }
 
@@ -7206,11 +8413,13 @@ drawSeasonTransition(ctx);
    ====================================================== */
 function updateAutumnScene(deltaTime) {
 updateLeafTrees(deltaTime);
-updateBumpApple(deltaTime);
 updateSeesaw(deltaTime);
+updateWoodpecker(deltaTime);
+updateSeesawProjectile();
 updateVines(deltaTime);
 updateAcorns();
 updateVinePumpkin();
+updateWormRock();
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
