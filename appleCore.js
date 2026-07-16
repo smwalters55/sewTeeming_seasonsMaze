@@ -94,7 +94,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "oak"; // TEMPORARY — was "autumn", switched for easy viewing of oak scene changes
+let currentScene = "oak"; // TEMPORARY — was "autumn", switched for easy viewing while actively working in the oak scene
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -125,7 +125,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 400, // TEMPORARY — was 120, matched to oak's spawn point
+  x: 400, // TEMPORARY — was 120, matched to oak's spawn point while actively working there
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -509,7 +509,7 @@ const sceneMapInfo = {
   oak:    { label: "Oak",    x: 40,  y: 20 }   // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
 };
 
-const discoveredScenes = { autumn: true }; // autumn is where you start
+const discoveredScenes = { autumn: true, oak: true }; // autumn is where you normally start; oak added too while the temporary debug-start is active
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -7647,8 +7647,8 @@ wallArtCircles.src = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAk
 
 const wallArtPieces = [
   { img: wallArtWaterBird, x: 280, y: 60, w: 95, h: 63, frame: "ornate" },
-  { img: wallArtArch, x: 730, y: 40, w: 130, h: 173, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, bigger per request
-  { img: wallArtCircles, x: 1050, y: 55, w: 95, h: 126, frame: "oval" } // right side of the nook
+  { img: wallArtArch, x: 730, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
+  { img: wallArtCircles, x: 1250, y: 55, w: 72, h: 95, frame: "oval" } // right side of the nook, moved with it, made smaller per request
 ];
 
 function drawAntiqueFrame(x, y, w, h, style) {
@@ -7708,7 +7708,7 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 480, bob: 0 };
+const owl = { x: 550, bob: 0 };
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
@@ -7755,28 +7755,181 @@ function drawBookSpread(spread, camX) {
   }
 }
 const BOOK_SPREAD_HEIGHT = 13; // max cluster height (9) + the 4-unit base offset used in drawBookSpread, verified against the actual drawing formula
-const nookSeat = { x: 950, heightAboveGround: 32, width: 100 }; // +2 to account for nookBottom being gy-2, not gy, matching the drawn surface exactly
+const nookSeat = { x: 1150, heightAboveGround: 32, width: 100 }; // +2 to account for nookBottom being gy-2, not gy, matching the drawn surface exactly
 
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
 // visual and unremarkable at this stage so it doesn't telegraph anything.
-const nookRug = { x: 1080, width: 90, height: 34 };
+const nookRug = { x: 1350, width: 100, height: 30 };
 function drawNookRug(camX) {
   const rx = nookRug.x - camX;
   const ry = gy - 3;
-  ctx.fillStyle = "#7a4038";
+  const w = nookRug.width, h = nookRug.height;
+
+  // subtle tell when the player is actually standing on it -- a gentle
+  // wobble, plus one corner slightly turned up, rather than anything
+  // that reads as a hint from a distance
+  const onRug = isPlayerNear(nookRug.x, 0, w / 2, 20, 10);
+  const WOBBLE_CYCLE_MS = 4500, WOBBLE_PULSE_MS = 700;
+  const cyclePos = onRug ? performance.now() % WOBBLE_CYCLE_MS : WOBBLE_CYCLE_MS;
+  const inPulse = cyclePos < WOBBLE_PULSE_MS;
+  const wobble = inPulse ? Math.sin((cyclePos / WOBBLE_PULSE_MS) * Math.PI * 3) * 0.015 * Math.sin((cyclePos / WOBBLE_PULSE_MS) * Math.PI) : 0;
+
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.scale(1 + wobble, 1 - wobble * 0.6);
+  ctx.translate(-rx, -ry);
+
+  const left = rx - w / 2, top = ry - h / 2;
+
+  // base
+  ctx.fillStyle = "#6a3230";
+  ctx.fillRect(left, top, w, h);
+
+  // clean border frame
+  ctx.strokeStyle = "#3a1818";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left + 2, top + 2, w - 4, h - 4);
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(left + 5, top + 5, w - 10, h - 10);
+
+  // abstract arrangement of varied geometric shapes -- not one repeated
+  // motif, a genuine mix of triangle/circle/square/diamond in different
+  // sizes, still contained cleanly within the border
+  const innerLeft = left + 8, innerTop = top + 8;
+  const innerW = w - 16, innerH = h - 16;
+  const accent1 = "#c9a860", accent2 = "#3a1818", accent3 = "#8a5040";
+
+  // triangle, left side
+  ctx.fillStyle = accent1;
   ctx.beginPath();
-  ctx.ellipse(rx, ry, nookRug.width / 2, nookRug.height / 2, 0, 0, Math.PI * 2);
+  ctx.moveTo(innerLeft + 4, innerTop + innerH);
+  ctx.lineTo(innerLeft + 14, innerTop);
+  ctx.lineTo(innerLeft + 22, innerTop + innerH);
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#5a2828";
+
+  // small circle
+  ctx.fillStyle = accent2;
+  ctx.beginPath();
+  ctx.arc(innerLeft + innerW * 0.32, innerTop + innerH * 0.35, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // diamond, center
+  ctx.fillStyle = accent3;
+  const dcx = innerLeft + innerW * 0.5, dcy = innerTop + innerH / 2;
+  ctx.beginPath();
+  ctx.moveTo(dcx, dcy - 7);
+  ctx.lineTo(dcx + 6, dcy);
+  ctx.lineTo(dcx, dcy + 7);
+  ctx.lineTo(dcx - 6, dcy);
+  ctx.closePath();
+  ctx.fill();
+
+  // small square, offset
+  ctx.fillStyle = accent1;
+  ctx.fillRect(innerLeft + innerW * 0.68 - 4, innerTop + innerH * 0.25, 8, 8);
+
+  // second, larger circle, right side
+  ctx.fillStyle = accent2;
+  ctx.beginPath();
+  ctx.arc(innerLeft + innerW * 0.85, innerTop + innerH * 0.6, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small triangle, bottom right, pointing down
+  ctx.fillStyle = accent3;
+  ctx.beginPath();
+  ctx.moveTo(innerLeft + innerW * 0.78, innerTop + innerH * 0.75);
+  ctx.lineTo(innerLeft + innerW * 0.92, innerTop + innerH * 0.75);
+  ctx.lineTo(innerLeft + innerW * 0.85, innerTop + innerH);
+  ctx.closePath();
+  ctx.fill();
+
+  // one corner slightly turned up when the player is standing on it --
+  // a tiny triangular peel showing the darker floor underneath
+  if (onRug) {
+    const liftAmt = 4 + Math.sin(performance.now() * 0.006) * 1.5;
+    ctx.fillStyle = "#2e1c0a";
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(left + liftAmt, top);
+    ctx.lineTo(left, top + liftAmt);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#3a1818";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(left + liftAmt, top);
+    ctx.lineTo(left, top + liftAmt);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// short, wide shelf -- right of the rug, breathing room from it. Deliberately
+// simpler than the tall left/right shelves (no mixed rows, no special-case
+// books), just a squat, broad shelf with a few rows of ordinary books.
+const shortShelf = { x: 1520, width: 110, top: 170, bottom: gy - 2 };
+function drawShortShelf(camX) {
+  const sx = shortShelf.x - camX;
+  const w = shortShelf.width;
+  const top = shortShelf.top, bottom = shortShelf.bottom;
+
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx - w / 2, top, w, bottom - top);
+  ctx.fillStyle = "#3a2410";
+  ctx.fillRect(sx - w / 2 + 4, top + 4, w - 8, bottom - top - 8);
+
+  const rowCount = 3;
+  const rowHeight = (bottom - top - 8) / rowCount;
+  const colors = ["#7a4a2f", "#3a5a3a", "#5a3a5a", "#b8862f", "#2f5a6a"];
+  for (let row = 0; row < rowCount; row++) {
+    const rowY = top + 4 + row * rowHeight;
+    ctx.fillStyle = "#5a3a1a";
+    ctx.fillRect(sx - w / 2 + 4, rowY + rowHeight - 3, w - 8, 3);
+
+    let bx = sx - w / 2 + 7;
+    const rowSeed = row * 5;
+    for (let b = 0; b < 7 && bx < sx + w / 2 - 6; b++) {
+      const bw = 5 + ((rowSeed + b * 2) % 5);
+      const bh = rowHeight - 8 - ((rowSeed + b) % 4);
+      const lean = (((rowSeed + b * 5) % 7) - 3) / 60;
+      ctx.save();
+      ctx.translate(bx + bw / 2, rowY + rowHeight - 3);
+      ctx.rotate(lean);
+      ctx.fillStyle = colors[(rowSeed + b) % colors.length];
+      ctx.fillRect(-bw / 2, -bh, bw, bh);
+      ctx.restore();
+      bx += bw + 1.5;
+    }
+  }
+
+  // old broom, leaning against the shelf's right side
+  const broomX = sx + w / 2 + 6, broomBottom = bottom;
+  const broomTopX = broomX + 14, broomTopY = top + 30;
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(broomX, broomBottom - 18);
+  ctx.lineTo(broomTopX, broomTopY);
+  ctx.stroke();
+  // bristles -- a small fan of straw-colored strokes at the base
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(broomX, broomBottom - 18);
+    ctx.lineTo(broomX + i * 2.2, broomBottom);
+    ctx.stroke();
+  }
+  // binding around the bristles
+  ctx.strokeStyle = "#5a3a1a";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.ellipse(rx, ry, nookRug.width / 2 - 6, nookRug.height / 2 - 4, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = "#9a5a48";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(rx, ry, nookRug.width / 2 - 12, nookRug.height / 2 - 8, 0, 0, Math.PI * 2);
+  ctx.moveTo(broomX - 6, broomBottom - 16);
+  ctx.lineTo(broomX + 6, broomBottom - 16);
   ctx.stroke();
 }
 
@@ -8023,7 +8176,7 @@ function drawOakScene(camX) {
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
   // out slightly, with a small window. Moved way right of the second
   // bookshelf, with a real seat you can jump onto after grabbing a book.
-  const nookX = 950 - camX;
+  const nookX = 1150 - camX;
   const nookWidth = 130, nookTop = gy - 150, nookBottom = gy - 2;
 
   // the alcove itself — a genuine arch shape: straight sides up to the
@@ -8238,6 +8391,7 @@ function drawOakScene(camX) {
   });
 
   drawNookRug(camX);
+  drawShortShelf(camX);
   drawOwl(camX);
 }
 
@@ -8643,7 +8797,7 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
 
   if (page.isToothPage) {
     const frX2 = frX, frY = ph / 2 - 10;
-    const s = 13; // scale factor for the big page version — much bigger per request
+    const s = 20; // scale factor for the big page version — huge, per request
     ctx.fillStyle = "#f5f0e0";
     ctx.beginPath();
     ctx.moveTo(frX2 - 2.5 * s, frY - 1.5 * s);
