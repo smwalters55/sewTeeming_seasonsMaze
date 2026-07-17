@@ -762,6 +762,14 @@ function drawSeasonTransition(ctx) {
     wash.addColorStop(0, "#d7edb0");   // soft light green center
     wash.addColorStop(0.55, "#bfe3a0"); // light green
     wash.addColorStop(1, "#9ccf90");   // deeper green edge
+  } else if (target === "oak") {
+    wash.addColorStop(0, "#d8b878");   // lighter warm wood-tone center
+    wash.addColorStop(0.55, "#b8925a"); // warm amber-brown
+    wash.addColorStop(1, "#8a6a3a");   // deeper wood edge
+  } else if (target === "ratroom") {
+    wash.addColorStop(0, "#4a2e18");   // dark brown center
+    wash.addColorStop(0.55, "#2e1c0e"); // darker brown
+    wash.addColorStop(1, "#100a06");   // near-black edge
   } else {
     wash.addColorStop(0, "#f7f4ee");
     wash.addColorStop(1, "#f7f4ee");
@@ -769,11 +777,68 @@ function drawSeasonTransition(ctx) {
 
   ctx.fillStyle = wash;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // oak gets a soft tree-line silhouette across the lower portion,
+  // a lighter echo of the room itself rather than the flat wash alone
+  if (target === "oak" && alpha > 0.3) {
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.fillStyle = "#6a4a28";
+    const baseY = canvas.height * 0.72;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height);
+    ctx.lineTo(0, baseY);
+    for (let tx = 0; tx <= canvas.width; tx += 40) {
+      const treeH = 30 + Math.sin(tx * 0.05) * 15 + Math.sin(tx * 0.13) * 8;
+      ctx.lineTo(tx, baseY - treeH);
+      ctx.lineTo(tx + 20, baseY - treeH * 0.6);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+  }
+
   ctx.restore();
 
   // scene name card, once mostly faded in
   if (alpha > 0.5 && target) {
     const textAlpha = (alpha - 0.5) / 0.5;
+    if (target === "ratroom") {
+      // its own distinct treatment -- white text, small winking rat
+      // face in the corner, a deliberately different feel from the
+      // other scene cards since this one's meant to read as a little secret
+      ctx.fillStyle = `rgba(255,255,255,${textAlpha})`;
+      ctx.font = "20px ui-monospace";
+      const prevAlign = ctx.textAlign;
+      ctx.textAlign = "center";
+      ctx.fillText("Ratden", canvas.width / 2, canvas.height / 2);
+      ctx.textAlign = prevAlign;
+
+      // small winking rat face, bottom right
+      const fx = canvas.width - 40, fy = canvas.height - 40;
+      ctx.globalAlpha = textAlpha;
+      ctx.fillStyle = "#8a8880";
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, 12, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#7a7268";
+      ctx.beginPath();
+      ctx.arc(fx - 5, fy - 8, 4, 0, Math.PI * 2);
+      ctx.arc(fx + 5, fy - 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // winking eye -- one closed (a curved line), one open (a dot)
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(fx - 4, fy - 1, 2, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+      ctx.fillStyle = "#1a1a1a";
+      ctx.beginPath();
+      ctx.arc(fx + 4, fy - 1, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      return;
+    }
     const label = target[0].toUpperCase() + target.slice(1);
     ctx.fillStyle = `rgba(43,43,43,${textAlpha})`;
     ctx.font = "20px ui-monospace";
@@ -4364,12 +4429,14 @@ function drawLampShape(ctx, x, y, size, rotation, lit) {
   ctx.translate(x, y);
   ctx.rotate(rotation);
 
-  // wide, sturdy base -- a classic hurricane lantern's footprint
-  ctx.fillStyle = "#3a2818";
+  // wide, sturdy base -- a classic hurricane lantern's footprint.
+  // Bright brass, not dark metal, so it doesn't blend into the room's
+  // dark wood-toned background.
+  ctx.fillStyle = "#8a6a2a";
   ctx.beginPath();
   ctx.ellipse(0, size * 0.7, size * 0.5, size * 0.14, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#4a3018";
+  ctx.fillStyle = "#b8923a";
   ctx.beginPath();
   ctx.moveTo(-size * 0.42, size * 0.6);
   ctx.lineTo(size * 0.42, size * 0.6);
@@ -4379,7 +4446,7 @@ function drawLampShape(ctx, x, y, size, rotation, lit) {
   ctx.fill();
 
   // round glass globe, the body of the lantern
-  ctx.fillStyle = lit ? "rgba(255, 220, 140, 0.85)" : "rgba(220, 230, 235, 0.5)";
+  ctx.fillStyle = lit ? "rgba(255, 220, 140, 0.9)" : "rgba(230, 238, 245, 0.75)";
   ctx.beginPath();
   ctx.ellipse(0, size * 0.05, size * 0.4, size * 0.35, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -4396,8 +4463,8 @@ function drawLampShape(ctx, x, y, size, rotation, lit) {
   }
 
   // metal cage struts around the globe -- classic lantern-frame look
-  ctx.strokeStyle = "#3a2818";
-  ctx.lineWidth = size * 0.05;
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = size * 0.06;
   [-0.28, 0, 0.28].forEach(dx => {
     ctx.beginPath();
     ctx.moveTo(dx * size, size * 0.32);
@@ -4409,15 +4476,15 @@ function drawLampShape(ctx, x, y, size, rotation, lit) {
   ctx.stroke();
 
   // top cap where the globe meets the handle
-  ctx.fillStyle = "#3a2818";
+  ctx.fillStyle = "#8a6a2a";
   ctx.beginPath();
   ctx.ellipse(0, -size * 0.28, size * 0.22, size * 0.08, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // large handle loop -- prominent and clearly grabbable, the defining
   // feature of an old-school carry lantern
-  ctx.strokeStyle = "#3a2818";
-  ctx.lineWidth = size * 0.1;
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = size * 0.11;
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.arc(0, -size * 0.5, size * 0.42, Math.PI * 1.08, Math.PI * 1.92);
@@ -7884,7 +7951,7 @@ const BOOK_SPREAD_HEIGHT = 13; // max cluster height (9) + the 4-unit base offse
 // trigger logic rather than each getting bespoke code.
 const sittingAreas = [
   { id: "nook", x: 1150, heightAboveGround: 32, width: 100, unlocked: () => true },
-  { id: "cushionPile", x: 1820, heightAboveGround: 14, width: 90, unlocked: () => oakLamp.collected }
+  { id: "cushionPile", x: 2000, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
 ];
 const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
@@ -8131,10 +8198,13 @@ function drawCushionPile(camX) {
   const cx = cushionPile.x - camX;
   const baseY = gy - 4;
 
-  // hanging ornaments from the ceiling -- simple string + small shape
+  // hanging ornaments from the ceiling -- more of them now, varied
+  // heights and shapes
   const hangs = [
-    { dx: -22, len: 60, color: "#c9863a", shape: "circle" },
-    { dx: 18, len: 45, color: "#8a5a2f", shape: "diamond" }
+    { dx: -34, len: 55, color: "#c9863a", shape: "circle" },
+    { dx: -8, len: 70, color: "#8a5a2f", shape: "diamond" },
+    { dx: 22, len: 48, color: "#a83a4a", shape: "circle" },
+    { dx: 42, len: 62, color: "#6a8a3a", shape: "diamond" }
   ];
   hangs.forEach(h => {
     ctx.strokeStyle = "#4a3018";
@@ -8157,26 +8227,85 @@ function drawCushionPile(camX) {
     }
   });
 
-  // overlapping cushions, varied colors and sizes, piled up
-  const cushions = [
-    { dx: -20, w: 40, h: 22, color: "#7a3a4a" },
-    { dx: 12, w: 44, h: 26, color: "#4a6a5a" },
-    { dx: -4, w: 36, h: 20, color: "#8a5a2f" }
+  // back cushions -- taller, propped up behind the seating spot like a
+  // backrest, leaning at angles against each other
+  const backCushions = [
+    { dx: -30, w: 46, h: 52, rot: -0.25, color: "#4a6a5a" },
+    { dx: 0, w: 50, h: 58, rot: 0.05, color: "#7a3a4a" },
+    { dx: 32, w: 44, h: 50, rot: 0.28, color: "#8a5a2f" }
   ];
-  cushions.forEach(c => {
+  backCushions.forEach(c => {
+    ctx.save();
+    ctx.translate(cx + c.dx, baseY - c.h * 0.42);
+    ctx.rotate(c.rot);
     ctx.fillStyle = c.color;
     ctx.beginPath();
-    ctx.ellipse(cx + c.dx, baseY - c.h / 2 + 4, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = 1;
     ctx.stroke();
+    // a seam line for texture, so it doesn't read as a flat blob
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.beginPath();
+    ctx.moveTo(-c.w * 0.3, -c.h * 0.25);
+    ctx.quadraticCurveTo(0, 0, -c.w * 0.3, c.h * 0.25);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // sheer, semi-transparent fabric strips hanging from the ceiling,
+  // draping down toward the cushions with a gentle breeze-like sway --
+  // each on its own phase so they don't all move in lockstep
+  const now = performance.now();
+  const fabricStrips = [
+    { dx: -38, len: 150, color: "rgba(230, 220, 200, 0.35)", phase: 0 },
+    { dx: -12, len: 172, color: "rgba(120, 40, 55, 0.4)", phase: 1.4 },     // maroon
+    { dx: 10, len: 140, color: "rgba(200, 190, 220, 0.3)", phase: 2.6 },
+    { dx: 24, len: 165, color: "rgba(95, 55, 90, 0.4)", phase: 3.8 },       // plum
+    { dx: 44, len: 148, color: "rgba(184, 98, 42, 0.4)", phase: 5.1 }       // burnt orange
+  ];
+  fabricStrips.forEach(f => {
+    const fx = cx + f.dx, fy = 0;
+    const sway = Math.sin(now * 0.0009 + f.phase) * 14;
+    const swayMid = Math.sin(now * 0.0009 + f.phase + 0.6) * 8;
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.quadraticCurveTo(fx + swayMid, fy + f.len * 0.5, fx + sway, fy + f.len);
+    ctx.stroke();
+  });
+
+  // front/side cushions -- lower, squashed-looking, overlapping and
+  // leaning against each other and the back cushions, forming the
+  // actual enclosing "seat in the middle" shape
+  const frontCushions = [
+    { dx: -46, w: 38, h: 24, rot: -0.35, color: "#a83a4a" },
+    { dx: -22, w: 42, h: 22, rot: -0.1, color: "#6a8a3a" },
+    { dx: 8, w: 40, h: 20, rot: 0.08, color: "#4a6a8a" },
+    { dx: 36, w: 40, h: 24, rot: 0.3, color: "#c9863a" },
+    { dx: 54, w: 32, h: 20, rot: 0.4, color: "#8a5a2f" }
+  ];
+  frontCushions.forEach(c => {
+    ctx.save();
+    ctx.translate(cx + c.dx, baseY - c.h / 2 + 5);
+    ctx.rotate(c.rot);
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   });
 }
 
 const oakLamp = { x: 700, collected: false };
 function drawOakLampTable(camX) {
-  if (!ratNPC.fed || oakLamp.collected) return;
+  if (!ratNPC.fed) return;
   const tx = oakLamp.x - camX;
   const tableTop = gy - 26;
 
@@ -8195,7 +8324,9 @@ function drawOakLampTable(camX) {
   ctx.lineWidth = 1;
   ctx.strokeRect(tx - 18, tableTop, 36, 6);
 
-  drawLampShape(ctx, tx, tableTop - 12, 11, 0, false);
+  if (!oakLamp.collected) {
+    drawLampShape(ctx, tx, tableTop - 12, 11, 0, false);
+  }
 }
 function updateOakLampTable() {
   if (!ratNPC.fed || oakLamp.collected) return;
@@ -9567,6 +9698,37 @@ function drawBookReader() {
    content come in a later pass.
    ====================================================== */
 const ratRoomStairsTop = { x: 400, y: 20 };
+
+// cheese painting -- a single framed piece on the rat room's wall,
+// away from the stairs/light-shaft area
+const ratRoomCheeseArt = new Image();
+ratRoomCheeseArt.src = "data:image/jpeg;base64,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";
+const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
+function drawRatRoomArt(camX) {
+  const px = ratRoomArtSpot.x - camX, py = ratRoomArtSpot.y;
+  const w = ratRoomArtSpot.w, h = ratRoomArtSpot.h;
+  const pad = 6;
+  ctx.fillStyle = "#3a2818";
+  ctx.fillRect(px - pad, py - pad, w + pad * 2, h + pad * 2);
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px - pad + 3, py - pad + 3, w + pad * 2 - 6, h + pad * 2 - 6);
+  if (ratRoomCheeseArt.complete && ratRoomCheeseArt.naturalWidth) {
+    ctx.drawImage(ratRoomCheeseArt, px, py, w, h);
+  }
+}
+
+
+// lamp lighting -- select the lamp like any other held item, then hold
+// space while in the rat room to light it. Turns off the instant space
+// is released, rather than staying lit -- more interactive that way.
+// Small radius on purpose, so actually seeing the room means moving
+// around with it rather than lighting it once and standing still.
+let lampLit = false;
+const LAMP_LIGHT_RADIUS = 90;
+function updateLampLighting() {
+  lampLit = currentScene === "ratroom" && heldItem === "lamp" && keys.space;
+}
 // individual hoppable steps -- computed once from the same top/bottom
 // points the visual stringer uses, so drawing and collision never drift
 const ratRoomStairs = (() => {
@@ -9589,6 +9751,7 @@ function drawRatRoomScene(camX) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   drawRatRoomEyes(camX);
+  drawRatRoomArt(camX);
 
   const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
 
@@ -9656,6 +9819,22 @@ function drawRatRoomScene(camX) {
     const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
     drawFittedSpeechBubble(ctx, ratNPC.x - camX - 10, gy - 120, displayLines);
   }
+
+  if (lampLit) {
+    const px = player.x + player.width / 2 - camX;
+    const py = gy - player.y - 20;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const glow = ctx.createRadialGradient(px, py, 0, px, py, LAMP_LIGHT_RADIUS);
+    glow.addColorStop(0, "rgba(255, 210, 140, 0.55)");
+    glow.addColorStop(0.6, "rgba(220, 170, 100, 0.25)");
+    glow.addColorStop(1, "rgba(220, 170, 100, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(px, py, LAMP_LIGHT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 // messy hay piles, splattered across the floor -- individual straw
@@ -9713,7 +9892,7 @@ const ACORN_FEED_SETTLE_PAUSE_MS = 550;
 function startAcornFeedAnim() {
   const px = player.x + player.width / 2;
   const py = 0; // ground level, world-relative height-above-ground
-  const bowlX = ratNPC.x + 24;
+  const bowlX = ratNPC.x + 65;
   const bowlY = 0;
   acornFeedAnim.startX = px;
   acornFeedAnim.startY = py;
@@ -9792,7 +9971,7 @@ function updateRatNPC(deltaTime) {
   ratNPC.tailSwayT += deltaTime;
 }
 function drawRatFeedBowl(camX) {
-  const bx = ratNPC.x + 24 - camX, by = gy - 4;
+  const bx = ratNPC.x + 65 - camX, by = gy - 4;
   ctx.save();
   ctx.translate(bx, by);
   ctx.rotate(0.12); // sits at a slight angle, like it just landed there
@@ -9935,10 +10114,10 @@ function drawRatNPC(camX) {
 // widespread thin ground-covering hay, scattered across most of the
 // floor -- distinct from the discrete piles below, which stay as
 // denser clusters standing out against this thinner background layer
-const hayGroundCover = Array.from({ length: 280 }, (_, i) => {
+const hayGroundCover = Array.from({ length: 503 }, (_, i) => {
   const seed = i * 11 + 7;
   return {
-    x: (seed * 37) % 780,
+    x: (seed * 37) % 1400,
     dy: ((seed * 13) % 8) - 2,
     len: 6 + (seed % 9),
     angle: (((seed * 5) % 100) - 50) / 90,
@@ -10021,6 +10200,33 @@ function drawRatRoomEyes(camX) {
     const ex = eye.x - camX, ey = eye.y;
     const cycle = (ratRoomEyeT * eye.blinkSpeed + eye.phase) % 6;
     const blinking = cycle > 5.5; // brief closed moment within each cycle
+
+    // within lamp light -- resolve into a small visible baby rat shape,
+    // the actual reveal the light is for
+    if (lampLit) {
+      const playerScreenX = player.x + player.width / 2 - camX;
+      const dist = Math.hypot(ex - playerScreenX, ey - (gy - player.y));
+      if (dist < LAMP_LIGHT_RADIUS) {
+        ctx.fillStyle = "#8a8880";
+        ctx.beginPath();
+        ctx.ellipse(ex, ey + 3, 6, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#7a7268";
+        ctx.beginPath();
+        ctx.arc(ex - 2.5, ey - 1, 1.8, 0, Math.PI * 2);
+        ctx.arc(ex + 2.5, ey - 1, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        if (!blinking) {
+          ctx.fillStyle = "#1a1a1a";
+          ctx.beginPath();
+          ctx.arc(ex - 1.5, ey + 1, 0.8, 0, Math.PI * 2);
+          ctx.arc(ex + 1.5, ey + 1, 0.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        return;
+      }
+    }
+
     if (blinking) return;
     const openness = cycle > 5.2 ? (5.5 - cycle) / 0.3 : 1;
     ctx.fillStyle = "rgba(220,190,120,0.85)";
@@ -10753,6 +10959,7 @@ lastTime = now;
 updateFallState(deltaTime); // shared — runs before scene dispatch, regardless of which scene started the fall
 updateCloudLanding(deltaTime);
 updateCrown(deltaTime); // scene-independent — C should work anywhere, not just autumn
+updateLampLighting(); // scene-independent check inside, so it correctly turns off if the scene changes mid-hold
 
 if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
