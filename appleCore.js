@@ -166,7 +166,8 @@ const ITEM_ICONS = {
   acorn: "🌰",
   worm: "🪱",
   pumpkin: "🎃",
-  goldPile: "🪙"
+  goldPile: "🪙",
+  lamp: "🏮"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -178,6 +179,10 @@ const BUCKET_DROPS_NEEDED = 3;
 // heldItem = the item type currently "picked up" in hand, ready to place
 // into a slot. Click an inventory chip to select/deselect it.
 let heldItem = null;
+// separate from heldItem/inventory -- books are unique, non-stackable,
+// and picking up a new one swaps out whatever was already carried,
+// rather than accumulating like normal collectibles
+let carriedBook = null;
 
 // World-space position of the held item's floating indicator (above the
 // player's head, gently bobbing). Shared by the draw call AND by the place
@@ -307,6 +312,10 @@ const ITEM_CANVAS_RENDER = {
   pumpkin: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawPumpkinShape(iconCtx, 10, 11, 8, 0);
+  },
+  lamp: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawLampShape(iconCtx, 10, 11, 8, 0, false);
   }
 };
 
@@ -3128,6 +3137,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
   } else if (itemType === "worm") {
     drawWormShape(ctx, x, y, size, rotation);
+  } else if (itemType === "lamp") {
+    drawLampShape(ctx, x, y, size, rotation, false);
   } else if (itemType === "acorn") {
     drawAcornShape(ctx, x, y, size, rotation);
   } else if (itemType === "pumpkin") {
@@ -4348,6 +4359,73 @@ function drawWormShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+function drawLampShape(ctx, x, y, size, rotation, lit) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  // wide, sturdy base -- a classic hurricane lantern's footprint
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.7, size * 0.5, size * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4a3018";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.42, size * 0.6);
+  ctx.lineTo(size * 0.42, size * 0.6);
+  ctx.lineTo(size * 0.3, size * 0.25);
+  ctx.lineTo(-size * 0.3, size * 0.25);
+  ctx.closePath();
+  ctx.fill();
+
+  // round glass globe, the body of the lantern
+  ctx.fillStyle = lit ? "rgba(255, 220, 140, 0.85)" : "rgba(220, 230, 235, 0.5)";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.05, size * 0.4, size * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small flame, only when lit
+  if (lit) {
+    ctx.fillStyle = "#f0a838";
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.2);
+    ctx.quadraticCurveTo(size * 0.14, size * 0.02, 0, -size * 0.15);
+    ctx.quadraticCurveTo(-size * 0.14, size * 0.02, 0, size * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // metal cage struts around the globe -- classic lantern-frame look
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = size * 0.05;
+  [-0.28, 0, 0.28].forEach(dx => {
+    ctx.beginPath();
+    ctx.moveTo(dx * size, size * 0.32);
+    ctx.lineTo(dx * 0.6 * size, -size * 0.22);
+    ctx.stroke();
+  });
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.05, size * 0.4, size * 0.35, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // top cap where the globe meets the handle
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(0, -size * 0.28, size * 0.22, size * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // large handle loop -- prominent and clearly grabbable, the defining
+  // feature of an old-school carry lantern
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = size * 0.1;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(0, -size * 0.5, size * 0.42, Math.PI * 1.08, Math.PI * 1.92);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 /* ======================================================
    WORM UNDER A ROCK — found at ground level near the
    ground-tier right vine. Two-stage: space lifts the rock,
@@ -4565,7 +4643,7 @@ function drawWoodpecker(camX) {
   ctx.fillStyle = "#3a3a3a";
   ctx.beginPath();
   ctx.moveTo(bodyX - 10, bodyY + 4);
-  ctx.lineTo(bodyX - 18, bodyY + 14);
+  ctx.lineTo(bodyX - 13, bodyY + 14);
   ctx.lineTo(bodyX - 6, bodyY + 8);
   ctx.closePath();
   ctx.fill();
@@ -4706,7 +4784,7 @@ function getSeesawHopExtraTilt() {
   if (seesawNPC.hopT > 700) return 0;
   const hopProgress = seesawNPC.hopT / 700;
   const groundCloseness = 1 - Math.sin(hopProgress * Math.PI);
-  return -0.07 * groundCloseness;
+  return -0.20 * groundCloseness;
 }
 function getSeesawDisplayAngle() {
   return seesaw.angle + getSeesawHopExtraTilt();
@@ -4986,7 +5064,7 @@ function drawSeesawNPC(camX) {
   // two-person seesaw effort, not just passively following the tilt
   if (seesawNPC.hopT < 700) {
     const hopProgress = seesawNPC.hopT / 700;
-    ny -= Math.sin(hopProgress * Math.PI) * 20;
+    ny -= Math.sin(hopProgress * Math.PI) * 55;
   }
 
   // spikes — single shared drawing function for both edge and on-body
@@ -7753,12 +7831,12 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 550, bob: 0 };
+const owl = { x: 520, bob: 0 };
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
-  { x: 230, seed: 41, count: 3, heightAboveGround: 22 }, // new -- door area is now clear
+  { x: 480, seed: 41, count: 3, heightAboveGround: 22 }, // moved off the door, fills the gap the book spread used to occupy
   { x: 330, seed: 2, count: 4, heightAboveGround: 30 },
   { x: 405, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
@@ -7772,7 +7850,7 @@ const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3
 // small clusters rather than one tall stack, opening up the space and
 // giving a broader, gentler hop option alongside the taller piles
 const bookSpreads = [
-  { x: 480, width: 90, height: 12, seed: 7 }
+  { x: 1000, width: 90, height: 12, seed: 7 }
 ];
 function drawBookSpread(spread, camX) {
   const baseX = spread.x - camX, baseY = gy - 4;
@@ -7800,7 +7878,15 @@ function drawBookSpread(spread, camX) {
   }
 }
 const BOOK_SPREAD_HEIGHT = 13; // max cluster height (9) + the 4-unit base offset used in drawBookSpread, verified against the actual drawing formula
-const nookSeat = { x: 1150, heightAboveGround: 32, width: 100 }; // +2 to account for nookBottom being gy-2, not gy, matching the drawn surface exactly
+// generic sitting areas -- any spot in this list can trigger reading a
+// carried book once the player is actually seated there. New spots
+// (like a future cushion pile) just get added here, reusing the same
+// trigger logic rather than each getting bespoke code.
+const sittingAreas = [
+  { id: "nook", x: 1150, heightAboveGround: 32, width: 100, unlocked: () => true },
+  { id: "cushionPile", x: 1820, heightAboveGround: 14, width: 90, unlocked: () => oakLamp.collected }
+];
+const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
@@ -7918,21 +8004,26 @@ function drawNookRug(camX) {
   ctx.fill();
 
   // one corner slightly turned up when the player is standing on it --
-  // a tiny corner peeled up, showing the rug's own lighter underside/backing
+  // a tiny corner peeled up, showing the rug's own lighter underside/backing.
+  // Which corner lifts follows the player's facing direction, so it reads
+  // as rucking up behind their trailing foot rather than always the same
+  // fixed corner regardless of which way they walked in from.
   if (onRug) {
     const liftAmt = 6.5 + Math.sin(performance.now() * 0.006) * 1.8;
+    const cornerX = player.facing === 1 ? left : left + w;
+    const cornerSign = player.facing === 1 ? 1 : -1;
     ctx.fillStyle = "#d8c8a0";
     ctx.beginPath();
-    ctx.moveTo(left, top);
-    ctx.lineTo(left + liftAmt, top);
-    ctx.lineTo(left, top + liftAmt);
+    ctx.moveTo(cornerX, top);
+    ctx.lineTo(cornerX + cornerSign * liftAmt, top);
+    ctx.lineTo(cornerX, top + liftAmt);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#3a1818";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(left + liftAmt, top);
-    ctx.lineTo(left, top + liftAmt);
+    ctx.moveTo(cornerX + cornerSign * liftAmt, top);
+    ctx.lineTo(cornerX, top + liftAmt);
     ctx.stroke();
   }
 
@@ -8027,18 +8118,112 @@ function drawTrapDoorSequence(camX) {
 // short, wide shelf -- right of the rug, breathing room from it. Deliberately
 // simpler than the tall left/right shelves (no mixed rows, no special-case
 // books), just a squat, broad shelf with a few rows of ordinary books.
-const shortShelf = { x: 1520, width: 110, top: 170, bottom: gy - 2 };
-function drawShortShelf(camX) {
-  const sx = shortShelf.x - camX;
-  const w = shortShelf.width;
-  const top = shortShelf.top, bottom = shortShelf.bottom;
+// small table with a lamp on it -- appears only once the rat has been
+// fed (see ratNPC.fed), tucked in an ordinary gap in the room rather
+// than somewhere obviously staged, matching the "wouldn't have noticed
+// it before now" framing from the rat's own dialogue
+// cushion pile -- a second sitting area, unlocked once the lamp has
+// been collected. Several overlapping cushions plus a couple of small
+// things hanging from the ceiling above it.
+const cushionPile = sittingAreas[1];
+function drawCushionPile(camX) {
+  if (!cushionPile.unlocked()) return;
+  const cx = cushionPile.x - camX;
+  const baseY = gy - 4;
 
-  ctx.fillStyle = "#6a4a28";
+  // hanging ornaments from the ceiling -- simple string + small shape
+  const hangs = [
+    { dx: -22, len: 60, color: "#c9863a", shape: "circle" },
+    { dx: 18, len: 45, color: "#8a5a2f", shape: "diamond" }
+  ];
+  hangs.forEach(h => {
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + h.dx, 0);
+    ctx.lineTo(cx + h.dx, h.len);
+    ctx.stroke();
+    ctx.fillStyle = h.color;
+    if (h.shape === "circle") {
+      ctx.beginPath();
+      ctx.arc(cx + h.dx, h.len + 5, 5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.save();
+      ctx.translate(cx + h.dx, h.len + 5);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-4, -4, 8, 8);
+      ctx.restore();
+    }
+  });
+
+  // overlapping cushions, varied colors and sizes, piled up
+  const cushions = [
+    { dx: -20, w: 40, h: 22, color: "#7a3a4a" },
+    { dx: 12, w: 44, h: 26, color: "#4a6a5a" },
+    { dx: -4, w: 36, h: 20, color: "#8a5a2f" }
+  ];
+  cushions.forEach(c => {
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.ellipse(cx + c.dx, baseY - c.h / 2 + 4, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+}
+
+const oakLamp = { x: 700, collected: false };
+function drawOakLampTable(camX) {
+  if (!ratNPC.fed || oakLamp.collected) return;
+  const tx = oakLamp.x - camX;
+  const tableTop = gy - 26;
+
+  // simple wooden table -- legs, then a top surface
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(tx - 14, tableTop + 4);
+  ctx.lineTo(tx - 14, gy - 2);
+  ctx.moveTo(tx + 14, tableTop + 4);
+  ctx.lineTo(tx + 14, gy - 2);
+  ctx.stroke();
+  ctx.fillStyle = "#5a3a1c";
+  ctx.fillRect(tx - 18, tableTop, 36, 6);
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tx - 18, tableTop, 36, 6);
+
+  drawLampShape(ctx, tx, tableTop - 12, 11, 0, false);
+}
+function updateOakLampTable() {
+  if (!ratNPC.fed || oakLamp.collected) return;
+  if (keys.spaceJustPressed && isPlayerNear(oakLamp.x, 38, 20, 20, 15)) {
+    oakLamp.collected = true;
+    addToInventory("lamp");
+    startCollectAnimation({ x: oakLamp.x, y: 38, size: 8, rotation: 0 }, "lamp");
+  }
+}
+
+const shortShelf = { x: 1520, width: 110, top: 170, bottom: gy - 2 };
+const mediumShelf = { x: 1680, width: 85, top: 110, bottom: gy - 2 };
+function drawMediumShelf(camX) {
+  const sx = mediumShelf.x - camX;
+  drawMixedBookShelf(sx, mediumShelf.width, mediumShelf.top, mediumShelf.bottom, 5);
+}
+// shared by every "plain" shelf (short shelf, medium shelf, and any
+// future ones) -- frame with a visible border, plus rows of books with
+// real spread and a mix of standing/laid-flat orientations
+function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
+  ctx.fillStyle = "#8a5a28";
   ctx.fillRect(sx - w / 2, top, w, bottom - top);
+  ctx.strokeStyle = "#c9863a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx - w / 2, top, w, bottom - top);
   ctx.fillStyle = "#5a3a1c";
   ctx.fillRect(sx - w / 2 + 4, top + 4, w - 8, bottom - top - 8);
 
-  const rowCount = 3;
   const rowHeight = (bottom - top - 8) / rowCount;
   const colors = ["#c9863a", "#8a5a2f", "#a83a4a", "#6a8a3a", "#4a6a8a"];
   for (let row = 0; row < rowCount; row++) {
@@ -8046,21 +8231,48 @@ function drawShortShelf(camX) {
     ctx.fillStyle = "#5a3a1a";
     ctx.fillRect(sx - w / 2 + 4, rowY + rowHeight - 3, w - 8, 3);
 
-    let bx = sx - w / 2 + 7;
+    let bx = sx - w / 2 + 8;
     const rowSeed = row * 3;
-    for (let b = 0; b < 7 && bx < sx + w / 2 - 6; b++) {
-      const bw = 5 + ((rowSeed + b * 2) % 5);
-      const bh = rowHeight - 8 - ((rowSeed + b) % 4);
-      const lean = (((rowSeed + b * 5) % 7) - 3) / 60;
-      ctx.save();
-      ctx.translate(bx + bw / 2, rowY + rowHeight - 3);
-      ctx.rotate(lean);
-      ctx.fillStyle = colors[(rowSeed + b) % colors.length];
-      ctx.fillRect(-bw / 2, -bh, bw, bh);
-      ctx.restore();
-      bx += bw + 1.5;
-    }
+    const layout = [
+      { standing: true }, { standing: true }, { standing: false }, { standing: true }, { standing: false }
+    ];
+    layout.forEach((entry, b) => {
+      if (bx >= sx + w / 2 - 8) return;
+      const seed = rowSeed + b * 4;
+      const gap = 4 + (seed % 6);
+      if (entry.standing) {
+        const bw = 6 + (seed % 5);
+        const bh = rowHeight - 8 - (seed % 4);
+        const lean = (((seed * 5) % 7) - 3) / 60;
+        ctx.save();
+        ctx.translate(bx + bw / 2, rowY + rowHeight - 3);
+        ctx.rotate(lean);
+        ctx.fillStyle = colors[seed % colors.length];
+        ctx.fillRect(-bw / 2, -bh, bw, bh);
+        ctx.restore();
+        bx += bw + gap;
+      } else {
+        const bookW = 16 + (seed % 8);
+        const stackCount = 1 + (seed % 2);
+        let stackY = rowY + rowHeight - 3;
+        for (let s = 0; s < stackCount; s++) {
+          const bh2 = 4 + (s % 2);
+          ctx.fillStyle = colors[(seed + s) % colors.length];
+          ctx.fillRect(bx, stackY - bh2, bookW, bh2);
+          stackY -= bh2;
+        }
+        bx += bookW + gap;
+      }
+    });
   }
+}
+
+function drawShortShelf(camX) {
+  const sx = shortShelf.x - camX;
+  const w = shortShelf.width;
+  const top = shortShelf.top, bottom = shortShelf.bottom;
+
+  drawMixedBookShelf(sx, w, top, bottom, 3);
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 6, broomBottom = bottom;
@@ -8566,6 +8778,9 @@ function drawOakScene(camX) {
     drawNookRug(camX);
   }
   drawShortShelf(camX);
+  drawMediumShelf(camX);
+  drawOakLampTable(camX);
+  drawCushionPile(camX);
   drawOwl(camX);
 }
 
@@ -8661,6 +8876,7 @@ function drawOwl(camX) {
 
 function updateOakScene(deltaTime) {
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
+  updateOakLampTable();
 
   if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
     startSeasonTransition("autumn");
@@ -8709,37 +8925,51 @@ function updateOakScene(deltaTime) {
     }
   });
 
-  // nook seat collision — jumpable, same pattern
-  const seatTop = nookSeat.heightAboveGround;
-  const playerBottom = player.y;
-  if (
-    player.x + player.width > nookSeat.x - nookSeat.width / 2 &&
-    player.x < nookSeat.x + nookSeat.width / 2 &&
-    playerBottom <= seatTop &&
-    playerBottom >= seatTop - 14 &&
-    player.vy <= 0
-  ) {
-    player.y = seatTop;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-  }
+  // sitting area collision — jumpable, same pattern for every unlocked spot
+  sittingAreas.forEach(spot => {
+    if (!spot.unlocked()) return;
+    const seatTop = spot.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > spot.x - spot.width / 2 &&
+      player.x < spot.x + spot.width / 2 &&
+      playerBottom <= seatTop &&
+      playerBottom >= seatTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = seatTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
 
-  // apple storybook — grab-to-read trigger. Positioned at the tall book
-  // pile for now (a stand-in "this is the book" spot); space opens it.
+  // pick up the apple storybook to carry -- no longer opens directly at
+  // the shelf, must be carried to a sitting area to actually read it
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
       keys.spaceJustPressed && isPlayerNear(90, 27, 20, 25, 25)) {
-    bookReader.book = "apple";
-    bookReader.opening = true;
-    bookReader.openT = 0;
+    carriedBook = "apple";
   }
 
-  // manual — its own trigger at its actual shelf position
+  // pick up the manual to carry, same rule
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
       keys.spaceJustPressed && isPlayerNear(620, 20, 25, 30, 30)) {
-    bookReader.book = "manual";
-    bookReader.opening = true;
-    bookReader.openT = 0;
+    carriedBook = "manual";
+  }
+
+  // reading only happens at a sitting area, and only once actually
+  // seated there (not just nearby) -- carrying a book somewhere and
+  // sitting down with it is the whole point of the ritual
+  if (carriedBook && !bookReader.active && !bookReader.closing && !bookReader.opening && keys.spaceJustPressed) {
+    sittingAreas.forEach(spot => {
+      if (!spot.unlocked()) return;
+      if (isPlayerNear(spot.x, spot.heightAboveGround, spot.width / 2, 10, 6)) {
+        bookReader.book = carriedBook;
+        bookReader.opening = true;
+        bookReader.openT = 0;
+        carriedBook = null;
+      }
+    });
   }
 }
 
@@ -9424,7 +9654,7 @@ function drawRatRoomScene(camX) {
     const beat = ratDialogue.lines[ratDialogue.index];
     const isLast = ratDialogue.index === ratDialogue.lines.length - 1;
     const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
-    drawFittedSpeechBubble(ctx, ratNPC.x - camX - 10, gy - 60, displayLines);
+    drawFittedSpeechBubble(ctx, ratNPC.x - camX - 10, gy - 120, displayLines);
   }
 }
 
@@ -9447,7 +9677,7 @@ const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false };
 // line that isn't the final one in its sequence gets '...' appended
 // automatically at render time, not typed into the text itself.
 const ratGreetingLines = [
-  ["Well, hello there, feller!", "Welcome to my humble abode.", "Not much to look at, I know.", "Don't mind the eyes -- they're just curious, same as you."],
+  ["Well, hello there, feller!", "Not much to look at, I know.", "Don't mind the eyes -- they're just curious, same as you."],
   ["You wouldn't happen to have anything... nutty on you?", "Small, hard little things -- I'm not picky."]
 ];
 const ratReturnGreetingLines = [
@@ -9483,7 +9713,7 @@ const ACORN_FEED_SETTLE_PAUSE_MS = 550;
 function startAcornFeedAnim() {
   const px = player.x + player.width / 2;
   const py = 0; // ground level, world-relative height-above-ground
-  const bowlX = ratNPC.x - 22;
+  const bowlX = ratNPC.x + 24;
   const bowlY = 0;
   acornFeedAnim.startX = px;
   acornFeedAnim.startY = py;
@@ -9543,6 +9773,7 @@ function advanceRatDialogue() {
     if (inventory.acorn > 0) {
       inventory.acorn -= 1;
       if (inventory.acorn <= 0) delete inventory.acorn;
+      if (heldItem === "acorn") heldItem = null;
       updateInventoryUI();
       ratDialogue.lines = ratDialogue.lines.concat(ratGratefulLines);
       startAcornFeedAnim(); // this owns advancing the dialogue once it completes
@@ -9561,12 +9792,12 @@ function updateRatNPC(deltaTime) {
   ratNPC.tailSwayT += deltaTime;
 }
 function drawRatFeedBowl(camX) {
-  const bx = ratNPC.x - 22 - camX, by = gy - 4;
+  const bx = ratNPC.x + 24 - camX, by = gy - 4;
   ctx.save();
   ctx.translate(bx, by);
-  ctx.rotate(-0.15); // sits at a slight angle, like it just landed there
+  ctx.rotate(0.12); // sits at a slight angle, like it just landed there
 
-  // chipped wooden bowl -- an arc for the rim, slightly irregular
+  // simple wooden bowl -- an arc for the rim
   ctx.fillStyle = "#8a3a28";
   ctx.beginPath();
   ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI, false);
@@ -9574,11 +9805,6 @@ function drawRatFeedBowl(camX) {
   ctx.fillStyle = "#5a2418";
   ctx.beginPath();
   ctx.ellipse(0, -1, 12.5, 4.6, 0, 0, Math.PI, false);
-  ctx.fill();
-  // a small chip out of the rim
-  ctx.fillStyle = "#100a06";
-  ctx.beginPath();
-  ctx.arc(10.5, -1.8, 2.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#3a1810";
   ctx.lineWidth = 1.5;
@@ -10080,6 +10306,21 @@ if (heldItem && !fallState.active) {
   } else {
     drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
   }
+}
+
+// carried book — same floating-above-head treatment as a held item,
+// small closed-book icon matching each book's established color coding
+if (carriedBook && !fallState.active) {
+  const bookPos = getHeldItemWorldPos();
+  const bx = bookPos.x - camX, by = bookPos.y;
+  const isManual = carriedBook === "manual";
+  ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
+  ctx.fillRect(bx - 6, by - 8, 12, 16);
+  ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx - 6, by - 8, 12, 16);
+  ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
+  ctx.fillRect(bx - 4, by - 5, 8, 1.5);
 }
 
 drawSeasonTransition(ctx);
