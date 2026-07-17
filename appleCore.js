@@ -625,7 +625,7 @@ const sceneMapInfo = {
   spring: { label: "Spring", x: 220, y: 110 },
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
-  ratroom: { label: "Rat Den", x: 40, y: 190 } // below oak, same column -- reached via the trap door, so down makes as much sense as up did for oak
+  ratroom: { label: "Ratroom", x: 95, y: 65 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Reached via the trap door from oak.
 };
 
 const discoveredScenes = { autumn: true, oak: true }; // autumn is where you normally start; oak added too while the temporary debug-start is active
@@ -819,6 +819,9 @@ function updateSeasonTransition(deltaTime) {
       currentScene = seasonTransition.targetScene;
       discoveredScenes[currentScene] = true;
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
+      if (currentScene === "ratroom" && previousScene !== "ratroom") {
+        ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
+      }
       if (currentScene === "oak" && previousScene === "ratroom") {
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
       } else if (currentScene === "autumn" && previousScene === "oak") {
@@ -923,7 +926,7 @@ function drawSeasonTransition(ctx) {
       ctx.font = "20px ui-monospace";
       const prevAlign = ctx.textAlign;
       ctx.textAlign = "center";
-      ctx.fillText("Ratden", canvas.width / 2, canvas.height / 2);
+      ctx.fillText("Ratroom", canvas.width / 2, canvas.height / 2);
       ctx.textAlign = prevAlign;
 
       // small winking rat face, bottom right
@@ -4670,7 +4673,7 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 
 // pothos -- hanging near the cushion pile, right side, several vines
 // trailing down with some pooling gently on the ground
-const pothosSpot = { x: 2755, hangY: 260 };
+const pothosSpot = { x: 2825, hangY: 260 };
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
 const snakePlantSpot = { x: 1349, y: 0 };
@@ -4787,7 +4790,7 @@ function drawStringOfHearts(camX) {
   ctx.fill();
 
   const vines = [
-    [-6, 0, 155, 15, 0.3, -1], [0, 0, 190, 18, 2.4, 1], [7, 0, 130, 12, 4.6, 1]
+    [-6, -5, 155, 15, 0.3, -1], [0, -5, 190, 18, 2.4, 1], [7, -5, 130, 12, 4.6, 1]
   ];
   vines.forEach(v => {
     drawHeartVine(ctx, px + v[0], py + v[1], v[2], v[3], v[4], v[5]);
@@ -4837,19 +4840,19 @@ function drawMonstera(camX) {
   ctx.fill();
   ctx.fillStyle = "#e08838";
   ctx.beginPath();
-  ctx.moveTo(px + 3, py - 34);
-  ctx.lineTo(px + 4.5, py - 32.5);
-  ctx.lineTo(px + 3.5, py - 31.5);
-  ctx.lineTo(px + 2, py - 32.5);
+  ctx.moveTo(px + 2.85, py - 34.75);
+  ctx.lineTo(px + 5.25, py - 32.35);
+  ctx.lineTo(px + 3.65, py - 30.75);
+  ctx.lineTo(px + 1.25, py - 32.35);
   ctx.closePath();
   ctx.fill();
 
-  // much smaller leaves, longer stems relative to leaf size, real
-  // angular gaps, and mostly leaning right so it only barely grazes
-  // the nook's edge instead of reaching into it
+  // more frequent, smaller leaves, with twisty-turny stems like real
+  // monstera vines rather than smooth straight growth
   const leaves = [
-    [-0.55, 40, 10, 11, null], [-0.15, 62, 15, 22, null], [0.25, 58, 13, 33, null],
-    [0.65, 40, 11, 46, null]
+    [-0.6, 36, 7, 11, null], [-0.35, 48, 8, 17, null], [-0.1, 40, 6, 22, null],
+    [0.2, 54, 8, 29, null], [0.4, 44, 7, 33, null], [0.6, 50, 8, 41, null],
+    [0.75, 36, 6, 46, null]
   ];
   leaves.forEach(([angle, stemLen, leafSize, seed, holeColor]) => {
     const bx = px, by = py - 33;
@@ -4857,18 +4860,28 @@ function drawMonstera(camX) {
     // right at the base before rising, rather than starting flat
     const bulgeX = bx + Math.sin(angle) * 10;
     const bulgeY = by + 4;
-    const midX = bx + Math.sin(angle) * stemLen * 0.6;
-    const midY = by - Math.cos(angle) * stemLen * 0.7;
     const tipX = bx + Math.sin(angle) * stemLen;
-    const tipY = midY + stemLen * 0.15;
+    const tipY = by - Math.cos(angle) * stemLen * 0.85;
+    // twisty-turny path -- several short segments with an alternating
+    // perpendicular wobble, instead of one smooth curve
+    const segments = 5;
+    const perpX = Math.cos(angle), perpY = Math.sin(angle);
     ctx.strokeStyle = "#3a6a34";
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(bx, by);
-    ctx.quadraticCurveTo(bulgeX, bulgeY, midX, midY);
-    ctx.quadraticCurveTo((midX + tipX) / 2, (midY + tipY) / 2, tipX, tipY);
+    ctx.quadraticCurveTo(bulgeX, bulgeY, bx + Math.sin(angle) * 14, by - Math.cos(angle) * 10);
+    let prevX = bx + Math.sin(angle) * 14, prevY = by - Math.cos(angle) * 10;
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const wobble = Math.sin(t * Math.PI * 2.4 + seed) * 4 * (1 - t * 0.4);
+      const px2 = bx + (tipX - bx) * t + perpX * wobble;
+      const py2 = by + (tipY - by) * t + perpY * wobble;
+      ctx.lineTo(px2, py2);
+      prevX = px2; prevY = py2;
+    }
     ctx.stroke();
-    drawMonsteraLeaf(ctx, tipX, tipY, leafSize, angle * 0.5, "#3a7a3a", seed, holeColor);
+    drawMonsteraLeaf(ctx, prevX, prevY, leafSize, angle * 0.5, "#3a7a3a", seed, holeColor);
   });
 }
 
@@ -4927,7 +4940,7 @@ function drawStringOfPearls(camX) {
 
   const pearlSeeds = [[0.3, -1], [1.2, 1], [2.4, -1], [3.1, 1], [4.0, -1], [4.9, 1], [5.8, -1]];
   pearlSeeds.forEach(([s, dir], i) => {
-    drawPearlVine(ctx, px - 6 + i * 2, py - 1, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s, dir);
+    drawPearlVine(ctx, px - 6 + i * 2, py - 1.5, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s, dir);
   });
 }
 
@@ -5023,7 +5036,7 @@ function drawPothos(camX) {
     [20, 246, 14, 4.7, false, 70, 0.9, 1]
   ];
   vines.forEach((v, i) => {
-    drawPothosVine(ctx, px + v[0], py + 8, v[1], v[2], i % 2 === 0 ? "#4a823c" : "#589144", v[3], v[5], v[6], v[7]);
+    drawPothosVine(ctx, px + v[0], py + 2, v[1], v[2], i % 2 === 0 ? "#4a823c" : "#589144", v[3], v[5], v[6], v[7]);
   });
 }
 
@@ -8674,7 +8687,7 @@ const BOOK_SPREAD_HEIGHT = 9; // max cluster height, now that the base sits exac
 // trigger logic rather than each getting bespoke code.
 const sittingAreas = [
   { id: "nook", x: 1573, heightAboveGround: 32, width: 100, unlocked: () => true },
-  { id: "cushionPile", x: 2610, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
+  { id: "cushionPile", x: 2680, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
 ];
 const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
@@ -9158,6 +9171,18 @@ function drawTeaNook(camX) {
   ctx.closePath();
   ctx.fill();
 
+  // subtle nested shading suggesting a rounded, enclosed crevice --
+  // concentric with the arch, darker toward the back/center
+  for (let i = 1; i <= 3; i++) {
+    const r = archR - i * 9;
+    if (r <= 10) break;
+    ctx.strokeStyle = `rgba(0,0,0,${0.1 + i * 0.05})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(tx, springY - i * 2, r, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+  }
+
   // floor plane inside the niche -- flat top edge where it meets the
   // rear wall (not rounded, which read as a bulging muffin-top), sides
   // curving out to a wider front edge that extends slightly past the
@@ -9260,8 +9285,10 @@ function drawTeaNook(camX) {
   const ox = oxBase + babyOwl.idleShift;
   const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
   const giveWingLift = teaAnim.phase === "sipping" ? Math.sin(Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping) * Math.PI) : 0;
+  const leanY = pourWingLift * 20; // leans down toward the table while pouring, since it stands well back at floor level
+  const leanX = pourWingLift * 15; // also shifts right toward the kettle, to actually reach it with its right wing
   ctx.save();
-  ctx.translate(ox, oy);
+  ctx.translate(ox + leanX, oy + leanY);
   ctx.scale(1.3, 1.3);
 
   // feet
@@ -9298,17 +9325,17 @@ function drawTeaNook(camX) {
   ctx.ellipse(0, 0, 4, 8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  // a short grip line connecting the pouring wing's tip to the
-  // kettle's handle, so it reads as actually holding it rather than
-  // just lifting nearby while it tilts on its own
+  // a grip curve wrapping toward the kettle's actual handle
+  // attachment point, so it reads as actually holding it
   if (pourWingLift > 0.05) {
     const wingAngle = -0.3 - pourWingLift * 1.3;
     const wingTipX = 7 + Math.sin(wingAngle) * 7, wingTipY = 2 - Math.cos(wingAngle) * 7;
+    const targetX = (kx - (ox + leanX) + 10) / 1.3, targetY = (ky - (oy + leanY) - 2) / 1.3;
     ctx.strokeStyle = "#584428";
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(wingTipX, wingTipY);
-    ctx.lineTo((kx - ox + 12) / 1.3, (ky - oy - 3) / 1.3);
+    ctx.quadraticCurveTo(wingTipX + (targetX - wingTipX) * 0.6, wingTipY + 4, targetX, targetY);
     ctx.stroke();
   }
   // wing feather lines, a couple scalloped strokes per wing
@@ -9394,14 +9421,33 @@ function drawTeaPlayerCup(tx, tableTop) {
     const bob = Math.sin(p * Math.PI);
     bx = cupX + bob * 24; by = cupY - bob * 6;
   }
-  // pouring stream, from the kettle spout down into the cup
+  // pouring stream, from the kettle spout's actual current tip
+  // (computed from its real rotation) down into the cup, wavy and
+  // animated with traveling droplets for a genuine pour feel
   if (teaAnim.phase === "pouring") {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring);
-    ctx.strokeStyle = "rgba(120,74,32,0.7)"; ctx.lineWidth = 1.2;
+    const kx = tx + 14, ky = tableTop + 2;
+    const spoutPivotX = kx - 9, spoutPivotY = ky - 1;
+    const spoutAngle = -0.5;
+    const spoutTipX = spoutPivotX - 8 * Math.cos(spoutAngle) - 3 * Math.sin(spoutAngle);
+    const spoutTipY = spoutPivotY - 8 * Math.sin(spoutAngle) + 3 * Math.cos(spoutAngle);
+    const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
+    const wob = Math.sin(performance.now() * 0.02) * 1.2;
+    ctx.strokeStyle = "rgba(120,74,32,0.75)"; ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(tx + 5, tableTop - 10);
-    ctx.lineTo(cupX, cupY - 6 + (1 - p) * 10);
+    ctx.moveTo(spoutTipX, spoutTipY);
+    ctx.quadraticCurveTo((spoutTipX + streamEndX) / 2 + wob, (spoutTipY + streamEndY) / 2, streamEndX, streamEndY);
     ctx.stroke();
+    // a couple traveling droplets along the stream
+    for (let d = 0; d < 2; d++) {
+      const dt = (p * 3 + d * 0.5) % 1;
+      const dx = spoutTipX + (streamEndX - spoutTipX) * dt + wob * Math.sin(dt * Math.PI);
+      const dy = spoutTipY + (streamEndY - spoutTipY) * dt;
+      ctx.fillStyle = "rgba(140,90,40,0.7)";
+      ctx.beginPath();
+      ctx.arc(dx, dy, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.fillStyle = "#e8ddc0";
   ctx.beginPath();
@@ -9684,7 +9730,7 @@ function drawShortShelf(camX) {
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 6, broomBottom = bottom;
-  const broomTopX = broomX - 4, broomTopY = top + 30;
+  const broomTopX = broomX - 10, broomTopY = top + 30;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -10308,6 +10354,7 @@ function updateOakScene(deltaTime) {
   if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
     startSeasonTransition("autumn");
     carriedBook = null; // same as the trap door -- books can't leave oak
+    if (heldItem === "lamp") heldItem = null; // the lamp stays local to oak/ratroom too, put back same as a book
   }
 
   updateTrapDoor(deltaTime);
@@ -11285,10 +11332,11 @@ function drawFeatherHangSpot(camX) {
 }
 function updateFeatherHangSpot() {
   if (featherHung || !carriedFeather) return;
-  if (keys.spaceJustPressed && isPlayerNear(featherHangSpot.x, featherHangSpot.heightAboveGround, 25, 20, 20)) {
+  if (keys.spaceJustPressed && isPlayerNear(featherHangSpot.x, featherHangSpot.heightAboveGround, 25, 20, 60)) {
     featherHung = true;
     carriedFeather = false;
     delete inventory.feather;
+    ratDialogueRestSuppressed = true; // just had a meaningful moment with the rat -- no "good to see you again" right after
     updateInventoryUI();
   }
 }
@@ -11299,7 +11347,7 @@ function updateFeatherHangSpot() {
 // normally. WS on the left, SW on the right, genuinely mirror-symmetric
 // letters carved into the wood, drawn as real hand-carved strokes
 // rather than typeset text.
-const carvedInitialsSpot = { x: 820, y: 275 };
+const carvedInitialsSpot = { x: 900, y: 240 };
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -11318,7 +11366,7 @@ function drawHandwrittenS(ctx, x, y, s, jitter) {
 }
 // found map -- an abstract, hand-drawn parchment showing only the
 // places you'd have actually walked through to get here (autumn, oak,
-// the rat den itself), deliberately not spring or clouds. Two more
+// the ratroom itself), deliberately not spring or clouds. Two more
 // paths trail off toward the torn edges with smudged, mostly-illegible
 // labels -- left open on purpose, no payoff written in yet.
 const foundMapSpot = { x: 250, y: 100 };
@@ -11383,7 +11431,7 @@ function drawFoundMap(camX) {
   ctx.beginPath();
   ctx.ellipse(-4, -7, 2.2, 3, 0.4, 0, Math.PI * 2);
   ctx.fill();
-  // rat den -- current location, marked with a small X
+  // ratroom -- current location, marked with a small X
   ctx.strokeStyle = "rgba(150,40,30,0.7)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
@@ -11679,6 +11727,12 @@ const ratDialogue = {
 };
 
 let featherHung = false;
+// suppresses the generic "good to see you again" greeting for the
+// rest of the current visit once something more specific has already
+// happened (like just hanging the feather) -- resets when the player
+// actually leaves ratroom and comes back, so a genuine return visit
+// still gets the normal greeting
+let ratDialogueRestSuppressed = false;
 const ratFeatherLines = [
   ["Oh! Oh my.", "Is that... a real feather?"],
   ["Wow, a beautiful feather! I've been hoping to find one like that.", "Would you mind hanging it up on that wall over there?"]
@@ -11691,6 +11745,9 @@ const ratLampLines = [
 ];
 
 function startRatDialogue() {
+  if (!(carriedFeather && !featherHung) && !(inventory.lamp > 0 && !lampAcknowledged) && ratDialogueRestSuppressed) {
+    return; // nothing new to say this visit -- already had a meaningful moment, skip the redundant greeting
+  }
   ratDialogue.active = true;
   ratDialogue.index = 0;
   if (carriedFeather && !featherHung) {
@@ -11700,6 +11757,7 @@ function startRatDialogue() {
     lampAcknowledged = true;
   } else {
     ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
+    ratDialogueRestSuppressed = true; // greeted for this visit -- no need to repeat if approached again
   }
   ratNPC.talkedTo = true;
 }
@@ -11803,13 +11861,13 @@ function updateRatNPC(deltaTime) {
 // near the rat (this is genuinely his nest, not just room decor) with
 // a handful of stray pieces scattered further out among the hay
 const nestFabricScraps = [
-  { dx: -18, dy: -2, w: 9, color: "#5a5450", rot: 0.4 },
-  { dx: -6, dy: -1, w: 7, color: "#4a5058", rot: -0.3 },
-  { dx: 30, dy: 2, w: 8, color: "#6a5848", rot: 0.6 },
+  { dx: -18, dy: -2, w: 16, color: "#5a5450", rot: 0.4 },
+  { dx: -6, dy: -1, w: 13, color: "#4a5058", rot: -0.3 },
+  { dx: 30, dy: 2, w: 15, color: "#6a5848", rot: 0.6 },
   // strays, scattered further into the hay
-  { dx: -160, dy: 0, w: 7, color: "#5a5450", rot: -0.5 },
-  { dx: 220, dy: 3, w: 8, color: "#4a5058", rot: 0.2 },
-  { dx: -260, dy: -2, w: 6, color: "#6a5848", rot: 0.7 }
+  { dx: -160, dy: 0, w: 14, color: "#5a5450", rot: -0.5 },
+  { dx: 220, dy: 3, w: 15, color: "#4a5058", rot: 0.2 },
+  { dx: -260, dy: -2, w: 12, color: "#6a5848", rot: 0.7 }
 ];
 const nestStrings = [
   { dx: 12, dy: 0, r: 5, color: "rgba(210,205,190,0.6)" },
@@ -11857,15 +11915,30 @@ function drawNestMaterials(camX) {
     ctx.rotate(f.rot);
     ctx.fillStyle = f.color;
     ctx.beginPath();
-    // irregular torn-edge polygon, not a clean rectangle
-    ctx.moveTo(-f.w / 2, -f.w * 0.3);
-    ctx.lineTo(-f.w * 0.2, -f.w * 0.5);
-    ctx.lineTo(f.w * 0.4, -f.w * 0.2);
-    ctx.lineTo(f.w / 2, f.w * 0.15);
-    ctx.lineTo(f.w * 0.1, f.w * 0.45);
-    ctx.lineTo(-f.w * 0.35, f.w * 0.35);
+    // longer, narrower torn strip rather than a rounded blob
+    ctx.moveTo(-f.w, -f.w * 0.22);
+    ctx.lineTo(-f.w * 0.5, -f.w * 0.35);
+    ctx.lineTo(f.w * 0.1, -f.w * 0.15);
+    ctx.lineTo(f.w * 0.75, -f.w * 0.25);
+    ctx.lineTo(f.w, f.w * 0.08);
+    ctx.lineTo(f.w * 0.6, f.w * 0.22);
+    ctx.lineTo(f.w * 0.05, f.w * 0.12);
+    ctx.lineTo(-f.w * 0.55, f.w * 0.28);
+    ctx.lineTo(-f.w * 0.9, f.w * 0.1);
     ctx.closePath();
     ctx.fill();
+    // frayed threads at both ends, for a ratty, worn look
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = 0.6;
+    [-f.w, f.w].forEach(endX => {
+      const dir = endX > 0 ? 1 : -1;
+      for (let t = -1; t <= 1; t++) {
+        ctx.beginPath();
+        ctx.moveTo(endX, t * f.w * 0.15);
+        ctx.lineTo(endX + dir * (2 + Math.abs(t)), t * f.w * 0.15 + dir * 0.5);
+        ctx.stroke();
+      }
+    });
     ctx.restore();
   });
 
@@ -12145,11 +12218,11 @@ function drawRatRoomEyes(camX) {
         // genuine variety per baby -- different fur tones and sizes,
         // deterministic from position so each one stays consistent
         const variantSeed = idx * 13 + 7;
-        const furColors = ["#8a8880", "#a8a090", "#8a7050", "#6a6862", "#9a8a78"];
-        const earColors = ["#7a7268", "#8a8070", "#7a6040", "#5a5852", "#8a7868"];
+        const furColors = ["#8a8880", "#a8a090", "#8a7050", "#6a6862", "#9a8a78", "#7a6858", "#b09878"];
+        const earColors = ["#7a7268", "#8a8070", "#7a6040", "#5a5852", "#8a7868", "#6a5848", "#9a8060"];
         const furColor = furColors[variantSeed % furColors.length];
         const earColor = earColors[variantSeed % earColors.length];
-        const scale = 0.75 + ((variantSeed % 5) / 5) * 0.5; // 0.75 to 1.15
+        const scale = 0.75 + (((variantSeed * 7 + 3) % 11) / 11) * 0.5; // decorrelated from color index so they don't cycle together
 
         // small tail, swaying side to side
         ctx.strokeStyle = earColor;
