@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { acorn: 1 }; // e.g. { appleSlice: 2, boomerang: 1 } -- acorn seeded for debug-start convenience
+const inventory = { acorn: 1, lamp: 1 }; // e.g. { appleSlice: 2, boomerang: 1 } -- acorn/lamp seeded for debug-start convenience
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -180,7 +180,7 @@ const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
 // into a slot. Click an inventory chip to select/deselect it.
-let heldItem = null;
+let heldItem = "lamp"; // defaulted for debug-start convenience -- ready to light immediately
 // separate from heldItem/inventory -- books are unique, non-stackable,
 // and picking up a new one swaps out whatever was already carried,
 // rather than accumulating like normal collectibles
@@ -207,7 +207,7 @@ let honeyScoops = 0; // set to 8 on collection
 // this instead of raw object key order, which was never actually
 // designed on purpose (it just happened to put whichever item type was
 // FIRST ever collected at the front, forever)
-let inventoryOrder = ["acorn"];
+let inventoryOrder = ["lamp", "acorn"];
 function touchInventoryOrder(itemType) {
   const idx = inventoryOrder.indexOf(itemType);
   if (idx !== -1) inventoryOrder.splice(idx, 1);
@@ -4634,7 +4634,8 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
   const segments = 12;
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + emergeDir * 12 * (1 - t) + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
+    const emergeFade = Math.max(0, 1 - t / 0.4);
+    const x = startX + emergeDir * 12 * emergeFade + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
     const y = startY + 6 + t * hangLength;
     points.push({ x, y });
   }
@@ -4736,12 +4737,13 @@ const monsteraSpot = { x: 1640, y: 0 };
 function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
   points.push({ x: startX, y: startY });
-  points.push({ x: startX + emergeDir * 7, y: startY + 4 });
+  points.push({ x: startX + emergeDir * 12, y: startY + 7 });
   const segments = 14;
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + emergeDir * 7 * (1 - t) + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + 4 + t * length;
+    const emergeFade = Math.max(0, 1 - t / 0.4);
+    const x = startX + emergeDir * 12 * emergeFade + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + 7 + t * length;
     points.push({ x, y });
   }
   ctx.strokeStyle = "rgba(150,120,150,0.5)";
@@ -4761,27 +4763,30 @@ function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
 const heartsSpot = { x: 1853, hangY: 235 };
 function drawStringOfHearts(camX) {
   const px = heartsSpot.x - camX, py = gy - heartsSpot.hangY;
-  // small round hanging pot, distinct shape from the others
+  // small round hanging pot, distinct shape from the others -- shortened
   ctx.strokeStyle = "#4a3018";
   ctx.lineWidth = 0.8;
   ctx.beginPath();
-  ctx.moveTo(px - 3, py - 14); ctx.lineTo(px - 3, py - 8);
-  ctx.moveTo(px + 3, py - 14); ctx.lineTo(px + 3, py - 8);
+  ctx.moveTo(px - 3, py - 12); ctx.lineTo(px - 3, py - 7);
+  ctx.moveTo(px + 3, py - 12); ctx.lineTo(px + 3, py - 7);
   ctx.stroke();
+  // single consistent base color, not a partial arc that leaves a
+  // mismatched wedge showing through
   ctx.fillStyle = "#5a4048";
   ctx.beginPath();
-  ctx.arc(px, py, 13, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#7a5a6a";
-  ctx.beginPath();
-  ctx.arc(px, py - 2, 12, 0, Math.PI * 1.4);
+  ctx.arc(px, py, 11, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#3a2028";
   ctx.lineWidth = 1;
   ctx.stroke();
+  // proper offset highlight, a genuine closed shape, not an auto-closed wedge
+  ctx.fillStyle = "rgba(140,110,120,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(px - 3, py - 4, 5, 4, -0.4, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = "#3a2818";
   ctx.beginPath();
-  ctx.ellipse(px, py - 5, 9, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py - 4, 8, 2.4, 0, 0, Math.PI * 2);
   ctx.fill();
 
   const vines = [
@@ -4820,7 +4825,7 @@ function drawMonstera(camX) {
   ctx.strokeStyle = "#5a4a10";
   ctx.lineWidth = 0.8;
   ctx.stroke();
-  ctx.strokeStyle = "rgba(160,130,40,0.5)";
+  ctx.strokeStyle = "rgba(90,68,20,0.6)";
   ctx.lineWidth = 0.5;
   [-24, -18, -11, -4].forEach(dy => {
     ctx.beginPath();
@@ -4874,12 +4879,13 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
   // distinct emergence bulge right at the base, matching the other plants
   points.push({ x: startX, y: startY });
-  points.push({ x: startX + emergeDir * 9, y: startY + 5 });
+  points.push({ x: startX + emergeDir * 15, y: startY + 9 });
   const segments = 20;
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + emergeDir * 9 * (1 - t) + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + 5 + t * length;
+    const emergeFade = Math.max(0, 1 - t / 0.4);
+    const x = startX + emergeDir * 15 * emergeFade + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + 9 + t * length;
     points.push({ x, y });
   }
   ctx.strokeStyle = "rgba(30,80,55,0.55)";
@@ -4903,24 +4909,24 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
 
 // string of pearls -- small hanging pot, tucked in the gap between the
 // entry door and the water-bird painting
-const pearlsSpot = { x: 368, hangY: 245 };
+const pearlsSpot = { x: 408, hangY: 245 };
 function drawStringOfPearls(camX) {
   const px = pearlsSpot.x - camX, py = gy - pearlsSpot.hangY;
-  // distinct rounded bowl, not the shared trapezoid shape
+  // distinct rounded bowl, not the shared trapezoid shape -- shrunk down
   ctx.fillStyle = "#6a5040";
   ctx.beginPath();
-  ctx.ellipse(px, py + 6, 15, 9, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 5, 11, 7, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#8a6a52";
   ctx.beginPath();
-  ctx.ellipse(px, py + 3, 15, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 2, 11, 5.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#4a3628";
-  ctx.lineWidth = 0.9;
+  ctx.lineWidth = 0.8;
   ctx.stroke();
   ctx.fillStyle = "#3a2818";
   ctx.beginPath();
-  ctx.ellipse(px, py, 13, 3.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py, 10, 2.6, 0, 0, Math.PI * 2);
   ctx.fill();
 
   const pearlSeeds = [[0.3, -1], [1.2, 1], [2.4, -1], [3.1, 1], [4.0, -1], [4.9, 1], [5.8, -1]];
@@ -5021,7 +5027,7 @@ function drawPothos(camX) {
     [20, 246, 14, 4.7, false, 70, 0.9, 1]
   ];
   vines.forEach((v, i) => {
-    drawPothosVine(ctx, px + v[0], py + 8, v[1], v[2], i % 2 === 0 ? "#5a9a48" : "#6aab52", v[3], v[5], v[6], v[7]);
+    drawPothosVine(ctx, px + v[0], py + 8, v[1], v[2], i % 2 === 0 ? "#4a823c" : "#589144", v[3], v[5], v[6], v[7]);
   });
 }
 
@@ -8527,9 +8533,9 @@ const wallArtCircles = new Image();
 wallArtCircles.src = "data:image/jpeg;base64,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";
 
 const wallArtPieces = [
-  { img: wallArtWaterBird, x: 478, y: 60, w: 95, h: 63, frame: "ornate" },
+  { img: wallArtWaterBird, x: 518, y: 60, w: 95, h: 63, frame: "ornate" },
   { img: wallArtArch, x: 1102, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
-  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval" } // right side of the nook, moved with it, made smaller per request
+  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval", darken: true } // right side of the nook, moved with it, made smaller per request
 ];
 
 function drawAntiqueFrame(x, y, w, h, style) {
@@ -8576,9 +8582,11 @@ function drawWallArt(camX) {
       ctx.beginPath();
       ctx.ellipse(px + piece.w / 2, piece.y + piece.h / 2, piece.w / 2, piece.h / 2, 0, 0, Math.PI * 2);
       ctx.clip();
+      if (piece.darken) ctx.filter = "brightness(0.72) contrast(1.2)";
       if (piece.img.complete && piece.img.naturalWidth) {
         ctx.drawImage(piece.img, px, piece.y, piece.w, piece.h);
       }
+      ctx.filter = "none";
       ctx.restore();
     } else {
       drawAntiqueFrame(px, piece.y, piece.w, piece.h, piece.frame);
@@ -8589,7 +8597,7 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 839, bob: 0 };
+const owl = { x: 670, bob: 0 };
 let owlTalked = false;
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
@@ -8597,7 +8605,7 @@ let owlTalked = false;
 const bookPiles = [
   { x: 2278, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
   { x: 571, seed: 2, count: 4, heightAboveGround: 30 },
-  { x: 710, seed: 23, count: 3, heightAboveGround: 24 },
+  { x: 839, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
   { x: 1147, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
   { x: 1259, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
@@ -8885,6 +8893,21 @@ function drawTrapDoorSequence(camX) {
 // been collected. Several overlapping cushions plus a couple of small
 // things hanging from the ceiling above it.
 const cushionPile = sittingAreas[1];
+
+// tea nook -- a small arched niche to the left of the cushion pile, a
+// baby owl offering free tea from behind a low table. Same unlock
+// condition as the cushion pile it sits beside. Purely passive,
+// repeatable, no gate or one-time flag.
+const teaSpot = { x: 2360 };
+const babyOwl = {
+  idleT: 0, idleNextAt: 3000 + Math.random() * 4000, idleShift: 0, idleShiftT: 0,
+  sipT: 0, sipNextAt: 5000 + Math.random() * 7000, sipping: 0
+};
+const teaDialogue = { active: false, lines: [], index: 0 };
+const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
+const TEA_SEGMENT_MS = { pouring: 450, full: 700, sipping: 550, empty: 550 };
+const TEA_SPARKLE_COUNT = 6;
+
 function drawCushionPile(camX) {
   if (!cushionPile.unlocked()) return;
   const cx = cushionPile.x - camX;
@@ -9044,40 +9067,309 @@ function drawCushionPile(camX) {
 function drawFairyLights(camX) {
   if (!cushionPile.unlocked()) return;
   const cx = cushionPile.x - camX;
-  const spanLeft = cx - 75, spanRight = cx + 75;
-  const sagY = 42;
   const bulbColors = ["#f5d060", "#f0a850", "#f5e8a0", "#f0b860"];
+  const now = performance.now();
 
-  // the wire itself, gently sagging
-  ctx.strokeStyle = "rgba(60,48,30,0.7)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(spanLeft, 8);
-  ctx.quadraticCurveTo(cx, sagY, spanRight, 8);
-  ctx.stroke();
-
-  const bulbCount = 9;
-  for (let i = 0; i < bulbCount; i++) {
-    const t = i / (bulbCount - 1);
-    const x = spanLeft + (spanRight - spanLeft) * t;
-    const y = 8 + (sagY - 8) * (4 * t * (1 - t)); // matches the wire's quadratic sag
-    const twinkle = 0.6 + 0.4 * Math.sin(performance.now() * 0.002 + i * 1.7);
+  function drawBulb(x, y, i) {
+    const twinkle = 0.6 + 0.4 * Math.sin(now * 0.002 + i * 1.7);
     ctx.save();
     ctx.globalAlpha = twinkle;
     ctx.fillStyle = bulbColors[i % bulbColors.length];
     ctx.beginPath();
-    ctx.arc(x, y + 3, 2.2, 0, Math.PI * 2);
+    ctx.arc(x, y, 1.4, 0, Math.PI * 2);
     ctx.fill();
-    // soft glow halo
     ctx.globalAlpha = twinkle * 0.35;
     ctx.beginPath();
-    ctx.arc(x, y + 3, 5, 0, Math.PI * 2);
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
+
+  // two main sagging strings, more bulbs each, smaller
+  const strings = [
+    { spanLeft: cx - 78, spanRight: cx + 78, sagY: 38, top: 6, bulbCount: 13 },
+    { spanLeft: cx - 60, spanRight: cx + 60, sagY: 52, top: 20, bulbCount: 11 }
+  ];
+  strings.forEach((s, si) => {
+    ctx.strokeStyle = "rgba(60,48,30,0.7)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(s.spanLeft, s.top);
+    ctx.quadraticCurveTo(cx, s.sagY, s.spanRight, s.top);
+    ctx.stroke();
+    for (let i = 0; i < s.bulbCount; i++) {
+      const t = i / (s.bulbCount - 1);
+      const x = s.spanLeft + (s.spanRight - s.spanLeft) * t;
+      const y = s.top + (s.sagY - s.top) * (4 * t * (1 - t));
+      drawBulb(x, y + 2, i + si * 20);
+    }
+  });
+
+  // drooping strands hanging down alongside the fabric strips, drawn
+  // after them so they read as woven through/hanging among the fabric
+  const droops = [
+    { dx: -28, len: 90, seed: 3 }, { dx: 2, len: 105, seed: 8 }, { dx: 33, len: 85, seed: 14 }
+  ];
+  droops.forEach(d => {
+    const dx0 = cx + d.dx;
+    const sway = Math.sin(now * 0.0009 + d.seed) * 6;
+    ctx.strokeStyle = "rgba(60,48,30,0.55)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(dx0, 30);
+    ctx.quadraticCurveTo(dx0 + sway * 0.5, 30 + d.len * 0.5, dx0 + sway, 30 + d.len);
+    ctx.stroke();
+    const bulbCount = 6;
+    for (let i = 1; i <= bulbCount; i++) {
+      const t = i / bulbCount;
+      const x = dx0 + sway * t;
+      const y = 30 + d.len * t;
+      drawBulb(x, y, i + d.seed * 5);
+    }
+  });
+}
+
+function drawTeaNook(camX) {
+  if (!cushionPile.unlocked()) return;
+  const tx = teaSpot.x - camX;
+  const archW = 90, archTop = gy - 84, archBottom = gy - 2;
+  const archR = (archW + 10) / 2;
+  const springY = archTop + archR;
+
+  // arch niche -- shorter and lower than the reading nook, its own
+  // distinct proportions rather than a shrunk copy
+  ctx.fillStyle = "#241608";
+  ctx.beginPath();
+  ctx.moveTo(tx - archR, springY);
+  ctx.lineTo(tx - archR, archBottom + 4);
+  ctx.lineTo(tx + archR, archBottom + 4);
+  ctx.lineTo(tx + archR, springY);
+  ctx.arc(tx, springY, archR, 0, Math.PI, true);
+  ctx.closePath();
+  ctx.fill();
+
+  // a little visible floor plane inside the niche, catching slightly
+  // more light than the back wall, plus a soft shadow pooling at its base
+  ctx.fillStyle = "#33210f";
+  ctx.beginPath();
+  ctx.ellipse(tx, archBottom - 4, archR - 6, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(10,6,3,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(tx, archBottom, archR - 8, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // low table
+  const tableTop = archBottom - 16;
+  ctx.fillStyle = "#5a3a22";
+  ctx.fillRect(tx - 34, tableTop, 68, 6);
+  ctx.fillStyle = "#3a2414";
+  ctx.fillRect(tx - 30, tableTop + 6, 4, 10);
+  ctx.fillRect(tx + 26, tableTop + 6, 4, 10);
+
+  // low cushions in front of the table, for the player to visually
+  // lounge on while getting tea
+  ctx.fillStyle = "#8a5a6a";
+  ctx.beginPath();
+  ctx.ellipse(tx - 14, archBottom + 6, 20, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6a8a5a";
+  ctx.beginPath();
+  ctx.ellipse(tx + 16, archBottom + 5, 16, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // red ornate kettle, right-middle of the table
+  const kx = tx + 14, ky = tableTop - 2;
+  ctx.fillStyle = "#a8342a";
+  ctx.beginPath();
+  ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(230,190,150,0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(kx, ky + 2, 8, 2.4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(kx - 7, ky - 4); ctx.lineTo(kx + 7, ky - 4);
+  ctx.stroke();
+  ctx.fillStyle = "#7a1f18";
+  ctx.beginPath();
+  ctx.arc(kx, ky - 10, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#7a1f18";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(kx + 10, ky - 2);
+  ctx.quadraticCurveTo(kx + 17, ky - 2, kx + 15, ky + 5);
+  ctx.stroke();
+  const spoutTiltActive = teaAnim.phase === "pouring";
+  ctx.save();
+  ctx.translate(kx - 9, ky - 1);
+  ctx.rotate(spoutTiltActive ? -0.5 : -0.15);
+  ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 3); ctx.stroke();
+  ctx.restore();
+
+  // baby owl behind the table -- small, its own idle shift and
+  // independent sip on its own cup, unsynced from the player's
+  const oxBase = tx - 8, oy = tableTop - 20;
+  const ox = oxBase + babyOwl.idleShift;
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.fillStyle = "#6a5238";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a2c1a";
+  ctx.beginPath();
+  ctx.arc(-3.5, -3, 2.6, 0, Math.PI * 2);
+  ctx.arc(3.5, -3, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f0e8d0";
+  ctx.beginPath();
+  ctx.arc(-3.5, -3, 1.2, 0, Math.PI * 2);
+  ctx.arc(3.5, -3, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c9863a";
+  ctx.beginPath();
+  ctx.moveTo(-1.5, 0); ctx.lineTo(1.5, 0); ctx.lineTo(0, 3);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // baby owl's own cup, small independent sip bob
+  const ownCupBob = babyOwl.sipping > 0 ? Math.sin(Math.min(1, babyOwl.sipping) * Math.PI) * 5 : 0;
+  ctx.fillStyle = "#e8ddc0";
+  ctx.beginPath();
+  ctx.ellipse(ox + 11, oy + 7 - ownCupBob, 4, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#b8a888"; ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  drawTeaPlayerCup(tx, tableTop);
+
+  if (teaDialogue.active) {
+    drawFittedSpeechBubble(ctx, ox + 14, oy - 30, ["Would you like some tea?"]);
+  }
+}
+
+function drawTeaPlayerCup(tx, tableTop) {
+  if (teaAnim.phase === "idle") return;
+  const cupX = tx - 16, cupY = tableTop - 2;
+  const isFull = teaAnim.phase === "full" || teaAnim.phase === "sipping";
+  let bx = cupX, by = cupY;
+  if (teaAnim.phase === "sipping") {
+    const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping);
+    const bob = Math.sin(p * Math.PI);
+    bx = cupX + bob * 24; by = cupY - bob * 6;
+  }
+  // pouring stream, from the kettle spout down into the cup
+  if (teaAnim.phase === "pouring") {
+    const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring);
+    ctx.strokeStyle = "rgba(120,74,32,0.7)"; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(tx + 5, tableTop - 10);
+    ctx.lineTo(cupX, cupY - 6 + (1 - p) * 10);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#e8ddc0";
+  ctx.beginPath();
+  ctx.ellipse(bx, by, 6, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#b8a888"; ctx.lineWidth = 0.8;
+  ctx.stroke();
+  if (isFull) {
+    ctx.fillStyle = "#7a4a1e";
+    ctx.beginPath();
+    ctx.ellipse(bx, by - 1, 4, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (teaAnim.phase === "full") {
+    const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.full);
+    for (let i = 0; i < 3; i++) {
+      const wob = Math.sin(performance.now() * 0.004 + i * 2) * 1.5;
+      ctx.strokeStyle = `rgba(220,220,210,${0.3 * (1 - p)})`;
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(bx - 2 + i * 2, by - 5 - p * 6);
+      ctx.quadraticCurveTo(bx - 2 + i * 2 + wob, by - 9 - p * 6, bx - 2 + i * 2, by - 13 - p * 6);
+      ctx.stroke();
+    }
+  }
+  if (teaAnim.phase === "empty" && teaAnim.t < 260) {
+    const p = teaAnim.t / 260;
+    for (let i = 0; i < TEA_SPARKLE_COUNT; i++) {
+      const ang = (i / TEA_SPARKLE_COUNT) * Math.PI * 2;
+      const r = 6 + p * 14;
+      ctx.fillStyle = `rgba(245,208,96,${0.8 * (1 - p)})`;
+      ctx.beginPath();
+      ctx.arc(bx + Math.cos(ang) * r, by + Math.sin(ang) * r - p * 6, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
 const oakLamp = { x: 1069, collected: true }; // seeded true for debug-start convenience -- unlocks cushion pile, pothos, fairy lights, and the Metaphors book immediately for testing
+
+function updateTeaNook(deltaTime) {
+  if (!cushionPile.unlocked()) return;
+  const dtMs = deltaTime * 1000;
+
+  // ambient baby owl motion -- a small occasional stance shift and an
+  // independent, unsynced sip on its own cup, so it reads as alive
+  // rather than a static prop
+  babyOwl.idleT += dtMs;
+  if (babyOwl.idleT >= babyOwl.idleNextAt) {
+    babyOwl.idleShiftT = 0;
+    babyOwl.idleT = 0;
+    babyOwl.idleNextAt = 3000 + Math.random() * 4000;
+  }
+  if (babyOwl.idleShiftT < 400) {
+    babyOwl.idleShiftT += dtMs;
+    const p = Math.min(1, babyOwl.idleShiftT / 400);
+    babyOwl.idleShift = Math.sin(p * Math.PI) * 3;
+  } else {
+    babyOwl.idleShift = 0;
+  }
+
+  babyOwl.sipT += dtMs;
+  if (babyOwl.sipT >= babyOwl.sipNextAt) {
+    babyOwl.sipping = 0.001;
+    babyOwl.sipT = 0;
+    babyOwl.sipNextAt = 5000 + Math.random() * 7000;
+  }
+  if (babyOwl.sipping > 0) {
+    babyOwl.sipping += dtMs / 500;
+    if (babyOwl.sipping >= 1) babyOwl.sipping = 0;
+  }
+
+  // interaction -- prompt, then accept to start the sequence. Walking
+  // away instead of accepting just closes the prompt, no explicit
+  // decline needed. Fully repeatable, no gate or one-time flag.
+  const nearOwl = isPlayerNear(teaSpot.x - 8, 0, 30, 30, 25);
+  if (teaAnim.phase === "idle") {
+    if (teaDialogue.active && nearOwl && keys.spaceJustPressed) {
+      teaDialogue.active = false;
+      teaAnim.phase = "pouring";
+      teaAnim.t = 0;
+    } else if (!teaDialogue.active && nearOwl && keys.spaceJustPressed) {
+      teaDialogue.active = true;
+    } else if (teaDialogue.active && !nearOwl) {
+      teaDialogue.active = false;
+    }
+  } else {
+    teaAnim.t += dtMs;
+    if (teaAnim.phase === "pouring" && teaAnim.t >= TEA_SEGMENT_MS.pouring) {
+      teaAnim.phase = "full"; teaAnim.t = 0;
+    } else if (teaAnim.phase === "full" && teaAnim.t >= TEA_SEGMENT_MS.full) {
+      teaAnim.phase = "sipping"; teaAnim.t = 0;
+    } else if (teaAnim.phase === "sipping" && teaAnim.t >= TEA_SEGMENT_MS.sipping) {
+      teaAnim.phase = "empty"; teaAnim.t = 0;
+    } else if (teaAnim.phase === "empty" && teaAnim.t >= TEA_SEGMENT_MS.empty) {
+      teaAnim.phase = "idle"; teaAnim.t = 0;
+    }
+  }
+}
+
 function drawOakLampTable(camX) {
   if (!ratNPC.fed) return;
   const tx = oakLamp.x - camX;
@@ -9260,7 +9552,7 @@ function drawShortShelf(camX) {
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 6, broomBottom = bottom;
-  const broomTopX = broomX + 14, broomTopY = top + 30;
+  const broomTopX = broomX - 14, broomTopY = top + 30;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -9771,6 +10063,7 @@ function drawOakScene(camX) {
   drawStringOfHearts(camX);
   drawCushionPile(camX);
   drawFairyLights(camX);
+  drawTeaNook(camX);
   drawOwl(camX);
 }
 
@@ -9874,6 +10167,7 @@ function drawOwl(camX) {
 function updateOakScene(deltaTime) {
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
+  updateTeaNook(deltaTime);
 
   if (isPlayerNear(owl.x, 0, 30, 25, 20) && keys.spaceJustPressed) {
     owlTalked = true;
@@ -10225,25 +10519,38 @@ const metaphorsBookPages = [
   },
   {
     num: 2,
-    lines: ["Linguistic expressions are containers.", "", "Words and sentences are the vessels we put those ideas", "into. A sentence can be \u201cfull of meaning,\u201d or feel \u201cempty,\u201d", "as though meaning were something poured in and sealed.", "", "\u201cThat paragraph is packed with ideas.\u201d"],
+    lines: ["Linguistic expressions are containers.", "", "Words and sentences are the vessels we put those ideas", "into. A sentence can be \u201cfull of meaning,\u201d or feel \u201cempty,\u201d", "as though meaning were something poured in and sealed.", "", "\u201cHer words carry so much meaning.\u201d"],
     draw: (frX, frY) => {
-      drawDustyPocket(ctx, frX, frY + 4, 30);
-      drawIdeaBulbSmall(ctx, frX - 10, frY + 22, 8);
-      drawIdeaBulbSmall(ctx, frX + 11, frY + 26, 7);
+      drawDustyPocket(ctx, frX, frY - 4, 30);
+      drawIdeaBulbSmall(ctx, frX - 10, frY + 14, 8);
+      drawIdeaBulbSmall(ctx, frX + 11, frY + 18, 7);
     }
   },
   {
     num: 3,
-    lines: ["Communication is sending.", "", "To communicate, then, is to send that filled container", "across the distance between two people \u2014 speaker to", "listener \u2014 trusting the meaning arrives intact inside it.", "", "\u201cI couldn't get my point across.\u201d"],
+    lines: ["Communication is sending.", "", "To communicate, then, is to send that filled container", "across the distance between two people \u2014 speaker to", "listener \u2014 trusting the meaning arrives intact inside it.", "", "\u201cShe carried her point across clearly.\u201d"],
     draw: (frX, frY) => {
-      ctx.strokeStyle = "#8a8880"; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#8a8880"; ctx.fillStyle = "#8a8880"; ctx.lineWidth = 1.5;
+      // left figure -- head plus a simple trapezoid body, clearer silhouette
       ctx.beginPath(); ctx.arc(frX - 42, frY - 4, 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(frX - 52, frY + 30); ctx.quadraticCurveTo(frX - 42, frY + 6, frX - 32, frY + 30); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(frX - 48, frY + 30); ctx.lineTo(frX - 44, frY + 8);
+      ctx.lineTo(frX - 40, frY + 8); ctx.lineTo(frX - 36, frY + 30);
+      ctx.closePath(); ctx.stroke();
+      // right figure, same shape
       ctx.beginPath(); ctx.arc(frX + 42, frY - 4, 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(frX + 32, frY + 30); ctx.quadraticCurveTo(frX + 42, frY + 6, frX + 52, frY + 30); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(frX + 36, frY + 30); ctx.lineTo(frX + 40, frY + 8);
+      ctx.lineTo(frX + 44, frY + 8); ctx.lineTo(frX + 48, frY + 30);
+      ctx.closePath(); ctx.stroke();
+      // sending path, now with an actual arrowhead pointing toward the listener
       ctx.strokeStyle = "rgba(15,110,86,0.5)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(frX - 30, frY + 2); ctx.quadraticCurveTo(frX, frY - 26, frX + 30, frY + 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(frX - 30, frY + 2); ctx.quadraticCurveTo(frX, frY - 26, frX + 26, frY + 4); ctx.stroke();
       ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(15,110,86,0.6)";
+      ctx.beginPath();
+      ctx.moveTo(frX + 26, frY + 4); ctx.lineTo(frX + 16.9, frY + 0.5); ctx.lineTo(frX + 22.5, frY - 5.1);
+      ctx.closePath(); ctx.fill();
       drawDustyPocket(ctx, frX, frY - 20, 14);
       drawIdeaBulbSmall(ctx, frX, frY - 12, 5);
     }
