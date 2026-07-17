@@ -230,6 +230,7 @@ function addToInventory(itemType) {
 }
 
 function selectHeldItem(itemType) {
+  if (itemType === "feather") return; // display-only in the inventory chip strip -- carried via carriedFeather instead, same pattern as books
   if (!inventory[itemType] || inventory[itemType] <= 0) return;
   heldItem = heldItem === itemType ? null : itemType; // click again to deselect
   carriedBook = null; // same "put it back" logic as leaving oak -- both share the above-head display slot
@@ -250,7 +251,7 @@ function selectBoomerangIfAvailable() {
 // Tab cycles through held items — a keyboard-only way to select, since
 // everything else in this game is keyboard-driven except clicking chips
 function cycleHeldItem() {
-  const types = inventoryOrder.filter(t => inventory[t] > 0);
+  const types = inventoryOrder.filter(t => inventory[t] > 0 && t !== "feather");
   if (types.length === 0) return;
   const currentIdx = types.indexOf(heldItem);
   const nextIdx = (currentIdx + 1) % types.length;
@@ -355,8 +356,9 @@ const ITEM_CANVAS_RENDER = {
 };
 
 function updateInventoryUI() {
-  const entries = Object.entries(inventory);
+  const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
   invEl.innerHTML = "";
+  updateCarryingUI();
 
   if (!entries.length) {
     invEl.textContent = "(empty)";
@@ -410,6 +412,66 @@ function updateInventoryUI() {
 
     chip.addEventListener("click", () => selectHeldItem(type));
     invEl.appendChild(chip);
+  });
+}
+
+function initCarryingUI() {
+  if (carryingUIEl) return;
+  const wrapper = document.createElement("div");
+  wrapper.id = "carryingWrapper";
+  wrapper.style.marginTop = "6px";
+  const label = document.createElement("div");
+  label.textContent = "Carrying";
+  label.style.fontSize = "11px";
+  label.style.color = "#888";
+  label.style.marginBottom = "2px";
+  wrapper.appendChild(label);
+
+  carryingUIEl = document.createElement("div");
+  wrapper.appendChild(carryingUIEl);
+
+  invEl.insertAdjacentElement("afterend", wrapper);
+  carryingUIEl._wrapper = wrapper;
+}
+
+function updateCarryingUI() {
+  if (!carryingUIEl) initCarryingUI();
+  const entries = Object.entries(inventory).filter(([type]) => CARRYING_ITEM_TYPES.has(type) && inventory[type] > 0);
+  carryingUIEl._wrapper.style.display = entries.length ? "" : "none";
+  carryingUIEl.innerHTML = "";
+
+  entries.forEach(([type, count]) => {
+    const chip = document.createElement("span");
+    const selectable = type !== "feather"; // feather just needs to be carried, not selected -- worm still needs selecting to place on the seesaw
+    chip.style.cursor = selectable ? "pointer" : "default";
+    chip.style.marginRight = "8px";
+    chip.style.padding = "1px 5px";
+    chip.style.borderRadius = "4px";
+    chip.style.border = type === "feather"
+      ? "2px solid #c9a04a" // always highlighted -- meaningfully active whenever present
+      : heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.verticalAlign = "middle";
+
+    if (ITEM_CANVAS_RENDER[type]) {
+      const iconCanvas = document.createElement("canvas");
+      iconCanvas.width = 20;
+      iconCanvas.height = 20;
+      iconCanvas.style.display = "block";
+      ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
+      chip.appendChild(iconCanvas);
+    } else {
+      chip.textContent = `${ITEM_ICONS[type] || "?"} `;
+    }
+    if (type !== "feather") {
+      const label = document.createElement("span");
+      label.textContent = ` x${count}`;
+      chip.appendChild(label);
+    }
+    chip.title = selectable ? "Click to hold this item" : "Bring it to where it belongs";
+    if (selectable) chip.addEventListener("click", () => selectHeldItem(type));
+    carryingUIEl.appendChild(chip);
   });
 }
 
@@ -2236,6 +2298,8 @@ function drawCarvedWoodPrompt(px, py, animT, lines) {
    only control; this is purely a display location.
    ====================================================== */
 let crownUIEl = null;
+let carryingUIEl = null;
+const CARRYING_ITEM_TYPES = new Set(["worm", "feather"]); // carry-to-a-destination items, shown in their own section instead of the regular tool strip
 
 function initCrownUI() {
   if (crownUIEl) return;
@@ -4512,6 +4576,228 @@ function drawTeemingSymbol(ctx, x, y, size, color) {
   ctx.stroke();
 
   ctx.restore();
+}
+
+function drawHeartLeaf(ctx, x, y, size, rotation, color, veinColor, variegated) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, size * 0.3);
+  ctx.bezierCurveTo(-size * 0.6, -size * 0.3, -size * 0.5, -size * 0.8, 0, -size * 0.55);
+  ctx.bezierCurveTo(size * 0.5, -size * 0.8, size * 0.6, -size * 0.3, 0, size * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  if (variegated) {
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = "rgba(240,235,215,0.75)";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.1, -size * 0.4);
+    ctx.quadraticCurveTo(size * 0.4, -size * 0.2, size * 0.3, size * 0.15);
+    ctx.quadraticCurveTo(size * 0.05, size * 0.25, -size * 0.05, 0);
+    ctx.quadraticCurveTo(-size * 0.1, -size * 0.25, size * 0.1, -size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.strokeStyle = veinColor || "rgba(255,255,255,0.25)";
+  ctx.lineWidth = size * 0.04;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.4);
+  ctx.lineTo(0, size * 0.2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, seed, groundLength, groundDir) {
+  const points = [];
+  const segments = 12;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = startX + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
+    const y = startY + t * hangLength;
+    points.push({ x, y });
+  }
+  if (groundLength) {
+    const last = points[points.length - 1];
+    const groundSteps = 8;
+    for (let i = 1; i <= groundSteps; i++) {
+      const t = i / groundSteps;
+      points.push({
+        x: last.x + t * groundLength * groundDir,
+        y: last.y + Math.sin(t * Math.PI * 0.9 + seed * 0.2) * 7
+      });
+    }
+  }
+  ctx.strokeStyle = "#4a7a3a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length - 1; i++) {
+    const midX = (points[i].x + points[i + 1].x) / 2;
+    const midY = (points[i].y + points[i + 1].y) / 2;
+    ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
+  }
+  ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+  ctx.stroke();
+  for (let i = 2; i < points.length; i += 2) {
+    const p = points[i];
+    const prev = points[i - 1];
+    const angle = Math.atan2(p.y - prev.y, p.x - prev.x);
+    const side = (i / 2) % 2 === 0 ? 1 : -1;
+    const leafSize = Math.max(6, 11 - (i / points.length) * 4.4);
+    drawHeartLeaf(ctx, p.x + Math.cos(angle + side * 1.4) * 6, p.y + Math.sin(angle + side * 1.4) * 6, leafSize, angle + side * 0.3, leafColor, null, i % 3 !== 0);
+  }
+}
+
+// pothos -- hanging near the cushion pile, right side, several vines
+// trailing down with some pooling gently on the ground
+const pothosSpot = { x: 2130, hangY: 260 };
+// snake plant -- tall, stiff upright blades with dark mottled banding,
+// near the entry door as a welcoming statement piece
+const snakePlantSpot = { x: 260, y: 0 };
+function drawMonsteraLeaf(ctx, x, y, size, rotation, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.bezierCurveTo(size * 0.55, -size * 0.9, size * 0.7, -size * 0.3, size * 0.62, 0);
+  ctx.bezierCurveTo(size * 0.7, size * 0.15, size * 0.5, size * 0.35, size * 0.55, size * 0.6);
+  ctx.bezierCurveTo(size * 0.3, size * 0.5, size * 0.15, size * 0.65, 0, size * 0.75);
+  ctx.bezierCurveTo(-size * 0.15, size * 0.65, -size * 0.3, size * 0.5, -size * 0.55, size * 0.6);
+  ctx.bezierCurveTo(-size * 0.5, size * 0.35, -size * 0.7, size * 0.15, -size * 0.62, 0);
+  ctx.bezierCurveTo(-size * 0.7, -size * 0.3, -size * 0.55, -size * 0.9, 0, -size);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "black";
+  const holes = [
+    [size * 0.28, -size * 0.35, size * 0.11], [-size * 0.3, -size * 0.15, size * 0.1],
+    [size * 0.32, size * 0.05, size * 0.1], [-size * 0.28, size * 0.25, size * 0.09]
+  ];
+  holes.forEach(([hx, hy, hr]) => {
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 1.6, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  [[-size * 0.6, -size * 0.1], [size * 0.62, -size * 0.15], [-size * 0.5, size * 0.4], [size * 0.5, size * 0.35]].forEach(([nx, ny]) => {
+    ctx.beginPath();
+    ctx.ellipse(nx, ny, size * 0.09, size * 0.22, Math.atan2(ny, nx), 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalCompositeOperation = "source-over";
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.lineWidth = size * 0.025;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.9); ctx.lineTo(0, size * 0.7);
+  ctx.moveTo(0, -size * 0.3); ctx.lineTo(size * 0.4, -size * 0.05);
+  ctx.moveTo(0, 0); ctx.lineTo(-size * 0.42, size * 0.15);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// monstera -- shorter, fuller, drooping leaves at irregular angles,
+// near the nook but offset so it doesn't overlap the sitting area
+const monsteraSpot = { x: 1230, y: 0 };
+function drawMonstera(camX) {
+  const px = monsteraSpot.x - camX, py = gy - monsteraSpot.y;
+  ctx.fillStyle = "#8a6a4a";
+  ctx.beginPath();
+  ctx.moveTo(px - 24, py); ctx.lineTo(px + 24, py); ctx.lineTo(px + 19, py - 30); ctx.lineTo(px - 19, py - 30);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const leaves = [
+    [-0.9, 70, 34], [-0.68, 100, 44], [-0.2, 128, 52],
+    [0.15, 95, 40], [0.42, 108, 46], [0.8, 60, 30]
+  ];
+  leaves.forEach(([angle, stemLen, leafSize]) => {
+    const bx = px, by = py - 30;
+    const midX = bx + Math.sin(angle) * stemLen * 0.6;
+    const midY = by - Math.cos(angle) * stemLen * 0.7;
+    const tipX = bx + Math.sin(angle) * stemLen;
+    const tipY = midY + stemLen * 0.15;
+    ctx.strokeStyle = "#3a6a34";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+    ctx.stroke();
+    drawMonsteraLeaf(ctx, tipX, tipY, leafSize, angle * 0.5, "#3a7a3a");
+  });
+}
+
+function drawSnakePlant(camX) {
+  const px = snakePlantSpot.x - camX, py = gy - snakePlantSpot.y;
+  ctx.fillStyle = "#8a6a4a";
+  ctx.beginPath();
+  ctx.moveTo(px - 22, py); ctx.lineTo(px + 22, py); ctx.lineTo(px + 17, py - 26); ctx.lineTo(px - 17, py - 26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const bladeAngles = [-0.5, -0.28, -0.08, 0.1, 0.3, 0.5];
+  const bladeHeights = [80, 100, 115, 105, 88, 73];
+  bladeAngles.forEach((a, i) => {
+    ctx.save();
+    ctx.translate(px, py - 26);
+    ctx.rotate(a * 0.35);
+    const h = bladeHeights[i];
+    ctx.fillStyle = i % 2 === 0 ? "#3a6a34" : "#4a7a3e";
+    ctx.beginPath();
+    ctx.moveTo(-2.5, 0);
+    ctx.quadraticCurveTo(-3.5, -h * 0.5, -1, -h);
+    ctx.quadraticCurveTo(0, -h * 1.03, 1, -h);
+    ctx.quadraticCurveTo(3.5, -h * 0.5, 2.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = "rgba(20,45,20,0.55)";
+    for (let by = -h * 0.1; by > -h * 0.95; by -= h * 0.13) {
+      const bw = 3 - Math.abs(by / h) * 1.5;
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(by * 0.3) * 0.8, by, bw, h * 0.045, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = "rgba(230,225,180,0.6)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-2.2, -1.5); ctx.lineTo(-2, -h * 0.98);
+    ctx.moveTo(2.2, -1.5); ctx.lineTo(2, -h * 0.98);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function drawPothos(camX) {
+  const px = pothosSpot.x - camX, py = gy - pothosSpot.hangY;
+  ctx.fillStyle = "#8a6a4a";
+  ctx.beginPath();
+  ctx.moveTo(px - 22, py); ctx.lineTo(px + 22, py); ctx.lineTo(px + 17, py + 28); ctx.lineTo(px - 17, py + 28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  const vines = [
+    [-12, 180, 18, 0.5, false, 0, 1], [-4, 200, 20, 1.4, true, 100, 1],
+    [4, 170, 16, 2.6, false, 40, 0.6], [12, 210, 22, 3.5, true, 130, 1.3],
+    [20, 160, 14, 4.7, false, 70, 0.9]
+  ];
+  vines.forEach((v, i) => {
+    drawPothosVine(ctx, px + v[0], py + 27, v[1], v[2], i % 2 === 0 ? "#5a9a48" : "#6aab52", v[3], v[5], v[6]);
+  });
 }
 
 function drawFeatherShape(ctx, x, y, size, rotation) {
@@ -9180,6 +9466,9 @@ function drawOakScene(camX) {
   drawShortShelf(camX);
   drawMediumShelf(camX);
   drawOakLampTable(camX);
+  drawPothos(camX);
+  drawSnakePlant(camX);
+  drawMonstera(camX);
   drawCushionPile(camX);
   drawOwl(camX);
 }
@@ -10015,6 +10304,20 @@ function drawFeatherHangSpot(camX) {
   const dist = Math.hypot(hx - playerScreenX, hy - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
 
+  // small shelf the pot sits on, same wooden-plank style as the other
+  // shelves in this room, sharing the pot's exact visibility gating
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(hx - 14, hy + 10, 28, 4);
+  ctx.strokeStyle = "#2e1c0e";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(hx - 14, hy + 10, 28, 4);
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(hx - 11, hy + 14);
+  ctx.lineTo(hx - 15, hy + 24);
+  ctx.stroke();
+
   // a small terracotta pot -- narrow base, bulging out near the top,
   // narrowing again at the mouth. Visible whether or not the feather
   // is in it yet, so it reads as a real display spot from the start.
@@ -10061,6 +10364,8 @@ function updateFeatherHangSpot() {
   if (keys.spaceJustPressed && isPlayerNear(featherHangSpot.x, featherHangSpot.heightAboveGround, 25, 20, 20)) {
     featherHung = true;
     carriedFeather = false;
+    delete inventory.feather;
+    updateInventoryUI();
   }
 }
 
@@ -10070,7 +10375,7 @@ function updateFeatherHangSpot() {
 // normally. WS on the left, SW on the right, genuinely mirror-symmetric
 // letters carved into the wood, drawn as real hand-carved strokes
 // rather than typeset text.
-const carvedInitialsSpot = { x: 820, y: 90 };
+const carvedInitialsSpot = { x: 820, y: 275 };
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -10607,6 +10912,9 @@ function updateRatRoomFeather() {
   if (keys.spaceJustPressed && isPlayerNear(ratRoomFeather.x, ratRoomFeather.y, 20, 15, 12)) {
     ratRoomFeather.collected = true;
     carriedFeather = true;
+    inventory.feather = 1;
+    touchInventoryOrder("feather");
+    updateInventoryUI();
     startCollectAnimation({ x: ratRoomFeather.x, y: ratRoomFeather.y, size: 7, rotation: 0 }, "feather");
     // the rat notices immediately -- turns to face the player and
     // starts his reaction on his own, rather than waiting for the
@@ -10988,12 +11296,24 @@ function drawHayPiles(camX) {
   });
 }
 
+let ratLampAcknowledged = false;
+const ratLampFoundLines = [["Oh! You found it -- the little lamp!", "Wonderful, just wonderful."]];
+
 function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
   updateAcornFeedAnim(deltaTime);
   updateRatRoomFeather();
   updateFeatherHangSpot();
+
+  if (!ratLampAcknowledged && inventory.lamp > 0 && !ratDialogue.active) {
+    ratLampAcknowledged = true;
+    ratNPC.facingRight = player.x > ratNPC.x;
+    ratDialogue.active = true;
+    ratDialogue.index = 0;
+    ratDialogue.lines = ratLampFoundLines.slice();
+    ratNPC.talkedTo = true;
+  }
 
   if (ratDialogue.active) {
     if (keys.spaceJustPressed && !acornFeedAnim.active) advanceRatDialogue();
@@ -11273,12 +11593,6 @@ if (carriedBook && !fallState.active) {
     ctx.fillStyle = "#d4a520";
     ctx.fillRect(bx - 4, by - 5, 8, 1.5);
   }
-}
-
-// carried feather — same treatment
-if (carriedFeather && !fallState.active) {
-  const featherPos = getHeldItemWorldPos();
-  drawFeatherShape(ctx, featherPos.x - camX, featherPos.y, 9, 0.4);
 }
 
 drawSeasonTransition(ctx);
