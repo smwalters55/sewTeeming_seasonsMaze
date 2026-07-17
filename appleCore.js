@@ -9266,23 +9266,187 @@ function drawRatRoomScene(camX) {
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
 
   drawHayGroundCover(camX);
+  drawHayStrays(camX);
   drawHayPiles(camX);
+  drawRatFeedBowl(camX);
+  if (acornFeedAnim.active) {
+    const pos = getAcornFeedAnimPos();
+    drawAcornShape(ctx, pos.x - camX, gy - pos.heightAboveGround, 6, pos.x * 0.05);
+  }
   drawRatNPC(camX);
+
+  if (ratDialogue.active) {
+    const beat = ratDialogue.lines[ratDialogue.index];
+    const isLast = ratDialogue.index === ratDialogue.lines.length - 1;
+    const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+    drawFittedSpeechBubble(ctx, ratNPC.x - camX - 10, gy - 60, displayLines);
+  }
 }
 
 // messy hay piles, splattered across the floor -- individual straw
 // pieces much larger than autumn's subtle background hay, clustered
 // unevenly rather than neat bundles
 const hayPiles = [
+  { x: 150, seed: 41, count: 8 },
   { x: 260, seed: 3, count: 9 },
-  { x: 500, seed: 17, count: 7 },
-  { x: 620, seed: 29, count: 11 }
+  { x: 410, seed: 53, count: 6 },
+  { x: 500, seed: 17, count: 10 },
+  { x: 640, seed: 29, count: 7 },
+  { x: 720, seed: 61, count: 8 }
 ];
 
-const ratNPC = { x: 460, tailSwayT: 0 };
+const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false };
+
+// dialogue system -- space near the rat starts it, space again advances
+// through each beat, closes automatically after the last line. Every
+// line that isn't the final one in its sequence gets '...' appended
+// automatically at render time, not typed into the text itself.
+const ratGreetingLines = [
+  ["Well, hello there, feller!", "Welcome to my humble abode.", "Not much to look at, I know.", "Don't mind the eyes -- they're just curious, same as you."],
+  ["You wouldn't happen to have anything... nutty on you?", "Small, hard little things -- I'm not picky."]
+];
+const ratReturnGreetingLines = [
+  ["Good to see you again, feller!"]
+];
+const ratDialogue = {
+  active: false,
+  index: 0,
+  lines: ratGreetingLines
+};
+
+function startRatDialogue() {
+  ratDialogue.active = true;
+  ratDialogue.index = 0;
+  ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
+  ratNPC.talkedTo = true;
+}
+
+// acorn feed animation -- three bounces (decreasing height) from the
+// player's position to the bowl, then a brief settle pause before the
+// grateful dialogue is allowed to advance
+const acornFeedAnim = {
+  active: false,
+  t: 0,
+  startX: 0,
+  startY: 0,
+  bowlX: 0,
+  bowlY: 0,
+  segments: [] // {dur, fromX, toX, peakH} in order, last one settles into the bowl
+};
+const ACORN_FEED_SETTLE_PAUSE_MS = 550;
+
+function startAcornFeedAnim() {
+  const px = player.x + player.width / 2;
+  const py = 0; // ground level, world-relative height-above-ground
+  const bowlX = ratNPC.x - 22;
+  const bowlY = 0;
+  acornFeedAnim.startX = px;
+  acornFeedAnim.startY = py;
+  acornFeedAnim.bowlX = bowlX;
+  acornFeedAnim.bowlY = bowlY;
+  const dx = bowlX - px;
+  acornFeedAnim.segments = [
+    { dur: 340, fromX: px, toX: px + dx * 0.42, peakH: 22 },
+    { dur: 270, fromX: px + dx * 0.42, toX: px + dx * 0.72, peakH: 13 },
+    { dur: 210, fromX: px + dx * 0.72, toX: bowlX, peakH: 6 }
+  ];
+  acornFeedAnim.active = true;
+  acornFeedAnim.t = 0;
+}
+
+function getAcornFeedAnimPos() {
+  let elapsed = acornFeedAnim.t;
+  for (const seg of acornFeedAnim.segments) {
+    if (elapsed <= seg.dur) {
+      const p = elapsed / seg.dur;
+      const x = seg.fromX + (seg.toX - seg.fromX) * p;
+      const heightAboveGround = Math.sin(p * Math.PI) * seg.peakH;
+      return { x, heightAboveGround };
+    }
+    elapsed -= seg.dur;
+  }
+  return { x: acornFeedAnim.bowlX, heightAboveGround: 0 };
+}
+
+function totalAcornFeedAnimDuration() {
+  return acornFeedAnim.segments.reduce((sum, seg) => sum + seg.dur, 0);
+}
+
+function updateAcornFeedAnim(deltaTime) {
+  if (!acornFeedAnim.active) return;
+  acornFeedAnim.t += deltaTime * 1000;
+  const totalDur = totalAcornFeedAnimDuration();
+  if (acornFeedAnim.t >= totalDur + ACORN_FEED_SETTLE_PAUSE_MS) {
+    acornFeedAnim.active = false;
+    ratNPC.fed = true; // bowl now shows the acorn, and this unblocks the dialogue advance below
+    ratDialogue.index++;
+    if (ratDialogue.index >= ratDialogue.lines.length) {
+      ratDialogue.active = false;
+    }
+  }
+}
+
+const ratGratefulLines = [
+  ["Oh, wonderful! Just wonderful.", "Can't remember the last time I had a proper snack."],
+  ["Say... since you're clearly the helpful sort,", "there's a little something I've been missing down here."],
+  ["A small lamp -- used to sit up top somewhere.", "Wouldn't have noticed it before now, I'd wager.", "Mind bringing it down?"]
+];
+const ratNoSnackLines = [["Ah, no matter. Next time, perhaps?"]];
+
+function advanceRatDialogue() {
+  if (ratDialogue.index === 1 && !ratNPC.fed) {
+    if (inventory.acorn > 0) {
+      inventory.acorn -= 1;
+      if (inventory.acorn <= 0) delete inventory.acorn;
+      updateInventoryUI();
+      ratDialogue.lines = ratDialogue.lines.concat(ratGratefulLines);
+      startAcornFeedAnim(); // this owns advancing the dialogue once it completes
+      return;
+    } else {
+      ratDialogue.lines = ratDialogue.lines.concat(ratNoSnackLines);
+    }
+  }
+  ratDialogue.index++;
+  if (ratDialogue.index >= ratDialogue.lines.length) {
+    ratDialogue.active = false;
+  }
+}
+
 function updateRatNPC(deltaTime) {
   ratNPC.tailSwayT += deltaTime;
 }
+function drawRatFeedBowl(camX) {
+  const bx = ratNPC.x - 22 - camX, by = gy - 4;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.rotate(-0.15); // sits at a slight angle, like it just landed there
+
+  // chipped wooden bowl -- an arc for the rim, slightly irregular
+  ctx.fillStyle = "#5a3a1c";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 9, 4, 0, 0, Math.PI, false);
+  ctx.fill();
+  ctx.fillStyle = "#3a2410";
+  ctx.beginPath();
+  ctx.ellipse(0, -0.5, 7, 2.6, 0, 0, Math.PI, false);
+  ctx.fill();
+  // a small chip out of the rim
+  ctx.fillStyle = "#100a06";
+  ctx.beginPath();
+  ctx.arc(6, -1, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#2a1608";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 9, 4, 0, 0, Math.PI, false);
+  ctx.stroke();
+
+  if (ratNPC.fed) {
+    drawAcornShape(ctx, -1, -1.5, 3.5, 0.3);
+  }
+  ctx.restore();
+}
+
 function drawRatNPC(camX) {
   const nx = ratNPC.x - camX;
   const groundY = gy - 2;
@@ -9334,36 +9498,26 @@ function drawRatNPC(camX) {
   ctx.lineTo(nx + bodyW / 2 + 3, bodyCenterY + 6);
   ctx.stroke();
 
-  // vest -- drapes down the front of the upright body, two open flaps
-  // with a visible chest gap between them, not a closed garment
-  const vestTop = bodyCenterY - bodyH / 2 + 3, vestBottom = bodyCenterY + bodyH / 2 - 2;
+  // vest -- clipped to the body's own ellipse so it always follows the
+  // real body contour exactly, with a narrow open gap down the center
+  // showing the chest fur beneath (genuinely open, not a closed jacket)
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(nx, bodyCenterY, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
   ctx.fillStyle = "#2f6a5a";
-  ctx.beginPath();
-  ctx.moveTo(nx - bodyW / 2 + 1, vestTop);
-  ctx.lineTo(nx - 2, vestTop + 3);
-  ctx.lineTo(nx - 3, vestBottom);
-  ctx.lineTo(nx - bodyW / 2 + 2, vestBottom - 2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(nx + bodyW / 2 - 1, vestTop);
-  ctx.lineTo(nx + 2, vestTop + 3);
-  ctx.lineTo(nx + 3, vestBottom);
-  ctx.lineTo(nx + bodyW / 2 - 2, vestBottom - 2);
-  ctx.closePath();
-  ctx.fill();
+  ctx.fillRect(nx - bodyW, bodyCenterY - bodyH / 2 + 3, bodyW * 2, bodyH);
+  ctx.fillStyle = "#9a988e";
+  ctx.fillRect(nx - 2, bodyCenterY - bodyH / 2 + 3, 4, bodyH);
+  ctx.restore();
   ctx.strokeStyle = "#1a4a3c";
   ctx.lineWidth = 1;
-  ctx.stroke();
-  // a visible sliver of chest fur between the two flaps
-  ctx.fillStyle = "#9a988e";
   ctx.beginPath();
-  ctx.moveTo(nx - 2, vestTop + 3);
-  ctx.lineTo(nx + 2, vestTop + 3);
-  ctx.lineTo(nx + 1.5, vestBottom - 1);
-  ctx.lineTo(nx - 1.5, vestBottom - 1);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(nx - 2, bodyCenterY - bodyH / 2 + 3);
+  ctx.lineTo(nx - 2, bodyCenterY + bodyH / 2 - 2);
+  ctx.moveTo(nx + 2, bodyCenterY - bodyH / 2 + 3);
+  ctx.lineTo(nx + 2, bodyCenterY + bodyH / 2 - 2);
+  ctx.stroke();
 
   // head -- on top of the body, facing left
   const hx = nx - 2 * s * 0.5, hy = bodyCenterY - bodyH / 2 - 6;
@@ -9410,7 +9564,7 @@ function drawRatNPC(camX) {
 // widespread thin ground-covering hay, scattered across most of the
 // floor -- distinct from the discrete piles below, which stay as
 // denser clusters standing out against this thinner background layer
-const hayGroundCover = Array.from({ length: 140 }, (_, i) => {
+const hayGroundCover = Array.from({ length: 280 }, (_, i) => {
   const seed = i * 11 + 7;
   return {
     x: (seed * 37) % 780,
@@ -9437,6 +9591,37 @@ function drawHayGroundCover(camX) {
     ctx.restore();
   });
   ctx.globalAlpha = 1;
+}
+
+// stray pieces -- isolated single strands scattered well outside the
+// pile clusters, at odd angles, for genuine messiness rather than
+// everything being tidily accounted for in either the piles or the
+// even ground cover
+const hayStrays = Array.from({ length: 45 }, (_, i) => {
+  const seed = i * 19 + 5;
+  return {
+    x: (seed * 53) % 780,
+    dy: ((seed * 17) % 10) - 3,
+    len: 10 + (seed % 14),
+    angle: (((seed * 31) % 140) - 70) / 70,
+    colorIdx: seed % 4
+  };
+});
+function drawHayStrays(camX) {
+  const hayColors = ["#c9a03a", "#e8c258", "#a8822a", "#d4ac48"];
+  const baseY = gy - 2;
+  hayStrays.forEach(h => {
+    ctx.save();
+    ctx.translate(h.x - camX, baseY + h.dy);
+    ctx.rotate(h.angle);
+    ctx.strokeStyle = hayColors[h.colorIdx];
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-h.len / 2, 0);
+    ctx.lineTo(h.len / 2, (h.len % 4) - 2);
+    ctx.stroke();
+    ctx.restore();
+  });
 }
 
 // watching eyes in the shadows -- mostly clustered in the bottom-left
@@ -9489,7 +9674,7 @@ function drawHayPiles(camX) {
       ctx.translate(baseX + dx, baseY + dy);
       ctx.rotate(angle);
       ctx.strokeStyle = hayColors[seed % hayColors.length];
-      ctx.lineWidth = 2 + (seed % 3);
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(-len / 2, 0);
       ctx.lineTo(len / 2, (seed % 5) - 2);
@@ -9502,6 +9687,18 @@ function drawHayPiles(camX) {
 function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
+  updateAcornFeedAnim(deltaTime);
+
+  if (ratDialogue.active) {
+    if (keys.spaceJustPressed && !acornFeedAnim.active) advanceRatDialogue();
+    return; // mid-conversation -- don't also process the stairs trigger this frame
+  }
+
+  if (isPlayerNear(ratNPC.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+    startRatDialogue();
+    return;
+  }
+
   const topStep = ratRoomStairs[0];
   if (isPlayerNear(topStep.x, topStep.heightAboveGround, 20, 20, 15) && keys.spaceJustPressed) {
     startSeasonTransition("oak");
