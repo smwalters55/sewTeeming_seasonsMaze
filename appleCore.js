@@ -66,6 +66,7 @@ window.addEventListener("keydown", e => {
   if (e.key==="Control") keys.ctrl=true;
   if (e.key==="Tab" && !e.repeat) cycleHeldItem();
   if ((e.key==="c" || e.key==="C") && !e.repeat) keys.cJustPressed = true;
+  if ((e.key==="b" || e.key==="B") && !e.repeat) selectBoomerangIfAvailable();
 });
 
 window.addEventListener("keyup", e => {
@@ -167,7 +168,8 @@ const ITEM_ICONS = {
   worm: "🪱",
   pumpkin: "🎃",
   goldPile: "🪙",
-  lamp: "🏮"
+  lamp: "🏮",
+  feather: "🪶"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -183,6 +185,7 @@ let heldItem = null;
 // and picking up a new one swaps out whatever was already carried,
 // rather than accumulating like normal collectibles
 let carriedBook = null;
+let carriedFeather = false;
 
 // World-space position of the held item's floating indicator (above the
 // player's head, gently bobbing). Shared by the draw call AND by the place
@@ -200,13 +203,28 @@ let cloudPieceBurstPending = false; // consumed once by the chip's one-time grow
 
 let honeyScoops = 0; // set to 8 on collection
 
+// explicit collection-order tracking, newest first -- cycling relies on
+// this instead of raw object key order, which was never actually
+// designed on purpose (it just happened to put whichever item type was
+// FIRST ever collected at the front, forever)
+let inventoryOrder = [];
+function touchInventoryOrder(itemType) {
+  const idx = inventoryOrder.indexOf(itemType);
+  if (idx !== -1) inventoryOrder.splice(idx, 1);
+  inventoryOrder.unshift(itemType);
+}
+
 function addToInventory(itemType) {
   inventory[itemType] = (inventory[itemType] || 0) + 1;
+  touchInventoryOrder(itemType);
   if (itemType === "cloudPiece" && inventory[itemType] === 8) {
     cloudPieceBurstPending = true;
   }
   if (itemType === "honey") {
     honeyScoops = 8; // reusable tool — 6 needed for the graft combinations, extra for sticking other items on honey
+  }
+  if (itemType === "boomerang" && inventory[itemType] === 1 && !boomerangPromptState.promptEverShown) {
+    boomerangPromptState.promptAnimT = 0;
   }
   updateInventoryUI();
 }
@@ -217,10 +235,20 @@ function selectHeldItem(itemType) {
   updateInventoryUI();
 }
 
+// dedicated shortcut -- boomerang stays reliably one keypress away
+// regardless of collection order or how many other items are in
+// inventory, rather than needing to tab-cycle to find it
+function selectBoomerangIfAvailable() {
+  if (!inventory.boomerang || inventory.boomerang <= 0) return;
+  heldItem = "boomerang";
+  boomerangPromptState.promptEverShown = true; // retired for good the first time B is actually used
+  updateInventoryUI();
+}
+
 // Tab cycles through held items — a keyboard-only way to select, since
 // everything else in this game is keyboard-driven except clicking chips
 function cycleHeldItem() {
-  const types = Object.keys(inventory).filter(t => inventory[t] > 0);
+  const types = inventoryOrder.filter(t => inventory[t] > 0);
   if (types.length === 0) return;
   const currentIdx = types.indexOf(heldItem);
   const nextIdx = (currentIdx + 1) % types.length;
@@ -316,6 +344,10 @@ const ITEM_CANVAS_RENDER = {
   lamp: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawLampShape(iconCtx, 10, 11, 8, 0, false);
+  },
+  feather: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawFeatherShape(iconCtx, 10, 10, 8, 0.3);
   }
 };
 
@@ -347,7 +379,7 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang"];
+      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp"];
       if (!NO_COUNT_LABEL.includes(type)) {
         const label = document.createElement("span");
         label.textContent = ` x${count}`;
@@ -1777,6 +1809,18 @@ const crownState = {
 };
 const CROWN_COMPLETE_ANIM_DURATION = 1500;
 
+// same pattern as the crown's carved-wood prompt, for the boomerang's
+// B-key shortcut -- appears once collected, retires the first time B
+// is actually pressed
+const boomerangPromptState = {
+  promptAnimT: 9999,
+  promptEverShown: false
+};
+const BOOMERANG_PROMPT_LINES = [
+  "Curved wood, quick to the hand \u2014",
+  "press B, wherever you stand!"
+];
+
 function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
   ctx.save();
   ctx.translate(x, y);
@@ -2102,11 +2146,23 @@ function drawCrown(camX) {
   }
 }
 
+// same prompt style as the crown, positioned above the player -- shows
+// once the boomerang is collected, retires the first time B is pressed
+function drawBoomerangPrompt(camX) {
+  if (boomerangPromptState.promptEverShown) return;
+  if (!inventory.boomerang || inventory.boomerang <= 0) return;
+  const px = player.x - camX + player.width / 2;
+  const py = gy - player.height - player.y + 6;
+  drawCarvedWoodPrompt(px, py - 46, boomerangPromptState.promptAnimT, BOOMERANG_PROMPT_LINES);
+}
+
 // carved-wood-plank prompt — materializes slowly via wood-chip particles
 // converging inward, then a wider plank sized to actually fit the text,
 // deeper engraved shading. Materializes once, then stays visible the whole time you're ready-but-unworn.
-function drawCarvedWoodPrompt(px, py) {
-  const p = Math.min(crownState.promptAnimT / CROWN_PROMPT_MATERIALIZE_DURATION, 1);
+function drawCarvedWoodPrompt(px, py, animT, lines) {
+  animT = animT === undefined ? crownState.promptAnimT : animT;
+  lines = lines || CROWN_PROMPT_LINES;
+  const p = Math.min(animT / CROWN_PROMPT_MATERIALIZE_DURATION, 1);
   const ease = 1 - Math.pow(1 - p, 2);
 
   if (p < 1) {
@@ -2156,7 +2212,7 @@ function drawCarvedWoodPrompt(px, py) {
   // the shadow was adding noise around the letterforms, not clarity
   ctx.font = "10px sans-serif";
   ctx.textAlign = "center";
-  CROWN_PROMPT_LINES.forEach((line, i) => {
+  lines.forEach((line, i) => {
     const ly = py - 4 + i * 13;
     ctx.fillStyle = "rgba(30,18,8,0.6)";
     ctx.fillText(line, px + 1, ly + 1);
@@ -3204,6 +3260,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawWormShape(ctx, x, y, size, rotation);
   } else if (itemType === "lamp") {
     drawLampShape(ctx, x, y, size, rotation, false);
+  } else if (itemType === "feather") {
+    drawFeatherShape(ctx, x, y, size, rotation);
   } else if (itemType === "acorn") {
     drawAcornShape(ctx, x, y, size, rotation);
   } else if (itemType === "pumpkin") {
@@ -3933,6 +3991,7 @@ function updateTreeSticks(deltaTime) {
         stick.collected = true;
         stick.crackT = 0; // reused as the burst-particle timer now
         inventory[treeType + "Stick"] = 2; // grants 2 automatically per collection, not just 1
+        touchInventoryOrder(treeType + "Stick");
         updateInventoryUI();
       }
       return;
@@ -4406,6 +4465,38 @@ function drawPumpkinShape(ctx, x, y, size, rotation) {
   ctx.moveTo(0, -size * 0.65);
   ctx.lineTo(0, -size * 0.9);
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawFeatherShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  // central shaft
+  ctx.strokeStyle = "#c9c0a8";
+  ctx.lineWidth = size * 0.08;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(0, size);
+  ctx.stroke();
+
+  // vane -- barbs along each side, tapering toward the tip. Black/white
+  // banding with a touch of red, echoing the woodpecker's own coloring.
+  const bandColors = ["#2b2b2b", "#e8e2d0", "#2b2b2b", "#c9382a", "#2b2b2b"];
+  for (let i = -6; i <= 6; i++) {
+    if (i === 0) continue;
+    const t = i / 7; // -1 to 1 along the shaft
+    const py = t * size;
+    const width = (1 - Math.abs(t)) * size * 0.5;
+    const color = bandColors[Math.floor(((t + 1) / 2) * bandColors.length) % bandColors.length];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.09;
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(Math.sign(i) * width, py - Math.sign(i) * size * 0.06);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -7903,7 +7994,7 @@ const owl = { x: 520, bob: 0 };
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
-  { x: 480, seed: 41, count: 3, heightAboveGround: 22 }, // moved off the door, fills the gap the book spread used to occupy
+  { x: 1780, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
   { x: 330, seed: 2, count: 4, heightAboveGround: 30 },
   { x: 405, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
@@ -8309,20 +8400,49 @@ function drawOakLampTable(camX) {
   const tx = oakLamp.x - camX;
   const tableTop = gy - 26;
 
-  // simple wooden table -- legs, then a top surface
+  // gently ornate wooden table -- curved, scrolled legs rather than
+  // plain straight lines
   ctx.strokeStyle = "#4a3018";
   ctx.lineWidth = 3;
+  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(tx - 14, tableTop + 4);
-  ctx.lineTo(tx - 14, gy - 2);
+  ctx.quadraticCurveTo(tx - 18, tableTop + 16, tx - 12, gy - 2);
   ctx.moveTo(tx + 14, tableTop + 4);
-  ctx.lineTo(tx + 14, gy - 2);
+  ctx.quadraticCurveTo(tx + 18, tableTop + 16, tx + 12, gy - 2);
   ctx.stroke();
+  // small decorative scroll foot flourish at the base of each leg
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.5;
+  [-12, 12].forEach(fx => {
+    ctx.beginPath();
+    ctx.arc(tx + fx, gy - 4, 3, 0, Math.PI * 1.4);
+    ctx.stroke();
+  });
+
   ctx.fillStyle = "#5a3a1c";
   ctx.fillRect(tx - 18, tableTop, 36, 6);
-  ctx.strokeStyle = "#3a2410";
+  ctx.strokeStyle = "#c9a860";
   ctx.lineWidth = 1;
   ctx.strokeRect(tx - 18, tableTop, 36, 6);
+  // scalloped trim along the tabletop's front edge
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = -17; i <= 17; i += 4) {
+    ctx.moveTo(tx + i, tableTop + 6);
+    ctx.arc(tx + i + 2, tableTop + 6, 2, Math.PI, 0);
+  }
+  ctx.stroke();
+
+  // small doily-like pattern beneath where the lamp sits
+  if (!oakLamp.collected) {
+    ctx.strokeStyle = "rgba(230, 220, 200, 0.5)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(tx, tableTop - 1, 13, 3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   if (!oakLamp.collected) {
     drawLampShape(ctx, tx, tableTop - 12, 11, 0, false);
@@ -8332,7 +8452,9 @@ function updateOakLampTable() {
   if (!ratNPC.fed || oakLamp.collected) return;
   if (keys.spaceJustPressed && isPlayerNear(oakLamp.x, 38, 20, 20, 15)) {
     oakLamp.collected = true;
-    addToInventory("lamp");
+    inventory.lamp = 1; // set directly, not incremented -- there's only ever one lamp, so this can never double-count regardless of cause
+    touchInventoryOrder("lamp");
+    updateInventoryUI();
     startCollectAnimation({ x: oakLamp.x, y: 38, size: 8, rotation: 0 }, "lamp");
   }
 }
@@ -8364,15 +8486,21 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
 
     let bx = sx - w / 2 + 8;
     const rowSeed = row * 3;
-    const layout = [
-      { standing: true }, { standing: true }, { standing: false }, { standing: true }, { standing: false }
+    const layoutPatterns = [
+      [{ standing: true }, { standing: true }, { standing: false }, { standing: true }, { standing: false }],
+      [{ standing: false }, { standing: true }, { standing: true }, { standing: false }, { standing: true }],
+      [{ standing: true }, { standing: false }, { standing: true }, { standing: true }, { standing: false }],
+      [{ standing: true }, { standing: true }, { standing: true }, { standing: false }, { standing: false }],
+      [{ standing: false }, { standing: false }, { standing: true }, { standing: true }, { standing: true }]
     ];
+    const layout = layoutPatterns[row % layoutPatterns.length];
     layout.forEach((entry, b) => {
       if (bx >= sx + w / 2 - 8) return;
       const seed = rowSeed + b * 4;
       const gap = 4 + (seed % 6);
       if (entry.standing) {
-        const bw = 6 + (seed % 5);
+        const bw = Math.min(6 + (seed % 5), sx + w / 2 - 8 - bx);
+        if (bw < 3) return; // not enough room left
         const bh = rowHeight - 8 - (seed % 4);
         const lean = (((seed * 5) % 7) - 3) / 60;
         ctx.save();
@@ -8383,7 +8511,9 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
         ctx.restore();
         bx += bw + gap;
       } else {
-        const bookW = 16 + (seed % 8);
+        const rightBound = sx + w / 2 - 8;
+        const bookW = Math.min(16 + (seed % 8), rightBound - bx);
+        if (bookW < 6) return; // not enough room left for even a small book
         const stackCount = 1 + (seed % 2);
         let stackY = rowY + rowHeight - 3;
         for (let s = 0; s < stackCount; s++) {
@@ -9704,6 +9834,30 @@ const ratRoomStairsTop = { x: 400, y: 20 };
 const ratRoomCheeseArt = new Image();
 ratRoomCheeseArt.src = "data:image/jpeg;base64,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";
 const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
+// wall spot where the feather gets hung once the rat asks for it --
+// near his own area, a specific place he can point to
+const featherHangSpot = { x: 550, heightAboveGround: 55 };
+function drawFeatherHangSpot(camX) {
+  if (!featherHung) return;
+  const hx = featherHangSpot.x - camX, hy = gy - featherHangSpot.heightAboveGround;
+  // small peg/nail the feather hangs from
+  ctx.fillStyle = "#5a4028";
+  ctx.beginPath();
+  ctx.arc(hx, hy, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(hx, hy + 10);
+  drawFeatherShape(ctx, 0, 0, 11, Math.PI);
+  ctx.restore();
+}
+function updateFeatherHangSpot() {
+  if (featherHung || !carriedFeather) return;
+  if (keys.spaceJustPressed && isPlayerNear(featherHangSpot.x, featherHangSpot.heightAboveGround, 25, 20, 20)) {
+    featherHung = true;
+    carriedFeather = false;
+  }
+}
+
 function drawRatRoomArt(camX) {
   const px = ratRoomArtSpot.x - camX, py = ratRoomArtSpot.y;
   const w = ratRoomArtSpot.w, h = ratRoomArtSpot.h;
@@ -9716,6 +9870,26 @@ function drawRatRoomArt(camX) {
   if (ratRoomCheeseArt.complete && ratRoomCheeseArt.naturalWidth) {
     ctx.drawImage(ratRoomCheeseArt, px, py, w, h);
   }
+}
+
+// little shelf for the high-up rat to perch on, matching its eye-pair
+// position exactly so it visibly has something to sit on
+const ratRoomHighShelf = { x: 280, y: 60, w: 34 };
+function drawRatRoomHighShelf(camX) {
+  const sx = ratRoomHighShelf.x - camX, sy = ratRoomHighShelf.y;
+  const w = ratRoomHighShelf.w;
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx - w / 2, sy, w, 5);
+  ctx.strokeStyle = "#2e1c0e";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx - w / 2, sy, w, 5);
+  // small diagonal bracket support underneath
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx - w / 2 + 3, sy + 5);
+  ctx.lineTo(sx - w / 2 - 3, sy + 16);
+  ctx.stroke();
 }
 
 
@@ -9750,8 +9924,10 @@ function drawRatRoomScene(camX) {
   ctx.fillStyle = "#100a06";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  drawRatRoomHighShelf(camX);
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
+  drawFeatherHangSpot(camX);
 
   const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
 
@@ -9806,6 +9982,8 @@ function drawRatRoomScene(camX) {
   drawHayGroundCover(camX);
   drawHayStrays(camX);
   drawHayPiles(camX);
+  drawNestMaterials(camX);
+  drawRatRoomFeather(camX);
   drawRatFeedBowl(camX);
   if (acornFeedAnim.active) {
     const pos = getAcornFeedAnimPos();
@@ -9868,10 +10046,20 @@ const ratDialogue = {
   lines: ratGreetingLines
 };
 
+let featherHung = false;
+const ratFeatherLines = [
+  ["Oh! Oh my.", "Is that... a real feather?"],
+  ["Wow, a beautiful feather! I've been hoping to find one like that.", "Would you mind hanging it up on that wall over there?"]
+];
+
 function startRatDialogue() {
   ratDialogue.active = true;
   ratDialogue.index = 0;
-  ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
+  if (carriedFeather && !featherHung) {
+    ratDialogue.lines = ratFeatherLines.slice();
+  } else {
+    ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
+  }
   ratNPC.talkedTo = true;
 }
 
@@ -9970,6 +10158,81 @@ function advanceRatDialogue() {
 function updateRatNPC(deltaTime) {
   ratNPC.tailSwayT += deltaTime;
 }
+// nest materials -- ratty fabric scraps and tangled string, clustered
+// near the rat (this is genuinely his nest, not just room decor) with
+// a handful of stray pieces scattered further out among the hay
+const nestFabricScraps = [
+  { dx: -18, dy: -2, w: 9, color: "#5a5450", rot: 0.4 },
+  { dx: -6, dy: -1, w: 7, color: "#4a5058", rot: -0.3 },
+  { dx: 30, dy: 2, w: 8, color: "#6a5848", rot: 0.6 },
+  // strays, scattered further into the hay
+  { dx: -160, dy: 0, w: 7, color: "#5a5450", rot: -0.5 },
+  { dx: 220, dy: 3, w: 8, color: "#4a5058", rot: 0.2 },
+  { dx: -260, dy: -2, w: 6, color: "#6a5848", rot: 0.7 }
+];
+const nestStrings = [
+  { dx: 12, dy: 0, r: 5, color: "rgba(210,205,190,0.6)" },
+  { dx: -280, dy: 2, r: 4, color: "rgba(210,205,190,0.5)" },
+  { dx: 180, dy: -1, r: 4.5, color: "rgba(210,205,190,0.55)" }
+];
+// feather -- a find-item hidden right of the rat, among the hay and
+// scrap clutter (not isolated), only visible and collectible while
+// the lamp is lit and within range. Positioned to the right specifically
+// since most of the eyes are to the left, where a player would default
+// to looking first.
+const ratRoomFeather = { x: 600, y: 4, collected: false };
+function drawRatRoomFeather(camX) {
+  if (ratRoomFeather.collected || !lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const fx = ratRoomFeather.x - camX, fy = gy - ratRoomFeather.y;
+  const dist = Math.hypot(fx - playerScreenX, fy - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+  // tucked at an angle among the clutter, not laid out flat/obvious
+  drawFeatherShape(ctx, fx, fy, 9, 0.9);
+}
+function updateRatRoomFeather() {
+  if (ratRoomFeather.collected || !lampLit) return;
+  if (keys.spaceJustPressed && isPlayerNear(ratRoomFeather.x, ratRoomFeather.y, 20, 15, 12)) {
+    ratRoomFeather.collected = true;
+    carriedFeather = true;
+    startCollectAnimation({ x: ratRoomFeather.x, y: ratRoomFeather.y, size: 7, rotation: 0 }, "feather");
+  }
+}
+
+function drawNestMaterials(camX) {
+  const baseX = ratNPC.x - camX, baseY = gy - 2;
+
+  nestFabricScraps.forEach(f => {
+    ctx.save();
+    ctx.translate(baseX + f.dx, baseY + f.dy);
+    ctx.rotate(f.rot);
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    // irregular torn-edge polygon, not a clean rectangle
+    ctx.moveTo(-f.w / 2, -f.w * 0.3);
+    ctx.lineTo(-f.w * 0.2, -f.w * 0.5);
+    ctx.lineTo(f.w * 0.4, -f.w * 0.2);
+    ctx.lineTo(f.w / 2, f.w * 0.15);
+    ctx.lineTo(f.w * 0.1, f.w * 0.45);
+    ctx.lineTo(-f.w * 0.35, f.w * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  nestStrings.forEach(s => {
+    const sx = baseX + s.dx, sy = baseY + s.dy;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    // a loose, tangled coil rather than a clean circle
+    ctx.moveTo(sx - s.r, sy);
+    ctx.bezierCurveTo(sx - s.r, sy - s.r, sx + s.r * 0.6, sy - s.r * 1.2, sx + s.r, sy - s.r * 0.2);
+    ctx.bezierCurveTo(sx + s.r * 1.3, sy + s.r * 0.6, sx - s.r * 0.3, sy + s.r, sx - s.r * 0.6, sy + s.r * 0.2);
+    ctx.stroke();
+  });
+}
+
 function drawRatFeedBowl(camX) {
   const bx = ratNPC.x + 65 - camX, by = gy - 4;
   ctx.save();
@@ -9998,6 +10261,7 @@ function drawRatFeedBowl(camX) {
 }
 
 function drawRatNPC(camX) {
+  ctx.globalAlpha = 1; // guard against any upstream alpha leak affecting the tail/body
   const nx = ratNPC.x - camX;
   const groundY = gy - 2;
   const sway = Math.sin(ratNPC.tailSwayT * 1.8) * 12;
@@ -10207,20 +10471,37 @@ function drawRatRoomEyes(camX) {
       const playerScreenX = player.x + player.width / 2 - camX;
       const dist = Math.hypot(ex - playerScreenX, ey - (gy - player.y));
       if (dist < LAMP_LIGHT_RADIUS) {
+        const babySway = Math.sin(ratRoomEyeT * 2.2 + eye.phase * 3) * 3;
+
+        // small tail, swaying side to side
+        ctx.strokeStyle = "#7a7268";
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(ex + 5, ey + 5);
+        ctx.quadraticCurveTo(ex + 8 + babySway * 0.5, ey + 6, ex + 10 + babySway, ey + 4);
+        ctx.stroke();
+
+        // little round body
         ctx.fillStyle = "#8a8880";
         ctx.beginPath();
-        ctx.ellipse(ex, ey + 3, 6, 4.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(ex + 1, ey + 5, 5, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // head, slightly forward and up from the body
+        ctx.fillStyle = "#8a8880";
+        ctx.beginPath();
+        ctx.ellipse(ex, ey, 6, 4.5, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "#7a7268";
         ctx.beginPath();
-        ctx.arc(ex - 2.5, ey - 1, 1.8, 0, Math.PI * 2);
-        ctx.arc(ex + 2.5, ey - 1, 1.8, 0, Math.PI * 2);
+        ctx.arc(ex - 2.5, ey - 4, 1.8, 0, Math.PI * 2);
+        ctx.arc(ex + 2.5, ey - 4, 1.8, 0, Math.PI * 2);
         ctx.fill();
         if (!blinking) {
           ctx.fillStyle = "#1a1a1a";
           ctx.beginPath();
-          ctx.arc(ex - 1.5, ey + 1, 0.8, 0, Math.PI * 2);
-          ctx.arc(ex + 1.5, ey + 1, 0.8, 0, Math.PI * 2);
+          ctx.arc(ex - 1.5, ey - 2, 0.8, 0, Math.PI * 2);
+          ctx.arc(ex + 1.5, ey - 2, 0.8, 0, Math.PI * 2);
           ctx.fill();
         }
         return;
@@ -10265,13 +10546,15 @@ function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
   updateAcornFeedAnim(deltaTime);
+  updateRatRoomFeather();
+  updateFeatherHangSpot();
 
   if (ratDialogue.active) {
     if (keys.spaceJustPressed && !acornFeedAnim.active) advanceRatDialogue();
     return; // mid-conversation -- don't also process the stairs trigger this frame
   }
 
-  if (isPlayerNear(ratNPC.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(ratNPC.x, 0, 55, 25, 20) && keys.spaceJustPressed) {
     startRatDialogue();
     return;
   }
@@ -10503,6 +10786,7 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 }
 
 drawCrown(camX);
+drawBoomerangPrompt(camX);
 
 // held item — floats above the head while selected, so it's clear it's "in play"
 if (heldItem && !fallState.active) {
@@ -10527,6 +10811,12 @@ if (carriedBook && !fallState.active) {
   ctx.strokeRect(bx - 6, by - 8, 12, 16);
   ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
   ctx.fillRect(bx - 4, by - 5, 8, 1.5);
+}
+
+// carried feather — same treatment
+if (carriedFeather && !fallState.active) {
+  const featherPos = getHeldItemWorldPos();
+  drawFeatherShape(ctx, featherPos.x - camX, featherPos.y, 9, 0.4);
 }
 
 drawSeasonTransition(ctx);
@@ -10959,6 +11249,9 @@ lastTime = now;
 updateFallState(deltaTime); // shared — runs before scene dispatch, regardless of which scene started the fall
 updateCloudLanding(deltaTime);
 updateCrown(deltaTime); // scene-independent — C should work anywhere, not just autumn
+if (inventory.boomerang > 0 && !boomerangPromptState.promptEverShown && boomerangPromptState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
+  boomerangPromptState.promptAnimT += deltaTime * 1000;
+}
 updateLampLighting(); // scene-independent check inside, so it correctly turns off if the scene changes mid-hold
 
 if (currentScene === "autumn") {
