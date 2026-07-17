@@ -5513,6 +5513,27 @@ const seesawNPC = {
   hopT: 9999 // tracks her own hop-bounce, triggered each time the player charges
 };
 
+// the player's own kick, opposite-phase from the hedgehog's hop --
+// rises while she's still descending and peaks right at her landing
+// impact (t=700, the moment her own hop offset returns to 0), rather
+// than at her hop's own midpoint. Grows taller with each successive
+// charge, since more of her weight has been landing on it.
+const playerHop = { t: 9999 };
+const PLAYER_HOP_RISE_START = 450, PLAYER_HOP_PEAK = 700, PLAYER_HOP_SETTLE = 1000;
+const PLAYER_HOP_BASE_HEIGHT = 34;
+
+function getPlayerHopOffset() {
+  if (playerHop.t >= PLAYER_HOP_SETTLE) return 0;
+  const peakHeight = PLAYER_HOP_BASE_HEIGHT * (seesaw.charge / SEESAW_CHARGE_NEEDED);
+  if (playerHop.t < PLAYER_HOP_RISE_START) return 0;
+  if (playerHop.t < PLAYER_HOP_PEAK) {
+    const p = (playerHop.t - PLAYER_HOP_RISE_START) / (PLAYER_HOP_PEAK - PLAYER_HOP_RISE_START);
+    return peakHeight * Math.sin(p * Math.PI / 2);
+  }
+  const p = (playerHop.t - PLAYER_HOP_PEAK) / (PLAYER_HOP_SETTLE - PLAYER_HOP_PEAK);
+  return peakHeight * Math.cos(p * Math.PI / 2);
+}
+
 const seesaw = {
   x: 3010,
   pivotHeightAboveGround: 40,
@@ -5751,6 +5772,7 @@ function updateSeesaw(deltaTime) {
     if (!nearMountHorizontally) {
       seesaw.mounted = false;
       seesaw.charge = 0;
+      playerHop.t = 9999;
     }
   }
 
@@ -5761,14 +5783,16 @@ function updateSeesaw(deltaTime) {
     // repeatedly while seated), but nothing was otherwise stopping
     // normal gravity from continuing to apply every subsequent frame,
     // since onPlank support logic doesn't run while mounted.
-    player.y = mountTargetSurfaceHeight;
+    player.y = mountTargetSurfaceHeight + getPlayerHopOffset();
     player.vy = 0;
     player.jumping = false;
     player.usedDoubleJump = false;
+    playerHop.t += deltaTime * 1000;
 
-    if (keys.upJustPressed) {
+    if (keys.upJustPressed && seesaw.charge < SEESAW_CHARGE_NEEDED) {
       seesaw.charge = Math.min(seesaw.charge + 1, SEESAW_CHARGE_NEEDED);
       seesawNPC.hopT = 0; // triggers her own hop animation, synced to the player's jump
+      playerHop.t = 0; // opposite-phase kick, peaks at her landing rather than her hop's own midpoint
     }
     // tilt follows charge — dampened per press so the visual buildup
     // reads more gradually, matching the actual charge progression
@@ -5776,7 +5800,10 @@ function updateSeesaw(deltaTime) {
     const targetAngle = -0.28 * (seesaw.charge / SEESAW_CHARGE_NEEDED);
     seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 4, 1);
 
-    if (seesaw.charge >= SEESAW_CHARGE_NEEDED) {
+    // full charge doesn't launch instantly -- wait for that final kick
+    // to actually reach its peak, so the launch genuinely starts from
+    // the built-up height rather than snapping away mid-rise
+    if (seesaw.charge >= SEESAW_CHARGE_NEEDED && playerHop.t >= PLAYER_HOP_PEAK) {
       seesaw.mounted = false;
       seesaw.launching = true;
       seesaw.launchT = 0;
@@ -5792,7 +5819,7 @@ function updateSeesaw(deltaTime) {
     const launchProgress = Math.min(seesaw.launchT / SEESAW_LAUNCH_DURATION, 1);
     if (prevT === 0) {
       seesaw.launchStartX = seesaw.x - 90;
-      seesaw.launchStartY = 0;
+      seesaw.launchStartY = player.y; // the actual height the kick had reached at that instant, not a flat ground value
     }
     const arcTargetX = TALL_OAK_X - 3;
     const arcTargetY = 280; // raised into the canopy proper — was 240, which visually landed near the hollow/trunk level rather than up in the leaves
