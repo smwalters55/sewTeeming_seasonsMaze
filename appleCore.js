@@ -232,6 +232,7 @@ function addToInventory(itemType) {
 function selectHeldItem(itemType) {
   if (!inventory[itemType] || inventory[itemType] <= 0) return;
   heldItem = heldItem === itemType ? null : itemType; // click again to deselect
+  carriedBook = null; // same "put it back" logic as leaving oak -- both share the above-head display slot
   updateInventoryUI();
 }
 
@@ -241,6 +242,7 @@ function selectHeldItem(itemType) {
 function selectBoomerangIfAvailable() {
   if (!inventory.boomerang || inventory.boomerang <= 0) return;
   heldItem = "boomerang";
+  carriedBook = null;
   boomerangPromptState.promptEverShown = true; // retired for good the first time B is actually used
   updateInventoryUI();
 }
@@ -253,6 +255,7 @@ function cycleHeldItem() {
   const currentIdx = types.indexOf(heldItem);
   const nextIdx = (currentIdx + 1) % types.length;
   heldItem = types[nextIdx];
+  carriedBook = null;
   updateInventoryUI();
 }
 
@@ -743,6 +746,8 @@ function updateSeasonTransition(deltaTime) {
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
       if (currentScene === "oak" && previousScene === "ratroom") {
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
+      } else if (currentScene === "autumn" && previousScene === "oak") {
+        player.x = seesaw.x - 120; // land just left of the seesaw, clear of the plank itself
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -4468,6 +4473,47 @@ function drawPumpkinShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// the recurring symbol -- outer circle, small center circle, and an
+// equilateral triangle (point-up) with a gap at each corner rather
+// than fully closed lines. Reusable so every appearance across the
+// game stays visually identical.
+function drawTeemingSymbol(ctx, x, y, size, color) {
+  const rOuter = size, rTriangle = size * 0.8, rCenter = size * 0.175;
+  const gapFraction = 0.14;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = color || "#3a2818";
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = "round";
+
+  // outer circle
+  ctx.beginPath();
+  ctx.arc(0, 0, rOuter, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // triangle vertices, point-up, at -90/30/150 degrees
+  const angles = [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6];
+  const vertices = angles.map(a => [rTriangle * Math.cos(a), rTriangle * Math.sin(a)]);
+  for (let i = 0; i < 3; i++) {
+    const a = vertices[i], b = vertices[(i + 1) % 3];
+    const startX = a[0] + gapFraction * (b[0] - a[0]);
+    const startY = a[1] + gapFraction * (b[1] - a[1]);
+    const endX = a[0] + (1 - gapFraction) * (b[0] - a[0]);
+    const endY = a[1] + (1 - gapFraction) * (b[1] - a[1]);
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+
+  // small center circle
+  ctx.beginPath();
+  ctx.arc(0, 0, rCenter, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawFeatherShape(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
@@ -5041,7 +5087,12 @@ function updateSeesaw(deltaTime) {
     // simple proximity, no jump required — this was incorrectly gated
     // behind playerOnPlank before, which meant you had to jump onto the
     // seesaw before placement would even register at all.
-    if (keys.spaceJustPressed && !seesaw.heldItemPlaced && heldItem && Math.abs(relX) > 60) {
+    // CONFIRMED BUG FIX: any held item could be placed here, not just
+    // the worm -- accidentally placing something else (like an acorn)
+    // with no way to retrieve it without launching permanently blocked
+    // the worm from ever being placed. Restricted to worm only, plus a
+    // pickup-back-up path for anything already stuck from before this fix.
+    if (keys.spaceJustPressed && !seesaw.heldItemPlaced && heldItem === "worm" && Math.abs(relX) > 60) {
       seesaw.heldItemPlaced = heldItem;
       // CONFIRMED BUG FIX: inventory was never decremented on use, so
       // placed/launched items stayed in the inventory count forever
@@ -5050,6 +5101,11 @@ function updateSeesaw(deltaTime) {
         if (inventory[heldItem] <= 0) delete inventory[heldItem];
       }
       heldItem = null;
+    } else if (keys.spaceJustPressed && seesaw.heldItemPlaced && !heldItem && Math.abs(relX) > 60) {
+      // pick it back up instead of leaving it stuck there forever
+      addToInventory(seesaw.heldItemPlaced);
+      heldItem = seesaw.heldItemPlaced;
+      seesaw.heldItemPlaced = null;
     }
 
     if (seesaw.playerOnPlank && !nearMountTarget) {
@@ -5094,7 +5150,7 @@ function updateSeesaw(deltaTime) {
   // the worm launches — exactly the moment a player would try to get her
   // moving, so the hop could never actually trigger. Simple proximity
   // instead, since this doesn't need to know about the other system at all.
-  if (seesawNPC.talkedTo && !seesawNPC.hopping && !seesawNPC.onSeesaw && isPlayerNear(seesaw.x, 0, 110, 40, 40) && woodpecker.fed) {
+  if (seesawNPC.talkedTo && !seesawNPC.hopping && !seesawNPC.onSeesaw && isPlayerNear(seesaw.x, 0, 110, 90, 40) && woodpecker.fed) {
     seesawNPC.hopping = true;
   }
 
@@ -7989,7 +8045,8 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 520, bob: 0 };
+const owl = { x: 470, bob: 0 };
+let owlTalked = false;
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
@@ -8371,21 +8428,64 @@ function drawCushionPile(camX) {
 
   // front/side cushions -- lower, squashed-looking, overlapping and
   // leaning against each other and the back cushions, forming the
-  // actual enclosing "seat in the middle" shape
+  // actual enclosing "seat in the middle" shape. Genuinely varied
+  // shapes now (not all ellipses), and repositioned into two loose
+  // clusters with a real gap in the middle where you'd actually sit.
   const frontCushions = [
-    { dx: -46, w: 38, h: 24, rot: -0.35, color: "#a83a4a" },
-    { dx: -22, w: 42, h: 22, rot: -0.1, color: "#6a8a3a" },
-    { dx: 8, w: 40, h: 20, rot: 0.08, color: "#4a6a8a" },
-    { dx: 36, w: 40, h: 24, rot: 0.3, color: "#c9863a" },
-    { dx: 54, w: 32, h: 20, rot: 0.4, color: "#8a5a2f" }
+    { dx: -54, w: 30, h: 24, rot: -0.4, color: "#a83a4a", shape: "ellipse" },
+    { dx: -32, w: 34, h: 30, rot: -0.2, color: "#6a8a3a", shape: "roundRect" },
+    { dx: 0, w: 46, h: 18, rot: 0, color: "#4a6a8a", shape: "flatSeat" },
+    { dx: 32, w: 36, h: 28, rot: 0.2, color: "#c9863a", shape: "roundRect" },
+    { dx: 56, w: 28, h: 22, rot: 0.4, color: "#8a5a2f", shape: "blob" }
   ];
   frontCushions.forEach(c => {
     ctx.save();
     ctx.translate(cx + c.dx, baseY - c.h / 2 + 5);
     ctx.rotate(c.rot);
     ctx.fillStyle = c.color;
+    const w = c.w, h = c.h;
     ctx.beginPath();
-    ctx.ellipse(0, 0, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+    if (c.shape === "ellipse") {
+      ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+    } else if (c.shape === "roundRect") {
+      const r = h * 0.35;
+      ctx.moveTo(-w / 2 + r, -h / 2);
+      ctx.lineTo(w / 2 - r, -h / 2);
+      ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+      ctx.lineTo(w / 2, h / 2 - r);
+      ctx.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+      ctx.lineTo(-w / 2 + r, h / 2);
+      ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+      ctx.lineTo(-w / 2, -h / 2 + r);
+      ctx.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+    } else if (c.shape === "teardrop") {
+      ctx.moveTo(-w / 2, h * 0.15);
+      ctx.quadraticCurveTo(-w / 2, -h / 2, 0, -h / 2);
+      ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, h * 0.15);
+      ctx.quadraticCurveTo(w / 2, h / 2, 0, h / 2);
+      ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h * 0.15);
+    } else if (c.shape === "flatSeat") {
+      // wide and low, with just a slight concave dip in the top-center
+      const r = h * 0.5;
+      ctx.moveTo(-w / 2 + r, -h / 2 + 2);
+      ctx.quadraticCurveTo(-w * 0.15, -h / 2 + 2.2, 0, -h / 2 + 3.5);
+      ctx.quadraticCurveTo(w * 0.15, -h / 2 + 2.2, w / 2 - r, -h / 2 + 2);
+      ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+      ctx.lineTo(w / 2, h / 2 - r);
+      ctx.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+      ctx.lineTo(-w / 2 + r, h / 2);
+      ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+      ctx.lineTo(-w / 2, -h / 2 + r);
+      ctx.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2 + 2);
+    } else {
+      // irregular, slightly lumpy blob -- not a clean symmetric curve
+      ctx.moveTo(-w / 2, -h * 0.1);
+      ctx.quadraticCurveTo(-w * 0.4, -h / 2, 0, -h * 0.45);
+      ctx.quadraticCurveTo(w * 0.35, -h * 0.55, w / 2, -h * 0.05);
+      ctx.quadraticCurveTo(w * 0.55, h * 0.3, w * 0.15, h / 2);
+      ctx.quadraticCurveTo(-w * 0.25, h * 0.55, -w / 2, h * 0.2);
+    }
+    ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = 1;
@@ -8488,21 +8588,23 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
     const rowSeed = row * 3;
     const layoutPatterns = [
       [{ standing: true }, { standing: true }, { standing: false }, { standing: true }, { standing: false }],
-      [{ standing: false }, { standing: true }, { standing: true }, { standing: false }, { standing: true }],
-      [{ standing: true }, { standing: false }, { standing: true }, { standing: true }, { standing: false }],
+      [{ standing: false }, { standing: true }, { standing: false }, { standing: false }, { standing: true }],
+      [{ standing: true }, { standing: false }, { standing: false }, { standing: true }, { standing: false }],
       [{ standing: true }, { standing: true }, { standing: true }, { standing: false }, { standing: false }],
-      [{ standing: false }, { standing: false }, { standing: true }, { standing: true }, { standing: true }]
+      [{ standing: false }, { standing: false }, { standing: true }, { standing: false }, { standing: true }],
+      [{ standing: false }, { standing: true }, { standing: false }, { standing: true }, { standing: false }],
+      [{ standing: true }, { standing: false }, { standing: true }, { standing: false }, { standing: false }]
     ];
     const layout = layoutPatterns[row % layoutPatterns.length];
     layout.forEach((entry, b) => {
       if (bx >= sx + w / 2 - 8) return;
-      const seed = rowSeed + b * 4;
-      const gap = 4 + (seed % 6);
+      const seed = rowSeed + b * 4 + row * 11; // more entropy so adjacent rows don't echo each other's widths
+      const gap = 3 + (seed % 8);
       if (entry.standing) {
-        const bw = Math.min(6 + (seed % 5), sx + w / 2 - 8 - bx);
+        const bw = Math.min(5 + (seed % 13), sx + w / 2 - 8 - bx);
         if (bw < 3) return; // not enough room left
-        const bh = rowHeight - 8 - (seed % 4);
-        const lean = (((seed * 5) % 7) - 3) / 60;
+        const bh = rowHeight - 6 - (seed % 9);
+        const lean = (((seed * 5) % 9) - 4) / 50;
         ctx.save();
         ctx.translate(bx + bw / 2, rowY + rowHeight - 3);
         ctx.rotate(lean);
@@ -8512,12 +8614,12 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
         bx += bw + gap;
       } else {
         const rightBound = sx + w / 2 - 8;
-        const bookW = Math.min(16 + (seed % 8), rightBound - bx);
+        const bookW = Math.min(14 + (seed % 21), rightBound - bx);
         if (bookW < 6) return; // not enough room left for even a small book
         const stackCount = 1 + (seed % 2);
         let stackY = rowY + rowHeight - 3;
         for (let s = 0; s < stackCount; s++) {
-          const bh2 = 4 + (s % 2);
+          const bh2 = 3 + ((seed + s * 5) % 6);
           ctx.fillStyle = colors[(seed + s) % colors.length];
           ctx.fillRect(bx, stackY - bh2, bookW, bh2);
           stackY -= bh2;
@@ -9133,14 +9235,26 @@ function drawOwl(camX) {
   ctx.lineTo(ox, oy + 3);
   ctx.closePath();
   ctx.fill();
+
+  if (owlTalked) {
+    drawFittedSpeechBubble(ctx, ox + 16, oy - 40, [
+      "We boast of readings in our little oak den...",
+      "grab a book to take to the nook, then!"
+    ]);
+  }
 }
 
 function updateOakScene(deltaTime) {
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
 
+  if (isPlayerNear(owl.x, 0, 30, 25, 20) && keys.spaceJustPressed) {
+    owlTalked = true;
+  }
+
   if (isPlayerNear(oakReturnDoor.x, 0, 26, 15, 15) && keys.spaceJustPressed) {
     startSeasonTransition("autumn");
+    carriedBook = null; // same as the trap door -- books can't leave oak
   }
 
   updateTrapDoor(deltaTime);
@@ -9148,6 +9262,7 @@ function updateOakScene(deltaTime) {
       isPlayerNear(nookRug.x, 0, nookRug.width / 2, 20, 10)) {
     trapDoor.active = true;
     trapDoor.t = 0;
+    carriedBook = null; // books can't leave oak -- nowhere to actually read one elsewhere, so it's quietly set back down
   }
 
   // book pile collision — same landing pattern as regular platforms
@@ -9199,6 +9314,25 @@ function updateOakScene(deltaTime) {
       player.vy <= 0
     ) {
       player.y = seatTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
+  // top-of-shelf collision — both the short and medium shelves are
+  // jumpable platforms, same landing pattern as everything else
+  [shortShelf, mediumShelf].forEach(shelf => {
+    const shelfTop = gy - shelf.top;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > shelf.x - shelf.width / 2 &&
+      player.x < shelf.x + shelf.width / 2 &&
+      playerBottom <= shelfTop &&
+      playerBottom >= shelfTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = shelfTop;
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
@@ -9510,16 +9644,16 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
     const s = 20; // huge, matching the molar page
     ctx.fillStyle = "#f5f0e0";
     ctx.beginPath();
-    // crown -- wider at the gumline, tapering to a single sharp point
-    ctx.moveTo(frX2 - 1.8 * s, frY - 2.8 * s);
-    ctx.quadraticCurveTo(frX2 - 2 * s, frY - 4 * s, frX2 - 0.6 * s, frY - 4.2 * s);
-    ctx.quadraticCurveTo(frX2, frY - 4.3 * s, frX2 + 0.6 * s, frY - 4.2 * s);
-    ctx.quadraticCurveTo(frX2 + 2 * s, frY - 4 * s, frX2 + 1.8 * s, frY - 2.8 * s);
-    ctx.quadraticCurveTo(frX2 + 1.4 * s, frY - 1 * s, frX2 + 0.3 * s, frY + 0.5 * s);
-    // single long tapering root, curving slightly to a point
-    ctx.quadraticCurveTo(frX2 + 0.2 * s, frY + 2.5 * s, frX2, frY + 4.5 * s);
-    ctx.quadraticCurveTo(frX2 - 0.2 * s, frY + 2.5 * s, frX2 - 0.3 * s, frY + 0.5 * s);
-    ctx.quadraticCurveTo(frX2 - 1.4 * s, frY - 1 * s, frX2 - 1.8 * s, frY - 2.8 * s);
+    // a single clean, curved fang -- wide at the gumline, smoothly
+    // tapering to one sharp point. Simplified from the earlier version,
+    // which had a complex crown-to-root transition that read as unclear.
+    ctx.moveTo(frX2 - 1.6 * s, frY - 3.6 * s);
+    ctx.quadraticCurveTo(frX2 - 1.9 * s, frY - 1 * s, frX2 - 0.6 * s, frY + 2.2 * s);
+    ctx.quadraticCurveTo(frX2 - 0.3 * s, frY + 3.6 * s, frX2, frY + 4.6 * s);
+    ctx.quadraticCurveTo(frX2 + 0.3 * s, frY + 3.6 * s, frX2 + 0.6 * s, frY + 2.2 * s);
+    ctx.quadraticCurveTo(frX2 + 1.9 * s, frY - 1 * s, frX2 + 1.6 * s, frY - 3.6 * s);
+    ctx.quadraticCurveTo(frX2 + 1 * s, frY - 4.4 * s, frX2, frY - 4.2 * s);
+    ctx.quadraticCurveTo(frX2 - 1 * s, frY - 4.4 * s, frX2 - 1.6 * s, frY - 3.6 * s);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#c9c0a8";
@@ -9527,11 +9661,11 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
     ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.beginPath();
-    ctx.ellipse(frX2 - 0.6 * s, frY - 2.6 * s, 0.4 * s, 1 * s, -0.3, 0, Math.PI * 2);
+    ctx.ellipse(frX2 - 0.5 * s, frY - 2 * s, 0.35 * s, 1.3 * s, -0.15, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth = 2;
-    [[1 * s, -3 * s], [0.5 * s, 1.5 * s]].forEach(([dx, dy]) => {
+    [[1 * s, -3 * s], [0.4 * s, 1.8 * s]].forEach(([dx, dy]) => {
       ctx.beginPath();
       ctx.moveTo(frX2 + dx - 4, frY + dy);
       ctx.lineTo(frX2 + dx + 4, frY + dy);
@@ -9858,6 +9992,178 @@ function updateFeatherHangSpot() {
   }
 }
 
+// carved initials -- a small found-detail, only visible while the lamp
+// is lit and nearby, matching the same discovery pattern as the
+// feather rather than something you'd stumble on with the room lit
+// normally. WS on the left, SW on the right, genuinely mirror-symmetric
+// letters carved into the wood, drawn as real hand-carved strokes
+// rather than typeset text.
+const carvedInitialsSpot = { x: 680, y: 90 };
+function drawHandwrittenW(ctx, x, y, s, jitter) {
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
+  ctx.lineTo(x - s * 0.5, y + s * 0.6 + jitter[1]);
+  ctx.lineTo(x, y - s * 0.15 + jitter[2]);
+  ctx.lineTo(x + s * 0.5, y + s * 0.6 + jitter[3]);
+  ctx.lineTo(x + s, y - s * 0.5 + jitter[4]);
+  ctx.stroke();
+}
+function drawHandwrittenS(ctx, x, y, s, jitter) {
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.55, y - s * 0.65 + jitter[0]);
+  ctx.quadraticCurveTo(x - s * 0.6, y - s * 0.55 + jitter[1], x - s * 0.15, y + jitter[2]);
+  ctx.quadraticCurveTo(x + s * 0.65, y + s * 0.45 + jitter[3], x - s * 0.5, y + s * 0.65 + jitter[4]);
+  ctx.stroke();
+}
+// found map -- an abstract, hand-drawn parchment showing only the
+// places you'd have actually walked through to get here (autumn, oak,
+// the rat den itself), deliberately not spring or clouds. Two more
+// paths trail off toward the torn edges with smudged, mostly-illegible
+// labels -- left open on purpose, no payoff written in yet.
+const foundMapSpot = { x: 250, y: 100 };
+function drawFoundMap(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const mx = foundMapSpot.x - camX, my = foundMapSpot.y;
+  const dist = Math.hypot(mx - playerScreenX, my - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+
+  ctx.save();
+  ctx.translate(mx, my);
+
+  // parchment background, slightly irregular edges
+  ctx.fillStyle = "rgba(200,178,130,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(-32, -22);
+  ctx.lineTo(20, -25);
+  ctx.lineTo(30, -8);
+  ctx.lineTo(28, 24);
+  ctx.lineTo(-10, 26);
+  ctx.lineTo(-30, 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,90,50,0.6)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // torn top-right corner, hanging down and slightly rotated away
+  // from the rest of the parchment
+  ctx.save();
+  ctx.translate(22, -16);
+  ctx.rotate(0.35);
+  ctx.fillStyle = "rgba(190,168,122,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(9, -2);
+  ctx.lineTo(7, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,90,50,0.5)";
+  ctx.stroke();
+  ctx.restore();
+
+  // paths -- wobbly, hand-drawn lines connecting the three known spots
+  ctx.strokeStyle = "rgba(90,64,32,0.6)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-22, 8);
+  ctx.quadraticCurveTo(-14, -2, -4, -6);
+  ctx.quadraticCurveTo(6, -10, 10, 6);
+  ctx.stroke();
+
+  // three known locations -- small hand-drawn icons, not literal thumbnails
+  ctx.fillStyle = "rgba(90,64,32,0.7)";
+  // autumn -- simple tree
+  ctx.beginPath();
+  ctx.moveTo(-23, 9); ctx.lineTo(-21, 3); ctx.lineTo(-19, 9);
+  ctx.closePath();
+  ctx.fill();
+  // oak -- small leaf/acorn shape
+  ctx.beginPath();
+  ctx.ellipse(-4, -7, 2.2, 3, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // rat den -- current location, marked with a small X
+  ctx.strokeStyle = "rgba(150,40,30,0.7)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(8, 3); ctx.lineTo(12, 9);
+  ctx.moveTo(12, 3); ctx.lineTo(8, 9);
+  ctx.stroke();
+
+  // two more paths trailing off toward the torn/worn edges, each with
+  // a couple legible letters fading into a smudge -- no resolved
+  // destination, deliberately
+  ctx.strokeStyle = "rgba(90,64,32,0.45)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(10, 6);
+  ctx.quadraticCurveTo(20, 14, 26, 20);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-22, 8);
+  ctx.quadraticCurveTo(-28, 16, -29, 22);
+  ctx.stroke();
+
+  ctx.font = "italic 5px Georgia, serif";
+  ctx.fillStyle = "rgba(90,64,32,0.55)";
+  ctx.fillText("Gr", 21, 22);
+  ctx.fillStyle = "rgba(90,64,32,0.2)";
+  ctx.fillText("\u2500\u2500\u2500", 27, 22);
+
+  ctx.fillStyle = "rgba(90,64,32,0.55)";
+  ctx.fillText("M\u2013", -33, 23);
+  ctx.fillStyle = "rgba(90,64,32,0.2)";
+  ctx.fillText("\u2500\u2500", -29, 26);
+
+  // small compass rose, tucked in a corner -- a quiet old-map touch,
+  // kept tiny so it doesn't compete with the deliberately basic feel
+  ctx.save();
+  ctx.translate(-24, -17);
+  ctx.strokeStyle = "rgba(90,64,32,0.5)";
+  ctx.lineWidth = 0.6;
+  [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].forEach((a, i) => {
+    const len = i % 2 === 0 ? 4 : 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.stroke();
+  });
+  ctx.font = "italic 3.5px Georgia, serif";
+  ctx.fillStyle = "rgba(90,64,32,0.5)";
+  ctx.textAlign = "center";
+  ctx.fillText("N", 0, -6);
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawCarvedInitials(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const cx = carvedInitialsSpot.x - camX, cy = carvedInitialsSpot.y;
+  const dist = Math.hypot(cx - playerScreenX, cy - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = "rgba(220,190,150,0.6)";
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  const s = 7;
+  drawHandwrittenW(ctx, -18, 0, s, [-0.4, 0.6, -0.3, 0.5, -0.5]);
+  drawHandwrittenS(ctx, -6, 0, s, [0.3, -0.4, 0.5, -0.3, 0.4]);
+  drawHandwrittenS(ctx, 6, 0, s, [-0.3, 0.4, -0.5, 0.3, -0.4]);
+  drawHandwrittenW(ctx, 18, 0, s, [0.4, -0.6, 0.3, -0.5, 0.5]);
+
+  ctx.beginPath();
+  ctx.moveTo(0, -5);
+  ctx.lineTo(0, 5);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawRatRoomArt(camX) {
   const px = ratRoomArtSpot.x - camX, py = ratRoomArtSpot.y;
   const w = ratRoomArtSpot.w, h = ratRoomArtSpot.h;
@@ -9874,22 +10180,27 @@ function drawRatRoomArt(camX) {
 
 // little shelf for the high-up rat to perch on, matching its eye-pair
 // position exactly so it visibly has something to sit on
-const ratRoomHighShelf = { x: 280, y: 60, w: 34 };
+const ratRoomHighShelves = [
+  { x: 280, y: 60, w: 34 },
+  { x: 950, y: 60, w: 34 } // second perch, further right
+];
 function drawRatRoomHighShelf(camX) {
-  const sx = ratRoomHighShelf.x - camX, sy = ratRoomHighShelf.y;
-  const w = ratRoomHighShelf.w;
-  ctx.fillStyle = "#4a3018";
-  ctx.fillRect(sx - w / 2, sy, w, 5);
-  ctx.strokeStyle = "#2e1c0e";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(sx - w / 2, sy, w, 5);
-  // small diagonal bracket support underneath
-  ctx.strokeStyle = "#3a2410";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(sx - w / 2 + 3, sy + 5);
-  ctx.lineTo(sx - w / 2 - 3, sy + 16);
-  ctx.stroke();
+  ratRoomHighShelves.forEach(shelf => {
+    const sx = shelf.x - camX, sy = shelf.y;
+    const w = shelf.w;
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(sx - w / 2, sy, w, 5);
+    ctx.strokeStyle = "#2e1c0e";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx - w / 2, sy, w, 5);
+    // small diagonal bracket support underneath
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx - w / 2 + 3, sy + 5);
+    ctx.lineTo(sx - w / 2 - 3, sy + 16);
+    ctx.stroke();
+  });
 }
 
 
@@ -9927,6 +10238,8 @@ function drawRatRoomScene(camX) {
   drawRatRoomHighShelf(camX);
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
+  drawCarvedInitials(camX);
+  drawFoundMap(camX);
   drawFeatherHangSpot(camX);
 
   const stairTopX = ratRoomStairsTop.x - camX, stairTopY = ratRoomStairsTop.y;
@@ -10052,11 +10365,20 @@ const ratFeatherLines = [
   ["Wow, a beautiful feather! I've been hoping to find one like that.", "Would you mind hanging it up on that wall over there?"]
 ];
 
+let lampAcknowledged = false;
+const ratLampLines = [
+  ["Oh! You found it \u2014 the lamp!"],
+  ["Hold it up and press space to light the way.", "There's more to see down here than you might think..."]
+];
+
 function startRatDialogue() {
   ratDialogue.active = true;
   ratDialogue.index = 0;
   if (carriedFeather && !featherHung) {
     ratDialogue.lines = ratFeatherLines.slice();
+  } else if (inventory.lamp > 0 && !lampAcknowledged) {
+    ratDialogue.lines = ratLampLines.slice();
+    lampAcknowledged = true;
   } else {
     ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
   }
@@ -10453,14 +10775,23 @@ const ratRoomEyes = [
   { x: 130, y: 288, phase: 1.2, blinkSpeed: 1.05 },
   { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
   { x: 730, y: 250, phase: 0.4, blinkSpeed: 1.15 },
-  { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 } // high up, left of the stairs, perched on top of something
+  { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 }, // high up, left of the stairs, perched on top of something
+  // more spread further right
+  { x: 830, y: 265, phase: 5.2, blinkSpeed: 0.92 },
+  { x: 900, y: 240, phase: 0.9, blinkSpeed: 1.08 },
+  { x: 970, y: 280, phase: 2.1, blinkSpeed: 0.88 },
+  { x: 1050, y: 255, phase: 4.4, blinkSpeed: 1.2 },
+  { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
+  { x: 1200, y: 245, phase: 3.8, blinkSpeed: 1.05 },
+  { x: 1280, y: 268, phase: 0.7, blinkSpeed: 0.9 },
+  { x: 950, y: 60, phase: 5.6, blinkSpeed: 0.8 } // a second high-up perch, further right
 ];
 let ratRoomEyeT = 0;
 function updateRatRoomEyes(deltaTime) {
   ratRoomEyeT += deltaTime;
 }
 function drawRatRoomEyes(camX) {
-  ratRoomEyes.forEach(eye => {
+  ratRoomEyes.forEach((eye, idx) => {
     const ex = eye.x - camX, ey = eye.y;
     const cycle = (ratRoomEyeT * eye.blinkSpeed + eye.phase) % 6;
     const blinking = cycle > 5.5; // brief closed moment within each cycle
@@ -10473,35 +10804,44 @@ function drawRatRoomEyes(camX) {
       if (dist < LAMP_LIGHT_RADIUS) {
         const babySway = Math.sin(ratRoomEyeT * 2.2 + eye.phase * 3) * 3;
 
+        // genuine variety per baby -- different fur tones and sizes,
+        // deterministic from position so each one stays consistent
+        const variantSeed = idx * 13 + 7;
+        const furColors = ["#8a8880", "#a8a090", "#8a7050", "#6a6862", "#9a8a78"];
+        const earColors = ["#7a7268", "#8a8070", "#7a6040", "#5a5852", "#8a7868"];
+        const furColor = furColors[variantSeed % furColors.length];
+        const earColor = earColors[variantSeed % earColors.length];
+        const scale = 0.75 + ((variantSeed % 5) / 5) * 0.5; // 0.75 to 1.15
+
         // small tail, swaying side to side
-        ctx.strokeStyle = "#7a7268";
-        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = earColor;
+        ctx.lineWidth = 1.3 * scale;
         ctx.beginPath();
-        ctx.moveTo(ex + 5, ey + 5);
-        ctx.quadraticCurveTo(ex + 8 + babySway * 0.5, ey + 6, ex + 10 + babySway, ey + 4);
+        ctx.moveTo(ex + 5 * scale, ey + 5 * scale);
+        ctx.quadraticCurveTo(ex + 8 * scale + babySway * 0.5, ey + 6 * scale, ex + 10 * scale + babySway, ey + 4 * scale);
         ctx.stroke();
 
         // little round body
-        ctx.fillStyle = "#8a8880";
+        ctx.fillStyle = furColor;
         ctx.beginPath();
-        ctx.ellipse(ex + 1, ey + 5, 5, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(ex + 1 * scale, ey + 5 * scale, 5 * scale, 4 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // head, slightly forward and up from the body
-        ctx.fillStyle = "#8a8880";
+        ctx.fillStyle = furColor;
         ctx.beginPath();
-        ctx.ellipse(ex, ey, 6, 4.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(ex, ey, 6 * scale, 4.5 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "#7a7268";
+        ctx.fillStyle = earColor;
         ctx.beginPath();
-        ctx.arc(ex - 2.5, ey - 4, 1.8, 0, Math.PI * 2);
-        ctx.arc(ex + 2.5, ey - 4, 1.8, 0, Math.PI * 2);
+        ctx.arc(ex - 2.5 * scale, ey - 4 * scale, 1.8 * scale, 0, Math.PI * 2);
+        ctx.arc(ex + 2.5 * scale, ey - 4 * scale, 1.8 * scale, 0, Math.PI * 2);
         ctx.fill();
         if (!blinking) {
           ctx.fillStyle = "#1a1a1a";
           ctx.beginPath();
-          ctx.arc(ex - 1.5, ey - 2, 0.8, 0, Math.PI * 2);
-          ctx.arc(ex + 1.5, ey - 2, 0.8, 0, Math.PI * 2);
+          ctx.arc(ex - 1.5 * scale, ey - 2 * scale, 0.8 * scale, 0, Math.PI * 2);
+          ctx.arc(ex + 1.5 * scale, ey - 2 * scale, 0.8 * scale, 0, Math.PI * 2);
           ctx.fill();
         }
         return;
@@ -10809,8 +11149,24 @@ if (carriedBook && !fallState.active) {
   ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
   ctx.lineWidth = 1;
   ctx.strokeRect(bx - 6, by - 8, 12, 16);
-  ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
-  ctx.fillRect(bx - 4, by - 5, 8, 1.5);
+  if (isManual) {
+    // small tooth icon, so the manual stands out at a glance even at
+    // this tiny carried-icon size, not just a plain label stripe
+    const tx = bx, ty = by - 4;
+    ctx.fillStyle = "#f5f0e0";
+    ctx.beginPath();
+    ctx.moveTo(tx - 1.6, ty - 1);
+    ctx.quadraticCurveTo(tx - 2, ty - 2.6, tx, ty - 2.6);
+    ctx.quadraticCurveTo(tx + 2, ty - 2.6, tx + 1.6, ty - 1);
+    ctx.quadraticCurveTo(tx + 1.8, ty, tx + 0.8, ty + 2);
+    ctx.quadraticCurveTo(tx, ty + 2.6, tx - 0.8, ty + 2);
+    ctx.quadraticCurveTo(tx - 1.8, ty, tx - 1.6, ty - 1);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#d4a520";
+    ctx.fillRect(bx - 4, by - 5, 8, 1.5);
+  }
 }
 
 // carried feather — same treatment
