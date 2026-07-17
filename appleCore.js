@@ -735,7 +735,7 @@ const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
-  oak: { x: 400 }, // arrives via seesaw launch, lands just past the arch entrance
+  oak: { x: 664 }, // arrives via seesaw launch, lands just past the arch entrance
   ratroom: { x: 310 } // arrives via the trap door, lands near the base of the stairs
 };
 
@@ -4672,10 +4672,10 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 
 // pothos -- hanging near the cushion pile, right side, several vines
 // trailing down with some pooling gently on the ground
-const pothosSpot = { x: 2130, hangY: 260 };
+const pothosSpot = { x: 2670, hangY: 260 };
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
-const snakePlantSpot = { x: 950, y: 0 };
+const snakePlantSpot = { x: 1349, y: 0 };
 function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
   ctx.save();
   ctx.translate(x, y);
@@ -4732,14 +4732,16 @@ function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
 
 // monstera -- shorter, fuller, drooping leaves at irregular angles,
 // near the nook but offset so it doesn't overlap the sitting area
-const monsteraSpot = { x: 1210, y: 0 };
-function drawHeartVine(ctx, startX, startY, length, waveAmp, seed) {
+const monsteraSpot = { x: 1640, y: 0 };
+function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
-  const segments = 16;
-  for (let i = 0; i <= segments; i++) {
+  points.push({ x: startX, y: startY });
+  points.push({ x: startX + emergeDir * 7, y: startY + 4 });
+  const segments = 14;
+  for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + t * length;
+    const x = startX + emergeDir * 7 * (1 - t) + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + 4 + t * length;
     points.push({ x, y });
   }
   ctx.strokeStyle = "rgba(150,120,150,0.5)";
@@ -4756,27 +4758,37 @@ function drawHeartVine(ctx, startX, startY, length, waveAmp, seed) {
 
 // string of hearts -- small hanging pot, higher up and right of the
 // circle painting, thin sparse wiry vines
-const heartsSpot = { x: 1330, hangY: 315 };
+const heartsSpot = { x: 1853, hangY: 235 };
 function drawStringOfHearts(camX) {
   const px = heartsSpot.x - camX, py = gy - heartsSpot.hangY;
+  // small round hanging pot, distinct shape from the others
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(px - 3, py - 14); ctx.lineTo(px - 3, py - 8);
+  ctx.moveTo(px + 3, py - 14); ctx.lineTo(px + 3, py - 8);
+  ctx.stroke();
+  ctx.fillStyle = "#5a4048";
+  ctx.beginPath();
+  ctx.arc(px, py, 13, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = "#7a5a6a";
   ctx.beginPath();
-  ctx.moveTo(px - 16, py); ctx.lineTo(px + 16, py); ctx.lineTo(px + 12, py + 20); ctx.lineTo(px - 12, py + 20);
-  ctx.closePath();
+  ctx.arc(px, py - 2, 12, 0, Math.PI * 1.4);
   ctx.fill();
-  ctx.strokeStyle = "#4a3040";
+  ctx.strokeStyle = "#3a2028";
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.fillStyle = "#3a2818";
   ctx.beginPath();
-  ctx.ellipse(px, py, 14, 3.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py - 5, 9, 2.6, 0, 0, Math.PI * 2);
   ctx.fill();
 
   const vines = [
-    [-9, 42, 155, 15, 0.3], [0, 42, 190, 18, 2.4], [9, 42, 130, 12, 4.6]
+    [-6, 0, 155, 15, 0.3, -1], [0, 0, 190, 18, 2.4, 1], [7, 0, 130, 12, 4.6, 1]
   ];
   vines.forEach(v => {
-    drawHeartVine(ctx, px + v[0], py + v[1], v[2], v[3], v[4]);
+    drawHeartVine(ctx, px + v[0], py + v[1], v[2], v[3], v[4], v[5]);
   });
 }
 
@@ -4834,7 +4846,7 @@ function drawMonstera(camX) {
   // angular gaps, and mostly leaning right so it only barely grazes
   // the nook's edge instead of reaching into it
   const leaves = [
-    [-0.55, 40, 14, 11, "#8a4a5a"], [-0.15, 62, 20, 22, null], [0.25, 58, 18, 33, null],
+    [-0.55, 40, 14, 11, null], [-0.15, 62, 20, 22, null], [0.25, 58, 18, 33, null],
     [0.65, 40, 15, 46, null]
   ];
   leaves.forEach(([angle, stemLen, leafSize, seed, holeColor]) => {
@@ -4858,16 +4870,19 @@ function drawMonstera(camX) {
   });
 }
 
-function drawPearlVine(ctx, startX, startY, length, waveAmp, seed) {
+function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
-  const segments = 22;
-  for (let i = 0; i <= segments; i++) {
+  // distinct emergence bulge right at the base, matching the other plants
+  points.push({ x: startX, y: startY });
+  points.push({ x: startX + emergeDir * 9, y: startY + 5 });
+  const segments = 20;
+  for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + t * length;
+    const x = startX + emergeDir * 9 * (1 - t) + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + 5 + t * length;
     points.push({ x, y });
   }
-  ctx.strokeStyle = "rgba(90,140,110,0.5)";
+  ctx.strokeStyle = "rgba(30,80,55,0.55)";
   ctx.lineWidth = 0.7;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
@@ -4875,11 +4890,11 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed) {
   ctx.stroke();
   points.forEach((p, i) => {
     if (i === 0) return;
-    ctx.fillStyle = i % 3 === 0 ? "#4a9a6a" : "#5aab78";
+    ctx.fillStyle = i % 3 === 0 ? "#1e5a3e" : "#2a6a4a";
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2.6 - (i / points.length) * 0.9, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
     ctx.beginPath();
     ctx.arc(p.x - 0.8, p.y - 0.8, 0.8, 0, Math.PI * 2);
     ctx.fill();
@@ -4888,15 +4903,19 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed) {
 
 // string of pearls -- small hanging pot, tucked in the gap between the
 // entry door and the water-bird painting
-const pearlsSpot = { x: 240, hangY: 245 };
+const pearlsSpot = { x: 368, hangY: 245 };
 function drawStringOfPearls(camX) {
   const px = pearlsSpot.x - camX, py = gy - pearlsSpot.hangY;
-  ctx.fillStyle = "#8a9070";
+  // distinct rounded bowl, not the shared trapezoid shape
+  ctx.fillStyle = "#6a5040";
   ctx.beginPath();
-  ctx.moveTo(px - 15, py); ctx.lineTo(px + 15, py); ctx.lineTo(px + 11, py + 18); ctx.lineTo(px - 11, py + 18);
-  ctx.closePath();
+  ctx.ellipse(px, py + 6, 15, 9, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#4a5038";
+  ctx.fillStyle = "#8a6a52";
+  ctx.beginPath();
+  ctx.ellipse(px, py + 3, 15, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4a3628";
   ctx.lineWidth = 0.9;
   ctx.stroke();
   ctx.fillStyle = "#3a2818";
@@ -4904,9 +4923,9 @@ function drawStringOfPearls(camX) {
   ctx.ellipse(px, py, 13, 3.2, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const pearlSeeds = [0.3, 1.2, 2.4, 3.1, 4.0, 4.9, 5.8];
-  pearlSeeds.forEach((s, i) => {
-    drawPearlVine(ctx, px - 9 + i * 3, py + 8, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s);
+  const pearlSeeds = [[0.3, -1], [1.2, 1], [2.4, -1], [3.1, 1], [4.0, -1], [4.9, 1], [5.8, -1]];
+  pearlSeeds.forEach(([s, dir], i) => {
+    drawPearlVine(ctx, px - 9 + i * 3, py + 4, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s, dir);
   });
 }
 
@@ -8488,7 +8507,7 @@ function updateRabbitShuttle(deltaTime) {
    interaction with the owl deliberately deferred for later —
    for now this is just the space existing.
    ====================================================== */
-const oakReturnDoor = { x: 200, width: 50, height: 90 };
+const oakReturnDoor = { x: 294, width: 50, height: 90 };
 
 /* ======================================================
    WALL ART — the player's own paintings, hung in the oak
@@ -8508,9 +8527,9 @@ const wallArtCircles = new Image();
 wallArtCircles.src = "data:image/jpeg;base64,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";
 
 const wallArtPieces = [
-  { img: wallArtWaterBird, x: 300, y: 60, w: 95, h: 63, frame: "ornate" },
-  { img: wallArtArch, x: 730, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
-  { img: wallArtCircles, x: 1250, y: 55, w: 72, h: 95, frame: "oval" } // right side of the nook, moved with it, made smaller per request
+  { img: wallArtWaterBird, x: 478, y: 60, w: 95, h: 63, frame: "ornate" },
+  { img: wallArtArch, x: 1102, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
+  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval" } // right side of the nook, moved with it, made smaller per request
 ];
 
 function drawAntiqueFrame(x, y, w, h, style) {
@@ -8570,18 +8589,18 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 495, bob: 0 };
+const owl = { x: 839, bob: 0 };
 let owlTalked = false;
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
-  { x: 1780, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
-  { x: 350, seed: 2, count: 4, heightAboveGround: 30 },
-  { x: 425, seed: 23, count: 3, heightAboveGround: 24 },
-  { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
-  { x: 770, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
-  { x: 870, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
+  { x: 2278, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
+  { x: 571, seed: 2, count: 4, heightAboveGround: 30 },
+  { x: 710, seed: 23, count: 3, heightAboveGround: 24 },
+  { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
+  { x: 1147, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
+  { x: 1259, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
 ];
 const BOOK_PILE_WIDTH = 24; // rough horizontal footprint for collision purposes
 const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
@@ -8590,10 +8609,10 @@ const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3
 // small clusters rather than one tall stack, opening up the space and
 // giving a broader, gentler hop option alongside the taller piles
 const bookSpreads = [
-  { x: 1000, width: 90, height: 12, seed: 7 }
+  { x: 1405, width: 90, height: 12, seed: 7 }
 ];
 function drawBookSpread(spread, camX) {
-  const baseX = spread.x - camX, baseY = gy - 4;
+  const baseX = spread.x - camX, baseY = gy;
   const clusterCount = 4;
   for (let c = 0; c < clusterCount; c++) {
     const cx = baseX - spread.width / 2 + (c + 0.5) * (spread.width / clusterCount);
@@ -8617,21 +8636,21 @@ function drawBookSpread(spread, camX) {
     }
   }
 }
-const BOOK_SPREAD_HEIGHT = 13; // max cluster height (9) + the 4-unit base offset used in drawBookSpread, verified against the actual drawing formula
+const BOOK_SPREAD_HEIGHT = 9; // max cluster height, now that the base sits exactly at gy instead of 4 units above it
 // generic sitting areas -- any spot in this list can trigger reading a
 // carried book once the player is actually seated there. New spots
 // (like a future cushion pile) just get added here, reusing the same
 // trigger logic rather than each getting bespoke code.
 const sittingAreas = [
-  { id: "nook", x: 1150, heightAboveGround: 32, width: 100, unlocked: () => true },
-  { id: "cushionPile", x: 2000, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
+  { id: "nook", x: 1573, heightAboveGround: 32, width: 100, unlocked: () => true },
+  { id: "cushionPile", x: 2525, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
 ];
 const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
 // visual and unremarkable at this stage so it doesn't telegraph anything.
-const nookRug = { x: 1350, width: 100, height: 28 };
+const nookRug = { x: 1797, width: 100, height: 28 };
 
 // trap door sequence -- space while standing on the rug triggers a
 // multi-stage reveal: the rug rolls up, the trap door underneath opens,
@@ -9058,7 +9077,7 @@ function drawFairyLights(camX) {
   }
 }
 
-const oakLamp = { x: 700, collected: false };
+const oakLamp = { x: 1069, collected: true }; // seeded true for debug-start convenience -- unlocks cushion pile, pothos, fairy lights, and the Metaphors book immediately for testing
 function drawOakLampTable(camX) {
   if (!ratNPC.fed) return;
   const tx = oakLamp.x - camX;
@@ -9123,8 +9142,8 @@ function updateOakLampTable() {
   }
 }
 
-const shortShelf = { x: 1520, width: 110, top: 170, bottom: gy - 2 };
-const mediumShelf = { x: 1680, width: 85, top: 110, bottom: gy - 2 };
+const shortShelf = { x: 1987, width: 110, top: 170, bottom: gy - 2 };
+const mediumShelf = { x: 2166, width: 85, top: 110, bottom: gy - 2 };
 function drawMediumShelf(camX) {
   const sx = mediumShelf.x - camX;
   drawMixedBookShelf(sx, mediumShelf.width, mediumShelf.top, mediumShelf.bottom, 5);
@@ -9178,11 +9197,11 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount, isShort) {
           ctx.save();
           ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh + mh * 0.62);
           ctx.rotate(-Math.PI / 2);
-          ctx.fillStyle = "#e8ddc8";
-          ctx.font = "italic 7px Georgia, serif";
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 8px Georgia, serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText("Metaphors", 0, 0);
+          ctx.fillText("META", 0, 0);
           ctx.restore();
         } else {
           // blank, unremarkable spine -- nothing readable yet
@@ -9195,7 +9214,7 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount, isShort) {
         bx += mw + 3;
         return;
       }
-      const seed = rowSeed + b * 4 + row * 11; // more entropy so adjacent rows don't echo each other's widths
+      const seed = rowSeed + b * 4 + row * 11 + (isShort ? 17 : 0); // more entropy so adjacent rows don't echo each other's widths, and so the two shelves don't mirror each other's colors at matching slots
       const gap = 3 + (seed % 8);
       if (entry.standing) {
         const bw = Math.min(5 + (seed % 13), sx + w / 2 - 8 - bx);
@@ -9217,7 +9236,7 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount, isShort) {
         // they're almost always stacked a few together. Only about 1
         // in 12 rolls a single lone book; otherwise 2-4 stacked.
         const stackRoll = seed % 12;
-        const stackCount = stackRoll < 1 ? 1 : 2 + (stackRoll % 3);
+        const stackCount = (stackRoll < 1 && seed !== 60) ? 1 : 2 + (stackRoll % 3);
         let stackY = rowY + rowHeight - 3;
         for (let s = 0; s < stackCount; s++) {
           const bh2 = 3 + ((seed + s * 5) % 6);
@@ -9290,7 +9309,7 @@ function drawOakScene(camX) {
   // screen — two genuinely different styles, not the same shelf mirrored
   const shelfStyles = [
     { x: 90, frameColor: "#3a2818", innerColor: "#2a1c0e", boardColor: "#4a3018", rowCount: 6, colors: ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f"], sideways: false },
-    { x: 620, frameColor: "#241a12", innerColor: "#160f0a", boardColor: "#2e2015", rowCount: 5, colors: ["#7a4a2f", "#5a3a5a", "#2f5a6a", "#9a5a3a", "#3a6a4a"], sideways: true }
+    { x: 979, frameColor: "#241a12", innerColor: "#160f0a", boardColor: "#2e2015", rowCount: 5, colors: ["#7a4a2f", "#5a3a5a", "#2f5a6a", "#9a5a3a", "#3a6a4a"], sideways: true }
   ];
   shelfStyles.forEach(style => {
     const sx = style.x - camX;
@@ -9509,7 +9528,7 @@ function drawOakScene(camX) {
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
   // out slightly, with a small window. Moved way right of the second
   // bookshelf, with a real seat you can jump onto after grabbing a book.
-  const nookX = 1150 - camX;
+  const nookX = 1573 - camX;
   const nookWidth = 130, nookTop = gy - 150, nookBottom = gy - 2;
 
   // the alcove itself — a genuine arch shape: straight sides up to the
@@ -9980,13 +9999,13 @@ function updateOakScene(deltaTime) {
   // pile area is unlocked, matching its shelf visibility
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
       oakLamp.collected &&
-      keys.spaceJustPressed && isPlayerNear(1481, 65, 25, 25, 25)) {
+      keys.spaceJustPressed && isPlayerNear(1948, 65, 25, 25, 25)) {
     carriedBook = "metaphors";
   }
 
   // pick up the manual to carry, same rule
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(620, 20, 32, 32, 32)) {
+      keys.spaceJustPressed && isPlayerNear(979, 20, 32, 32, 32)) {
     carriedBook = "manual";
   }
 
@@ -10529,10 +10548,19 @@ function drawBookCover(centerX, centerY, alpha) {
     ctx.lineWidth = 2;
     ctx.strokeRect(cx0, cy0, coverW, coverH);
   }
-  ctx.fillStyle = bookType === "manual" ? "#e8ddc8" : bookType === "metaphors" ? "#e8ddc8" : "#d4a520";
-  ctx.font = "italic 13px Georgia, serif";
-  ctx.textAlign = "center";
-  ctx.fillText(bookType === "manual" ? "MANUAL" : bookType === "metaphors" ? "Metaphors" : "apple", centerX, centerY);
+  if (bookType === "metaphors") {
+    ctx.fillStyle = "#e8ddc8";
+    ctx.font = "bold 12px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.fillText("METAPHORS", centerX, centerY - 5);
+    ctx.font = "11px Georgia, serif";
+    ctx.fillText("WE LIVE BY", centerX, centerY + 11);
+  } else {
+    ctx.fillStyle = bookType === "manual" ? "#e8ddc8" : "#d4a520";
+    ctx.font = "italic 13px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.fillText(bookType === "manual" ? "MANUAL" : "apple", centerX, centerY);
+  }
   ctx.restore();
 }
 
