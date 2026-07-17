@@ -4695,6 +4695,23 @@ const seesaw = {
   pumpEnergy: 0
 };
 const SEESAW_CHARGE_NEEDED = 6;
+
+// her own weight landing back down should actually move the seesaw --
+// near ground level (start/end of her hop) her side presses down,
+// lifting the player's side; mid-air she's not affecting it at all.
+// Computed fresh each call from her current hop phase, never stored,
+// so it can't accumulate across frames the way mutating seesaw.angle
+// directly would have.
+function getSeesawHopExtraTilt() {
+  if (seesawNPC.hopT > 700) return 0;
+  const hopProgress = seesawNPC.hopT / 700;
+  const groundCloseness = 1 - Math.sin(hopProgress * Math.PI);
+  return -0.07 * groundCloseness;
+}
+function getSeesawDisplayAngle() {
+  return seesaw.angle + getSeesawHopExtraTilt();
+}
+
 const SEESAW_LAUNCH_DURATION = 2600; // slowed substantially for a gentle, whimsical arc
 
 function updateSeesaw(deltaTime) {
@@ -4769,9 +4786,11 @@ function updateSeesaw(deltaTime) {
     // using the same tolerance as the support-snap below.
     const currentSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - relX * Math.sin(seesaw.angle);
     const nearPlankVertically = player.y >= currentSurfaceHeight - 30 && player.y <= currentSurfaceHeight + 40;
-    const pumpBoost = (seesaw.playerOnPlank && !nearMountTarget) ? Math.sign(t || 1) * (seesaw.pumpEnergy || 0) : 0;
+    const pumpBoost = (seesaw.playerOnPlank && !nearMountTarget)
+      ? Math.sign(t || 1) * Math.min((seesaw.pumpEnergy || 0) / 0.35, 1) * 0.5
+      : 0; // rescaled against the actual 0.35 launch threshold, not the raw 0.5 cap -- otherwise the seesaw only ever looks 70% tilted at the exact moment it launches, which read as launching too early
     const targetAngle = nearPlankVertically ? (t * 0.25 + pumpBoost) : 0; // settles back toward flat if nobody's genuinely near it
-    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 8, 1);
+    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 5, 1);
     const surfaceHeight = (seesaw.pivotHeightAboveGround + 24) - relX * Math.sin(seesaw.angle);
     if (player.vy <= 0 && player.y <= surfaceHeight && player.y >= surfaceHeight - 30) {
       player.y = surfaceHeight;
@@ -4864,7 +4883,7 @@ function updateSeesaw(deltaTime) {
   // these were conflicting: holding UP near this spot while trying to
   // jump-activate the platform would silently steal the interaction,
   // blocking worm placement and the jump-pump entirely.
-  const mountTargetSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - (-90) * Math.sin(seesaw.angle);
+  const mountTargetSurfaceHeight = (seesaw.pivotHeightAboveGround + 24) - (-90) * Math.sin(getSeesawDisplayAngle());
   const nearMountHorizontally = Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
   if (!seesaw.mounted && !seesaw.launching && !seesaw.playerOnPlank && keys.upJustPressed &&
       nearMountHorizontally) {
@@ -4909,9 +4928,11 @@ function updateSeesaw(deltaTime) {
       seesaw.charge = Math.min(seesaw.charge + 1, SEESAW_CHARGE_NEEDED);
       seesawNPC.hopT = 0; // triggers her own hop animation, synced to the player's jump
     }
-    // tilt follows charge — a sudden pop per press, not a gradual pendulum build
+    // tilt follows charge — dampened per press so the visual buildup
+    // reads more gradually, matching the actual charge progression
+    // rather than snapping hard toward each new target
     const targetAngle = -0.28 * (seesaw.charge / SEESAW_CHARGE_NEEDED);
-    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 10, 1);
+    seesaw.angle += (targetAngle - seesaw.angle) * Math.min(deltaTime * 4, 1);
 
     if (seesaw.charge >= SEESAW_CHARGE_NEEDED) {
       seesaw.mounted = false;
@@ -4974,8 +4995,13 @@ function drawSeesawNPC(camX) {
   // for edge spikes, direct perpendicular offset for on-body ones --
   // which don't actually produce the same visual width even with
   // matching color, despite looking like they should on paper).
+  ctx.save();
+  ctx.translate(nx, ny);
+  ctx.scale(1.4, 1.4); // larger still, per request
+  ctx.translate(-nx, -ny);
+
   const drawSpike = (baseX, baseY, angle, length) => {
-    const baseHalfWidth = 1.3;
+    const baseHalfWidth = length * 0.1; // scales with length so all spikes share the same proportion, regardless of which loop draws them
     ctx.beginPath();
     ctx.moveTo(baseX + Math.cos(angle + 1.5708) * baseHalfWidth, baseY + Math.sin(angle + 1.5708) * baseHalfWidth);
     ctx.lineTo(baseX + Math.cos(angle) * length, baseY + Math.sin(angle) * length);
@@ -4986,7 +5012,8 @@ function drawSeesawNPC(camX) {
 
   ctx.fillStyle = "#2e2314";
   for (let i = -11; i <= 8; i++) {
-    const ang = -Math.PI / 2 + i * 0.28;
+    const jitter = Math.sin(i * 2.7) * 0.07; // breaks the perfectly uniform spacing
+    const ang = -Math.PI / 2 + i * 0.28 + jitter;
     const spikeLen = 13 + Math.sin(i * 0.9) * 4; // 9-17, verified clear of the body radius (15) at every value
     drawSpike(nx + Math.cos(ang) * 7, ny + Math.sin(ang) * 7, ang, spikeLen);
   }
@@ -5005,7 +5032,10 @@ function drawSeesawNPC(camX) {
     [-7, -7, 0.3], [-3, -9, -0.5], [2, -8, 0.8], [-9, -1, -1.2],
     [-5, 2, 0.4], [0, -3, -0.7], [3, 4, 1.1], [-8, 5, -0.3], [-2, 7, 0.6],
     [-6, -4, 1.0], [4, -5, -1.0], [-4, -1, 1.3], [6, 1, -0.6], [1, 6, -1.3],
-    [-7, 2, 0.9], [5, -1, 0.2]
+    [-7, 2, 0.9], [5, -1, 0.2],
+    [8, -3, 1.4], [7, 4, -1.1], [-1, -6, 0.5], [-3, 6, 1.2],
+    [3, -2, -0.4], [-9, 4, 0.7], [0, 8, -0.9], [6, -6, 0.3],
+    [-5, -6, -0.8], [2, 2, 1.0], [-1, 3, -0.2], [4, 7, 0.5]
   ];
   onBodySpikes.forEach(([dx, dy, tilt], idx) => {
     const len = 6 + (idx % 4) * 1.5; // 6-10.5, comparable visual scale to edge spikes given the different starting offset
@@ -5034,17 +5064,26 @@ function drawSeesawNPC(camX) {
   ctx.arc(nx + 10, ny - 1, 1.2, 0, Math.PI * 2); // eyes
   ctx.fill();
 
+  // small stubby tail at the back, opposite the face -- real hedgehogs
+  // have very short tails, not a prominent feature
+  ctx.fillStyle = "#8a6a4a";
+  ctx.beginPath();
+  ctx.ellipse(nx - 15, ny + 6, 3, 2.2, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore(); // closes the scale transform opened before the spikes
+
   // real dialogue, positioned to genuinely sit on her right — removed the
   // blank "..." placeholder entirely, it wasn't adding anything and was
   // confusingly positioned
   if (seesawNPC.talkedTo && !seesawNPC.onSeesaw) {
-    drawFittedSpeechBubble(ctx, nx + 26, ny - 20, ["ready to fly high?", "hop on the other", "side of the seesaw!"]);
+    drawFittedSpeechBubble(ctx, nx + 40, ny - 32, ["ready to fly high?", "hop on the other", "side of the seesaw!"]);
   }
 
   // hint once both are on the seesaw but the player hasn't started
   // pumping yet — the "keep pressing up" mechanic wasn't obvious enough
   if (seesaw.mounted && seesaw.charge === 0) {
-    drawFittedSpeechBubble(ctx, nx + 26, ny - 20, ["jump up to", "pump up!"]);
+    drawFittedSpeechBubble(ctx, nx + 40, ny - 32, ["jump up to", "pump up!"]);
   }
 }
 
@@ -5072,7 +5111,7 @@ function drawSeesaw(camX) {
   // plank — red as the primary body color, wider, rounded ends
   ctx.save();
   ctx.translate(sx, sy - 10);
-  ctx.rotate(seesaw.angle);
+  ctx.rotate(getSeesawDisplayAngle());
 
   ctx.fillStyle = "#a8402e";
   ctx.strokeStyle = "#4a3018";
@@ -7935,36 +7974,53 @@ function drawTrapDoorSequence(camX) {
     ctx.ellipse(rollX - rollWidth / 2, ry, rollWidth / 2, h / 2, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (t < TRAPDOOR_ROLLUP_MS + TRAPDOOR_OPEN_MS) {
-    // the trap door itself splits open, two halves swinging outward
+    // single hinged panel -- like a real cellar door. Hinged at the
+    // right edge of the hole, it lifts up through vertical and lays
+    // flat on the ground to the right, revealing the hole as it goes.
     const p = easeInOutTrap((t - TRAPDOOR_ROLLUP_MS) / TRAPDOOR_OPEN_MS);
-    const doorW = w * 0.9, doorH = 6;
-    const openAmt = p; // 0 = closed flat, 1 = fully open (foreshortened to a sliver)
+    const doorW = w * 0.9, doorH = 5;
+    const theta = p * Math.PI;
+    const hingeX = rx + doorW / 2;
 
-    // dark pit beneath, growing more visible as the door opens
+    // dark pit beneath, growing more visible as the door lifts clear of it
     ctx.fillStyle = "#0a0604";
-    ctx.fillRect(rx - doorW / 2, ry - doorH, doorW, doorH + 4);
+    ctx.fillRect(rx - doorW / 2, ry - doorH - 2, doorW, doorH + 6);
 
-    [-1, 1].forEach(side => {
-      const halfW = doorW / 2;
-      const scaleX = Math.max(0.06, 1 - openAmt);
-      ctx.save();
-      ctx.translate(rx + side * halfW / 2 * (1 + openAmt * 0.15), ry - doorH / 2);
-      ctx.scale(scaleX, 1);
-      ctx.fillStyle = "#6a4028";
-      ctx.fillRect(-halfW / 2, -doorH / 2, halfW, doorH);
-      ctx.strokeStyle = "#3a2010";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-halfW / 2, -doorH / 2, halfW, doorH);
-      ctx.restore();
-    });
-  } else {
-    // brief pause on the fully-open door before the scene transition
-    const doorW = w * 0.9;
-    ctx.fillStyle = "#0a0604";
-    ctx.fillRect(rx - doorW / 2, ry - 8, doorW, 12);
+    const farX = hingeX - doorW * Math.cos(theta);
+    const farY = ry - doorW * Math.sin(theta);
+    const midX = (hingeX + farX) / 2, midY = (ry + farY) / 2;
+    const panelAngle = Math.atan2(farY - ry, farX - hingeX);
+
+    ctx.save();
+    ctx.translate(midX, midY);
+    ctx.rotate(panelAngle);
+    ctx.fillStyle = "#6a4028";
+    ctx.fillRect(-doorW / 2, -doorH / 2, doorW, doorH);
     ctx.strokeStyle = "#3a2010";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rx - doorW / 2, ry - 8, doorW, 12);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-doorW / 2, -doorH / 2, doorW, doorH);
+    ctx.restore();
+
+    // the hinge/latch itself, a small fixed dark bracket at the pivot point
+    ctx.fillStyle = "#2a1810";
+    ctx.beginPath();
+    ctx.arc(hingeX, ry, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // brief pause with the door lying flat and open on the ground to
+    // the right -- a normal walkable surface, not blocking anything
+    const doorW = w * 0.9;
+    const hingeX = rx + doorW / 2;
+    ctx.fillStyle = "#0a0604";
+    ctx.fillRect(rx - doorW / 2, ry - 7, doorW, 10);
+    ctx.save();
+    ctx.translate(hingeX + doorW / 2, ry);
+    ctx.fillStyle = "#6a4028";
+    ctx.fillRect(-doorW / 2, -2.5, doorW, 5);
+    ctx.strokeStyle = "#3a2010";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-doorW / 2, -2.5, doorW, 5);
+    ctx.restore();
   }
 }
 
@@ -8495,11 +8551,17 @@ function drawOakScene(camX) {
   } else if (trapDoor.opened) {
     const rx = nookRug.x - camX, ry = gy + 14;
     const doorW = nookRug.width * 0.9;
+    const hingeX = rx + doorW / 2;
     ctx.fillStyle = "#0a0604";
-    ctx.fillRect(rx - doorW / 2, ry - 8, doorW, 12);
+    ctx.fillRect(rx - doorW / 2, ry - 7, doorW, 10);
+    ctx.save();
+    ctx.translate(hingeX + doorW / 2, ry);
+    ctx.fillStyle = "#6a4028";
+    ctx.fillRect(-doorW / 2, -2.5, doorW, 5);
     ctx.strokeStyle = "#3a2010";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rx - doorW / 2, ry - 8, doorW, 12);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-doorW / 2, -2.5, doorW, 5);
+    ctx.restore();
   } else {
     drawNookRug(camX);
   }
@@ -8781,6 +8843,8 @@ const appleBookPages = [
 
 const manualBookPages = [
   { num: null, isToothPage: true, lines: [] },
+  { num: null, isCaninePage: true, lines: [] },
+  { num: null, isFrontToothPage: true, lines: [] },
   { num: null, isEndPage: true, lines: [] }
 ];
 
@@ -8950,6 +9014,87 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
     return;
   }
 
+  if (page.isCaninePage) {
+    const frX2 = frX, frY = ph / 2 - 10;
+    const s = 20; // huge, matching the molar page
+    ctx.fillStyle = "#f5f0e0";
+    ctx.beginPath();
+    // crown -- wider at the gumline, tapering to a single sharp point
+    ctx.moveTo(frX2 - 1.8 * s, frY - 2.8 * s);
+    ctx.quadraticCurveTo(frX2 - 2 * s, frY - 4 * s, frX2 - 0.6 * s, frY - 4.2 * s);
+    ctx.quadraticCurveTo(frX2, frY - 4.3 * s, frX2 + 0.6 * s, frY - 4.2 * s);
+    ctx.quadraticCurveTo(frX2 + 2 * s, frY - 4 * s, frX2 + 1.8 * s, frY - 2.8 * s);
+    ctx.quadraticCurveTo(frX2 + 1.4 * s, frY - 1 * s, frX2 + 0.3 * s, frY + 0.5 * s);
+    // single long tapering root, curving slightly to a point
+    ctx.quadraticCurveTo(frX2 + 0.2 * s, frY + 2.5 * s, frX2, frY + 4.5 * s);
+    ctx.quadraticCurveTo(frX2 - 0.2 * s, frY + 2.5 * s, frX2 - 0.3 * s, frY + 0.5 * s);
+    ctx.quadraticCurveTo(frX2 - 1.4 * s, frY - 1 * s, frX2 - 1.8 * s, frY - 2.8 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#c9c0a8";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(frX2 - 0.6 * s, frY - 2.6 * s, 0.4 * s, 1 * s, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+    [[1 * s, -3 * s], [0.5 * s, 1.5 * s]].forEach(([dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(frX2 + dx - 4, frY + dy);
+      ctx.lineTo(frX2 + dx + 4, frY + dy);
+      ctx.moveTo(frX2 + dx, frY + dy - 4);
+      ctx.lineTo(frX2 + dx, frY + dy + 4);
+      ctx.stroke();
+    });
+    ctx.restore();
+    return;
+  }
+
+  if (page.isFrontToothPage) {
+    const frX2 = frX, frY = ph / 2 - 10;
+    const s = 20; // huge, matching the other tooth pages
+    ctx.fillStyle = "#f5f0e0";
+    ctx.beginPath();
+    // crown -- flat, chisel-shaped, wide rectangular edge (not pointed)
+    ctx.moveTo(frX2 - 2 * s, frY - 3.5 * s);
+    ctx.quadraticCurveTo(frX2 - 2.1 * s, frY - 4.3 * s, frX2 - 1.3 * s, frY - 4.4 * s);
+    ctx.lineTo(frX2 + 1.3 * s, frY - 4.4 * s);
+    ctx.quadraticCurveTo(frX2 + 2.1 * s, frY - 4.3 * s, frX2 + 2 * s, frY - 3.5 * s);
+    ctx.quadraticCurveTo(frX2 + 2.1 * s, frY - 0.8 * s, frX2 + 1.7 * s, frY + 0.3 * s);
+    ctx.lineTo(frX2 - 1.7 * s, frY + 0.3 * s);
+    ctx.quadraticCurveTo(frX2 - 2.1 * s, frY - 0.8 * s, frX2 - 2 * s, frY - 3.5 * s);
+    ctx.closePath();
+    ctx.fill();
+    // single tapering root beneath the flat crown edge
+    ctx.beginPath();
+    ctx.moveTo(frX2 - 1.5 * s, frY + 0.2 * s);
+    ctx.quadraticCurveTo(frX2 - 0.9 * s, frY + 2.6 * s, frX2, frY + 4.4 * s);
+    ctx.quadraticCurveTo(frX2 + 0.9 * s, frY + 2.6 * s, frX2 + 1.5 * s, frY + 0.2 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#c9c0a8";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(frX2 - 0.9 * s, frY - 2.5 * s, 0.7 * s, 1.1 * s, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 2;
+    [[1.3 * s, -3 * s], [1.6 * s, -1 * s]].forEach(([dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(frX2 + dx - 4, frY + dy);
+      ctx.lineTo(frX2 + dx + 4, frY + dy);
+      ctx.moveTo(frX2 + dx, frY + dy - 4);
+      ctx.lineTo(frX2 + dx, frY + dy + 4);
+      ctx.stroke();
+    });
+    ctx.restore();
+    return;
+  }
+
   const frY = 92, frR = 55;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2;
@@ -8969,9 +9114,9 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
   ctx.font = "14px Georgia, serif";
   const numStr = String(page.num);
   const numWidth = ctx.measureText(numStr).width;
-  drawBookVine(frX, ph - 34, numWidth);
+  drawBookVine(frX, ph - 48, numWidth);
   ctx.fillStyle = "#4a3018";
-  ctx.fillText(numStr, frX, ph - 18);
+  ctx.fillText(numStr, frX, ph - 32);
   ctx.restore();
 }
 
@@ -9422,27 +9567,27 @@ function drawRatFeedBowl(camX) {
   ctx.rotate(-0.15); // sits at a slight angle, like it just landed there
 
   // chipped wooden bowl -- an arc for the rim, slightly irregular
-  ctx.fillStyle = "#5a3a1c";
+  ctx.fillStyle = "#8a3a28";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 9, 4, 0, 0, Math.PI, false);
+  ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI, false);
   ctx.fill();
-  ctx.fillStyle = "#3a2410";
+  ctx.fillStyle = "#5a2418";
   ctx.beginPath();
-  ctx.ellipse(0, -0.5, 7, 2.6, 0, 0, Math.PI, false);
+  ctx.ellipse(0, -1, 12.5, 4.6, 0, 0, Math.PI, false);
   ctx.fill();
   // a small chip out of the rim
   ctx.fillStyle = "#100a06";
   ctx.beginPath();
-  ctx.arc(6, -1, 1.4, 0, Math.PI * 2);
+  ctx.arc(10.5, -1.8, 2.4, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#2a1608";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#3a1810";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 9, 4, 0, 0, Math.PI, false);
+  ctx.ellipse(0, 0, 16, 7, 0, 0, Math.PI, false);
   ctx.stroke();
 
   if (ratNPC.fed) {
-    drawAcornShape(ctx, -1, -1.5, 3.5, 0.3);
+    drawAcornShape(ctx, -1.5, -2, 6, 0.3);
   }
   ctx.restore();
 }
