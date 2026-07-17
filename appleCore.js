@@ -4626,17 +4626,14 @@ function drawHeartLeaf(ctx, x, y, size, rotation, color, veinColor, variegated) 
 
 function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, seed, groundLength, groundDir, emergeDir) {
   const points = [];
-  // distinct emergence bulge right at the base -- a clear curve out
-  // over the pot's rim before the normal hanging wave takes over,
-  // same two-stage idea as the monstera's stems
-  points.push({ x: startX, y: startY });
-  points.push({ x: startX + emergeDir * 12, y: startY + 6 });
   const segments = 12;
-  for (let i = 1; i <= segments; i++) {
+  const EMERGE_END = 0.3;
+  for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const emergeFade = Math.max(0, 1 - t / 0.4);
-    const x = startX + emergeDir * 12 * emergeFade + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
-    const y = startY + 6 + t * hangLength;
+    const u = Math.min(t / EMERGE_END, 1);
+    const emergeBump = Math.pow(Math.sin(Math.PI * u), 2); // zero slope at both ends -- smooth candy-cane hook, no kink
+    const x = startX + emergeDir * 13 * emergeBump + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
+    const y = startY + t * (hangLength + 6);
     points.push({ x, y });
   }
   if (groundLength) {
@@ -4673,7 +4670,7 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 
 // pothos -- hanging near the cushion pile, right side, several vines
 // trailing down with some pooling gently on the ground
-const pothosSpot = { x: 2670, hangY: 260 };
+const pothosSpot = { x: 2755, hangY: 260 };
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
 const snakePlantSpot = { x: 1349, y: 0 };
@@ -4736,14 +4733,14 @@ function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
 const monsteraSpot = { x: 1640, y: 0 };
 function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
-  points.push({ x: startX, y: startY });
-  points.push({ x: startX + emergeDir * 12, y: startY + 7 });
-  const segments = 14;
-  for (let i = 1; i <= segments; i++) {
+  const segments = 16;
+  const EMERGE_END = 0.3;
+  for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const emergeFade = Math.max(0, 1 - t / 0.4);
-    const x = startX + emergeDir * 12 * emergeFade + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + 7 + t * length;
+    const u = Math.min(t / EMERGE_END, 1);
+    const emergeBump = Math.pow(Math.sin(Math.PI * u), 2); // zero slope at both ends -- smooth candy-cane hook, no kink
+    const x = startX + emergeDir * 13 * emergeBump + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + t * (length + 7);
     points.push({ x, y });
   }
   ctx.strokeStyle = "rgba(150,120,150,0.5)";
@@ -4851,8 +4848,8 @@ function drawMonstera(camX) {
   // angular gaps, and mostly leaning right so it only barely grazes
   // the nook's edge instead of reaching into it
   const leaves = [
-    [-0.55, 40, 14, 11, null], [-0.15, 62, 20, 22, null], [0.25, 58, 18, 33, null],
-    [0.65, 40, 15, 46, null]
+    [-0.55, 40, 10, 11, null], [-0.15, 62, 15, 22, null], [0.25, 58, 13, 33, null],
+    [0.65, 40, 11, 46, null]
   ];
   leaves.forEach(([angle, stemLen, leafSize, seed, holeColor]) => {
     const bx = px, by = py - 33;
@@ -4877,15 +4874,14 @@ function drawMonstera(camX) {
 
 function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
-  // distinct emergence bulge right at the base, matching the other plants
-  points.push({ x: startX, y: startY });
-  points.push({ x: startX + emergeDir * 15, y: startY + 9 });
   const segments = 20;
-  for (let i = 1; i <= segments; i++) {
+  const EMERGE_END = 0.3;
+  for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const emergeFade = Math.max(0, 1 - t / 0.4);
-    const x = startX + emergeDir * 15 * emergeFade + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
-    const y = startY + 9 + t * length;
+    const u = Math.min(t / EMERGE_END, 1);
+    const emergeBump = Math.pow(Math.sin(Math.PI * u), 2); // zero slope at both ends -- smooth candy-cane hook, no kink
+    const x = startX + emergeDir * 16 * emergeBump + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + t * (length + 9);
     points.push({ x, y });
   }
   ctx.strokeStyle = "rgba(30,80,55,0.55)";
@@ -4898,11 +4894,11 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
     if (i === 0) return;
     ctx.fillStyle = i % 3 === 0 ? "#1e5a3e" : "#2a6a4a";
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.6 - (i / points.length) * 0.9, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 1.8 - (i / points.length) * 0.6, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.15)";
     ctx.beginPath();
-    ctx.arc(p.x - 0.8, p.y - 0.8, 0.8, 0, Math.PI * 2);
+    ctx.arc(p.x - 0.5, p.y - 0.5, 0.5, 0, Math.PI * 2);
     ctx.fill();
   });
 }
@@ -4912,26 +4908,26 @@ function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
 const pearlsSpot = { x: 408, hangY: 245 };
 function drawStringOfPearls(camX) {
   const px = pearlsSpot.x - camX, py = gy - pearlsSpot.hangY;
-  // distinct rounded bowl, not the shared trapezoid shape -- shrunk down
+  // distinct rounded bowl, not the shared trapezoid shape -- shrunk down further
   ctx.fillStyle = "#6a5040";
   ctx.beginPath();
-  ctx.ellipse(px, py + 5, 11, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 4, 8, 5.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#8a6a52";
   ctx.beginPath();
-  ctx.ellipse(px, py + 2, 11, 5.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 1.5, 8, 4.2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#4a3628";
-  ctx.lineWidth = 0.8;
+  ctx.lineWidth = 0.7;
   ctx.stroke();
   ctx.fillStyle = "#3a2818";
   ctx.beginPath();
-  ctx.ellipse(px, py, 10, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py, 7.2, 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
   const pearlSeeds = [[0.3, -1], [1.2, 1], [2.4, -1], [3.1, 1], [4.0, -1], [4.9, 1], [5.8, -1]];
   pearlSeeds.forEach(([s, dir], i) => {
-    drawPearlVine(ctx, px - 9 + i * 3, py + 4, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s, dir);
+    drawPearlVine(ctx, px - 6 + i * 2, py - 1, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s, dir);
   });
 }
 
@@ -8678,7 +8674,7 @@ const BOOK_SPREAD_HEIGHT = 9; // max cluster height, now that the base sits exac
 // trigger logic rather than each getting bespoke code.
 const sittingAreas = [
   { id: "nook", x: 1573, heightAboveGround: 32, width: 100, unlocked: () => true },
-  { id: "cushionPile", x: 2525, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
+  { id: "cushionPile", x: 2610, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
 ];
 const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
@@ -8925,14 +8921,14 @@ const cushionPile = sittingAreas[1];
 // baby owl offering free tea from behind a low table. Same unlock
 // condition as the cushion pile it sits beside. Purely passive,
 // repeatable, no gate or one-time flag.
-const teaSpot = { x: 2360 };
+const teaSpot = { x: 2425 };
 const babyOwl = {
   idleT: 0, idleNextAt: 3000 + Math.random() * 4000, idleShift: 0, idleShiftT: 0,
   sipT: 0, sipNextAt: 5000 + Math.random() * 7000, sipping: 0
 };
 const teaDialogue = { active: false, lines: [], index: 0 };
 const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
-const TEA_SEGMENT_MS = { pouring: 450, full: 700, sipping: 550, empty: 550 };
+const TEA_SEGMENT_MS = { pouring: 900, full: 1300, sipping: 1000, empty: 900 };
 const TEA_SPARKLE_COUNT = 6;
 
 function drawCushionPile(camX) {
@@ -8972,9 +8968,9 @@ function drawCushionPile(camX) {
   // back cushions -- taller, propped up behind the seating spot like a
   // backrest, leaning at angles against each other
   const backCushions = [
-    { dx: -30, w: 46, h: 52, rot: -0.25, color: "#4a6a5a" },
-    { dx: 0, w: 50, h: 58, rot: 0.05, color: "#7a3a4a" },
-    { dx: 32, w: 44, h: 50, rot: 0.28, color: "#8a5a2f" }
+    { dx: -30, w: 58, h: 65, rot: -0.25, color: "#4a6a5a" },
+    { dx: 0, w: 63, h: 73, rot: 0.05, color: "#7a3a4a" },
+    { dx: 32, w: 55, h: 63, rot: 0.28, color: "#8a5a2f" }
   ];
   backCushions.forEach(c => {
     ctx.save();
@@ -9026,11 +9022,11 @@ function drawCushionPile(camX) {
   // shapes now (not all ellipses), and repositioned into two loose
   // clusters with a real gap in the middle where you'd actually sit.
   const frontCushions = [
-    { dx: -54, w: 30, h: 24, rot: -0.4, color: "#a83a4a", shape: "ellipse" },
-    { dx: -32, w: 34, h: 30, rot: -0.2, color: "#6a8a3a", shape: "roundRect" },
-    { dx: 0, w: 46, h: 18, rot: 0, color: "#4a6a8a", shape: "flatSeat" },
-    { dx: 32, w: 36, h: 28, rot: 0.2, color: "#c9863a", shape: "roundRect" },
-    { dx: 56, w: 28, h: 22, rot: 0.4, color: "#8a5a2f", shape: "blob" }
+    { dx: -54, w: 38, h: 30, rot: -0.4, color: "#a83a4a", shape: "ellipse" },
+    { dx: -32, w: 43, h: 38, rot: -0.2, color: "#6a8a3a", shape: "roundRect" },
+    { dx: 0, w: 58, h: 23, rot: 0, color: "#4a6a8a", shape: "flatSeat" },
+    { dx: 32, w: 45, h: 35, rot: 0.2, color: "#c9863a", shape: "roundRect" },
+    { dx: 56, w: 35, h: 28, rot: 0.4, color: "#8a5a2f", shape: "blob" }
   ];
   frontCushions.forEach(c => {
     ctx.save();
@@ -9094,64 +9090,51 @@ function drawCushionPile(camX) {
 function drawFairyLights(camX) {
   if (!cushionPile.unlocked()) return;
   const cx = cushionPile.x - camX;
-  const bulbColors = ["#f5d060", "#f0a850", "#f5e8a0", "#f0b860"];
+  const bulbColors = ["#e8d8a0", "#f0e6c0", "#dcd0a8", "#e8dcb0"]; // cooler, softer pale-gold, not warm party-string amber
   const now = performance.now();
 
-  function drawBulb(x, y, i) {
-    const twinkle = 0.6 + 0.4 * Math.sin(now * 0.002 + i * 1.7);
+  function drawBulb(x, y, i, glowScale) {
+    const twinkle = 0.55 + 0.35 * Math.sin(now * 0.0015 + i * 1.7);
     ctx.save();
     ctx.globalAlpha = twinkle;
     ctx.fillStyle = bulbColors[i % bulbColors.length];
     ctx.beginPath();
-    ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+    ctx.arc(x, y, 1.3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = twinkle * 0.35;
+    ctx.globalAlpha = twinkle * 0.3;
     ctx.beginPath();
-    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+    ctx.arc(x, y, 2.8 * glowScale, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  // two main sagging strings, more bulbs each, smaller
-  const strings = [
-    { spanLeft: cx - 78, spanRight: cx + 78, sagY: 38, top: 6, bulbCount: 13 },
-    { spanLeft: cx - 60, spanRight: cx + 60, sagY: 52, top: 20, bulbCount: 11 }
-  ];
-  strings.forEach((s, si) => {
-    ctx.strokeStyle = "rgba(60,48,30,0.7)";
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(s.spanLeft, s.top);
-    ctx.quadraticCurveTo(cx, s.sagY, s.spanRight, s.top);
-    ctx.stroke();
-    for (let i = 0; i < s.bulbCount; i++) {
-      const t = i / (s.bulbCount - 1);
-      const x = s.spanLeft + (s.spanRight - s.spanLeft) * t;
-      const y = s.top + (s.sagY - s.top) * (4 * t * (1 - t));
-      drawBulb(x, y + 2, i + si * 20);
-    }
-  });
-
-  // drooping strands hanging down alongside the fabric strips, drawn
-  // after them so they read as woven through/hanging among the fabric
+  // several drooping strands from the ceiling, uneven spacing (not
+  // evenly distributed like party bunting) and varied length, each
+  // with a slow drift on top of the twinkle so they feel suspended
+  // in still air rather than strung up for an event
   const droops = [
-    { dx: -28, len: 90, seed: 3 }, { dx: 2, len: 105, seed: 8 }, { dx: 33, len: 85, seed: 14 }
+    { dx: -66, len: 78, seed: 1 }, { dx: -44, len: 102, seed: 6 },
+    { dx: -12, len: 88, seed: 11 }, { dx: 8, len: 112, seed: 4 },
+    { dx: 30, len: 80, seed: 15 }, { dx: 58, len: 96, seed: 9 },
+    { dx: 74, len: 70, seed: 18 }
   ];
   droops.forEach(d => {
     const dx0 = cx + d.dx;
-    const sway = Math.sin(now * 0.0009 + d.seed) * 6;
-    ctx.strokeStyle = "rgba(60,48,30,0.55)";
-    ctx.lineWidth = 0.6;
+    const sway = Math.sin(now * 0.0006 + d.seed) * 5;
+    const drift = Math.sin(now * 0.00018 + d.seed * 2.3) * 3; // very slow, tiny -- suspended, not swinging
+    ctx.strokeStyle = "rgba(70,62,44,0.45)";
+    ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(dx0, 30);
-    ctx.quadraticCurveTo(dx0 + sway * 0.5, 30 + d.len * 0.5, dx0 + sway, 30 + d.len);
+    ctx.moveTo(dx0 + drift, 4);
+    ctx.quadraticCurveTo(dx0 + drift + sway * 0.5, 4 + d.len * 0.5, dx0 + drift + sway, 4 + d.len);
     ctx.stroke();
-    const bulbCount = 6;
+    const bulbCount = 5;
     for (let i = 1; i <= bulbCount; i++) {
       const t = i / bulbCount;
-      const x = dx0 + sway * t;
-      const y = 30 + d.len * t;
-      drawBulb(x, y, i + d.seed * 5);
+      const x = dx0 + drift + sway * t;
+      const y = 4 + d.len * t;
+      const glowScale = 0.7 + ((d.seed * 7 + i * 3) % 5) * 0.18; // varied glow size, not uniform bulbs
+      drawBulb(x, y, i + d.seed * 5, glowScale);
     }
   });
 }
@@ -9175,24 +9158,52 @@ function drawTeaNook(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // a little visible floor plane inside the niche, catching slightly
-  // more light than the back wall, plus a soft shadow pooling at its base
+  // floor plane inside the niche -- flat top edge where it meets the
+  // rear wall (not rounded, which read as a bulging muffin-top), sides
+  // curving out to a wider front edge that extends slightly past the
+  // table's own front so a sliver of floor shows in front of it too
+  const floorTopY = archBottom - 38, floorBottomY = archBottom - 4;
+  const floorTopHalfW = archR - 22, floorBottomHalfW = archR - 6;
   ctx.fillStyle = "#33210f";
   ctx.beginPath();
-  ctx.ellipse(tx, archBottom - 4, archR - 6, 7, 0, 0, Math.PI * 2);
+  ctx.moveTo(tx - floorTopHalfW, floorTopY);
+  ctx.lineTo(tx + floorTopHalfW, floorTopY);
+  ctx.quadraticCurveTo(tx + floorBottomHalfW, (floorTopY + floorBottomY) / 2, tx + floorBottomHalfW, floorBottomY);
+  ctx.lineTo(tx - floorBottomHalfW, floorBottomY);
+  ctx.quadraticCurveTo(tx - floorBottomHalfW, (floorTopY + floorBottomY) / 2, tx - floorTopHalfW, floorTopY);
+  ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "rgba(10,6,3,0.4)";
   ctx.beginPath();
   ctx.ellipse(tx, archBottom, archR - 8, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // low table
-  const tableTop = archBottom - 16;
+  // low table -- genuine arc shape, curved to match the niche, with a
+  // visible top surface so its short depth actually reads as a
+  // crescent/moon shape rather than a thin flat line
+  const tableTop = archBottom - 30;
+  const tableHalfW = 42, tableDepth = 11;
+  ctx.fillStyle = "#6a4a2c";
+  ctx.beginPath();
+  ctx.moveTo(tx - tableHalfW, tableTop + tableDepth);
+  ctx.quadraticCurveTo(tx, tableTop + tableDepth - 4, tx + tableHalfW, tableTop + tableDepth);
+  ctx.quadraticCurveTo(tx, tableTop + tableDepth * 1.9, tx - tableHalfW, tableTop + tableDepth);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a2e18";
+  ctx.lineWidth = 1;
+  ctx.stroke();
   ctx.fillStyle = "#5a3a22";
-  ctx.fillRect(tx - 34, tableTop, 68, 6);
+  ctx.beginPath();
+  ctx.moveTo(tx - tableHalfW, tableTop + tableDepth);
+  ctx.quadraticCurveTo(tx, tableTop + tableDepth * 1.9, tx + tableHalfW, tableTop + tableDepth);
+  ctx.lineTo(tx + tableHalfW - 6, tableTop + tableDepth + 6);
+  ctx.quadraticCurveTo(tx, tableTop + tableDepth * 1.9 + 6, tx - tableHalfW + 6, tableTop + tableDepth + 6);
+  ctx.closePath();
+  ctx.fill();
   ctx.fillStyle = "#3a2414";
-  ctx.fillRect(tx - 30, tableTop + 6, 4, 10);
-  ctx.fillRect(tx + 26, tableTop + 6, 4, 10);
+  ctx.fillRect(tx - 30, tableTop + tableDepth + 4, 4, 8);
+  ctx.fillRect(tx + 26, tableTop + tableDepth + 4, 4, 8);
 
   // low cushions in front of the table, for the player to visually
   // lounge on while getting tea
@@ -9205,8 +9216,12 @@ function drawTeaNook(camX) {
   ctx.ellipse(tx + 16, archBottom + 5, 16, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // red ornate kettle, right-middle of the table
-  const kx = tx + 14, ky = tableTop - 2;
+  // red ornate kettle, right-middle of the table -- shrunk down
+  const kx = tx + 14, ky = tableTop + 2;
+  ctx.save();
+  ctx.translate(kx, ky);
+  ctx.scale(0.85, 0.85);
+  ctx.translate(-kx, -ky);
   ctx.fillStyle = "#a8342a";
   ctx.beginPath();
   ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
@@ -9236,38 +9251,128 @@ function drawTeaNook(camX) {
   ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 3); ctx.stroke();
   ctx.restore();
+  ctx.restore();
 
   // baby owl behind the table -- small, its own idle shift and
-  // independent sip on its own cup, unsynced from the player's
-  const oxBase = tx - 8, oy = tableTop - 20;
+  // independent sip on its own cup, unsynced from the player's.
+  // Wings animate with the pour and the cup-giving beats.
+  const oxBase = tx - 8, oy = tableTop - 22;
   const ox = oxBase + babyOwl.idleShift;
+  const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
+  const giveWingLift = teaAnim.phase === "sipping" ? Math.sin(Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping) * Math.PI) : 0;
   ctx.save();
   ctx.translate(ox, oy);
+  ctx.scale(1.3, 1.3);
+
+  // feet
+  ctx.strokeStyle = "#c9863a";
+  ctx.lineWidth = 1.2;
+  [-4, 4].forEach(fx => {
+    ctx.beginPath();
+    ctx.moveTo(fx, 11); ctx.lineTo(fx - 2, 14);
+    ctx.moveTo(fx, 11); ctx.lineTo(fx, 14.5);
+    ctx.moveTo(fx, 11); ctx.lineTo(fx + 2, 14);
+    ctx.stroke();
+  });
+
+  // body -- rounder, baby proportions
   ctx.fillStyle = "#6a5238";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 10, 12, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 1, 9, 11, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#3a2c1a";
+
+  // wings -- right wing lifts toward the kettle while pouring, left
+  // wing extends forward while giving the cup
+  ctx.fillStyle = "#584428";
+  ctx.save();
+  ctx.translate(7, 2);
+  ctx.rotate(-0.3 - pourWingLift * 1.3);
   ctx.beginPath();
-  ctx.arc(-3.5, -3, 2.6, 0, Math.PI * 2);
-  ctx.arc(3.5, -3, 2.6, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 4, 8, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#f0e8d0";
+  ctx.restore();
+  ctx.save();
+  ctx.translate(-7, 2);
+  ctx.rotate(0.3 + giveWingLift * 0.9);
   ctx.beginPath();
-  ctx.arc(-3.5, -3, 1.2, 0, Math.PI * 2);
-  ctx.arc(3.5, -3, 1.2, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 4, 8, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#c9863a";
+  ctx.restore();
+  // a short grip line connecting the pouring wing's tip to the
+  // kettle's handle, so it reads as actually holding it rather than
+  // just lifting nearby while it tilts on its own
+  if (pourWingLift > 0.05) {
+    const wingAngle = -0.3 - pourWingLift * 1.3;
+    const wingTipX = 7 + Math.sin(wingAngle) * 7, wingTipY = 2 - Math.cos(wingAngle) * 7;
+    ctx.strokeStyle = "#584428";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(wingTipX, wingTipY);
+    ctx.lineTo((kx - ox + 12) / 1.3, (ky - oy - 3) / 1.3);
+    ctx.stroke();
+  }
+  // wing feather lines, a couple scalloped strokes per wing
+  ctx.strokeStyle = "#4a3820";
+  ctx.lineWidth = 0.7;
+  [[7, 2, -0.3 - pourWingLift * 1.3, 1], [-7, 2, 0.3 + giveWingLift * 0.9, -1]].forEach(([wx, wy, rot, side]) => {
+    ctx.save();
+    ctx.translate(wx, wy);
+    ctx.rotate(rot);
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.arc(0, -2 + i * 4, 3, side > 0 ? Math.PI * 0.9 : -Math.PI * 0.1, side > 0 ? Math.PI * 1.6 : Math.PI * 0.6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+
+  // body feather texture, a couple small scalloped rows
+  ctx.strokeStyle = "#584428";
+  ctx.lineWidth = 0.6;
+  for (let row = 0; row < 2; row++) {
+    ctx.beginPath();
+    ctx.arc(0, 3 + row * 3.5, 2, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  // face disc, pale -- separated enough to not overlap, matching the
+  // same ratio the adult owl already uses. Each side its own path.
+  ctx.fillStyle = "#f0e0c0";
   ctx.beginPath();
-  ctx.moveTo(-1.5, 0); ctx.lineTo(1.5, 0); ctx.lineTo(0, 3);
+  ctx.arc(-3.6, -3, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(3.6, -3, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eyes, big for baby proportions -- each its own path
+  ctx.fillStyle = "#2b2b2b";
+  ctx.beginPath();
+  ctx.arc(-3.6, -3, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(3.6, -3, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.beginPath();
+  ctx.arc(-4.1, -3.5, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(3.1, -3.5, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // beak
+  ctx.fillStyle = "#e0a020";
+  ctx.beginPath();
+  ctx.moveTo(-1.3, -0.5); ctx.lineTo(1.3, -0.5); ctx.lineTo(0, 2);
   ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // baby owl's own cup, small independent sip bob
+  // baby owl's own cup, held near the left wing, small independent sip bob
   const ownCupBob = babyOwl.sipping > 0 ? Math.sin(Math.min(1, babyOwl.sipping) * Math.PI) * 5 : 0;
   ctx.fillStyle = "#e8ddc0";
   ctx.beginPath();
-  ctx.ellipse(ox + 11, oy + 7 - ownCupBob, 4, 3, 0, 0, Math.PI * 2);
+  ctx.ellipse(ox - 11, oy + 6 - ownCupBob, 4, 3, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#b8a888"; ctx.lineWidth = 0.6;
   ctx.stroke();
@@ -9281,7 +9386,7 @@ function drawTeaNook(camX) {
 
 function drawTeaPlayerCup(tx, tableTop) {
   if (teaAnim.phase === "idle") return;
-  const cupX = tx - 16, cupY = tableTop - 2;
+  const cupX = tx - 16, cupY = tableTop + 5;
   const isFull = teaAnim.phase === "full" || teaAnim.phase === "sipping";
   let bx = cupX, by = cupY;
   if (teaAnim.phase === "sipping") {
@@ -9372,7 +9477,7 @@ function updateTeaNook(deltaTime) {
   // interaction -- prompt, then accept to start the sequence. Walking
   // away instead of accepting just closes the prompt, no explicit
   // decline needed. Fully repeatable, no gate or one-time flag.
-  const nearOwl = isPlayerNear(teaSpot.x - 8, 0, 30, 30, 25);
+  const nearOwl = isPlayerNear(teaSpot.x - 8, 0, 55, 35, 25);
   if (teaAnim.phase === "idle") {
     if (teaDialogue.active && nearOwl && keys.spaceJustPressed) {
       teaDialogue.active = false;
@@ -9579,7 +9684,7 @@ function drawShortShelf(camX) {
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 6, broomBottom = bottom;
-  const broomTopX = broomX - 14, broomTopY = top + 30;
+  const broomTopX = broomX - 4, broomTopY = top + 30;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
