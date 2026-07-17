@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 }
+const inventory = { acorn: 1 }; // e.g. { appleSlice: 2, boomerang: 1 } -- acorn seeded for debug-start convenience
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -207,7 +207,7 @@ let honeyScoops = 0; // set to 8 on collection
 // this instead of raw object key order, which was never actually
 // designed on purpose (it just happened to put whichever item type was
 // FIRST ever collected at the front, forever)
-let inventoryOrder = [];
+let inventoryOrder = ["acorn"];
 function touchInventoryOrder(itemType) {
   const idx = inventoryOrder.indexOf(itemType);
   if (idx !== -1) inventoryOrder.splice(idx, 1);
@@ -4519,30 +4519,62 @@ function drawFeatherShape(ctx, x, y, size, rotation) {
   ctx.translate(x, y);
   ctx.rotate(rotation);
 
-  // central shaft
-  ctx.strokeStyle = "#c9c0a8";
-  ctx.lineWidth = size * 0.08;
-  ctx.beginPath();
-  ctx.moveTo(0, -size);
-  ctx.lineTo(0, size);
-  ctx.stroke();
-
-  // vane -- barbs along each side, tapering toward the tip. Black/white
-  // banding with a touch of red, echoing the woodpecker's own coloring.
-  const bandColors = ["#2b2b2b", "#e8e2d0", "#2b2b2b", "#c9382a", "#2b2b2b"];
-  for (let i = -6; i <= 6; i++) {
-    if (i === 0) continue;
-    const t = i / 7; // -1 to 1 along the shaft
-    const py = t * size;
-    const width = (1 - Math.abs(t)) * size * 0.5;
-    const color = bandColors[Math.floor(((t + 1) / 2) * bandColors.length) % bandColors.length];
-    ctx.strokeStyle = color;
-    ctx.lineWidth = size * 0.09;
+  // the vane -- one continuous filled silhouette, not sparse lines.
+  // Classic quill shape: pointed tip, asymmetric sides (one wider than
+  // the other, like a real feather), soft rounded base.
+  function traceVane() {
     ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(Math.sign(i) * width, py - Math.sign(i) * size * 0.06);
+    ctx.moveTo(0, -size);
+    ctx.quadraticCurveTo(-size * 0.32, -size * 0.55, -size * 0.34, -size * 0.05);
+    ctx.quadraticCurveTo(-size * 0.3, size * 0.4, -size * 0.1, size * 0.85);
+    ctx.quadraticCurveTo(0, size * 1.05, 0, size);
+    ctx.quadraticCurveTo(0, size * 1.05, size * 0.14, size * 0.82);
+    ctx.quadraticCurveTo(size * 0.4, size * 0.35, size * 0.42, -size * 0.1);
+    ctx.quadraticCurveTo(size * 0.4, -size * 0.55, 0, -size);
+    ctx.closePath();
+  }
+
+  // base fill, then clipped horizontal bands -- black/white with a
+  // touch of red, echoing the woodpecker's own coloring
+  ctx.save();
+  traceVane();
+  ctx.clip();
+  const bands = [
+    { from: -1.1, to: -0.5, color: "#f0ead8" },
+    { from: -0.5, to: -0.05, color: "#2b2b2b" },
+    { from: -0.05, to: 0.25, color: "#c9382a" },
+    { from: 0.25, to: 1.1, color: "#3a3a3a" }
+  ];
+  bands.forEach(b => {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(-size, b.from * size, size * 2, (b.to - b.from) * size);
+  });
+  // fine barb-texture lines within the vane, subtle, suggesting the
+  // feathery grain without being the primary structure
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = size * 0.02;
+  for (let t = -0.9; t <= 1.0; t += 0.14) {
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.4, t * size);
+    ctx.lineTo(size * 0.4, t * size + size * 0.06);
     ctx.stroke();
   }
+  ctx.restore();
+
+  // vane outline
+  traceVane();
+  ctx.strokeStyle = "rgba(20,16,10,0.5)";
+  ctx.lineWidth = size * 0.04;
+  ctx.stroke();
+
+  // central shaft/rachis, on top of the fill
+  ctx.strokeStyle = "#e8ddc0";
+  ctx.lineWidth = size * 0.05;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.95);
+  ctx.lineTo(0, size * 0.95);
+  ctx.stroke();
+
   ctx.restore();
 }
 
@@ -5101,6 +5133,7 @@ function updateSeesaw(deltaTime) {
         if (inventory[heldItem] <= 0) delete inventory[heldItem];
       }
       heldItem = null;
+      updateInventoryUI(); // CONFIRMED BUG FIX: data was correct immediately, but the chip display didn't refresh until some unrelated later action happened to call this
     } else if (keys.spaceJustPressed && seesaw.heldItemPlaced && !heldItem && Math.abs(relX) > 60) {
       // pick it back up instead of leaving it stuck there forever
       addToInventory(seesaw.heldItemPlaced);
@@ -8616,7 +8649,11 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
         const rightBound = sx + w / 2 - 8;
         const bookW = Math.min(14 + (seed % 21), rightBound - bx);
         if (bookW < 6) return; // not enough room left for even a small book
-        const stackCount = 1 + (seed % 2);
+        // horizontal books very rarely appear alone -- realistically
+        // they're almost always stacked a few together. Only about 1
+        // in 12 rolls a single lone book; otherwise 2-4 stacked.
+        const stackRoll = seed % 12;
+        const stackCount = stackRoll < 1 ? 1 : 2 + (stackRoll % 3);
         let stackY = rowY + rowHeight - 3;
         for (let s = 0; s < stackCount; s++) {
           const bh2 = 3 + ((seed + s * 5) % 6);
@@ -9236,7 +9273,7 @@ function drawOwl(camX) {
   ctx.closePath();
   ctx.fill();
 
-  if (owlTalked) {
+  if (owlTalked && isPlayerNear(owl.x, 0, 40, 30, 25)) {
     drawFittedSpeechBubble(ctx, ox + 16, oy - 40, [
       "We boast of readings in our little oak den...",
       "grab a book to take to the nook, then!"
@@ -9972,16 +10009,51 @@ const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
 // near his own area, a specific place he can point to
 const featherHangSpot = { x: 550, heightAboveGround: 55 };
 function drawFeatherHangSpot(camX) {
-  if (!featherHung) return;
+  if (!lampLit) return;
   const hx = featherHangSpot.x - camX, hy = gy - featherHangSpot.heightAboveGround;
-  // small peg/nail the feather hangs from
-  ctx.fillStyle = "#5a4028";
-  ctx.beginPath();
-  ctx.arc(hx, hy, 1.5, 0, Math.PI * 2);
-  ctx.fill();
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const dist = Math.hypot(hx - playerScreenX, hy - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+
+  // a small terracotta pot -- narrow base, bulging out near the top,
+  // narrowing again at the mouth. Visible whether or not the feather
+  // is in it yet, so it reads as a real display spot from the start.
   ctx.save();
-  ctx.translate(hx, hy + 10);
-  drawFeatherShape(ctx, 0, 0, 11, Math.PI);
+  ctx.translate(hx, hy);
+  ctx.fillStyle = "#b8603a";
+  ctx.beginPath();
+  ctx.moveTo(-3, 10);
+  ctx.quadraticCurveTo(-9, 7, -8, 2);
+  ctx.quadraticCurveTo(-7, -3, -4, -5);
+  ctx.lineTo(-5, -7);
+  ctx.lineTo(5, -7);
+  ctx.lineTo(4, -5);
+  ctx.quadraticCurveTo(7, -3, 8, 2);
+  ctx.quadraticCurveTo(9, 7, 3, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#7a3a20";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // rim highlight and a couple faint horizontal throw-lines for a
+  // rustic, hand-thrown clay look
+  ctx.strokeStyle = "rgba(140,70,40,0.5)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(-7, 1.5); ctx.lineTo(7, 1.5);
+  ctx.moveTo(-8.5, 5); ctx.lineTo(8.5, 5);
+  ctx.stroke();
+  ctx.fillStyle = "#8a4426";
+  ctx.beginPath();
+  ctx.ellipse(0, -7, 5, 1.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (featherHung) {
+    ctx.save();
+    ctx.translate(0, -17);
+    drawFeatherShape(ctx, 0, 0, 11, 0);
+    ctx.restore();
+  }
   ctx.restore();
 }
 function updateFeatherHangSpot() {
@@ -9998,7 +10070,7 @@ function updateFeatherHangSpot() {
 // normally. WS on the left, SW on the right, genuinely mirror-symmetric
 // letters carved into the wood, drawn as real hand-carved strokes
 // rather than typeset text.
-const carvedInitialsSpot = { x: 680, y: 90 };
+const carvedInitialsSpot = { x: 820, y: 90 };
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -10137,6 +10209,19 @@ function drawFoundMap(camX) {
   ctx.restore();
 }
 
+// the recurring symbol -- an actual placed instance, lamp-gated like
+// everything else here. The shape function itself was built earlier;
+// this is where it's actually used for the first time.
+const foundSymbolSpot = { x: 380, y: 45 };
+function drawFoundSymbol(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const sx = foundSymbolSpot.x - camX, sy = foundSymbolSpot.y;
+  const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+  drawTeemingSymbol(ctx, sx, sy, 14, "rgba(220,190,150,0.55)");
+}
+
 function drawCarvedInitials(camX) {
   if (!lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -10185,8 +10270,12 @@ const ratRoomHighShelves = [
   { x: 950, y: 60, w: 34 } // second perch, further right
 ];
 function drawRatRoomHighShelf(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
   ratRoomHighShelves.forEach(shelf => {
     const sx = shelf.x - camX, sy = shelf.y;
+    const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
+    if (dist > LAMP_LIGHT_RADIUS) return;
     const w = shelf.w;
     ctx.fillStyle = "#4a3018";
     ctx.fillRect(sx - w / 2, sy, w, 5);
@@ -10239,6 +10328,7 @@ function drawRatRoomScene(camX) {
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
   drawCarvedInitials(camX);
+  drawFoundSymbol(camX);
   drawFoundMap(camX);
   drawFeatherHangSpot(camX);
 
@@ -10340,7 +10430,7 @@ const hayPiles = [
   { x: 720, seed: 61, count: 8 }
 ];
 
-const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false };
+const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false, facingRight: false };
 
 // dialogue system -- space near the rat starts it, space again advances
 // through each beat, closes automatically after the last line. Every
@@ -10518,6 +10608,11 @@ function updateRatRoomFeather() {
     ratRoomFeather.collected = true;
     carriedFeather = true;
     startCollectAnimation({ x: ratRoomFeather.x, y: ratRoomFeather.y, size: 7, rotation: 0 }, "feather");
+    // the rat notices immediately -- turns to face the player and
+    // starts his reaction on his own, rather than waiting for the
+    // player to walk over and initiate
+    ratNPC.facingRight = ratRoomFeather.x > ratNPC.x;
+    startRatDialogue();
   }
 }
 
@@ -10585,6 +10680,15 @@ function drawRatFeedBowl(camX) {
 function drawRatNPC(camX) {
   ctx.globalAlpha = 1; // guard against any upstream alpha leak affecting the tail/body
   const nx = ratNPC.x - camX;
+  ctx.save();
+  if (ratNPC.facingRight) {
+    // mirror everything around nx -- every shape below is drawn in
+    // nx-relative coordinates already, so this flips the whole
+    // character without needing to rewrite any of the individual
+    // drawing calls
+    ctx.translate(2 * nx, 0);
+    ctx.scale(-1, 1);
+  }
   const groundY = gy - 2;
   const sway = Math.sin(ratNPC.tailSwayT * 1.8) * 12;
   const s = 1.7; // overall scale -- bigger, standing character
@@ -10695,6 +10799,7 @@ function drawRatNPC(camX) {
     ctx.lineTo(hx - 15, hy + dy);
     ctx.stroke();
   });
+  ctx.restore();
 }
 
 // widespread thin ground-covering hay, scattered across most of the
@@ -10776,11 +10881,12 @@ const ratRoomEyes = [
   { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
   { x: 730, y: 250, phase: 0.4, blinkSpeed: 1.15 },
   { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 }, // high up, left of the stairs, perched on top of something
-  // more spread further right
-  { x: 830, y: 265, phase: 5.2, blinkSpeed: 0.92 },
-  { x: 900, y: 240, phase: 0.9, blinkSpeed: 1.08 },
-  { x: 970, y: 280, phase: 2.1, blinkSpeed: 0.88 },
-  { x: 1050, y: 255, phase: 4.4, blinkSpeed: 1.2 },
+  // more spread further right -- a genuine huddled cluster of three,
+  // not evenly spaced like before, plus one further out on its own
+  { x: 825, y: 268, phase: 5.2, blinkSpeed: 0.92 },
+  { x: 848, y: 250, phase: 0.9, blinkSpeed: 1.08 },
+  { x: 840, y: 285, phase: 2.1, blinkSpeed: 0.88 },
+  { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
   { x: 1200, y: 245, phase: 3.8, blinkSpeed: 1.05 },
   { x: 1280, y: 268, phase: 0.7, blinkSpeed: 0.9 },
