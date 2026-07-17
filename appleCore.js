@@ -600,6 +600,18 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // map-only entry — oak<->ratroom travel is handled by the trap
+    // door and its return spawn, not a standard door pair.
+    id: "oak-ratroom",
+    doors: {
+      oak: { leadsTo: "ratroom" },
+      ratroom: { leadsTo: "oak" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -612,7 +624,8 @@ const sceneMapInfo = {
   autumn: { label: "Autumn", x: 40,  y: 110 },
   spring: { label: "Spring", x: 220, y: 110 },
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
-  oak:    { label: "Oak",    x: 40,  y: 20 }   // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
+  oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
+  ratroom: { label: "Rat Den", x: 40, y: 190 } // below oak, same column -- reached via the trap door, so down makes as much sense as up did for oak
 };
 
 const discoveredScenes = { autumn: true, oak: true }; // autumn is where you normally start; oak added too while the temporary debug-start is active
@@ -4611,13 +4624,18 @@ function drawHeartLeaf(ctx, x, y, size, rotation, color, veinColor, variegated) 
   ctx.restore();
 }
 
-function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, seed, groundLength, groundDir) {
+function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, seed, groundLength, groundDir, emergeDir) {
   const points = [];
+  // distinct emergence bulge right at the base -- a clear curve out
+  // over the pot's rim before the normal hanging wave takes over,
+  // same two-stage idea as the monstera's stems
+  points.push({ x: startX, y: startY });
+  points.push({ x: startX + emergeDir * 12, y: startY + 6 });
   const segments = 12;
-  for (let i = 0; i <= segments; i++) {
+  for (let i = 1; i <= segments; i++) {
     const t = i / segments;
-    const x = startX + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
-    const y = startY + t * hangLength;
+    const x = startX + emergeDir * 12 * (1 - t) + Math.sin(t * 3.2 + seed) * waveAmp * (0.3 + t * 0.7);
+    const y = startY + 6 + t * hangLength;
     points.push({ x, y });
   }
   if (groundLength) {
@@ -4657,8 +4675,8 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 const pothosSpot = { x: 2130, hangY: 260 };
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
-const snakePlantSpot = { x: 260, y: 0 };
-function drawMonsteraLeaf(ctx, x, y, size, rotation, color) {
+const snakePlantSpot = { x: 950, y: 0 };
+function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
@@ -4673,23 +4691,34 @@ function drawMonsteraLeaf(ctx, x, y, size, rotation, color) {
   ctx.bezierCurveTo(-size * 0.7, -size * 0.3, -size * 0.55, -size * 0.9, 0, -size);
   ctx.closePath();
   ctx.fill();
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.fillStyle = "black";
-  const holes = [
-    [size * 0.28, -size * 0.35, size * 0.11], [-size * 0.3, -size * 0.15, size * 0.1],
-    [size * 0.32, size * 0.05, size * 0.1], [-size * 0.28, size * 0.25, size * 0.09]
-  ];
-  holes.forEach(([hx, hy, hr]) => {
+
+  // real holes -- filled with an approximation of the oak room's own
+  // background tone instead of destination-out, which was erasing
+  // through everything already painted on the canvas (the whole room
+  // background), not just this leaf shape, hence the stray white.
+  // Pattern genuinely varies per leaf via the seed.
+  ctx.fillStyle = holeColor || "#4a3420";
+  const holeCount = 3 + (seed % 2);
+  for (let i = 0; i < holeCount; i++) {
+    const a = (i / holeCount) * Math.PI * 1.3 - Math.PI * 0.55 + (seed % 5) * 0.1;
+    const r = size * (0.25 + ((seed + i * 3) % 5) * 0.03);
+    const hx = Math.sin(a) * size * 0.32;
+    const hy = -size * 0.15 + Math.cos(a) * size * 0.28 + (i % 2) * size * 0.15;
     ctx.beginPath();
-    ctx.ellipse(hx, hy, hr, hr * 1.6, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(hx, hy, r * 0.4, r * 0.65, a, 0, Math.PI * 2);
     ctx.fill();
-  });
-  [[-size * 0.6, -size * 0.1], [size * 0.62, -size * 0.15], [-size * 0.5, size * 0.4], [size * 0.5, size * 0.35]].forEach(([nx, ny]) => {
+  }
+  const notchCount = 3 + (seed % 2);
+  for (let i = 0; i < notchCount; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const t = 0.15 + ((seed + i * 7) % 6) * 0.12;
+    const nx = side * size * 0.6;
+    const ny = -size * 0.5 + t * size;
     ctx.beginPath();
-    ctx.ellipse(nx, ny, size * 0.09, size * 0.22, Math.atan2(ny, nx), 0, Math.PI * 2);
+    ctx.ellipse(nx, ny, size * 0.08, size * 0.18, Math.atan2(ny, nx), 0, Math.PI * 2);
     ctx.fill();
-  });
-  ctx.globalCompositeOperation = "source-over";
+  }
+
   ctx.strokeStyle = "rgba(255,255,255,0.2)";
   ctx.lineWidth = size * 0.025;
   ctx.beginPath();
@@ -4700,56 +4729,216 @@ function drawMonsteraLeaf(ctx, x, y, size, rotation, color) {
   ctx.restore();
 }
 
+
 // monstera -- shorter, fuller, drooping leaves at irregular angles,
 // near the nook but offset so it doesn't overlap the sitting area
-const monsteraSpot = { x: 1230, y: 0 };
-function drawMonstera(camX) {
-  const px = monsteraSpot.x - camX, py = gy - monsteraSpot.y;
-  ctx.fillStyle = "#8a6a4a";
+const monsteraSpot = { x: 1210, y: 0 };
+function drawHeartVine(ctx, startX, startY, length, waveAmp, seed) {
+  const points = [];
+  const segments = 16;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = startX + Math.sin(t * 3.5 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + t * length;
+    points.push({ x, y });
+  }
+  ctx.strokeStyle = "rgba(150,120,150,0.5)";
+  ctx.lineWidth = 0.8;
   ctx.beginPath();
-  ctx.moveTo(px - 24, py); ctx.lineTo(px + 24, py); ctx.lineTo(px + 19, py - 30); ctx.lineTo(px - 19, py - 30);
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+  for (let i = 3; i < points.length; i += 4) {
+    const p = points[i];
+    drawHeartLeaf(ctx, p.x, p.y, 6, Math.PI, i % 8 === 0 ? "#8a7a9a" : "#9a8aac", "rgba(200,180,210,0.3)");
+  }
+}
+
+// string of hearts -- small hanging pot, higher up and right of the
+// circle painting, thin sparse wiry vines
+const heartsSpot = { x: 1330, hangY: 315 };
+function drawStringOfHearts(camX) {
+  const px = heartsSpot.x - camX, py = gy - heartsSpot.hangY;
+  ctx.fillStyle = "#7a5a6a";
+  ctx.beginPath();
+  ctx.moveTo(px - 16, py); ctx.lineTo(px + 16, py); ctx.lineTo(px + 12, py + 20); ctx.lineTo(px - 12, py + 20);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#5a4028";
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#4a3040";
+  ctx.lineWidth = 1;
   ctx.stroke();
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py, 14, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  const leaves = [
-    [-0.9, 70, 34], [-0.68, 100, 44], [-0.2, 128, 52],
-    [0.15, 95, 40], [0.42, 108, 46], [0.8, 60, 30]
+  const vines = [
+    [-9, 42, 155, 15, 0.3], [0, 42, 190, 18, 2.4], [9, 42, 130, 12, 4.6]
   ];
-  leaves.forEach(([angle, stemLen, leafSize]) => {
-    const bx = px, by = py - 30;
+  vines.forEach(v => {
+    drawHeartVine(ctx, px + v[0], py + v[1], v[2], v[3], v[4]);
+  });
+}
+
+function drawMonstera(camX) {
+  const px = monsteraSpot.x - camX, py = gy - monsteraSpot.y;
+
+  // ground-contact shadow -- the pot's base narrows to a small point,
+  // which reads as floating without something anchoring it visually
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(px, py + 1, 10, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // dark yellow oval bulb pot -- narrow at the base, wide in the
+  // middle, narrowing again at the mouth, with very thin horizontal
+  // yellow-brown lines
+  ctx.fillStyle = "#8a7020";
+  ctx.beginPath();
+  ctx.moveTo(px - 6, py);
+  ctx.quadraticCurveTo(px - 20, py - 4, px - 19, py - 16);
+  ctx.quadraticCurveTo(px - 17, py - 27, px - 9, py - 31);
+  ctx.lineTo(px - 10, py - 34);
+  ctx.lineTo(px + 10, py - 34);
+  ctx.lineTo(px + 9, py - 31);
+  ctx.quadraticCurveTo(px + 17, py - 27, px + 19, py - 16);
+  ctx.quadraticCurveTo(px + 20, py - 4, px + 6, py);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a4a10";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(160,130,40,0.5)";
+  ctx.lineWidth = 0.5;
+  [-24, -18, -11, -4].forEach(dy => {
+    ctx.beginPath();
+    ctx.moveTo(px - 18, py + dy);
+    ctx.lineTo(px + 18, py + dy);
+    ctx.stroke();
+  });
+  // dirt in the mouth, with a tiny orange crystal tucked in it
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 33, 9, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e08838";
+  ctx.beginPath();
+  ctx.moveTo(px + 3, py - 34);
+  ctx.lineTo(px + 4.5, py - 32.5);
+  ctx.lineTo(px + 3.5, py - 31.5);
+  ctx.lineTo(px + 2, py - 32.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // much smaller leaves, longer stems relative to leaf size, real
+  // angular gaps, and mostly leaning right so it only barely grazes
+  // the nook's edge instead of reaching into it
+  const leaves = [
+    [-0.55, 40, 14, 11, "#8a4a5a"], [-0.15, 62, 20, 22, null], [0.25, 58, 18, 33, null],
+    [0.65, 40, 15, 46, null]
+  ];
+  leaves.forEach(([angle, stemLen, leafSize, seed, holeColor]) => {
+    const bx = px, by = py - 33;
+    // emergence bulge -- the stem curves outward over the pot's rim
+    // right at the base before rising, rather than starting flat
+    const bulgeX = bx + Math.sin(angle) * 10;
+    const bulgeY = by + 4;
     const midX = bx + Math.sin(angle) * stemLen * 0.6;
     const midY = by - Math.cos(angle) * stemLen * 0.7;
     const tipX = bx + Math.sin(angle) * stemLen;
     const tipY = midY + stemLen * 0.15;
     ctx.strokeStyle = "#3a6a34";
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(bx, by);
-    ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+    ctx.quadraticCurveTo(bulgeX, bulgeY, midX, midY);
+    ctx.quadraticCurveTo((midX + tipX) / 2, (midY + tipY) / 2, tipX, tipY);
     ctx.stroke();
-    drawMonsteraLeaf(ctx, tipX, tipY, leafSize, angle * 0.5, "#3a7a3a");
+    drawMonsteraLeaf(ctx, tipX, tipY, leafSize, angle * 0.5, "#3a7a3a", seed, holeColor);
+  });
+}
+
+function drawPearlVine(ctx, startX, startY, length, waveAmp, seed) {
+  const points = [];
+  const segments = 22;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const x = startX + Math.sin(t * 4 + seed) * waveAmp * (0.2 + t * 0.8);
+    const y = startY + t * length;
+    points.push({ x, y });
+  }
+  ctx.strokeStyle = "rgba(90,140,110,0.5)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+  points.forEach((p, i) => {
+    if (i === 0) return;
+    ctx.fillStyle = i % 3 === 0 ? "#4a9a6a" : "#5aab78";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.6 - (i / points.length) * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.beginPath();
+    ctx.arc(p.x - 0.8, p.y - 0.8, 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// string of pearls -- small hanging pot, tucked in the gap between the
+// entry door and the water-bird painting
+const pearlsSpot = { x: 240, hangY: 245 };
+function drawStringOfPearls(camX) {
+  const px = pearlsSpot.x - camX, py = gy - pearlsSpot.hangY;
+  ctx.fillStyle = "#8a9070";
+  ctx.beginPath();
+  ctx.moveTo(px - 15, py); ctx.lineTo(px + 15, py); ctx.lineTo(px + 11, py + 18); ctx.lineTo(px - 11, py + 18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a5038";
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py, 13, 3.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const pearlSeeds = [0.3, 1.2, 2.4, 3.1, 4.0, 4.9, 5.8];
+  pearlSeeds.forEach((s, i) => {
+    drawPearlVine(ctx, px - 9 + i * 3, py + 8, 85 + (i % 3) * 24, 10 + (i % 4) * 2, s);
   });
 }
 
 function drawSnakePlant(camX) {
   const px = snakePlantSpot.x - camX, py = gy - snakePlantSpot.y;
-  ctx.fillStyle = "#8a6a4a";
+  // tall cylindrical ceramic pot, distinct dark charcoal-blue glaze
+  ctx.fillStyle = "#3a4048";
   ctx.beginPath();
-  ctx.moveTo(px - 22, py); ctx.lineTo(px + 22, py); ctx.lineTo(px + 17, py - 26); ctx.lineTo(px - 17, py - 26);
+  ctx.moveTo(px - 18, py); ctx.lineTo(px + 18, py); ctx.lineTo(px + 16, py - 30); ctx.lineTo(px - 16, py - 30);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#5a4028";
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#1e2226";
+  ctx.lineWidth = 1.2;
   ctx.stroke();
+  ctx.strokeStyle = "rgba(90,110,120,0.35)";
+  ctx.lineWidth = 0.5;
+  [-24, -16, -8].forEach(dy => {
+    ctx.beginPath();
+    ctx.moveTo(px - 15.5, py + dy); ctx.lineTo(px + 15.5, py + dy);
+    ctx.stroke();
+  });
+  // dirt at the top
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 30, 15, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   const bladeAngles = [-0.5, -0.28, -0.08, 0.1, 0.3, 0.5];
   const bladeHeights = [80, 100, 115, 105, 88, 73];
   bladeAngles.forEach((a, i) => {
     ctx.save();
-    ctx.translate(px, py - 26);
+    ctx.translate(px, py - 30);
     ctx.rotate(a * 0.35);
     const h = bladeHeights[i];
     ctx.fillStyle = i % 2 === 0 ? "#3a6a34" : "#4a7a3e";
@@ -4781,22 +4970,39 @@ function drawSnakePlant(camX) {
 }
 
 function drawPothos(camX) {
+  if (!oakLamp.collected) return; // same unlock condition as the cushion pile it sits beside
   const px = pothosSpot.x - camX, py = gy - pothosSpot.hangY;
-  ctx.fillStyle = "#8a6a4a";
+  // woven hanging basket -- rounded, distinct from the other pots
+  ctx.fillStyle = "#c9a878";
   ctx.beginPath();
-  ctx.moveTo(px - 22, py); ctx.lineTo(px + 22, py); ctx.lineTo(px + 17, py + 28); ctx.lineTo(px - 17, py + 28);
-  ctx.closePath();
+  ctx.ellipse(px, py + 12, 22, 14, 0, 0, Math.PI);
   ctx.fill();
-  ctx.strokeStyle = "#5a4028";
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#8a6a48";
+  ctx.lineWidth = 0.7;
+  for (let wy = 2; wy <= 20; wy += 4) {
+    ctx.beginPath();
+    const wr = 22 * Math.sin(Math.acos(Math.min(1, wy / 14)));
+    ctx.moveTo(px - wr, py + 12 - (14 - wy));
+    ctx.lineTo(px + wr, py + 12 - (14 - wy));
+    ctx.stroke();
+  }
+  // dirt and rim at the top opening
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py, 20, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a48";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.ellipse(px, py, 22, 7, 0, 0, Math.PI * 2);
   ctx.stroke();
   const vines = [
-    [-12, 180, 18, 0.5, false, 0, 1], [-4, 200, 20, 1.4, true, 100, 1],
-    [4, 170, 16, 2.6, false, 40, 0.6], [12, 210, 22, 3.5, true, 130, 1.3],
-    [20, 160, 14, 4.7, false, 70, 0.9]
+    [-12, 193, 18, 0.5, false, 0, 1, -1], [-4, 246, 20, 1.4, true, 100, 1, -1],
+    [4, 246, 16, 2.6, false, 40, 0.6, 1], [12, 251, 22, 3.5, true, 130, 1.3, 1],
+    [20, 246, 14, 4.7, false, 70, 0.9, 1]
   ];
   vines.forEach((v, i) => {
-    drawPothosVine(ctx, px + v[0], py + 27, v[1], v[2], i % 2 === 0 ? "#5a9a48" : "#6aab52", v[3], v[5], v[6]);
+    drawPothosVine(ctx, px + v[0], py + 8, v[1], v[2], i % 2 === 0 ? "#5a9a48" : "#6aab52", v[3], v[5], v[6], v[7]);
   });
 }
 
@@ -8302,7 +8508,7 @@ const wallArtCircles = new Image();
 wallArtCircles.src = "data:image/jpeg;base64,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";
 
 const wallArtPieces = [
-  { img: wallArtWaterBird, x: 280, y: 60, w: 95, h: 63, frame: "ornate" },
+  { img: wallArtWaterBird, x: 300, y: 60, w: 95, h: 63, frame: "ornate" },
   { img: wallArtArch, x: 730, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
   { img: wallArtCircles, x: 1250, y: 55, w: 72, h: 95, frame: "oval" } // right side of the nook, moved with it, made smaller per request
 ];
@@ -8310,14 +8516,14 @@ const wallArtPieces = [
 function drawAntiqueFrame(x, y, w, h, style) {
   const pad = 6;
   if (style === "ornate") {
-    ctx.fillStyle = "#7a5a2e";
+    ctx.fillStyle = "#4a3818";
     ctx.fillRect(x - pad, y - pad, w + pad * 2, h + pad * 2);
-    ctx.strokeStyle = "#c9a84a";
+    ctx.strokeStyle = "#8a6a2a";
     ctx.lineWidth = 2;
     ctx.strokeRect(x - pad + 2, y - pad + 2, w + pad * 2 - 4, h + pad * 2 - 4);
     // small corner flourishes
     [[x - pad, y - pad], [x + w + pad, y - pad], [x - pad, y + h + pad], [x + w + pad, y + h + pad]].forEach(([cx, cy]) => {
-      ctx.fillStyle = "#c9a84a";
+      ctx.fillStyle = "#8a6a2a";
       ctx.beginPath();
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -8364,15 +8570,15 @@ function drawWallArt(camX) {
   });
 }
 
-const owl = { x: 470, bob: 0 };
+const owl = { x: 495, bob: 0 };
 let owlTalked = false;
 // book piles — hoppable platforms. heightAboveGround pre-computed to match
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
   { x: 1780, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
-  { x: 330, seed: 2, count: 4, heightAboveGround: 30 },
-  { x: 405, seed: 23, count: 3, heightAboveGround: 24 },
+  { x: 350, seed: 2, count: 4, heightAboveGround: 30 },
+  { x: 425, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 560, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
   { x: 770, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
   { x: 870, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
@@ -8813,6 +9019,45 @@ function drawCushionPile(camX) {
   });
 }
 
+// fairy lights -- a gently sagging string draped above the cushion
+// pile, small warm glowing bulbs with a subtle twinkle. Same unlock
+// condition as the cushion pile it's part of.
+function drawFairyLights(camX) {
+  if (!cushionPile.unlocked()) return;
+  const cx = cushionPile.x - camX;
+  const spanLeft = cx - 75, spanRight = cx + 75;
+  const sagY = 42;
+  const bulbColors = ["#f5d060", "#f0a850", "#f5e8a0", "#f0b860"];
+
+  // the wire itself, gently sagging
+  ctx.strokeStyle = "rgba(60,48,30,0.7)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(spanLeft, 8);
+  ctx.quadraticCurveTo(cx, sagY, spanRight, 8);
+  ctx.stroke();
+
+  const bulbCount = 9;
+  for (let i = 0; i < bulbCount; i++) {
+    const t = i / (bulbCount - 1);
+    const x = spanLeft + (spanRight - spanLeft) * t;
+    const y = 8 + (sagY - 8) * (4 * t * (1 - t)); // matches the wire's quadratic sag
+    const twinkle = 0.6 + 0.4 * Math.sin(performance.now() * 0.002 + i * 1.7);
+    ctx.save();
+    ctx.globalAlpha = twinkle;
+    ctx.fillStyle = bulbColors[i % bulbColors.length];
+    ctx.beginPath();
+    ctx.arc(x, y + 3, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    // soft glow halo
+    ctx.globalAlpha = twinkle * 0.35;
+    ctx.beginPath();
+    ctx.arc(x, y + 3, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 const oakLamp = { x: 700, collected: false };
 function drawOakLampTable(camX) {
   if (!ratNPC.fed) return;
@@ -8887,7 +9132,7 @@ function drawMediumShelf(camX) {
 // shared by every "plain" shelf (short shelf, medium shelf, and any
 // future ones) -- frame with a visible border, plus rows of books with
 // real spread and a mix of standing/laid-flat orientations
-function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
+function drawMixedBookShelf(sx, w, top, bottom, rowCount, isShort) {
   ctx.fillStyle = "#8a5a28";
   ctx.fillRect(sx - w / 2, top, w, bottom - top);
   ctx.strokeStyle = "#c9863a";
@@ -8917,6 +9162,39 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
     const layout = layoutPatterns[row % layoutPatterns.length];
     layout.forEach((entry, b) => {
       if (bx >= sx + w / 2 - 8) return;
+      if (isShort && row === 1 && b === 0) {
+        // the Metaphors book -- title only shows/readable once the
+        // cushion pile area is unlocked, matching its own cover design
+        const mw = 16, mh = rowHeight - 8;
+        const unlocked = oakLamp.collected;
+        if (unlocked) {
+          ctx.fillStyle = "#1a1a1a";
+          ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
+          ctx.fillStyle = "#3f5766";
+          ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh / 3);
+          ctx.strokeStyle = "#22303a";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
+          ctx.save();
+          ctx.translate(bx + mw / 2, rowY + rowHeight - 3 - mh + mh * 0.62);
+          ctx.rotate(-Math.PI / 2);
+          ctx.fillStyle = "#e8ddc8";
+          ctx.font = "italic 7px Georgia, serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Metaphors", 0, 0);
+          ctx.restore();
+        } else {
+          // blank, unremarkable spine -- nothing readable yet
+          ctx.fillStyle = "#4a3a2f";
+          ctx.fillRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
+          ctx.strokeStyle = "#2e241c";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bx, rowY + rowHeight - 3 - mh, mw, mh);
+        }
+        bx += mw + 3;
+        return;
+      }
       const seed = rowSeed + b * 4 + row * 11; // more entropy so adjacent rows don't echo each other's widths
       const gap = 3 + (seed % 8);
       if (entry.standing) {
@@ -8943,8 +9221,9 @@ function drawMixedBookShelf(sx, w, top, bottom, rowCount) {
         let stackY = rowY + rowHeight - 3;
         for (let s = 0; s < stackCount; s++) {
           const bh2 = 3 + ((seed + s * 5) % 6);
+          const bookW2 = Math.max(6, bookW - ((seed + s * 7) % 9)); // varied length per book in the stack, not all identical
           ctx.fillStyle = colors[(seed + s) % colors.length];
-          ctx.fillRect(bx, stackY - bh2, bookW, bh2);
+          ctx.fillRect(bx, stackY - bh2, bookW2, bh2);
           stackY -= bh2;
         }
         bx += bookW + gap;
@@ -8958,7 +9237,7 @@ function drawShortShelf(camX) {
   const w = shortShelf.width;
   const top = shortShelf.top, bottom = shortShelf.bottom;
 
-  drawMixedBookShelf(sx, w, top, bottom, 3);
+  drawMixedBookShelf(sx, w, top, bottom, 3, true);
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 6, broomBottom = bottom;
@@ -9224,7 +9503,7 @@ function drawOakScene(camX) {
     }
   }
   // drawn from the shared bookPiles array (also used for collision below)
-  bookPiles.forEach(pile => drawBookPile(pile.x, gy - 6, pile.seed, pile.count));
+  bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count));
   bookSpreads.forEach(spread => drawBookSpread(spread, camX));
 
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
@@ -9468,8 +9747,11 @@ function drawOakScene(camX) {
   drawOakLampTable(camX);
   drawPothos(camX);
   drawSnakePlant(camX);
+  drawStringOfPearls(camX);
   drawMonstera(camX);
+  drawStringOfHearts(camX);
   drawCushionPile(camX);
+  drawFairyLights(camX);
   drawOwl(camX);
 }
 
@@ -9591,7 +9873,11 @@ function updateOakScene(deltaTime) {
     carriedBook = null; // books can't leave oak -- nowhere to actually read one elsewhere, so it's quietly set back down
   }
 
-  // book pile collision — same landing pattern as regular platforms
+  // book pile collision — same landing pattern as regular platforms.
+  // CONFIRMED BUG FIX: 14-unit tolerance was narrower than the ~15-17
+  // units/frame fall speed reached dropping from something tall above
+  // (like the medium shelf), so landing was a coin flip depending on
+  // exact frame timing -- widened with real margin.
   bookPiles.forEach(pile => {
     const pileTop = pile.heightAboveGround;
     const playerBottom = player.y;
@@ -9599,7 +9885,7 @@ function updateOakScene(deltaTime) {
       player.x + player.width > pile.x - BOOK_PILE_WIDTH / 2 &&
       player.x < pile.x + BOOK_PILE_WIDTH / 2 &&
       playerBottom <= pileTop &&
-      playerBottom >= pileTop - 14 &&
+      playerBottom >= pileTop - 24 &&
       player.vy <= 0
     ) {
       player.y = pileTop;
@@ -9665,16 +9951,42 @@ function updateOakScene(deltaTime) {
     }
   });
 
+  // top-of-lamp-table collision — jumpable, same pattern as the shelves
+  {
+    const tableTopHeight = 26;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > oakLamp.x - 18 &&
+      player.x < oakLamp.x + 18 &&
+      playerBottom <= tableTopHeight &&
+      playerBottom >= tableTopHeight - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = tableTopHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // pick up the apple storybook to carry -- no longer opens directly at
   // the shelf, must be carried to a sitting area to actually read it
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(90, 27, 20, 25, 25)) {
+      keys.spaceJustPressed && isPlayerNear(90, 27, 30, 30, 30)) {
     carriedBook = "apple";
+  }
+
+  // pick up the Metaphors book -- only pickup-able once the cushion
+  // pile area is unlocked, matching its shelf visibility
+  if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
+      oakLamp.collected &&
+      keys.spaceJustPressed && isPlayerNear(1481, 65, 25, 25, 25)) {
+    carriedBook = "metaphors";
   }
 
   // pick up the manual to carry, same rule
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(620, 20, 25, 30, 30)) {
+      keys.spaceJustPressed && isPlayerNear(620, 20, 32, 32, 32)) {
     carriedBook = "manual";
   }
 
@@ -9712,6 +10024,7 @@ const bookReader = {
   closeT: 0,
   transitioning: false,
   transitionT: 0,
+  pageTime: 0,           // how long the current page has been shown -- used for a brief grace period on the end page
   sparkles: []
 };
 
@@ -9720,6 +10033,7 @@ const BOOK_READER_PAUSE_MS = 500;
 const BOOK_READER_IN_MS = 1500;
 const BOOK_READER_TRANSITION_TOTAL = BOOK_READER_OUT_MS + BOOK_READER_PAUSE_MS + BOOK_READER_IN_MS;
 const BOOK_OPEN_CLOSE_MS = 2800; // matches the previewed flourish timing
+const BOOK_END_PAGE_GRACE_MS = 550; // brief pause on "the end" before input can close the book
 
 const appleBookPages = [
   {
@@ -9799,8 +10113,129 @@ const manualBookPages = [
   { num: null, isEndPage: true, lines: [] }
 ];
 
+function drawIdeaBulb(ctx, x, y, s) {
+  // an idea shape (hexagon) with a real lightbulb inside -- the
+  // established marker for "this is an idea" throughout the book
+  ctx.fillStyle = "#F2D9A8";
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x, y - s); ctx.lineTo(x + s * 0.55, y - s * 0.6); ctx.lineTo(x + s * 0.35, y + s * 0.25);
+  ctx.lineTo(x - s * 0.35, y + s * 0.25); ctx.lineTo(x - s * 0.55, y - s * 0.6);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "#B5551E";
+  ctx.lineWidth = s * 0.05;
+  ctx.beginPath();
+  ctx.arc(x, y - s * 0.4, s * 0.25, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.13, y - s * 0.18); ctx.lineTo(x - s * 0.1, y);
+  ctx.lineTo(x + s * 0.1, y); ctx.lineTo(x + s * 0.13, y - s * 0.18);
+  ctx.stroke();
+  ctx.strokeRect(x - s * 0.1, y, s * 0.2, s * 0.18);
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.1, y + s * 0.06); ctx.lineTo(x + s * 0.1, y + s * 0.06);
+  ctx.moveTo(x - s * 0.1, y + s * 0.13); ctx.lineTo(x + s * 0.1, y + s * 0.13);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.1, y - s * 0.4); ctx.quadraticCurveTo(x, y - s * 0.62, x + s * 0.1, y - s * 0.4);
+  ctx.quadraticCurveTo(x, y - s * 0.18, x - s * 0.1, y - s * 0.4);
+  ctx.stroke();
+}
+
+function drawIdeaBulbSmall(ctx, x, y, s) {
+  // same marker, small circle variant, used for the extra idea inside the pocket
+  ctx.fillStyle = "#F2D9A8";
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, s, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "#B5551E";
+  ctx.lineWidth = s * 0.09;
+  ctx.beginPath();
+  ctx.arc(x, y - s * 0.15, s * 0.35, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.15, y + s * 0.12); ctx.lineTo(x + s * 0.15, y + s * 0.12);
+  ctx.stroke();
+}
+
+function drawDustyPocket(ctx, x, y, s) {
+  // jeans-pocket shaped container, curved bottom, partly open top,
+  // translucent, dusty blue matching the book's own cover
+  ctx.fillStyle = "rgba(63,87,102,0.35)";
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s * 0.2); ctx.quadraticCurveTo(x - s, y + s * 1.3, x, y + s * 1.4);
+  ctx.quadraticCurveTo(x + s, y + s * 1.3, x + s, y - s * 0.2); ctx.lineTo(x + s, y - s * 0.45);
+  ctx.quadraticCurveTo(x, y - s * 0.2, x - s, y - s * 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(90,125,140,0.45)";
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.94, y - s * 0.25); ctx.lineTo(x - s * 0.94, y + s * 1.06);
+  ctx.quadraticCurveTo(x - s * 0.94, y + s * 1.3, x, y + s * 1.38);
+  ctx.quadraticCurveTo(x + s * 0.94, y + s * 1.3, x + s * 0.94, y + s * 1.06);
+  ctx.lineTo(x + s * 0.94, y - s * 0.25);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a6470";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(38,52,60,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.94, y - s * 0.25); ctx.quadraticCurveTo(x, y + s * 0.06, x + s * 0.94, y - s * 0.25);
+  ctx.lineTo(x + s, y - s * 0.45); ctx.quadraticCurveTo(x, y - s * 0.2, x - s, y - s * 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(74,100,112,0.6)";
+  ctx.lineWidth = 0.6;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.75, y - s * 0.05); ctx.quadraticCurveTo(x - s * 0.75, y + s * 1.06, x, y + s * 1.12);
+  ctx.quadraticCurveTo(x + s * 0.75, y + s * 1.06, x + s * 0.75, y - s * 0.05);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+const metaphorsBookPages = [
+  {
+    num: 1,
+    lines: ["Ideas (or meanings) are objects.", "", "We speak of ideas as things we grasp, hold onto, turn over,", "or drop. Something we can hand to another person, whole,", "as if meaning had a shape.", "", "\u201cLet me give you an idea.\u201d \u201cI can't quite grasp that.\u201d"],
+    draw: (frX, frY) => { drawIdeaBulb(ctx, frX, frY, 34); }
+  },
+  {
+    num: 2,
+    lines: ["Linguistic expressions are containers.", "", "Words and sentences are the vessels we put those ideas", "into. A sentence can be \u201cfull of meaning,\u201d or feel \u201cempty,\u201d", "as though meaning were something poured in and sealed.", "", "\u201cThat paragraph is packed with ideas.\u201d"],
+    draw: (frX, frY) => {
+      drawDustyPocket(ctx, frX, frY + 4, 30);
+      drawIdeaBulbSmall(ctx, frX - 10, frY + 22, 8);
+      drawIdeaBulbSmall(ctx, frX + 11, frY + 26, 7);
+    }
+  },
+  {
+    num: 3,
+    lines: ["Communication is sending.", "", "To communicate, then, is to send that filled container", "across the distance between two people \u2014 speaker to", "listener \u2014 trusting the meaning arrives intact inside it.", "", "\u201cI couldn't get my point across.\u201d"],
+    draw: (frX, frY) => {
+      ctx.strokeStyle = "#8a8880"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(frX - 42, frY - 4, 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(frX - 52, frY + 30); ctx.quadraticCurveTo(frX - 42, frY + 6, frX - 32, frY + 30); ctx.stroke();
+      ctx.beginPath(); ctx.arc(frX + 42, frY - 4, 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(frX + 32, frY + 30); ctx.quadraticCurveTo(frX + 42, frY + 6, frX + 52, frY + 30); ctx.stroke();
+      ctx.strokeStyle = "rgba(15,110,86,0.5)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(frX - 30, frY + 2); ctx.quadraticCurveTo(frX, frY - 26, frX + 30, frY + 2); ctx.stroke();
+      ctx.setLineDash([]);
+      drawDustyPocket(ctx, frX, frY - 20, 14);
+      drawIdeaBulbSmall(ctx, frX, frY - 12, 5);
+    }
+  },
+  { num: null, isEndPage: true, lines: [] }
+];
+
 function getActivePages() {
-  return bookReader.book === "manual" ? manualBookPages : appleBookPages;
+  if (bookReader.book === "manual") return manualBookPages;
+  if (bookReader.book === "metaphors") return metaphorsBookPages;
+  return appleBookPages;
 }
 
 function drawBookVine(cx, y, textWidth) {
@@ -10065,26 +10500,39 @@ function drawBookPageContent(pages, pageIdx, x, pw, ph, alpha) {
   ctx.font = "14px Georgia, serif";
   const numStr = String(page.num);
   const numWidth = ctx.measureText(numStr).width;
-  drawBookVine(frX, ph - 48, numWidth);
+  drawBookVine(frX, ph - 62, numWidth);
   ctx.fillStyle = "#4a3018";
-  ctx.fillText(numStr, frX, ph - 32);
+  ctx.fillText(numStr, frX, ph - 44);
   ctx.restore();
 }
 
 function drawBookCover(centerX, centerY, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha;
-  const isManual = bookReader.book === "manual";
-  const coverW = isManual ? 90 : 110, coverH = 130;
-  ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
-  ctx.fillRect(centerX - coverW / 2, centerY - coverH / 2, coverW, coverH);
-  ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(centerX - coverW / 2, centerY - coverH / 2, coverW, coverH);
-  ctx.fillStyle = isManual ? "#e8ddc8" : "#d4a520";
+  const bookType = bookReader.book;
+  const coverW = bookType === "manual" ? 90 : bookType === "metaphors" ? 100 : 110, coverH = 130;
+  const cx0 = centerX - coverW / 2, cy0 = centerY - coverH / 2;
+  if (bookType === "metaphors") {
+    // simplified cover -- black bottom two-thirds, dusty blue top third
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(cx0, cy0, coverW, coverH);
+    ctx.fillStyle = "#3f5766";
+    ctx.fillRect(cx0, cy0, coverW, coverH / 3);
+    ctx.strokeStyle = "#22303a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx0, cy0, coverW, coverH);
+  } else {
+    const isManual = bookType === "manual";
+    ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
+    ctx.fillRect(cx0, cy0, coverW, coverH);
+    ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx0, cy0, coverW, coverH);
+  }
+  ctx.fillStyle = bookType === "manual" ? "#e8ddc8" : bookType === "metaphors" ? "#e8ddc8" : "#d4a520";
   ctx.font = "italic 13px Georgia, serif";
   ctx.textAlign = "center";
-  ctx.fillText(isManual ? "MANUAL" : "apple", centerX, centerY);
+  ctx.fillText(bookType === "manual" ? "MANUAL" : bookType === "metaphors" ? "Metaphors" : "apple", centerX, centerY);
   ctx.restore();
 }
 
@@ -10103,6 +10551,7 @@ function updateBookReader(deltaTime) {
       bookReader.opening = false;
       bookReader.active = true;
       bookReader.currentPage = 0;
+      bookReader.pageTime = 0;
     }
     return;
   }
@@ -10125,18 +10574,26 @@ function updateBookReader(deltaTime) {
     if (bookReader.transitionT >= BOOK_READER_TRANSITION_TOTAL) {
       bookReader.transitioning = false;
       bookReader.currentPage = bookReader.pendingPage;
+      bookReader.pageTime = 0;
     }
     return;
   }
 
-  if (keys.spaceJustPressed) {
+  bookReader.pageTime += dtMs;
+
+  // brief grace period on the end page specifically -- ensures "the
+  // end" is actually seen for a moment before input can close the book
+  const onEndPage = pages[bookReader.currentPage] && pages[bookReader.currentPage].isEndPage;
+  const pastGracePeriod = !onEndPage || bookReader.pageTime >= BOOK_END_PAGE_GRACE_MS;
+
+  if (keys.spaceJustPressed && pastGracePeriod) {
     bookReader.active = false;
     bookReader.closing = true;
     bookReader.closeT = 0;
     return;
   }
 
-  if (keys.rightJustPressed) {
+  if (keys.rightJustPressed && pastGracePeriod) {
     if (bookReader.currentPage >= pages.length - 1) {
       bookReader.active = false;
       bookReader.closing = true;
@@ -10735,7 +11192,7 @@ const hayPiles = [
   { x: 720, seed: 61, count: 8 }
 ];
 
-const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false, facingRight: false };
+const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false, facingRight: false, fed: true }; // fed seeded true for debug-start convenience -- unlocks lamp table / cushion pile immediately for testing
 
 // dialogue system -- space near the rat starts it, space again advances
 // through each beat, closes automatically after the last line. Every
@@ -11570,11 +12027,22 @@ if (carriedBook && !fallState.active) {
   const bookPos = getHeldItemWorldPos();
   const bx = bookPos.x - camX, by = bookPos.y;
   const isManual = carriedBook === "manual";
-  ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
-  ctx.fillRect(bx - 6, by - 8, 12, 16);
-  ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bx - 6, by - 8, 12, 16);
+  const isMetaphors = carriedBook === "metaphors";
+  if (isMetaphors) {
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(bx - 6, by - 8, 12, 16);
+    ctx.fillStyle = "#3f5766";
+    ctx.fillRect(bx - 6, by - 8, 12, 5);
+    ctx.strokeStyle = "#22303a";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 6, by - 8, 12, 16);
+  } else {
+    ctx.fillStyle = isManual ? "#2f5a6a" : "#7a2f2f";
+    ctx.fillRect(bx - 6, by - 8, 12, 16);
+    ctx.strokeStyle = isManual ? "#1a3540" : "#5a2020";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 6, by - 8, 12, 16);
+  }
   if (isManual) {
     // small tooth icon, so the manual stands out at a glance even at
     // this tiny carried-icon size, not just a plain label stripe
@@ -11589,7 +12057,7 @@ if (carriedBook && !fallState.active) {
     ctx.quadraticCurveTo(tx - 1.8, ty, tx - 1.6, ty - 1);
     ctx.closePath();
     ctx.fill();
-  } else {
+  } else if (!isMetaphors) {
     ctx.fillStyle = "#d4a520";
     ctx.fillRect(bx - 4, by - 5, 8, 1.5);
   }
