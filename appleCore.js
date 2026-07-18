@@ -1022,19 +1022,11 @@ function drawSeasonTransition(ctx) {
       // for real dimension, plus a smirk on the snout that wasn't
       // there at all before
       ctx.strokeStyle = "#1a1a1a";
-      ctx.lineWidth = 1.3;
+      ctx.lineWidth = 1.6;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(-5.4, -0.8);
-      ctx.quadraticCurveTo(-4, 0.4, -2.6, -0.6);
-      ctx.stroke();
-      // eyelid crease just above the squint, the detail that actually
-      // reads as a real closed eye instead of a cartoon curve
-      ctx.strokeStyle = "rgba(26,26,26,0.55)";
-      ctx.lineWidth = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(-5, -2);
-      ctx.quadraticCurveTo(-4, -1.6, -3, -2);
+      ctx.moveTo(-5.4, -0.6);
+      ctx.quadraticCurveTo(-4, 0.6, -2.6, -0.4);
       ctx.stroke();
       // open eye, with a tiny highlight for some life
       ctx.fillStyle = "#1a1a1a";
@@ -4808,15 +4800,19 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 // trailing down with some pooling gently on the ground
 const pothosSpot = { x: 2825, hangY: 260 };
 
-const lavenderSpot = { x: 2620 };
+const lavenderSpot = { x: 2590 };
 // Joshua tree, tucked into the ratroom's right side -- a real
 // personal touch rather than a generic desert plant, with its actual
 // distinctive silhouette: a thick, gnarled, irregularly-branching
 // trunk, each branch ending in a spiky rosette of pointed leaves
 // radiating outward, not a smooth-armed saguaro shape
-const joshuaTreeSpot = { x: 1360 };
+const joshuaTreeSpot = { x: 1280 };
 function drawJoshuaTree(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
   const px = joshuaTreeSpot.x - camX, py = gy;
+  const dist = Math.hypot(px - playerScreenX, py - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
   const trunkColor = "#6a5a42";
   const leafColor = "#5a8a48";
   const leafColorDark = "#4a7a3a";
@@ -4920,27 +4916,32 @@ function drawJoshuaTree(camX) {
 // its own gentle wander and independent on/off flicker timing, so the
 // glow itself (not fixed eyes) is what makes these read as alive
 const fireflies = [
-  { baseX: 1340, baseY: 60, seed: 3, flickerSeed: 11 },
-  { baseX: 1375, baseY: 85, seed: 17, flickerSeed: 29 },
-  { baseX: 1395, baseY: 45, seed: 41, flickerSeed: 53 }
+  { baseX: 1260, baseY: 60, seed: 3, phaseOffset: 0 },
+  { baseX: 1295, baseY: 85, seed: 17, phaseOffset: 0.6 },
+  { baseX: 1315, baseY: 45, seed: 41, phaseOffset: 1.2 },
+  { baseX: 1245, baseY: 90, seed: 23, phaseOffset: 1.8 },
+  { baseX: 1330, baseY: 70, seed: 31, phaseOffset: 2.4 }
 ];
 let fireflyT = 0;
 function updateFireflies(deltaTime) {
   fireflyT += deltaTime * 1000;
 }
 function drawFireflies(camX) {
-  if (!lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
   fireflies.forEach(f => {
     const wx = f.baseX + Math.sin(fireflyT * 0.0006 + f.seed) * 14;
     const wy = f.baseY + Math.cos(fireflyT * 0.0004 + f.seed * 1.3) * 10;
     const fx = wx - camX, fy = gy - wy;
     const dist = Math.hypot(fx - playerScreenX, fy - (gy - player.y));
-    if (dist > LAMP_LIGHT_RADIUS) return;
+    // the glow itself is always visible, no lamp needed -- fireflies
+    // make their own light, so requiring an external lamp to see them
+    // at all was backwards. Wider range than the lamp's own radius,
+    // since a glowing point stands out more in real darkness.
+    if (dist > 150) return;
     // independent flicker -- irregular on/off rather than a smooth
     // pulse, closer to how real fireflies actually blink
-    const flickerCycle = (fireflyT * 0.001 + f.flickerSeed * 7) % 4;
-    const glowP = flickerCycle < 0.5 ? Math.sin((flickerCycle / 0.5) * Math.PI) : 0;
+    const flickerCycle = (fireflyT * 0.001 + f.phaseOffset) % 3;
+    const glowP = flickerCycle < 1.5 ? Math.sin((flickerCycle / 1.5) * Math.PI) : 0;
     if (glowP < 0.05) return; // fully off, don't even draw the dark body -- reads as truly absent, not just dim
     const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 6);
     grad.addColorStop(0, `rgba(220,240,140,${0.9 * glowP})`);
@@ -4954,6 +4955,26 @@ function drawFireflies(camX) {
     ctx.beginPath();
     ctx.arc(fx, fy, 1.3, 0, Math.PI * 2);
     ctx.fill();
+    // actual bug shape, only visible with the lamp on and close
+    // enough -- a small dark body and two wing shapes flanking the
+    // glow, the detail the glow alone can't show in the dark
+    if (lampLit && dist <= LAMP_LIGHT_RADIUS) {
+      ctx.fillStyle = "rgba(30,26,16,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, 1.6, 0.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(60,55,40,0.4)";
+      const wingFlap = Math.sin(fireflyT * 0.02 + f.seed) * 0.3;
+      [-1, 1].forEach(side => {
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(side * (0.5 + wingFlap));
+        ctx.beginPath();
+        ctx.ellipse(side * 2, 0, 1.8, 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
   });
 }
 function drawLavenderPlant(camX) {
@@ -9353,6 +9374,7 @@ const babyOwl = {
 };
 const teaDialogue = { active: false, lines: [], index: 0 };
 const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
+let pourRetractValue = 0; // smoothly eases back to 0 once pouring ends, instead of the owl/kettle instantly snapping to resting
 const TEA_SEGMENT_MS = { pouring: 2200, full: 1800, sipping: 1400, empty: 1200 };
 const TEA_SPARKLE_COUNT = 6;
 
@@ -9704,10 +9726,10 @@ function drawTeaNook(camX) {
   // During pouring the owl actually lifts and tilts it rather than it
   // staying fixed on the table -- first half of the pour is the wing
   // reaching to grab the handle, second half is the lift-and-pour itself.
-  const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
+  const pourWingLift = pourRetractValue;
   const grabP = Math.min(1, pourWingLift / 0.28);
   const liftP = Math.max(0, (pourWingLift - 0.28) / 0.72);
-  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 32;
+  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 24;
   const kettleTiltAngle = -liftP * 0.4;
   const kx = tx + 14, ky = tableTop + 2;
   // rotate around the handle's own position, not the kettle's center
@@ -9958,7 +9980,8 @@ function drawTeaPlayerCup(tx, tableTop) {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping);
     const bob = Math.sin(p * Math.PI);
     const towardPlayer = player.x < teaSpot.x ? -1 : 1; // bobs toward wherever the player actually is, not always to the right
-    bx = cupX + bob * 24 * towardPlayer; by = cupY - bob * 6;
+    const reachDist = towardPlayer === 1 ? 34 : 24; // further right, since that side's interaction zone extends further -- should read as reaching a genuinely farther player
+    bx = cupX + bob * reachDist * towardPlayer; by = cupY - bob * 6;
   }
   // pouring stream, from the kettle spout's actual current tip
   // (computed from its real rotation) down into the cup, wavy and
@@ -9974,10 +9997,11 @@ function drawTeaPlayerCup(tx, tableTop) {
     const spoutTipX = spoutTipWorld.x, spoutTipY = spoutTipWorld.y;
     const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
     const wob = Math.sin(performance.now() * 0.02) * 1.2;
+    const bowAmount = 20; // consistent downward sag from gravity, on top of the small time-wobble -- accounts for the quadratic bezier's control point only being 50% weighted in the actual curve
     ctx.strokeStyle = "rgba(140,86,36,0.9)"; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(spoutTipX, spoutTipY);
-    ctx.quadraticCurveTo((spoutTipX + streamEndX) / 2 + wob, (spoutTipY + streamEndY) / 2, streamEndX, streamEndY);
+    ctx.quadraticCurveTo((spoutTipX + streamEndX) / 2 + wob, (spoutTipY + streamEndY) / 2 + bowAmount, streamEndX, streamEndY);
     ctx.stroke();
     // a couple traveling droplets along the stream
     for (let d = 0; d < 2; d++) {
@@ -10099,6 +10123,14 @@ function updateTeaNook(deltaTime) {
     }
   } else {
     teaAnim.t += dtMs;
+    // smooth retraction -- tracks live pour progress while actively
+    // pouring, then eases toward 0 afterward instead of the instant
+    // reset that caused the owl/kettle to visibly snap back to resting
+    if (teaAnim.phase === "pouring") {
+      pourRetractValue = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring);
+    } else if (pourRetractValue > 0) {
+      pourRetractValue = Math.max(0, pourRetractValue - dtMs / 700);
+    }
     if (teaAnim.phase === "pouring" && teaAnim.t >= TEA_SEGMENT_MS.pouring) {
       teaAnim.phase = "full"; teaAnim.t = 0;
     } else if (teaAnim.phase === "full" && teaAnim.t >= TEA_SEGMENT_MS.full) {
@@ -12282,7 +12314,7 @@ const ratRoomHighShelves = [
   // comfortably reachable from the tier below but not skippable from
   // ground, and still within the lamp's own 90-unit radius.
   { x: 170, y: 255, w: 32, tier: 0, cluster: "left" },
-  { x: 195, y: 185, w: 30, tier: 1, cluster: "left", unlocked: false }, // offset from tier 0, not stacked directly above it
+  { x: 195, y: 185, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's own shelf, offset from tier0 rather than stacked directly above it
   // right cluster -- ground shelf, then two middle shelves revealed
   // from it at slightly different heights for visual variety, then
   // the snake's own shelf pushed up a further, larger jump for real
@@ -12300,7 +12332,7 @@ const ratRoomHighShelves = [
   // landing on the snake's shelf is meant to be a dead end that knocks
   // you back rather than a valid path forward.
   { x: 1195, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
-  { x: 1265, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
+  { x: 1295, y: 100, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it. Moved lower and further right from the safe shelf, which was too crowded before -- verified still reachable via a real jump simulation.
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -12689,7 +12721,7 @@ function updateSnake(deltaTime) {
   // auto-triggers on proximity with the lamp lit -- no space press
   // needed, since requiring one would conflict with holding space
   // continuously just to keep the lamp lit while approaching
-  if (!snakeDialogue.everShownThisVisit && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 40, 35, 30) && lampLit) {
+  if (!snakeDialogue.everShownThisVisit && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 70, 60, 30) && lampLit) {
     snakeDialogue.active = true;
     snakeDialogue.index = 0;
     snakeDialogue.t = 0;
@@ -12699,7 +12731,7 @@ function updateSnake(deltaTime) {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1265, y: 63, collected: false };
+const marbleSpot = { x: 1295, y: 93, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -13109,7 +13141,7 @@ const nestStrings = [
 // the lamp is lit and within range. Positioned to the right specifically
 // since most of the eyes are to the left, where a player would default
 // to looking first.
-const ratRoomFeather = { x: 600, y: 4, collected: false };
+const ratRoomFeather = { x: 600, y: 30, collected: false };
 // unravel animation -- pressing space starts a slow unwind rather than
 // an instant pickup, so the string-wrapped feather reads as a
 // deliberate discovery rather than something grabbed by accident
@@ -13185,7 +13217,7 @@ function completeFeatherPickup() {
 }
 function updateRatRoomFeather() {
   if (ratRoomFeather.collected || !lampLit || featherUnravelAnim.active) return;
-  if (keys.spaceJustPressed && isPlayerNear(ratRoomFeather.x, ratRoomFeather.y, 20, 15, 12)) {
+  if (keys.spaceJustPressed && isPlayerNear(ratRoomFeather.x, ratRoomFeather.y, 20, 15, 35)) {
     featherUnravelAnim.active = true;
     featherUnravelAnim.t = 0;
   }
@@ -13487,7 +13519,7 @@ const ratRoomEyes = [
   { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
   { x: 1200, y: 245, phase: 3.8, blinkSpeed: 1.05 },
-  { x: 1280, y: 268, phase: 0.7, blinkSpeed: 0.9 },
+  { x: 1360, y: 268, phase: 0.7, blinkSpeed: 0.9 },
   { x: 950, y: 60, phase: 5.6, blinkSpeed: 0.8 } // a second high-up perch, further right
 ];
 let ratRoomEyeT = 0;
@@ -14431,7 +14463,7 @@ updateSeasonTransition(deltaTime);
   // pattern -- caps the camera a bit past where the hay ground cover
   // actually ends, so the camera stops there even if the player keeps
   // walking on toward their own boundary further out
-  if (currentScene === "ratroom" && cameraX > 700) cameraX = 700;
+  if (currentScene === "ratroom" && cameraX > 625) cameraX = 625;
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
