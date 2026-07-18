@@ -1044,7 +1044,7 @@ function drawSeasonTransition(ctx) {
       // for real dimension, plus a smirk on the snout that wasn't
       // there at all before
       ctx.strokeStyle = "#1a1a1a";
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.1;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(-5.4, -0.6);
@@ -3514,6 +3514,27 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.arc(-size * 0.15, -size * 0.15, size * 0.15, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  } else if (itemType === "paperAirplane") {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.fillStyle = "#f0e8d8";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.9, 0);
+    ctx.lineTo(-size * 0.7, -size * 0.5);
+    ctx.lineTo(-size * 0.3, 0);
+    ctx.lineTo(-size * 0.7, size * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.beginPath();
+    ctx.moveTo(size * 0.9, 0);
+    ctx.lineTo(-size * 0.3, 0);
+    ctx.stroke();
+    ctx.restore();
   } else {
     drawApplePieceShape(ctx, x, y, size, rotation);
   }
@@ -4840,22 +4861,32 @@ function drawRaggedBookPile(camX) {
   const count = 7;
   let dy = 0;
   for (let i = 0; i < count; i++) {
-    const w = 22 + ((i * 7) % 10);
+    const w = 24 + ((i * 7) % 10);
     const h = 5 + ((i * 3) % 3);
-    const rot = (((i * 11) % 30) - 15) / 55;
-    const dx = ((i * 5) % 8) - 4;
+    const rot = (((i * 11) % 16) - 8) / 90; // modest tilt, close to the clean piles' own range
+    const dx = ((i * 5) % 6) - 3;
     ctx.save();
     ctx.translate(px + dx, py - dy);
     ctx.rotate(rot);
     ctx.fillStyle = raggedPileColors[i % raggedPileColors.length];
-    // frayed edge -- a jagged top line instead of a clean rectangle
+    // a clear rectangular book, same shape language as the clean piles --
+    // frayed wear lives only in a small notch torn out of one top corner,
+    // not across the whole silhouette
+    const notchSide = i % 2 === 0 ? 1 : -1;
+    const notchW = w * 0.18, notchD = h * 0.5;
     ctx.beginPath();
     ctx.moveTo(-w / 2, 0);
-    const teeth = 5;
-    for (let t = 0; t <= teeth; t++) {
-      const tx = -w / 2 + (w / teeth) * t;
-      const ty = -h + (t % 2 === 0 ? 0 : 1.5);
-      ctx.lineTo(tx, ty);
+    ctx.lineTo(-w / 2, -h);
+    if (notchSide < 0) {
+      ctx.lineTo(-w / 2 + notchW * 0.3, -h);
+      ctx.lineTo(-w / 2 + notchW * 0.6, -h + notchD);
+      ctx.lineTo(-w / 2 + notchW, -h);
+    }
+    ctx.lineTo(notchSide > 0 ? w / 2 - notchW : w / 2, -h);
+    if (notchSide > 0) {
+      ctx.lineTo(w / 2 - notchW * 0.6, -h + notchD);
+      ctx.lineTo(w / 2 - notchW * 0.3, -h);
+      ctx.lineTo(w / 2, -h);
     }
     ctx.lineTo(w / 2, 0);
     ctx.closePath();
@@ -4866,22 +4897,42 @@ function drawRaggedBookPile(camX) {
     ctx.restore();
     dy += h;
   }
-  // a couple of loose pages, fallen and resting beside the pile
-  [{ ox: -22, oy: -2, rot: -0.4 }, { ox: 20, oy: -1, rot: 0.5 }].forEach(page => {
+  // several loose pages, scattered flat near the base -- separate
+  // fallen sheets, not another small folded stack
+  const scatterPages = [
+    { ox: -20, oy: -1, rot: -0.5, w: 8, skew: 0.6 },
+    { ox: -15, oy: -0.5, rot: 0.3, w: 7, skew: -0.4 },
+    { ox: 19, oy: -1.5, rot: 0.55, w: 8.5, skew: 0.5 },
+    { ox: 24, oy: -0.5, rot: -0.25, w: 6.5, skew: -0.3 },
+    { ox: 3, oy: -0.8, rot: 0.15, w: 7, skew: 0.4 }
+  ];
+  scatterPages.forEach((page, pi) => {
     ctx.save();
     ctx.translate(px + page.ox, py + page.oy);
     ctx.rotate(page.rot);
-    ctx.fillStyle = "#c8bca4";
+    // a single flat sheet, lying down -- skewed quad rather than a
+    // folded/curled shape, so it reads as one dropped page
+    ctx.fillStyle = pi % 2 === 0 ? "#c8bca4" : "#bcb096";
     ctx.beginPath();
-    ctx.moveTo(-6, 0);
-    ctx.lineTo(6, -0.5);
-    ctx.lineTo(5, -3.5);
-    ctx.lineTo(-5.5, -3);
+    ctx.moveTo(-page.w, 0);
+    ctx.lineTo(page.w, page.skew);
+    ctx.lineTo(page.w - 0.6, page.skew - 1.6);
+    ctx.lineTo(-page.w + 0.6, -1.6);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.2)";
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = "rgba(0,0,0,0.18)";
+    ctx.lineWidth = 0.4;
     ctx.stroke();
+    // faint text lines on this one sheet
+    ctx.strokeStyle = "rgba(70,60,45,0.3)";
+    ctx.lineWidth = 0.3;
+    for (let ln = 0; ln < 2; ln++) {
+      const ly = -1.1 + ln * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(-page.w + 1.2, ly);
+      ctx.lineTo(page.w - 1.4 - ln * 0.4, ly + page.skew * 0.3);
+      ctx.stroke();
+    }
     ctx.restore();
   });
 }
@@ -5104,7 +5155,7 @@ function drawMoth(camX) {
   const playerScreenY = gy - player.y - player.height / 2;
   const approachP = mothState.approachT / MOTH_MAX_APPROACH_MS;
   const dist = 130 - (130 - 22) * approachP; // starts far, flutters down to a close hover
-  const wanderAngle = fireflyT * 0.0011 + mothState.wanderSeed;
+  const wanderAngle = fireflyT * 0.0006 + mothState.wanderSeed;
   const flutterX = Math.sin(wanderAngle) * dist;
   const flutterY = Math.cos(wanderAngle * 1.3) * dist * 0.5 - 20;
   const mx = playerScreenX + flutterX, my = playerScreenY + flutterY;
@@ -9227,30 +9278,30 @@ const bookPiles = [
   { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
   { x: 1147, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
   { x: 1259, seed: 17, count: 5, heightAboveGround: 34 }, // new -- fills the gap before the nook, more hop opportunities
-  { x: 2820, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
-  { x: 2923, seed: 74, count: 15, heightAboveGround: 80 },
-  { x: 2996, seed: 81, count: 5, heightAboveGround: 30 },
-  { x: 3107, seed: 88, count: 10, heightAboveGround: 55 },
-  { x: 3221, seed: 95, count: 14, heightAboveGround: 78 },
-  { x: 3294, seed: 102, count: 5, heightAboveGround: 28 },
-  { x: 3404, seed: 109, count: 11, heightAboveGround: 60 },
-  { x: 3518, seed: 116, count: 15, heightAboveGround: 80 },
-  { x: 3682, seed: 123, count: 32, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
-  { x: 3737, seed: 130, count: 26, heightAboveGround: 145 },
-  { x: 3798, seed: 137, count: 18, heightAboveGround: 100 },
-  { x: 3853, seed: 144, count: 13, heightAboveGround: 70 },
-  { x: 3903, seed: 151, count: 9, heightAboveGround: 50 }, // medium/high only from here on, no more lows
-  { x: 4013, seed: 158, count: 15, heightAboveGround: 80 },
-  { x: 4065, seed: 165, count: 10, heightAboveGround: 55 },
-  { x: 4176, seed: 172, count: 15, heightAboveGround: 80 },
-  { x: 4226, seed: 179, count: 11, heightAboveGround: 60 },
-  { x: 4340, seed: 186, count: 14, heightAboveGround: 78 },
-  { x: 4455, seed: 193, count: 16, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
-  { x: 4565, seed: 200, count: 22, heightAboveGround: 120 },
-  { x: 4675, seed: 207, count: 27, heightAboveGround: 150 },
-  { x: 4785, seed: 214, count: 33, heightAboveGround: 180 },
-  { x: 4895, seed: 221, count: 38, heightAboveGround: 210 },
-  { x: 5006, seed: 228, count: 43, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
+  { x: 3000, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
+  { x: 3100, seed: 74, count: 13, heightAboveGround: 80 },
+  { x: 3170, seed: 81, count: 7, heightAboveGround: 30 },
+  { x: 3278, seed: 88, count: 11, heightAboveGround: 55 },
+  { x: 3390, seed: 95, count: 13, heightAboveGround: 78 },
+  { x: 3458, seed: 102, count: 7, heightAboveGround: 28 },
+  { x: 3566, seed: 109, count: 12, heightAboveGround: 60 },
+  { x: 3678, seed: 116, count: 13, heightAboveGround: 80 },
+  { x: 3840, seed: 123, count: 44, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
+  { x: 3908, seed: 130, count: 29, heightAboveGround: 145 },
+  { x: 3982, seed: 137, count: 17, heightAboveGround: 100 },
+  { x: 4050, seed: 144, count: 17, heightAboveGround: 70 },
+  { x: 4113, seed: 151, count: 10, heightAboveGround: 50 }, // medium/high only from here on, no more lows
+  { x: 4221, seed: 158, count: 13, heightAboveGround: 80 },
+  { x: 4271, seed: 165, count: 14, heightAboveGround: 55 },
+  { x: 4379, seed: 172, count: 16, heightAboveGround: 80 },
+  { x: 4426, seed: 179, count: 10, heightAboveGround: 60 },
+  { x: 4538, seed: 186, count: 19, heightAboveGround: 78 },
+  { x: 4650, seed: 193, count: 18, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
+  { x: 4758, seed: 200, count: 20, heightAboveGround: 120 },
+  { x: 4866, seed: 207, count: 37, heightAboveGround: 150 },
+  { x: 4974, seed: 214, count: 36, heightAboveGround: 180 },
+  { x: 5082, seed: 221, count: 35, heightAboveGround: 210 },
+  { x: 5190, seed: 228, count: 59, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
 ];
 const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but not so wide that adjacent piles in a dense sequence intercept each other's jumps
 const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
@@ -12909,7 +12960,7 @@ function updateSnake(deltaTime) {
 
 // paper airplane -- the payoff waiting at the top of the giant capstone
 // book pile, after the whole long jump run
-const paperAirplaneSpot = { x: 5006, y: 245, collected: false };
+const paperAirplaneSpot = { x: 5190, y: 240, collected: false };
 function drawPaperAirplane(camX) {
   if (paperAirplaneSpot.collected) return;
   const ax0 = paperAirplaneSpot.x - camX, ay0 = gy - paperAirplaneSpot.y;
@@ -13183,12 +13234,6 @@ const ratFeatherLines = [
   ["Wow, a beautiful feather! I've been hoping to find one like that.", "Put it in that jar right there."]
 ];
 
-let lampAcknowledged = false;
-const ratLampLines = [
-  ["Oh! You found it \u2014 the lamp!"],
-  ["Hold it up and press space to light the way.", "There's more to see down here than you might think..."]
-];
-
 function startRatDialogue() {
   if (ratFeatherThankQueued) {
     ratDialogue.active = true;
@@ -13199,16 +13244,13 @@ function startRatDialogue() {
     ratNPC.talkedTo = true;
     return;
   }
-  if (!(carriedFeather && !featherHung) && !(inventory.lamp > 0 && !lampAcknowledged) && ratDialogueRestSuppressed) {
+  if (!(carriedFeather && !featherHung) && ratDialogueRestSuppressed) {
     return; // nothing new to say this visit -- already had a meaningful moment, skip the redundant greeting
   }
   ratDialogue.active = true;
   ratDialogue.index = 0;
   if (carriedFeather && !featherHung) {
     ratDialogue.lines = ratFeatherLines.slice();
-  } else if (inventory.lamp > 0 && !lampAcknowledged) {
-    ratDialogue.lines = ratLampLines.slice();
-    lampAcknowledged = true;
   } else {
     ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
     ratDialogueRestSuppressed = true; // greeted for this visit -- no need to repeat if approached again
