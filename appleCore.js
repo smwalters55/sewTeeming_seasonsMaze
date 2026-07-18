@@ -693,13 +693,6 @@ function updateMapUI() {
     <path d="M150,0 L185,0 L172,10 L196,16 L162,22 L150,0" fill="#1c1006" opacity="0.65"/>
     <path d="M0,110 L0,145 L16,133 L6,155 L0,145" fill="#1c1006" opacity="0.65"/>
     <path d="M400,100 L400,138 L380,120 L392,148 L400,138" fill="#1c1006" opacity="0.65"/>
-    <g stroke="rgba(40,26,12,0.4)" stroke-width="1.4" fill="none">
-      <path d="M60,40 Q90,55 70,80 Q100,95 85,120"/>
-      <path d="M320,50 Q290,70 310,95"/>
-      <path d="M180,200 Q210,190 195,170 Q225,165 210,145"/>
-    </g>
-    <path d="M270,90 L276,105 L268,112 L280,128 L271,138 L285,155 L273,168 L288,182" stroke="#0e0803" stroke-width="3" fill="none" opacity="0.8"/>
-    <path d="M273,90 L280,104 L273,113 L284,127 L275,139 L288,154 L277,167 L292,180" stroke="#4a3018" stroke-width="1.2" fill="none" opacity="0.7"/>
     <g transform-origin="400px 260px">
       <path d="M400,260 L400,215 Q380,225 372,245 Q385,238 400,260 Z" fill="rgba(20,13,6,0.3)"/>
       <path d="M400,260 L400,212 Q378,222 368,244 Q383,236 400,260 Z" fill="#ddd0a8" stroke="rgba(90,64,32,0.4)" stroke-width="0.8"/>
@@ -4852,13 +4845,16 @@ function drawLavenderPlant(camX) {
     ctx.moveTo(0, 0);
     ctx.quadraticCurveTo(-1, -h * 0.5, 0, -h);
     ctx.stroke();
-    // bud cluster -- smaller, denser overlapping purple ovals along
-    // the top third of the stalk, the actual lavender flower spike
-    ctx.fillStyle = i % 2 === 0 ? "#8a6ab8" : "#9a7ac8";
-    for (let b = 0; b < 9; b++) {
-      const bt = b / 8;
+    // bud cluster -- smaller still, with horizontal jitter and
+    // alternating shades so individual buds actually read as texture
+    // rather than blending into a smooth vertical cylinder
+    const budColors = ["#7a5aa8", "#8a6ab8", "#9a7ac8"];
+    for (let b = 0; b < 11; b++) {
+      const bt = b / 10;
+      const jitterX = ((b * 37) % 7 - 3) * 0.35;
+      ctx.fillStyle = budColors[b % 3];
       ctx.beginPath();
-      ctx.ellipse(0, -h + bt * h * 0.3, 1.0, 1.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(jitterX, -h + bt * h * 0.32, 0.6, 0.9, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -9202,6 +9198,7 @@ const cushionPile = sittingAreas[1];
 // condition as the cushion pile it sits beside. Purely passive,
 // repeatable, no gate or one-time flag.
 const teaSpot = { x: 2425 };
+let spoutTipWorld = { x: 0, y: 0 }; // set when the actual kettle spout is drawn; the pour stream reads this directly instead of recomputing the spout's position independently, which is what caused it to drift out of sync
 const babyOwl = {
   idleT: 0, idleNextAt: 3000 + Math.random() * 4000, idleShift: 0, idleShiftT: 0,
   sipT: 0, sipNextAt: 5000 + Math.random() * 7000, sipping: 0,
@@ -9561,10 +9558,10 @@ function drawTeaNook(camX) {
   // staying fixed on the table -- first half of the pour is the wing
   // reaching to grab the handle, second half is the lift-and-pour itself.
   const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
-  const grabP = Math.min(1, pourWingLift / 0.45);
-  const liftP = Math.max(0, (pourWingLift - 0.45) / 0.55);
-  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 10;
-  const kettleTiltAngle = -liftP * 1.0;
+  const grabP = Math.min(1, pourWingLift / 0.28);
+  const liftP = Math.max(0, (pourWingLift - 0.28) / 0.72);
+  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 16;
+  const kettleTiltAngle = -liftP * 0.4;
   const kx = tx + 14, ky = tableTop + 2;
   // rotate around the handle's own position, not the kettle's center
   // -- keeps the handle anchored (as if genuinely being held) while
@@ -9604,10 +9601,31 @@ function drawTeaNook(camX) {
   ctx.save();
   ctx.translate(kx - 9, ky - 1);
   ctx.rotate(spoutOwnTilt);
-  ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 3); ctx.stroke();
+  ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 3.2; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, 4); ctx.stroke();
   ctx.restore();
   ctx.restore();
+
+  // compute the spout tip's actual world-space position, mirroring
+  // the exact transform chain just applied above (translate ->
+  // handle-pivot -> rotate -> scale -> spout's own local
+  // translate+rotate), so the pour stream can read this directly
+  // instead of recomputing an independent, drift-prone copy of the
+  // same math
+  {
+    const localTipX = -11, localTipY = 4; // the spout's own endpoint, matching the line drawn above
+    const cosS = Math.cos(spoutOwnTilt), sinS = Math.sin(spoutOwnTilt);
+    const spoutLocalX = localTipX * cosS - localTipY * sinS;
+    const spoutLocalY = localTipX * sinS + localTipY * cosS;
+    const preScaleX = (kx - 9) + spoutLocalX, preScaleY = (ky - 1) + spoutLocalY;
+    // now apply the outer kettle transform: translate(lift) -> handlePivot -> rotate(tilt) -> scale(0.85) -> -handlePivot
+    const relX = preScaleX - handlePivotX, relY = preScaleY - handlePivotY;
+    const scaledX = relX * 0.85, scaledY = relY * 0.85;
+    const cosK = Math.cos(kettleTiltAngle), sinK = Math.sin(kettleTiltAngle);
+    const rotX = scaledX * cosK - scaledY * sinK, rotY = scaledX * sinK + scaledY * cosK;
+    spoutTipWorld.x = handlePivotX + rotX + kettleLiftX;
+    spoutTipWorld.y = handlePivotY + rotY + kettleLiftY;
+  }
 
   // baby owl behind the table -- small, its own idle shift and
   // independent sip on its own cup, unsynced from the player's.
@@ -9653,14 +9671,15 @@ function drawTeaNook(camX) {
   const toHandleDist = Math.hypot(handleLocalX - pivotX, handleLocalY - pivotY);
   const toHandleAngle = Math.atan2(handleLocalY - pivotY, handleLocalX - pivotX);
   const restAngle = -0.3 - Math.PI / 2; // wing's natural resting angle, in the same atan2 frame
-  const wingAngle = restAngle + (toHandleAngle - restAngle) * grabP;
+  const wingAngleP = 1 - Math.pow(1 - grabP, 3); // cubic ease-out -- angle catches up to the handle's direction quickly, before the wing has extended far
+  const wingAngle = restAngle + (toHandleAngle - restAngle) * wingAngleP;
   const wingLen = 8 + (toHandleDist - 8) * grabP;
   ctx.fillStyle = "#584428";
   ctx.save();
   ctx.translate(pivotX, pivotY);
   ctx.rotate(wingAngle + Math.PI / 2);
   ctx.beginPath();
-  ctx.ellipse(0, -wingLen * 0.5 + 4, 4.5, wingLen * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -wingLen * 0.5, 4.5, wingLen * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
   ctx.save();
@@ -9733,9 +9752,11 @@ function drawTeaNook(camX) {
   // handle, so it stays visible wrapping around
   if (teaAnim.phase === "pouring") {
     ctx.save();
-    ctx.translate(kx, ky);
+    ctx.translate(kettleLiftX, kettleLiftY);
+    ctx.translate(handlePivotX, handlePivotY);
+    ctx.rotate(kettleTiltAngle);
     ctx.scale(0.85, 0.85);
-    ctx.translate(-kx, -ky);
+    ctx.translate(-handlePivotX, -handlePivotY);
     ctx.fillStyle = "#a8342a";
     ctx.beginPath();
     ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
@@ -9745,6 +9766,16 @@ function drawTeaNook(camX) {
     ctx.beginPath();
     ctx.ellipse(kx, ky + 2, 8, 2.4, 0, 0, Math.PI * 2);
     ctx.stroke();
+    // spout too -- the body re-draw above didn't include it, which is
+    // exactly why a foot in front of the body could still end up
+    // appearing on top of the spout specifically
+    const spoutOwnTilt2Redraw = -0.15 - liftP * 0.35;
+    ctx.save();
+    ctx.translate(kx - 9, ky - 1);
+    ctx.rotate(spoutOwnTilt2Redraw);
+    ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 3.2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, 4); ctx.stroke();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -9786,26 +9817,14 @@ function drawTeaPlayerCup(tx, tableTop) {
   // (computed from its real rotation) down into the cup, wavy and
   // animated with traveling droplets for a genuine pour feel -- only
   // once the kettle is actually tilted, not during the earlier reach
-  if (teaAnim.phase === "pouring" && Math.max(0, (Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) - 0.45) / 0.55) > 0.05) {
+  if (teaAnim.phase === "pouring" && Math.max(0, (Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) - 0.28) / 0.72) > 0.5) {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring);
-    const kx = tx + 14, ky = tableTop + 2;
-    const grabP2 = Math.min(1, p / 0.45);
-    const liftP2 = Math.max(0, (p - 0.45) / 0.55);
-    const kettleLiftX2 = -liftP2 * 6, kettleLiftY2 = -liftP2 * 10;
-    const kettleTiltAngle2 = -liftP2 * 1.0;
-    const spoutOwnTilt2 = -0.15 - liftP2 * 0.35;
-    // spout pivot and tip in untransformed kettle-local space,
-    // recomputed relative to the handle (the kettle's actual rotation
-    // pivot now, not its own center), matching the real transform chain
-    const handlePivotX2 = kx + 14.75, handlePivotY2 = ky - 0.25;
-    const spoutPivotRelX = (kx - 9) - handlePivotX2, spoutPivotRelY = (ky - 1) - handlePivotY2;
-    const tipLocalX = -8 * Math.cos(spoutOwnTilt2) - 3 * Math.sin(spoutOwnTilt2);
-    const tipLocalY = -8 * Math.sin(spoutOwnTilt2) + 3 * Math.cos(spoutOwnTilt2);
-    const tipRelX = spoutPivotRelX + tipLocalX, tipRelY = spoutPivotRelY + tipLocalY;
-    const tipScaledX = tipRelX * 0.85, tipScaledY = tipRelY * 0.85;
-    const tipRotX = tipScaledX * Math.cos(kettleTiltAngle2) - tipScaledY * Math.sin(kettleTiltAngle2);
-    const tipRotY = tipScaledX * Math.sin(kettleTiltAngle2) + tipScaledY * Math.cos(kettleTiltAngle2);
-    const spoutTipX = handlePivotX2 + tipRotX + kettleLiftX2, spoutTipY = handlePivotY2 + tipRotY + kettleLiftY2;
+    // spout tip read directly from where the actual spout was drawn
+    // (spoutTipWorld, computed in the main kettle draw above) rather
+    // than an independent recomputation -- the previous parallel copy
+    // of this math drifted out of sync with the real spout, which is
+    // what caused the stream to look disconnected and floating
+    const spoutTipX = spoutTipWorld.x, spoutTipY = spoutTipWorld.y;
     const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
     const wob = Math.sin(performance.now() * 0.02) * 1.2;
     ctx.strokeStyle = "rgba(140,86,36,0.9)"; ctx.lineWidth = 2;
@@ -9916,7 +9935,11 @@ function updateTeaNook(deltaTime) {
   // interaction -- prompt, then accept to start the sequence. Walking
   // away instead of accepting just closes the prompt, no explicit
   // decline needed. Fully repeatable, no gate or one-time flag.
-  const nearOwl = isPlayerNear(teaSpot.x - 8, 0, 55, 35, 25);
+  const nearOwlBaseX = teaSpot.x - 8;
+  const nearOwlDx = (player.x + player.width / 2) - nearOwlBaseX;
+  const nearOwlDy = player.y - 0;
+  const nearOwl = nearOwlDy <= 40 && nearOwlDy >= -25 &&
+    (nearOwlDx >= -80 && nearOwlDx <= 102); // extends further right (102) than left (-80), broadening specifically past the table's actual right edge (52 from teaSpot.x) rather than symmetrically
   if (teaAnim.phase === "idle") {
     if (teaDialogue.active && nearOwl && keys.spaceJustPressed) {
       teaDialogue.active = false;
@@ -12129,8 +12152,8 @@ const ratRoomHighShelves = [
   // depends specifically on this shelf, not any tier2 shelf, since
   // landing on the snake's shelf is meant to be a dead end that knocks
   // you back rather than a valid path forward.
-  { x: 1220, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
-  { x: 1320, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
+  { x: 1195, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
+  { x: 1265, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -12198,13 +12221,14 @@ function drawSpider(camX) {
   // rings forming an actual web pattern, positioned above where the
   // spider hangs rather than spokes running directly to it (which
   // read as a tangle of loose threads rather than a web)
-  const webCenterY = 12;
-  const webR = 18;
+  const webCenterY = 110;
+  const webR = 34;
   ctx.strokeStyle = "rgba(210,200,180,0.35)";
   ctx.lineWidth = 0.6;
   const spokeCount = 7;
+  const spokeOffset = 0.227; // 13 degrees -- the offset that maximizes every spoke's distance from exactly horizontal, computed directly rather than guessed
   for (let i = 0; i < spokeCount; i++) {
-    const angle = (i / spokeCount) * Math.PI * 2;
+    const angle = (i / spokeCount) * Math.PI * 2 + spokeOffset;
     ctx.beginPath();
     ctx.moveTo(sx, webCenterY);
     ctx.lineTo(sx + Math.cos(angle) * webR, webCenterY + Math.sin(angle) * webR);
@@ -12214,7 +12238,7 @@ function drawSpider(camX) {
     const r = (webR / 3) * ring;
     ctx.beginPath();
     for (let i = 0; i <= spokeCount; i++) {
-      const angle = (i / spokeCount) * Math.PI * 2;
+      const angle = (i / spokeCount) * Math.PI * 2 + spokeOffset;
       const px2 = sx + Math.cos(angle) * r, py2 = webCenterY + Math.sin(angle) * r;
       if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
     }
@@ -12522,7 +12546,7 @@ function updateSnake(deltaTime) {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1320, y: 63, collected: false };
+const marbleSpot = { x: 1265, y: 63, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -14247,6 +14271,11 @@ updateSeasonTransition(deltaTime);
   const targetCam = player.x - canvas.width*0.4;
   cameraX += (targetCam - cameraX)*0.08;
   if (cameraX<0) cameraX=0;
+  // ratroom's own right-side camera clamp, mirroring the left-side
+  // pattern -- caps the camera a bit past where the hay ground cover
+  // actually ends, so the camera stops there even if the player keeps
+  // walking on toward their own boundary further out
+  if (currentScene === "ratroom" && cameraX > 700) cameraX = 700;
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
