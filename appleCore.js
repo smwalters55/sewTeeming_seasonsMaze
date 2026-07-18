@@ -4808,7 +4808,154 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 // trailing down with some pooling gently on the ground
 const pothosSpot = { x: 2825, hangY: 260 };
 
-const lavenderSpot = { x: 2550 };
+const lavenderSpot = { x: 2620 };
+// Joshua tree, tucked into the ratroom's right side -- a real
+// personal touch rather than a generic desert plant, with its actual
+// distinctive silhouette: a thick, gnarled, irregularly-branching
+// trunk, each branch ending in a spiky rosette of pointed leaves
+// radiating outward, not a smooth-armed saguaro shape
+const joshuaTreeSpot = { x: 1360 };
+function drawJoshuaTree(camX) {
+  const px = joshuaTreeSpot.x - camX, py = gy;
+  const trunkColor = "#6a5a42";
+  const leafColor = "#5a8a48";
+  const leafColorDark = "#4a7a3a";
+
+  function drawRosette(cx, cy, angle, scale) {
+    const spikeCount = 13;
+    for (let i = 0; i < spikeCount; i++) {
+      const a = angle + (i / (spikeCount - 1) - 0.5) * Math.PI * 0.9;
+      const len = (10 + (i % 3) * 2) * scale;
+      ctx.fillStyle = i % 2 === 0 ? leafColor : leafColorDark;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len - len * 0.15);
+      ctx.lineTo(cx + Math.cos(a + 0.12) * len * 0.3, cy + Math.sin(a + 0.12) * len * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // dead, drooping lower leaves -- the shaggy skirt real Joshua
+    // trees have below each rosette as old leaves die back
+    ctx.strokeStyle = "rgba(120,100,70,0.6)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const a = angle + Math.PI * 0.5 + (i - 2) * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * 10 * scale, cy + Math.sin(a) * 10 * scale);
+      ctx.stroke();
+    }
+  }
+
+  // draws a genuinely gnarled limb -- walks from base to tip building
+  // up irregular bumps and knots along both edges via seeded jitter,
+  // rather than the single smooth curve per side used before, which
+  // never actually looked gnarled despite the comment claiming it did
+  function drawGnarledLimb(x1, y1, x2, y2, baseWidth, tipWidth, seed) {
+    const segments = 7;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len, uy = dy / len; // unit vector along the limb
+    const nx = -uy, ny = ux; // perpendicular unit vector
+
+    const leftPts = [], rightPts = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const cx = x1 + dx * t, cy = y1 + dy * t;
+      const width = (baseWidth + (tipWidth - baseWidth) * t) / 2;
+      // seeded jitter -- irregular per-segment bump, different on
+      // each side so the limb doesn't stay a uniform thickness
+      const jL = Math.sin(seed + t * 11) * 1.8 + Math.sin(seed * 2.3 + t * 23) * 0.9;
+      const jR = Math.sin(seed + 1.7 + t * 13) * 1.8 + Math.sin(seed * 1.9 + t * 19) * 0.9;
+      leftPts.push({ x: cx + nx * (width + jL), y: cy + ny * (width + jL) });
+      rightPts.push({ x: cx - nx * (width + jR), y: cy - ny * (width + jR) });
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let i = 1; i < leftPts.length; i++) {
+      const mid = { x: (leftPts[i - 1].x + leftPts[i].x) / 2, y: (leftPts[i - 1].y + leftPts[i].y) / 2 };
+      ctx.quadraticCurveTo(leftPts[i - 1].x, leftPts[i - 1].y, mid.x, mid.y);
+    }
+    ctx.lineTo(leftPts[leftPts.length - 1].x, leftPts[leftPts.length - 1].y);
+    for (let i = rightPts.length - 1; i >= 0; i--) {
+      ctx.lineTo(rightPts[i].x, rightPts[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#4a3e2c";
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+
+  // trunk -- thinner than before, now genuinely gnarled with irregular
+  // knots along both edges instead of a single smooth taper
+  ctx.fillStyle = trunkColor;
+  drawGnarledLimb(px, py, px + 1, py - 51, 9, 4.5, 4.1);
+  // bark texture -- a few short irregular horizontal marks
+  ctx.strokeStyle = "rgba(74,62,44,0.5)";
+  ctx.lineWidth = 0.6;
+  [-38, -25, -12].forEach((dy, i) => {
+    ctx.beginPath();
+    ctx.moveTo(px - 3.5 + (i % 2), py + dy);
+    ctx.lineTo(px + 2 - (i % 2), py + dy + 2);
+    ctx.stroke();
+  });
+  drawRosette(px + 0.5, py - 51, -Math.PI / 2, 1.4);
+
+  // right side branch -- gnarled, rosette drawn immediately after so
+  // it's unambiguously on top of this specific limb
+  ctx.fillStyle = trunkColor;
+  drawGnarledLimb(px + 2, py - 34, px + 22, py - 53, 7, 3.5, 9.7);
+  drawRosette(px + 22, py - 53, -Math.PI / 2 + 0.3, 1.1);
+
+  // left side branch -- the third limb, balancing the composition,
+  // splitting off lower down the trunk than the right one
+  ctx.fillStyle = trunkColor;
+  drawGnarledLimb(px - 2, py - 22, px - 21, py - 43, 6.5, 3.2, 15.3);
+  drawRosette(px - 21, py - 43, -Math.PI / 2 - 0.35, 1.0);
+}
+
+// fireflies -- a small drifting group near the Joshua tree, each with
+// its own gentle wander and independent on/off flicker timing, so the
+// glow itself (not fixed eyes) is what makes these read as alive
+const fireflies = [
+  { baseX: 1340, baseY: 60, seed: 3, flickerSeed: 11 },
+  { baseX: 1375, baseY: 85, seed: 17, flickerSeed: 29 },
+  { baseX: 1395, baseY: 45, seed: 41, flickerSeed: 53 }
+];
+let fireflyT = 0;
+function updateFireflies(deltaTime) {
+  fireflyT += deltaTime * 1000;
+}
+function drawFireflies(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  fireflies.forEach(f => {
+    const wx = f.baseX + Math.sin(fireflyT * 0.0006 + f.seed) * 14;
+    const wy = f.baseY + Math.cos(fireflyT * 0.0004 + f.seed * 1.3) * 10;
+    const fx = wx - camX, fy = gy - wy;
+    const dist = Math.hypot(fx - playerScreenX, fy - (gy - player.y));
+    if (dist > LAMP_LIGHT_RADIUS) return;
+    // independent flicker -- irregular on/off rather than a smooth
+    // pulse, closer to how real fireflies actually blink
+    const flickerCycle = (fireflyT * 0.001 + f.flickerSeed * 7) % 4;
+    const glowP = flickerCycle < 0.5 ? Math.sin((flickerCycle / 0.5) * Math.PI) : 0;
+    if (glowP < 0.05) return; // fully off, don't even draw the dark body -- reads as truly absent, not just dim
+    const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 6);
+    grad.addColorStop(0, `rgba(220,240,140,${0.9 * glowP})`);
+    grad.addColorStop(0.5, `rgba(200,220,100,${0.4 * glowP})`);
+    grad.addColorStop(1, "rgba(200,220,100,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(230,250,180,${glowP})`;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
 function drawLavenderPlant(camX) {
   const px = lavenderSpot.x - camX, py = gy;
   // small terracotta pot
@@ -9560,7 +9707,7 @@ function drawTeaNook(camX) {
   const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
   const grabP = Math.min(1, pourWingLift / 0.28);
   const liftP = Math.max(0, (pourWingLift - 0.28) / 0.72);
-  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 16;
+  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 32;
   const kettleTiltAngle = -liftP * 0.4;
   const kx = tx + 14, ky = tableTop + 2;
   // rotate around the handle's own position, not the kettle's center
@@ -12322,8 +12469,14 @@ function drawSnake(camX) {
   const dist = Math.hypot(nx - playerScreenX, ny - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
 
-  const nearPlayer = dist < 55;
-  const tailWave = nearPlayer ? Math.sin(snakeState.tailWaveT * 0.004) * 14 : Math.sin(snakeState.tailWaveT * 0.0012) * 3;
+  // single continuous frequency, amplitude smoothly interpolated by
+  // actual distance rather than hard-switching between two entirely
+  // different sine formulas -- the old version jumped 11-14 units
+  // every time the proximity threshold was crossed, which happened
+  // rapidly during a double jump near the snake and read as erratic
+  const proximityP = Math.max(0, Math.min(1, (90 - dist) / 90));
+  const tailAmplitude = 3 + (14 - 3) * proximityP;
+  const tailWave = Math.sin(snakeState.tailWaveT * 0.004) * tailAmplitude;
 
   ctx.save();
   ctx.translate(nx, ny);
@@ -12631,6 +12784,8 @@ function drawRatRoomScene(camX) {
   drawRatRoomHighShelf(camX);
   drawSpider(camX);
   drawSnake(camX);
+  drawJoshuaTree(camX);
+  drawFireflies(camX);
   drawMarble(camX);
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
@@ -13452,6 +13607,7 @@ function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
   updateSpider(deltaTime);
+  updateFireflies(deltaTime);
   updateShelfTierUnlocks();
   updateSnake(deltaTime);
   updateMarble();
