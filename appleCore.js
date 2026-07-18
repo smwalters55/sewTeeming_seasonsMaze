@@ -625,7 +625,7 @@ const sceneMapInfo = {
   spring: { label: "Spring", x: 220, y: 110 },
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
-  ratroom: { label: "Ratroom", x: 95, y: 65 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Reached via the trap door from oak.
+  ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
 };
 
 const discoveredScenes = { autumn: true, oak: true }; // autumn is where you normally start; oak added too while the temporary debug-start is active
@@ -678,16 +678,17 @@ function updateMapUI() {
     const b = sceneMapInfo[sceneB];
     if (!a || !b) return;
 
-    const aCenterX = a.x + NODE_W / 2, aCenterY = a.y + NODE_H / 2;
-    const bCenterX = b.x + NODE_W / 2, bCenterY = b.y + NODE_H / 2;
+    const aW = a.w || NODE_W, aH = a.h || NODE_H, bW = b.w || NODE_W, bH = b.h || NODE_H;
+    const aCenterX = a.x + aW / 2, aCenterY = a.y + aH / 2;
+    const bCenterX = b.x + bW / 2, bCenterY = b.y + bH / 2;
 
     const dx = bCenterX - aCenterX, dy = bCenterY - aCenterY;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0) return;
     const dirX = dx / dist, dirY = dy / dist;
 
-    const start = rectEdgeIntersection(aCenterX, aCenterY, NODE_W / 2, NODE_H / 2, dirX, dirY);
-    const end = rectEdgeIntersection(bCenterX, bCenterY, NODE_W / 2, NODE_H / 2, -dirX, -dirY);
+    const start = rectEdgeIntersection(aCenterX, aCenterY, aW / 2, aH / 2, dirX, dirY);
+    const end = rectEdgeIntersection(bCenterX, bCenterY, bW / 2, bH / 2, -dirX, -dirY);
 
     mapEl.appendChild(createEdgeLine(start.x, start.y, end.x, end.y));
   });
@@ -704,6 +705,8 @@ function updateMapUI() {
     node.style.left = info.x + "px";
     node.style.top = info.y + "px";
     node.textContent = info.label;
+    if (info.w) node.style.width = info.w + "px";
+    if (info.h) { node.style.height = info.h + "px"; node.style.fontSize = "0.75em"; }
 
     if (scene === "spring") {
       node.style.background = "rgba(180,222,150,0.35)"; // slight light green
@@ -725,6 +728,20 @@ function updateMapUI() {
 // don't overlap — done here in JS rather than editing index.html's CSS
 if (mapEl) {
   mapEl.style.marginTop = "70px";
+
+  // faded decorative background -- a few tree outlines and a wiggly
+  // trail line, via CSS background-image since it's a child-independent
+  // property and survives updateMapUI's innerHTML clears on every refresh
+  const mapDecorSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='260' viewBox='0 0 400 260'>
+    <g stroke='rgba(120,140,100,0.18)' stroke-width='2' fill='none'>
+      <path d='M300,230 L300,190 M285,200 Q300,165 315,200 Q300,180 285,200' />
+      <path d='M340,240 L340,200 M328,208 Q340,178 352,208 Q340,190 328,208' />
+      <path d='M20,230 L20,195 M8,202 Q20,170 32,202 Q20,185 8,202' />
+    </g>
+    <path d='M60,20 Q90,60 70,100 Q50,140 90,170 Q120,190 100,230' stroke='rgba(180,160,110,0.14)' stroke-width='1.5' fill='none' stroke-dasharray='3,4' />
+  </svg>`;
+  mapEl.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(mapDecorSvg)}")`;
+  mapEl.style.backgroundRepeat = "no-repeat";
 }
 
 updateMapUI(); // populate once at load, so autumn shows up immediately
@@ -4661,13 +4678,13 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
   }
   ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
   ctx.stroke();
-  for (let i = 2; i < points.length; i += 2) {
+  for (let i = 2; i < points.length; i += 1) {
     const p = points[i];
     const prev = points[i - 1];
     const angle = Math.atan2(p.y - prev.y, p.x - prev.x);
-    const side = (i / 2) % 2 === 0 ? 1 : -1;
-    const leafSize = Math.max(6, 11 - (i / points.length) * 4.4);
-    drawHeartLeaf(ctx, p.x + Math.cos(angle + side * 1.4) * 6, p.y + Math.sin(angle + side * 1.4) * 6, leafSize, angle + side * 0.3, leafColor, null, i % 3 !== 0);
+    const side = i % 2 === 0 ? 1 : -1;
+    const leafSize = Math.max(4, 7 - (i / points.length) * 2.6);
+    drawHeartLeaf(ctx, p.x + Math.cos(angle + side * 1.4) * 5, p.y + Math.sin(angle + side * 1.4) * 5, leafSize, angle + side * 0.3, leafColor, null, i % 3 !== 0);
   }
 }
 
@@ -8941,7 +8958,7 @@ const babyOwl = {
 };
 const teaDialogue = { active: false, lines: [], index: 0 };
 const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
-const TEA_SEGMENT_MS = { pouring: 900, full: 1300, sipping: 1000, empty: 900 };
+const TEA_SEGMENT_MS = { pouring: 1500, full: 1300, sipping: 1000, empty: 900 };
 const TEA_SPARKLE_COUNT = 6;
 
 function drawCushionPile(camX) {
@@ -9231,15 +9248,27 @@ function drawTeaNook(camX) {
   ctx.fillRect(tx + 26, tableTop + tableDepth + 4, 4, 8);
 
   // low cushions in front of the table, for the player to visually
-  // lounge on while getting tea
-  ctx.fillStyle = "#8a5a6a";
-  ctx.beginPath();
-  ctx.ellipse(tx - 14, archBottom + 6, 20, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#6a8a5a";
-  ctx.beginPath();
-  ctx.ellipse(tx + 16, archBottom + 5, 16, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // lounge on while getting tea -- three, each with a highlight and
+  // outline for a plusher look rather than flat solid ellipses
+  const teaCushions = [
+    { dx: -22, w: 18, h: 7, color: "#8a5a6a" },
+    { dx: 0, w: 17, h: 6.5, color: "#c9863a" },
+    { dx: 20, w: 16, h: 6, color: "#6a8a5a" }
+  ];
+  teaCushions.forEach(c => {
+    const cx2 = tx + c.dx, cy2 = archBottom + 6;
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.ellipse(cx2, cy2, c.w, c.h, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(cx2 - c.w * 0.25, cy2 - c.h * 0.35, c.w * 0.35, c.h * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // red ornate kettle, right-middle of the table -- shrunk down
   const kx = tx + 14, ky = tableTop + 2;
@@ -9308,14 +9337,22 @@ function drawTeaNook(camX) {
   ctx.ellipse(0, 1, 9, 11, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // wings -- right wing lifts toward the kettle while pouring, left
-  // wing extends forward while giving the cup
+  // wings -- right wing stretches and rotates to actually reach the
+  // kettle's handle while pouring, as one continuous shape rather than
+  // a fixed-size ellipse plus a separate connecting line
+  const handleLocalX = (kx - (ox + leanX) + 10) / 1.3, handleLocalY = (ky - (oy + leanY) - 2) / 1.3;
+  const pivotX = 7, pivotY = 2;
+  const toHandleDist = Math.hypot(handleLocalX - pivotX, handleLocalY - pivotY);
+  const toHandleAngle = Math.atan2(handleLocalY - pivotY, handleLocalX - pivotX);
+  const restAngle = -0.3 - Math.PI / 2; // wing's natural resting angle, in the same atan2 frame
+  const wingAngle = restAngle + (toHandleAngle - restAngle) * pourWingLift;
+  const wingLen = 8 + (toHandleDist - 8) * pourWingLift;
   ctx.fillStyle = "#584428";
   ctx.save();
-  ctx.translate(7, 2);
-  ctx.rotate(-0.3 - pourWingLift * 1.3);
+  ctx.translate(pivotX, pivotY);
+  ctx.rotate(wingAngle + Math.PI / 2);
   ctx.beginPath();
-  ctx.ellipse(0, 0, 4, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -wingLen * 0.5 + 4, 4, wingLen * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
   ctx.save();
@@ -9325,23 +9362,10 @@ function drawTeaNook(camX) {
   ctx.ellipse(0, 0, 4, 8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  // a grip curve wrapping toward the kettle's actual handle
-  // attachment point, so it reads as actually holding it
-  if (pourWingLift > 0.05) {
-    const wingAngle = -0.3 - pourWingLift * 1.3;
-    const wingTipX = 7 + Math.sin(wingAngle) * 7, wingTipY = 2 - Math.cos(wingAngle) * 7;
-    const targetX = (kx - (ox + leanX) + 10) / 1.3, targetY = (ky - (oy + leanY) - 2) / 1.3;
-    ctx.strokeStyle = "#584428";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(wingTipX, wingTipY);
-    ctx.quadraticCurveTo(wingTipX + (targetX - wingTipX) * 0.6, wingTipY + 4, targetX, targetY);
-    ctx.stroke();
-  }
   // wing feather lines, a couple scalloped strokes per wing
   ctx.strokeStyle = "#4a3820";
   ctx.lineWidth = 0.7;
-  [[7, 2, -0.3 - pourWingLift * 1.3, 1], [-7, 2, 0.3 + giveWingLift * 0.9, -1]].forEach(([wx, wy, rot, side]) => {
+  [[-7, 2, 0.3 + giveWingLift * 0.9, -1]].forEach(([wx, wy, rot, side]) => {
     ctx.save();
     ctx.translate(wx, wy);
     ctx.rotate(rot);
@@ -9395,7 +9419,29 @@ function drawTeaNook(camX) {
   ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // baby owl's own cup, held near the left wing, small independent sip bob
+  // during pouring, redraw the kettle's own body on top so the owl
+  // reads as reaching from behind it, rather than always in front --
+  // the wing itself still extends past the body's radius to reach the
+  // handle, so it stays visible wrapping around
+  if (teaAnim.phase === "pouring") {
+    ctx.save();
+    ctx.translate(kx, ky);
+    ctx.scale(0.85, 0.85);
+    ctx.translate(-kx, -ky);
+    ctx.fillStyle = "#a8342a";
+    ctx.beginPath();
+    ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(230,190,150,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(kx, ky + 2, 8, 2.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // baby owl's own cup -- always held, not resting on anything, which
+  // reinforces the tea moment even when the kettle isn't the focus
   const ownCupBob = babyOwl.sipping > 0 ? Math.sin(Math.min(1, babyOwl.sipping) * Math.PI) * 5 : 0;
   ctx.fillStyle = "#e8ddc0";
   ctx.beginPath();
@@ -9729,8 +9775,8 @@ function drawShortShelf(camX) {
   drawMixedBookShelf(sx, w, top, bottom, 3, true);
 
   // old broom, leaning against the shelf's right side
-  const broomX = sx + w / 2 + 6, broomBottom = bottom;
-  const broomTopX = broomX - 10, broomTopY = top + 30;
+  const broomX = sx + w / 2 + 16, broomBottom = bottom;
+  const broomTopX = broomX - 16, broomTopY = top + 30;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -10334,7 +10380,7 @@ function drawOwl(camX) {
   ctx.closePath();
   ctx.fill();
 
-  if (owlTalked && isPlayerNear(owl.x, 0, 40, 30, 25)) {
+  if (owlTalked && isPlayerNear(owl.x, 0, 55, 35, 25)) {
     drawFittedSpeechBubble(ctx, ox + 16, oy - 40, [
       "We boast of readings in our little oak den...",
       "grab a book to take to the nook, then!"
@@ -10347,7 +10393,7 @@ function updateOakScene(deltaTime) {
   updateOakLampTable();
   updateTeaNook(deltaTime);
 
-  if (isPlayerNear(owl.x, 0, 30, 25, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(owl.x, 0, 55, 35, 25) && keys.spaceJustPressed) {
     owlTalked = true;
   }
 
@@ -11336,7 +11382,7 @@ function updateFeatherHangSpot() {
     featherHung = true;
     carriedFeather = false;
     delete inventory.feather;
-    ratDialogueRestSuppressed = true; // just had a meaningful moment with the rat -- no "good to see you again" right after
+    ratFeatherThankQueued = true; // queues the thank-you line for the next time the rat is approached
     updateInventoryUI();
   }
 }
@@ -11720,6 +11766,9 @@ const ratGreetingLines = [
 const ratReturnGreetingLines = [
   ["Good to see you again, feller!"]
 ];
+const ratFeatherThankLines = [
+  ["Oh, thank you for the decoration!", "Feel free to look around a bit more, if you like."]
+];
 const ratDialogue = {
   active: false,
   index: 0,
@@ -11733,6 +11782,7 @@ let featherHung = false;
 // actually leaves ratroom and comes back, so a genuine return visit
 // still gets the normal greeting
 let ratDialogueRestSuppressed = false;
+let ratFeatherThankQueued = false; // set true the moment the feather is hung, shows once then clears
 const ratFeatherLines = [
   ["Oh! Oh my.", "Is that... a real feather?"],
   ["Wow, a beautiful feather! I've been hoping to find one like that.", "Would you mind hanging it up on that wall over there?"]
@@ -11745,6 +11795,15 @@ const ratLampLines = [
 ];
 
 function startRatDialogue() {
+  if (ratFeatherThankQueued) {
+    ratDialogue.active = true;
+    ratDialogue.index = 0;
+    ratDialogue.lines = ratFeatherThankLines.slice();
+    ratFeatherThankQueued = false;
+    ratDialogueRestSuppressed = true; // shown for this visit -- no need to repeat if approached again
+    ratNPC.talkedTo = true;
+    return;
+  }
   if (!(carriedFeather && !featherHung) && !(inventory.lamp > 0 && !lampAcknowledged) && ratDialogueRestSuppressed) {
     return; // nothing new to say this visit -- already had a meaningful moment, skip the redundant greeting
   }
@@ -11880,6 +11939,11 @@ const nestStrings = [
 // since most of the eyes are to the left, where a player would default
 // to looking first.
 const ratRoomFeather = { x: 600, y: 4, collected: false };
+// unravel animation -- pressing space starts a slow unwind rather than
+// an instant pickup, so the string-wrapped feather reads as a
+// deliberate discovery rather than something grabbed by accident
+const featherUnravelAnim = { active: false, t: 0 };
+const FEATHER_UNRAVEL_MS = 900; // slow enough to actually be experienced, not just flash by
 function drawRatRoomFeather(camX) {
   if (ratRoomFeather.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -11888,54 +11952,95 @@ function drawRatRoomFeather(camX) {
   if (dist > LAMP_LIGHT_RADIUS) return;
   // tucked at an angle among the clutter, not laid out flat/obvious
   drawFeatherShape(ctx, fx, fy, 9, 0.9);
+
+  // string wrapped around it -- a few loops that progressively unwind
+  // and fall away during the unravel animation
+  const unravelP = featherUnravelAnim.active ? Math.min(1, featherUnravelAnim.t / FEATHER_UNRAVEL_MS) : 0;
+  const loopCount = 3;
+  ctx.strokeStyle = "rgba(210,195,160,0.85)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < loopCount; i++) {
+    const loopUnravelStart = i / loopCount;
+    if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this loop has fully fallen away
+    const loopP = Math.max(0, (unravelP - loopUnravelStart) * loopCount); // 0 to 1 for this specific loop's own unwind
+    const loopY = fy - 6 + i * 5;
+    const droop = loopP * 10; // sags and drifts down as it loosens
+    const spread = 1 - loopP * 0.4; // loosens outward slightly before falling
+    ctx.save();
+    ctx.globalAlpha = 1 - loopP * 0.7;
+    ctx.beginPath();
+    ctx.ellipse(fx + loopP * 3, loopY + droop, 6 * spread, 2.2, loopP * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+function updateFeatherUnravelAnim(deltaTime) {
+  if (!featherUnravelAnim.active) return;
+  featherUnravelAnim.t += deltaTime * 1000;
+  if (featherUnravelAnim.t >= FEATHER_UNRAVEL_MS) {
+    featherUnravelAnim.active = false;
+    completeFeatherPickup();
+  }
+}
+function completeFeatherPickup() {
+  ratRoomFeather.collected = true;
+  carriedFeather = true;
+  inventory.feather = 1;
+  touchInventoryOrder("feather");
+  updateInventoryUI();
+  startCollectAnimation({ x: ratRoomFeather.x, y: ratRoomFeather.y, size: 7, rotation: 0 }, "feather");
+  // the rat notices immediately -- turns to face the player and
+  // starts his reaction on his own, rather than waiting for the
+  // player to walk over and initiate
+  ratNPC.facingRight = ratRoomFeather.x > ratNPC.x;
+  startRatDialogue();
 }
 function updateRatRoomFeather() {
-  if (ratRoomFeather.collected || !lampLit) return;
+  if (ratRoomFeather.collected || !lampLit || featherUnravelAnim.active) return;
   if (keys.spaceJustPressed && isPlayerNear(ratRoomFeather.x, ratRoomFeather.y, 20, 15, 12)) {
-    ratRoomFeather.collected = true;
-    carriedFeather = true;
-    inventory.feather = 1;
-    touchInventoryOrder("feather");
-    updateInventoryUI();
-    startCollectAnimation({ x: ratRoomFeather.x, y: ratRoomFeather.y, size: 7, rotation: 0 }, "feather");
-    // the rat notices immediately -- turns to face the player and
-    // starts his reaction on his own, rather than waiting for the
-    // player to walk over and initiate
-    ratNPC.facingRight = ratRoomFeather.x > ratNPC.x;
-    startRatDialogue();
+    featherUnravelAnim.active = true;
+    featherUnravelAnim.t = 0;
   }
 }
 
 function drawNestMaterials(camX) {
   const baseX = ratNPC.x - camX, baseY = gy - 2;
 
-  nestFabricScraps.forEach(f => {
+  nestFabricScraps.forEach((f, fIdx) => {
     ctx.save();
     ctx.translate(baseX + f.dx, baseY + f.dy);
     ctx.rotate(f.rot);
     ctx.fillStyle = f.color;
+    // seeded jitter per vertex so every scrap has its own ragged
+    // silhouette, not the same proportional shape just rescaled, with
+    // real width variation along the length -- some parts wide, some
+    // pinched thin, like an actual torn scrap rather than a uniform strip
+    const seed = fIdx * 37 + 11;
+    const jitter = (n) => (((seed * (n + 3) * 17) % 13) / 13 - 0.5) * f.w * 0.18;
+    const widthMult = (n) => 0.5 + (((seed * (n + 5) * 23) % 17) / 17) * 1.3; // 0.5 to 1.8, seeded per segment
+    const baseVerts = [
+      [-1, -0.22], [-0.5, -0.35], [0.1, -0.15], [0.75, -0.25], [1, 0.08],
+      [0.6, 0.22], [0.05, 0.12], [-0.55, 0.28], [-0.9, 0.1]
+    ];
     ctx.beginPath();
-    // longer, narrower torn strip rather than a rounded blob
-    ctx.moveTo(-f.w, -f.w * 0.22);
-    ctx.lineTo(-f.w * 0.5, -f.w * 0.35);
-    ctx.lineTo(f.w * 0.1, -f.w * 0.15);
-    ctx.lineTo(f.w * 0.75, -f.w * 0.25);
-    ctx.lineTo(f.w, f.w * 0.08);
-    ctx.lineTo(f.w * 0.6, f.w * 0.22);
-    ctx.lineTo(f.w * 0.05, f.w * 0.12);
-    ctx.lineTo(-f.w * 0.55, f.w * 0.28);
-    ctx.lineTo(-f.w * 0.9, f.w * 0.1);
+    baseVerts.forEach(([vx, vy], i) => {
+      const x = vx * f.w + jitter(i * 2), y = vy * f.w * widthMult(i) + jitter(i * 2 + 1);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
     ctx.closePath();
     ctx.fill();
-    // frayed threads at both ends, for a ratty, worn look
+    // frayed threads at both ends, count and length varying per piece
     ctx.strokeStyle = f.color;
     ctx.lineWidth = 0.6;
     [-f.w, f.w].forEach(endX => {
       const dir = endX > 0 ? 1 : -1;
-      for (let t = -1; t <= 1; t++) {
+      const threadCount = 2 + (seed % 3);
+      for (let t = 0; t < threadCount; t++) {
+        const ty = (t - (threadCount - 1) / 2) * f.w * 0.12 + jitter(t + 5);
+        const len = 1.5 + ((seed * (t + 1)) % 4);
         ctx.beginPath();
-        ctx.moveTo(endX, t * f.w * 0.15);
-        ctx.lineTo(endX + dir * (2 + Math.abs(t)), t * f.w * 0.15 + dir * 0.5);
+        ctx.moveTo(endX, ty);
+        ctx.lineTo(endX + dir * len, ty + dir * (0.3 + jitter(t + 8) * 0.1));
         ctx.stroke();
       }
     });
@@ -12176,13 +12281,13 @@ function drawHayStrays(camX) {
 // own staggered timing, not synchronized, for a more alive, curious
 // feel rather than a single ominous effect.
 const ratRoomEyes = [
-  { x: 60, y: 260, phase: 0.2, blinkSpeed: 0.9 },
-  { x: 110, y: 275, phase: 1.8, blinkSpeed: 1.1 },
-  { x: 90, y: 240, phase: 3.1, blinkSpeed: 0.8 },
-  { x: 150, y: 265, phase: 0.6, blinkSpeed: 1.3 },
-  { x: 180, y: 245, phase: 2.4, blinkSpeed: 1.0 },
-  { x: 45, y: 285, phase: 4.0, blinkSpeed: 0.95 },
-  { x: 130, y: 288, phase: 1.2, blinkSpeed: 1.05 },
+  { x: 55, y: 268, phase: 0.2, blinkSpeed: 0.9 },
+  { x: 125, y: 290, phase: 1.8, blinkSpeed: 1.1 },
+  { x: 78, y: 210, phase: 3.1, blinkSpeed: 0.8 },
+  { x: 165, y: 255, phase: 0.6, blinkSpeed: 1.3 },
+  { x: 200, y: 235, phase: 2.4, blinkSpeed: 1.0 },
+  { x: 32, y: 278, phase: 4.0, blinkSpeed: 0.95 },
+  { x: 105, y: 225, phase: 1.2, blinkSpeed: 1.05 },
   { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
   { x: 730, y: 250, phase: 0.4, blinkSpeed: 1.15 },
   { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 }, // high up, left of the stairs, perched on top of something
@@ -12215,27 +12320,29 @@ function drawRatRoomEyes(camX) {
       if (dist < LAMP_LIGHT_RADIUS) {
         const babySway = Math.sin(ratRoomEyeT * 2.2 + eye.phase * 3) * 3;
 
-        // genuine variety per baby -- different fur tones and sizes,
-        // deterministic from position so each one stays consistent
+        // genuine variety per baby -- different fur tones, sizes, and
+        // facing direction, deterministic from position so each one
+        // stays consistent
         const variantSeed = idx * 13 + 7;
         const furColors = ["#8a8880", "#a8a090", "#8a7050", "#6a6862", "#9a8a78", "#7a6858", "#b09878"];
         const earColors = ["#7a7268", "#8a8070", "#7a6040", "#5a5852", "#8a7868", "#6a5848", "#9a8060"];
         const furColor = furColors[variantSeed % furColors.length];
         const earColor = earColors[variantSeed % earColors.length];
         const scale = 0.75 + (((variantSeed * 7 + 3) % 11) / 11) * 0.5; // decorrelated from color index so they don't cycle together
+        const facingDir = (variantSeed % 3 === 0) ? -1 : 1; // some face the other way -- real pose variety, not just a color tint on an identical shape
 
-        // small tail, swaying side to side
+        // small tail, swaying side to side, flipped with facing direction
         ctx.strokeStyle = earColor;
         ctx.lineWidth = 1.3 * scale;
         ctx.beginPath();
-        ctx.moveTo(ex + 5 * scale, ey + 5 * scale);
-        ctx.quadraticCurveTo(ex + 8 * scale + babySway * 0.5, ey + 6 * scale, ex + 10 * scale + babySway, ey + 4 * scale);
+        ctx.moveTo(ex + 5 * scale * facingDir, ey + 5 * scale);
+        ctx.quadraticCurveTo(ex + 8 * scale * facingDir + babySway * 0.5, ey + 6 * scale, ex + 10 * scale * facingDir + babySway, ey + 4 * scale);
         ctx.stroke();
 
         // little round body
         ctx.fillStyle = furColor;
         ctx.beginPath();
-        ctx.ellipse(ex + 1 * scale, ey + 5 * scale, 5 * scale, 4 * scale, 0, 0, Math.PI * 2);
+        ctx.ellipse(ex + 1 * scale * facingDir, ey + 5 * scale, 5 * scale, 4 * scale, 0, 0, Math.PI * 2);
         ctx.fill();
 
         // head, slightly forward and up from the body
@@ -12301,6 +12408,7 @@ function updateRatRoomScene(deltaTime) {
   updateRatRoomEyes(deltaTime);
   updateAcornFeedAnim(deltaTime);
   updateRatRoomFeather();
+  updateFeatherUnravelAnim(deltaTime);
   updateFeatherHangSpot();
 
   if (!ratLampAcknowledged && inventory.lamp > 0 && !ratDialogue.active) {
