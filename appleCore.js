@@ -670,19 +670,21 @@ function updateMapUI() {
   // interior, injected directly here (rather than as a CSS
   // background-image, which may not have been rendering reliably)
   // so it's guaranteed present on every single refresh
-  mapEl.innerHTML = `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible" viewBox="0 0 400 260" preserveAspectRatio="none">
-    <path d="M0,0 L38,0 L30,9 L48,14 L36,22 L52,30 L28,34 L0,34 Z" fill="#2a180a" opacity="0.55"/>
-    <path d="M400,0 L360,0 L370,10 L350,16 L368,26 L346,32 L400,32 Z" fill="#2a180a" opacity="0.55"/>
-    <path d="M0,260 L0,222 L14,230 L8,214 L26,224 L20,206 L44,222 L0,222 Z" fill="#2a180a" opacity="0.55"/>
-    <path d="M400,260 L400,220 L382,230 L392,212 L370,222 L378,204 L400,220 Z" fill="#2a180a" opacity="0.55"/>
-    <path d="M150,0 L172,0 L164,7 L180,11 L158,15 L150,0" fill="#2a180a" opacity="0.4"/>
-    <path d="M0,120 L0,140 L10,132 L4,148 L0,140" fill="#2a180a" opacity="0.4"/>
-    <path d="M400,110 L400,132 L390,122 L396,140 L400,132" fill="#2a180a" opacity="0.4"/>
-    <g stroke="rgba(60,40,20,0.25)" stroke-width="1" fill="none">
+  mapEl.innerHTML = `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:5" viewBox="0 0 400 260" preserveAspectRatio="none">
+    <path d="M0,0 L60,0 L48,14 L72,20 L54,32 L78,44 L42,50 L0,50 Z" fill="#1c1006" opacity="0.85"/>
+    <path d="M400,0 L340,0 L354,15 L326,22 L350,36 L318,46 L400,46 Z" fill="#1c1006" opacity="0.85"/>
+    <path d="M0,260 L0,205 L22,216 L14,192 L38,206 L28,180 L58,204 L0,204 Z" fill="#1c1006" opacity="0.85"/>
+    <path d="M400,260 L400,200 L372,214 L386,188 L358,200 L372,176 L400,196 Z" fill="#1c1006" opacity="0.85"/>
+    <path d="M150,0 L185,0 L172,10 L196,16 L162,22 L150,0" fill="#1c1006" opacity="0.65"/>
+    <path d="M0,110 L0,145 L16,133 L6,155 L0,145" fill="#1c1006" opacity="0.65"/>
+    <path d="M400,100 L400,138 L380,120 L392,148 L400,138" fill="#1c1006" opacity="0.65"/>
+    <g stroke="rgba(40,26,12,0.4)" stroke-width="1.4" fill="none">
       <path d="M60,40 Q90,55 70,80 Q100,95 85,120"/>
       <path d="M320,50 Q290,70 310,95"/>
       <path d="M180,200 Q210,190 195,170 Q225,165 210,145"/>
     </g>
+    <path d="M270,90 L276,105 L268,112 L280,128 L271,138 L285,155 L273,168 L288,182" stroke="#0e0803" stroke-width="3" fill="none" opacity="0.8"/>
+    <path d="M273,90 L280,104 L273,113 L284,127 L275,139 L288,154 L277,167 L292,180" stroke="#4a3018" stroke-width="1.2" fill="none" opacity="0.7"/>
   </svg>`;
 
   const NODE_W = 120, NODE_H = 60; // matches .map-node's CSS dimensions
@@ -756,7 +758,7 @@ const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
-  oak: { x: 664 }, // arrives via seesaw launch, lands just past the arch entrance
+  oak: { x: 380 }, // arrives via seesaw launch -- moved closer to the actual entrance door (oakReturnDoor at x:294), was landing 370 units away from it despite the door being the visual entry point
   ratroom: { x: 310 } // arrives via the trap door, lands near the base of the stairs
 };
 
@@ -843,6 +845,7 @@ function updateSeasonTransition(deltaTime) {
       if (currentScene === "ratroom" && previousScene !== "ratroom") {
         ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
         ratRoomHighShelves.forEach(s => { if (s.tier > 0) s.unlocked = false; });
+        snakeDialogue.everShownThisVisit = false;
       }
       if (currentScene === "oak" && previousScene === "ratroom") {
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
@@ -4767,6 +4770,52 @@ const pothosSpot = { x: 2825, hangY: 260 };
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
 const snakePlantSpot = { x: 1349, y: 0 };
+const entrywayFernSpot = { x: 420, y: 0 };
+function drawEntrywayFern(camX) {
+  const px = entrywayFernSpot.x - camX, py = gy - entrywayFernSpot.y;
+  // small terracotta pot, simpler than the snake plant's since this
+  // is a smaller fill-in piece for the entryway rather than a set piece
+  ctx.fillStyle = "#8a4a2e";
+  ctx.beginPath();
+  ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py); ctx.lineTo(px + 10, py - 16); ctx.lineTo(px - 10, py - 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a2c18";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 16, 10, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const fronds = [-0.55, -0.25, 0, 0.25, 0.55];
+  const frondLens = [38, 48, 52, 46, 36];
+  fronds.forEach((a, i) => {
+    ctx.save();
+    ctx.translate(px, py - 16);
+    ctx.rotate(a * 0.5);
+    const len = frondLens[i];
+    ctx.fillStyle = i % 2 === 0 ? "#3a6a34" : "#4a7a3e";
+    ctx.beginPath();
+    ctx.moveTo(-1.5, 0);
+    ctx.quadraticCurveTo(-2.5, -len * 0.5, -0.5, -len);
+    ctx.quadraticCurveTo(0, -len * 1.02, 0.5, -len);
+    ctx.quadraticCurveTo(2.5, -len * 0.5, 1.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    // small leaflet notches along the frond, since a fern reads as
+    // feathery rather than a solid blade
+    ctx.strokeStyle = "rgba(20,45,20,0.4)";
+    ctx.lineWidth = 0.5;
+    for (let ly = -len * 0.15; ly > -len * 0.9; ly -= len * 0.12) {
+      ctx.beginPath();
+      ctx.moveTo(-1.2, ly); ctx.lineTo(-2.4, ly - 3);
+      ctx.moveTo(1.2, ly); ctx.lineTo(2.4, ly - 3);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
 function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
   ctx.save();
   ctx.translate(x, y);
@@ -8734,6 +8783,8 @@ let owlTalked = false;
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
   { x: 2278, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
+  { x: 350, seed: 52, count: 4, heightAboveGround: 20 }, // fills the empty stretch right after the entrance door
+  { x: 460, seed: 8, count: 3, heightAboveGround: 26 }, // second pile in the same gap, before the existing 571 one
   { x: 571, seed: 2, count: 4, heightAboveGround: 30 },
   { x: 839, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
@@ -9031,7 +9082,8 @@ const cushionPile = sittingAreas[1];
 const teaSpot = { x: 2425 };
 const babyOwl = {
   idleT: 0, idleNextAt: 3000 + Math.random() * 4000, idleShift: 0, idleShiftT: 0,
-  sipT: 0, sipNextAt: 5000 + Math.random() * 7000, sipping: 0
+  sipT: 0, sipNextAt: 5000 + Math.random() * 7000, sipping: 0,
+  retreatT: 0, retreatNextAt: 9000 + Math.random() * 8000, retreatShiftT: 0, retreatOffset: 0
 };
 const teaDialogue = { active: false, lines: [], index: 0 };
 const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
@@ -9249,7 +9301,7 @@ function drawFairyLights(camX) {
 function drawTeaNook(camX) {
   if (!cushionPile.unlocked()) return;
   const tx = teaSpot.x - camX;
-  const archW = 165, archTop = gy - 84, archBottom = gy - 2;
+  const archW = 120, archTop = gy - 84, archBottom = gy - 2;
   const archR = (archW + 10) / 2;
   const springY = archTop + archR;
 
@@ -9265,7 +9317,35 @@ function drawTeaNook(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // radial gradient suggesting the quarter-sphere curvature actually
+  // subtle surface texture -- a few soft irregular patches and thin
+  // strata lines suggesting rough stone/clay, confined strictly to the
+  // upper arch region, well clear of where the table/owl/kettle sit,
+  // to avoid any risk of repeating the earlier mistake where a shape
+  // meant to be a thin sliver ended up covering most of the niche
+  const texturePatches = [
+    { dx: -0.35, dy: 0.15, r: 14 }, { dx: 0.15, dy: 0.05, r: 11 },
+    { dx: 0.42, dy: 0.22, r: 9 }, { dx: -0.1, dy: 0.3, r: 10 }
+  ];
+  texturePatches.forEach(p => {
+    const px = tx + archR * p.dx, py = archTop + (springY - archTop) * p.dy;
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, p.r);
+    grad.addColorStop(0, "rgba(0,0,0,0.22)");
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px, py, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  ctx.lineWidth = 1;
+  [0.2, 0.45].forEach(f => {
+    const strataY = archTop + (springY - archTop) * f;
+    ctx.beginPath();
+    ctx.moveTo(tx - archR * 0.7, strataY);
+    ctx.quadraticCurveTo(tx, strataY + 3, tx + archR * 0.7, strataY - 2);
+    ctx.stroke();
+  });
+
   // receding into the wall -- a smooth falloff reads as real depth far
   // better than discrete rings did, which looked like flat decorative
   // circles rather than a curved surface losing light as it recedes
@@ -9307,7 +9387,7 @@ function drawTeaNook(camX) {
   // visible top surface so its short depth actually reads as a
   // crescent/moon shape rather than a thin flat line
   const tableTop = archBottom - 30;
-  const tableHalfW = 82, tableDepth = 11;
+  const tableHalfW = 52, tableDepth = 11;
   ctx.fillStyle = "#6a4a2c";
   ctx.beginPath();
   ctx.moveTo(tx - tableHalfW, tableTop + tableDepth);
@@ -9409,11 +9489,12 @@ function drawTeaNook(camX) {
   const oxBase = tx - 8, oy = tableTop - 22;
   const ox = oxBase + babyOwl.idleShift;
   const giveWingLift = teaAnim.phase === "sipping" ? Math.sin(Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping) * Math.PI) : 0;
-  const leanY = pourWingLift * 20; // leans down toward the table while pouring, since it stands well back at floor level
-  const leanX = pourWingLift * 15; // also shifts right toward the kettle, to actually reach it with its right wing
+  const leanY = grabP * 20; // leans down toward the table while reaching, completes by the end of the grab phase rather than continuing to drift during the lift/pour
+  const leanX = grabP * 15; // also shifts right toward the kettle -- same grabP cap, so the pivot stays fixed relative to the handle once grabbed instead of swinging the wing angle wildly
+  const retreatActive = teaAnim.phase === "idle" ? babyOwl.retreatOffset : 0; // only during idle -- the pour sequence already has its own lean, combining both would be confusing
   ctx.save();
-  ctx.translate(ox + leanX, oy + leanY);
-  ctx.scale(1.3, 1.3);
+  ctx.translate(ox + leanX, oy + leanY - retreatActive * 10);
+  ctx.scale(1.3 * (1 - retreatActive * 0.08), 1.3 * (1 - retreatActive * 0.08));
 
   // feet
   ctx.strokeStyle = "#c9863a";
@@ -9546,17 +9627,18 @@ function drawTeaNook(camX) {
 
   // baby owl's own cup -- always held, not resting on anything, which
   // reinforces the tea moment even when the kettle isn't the focus
-  // a curved band matching the arch's own top curvature and fill,
-  // drawn after the owl so it dips down and covers the very top of
-  // its head slightly -- suggests the owl is genuinely tucked back
-  // into the recess rather than floating in front of a flat wall
+  // a thin band matching the arch's own fill color, drawn after the
+  // owl so it dips down and covers the very top of its head slightly
+  // -- confined to a small strip near the top only, since the earlier
+  // version traced the full semicircle arc and ended up extending
+  // nearly to the center, obscuring the table and floor entirely
   ctx.fillStyle = "#241608";
   ctx.beginPath();
-  ctx.moveTo(tx - archR, springY - 30);
-  ctx.lineTo(tx - archR, springY);
-  ctx.arc(tx, springY, archR, Math.PI, Math.PI * 2, true);
-  ctx.lineTo(tx + archR, springY - 30);
-  ctx.quadraticCurveTo(tx, springY - 22, tx - archR, springY - 30);
+  ctx.moveTo(tx - archR * 0.6, springY - 30);
+  ctx.lineTo(tx - archR * 0.6, springY - 20);
+  ctx.quadraticCurveTo(tx, springY - 12, tx + archR * 0.6, springY - 20);
+  ctx.lineTo(tx + archR * 0.6, springY - 30);
+  ctx.quadraticCurveTo(tx, springY - 22, tx - archR * 0.6, springY - 30);
   ctx.closePath();
   ctx.fill();
 
@@ -9682,6 +9764,24 @@ function updateTeaNook(deltaTime) {
     babyOwl.idleShift = Math.sin(p * Math.PI) * 3;
   } else {
     babyOwl.idleShift = 0;
+  }
+
+  // occasional retreat further into the cove -- settles slightly
+  // smaller and shifts back for a moment, a real depth cue since it's
+  // visible movement into the space rather than another static trick
+  babyOwl.retreatT += dtMs;
+  if (babyOwl.retreatT >= babyOwl.retreatNextAt) {
+    babyOwl.retreatShiftT = 0;
+    babyOwl.retreatT = 0;
+    babyOwl.retreatNextAt = 9000 + Math.random() * 8000;
+  }
+  if (babyOwl.retreatShiftT < 2400) {
+    babyOwl.retreatShiftT += dtMs;
+    const p = babyOwl.retreatShiftT / 2400;
+    // eases back, holds briefly, eases forward again -- not a snap
+    babyOwl.retreatOffset = Math.sin(p * Math.PI) * 1;
+  } else {
+    babyOwl.retreatOffset = 0;
   }
 
   babyOwl.sipT += dtMs;
@@ -10411,6 +10511,7 @@ function drawOakScene(camX) {
   drawOakLampTable(camX);
   drawPothos(camX);
   drawSnakePlant(camX);
+  drawEntrywayFern(camX);
   drawStringOfPearls(camX);
   drawMonstera(camX);
   drawStringOfHearts(camX);
@@ -11514,7 +11615,7 @@ function drawFeatherHangSpot(camX) {
   if (featherHung || featherHangAnim.active) {
     ctx.save();
     const settleP = featherHangAnim.active ? Math.min(1, featherHangAnim.t / FEATHER_HANG_MS) : 1;
-    const startY = -40, endY = -17;
+    const startY = -40, endY = -9; // ends right at the pot's own rim (rim ellipse is at y=-7), not floating well above it
     ctx.translate(0, startY + (endY - startY) * settleP);
     ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
     drawFeatherShape(ctx, 0, 0, 11, (1 - settleP) * 0.6);
@@ -11811,7 +11912,7 @@ const ratRoomHighShelves = [
   { x: 1030, y: 185, w: 30, tier: 1, cluster: "right", unlocked: false },
   { x: 1080, y: 175, w: 28, tier: 1, cluster: "right", unlocked: false },
   { x: 1140, y: 85, w: 55, tier: 2, cluster: "right", unlocked: false }, // snake's shelf, wider, and a full extra jump higher
-  { x: 1210, y: 15, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
+  { x: 1210, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -11854,7 +11955,7 @@ function drawRatRoomHighShelf(camX) {
 // The shelf itself is always visible from ground, so it invites the
 // jump on its own; the spider is the payoff for actually taking it.
 const spiderSpot = { x: 140, y: 175 };
-const spiderState = { legDanceT: 0, legDanceNextAt: 4000 + Math.random() * 5000, legDancing: 0 };
+const spiderState = { legDanceT: 0, legDanceNextAt: 1200 + Math.random() * 2000, legDancing: 0 };
 function drawSpider(camX) {
   if (!lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -11930,7 +12031,7 @@ function updateSpider(deltaTime) {
   if (spiderState.legDanceT >= spiderState.legDanceNextAt) {
     spiderState.legDancing = 0.001;
     spiderState.legDanceT = 0;
-    spiderState.legDanceNextAt = 4000 + Math.random() * 5000;
+    spiderState.legDanceNextAt = 1200 + Math.random() * 2000;
   }
   if (spiderState.legDancing > 0) {
     spiderState.legDancing += dtMs / 700;
@@ -11946,7 +12047,7 @@ function updateSpider(deltaTime) {
 // separate triggers.
 const snakeSpot = { x: 1125, y: 78 };
 const snakeState = { tailWaveT: 0 };
-const snakeDialogue = { active: false, index: 0 };
+const snakeDialogue = { active: false, index: 0, t: 0, everShownThisVisit: false };
 const snakeLines = [
   ["Sssomeone'sss curioussss down here."],
   ["Thisss one'sss mine. Found it firssst."]
@@ -11963,7 +12064,7 @@ function drawSnake(camX) {
 
   ctx.save();
   ctx.translate(nx, ny);
-  ctx.scale(1.9, 1.9); // much bigger than before, a real presence on its shelf
+  ctx.scale(1.9, 1.9);
 
   // the small hoarded object, coiled around by the body
   ctx.fillStyle = "#8ac8d8";
@@ -11975,64 +12076,137 @@ function drawSnake(camX) {
   ctx.arc(-0.6, 2.4, 0.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // garter-snake styling -- green base with longitudinal cream
-  // stripes rather than a plain brown-green body. Coil first (base
-  // color, thick), then the tail (base color), then stripes drawn as
-  // thinner offset strokes following the same paths on top.
-  const bodyColor = "#3f7a3a";
+  // single continuous body -- a spiral coil that smoothly becomes the
+  // tail, one connected tapered path rather than separate arcs and a
+  // disjointed line. Built as points, walked with overlapping tapered
+  // segments so width actually varies along the body's real length.
+  const points = [];
+  const coilTurns = 1.6, coilSteps = 44;
+  for (let i = 0; i <= coilSteps; i++) {
+    const t = i / coilSteps;
+    const angle = 0.3 + t * Math.PI * 2 * coilTurns;
+    const r = 1.5 + t * 5.2;
+    points.push({ x: Math.cos(angle) * r, y: 3 + Math.sin(angle) * r * 0.85 });
+  }
+  // tail continues directly from the coil's own last point, same
+  // curve family, so there's no seam between coil and tail
+  const tailStart = points[points.length - 1];
+  const tailSteps = 28;
+  for (let i = 1; i <= tailSteps; i++) {
+    const t = i / tailSteps;
+    const wave = Math.sin(t * Math.PI * 1.4) * (tailWave * 0.15 + 3) * t;
+    points.push({
+      x: tailStart.x + t * (34 + tailWave * 1.2),
+      y: tailStart.y + wave - t * 2
+    });
+  }
+
+  const bodyColor = "#2e5c2a";
   const stripeColor = "#d8cf8a";
+  const bellyColor = "#5c7842";
   ctx.lineCap = "round";
 
-  const coilPaths = [
-    () => { ctx.arc(0, 3, 6, 0.2, Math.PI * 1.7); },
-    () => { ctx.arc(0, 3, 3.5, Math.PI * 0.1, Math.PI * 1.9); }
-  ];
-  const tailPath = () => {
-    ctx.moveTo(8, 1);
-    ctx.quadraticCurveTo(16 + tailWave * 0.4, -3, 26 + tailWave, 0);
-    ctx.quadraticCurveTo(34 + tailWave * 1.3, 2, 40 + tailWave * 1.6, -2);
+  // width tapers -- thin at the tail tip, thickest through the
+  // mid-body, narrowing again toward the neck
+  const widthAt = (t) => {
+    if (t < 0.15) return 2.2 + t / 0.15 * 1.8;
+    if (t < 0.75) return 4.0;
+    return 4.0 - (t - 0.75) / 0.25 * 2.6;
   };
 
-  ctx.strokeStyle = bodyColor;
-  ctx.lineWidth = 3.4;
-  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
-  ctx.beginPath(); tailPath(); ctx.stroke();
-
-  // stripe overlay, offset slightly to each side of the same paths
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    const p0 = points[i], p1 = points[i + 1];
+    ctx.strokeStyle = bodyColor;
+    ctx.lineWidth = widthAt(t);
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
+  }
+  // a soft lighter belly stripe down the center for real dimension,
+  // not just a flat tube
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    if (widthAt(t) < 2.5) continue;
+    const p0 = points[i], p1 = points[i + 1];
+    ctx.strokeStyle = bellyColor;
+    ctx.lineWidth = widthAt(t) * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y + widthAt(t) * 0.2);
+    ctx.lineTo(p1.x, p1.y + widthAt(t) * 0.2);
+    ctx.stroke();
+  }
+  // garter stripes, offset perpendicular to the path's actual local
+  // direction at each point so they genuinely follow the coil and
+  // tail's curve instead of a flat, direction-blind y-offset
   ctx.strokeStyle = stripeColor;
-  ctx.lineWidth = 0.9;
-  ctx.save();
-  ctx.translate(0, -1.1);
-  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
-  ctx.beginPath(); tailPath(); ctx.stroke();
-  ctx.restore();
-  ctx.save();
-  ctx.translate(0, 1.1);
-  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
-  ctx.beginPath(); tailPath(); ctx.stroke();
-  ctx.restore();
+  ctx.lineWidth = 0.8;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i++) {
+      const t = i / (points.length - 1);
+      const w = widthAt(t) * 0.55;
+      const p0 = points[Math.max(0, i - 1)], p1 = points[Math.min(points.length - 1, i + 1)];
+      const dx = p1.x - p0.x, dy = p1.y - p0.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const perpX = -dy / len * w * side, perpY = dx / len * w * side;
+      const px2 = points[i].x + perpX, py2 = points[i].y + perpY;
+      if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+    }
+    ctx.stroke();
+  });
 
-  // head, resting on top of the coil, glowing eyes matching the room's motif
+  // scale texture -- small diagonal tick marks along both edges of
+  // the body, for real surface detail rather than a flat smooth tube
+  ctx.strokeStyle = "rgba(20,40,15,0.35)";
+  ctx.lineWidth = 0.4;
+  for (let i = 2; i < points.length - 1; i += 2) {
+    const t = i / (points.length - 1);
+    const w = widthAt(t) * 0.5;
+    if (w < 1) continue;
+    const p0 = points[Math.max(0, i - 1)], p1 = points[Math.min(points.length - 1, i + 1)];
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const perpX = -dy / len, perpY = dx / len;
+    [-1, 1].forEach(side => {
+      const baseX = points[i].x + perpX * w * side, baseY = points[i].y + perpY * w * side;
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.lineTo(baseX + dx / len * 1.4, baseY + dy / len * 1.4 - side * 0.3);
+      ctx.stroke();
+    });
+  }
+
+  // head, at the coil's own starting point (t=0), glowing eyes
+  // matching the room's motif
+  const headPt = points[0];
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
-  ctx.ellipse(-6, -3, 3.5, 2.6, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(headPt.x - 1.5, headPt.y - 1, 3.5, 2.6, -0.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "rgba(220,190,120,0.9)";
   ctx.beginPath();
-  ctx.arc(-7, -3.5, 0.8, 0, Math.PI * 2);
-  ctx.arc(-5, -4, 0.8, 0, Math.PI * 2);
+  ctx.arc(headPt.x - 2.5, headPt.y - 1.5, 0.8, 0, Math.PI * 2);
+  ctx.arc(headPt.x - 0.5, headPt.y - 2, 0.8, 0, Math.PI * 2);
   ctx.fill();
-  // small forked tongue flick, since it's a snake after all
-  ctx.strokeStyle = "#c85a5a";
-  ctx.lineWidth = 0.4;
-  ctx.beginPath();
-  ctx.moveTo(-9.5, -2.5);
-  ctx.lineTo(-12, -2.2);
-  ctx.moveTo(-12, -2.2);
-  ctx.lineTo(-13, -2.8);
-  ctx.moveTo(-12, -2.2);
-  ctx.lineTo(-13, -1.6);
-  ctx.stroke();
+  // forked tongue flick -- enlarged and much more intensely colored,
+  // and only visible for a brief window periodically, so it reads as
+  // an actual flick rather than a static feature always sitting there
+  const tongueCycle = snakeState.tailWaveT % 2500;
+  if (tongueCycle < 400) {
+    const flickP = Math.sin((tongueCycle / 400) * Math.PI); // eases in and out rather than a hard on/off
+    ctx.strokeStyle = "#ff2418";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(headPt.x - 5, headPt.y - 0.5);
+    ctx.lineTo(headPt.x - 5 - 4.5 * flickP, headPt.y - 0.5 + 0.4 * flickP);
+    ctx.moveTo(headPt.x - 5 - 4.5 * flickP, headPt.y - 0.5 + 0.4 * flickP);
+    ctx.lineTo(headPt.x - 5 - 6.5 * flickP, headPt.y - 0.5 + 0.4 * flickP - 1.2 * flickP);
+    ctx.moveTo(headPt.x - 5 - 4.5 * flickP, headPt.y - 0.5 + 0.4 * flickP);
+    ctx.lineTo(headPt.x - 5 - 6.5 * flickP, headPt.y - 0.5 + 0.4 * flickP + 1.2 * flickP);
+    ctx.stroke();
+  }
 
   ctx.restore();
 
@@ -12041,25 +12215,33 @@ function drawSnake(camX) {
     drawFittedSpeechBubble(ctx, nx, ny - 30, beat);
   }
 }
+const SNAKE_LINE_MS = 2600; // slow enough to actually read each line, auto-advancing rather than requiring a press that conflicts with holding space for the lamp
 function updateSnake(deltaTime) {
   snakeState.tailWaveT += deltaTime * 1000;
 
   if (snakeDialogue.active) {
-    if (keys.spaceJustPressed) {
+    snakeDialogue.t += deltaTime * 1000;
+    if (snakeDialogue.t >= SNAKE_LINE_MS) {
+      snakeDialogue.t = 0;
       snakeDialogue.index++;
       if (snakeDialogue.index >= snakeLines.length) snakeDialogue.active = false;
     }
     return;
   }
-  if (keys.spaceJustPressed && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 20, 20, 15) && lampLit) {
+  // auto-triggers on proximity with the lamp lit -- no space press
+  // needed, since requiring one would conflict with holding space
+  // continuously just to keep the lamp lit while approaching
+  if (!snakeDialogue.everShownThisVisit && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 20, 20, 15) && lampLit) {
     snakeDialogue.active = true;
     snakeDialogue.index = 0;
+    snakeDialogue.t = 0;
+    snakeDialogue.everShownThisVisit = true;
   }
 }
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1210, y: 8, collected: false };
+const marbleSpot = { x: 1210, y: 63, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -12469,8 +12651,8 @@ function drawRatRoomFeather(camX) {
   // tidy shapes at all
   const unravelP = featherUnravelAnim.active ? Math.min(1, featherUnravelAnim.t / FEATHER_UNRAVEL_MS) : 0;
   const loopCount = 4;
-  ctx.strokeStyle = "rgba(210,195,160,0.85)";
-  ctx.lineWidth = 0.55;
+  ctx.strokeStyle = "rgba(225,215,185,0.95)";
+  ctx.lineWidth = 0.75;
   for (let i = 0; i < loopCount; i++) {
     const loopUnravelStart = i / loopCount;
     if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this strand has fully fallen away
