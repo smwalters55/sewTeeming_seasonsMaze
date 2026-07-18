@@ -947,28 +947,57 @@ function drawSeasonTransition(ctx) {
       ctx.fillText("Ratroom", canvas.width / 2, canvas.height / 2);
       ctx.textAlign = prevAlign;
 
-      // small winking rat face, bottom right
-      const fx = canvas.width - 40, fy = canvas.height - 40;
+      // rat face, matching the actual rat NPC's features -- centered
+      // below the text and enlarged, since tucked in the corner at
+      // its old size it was too small and out of the way to actually see
+      const fx = canvas.width / 2, fy = canvas.height / 2 + 45;
       ctx.globalAlpha = textAlpha;
+      ctx.save();
+      ctx.translate(fx, fy);
+      ctx.scale(1.8, 1.8);
       ctx.fillStyle = "#8a8880";
       ctx.beginPath();
-      ctx.ellipse(fx, fy, 12, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#7a7268";
       ctx.beginPath();
-      ctx.arc(fx - 5, fy - 8, 4, 0, Math.PI * 2);
-      ctx.arc(fx + 5, fy - 8, 4, 0, Math.PI * 2);
+      ctx.arc(-5, -8, 4, 0, Math.PI * 2);
+      ctx.arc(5, -8, 4, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = "#c98a8a";
+      ctx.beginPath();
+      ctx.arc(-5, -8, 2, 0, Math.PI * 2);
+      ctx.arc(5, -8, 2, 0, Math.PI * 2);
+      ctx.fill();
+      // nose, matching the real rat's pink snout tone
+      ctx.fillStyle = "#d89a9a";
+      ctx.beginPath();
+      ctx.arc(0, 6, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      // whiskers, same as the real rat
+      ctx.strokeStyle = "rgba(230,230,230,0.6)";
+      ctx.lineWidth = 0.5;
+      [-1.5, 0, 1.5].forEach(dy => {
+        ctx.beginPath();
+        ctx.moveTo(1, 5 + dy * 0.5);
+        ctx.lineTo(9, 4 + dy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-1, 5 + dy * 0.5);
+        ctx.lineTo(-9, 4 + dy);
+        ctx.stroke();
+      });
       // winking eye -- one closed (a curved line), one open (a dot)
       ctx.strokeStyle = "#1a1a1a";
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(fx - 4, fy - 1, 2, 0.2, Math.PI - 0.2);
+      ctx.arc(-4, -1, 2, 0.2, Math.PI - 0.2);
       ctx.stroke();
       ctx.fillStyle = "#1a1a1a";
       ctx.beginPath();
-      ctx.arc(fx + 4, fy - 1, 1.2, 0, Math.PI * 2);
+      ctx.arc(4, -1, 1.2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
       ctx.globalAlpha = 1;
       return;
     }
@@ -5067,8 +5096,8 @@ function drawPothos(camX) {
   ctx.stroke();
   const vines = [
     [-12, 193, 18, 0.5, false, 0, 1, -1], [-4, 246, 20, 1.4, true, 28, 1, -1],
-    [4, 246, 16, 2.6, false, 40, 0.6, 1], [12, 251, 22, 3.5, true, 32, 1.3, 1],
-    [20, 246, 14, 4.7, false, 70, 0.9, 1]
+    [4, 246, 16, 2.6, false, 0, 0.6, 1], [12, 251, 22, 3.5, true, 32, 1.3, 1],
+    [20, 246, 14, 4.7, false, 0, 0.9, 1]
   ];
   vines.forEach((v, i) => {
     drawPothosVine(ctx, px + v[0], py + 2, v[1], v[2], i % 2 === 0 ? "#4a823c" : "#589144", v[3], v[5], v[6], v[7]);
@@ -9190,7 +9219,7 @@ function drawFairyLights(camX) {
 function drawTeaNook(camX) {
   if (!cushionPile.unlocked()) return;
   const tx = teaSpot.x - camX;
-  const archW = 90, archTop = gy - 84, archBottom = gy - 2;
+  const archW = 165, archTop = gy - 84, archBottom = gy - 2;
   const archR = (archW + 10) / 2;
   const springY = archTop + archR;
 
@@ -9248,7 +9277,7 @@ function drawTeaNook(camX) {
   // visible top surface so its short depth actually reads as a
   // crescent/moon shape rather than a thin flat line
   const tableTop = archBottom - 30;
-  const tableHalfW = 55, tableDepth = 11;
+  const tableHalfW = 82, tableDepth = 11;
   ctx.fillStyle = "#6a4a2c";
   ctx.beginPath();
   ctx.moveTo(tx - tableHalfW, tableTop + tableDepth);
@@ -9801,7 +9830,7 @@ function drawShortShelf(camX) {
 
   // old broom, leaning against the shelf's right side
   const broomX = sx + w / 2 + 16, broomBottom = bottom;
-  const broomTopX = broomX - 16, broomTopY = top + 30;
+  const broomTopX = broomX - 19, broomTopY = top + 30;
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
@@ -11688,14 +11717,19 @@ function drawPressedLeaf(camX) {
 // with the lamp lit reveals the next tier up, cascading as you climb,
 // rather than everything being visible (or invisible) all at once.
 const ratRoomHighShelves = [
-  // left cluster -- leads up to the spider
+  // left cluster -- leads up to the spider. Every shelf, including
+  // this first one, is lamp-gated -- none are visible in the dark at
+  // all, matching the room's established light-reveals-everything pattern
   { x: 170, y: 95, w: 32, tier: 0, cluster: "left" },
   { x: 170, y: 55, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's shelf
-  // right cluster -- leads up through the snake to the marble
+  // right cluster -- ground shelf, then two middle shelves revealed
+  // from it, then the snake's own shelf revealed from those, then the
+  // marble one tier beyond that
   { x: 1000, y: 100, w: 32, tier: 0, cluster: "right" },
-  { x: 1050, y: 65, w: 30, tier: 1, cluster: "right", unlocked: false },
-  { x: 1130, y: 50, w: 30, tier: 1, cluster: "right", unlocked: false }, // snake's shelf
-  { x: 1210, y: 65, w: 30, tier: 2, cluster: "right", unlocked: false } // marble, one tier further up
+  { x: 1050, y: 68, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1100, y: 78, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1130, y: 50, w: 30, tier: 2, cluster: "right", unlocked: false }, // snake's shelf
+  { x: 1210, y: 65, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -11713,32 +11747,15 @@ function drawRatRoomHighShelf(camX) {
   ratRoomHighShelves.forEach(shelf => {
     const sx = shelf.x - camX, sy = shelf.y;
     const w = shelf.w;
-    if (shelf.tier > 0) {
-      if (!shelf.unlocked) return;
-      if (!lampLit) return;
-      const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
-      if (dist > LAMP_LIGHT_RADIUS) return;
-    }
-    if (shelf.tier === 0) {
-      // meaningfully higher contrast than the rest -- lighter wood
-      // tone plus a soft glow, since the original uniform dark brown
-      // was nearly invisible against the room's own darkness
-      ctx.save();
-      ctx.shadowColor = "rgba(180,140,80,0.4)";
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = "#8a6035";
-      ctx.fillRect(sx - w / 2, sy, w, 5);
-      ctx.restore();
-      ctx.strokeStyle = "#5a3e1c";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(sx - w / 2, sy, w, 5);
-    } else {
-      ctx.fillStyle = "#4a3018";
-      ctx.fillRect(sx - w / 2, sy, w, 5);
-      ctx.strokeStyle = "#2e1c0e";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(sx - w / 2, sy, w, 5);
-    }
+    if (shelf.tier > 0 && !shelf.unlocked) return;
+    if (!lampLit) return;
+    const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
+    if (dist > LAMP_LIGHT_RADIUS) return;
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(sx - w / 2, sy, w, 5);
+    ctx.strokeStyle = "#2e1c0e";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx - w / 2, sy, w, 5);
     // small diagonal bracket support underneath
     ctx.strokeStyle = "#3a2410";
     ctx.lineWidth = 2;
@@ -12050,6 +12067,7 @@ function drawRatRoomScene(camX) {
   drawHayStrays(camX);
   drawHayPiles(camX);
   drawNestMaterials(camX);
+  drawHayOverHayScraps(camX);
   drawRatRoomFeather(camX);
   drawRatFeedBowl(camX);
   if (acornFeedAnim.active) {
@@ -12269,6 +12287,35 @@ const nestFabricScraps = [
   { dx: 220, dy: 3, w: 15, color: "#4a5058", rot: 0.2 },
   { dx: -260, dy: -2, w: 12, color: "#6a5848", rot: 0.7 }
 ];
+// a few hay strands drawn on top of each fabric scrap's position, so
+// they read as woven into the hay rather than sitting entirely above
+// it -- all the hay layers draw before nest materials, so this is the
+// simplest way to get some hay crossing back over the scraps
+function drawHayOverHayScraps(camX) {
+  const baseX = ratNPC.x - camX, baseY = gy - 2;
+  const hayColors = ["#c9a03a", "#e8c258", "#a8822a", "#d4ac48"];
+  nestFabricScraps.forEach((f, fIdx) => {
+    const cx = baseX + f.dx, cy = baseY + f.dy;
+    for (let i = 0; i < 3; i++) {
+      const seed = fIdx * 23 + i * 11;
+      const angle = ((seed * 7) % 140 - 70) / 70;
+      const len = 8 + (seed % 8);
+      const ox = ((seed * 13) % 12) - 6, oy = ((seed * 5) % 6) - 3;
+      ctx.save();
+      ctx.translate(cx + ox, cy + oy);
+      ctx.rotate(angle);
+      ctx.strokeStyle = hayColors[seed % hayColors.length];
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-len / 2, 0);
+      ctx.lineTo(len / 2, (seed % 4) - 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+  ctx.globalAlpha = 1;
+}
 const nestStrings = [
   { dx: 12, dy: 0, r: 5, color: "rgba(210,205,190,0.6)" },
   { dx: -280, dy: 2, r: 4, color: "rgba(210,205,190,0.5)" },
@@ -12291,8 +12338,9 @@ function drawRatRoomFeather(camX) {
   const fx = ratRoomFeather.x - camX, fy = gy - ratRoomFeather.y;
   const dist = Math.hypot(fx - playerScreenX, fy - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
-  // tucked at an angle among the clutter, not laid out flat/obvious
-  drawFeatherShape(ctx, fx, fy, 9, 0.9);
+  // tucked at an angle among the clutter, leaning slightly right --
+  // reduced from a steep angle that read as too deliberately posed
+  drawFeatherShape(ctx, fx, fy, 9, 0.2);
 
   // string wrapped around it -- messy and tangled, not a clean spiral:
   // irregular loops at varying angles and sizes, some crossing over
@@ -12309,7 +12357,7 @@ function drawRatRoomFeather(camX) {
     const loopY = fy - 7 + i * 4.5 + ((seed * 3) % 5) - 2; // irregular vertical spacing, not evenly stepped
     const loopAngle = ((seed * 7) % 60 - 30) / 100; // varied tilt per loop, not all parallel
     const loopRx = 5 + ((seed * 11) % 4); // varied size per loop
-    const loopRy = 1.6 + ((seed * 5) % 3) * 0.4;
+    const loopRy = 0.9 + ((seed * 5) % 3) * 0.25;
     const droop = loopP * 11 + Math.sin(loopP * 9 + seed) * loopP * 2.5; // irregular jitter on the way down, not a smooth linear drift
     const sideJitter = Math.sin(loopP * 7 + seed * 1.7) * loopP * 4;
     ctx.save();
@@ -12802,7 +12850,8 @@ function updateRatRoomScene(deltaTime) {
   // hoppable; shelf.y is a screen-y coordinate, converted to an
   // equivalent height-above-ground for the landing check
   ratRoomHighShelves.forEach(shelf => {
-    if (shelf.tier > 0 && (!shelf.unlocked || !lampLit)) return;
+    if (shelf.tier > 0 && !shelf.unlocked) return;
+    if (!lampLit) return;
     const shelfTop = gy - shelf.y;
     const playerBottom = player.y;
     if (
