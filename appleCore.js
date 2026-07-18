@@ -838,6 +838,7 @@ function updateSeasonTransition(deltaTime) {
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
       if (currentScene === "ratroom" && previousScene !== "ratroom") {
         ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
+        ratRoomHighShelves.forEach(s => { if (s.tier > 0) s.unlocked = false; });
       }
       if (currentScene === "oak" && previousScene === "ratroom") {
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
@@ -4863,26 +4864,19 @@ function drawMonstera(camX) {
     ctx.lineTo(px + 18, py + dy);
     ctx.stroke();
   });
-  // dirt in the mouth, with a tiny orange crystal tucked in it
+  // dirt in the mouth
   ctx.fillStyle = "#3a2818";
   ctx.beginPath();
   ctx.ellipse(px, py - 33, 9, 2.2, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#e08838";
-  ctx.beginPath();
-  ctx.moveTo(px + 2.85, py - 34.75);
-  ctx.lineTo(px + 5.25, py - 32.35);
-  ctx.lineTo(px + 3.65, py - 30.75);
-  ctx.lineTo(px + 1.25, py - 32.35);
-  ctx.closePath();
-  ctx.fill();
 
-  // more frequent, smaller leaves, with twisty-turny stems like real
-  // monstera vines rather than smooth straight growth
+  // bigger leaves with real weight variation -- a couple noticeably
+  // larger and heavier, hanging lower under their own weight, rest
+  // smaller, rather than uniform sizing
   const leaves = [
-    [-0.6, 36, 7, 11, null], [-0.35, 48, 8, 17, null], [-0.1, 40, 6, 22, null],
-    [0.2, 54, 8, 29, null], [0.4, 44, 7, 33, null], [0.6, 50, 8, 41, null],
-    [0.75, 36, 6, 46, null]
+    [-0.6, 38, 10, 11, null], [-0.3, 50, 14, 17, null], [-0.05, 42, 9, 22, null],
+    [0.25, 56, 13, 29, null], [0.5, 46, 10, 33, null], [0.75, 52, 15, 41, null],
+    [0.95, 40, 9, 46, null]
   ];
   leaves.forEach(([angle, stemLen, leafSize, seed, holeColor]) => {
     const bx = px, by = py - 33;
@@ -4913,6 +4907,17 @@ function drawMonstera(camX) {
     ctx.stroke();
     drawMonsteraLeaf(ctx, prevX, prevY, leafSize, angle * 0.5, "#3a7a3a", seed, holeColor);
   });
+
+  // orange crystal, drawn after the leaves so it's never covered by
+  // them, and enlarged further for visibility
+  ctx.fillStyle = "#e08838";
+  ctx.beginPath();
+  ctx.moveTo(px + 2.65, py - 35.85);
+  ctx.lineTo(px + 6.25, py - 32.25);
+  ctx.lineTo(px + 3.85, py - 29.85);
+  ctx.lineTo(px + 0.25, py - 32.25);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawPearlVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
@@ -5061,8 +5066,8 @@ function drawPothos(camX) {
   ctx.ellipse(px, py, 22, 7, 0, 0, Math.PI * 2);
   ctx.stroke();
   const vines = [
-    [-12, 193, 18, 0.5, false, 0, 1, -1], [-4, 246, 20, 1.4, true, 100, 1, -1],
-    [4, 246, 16, 2.6, false, 40, 0.6, 1], [12, 251, 22, 3.5, true, 130, 1.3, 1],
+    [-12, 193, 18, 0.5, false, 0, 1, -1], [-4, 246, 20, 1.4, true, 28, 1, -1],
+    [4, 246, 16, 2.6, false, 40, 0.6, 1], [12, 251, 22, 3.5, true, 32, 1.3, 1],
     [20, 246, 14, 4.7, false, 70, 0.9, 1]
   ];
   vines.forEach((v, i) => {
@@ -9201,17 +9206,23 @@ function drawTeaNook(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // subtle nested shading suggesting a rounded, enclosed crevice --
-  // concentric with the arch, darker toward the back/center
-  for (let i = 1; i <= 3; i++) {
-    const r = archR - i * 9;
-    if (r <= 10) break;
-    ctx.strokeStyle = `rgba(0,0,0,${0.1 + i * 0.05})`;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(tx, springY - i * 2, r, Math.PI * 0.15, Math.PI * 0.85);
-    ctx.stroke();
-  }
+  // radial gradient suggesting the quarter-sphere curvature actually
+  // receding into the wall -- a smooth falloff reads as real depth far
+  // better than discrete rings did, which looked like flat decorative
+  // circles rather than a curved surface losing light as it recedes
+  const crevicedepthGrad = ctx.createRadialGradient(tx, springY - 6, 0, tx, springY - 6, archR);
+  crevicedepthGrad.addColorStop(0, "rgba(0,0,0,0.55)");
+  crevicedepthGrad.addColorStop(0.5, "rgba(0,0,0,0.28)");
+  crevicedepthGrad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = crevicedepthGrad;
+  ctx.beginPath();
+  ctx.moveTo(tx - archR, springY);
+  ctx.lineTo(tx - archR, archBottom + 4);
+  ctx.lineTo(tx + archR, archBottom + 4);
+  ctx.lineTo(tx + archR, springY);
+  ctx.arc(tx, springY, archR, 0, Math.PI, true);
+  ctx.closePath();
+  ctx.fill();
 
   // floor plane inside the niche -- flat top edge where it meets the
   // rear wall (not rounded, which read as a bulging muffin-top), sides
@@ -9237,7 +9248,7 @@ function drawTeaNook(camX) {
   // visible top surface so its short depth actually reads as a
   // crescent/moon shape rather than a thin flat line
   const tableTop = archBottom - 30;
-  const tableHalfW = 42, tableDepth = 11;
+  const tableHalfW = 55, tableDepth = 11;
   ctx.fillStyle = "#6a4a2c";
   ctx.beginPath();
   ctx.moveTo(tx - tableHalfW, tableTop + tableDepth);
@@ -9264,22 +9275,23 @@ function drawTeaNook(camX) {
   // lounge on while getting tea -- three, each with a highlight and
   // outline for a plusher look rather than flat solid ellipses
   const teaCushions = [
-    { dx: -22, w: 18, h: 7, color: "#8a5a6a" },
-    { dx: 0, w: 17, h: 6.5, color: "#c9863a" },
-    { dx: 20, w: 16, h: 6, color: "#6a8a5a" }
+    { dx: -24, dy: 2, w: 22, h: 8, rot: -0.15, color: "#8a5a6a" },
+    { dx: 2, dy: -2, w: 13, h: 9, rot: 0.05, color: "#c9863a" },
+    { dx: 21, dy: 4, w: 18, h: 5.5, rot: 0.2, color: "#6a8a5a" },
+    { dx: -8, dy: 6, w: 15, h: 6.5, rot: -0.08, color: "#5a7a8a" }
   ];
   teaCushions.forEach(c => {
-    const cx2 = tx + c.dx, cy2 = archBottom + 6;
+    const cx2 = tx + c.dx, cy2 = archBottom + 6 + c.dy;
     ctx.fillStyle = c.color;
     ctx.beginPath();
-    ctx.ellipse(cx2, cy2, c.w, c.h, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx2, cy2, c.w, c.h, c.rot, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = 0.8;
     ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,0.18)";
     ctx.beginPath();
-    ctx.ellipse(cx2 - c.w * 0.25, cy2 - c.h * 0.35, c.w * 0.35, c.h * 0.3, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx2 - c.w * 0.25, cy2 - c.h * 0.35, c.w * 0.35, c.h * 0.3, c.rot, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -11328,11 +11340,25 @@ const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
 // near his own area, a specific place he can point to
 const featherHangSpot = { x: 550, heightAboveGround: 55 };
 function drawFeatherHangSpot(camX) {
-  if (!lampLit) return;
+  if (!lampLit && !featherHangAnim.active) return;
   const hx = featherHangSpot.x - camX, hy = gy - featherHangSpot.heightAboveGround;
   const playerScreenX = player.x + player.width / 2 - camX;
   const dist = Math.hypot(hx - playerScreenX, hy - (gy - player.y));
-  if (dist > LAMP_LIGHT_RADIUS) return;
+  if (dist > LAMP_LIGHT_RADIUS && !featherHangAnim.active) return;
+
+  // a temporary glow while the placement animation plays, independent
+  // of whether the lamp happens to be actively held right then -- so
+  // the moment is guaranteed visible rather than possibly happening
+  // in the dark
+  if (featherHangAnim.active) {
+    const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 55);
+    glow.addColorStop(0, "rgba(220,190,120,0.35)");
+    glow.addColorStop(1, "rgba(220,190,120,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 55, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // small shelf the pot sits on, same wooden-plank style as the other
   // shelves in this room, sharing the pot's exact visibility gating
@@ -11381,19 +11407,33 @@ function drawFeatherHangSpot(camX) {
   ctx.ellipse(0, -7, 5, 1.4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (featherHung) {
+  if (featherHung || featherHangAnim.active) {
     ctx.save();
-    ctx.translate(0, -17);
-    drawFeatherShape(ctx, 0, 0, 11, 0);
+    const settleP = featherHangAnim.active ? Math.min(1, featherHangAnim.t / FEATHER_HANG_MS) : 1;
+    const startY = -40, endY = -17;
+    ctx.translate(0, startY + (endY - startY) * settleP);
+    ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
+    drawFeatherShape(ctx, 0, 0, 11, (1 - settleP) * 0.6);
     ctx.restore();
   }
   ctx.restore();
 }
+const featherHangAnim = { active: false, t: 0 };
+const FEATHER_HANG_MS = 800;
 function updateFeatherHangSpot() {
-  if (featherHung || !carriedFeather) return;
+  if (featherHung || !carriedFeather || featherHangAnim.active) return;
   if (keys.spaceJustPressed && isPlayerNear(featherHangSpot.x, featherHangSpot.heightAboveGround, 25, 20, 60)) {
+    featherHangAnim.active = true;
+    featherHangAnim.t = 0;
+    carriedFeather = false; // no longer visibly carried once the placement has started
+  }
+}
+function updateFeatherHangAnim(deltaTime) {
+  if (!featherHangAnim.active) return;
+  featherHangAnim.t += deltaTime * 1000;
+  if (featherHangAnim.t >= FEATHER_HANG_MS) {
+    featherHangAnim.active = false;
     featherHung = true;
-    carriedFeather = false;
     delete inventory.feather;
     ratFeatherThankQueued = true; // queues the thank-you line for the next time the rat is approached
     updateInventoryUI();
@@ -11642,26 +11682,63 @@ function drawPressedLeaf(camX) {
 
 // little shelf for the high-up rat to perch on, matching its eye-pair
 // position exactly so it visibly has something to sit on
+// tiered reveal -- only tier 0 is visible from the ground (styled with
+// enough contrast to actually register against the dark room, unlike
+// the rest which blend into it almost entirely). Standing on a tier
+// with the lamp lit reveals the next tier up, cascading as you climb,
+// rather than everything being visible (or invisible) all at once.
 const ratRoomHighShelves = [
-  { x: 280, y: 60, w: 34 },
-  { x: 950, y: 60, w: 34 }, // second perch, further right
-  { x: 170, y: 70, w: 30 }, // left -- spider's perch, structurally visible from ground so it invites a jump on its own
-  { x: 1050, y: 65, w: 30 }, // right hop-sequence, start
-  { x: 1130, y: 50, w: 30 }, // right hop-sequence, snake's shelf, mid-path
-  { x: 1210, y: 65, w: 30 } // right hop-sequence, shiny collectible
+  // left cluster -- leads up to the spider
+  { x: 170, y: 95, w: 32, tier: 0, cluster: "left" },
+  { x: 170, y: 55, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's shelf
+  // right cluster -- leads up through the snake to the marble
+  { x: 1000, y: 100, w: 32, tier: 0, cluster: "right" },
+  { x: 1050, y: 65, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1130, y: 50, w: 30, tier: 1, cluster: "right", unlocked: false }, // snake's shelf
+  { x: 1210, y: 65, w: 30, tier: 2, cluster: "right", unlocked: false } // marble, one tier further up
 ];
+function updateShelfTierUnlocks() {
+  ratRoomHighShelves.forEach(shelf => {
+    if (shelf.tier === 0 || shelf.unlocked) return;
+    const prevTierShelves = ratRoomHighShelves.filter(s => s.cluster === shelf.cluster && s.tier === shelf.tier - 1);
+    const onPrevTier = prevTierShelves.some(s => {
+      const sTop = gy - s.y;
+      return Math.abs(player.y - sTop) < 3 && player.x + player.width > s.x - s.w / 2 - 6 && player.x < s.x + s.w / 2 + 6;
+    });
+    if (onPrevTier && lampLit) shelf.unlocked = true;
+  });
+}
 function drawRatRoomHighShelf(camX) {
-  // structure itself is always visible -- wood, not a lamp-revealed
-  // detail -- so shelves genuinely invite a jump from ground rather
-  // than only existing once the lamp happens to find them
+  const playerScreenX = player.x + player.width / 2 - camX;
   ratRoomHighShelves.forEach(shelf => {
     const sx = shelf.x - camX, sy = shelf.y;
     const w = shelf.w;
-    ctx.fillStyle = "#4a3018";
-    ctx.fillRect(sx - w / 2, sy, w, 5);
-    ctx.strokeStyle = "#2e1c0e";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(sx - w / 2, sy, w, 5);
+    if (shelf.tier > 0) {
+      if (!shelf.unlocked) return;
+      if (!lampLit) return;
+      const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
+      if (dist > LAMP_LIGHT_RADIUS) return;
+    }
+    if (shelf.tier === 0) {
+      // meaningfully higher contrast than the rest -- lighter wood
+      // tone plus a soft glow, since the original uniform dark brown
+      // was nearly invisible against the room's own darkness
+      ctx.save();
+      ctx.shadowColor = "rgba(180,140,80,0.4)";
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = "#8a6035";
+      ctx.fillRect(sx - w / 2, sy, w, 5);
+      ctx.restore();
+      ctx.strokeStyle = "#5a3e1c";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx - w / 2, sy, w, 5);
+    } else {
+      ctx.fillStyle = "#4a3018";
+      ctx.fillRect(sx - w / 2, sy, w, 5);
+      ctx.strokeStyle = "#2e1c0e";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx - w / 2, sy, w, 5);
+    }
     // small diagonal bracket support underneath
     ctx.strokeStyle = "#3a2410";
     ctx.lineWidth = 2;
@@ -11677,7 +11754,7 @@ function drawRatRoomHighShelf(camX) {
 // with the lamp lit, same discovery pattern as everything else here.
 // The shelf itself is always visible from ground, so it invites the
 // jump on its own; the spider is the payoff for actually taking it.
-const spiderSpot = { x: 170, y: 40 };
+const spiderSpot = { x: 170, y: 48 };
 const spiderState = { legDanceT: 0, legDanceNextAt: 4000 + Math.random() * 5000, legDancing: 0 };
 function drawSpider(camX) {
   if (!lampLit) return;
@@ -11686,33 +11763,44 @@ function drawSpider(camX) {
   const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
 
-  // web -- a thin line from the ceiling down to the spider, with a
-  // few cross-strands near the bottom
-  ctx.strokeStyle = "rgba(210,200,180,0.35)";
+  // large web from the ceiling -- radial spokes plus a couple
+  // concentric rings, a real web shape rather than a single thread
+  ctx.strokeStyle = "rgba(210,200,180,0.3)";
   ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.moveTo(sx, 0);
-  ctx.lineTo(sx, sy - 4);
-  ctx.stroke();
-  for (let i = 0; i < 2; i++) {
-    const wy = sy - 12 + i * 6;
+  const webSpread = 22;
+  for (let i = -2; i <= 2; i++) {
     ctx.beginPath();
-    ctx.moveTo(sx - 5, wy);
-    ctx.lineTo(sx + 5, wy);
+    ctx.moveTo(sx + i * (webSpread / 2), 0);
+    ctx.lineTo(sx, sy);
     ctx.stroke();
   }
+  for (let ring = 1; ring <= 2; ring++) {
+    const ringY = sy * (ring / 3);
+    const ringW = webSpread * (ring / 3);
+    ctx.beginPath();
+    ctx.moveTo(sx - ringW, ringY);
+    ctx.quadraticCurveTo(sx, ringY + 4, sx + ringW, ringY);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - 6);
+  ctx.lineTo(sx, sy);
+  ctx.stroke();
 
   const danceP = spiderState.legDancing > 0 ? Math.sin(Math.min(1, spiderState.legDancing) * Math.PI * 3) : 0;
   ctx.save();
   ctx.translate(sx, sy);
+  ctx.scale(1.7, 1.7); // larger than normal size, dangling and visibly bigger than the room's other creatures
 
-  // legs, four per side, dancing wiggle on top of the resting angle
+  // legs, four per side, each with its own slight timing offset so
+  // the dance reads as multiple legs moving rather than one uniform wiggle
   ctx.strokeStyle = "#2a221c";
   ctx.lineWidth = 1;
   for (let side = -1; side <= 1; side += 2) {
     for (let i = 0; i < 4; i++) {
       const baseAngle = side * (0.5 + i * 0.35);
-      const wiggle = danceP * 0.25 * (i % 2 === 0 ? 1 : -1);
+      const legPhase = Math.sin(Math.min(1, spiderState.legDancing) * Math.PI * 3 - i * 0.5);
+      const wiggle = spiderState.legDancing > 0 ? legPhase * 0.28 * (i % 2 === 0 ? 1 : -1) : 0;
       const angle = baseAngle + wiggle;
       const legLen = 7;
       ctx.beginPath();
@@ -12206,23 +12294,40 @@ function drawRatRoomFeather(camX) {
   // tucked at an angle among the clutter, not laid out flat/obvious
   drawFeatherShape(ctx, fx, fy, 9, 0.9);
 
-  // string wrapped around it -- a few loops that progressively unwind
-  // and fall away during the unravel animation
+  // string wrapped around it -- messy and tangled, not a clean spiral:
+  // irregular loops at varying angles and sizes, some crossing over
+  // each other, that progressively fall away during the unravel
   const unravelP = featherUnravelAnim.active ? Math.min(1, featherUnravelAnim.t / FEATHER_UNRAVEL_MS) : 0;
-  const loopCount = 3;
+  const loopCount = 4;
   ctx.strokeStyle = "rgba(210,195,160,0.85)";
   ctx.lineWidth = 1;
   for (let i = 0; i < loopCount; i++) {
     const loopUnravelStart = i / loopCount;
     if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this loop has fully fallen away
     const loopP = Math.max(0, (unravelP - loopUnravelStart) * loopCount); // 0 to 1 for this specific loop's own unwind
-    const loopY = fy - 6 + i * 5;
-    const droop = loopP * 10; // sags and drifts down as it loosens
-    const spread = 1 - loopP * 0.4; // loosens outward slightly before falling
+    const seed = i * 17 + 5;
+    const loopY = fy - 7 + i * 4.5 + ((seed * 3) % 5) - 2; // irregular vertical spacing, not evenly stepped
+    const loopAngle = ((seed * 7) % 60 - 30) / 100; // varied tilt per loop, not all parallel
+    const loopRx = 5 + ((seed * 11) % 4); // varied size per loop
+    const loopRy = 1.6 + ((seed * 5) % 3) * 0.4;
+    const droop = loopP * 11 + Math.sin(loopP * 9 + seed) * loopP * 2.5; // irregular jitter on the way down, not a smooth linear drift
+    const sideJitter = Math.sin(loopP * 7 + seed * 1.7) * loopP * 4;
     ctx.save();
     ctx.globalAlpha = 1 - loopP * 0.7;
+    ctx.translate(fx + ((seed * 13) % 5) - 2 + loopP * 3 + sideJitter, loopY + droop);
+    ctx.rotate(loopAngle + loopP * 0.5 + Math.sin(loopP * 11 + seed) * loopP * 0.4);
+    // irregular loop shape, not a clean ellipse -- a few uneven
+    // segments around the loop so it reads as actual wound string
     ctx.beginPath();
-    ctx.ellipse(fx + loopP * 3, loopY + droop, 6 * spread, 2.2, loopP * 0.6, 0, Math.PI * 2);
+    const segs = 7;
+    for (let s = 0; s <= segs; s++) {
+      const a = (s / segs) * Math.PI * 2;
+      const wobble = 1 + Math.sin(a * 2.3 + seed) * 0.25;
+      const px2 = Math.cos(a) * loopRx * wobble * (1 - loopP * 0.3);
+      const py2 = Math.sin(a) * loopRy * wobble;
+      if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+    }
+    ctx.closePath();
     ctx.stroke();
     ctx.restore();
   }
@@ -12547,8 +12652,8 @@ const ratRoomEyes = [
   // more spread further right -- a genuine huddled cluster of three,
   // not evenly spaced like before, plus one further out on its own
   { x: 825, y: 268, phase: 5.2, blinkSpeed: 0.92 },
-  { x: 848, y: 250, phase: 0.9, blinkSpeed: 1.08 },
-  { x: 840, y: 285, phase: 2.1, blinkSpeed: 0.88 },
+  { x: 865, y: 235, phase: 0.9, blinkSpeed: 1.08 },
+  { x: 822, y: 292, phase: 2.1, blinkSpeed: 0.88 },
   { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
   { x: 1200, y: 245, phase: 3.8, blinkSpeed: 1.05 },
@@ -12660,12 +12765,14 @@ function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
   updateSpider(deltaTime);
+  updateShelfTierUnlocks();
   updateSnake(deltaTime);
   updateMarble();
   updateAcornFeedAnim(deltaTime);
   updateRatRoomFeather();
   updateFeatherUnravelAnim(deltaTime);
   updateFeatherHangSpot();
+  updateFeatherHangAnim(deltaTime);
 
   if (!ratLampAcknowledged && inventory.lamp > 0 && !ratDialogue.active) {
     ratLampAcknowledged = true;
@@ -12695,6 +12802,7 @@ function updateRatRoomScene(deltaTime) {
   // hoppable; shelf.y is a screen-y coordinate, converted to an
   // equivalent height-above-ground for the landing check
   ratRoomHighShelves.forEach(shelf => {
+    if (shelf.tier > 0 && (!shelf.unlocked || !lampLit)) return;
     const shelfTop = gy - shelf.y;
     const playerBottom = player.y;
     if (
