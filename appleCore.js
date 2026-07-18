@@ -866,8 +866,16 @@ function updateSeasonTransition(deltaTime) {
         ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
         ratRoomHighShelves.forEach(s => { if (s.tier > 0) s.unlocked = false; });
         snakeDialogue.everShownThisVisit = false;
+        // the lamp automatically comes back "above your head" on every
+        // ratroom entry once it's ever actually been used here, rather
+        // than needing to be manually re-selected each time
+        if (lampEverUsedInRatroom && inventory.lamp > 0) heldItem = "lamp";
       }
       if (currentScene === "oak" && previousScene === "ratroom") {
+        // once the lamp has actually been used in ratroom, it never
+        // leaves at all -- not just deselected when heading further to
+        // autumn, but the moment it's carried back up to oak itself
+        if (lampEverUsedInRatroom && heldItem === "lamp") heldItem = null;
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
       } else if (currentScene === "autumn" && previousScene === "oak") {
         player.x = seesaw.x - 120; // land just left of the seesaw, clear of the plank itself
@@ -996,22 +1004,24 @@ function drawSeasonTransition(ctx) {
       ctx.arc(-5, -8, 2, 0, Math.PI * 2);
       ctx.arc(5, -8, 2, 0, Math.PI * 2);
       ctx.fill();
-      // nose, matching the real rat's pink snout tone
+      // nose, matching the real rat's pink snout tone -- moved up to
+      // y=2, clearly separated from the smirk below (which starts at
+      // y=4.2) rather than sitting inside the mouth's own curve
       ctx.fillStyle = "#d89a9a";
       ctx.beginPath();
-      ctx.arc(0, 6, 1.8, 0, Math.PI * 2);
+      ctx.arc(0, 2, 1.8, 0, Math.PI * 2);
       ctx.fill();
       // whiskers, same as the real rat
       ctx.strokeStyle = "rgba(230,230,230,0.6)";
       ctx.lineWidth = 0.5;
       [-1.5, 0, 1.5].forEach(dy => {
         ctx.beginPath();
-        ctx.moveTo(1, 5 + dy * 0.5);
-        ctx.lineTo(9, 4 + dy);
+        ctx.moveTo(1, 1 + dy * 0.5);
+        ctx.lineTo(9, dy);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(-1, 5 + dy * 0.5);
-        ctx.lineTo(-9, 4 + dy);
+        ctx.moveTo(-1, 1 + dy * 0.5);
+        ctx.lineTo(-9, dy);
         ctx.stroke();
       });
       // winking eye -- a genuine squint rather than the flat emoji-arc
@@ -1022,16 +1032,16 @@ function drawSeasonTransition(ctx) {
       ctx.lineWidth = 1.3;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(-6.2, -0.8);
-      ctx.quadraticCurveTo(-4, 0.4, -1.8, -0.6);
+      ctx.moveTo(-5.4, -0.8);
+      ctx.quadraticCurveTo(-4, 0.4, -2.6, -0.6);
       ctx.stroke();
       // eyelid crease just above the squint, the detail that actually
       // reads as a real closed eye instead of a cartoon curve
       ctx.strokeStyle = "rgba(26,26,26,0.55)";
       ctx.lineWidth = 0.7;
       ctx.beginPath();
-      ctx.moveTo(-5.8, -2);
-      ctx.quadraticCurveTo(-4, -1.6, -2.3, -2);
+      ctx.moveTo(-5, -2);
+      ctx.quadraticCurveTo(-4, -1.6, -3, -2);
       ctx.stroke();
       // open eye, with a tiny highlight for some life
       ctx.fillStyle = "#1a1a1a";
@@ -1685,9 +1695,11 @@ function applyPhysics(){
     }
   }
 
-  // gravity
+  // gravity -- much slower during the snake's knockback specifically,
+  // so that moment reads clearly as an intentional dramatic push
+  // rather than happening too fast to actually see
   player.y += player.vy;
-  player.vy -= 0.8;
+  player.vy -= snakeState.hissing > 0 ? 0.22 : 0.8;
 
   // ground collision
   if (player.y <= 0) {
@@ -4794,9 +4806,68 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
   }
 }
 
+// lavender plant, with a trailing vine draped over the pot's edge --
+// sits between the tea table and the cushion pile, giving that whole
+// corner more vibe: upright lavender stalks for the tea-adjacent
+// herbal note, plus a vine reusing the same draping technique as the
+// pothos so it ties the greenery together across the space
 // pothos -- hanging near the cushion pile, right side, several vines
 // trailing down with some pooling gently on the ground
 const pothosSpot = { x: 2825, hangY: 260 };
+
+const lavenderSpot = { x: 2550 };
+function drawLavenderPlant(camX) {
+  const px = lavenderSpot.x - camX, py = gy;
+  // small terracotta pot
+  ctx.fillStyle = "#a85838";
+  ctx.beginPath();
+  ctx.moveTo(px - 12, py);
+  ctx.lineTo(px + 12, py);
+  ctx.lineTo(px + 10, py - 16);
+  ctx.lineTo(px - 10, py - 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#7a3a20";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 16, 10, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // upright lavender stalks -- minty gray-green stems (lavender's
+  // actual signature color, not a muted olive), more of them for a
+  // genuinely bushy look, each topped with a denser cluster of
+  // smaller purple buds
+  const stalkAngles = [-0.4, -0.28, -0.15, -0.02, 0.1, 0.22, 0.32, -0.08, 0.05];
+  const stalkHeights = [40, 50, 44, 52, 38, 46, 42, 48, 36];
+  stalkAngles.forEach((a, i) => {
+    ctx.save();
+    ctx.translate(px, py - 16);
+    ctx.rotate(a * 0.4);
+    const h = stalkHeights[i];
+    ctx.strokeStyle = "#9cc49c";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-1, -h * 0.5, 0, -h);
+    ctx.stroke();
+    // bud cluster -- smaller, denser overlapping purple ovals along
+    // the top third of the stalk, the actual lavender flower spike
+    ctx.fillStyle = i % 2 === 0 ? "#8a6ab8" : "#9a7ac8";
+    for (let b = 0; b < 9; b++) {
+      const bt = b / 8;
+      ctx.beginPath();
+      ctx.ellipse(0, -h + bt * h * 0.3, 1.0, 1.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+
+  // trailing vine, draped over the pot's edge and hanging down --
+  // reuses the pothos technique for a consistent look
+  drawPothosVine(ctx, px + 9, py - 15, 34, 4, "#5a8a4a", 7, 0, 1, 1);
+}
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
 const snakePlantSpot = { x: 1349, y: 0 };
@@ -5046,14 +5117,35 @@ function drawMonstera(camX) {
     drawMonsteraLeaf(ctx, prevX, prevY, leafSize, angle * 0.5, "#3a7a3a", seed, holeColor);
   });
 
-  // orange crystal, drawn after the leaves so it's never covered by
-  // them, and enlarged further for visibility
+  // a genuine gem-cut diamond -- flat top table facet, symmetric
+  // angled sides, pointed bottom, with facet lines and a sparkle
+  // highlight for real gem-like read, rather than a simple irregular
+  // quadrilateral
   ctx.fillStyle = "#e08838";
   ctx.beginPath();
-  ctx.moveTo(px + 2.65, py - 35.85);
-  ctx.lineTo(px + 6.25, py - 32.25);
-  ctx.lineTo(px + 3.85, py - 29.85);
-  ctx.lineTo(px + 0.25, py - 32.25);
+  ctx.moveTo(px - 1.5, py - 34.5); // top-left of the flat table facet
+  ctx.lineTo(px + 2, py - 34.5); // top-right of the table facet
+  ctx.lineTo(px + 4.8, py - 32); // right shoulder
+  ctx.lineTo(px + 0.25, py - 27.5); // bottom point
+  ctx.lineTo(px - 4.3, py - 32); // left shoulder
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(140,70,20,0.6)";
+  ctx.lineWidth = 0.4;
+  ctx.stroke();
+  // facet lines from the table's corners down to the point, the
+  // detail that actually reads as a cut gem rather than a flat shape
+  ctx.beginPath();
+  ctx.moveTo(px - 1.5, py - 34.5); ctx.lineTo(px + 0.25, py - 27.5);
+  ctx.moveTo(px + 2, py - 34.5); ctx.lineTo(px + 0.25, py - 27.5);
+  ctx.stroke();
+  // small sparkle highlight on the table facet
+  ctx.fillStyle = "rgba(255,235,200,0.75)";
+  ctx.beginPath();
+  ctx.moveTo(px - 0.6, py - 34.2);
+  ctx.lineTo(px, py - 33.4);
+  ctx.lineTo(px + 0.6, py - 34.2);
+  ctx.lineTo(px, py - 33.9);
   ctx.closePath();
   ctx.fill();
 }
@@ -9117,7 +9209,7 @@ const babyOwl = {
 };
 const teaDialogue = { active: false, lines: [], index: 0 };
 const teaAnim = { phase: "idle", t: 0 }; // idle -> pouring -> full -> sipping -> empty -> idle
-const TEA_SEGMENT_MS = { pouring: 1500, full: 1300, sipping: 1000, empty: 900 };
+const TEA_SEGMENT_MS = { pouring: 2200, full: 1800, sipping: 1400, empty: 1200 };
 const TEA_SPARKLE_COUNT = 6;
 
 function drawCushionPile(camX) {
@@ -9474,14 +9566,18 @@ function drawTeaNook(camX) {
   const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 10;
   const kettleTiltAngle = -liftP * 1.0;
   const kx = tx + 14, ky = tableTop + 2;
+  // rotate around the handle's own position, not the kettle's center
+  // -- keeps the handle anchored (as if genuinely being held) while
+  // the body visibly swings and tips around it, which is what an
+  // actual pour looks like, rather than the kettle appearing to spin
+  // in place around its own middle
+  const handlePivotX = kx + 14.75, handlePivotY = ky - 0.25;
   ctx.save();
   ctx.translate(kettleLiftX, kettleLiftY);
-  ctx.translate(kx, ky);
+  ctx.translate(handlePivotX, handlePivotY);
   ctx.rotate(kettleTiltAngle);
-  ctx.translate(-kx, -ky);
-  ctx.translate(kx, ky);
   ctx.scale(0.85, 0.85);
-  ctx.translate(-kx, -ky);
+  ctx.translate(-handlePivotX, -handlePivotY);
   ctx.fillStyle = "#a8342a";
   ctx.beginPath();
   ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
@@ -9548,13 +9644,10 @@ function drawTeaNook(camX) {
   // a fixed-size ellipse plus a separate connecting line
   // handle's actual transformed position -- the kettle now lifts and
   // tilts as a whole during the pour, so the handle moves with it;
-  // computed here by applying the same scale/rotate/lift chain the
-  // kettle itself uses, rather than assuming a fixed spot
-  const handleRelX = 14.75, handleRelY = -0.25; // bezier midpoint of the handle curve, relative to kx,ky
-  const hScaledX = handleRelX * 0.85, hScaledY = handleRelY * 0.85;
-  const hRotX = hScaledX * Math.cos(kettleTiltAngle) - hScaledY * Math.sin(kettleTiltAngle);
-  const hRotY = hScaledX * Math.sin(kettleTiltAngle) + hScaledY * Math.cos(kettleTiltAngle);
-  const handleWorldX = kx + hRotX + kettleLiftX, handleWorldY = ky + hRotY + kettleLiftY;
+  // handle now stays fixed under rotation (it's the kettle's own
+  // pivot point), only moving with the lift offset -- much simpler
+  // than recomputing rotation each frame like before
+  const handleWorldX = handlePivotX + kettleLiftX, handleWorldY = handlePivotY + kettleLiftY;
   const handleLocalX = (handleWorldX - (ox + leanX)) / 1.3, handleLocalY = (handleWorldY - (oy + leanY)) / 1.3;
   const pivotX = 7, pivotY = 2;
   const toHandleDist = Math.hypot(handleLocalX - pivotX, handleLocalY - pivotY);
@@ -9701,15 +9794,18 @@ function drawTeaPlayerCup(tx, tableTop) {
     const kettleLiftX2 = -liftP2 * 6, kettleLiftY2 = -liftP2 * 10;
     const kettleTiltAngle2 = -liftP2 * 1.0;
     const spoutOwnTilt2 = -0.15 - liftP2 * 0.35;
-    // spout pivot and tip in untransformed kettle-local space, then
-    // through the same scale/rotate/lift chain the kettle itself uses
-    const pivotRelX = -9 * 0.85, pivotRelY = -1 * 0.85;
+    // spout pivot and tip in untransformed kettle-local space,
+    // recomputed relative to the handle (the kettle's actual rotation
+    // pivot now, not its own center), matching the real transform chain
+    const handlePivotX2 = kx + 14.75, handlePivotY2 = ky - 0.25;
+    const spoutPivotRelX = (kx - 9) - handlePivotX2, spoutPivotRelY = (ky - 1) - handlePivotY2;
     const tipLocalX = -8 * Math.cos(spoutOwnTilt2) - 3 * Math.sin(spoutOwnTilt2);
     const tipLocalY = -8 * Math.sin(spoutOwnTilt2) + 3 * Math.cos(spoutOwnTilt2);
-    const tipRelX = pivotRelX + tipLocalX * 0.85, tipRelY = pivotRelY + tipLocalY * 0.85;
-    const tipRotX = tipRelX * Math.cos(kettleTiltAngle2) - tipRelY * Math.sin(kettleTiltAngle2);
-    const tipRotY = tipRelX * Math.sin(kettleTiltAngle2) + tipRelY * Math.cos(kettleTiltAngle2);
-    const spoutTipX = kx + tipRotX + kettleLiftX2, spoutTipY = ky + tipRotY + kettleLiftY2;
+    const tipRelX = spoutPivotRelX + tipLocalX, tipRelY = spoutPivotRelY + tipLocalY;
+    const tipScaledX = tipRelX * 0.85, tipScaledY = tipRelY * 0.85;
+    const tipRotX = tipScaledX * Math.cos(kettleTiltAngle2) - tipScaledY * Math.sin(kettleTiltAngle2);
+    const tipRotY = tipScaledX * Math.sin(kettleTiltAngle2) + tipScaledY * Math.cos(kettleTiltAngle2);
+    const spoutTipX = handlePivotX2 + tipRotX + kettleLiftX2, spoutTipY = handlePivotY2 + tipRotY + kettleLiftY2;
     const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
     const wob = Math.sin(performance.now() * 0.02) * 1.2;
     ctx.strokeStyle = "rgba(140,86,36,0.9)"; ctx.lineWidth = 2;
@@ -10532,6 +10628,7 @@ function drawOakScene(camX) {
   drawMediumShelf(camX);
   drawOakLampTable(camX);
   drawPothos(camX);
+  drawLavenderPlant(camX);
   drawSnakePlant(camX);
   drawEntrywayFern(camX);
   drawStringOfPearls(camX);
@@ -11936,8 +12033,8 @@ function drawRatRoomArt(camX) {
 // them still requires a real jump, and clear of the symbol which they
 // were previously crowding right next to
 const pressedLeafSpots = [
-  { x: 1100, y: 165, variant: "yellow" },
-  { x: 1150, y: 172, variant: "white" }
+  { x: 1155, y: 183, variant: "yellow" },
+  { x: 1165, y: 195, variant: "white" }
 ];
 function drawPressedLeaf(camX) {
   if (!lampLit) return;
@@ -12032,8 +12129,8 @@ const ratRoomHighShelves = [
   // depends specifically on this shelf, not any tier2 shelf, since
   // landing on the snake's shelf is meant to be a dead end that knocks
   // you back rather than a valid path forward.
-  { x: 1150, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
-  { x: 1210, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
+  { x: 1220, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
+  { x: 1320, y: 70, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -12208,16 +12305,6 @@ function drawSnake(camX) {
   ctx.translate(nx, ny);
   ctx.scale(1.9, 1.9);
 
-  // the small hoarded object, coiled around by the body
-  ctx.fillStyle = "#8ac8d8";
-  ctx.beginPath();
-  ctx.arc(0, 3, 2.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.4)";
-  ctx.beginPath();
-  ctx.arc(-0.6, 2.4, 0.6, 0, Math.PI * 2);
-  ctx.fill();
-
   // single continuous body -- a spiral coil that smoothly becomes the
   // tail, one connected tapered path rather than separate arcs and a
   // disjointed line. Built as points, walked with overlapping tapered
@@ -12228,7 +12315,8 @@ function drawSnake(camX) {
     const t = i / coilSteps;
     const angle = 0.3 + t * Math.PI * 2 * coilTurns;
     const r = 4 + t * 4.7;
-    points.push({ x: Math.cos(angle) * r, y: 3 + Math.sin(angle) * r * 0.85 });
+    const mound = (1 - t) * 3.2; // tallest at the center, flattens toward the outer edge -- the pearl peeks out from the top of this
+    points.push({ x: Math.cos(angle) * r, y: 3 - mound + Math.sin(angle) * r * 0.32 });
   }
   // tail continues directly from the coil's own last point, same
   // curve family, so there's no seam between coil and tail
@@ -12283,7 +12371,7 @@ function drawSnake(camX) {
   // direction at each point so they genuinely follow the coil and
   // tail's curve instead of a flat, direction-blind y-offset
   ctx.strokeStyle = stripeColor;
-  ctx.lineWidth = 0.35;
+  ctx.lineWidth = 0.2;
   [-1, 1].forEach(side => {
     ctx.beginPath();
     for (let i = 0; i < points.length; i++) {
@@ -12320,9 +12408,39 @@ function drawSnake(camX) {
     });
   }
 
-  // head, at the coil's own starting point (t=0), glowing eyes
-  // matching the room's motif
-  const headPt = points[0];
+  // the small hoarded object, drawn after the coil so it's never
+  // covered by the spiral lines passing near the center -- genuinely
+  // sitting within the coil now rather than hidden behind it
+  ctx.fillStyle = "#8ac8d8";
+  ctx.beginPath();
+  ctx.arc(0, -1, 3.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.beginPath();
+  ctx.arc(-0.9, -1.9, 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  // a little more of the coil now passes over the pearl's own bottom
+  // edge, so the body genuinely wraps over it rather than the pearl
+  // floating entirely in front of every coil line
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.arc(0, -1, 3.4, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.closePath();
+  ctx.fill();
+
+  // head, extended out from the coil's own innermost point rather than
+  // sitting almost on top of it -- a visible neck connects the two, so
+  // the head reads as a distinct shape sticking out and up, not
+  // blended into the body mass
+  const neckBase = points[0];
+  const headPt = { x: neckBase.x - 5, y: neckBase.y - 3 };
+  ctx.strokeStyle = bodyColor;
+  ctx.lineWidth = widthAt(0) * 0.9;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(neckBase.x, neckBase.y);
+  ctx.lineTo(headPt.x, headPt.y);
+  ctx.stroke();
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
   ctx.ellipse(headPt.x - 1.5, headPt.y - 1, 3.5, 2.6, -0.3, 0, Math.PI * 2);
@@ -12404,23 +12522,40 @@ function updateSnake(deltaTime) {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1210, y: 63, collected: false };
+const marbleSpot = { x: 1320, y: 63, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
-  const mx = marbleSpot.x - camX, my = marbleSpot.y;
-  const dist = Math.hypot(mx - playerScreenX, my - (gy - player.y));
+  const mx0 = marbleSpot.x - camX, my0 = marbleSpot.y;
+  const dist = Math.hypot(mx0 - playerScreenX, my0 - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
-  const twinkle = 0.6 + 0.4 * Math.sin(performance.now() * 0.003);
+  const twinkle = 0.7 + 0.3 * Math.sin(performance.now() * 0.003);
+  const bob = Math.sin(performance.now() * 0.0016) * 2.5; // gentle float -- motion catches the eye more than alpha alone
+  const mx = mx0, my = my0 - bob;
   ctx.save();
+  // soft glow halo behind it
+  const glowGrad = ctx.createRadialGradient(mx, my, 0, mx, my, 9);
+  glowGrad.addColorStop(0, `rgba(200,120,160,${0.35 * twinkle})`);
+  glowGrad.addColorStop(1, "rgba(200,120,160,0)");
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(mx, my, 9, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = twinkle;
   ctx.fillStyle = "#c85a8a";
   ctx.beginPath();
-  ctx.arc(mx, my, 3.2, 0, Math.PI * 2);
+  ctx.arc(mx, my, 4.2, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  // rotating sparkle highlight rather than one static dot -- catches
+  // the eye as something alive, not just glinting in place
+  const sparkleAngle = performance.now() * 0.0012;
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
   ctx.beginPath();
-  ctx.arc(mx - 1, my - 1, 1, 0, Math.PI * 2);
+  ctx.arc(mx + Math.cos(sparkleAngle) * 1.6, my + Math.sin(sparkleAngle) * 1.6, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.beginPath();
+  ctx.arc(mx + Math.cos(sparkleAngle + Math.PI) * 1.6, my + Math.sin(sparkleAngle + Math.PI) * 1.6, 0.7, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -12442,9 +12577,11 @@ function updateMarble() {
 // Small radius on purpose, so actually seeing the room means moving
 // around with it rather than lighting it once and standing still.
 let lampLit = false;
+let lampEverUsedInRatroom = false; // once the lamp has actually been lit here, it stops leaving the room at all -- no longer just deselected on exit, never carried up in the first place
 const LAMP_LIGHT_RADIUS = 90;
 function updateLampLighting() {
   lampLit = currentScene === "ratroom" && heldItem === "lamp" && keys.space;
+  if (lampLit) lampEverUsedInRatroom = true;
 }
 // individual hoppable steps -- computed once from the same top/bottom
 // points the visual stringer uses, so drawing and collision never drift
@@ -13284,7 +13421,7 @@ function updateRatRoomScene(deltaTime) {
   // earlier global version blocked the stairs entirely, which
   // legitimately need to reach height 280 to trigger the transition
   // back to oak.
-  if (player.x > 950 && player.x < 1260 && player.y > 246) {
+  if (player.x > 950 && player.x < 1370 && player.y > 246) {
     player.y = 246;
     if (player.vy > 0) player.vy = 0;
   }
@@ -13363,7 +13500,7 @@ function updateRatRoomScene(deltaTime) {
       player.vy = 6;
       player.jumping = true;
     }
-    if (snakeState.hissT >= 700) {
+    if (snakeState.hissT >= 2000) {
       snakeState.hissing = 0;
       snakeState.hissT = 0;
     }
