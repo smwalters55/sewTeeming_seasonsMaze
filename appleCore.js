@@ -3389,6 +3389,19 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawBucketShape(ctx, x, y, size, rotation);
   } else if (itemType === "honey") {
     drawHoneyShape(ctx, x, y, size, rotation);
+  } else if (itemType === "marble") {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.fillStyle = "#c85a8a";
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.beginPath();
+    ctx.arc(-size * 0.15, -size * 0.15, size * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else {
     drawApplePieceShape(ctx, x, y, size, rotation);
   }
@@ -11535,14 +11548,14 @@ function drawFoundMap(camX) {
 // the recurring symbol -- an actual placed instance, lamp-gated like
 // everything else here. The shape function itself was built earlier;
 // this is where it's actually used for the first time.
-const foundSymbolSpot = { x: 380, y: 45 };
+const foundSymbolSpot = { x: 1000, y: 45 };
 function drawFoundSymbol(camX) {
   if (!lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
   const sx = foundSymbolSpot.x - camX, sy = foundSymbolSpot.y;
   const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
-  drawTeemingSymbol(ctx, sx, sy, 14, "rgba(220,190,150,0.55)");
+  drawTeemingSymbol(ctx, sx, sy, 14, "rgba(220,190,150,0.6)");
 }
 
 function drawCarvedInitials(camX) {
@@ -11586,19 +11599,63 @@ function drawRatRoomArt(camX) {
   }
 }
 
+// a small pressed leaf, pinned flat to the wall in the right-side
+// cluster, same discovery pattern (lamp-lit, nearby) as everything else
+const pressedLeafSpot = { x: 1080, y: 40 };
+function drawPressedLeaf(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const lx = pressedLeafSpot.x - camX, ly = pressedLeafSpot.y;
+  const dist = Math.hypot(lx - playerScreenX, ly - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+  ctx.save();
+  ctx.translate(lx, ly);
+  ctx.rotate(-0.15);
+  ctx.fillStyle = "rgba(160,130,70,0.35)";
+  ctx.strokeStyle = "rgba(190,160,100,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.quadraticCurveTo(6, -4, 5, 4);
+  ctx.quadraticCurveTo(3, 9, 0, 10);
+  ctx.quadraticCurveTo(-3, 9, -5, 4);
+  ctx.quadraticCurveTo(-6, -4, 0, -9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // center vein plus a few side veins, the kind of detail that
+  // survives pressing flat
+  ctx.beginPath();
+  ctx.moveTo(0, -8); ctx.lineTo(0, 9);
+  for (let i = -1; i <= 1; i += 2) {
+    ctx.moveTo(0, -3); ctx.lineTo(i * 3, -1);
+    ctx.moveTo(0, 2); ctx.lineTo(i * 3.2, 4);
+  }
+  ctx.stroke();
+  // a small pin holding it to the wall
+  ctx.fillStyle = "rgba(150,140,130,0.5)";
+  ctx.beginPath();
+  ctx.arc(0, -9, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // little shelf for the high-up rat to perch on, matching its eye-pair
 // position exactly so it visibly has something to sit on
 const ratRoomHighShelves = [
   { x: 280, y: 60, w: 34 },
-  { x: 950, y: 60, w: 34 } // second perch, further right
+  { x: 950, y: 60, w: 34 }, // second perch, further right
+  { x: 170, y: 70, w: 30 }, // left -- spider's perch, structurally visible from ground so it invites a jump on its own
+  { x: 1050, y: 65, w: 30 }, // right hop-sequence, start
+  { x: 1130, y: 50, w: 30 }, // right hop-sequence, snake's shelf, mid-path
+  { x: 1210, y: 65, w: 30 } // right hop-sequence, shiny collectible
 ];
 function drawRatRoomHighShelf(camX) {
-  if (!lampLit) return;
-  const playerScreenX = player.x + player.width / 2 - camX;
+  // structure itself is always visible -- wood, not a lamp-revealed
+  // detail -- so shelves genuinely invite a jump from ground rather
+  // than only existing once the lamp happens to find them
   ratRoomHighShelves.forEach(shelf => {
     const sx = shelf.x - camX, sy = shelf.y;
-    const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
-    if (dist > LAMP_LIGHT_RADIUS) return;
     const w = shelf.w;
     ctx.fillStyle = "#4a3018";
     ctx.fillRect(sx - w / 2, sy, w, 5);
@@ -11613,6 +11670,198 @@ function drawRatRoomHighShelf(camX) {
     ctx.lineTo(sx - w / 2 - 3, sy + 16);
     ctx.stroke();
   });
+}
+
+// spider -- hangs from a web near the left shelf, only actually
+// revealed once the player has climbed up and is standing near it
+// with the lamp lit, same discovery pattern as everything else here.
+// The shelf itself is always visible from ground, so it invites the
+// jump on its own; the spider is the payoff for actually taking it.
+const spiderSpot = { x: 170, y: 40 };
+const spiderState = { legDanceT: 0, legDanceNextAt: 4000 + Math.random() * 5000, legDancing: 0 };
+function drawSpider(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const sx = spiderSpot.x - camX, sy = spiderSpot.y;
+  const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+
+  // web -- a thin line from the ceiling down to the spider, with a
+  // few cross-strands near the bottom
+  ctx.strokeStyle = "rgba(210,200,180,0.35)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(sx, 0);
+  ctx.lineTo(sx, sy - 4);
+  ctx.stroke();
+  for (let i = 0; i < 2; i++) {
+    const wy = sy - 12 + i * 6;
+    ctx.beginPath();
+    ctx.moveTo(sx - 5, wy);
+    ctx.lineTo(sx + 5, wy);
+    ctx.stroke();
+  }
+
+  const danceP = spiderState.legDancing > 0 ? Math.sin(Math.min(1, spiderState.legDancing) * Math.PI * 3) : 0;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // legs, four per side, dancing wiggle on top of the resting angle
+  ctx.strokeStyle = "#2a221c";
+  ctx.lineWidth = 1;
+  for (let side = -1; side <= 1; side += 2) {
+    for (let i = 0; i < 4; i++) {
+      const baseAngle = side * (0.5 + i * 0.35);
+      const wiggle = danceP * 0.25 * (i % 2 === 0 ? 1 : -1);
+      const angle = baseAngle + wiggle;
+      const legLen = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(Math.sin(angle) * legLen * 0.6, Math.cos(angle) * legLen * 0.5 + 2, Math.sin(angle) * legLen, Math.cos(angle) * legLen + 3);
+      ctx.stroke();
+    }
+  }
+
+  // body -- small round abdomen, no head distinction needed at this size
+  ctx.fillStyle = "#3a3028";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 4.5, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // glowing eyes, matching the room's established motif
+  ctx.fillStyle = "rgba(220,190,120,0.9)";
+  ctx.beginPath();
+  ctx.arc(-1.4, -1, 0.9, 0, Math.PI * 2);
+  ctx.arc(1.4, -1, 0.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+function updateSpider(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  spiderState.legDanceT += dtMs;
+  if (spiderState.legDanceT >= spiderState.legDanceNextAt) {
+    spiderState.legDancing = 0.001;
+    spiderState.legDanceT = 0;
+    spiderState.legDanceNextAt = 4000 + Math.random() * 5000;
+  }
+  if (spiderState.legDancing > 0) {
+    spiderState.legDancing += dtMs / 700;
+    if (spiderState.legDancing >= 1) spiderState.legDancing = 0;
+  }
+}
+
+// snake -- coiled on the middle shelf of the right hop-sequence, so
+// its in the actual path rather than something seen from below. Tail
+// wave reacts to the player being nearby rather than firing on a
+// blind timer regardless of whether anyone's there. Greeting and the
+// reveal of what it's hoarding are one slow combined beat, not two
+// separate triggers.
+const snakeSpot = { x: 1130, y: 42 };
+const snakeState = { tailWaveT: 0 };
+const snakeDialogue = { active: false, index: 0 };
+const snakeLines = [
+  ["Sssomeone'sss curioussss down here."],
+  ["Thisss one'sss mine. Found it firssst."]
+];
+function drawSnake(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const nx = snakeSpot.x - camX, ny = snakeSpot.y;
+  const dist = Math.hypot(nx - playerScreenX, ny - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+
+  const nearPlayer = dist < 40;
+  const tailWave = nearPlayer ? Math.sin(snakeState.tailWaveT * 0.004) * 8 : 0;
+
+  // the small hoarded object, coiled around by the body
+  ctx.fillStyle = "#8ac8d8";
+  ctx.beginPath();
+  ctx.arc(nx, ny + 3, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.beginPath();
+  ctx.arc(nx - 0.6, ny + 2.4, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // coiled body, a simple spiral, with the tail extending out and waving
+  ctx.strokeStyle = "#4a6a3a";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(nx, ny + 3, 6, 0.2, Math.PI * 1.7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(nx, ny + 3, 3.5, Math.PI * 0.1, Math.PI * 1.9);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(nx + 8, ny + 1);
+  ctx.quadraticCurveTo(nx + 14 + tailWave * 0.5, ny - 2, nx + 18 + tailWave, ny + 2);
+  ctx.stroke();
+
+  // head, resting on top of the coil, glowing eyes matching the room's motif
+  ctx.fillStyle = "#4a6a3a";
+  ctx.beginPath();
+  ctx.ellipse(nx - 6, ny - 3, 3.5, 2.6, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(220,190,120,0.9)";
+  ctx.beginPath();
+  ctx.arc(nx - 7, ny - 3.5, 0.8, 0, Math.PI * 2);
+  ctx.arc(nx - 5, ny - 4, 0.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (snakeDialogue.active) {
+    const beat = snakeLines[snakeDialogue.index];
+    drawFittedSpeechBubble(ctx, nx, ny - 20, beat);
+  }
+}
+function updateSnake(deltaTime) {
+  snakeState.tailWaveT += deltaTime * 1000;
+
+  if (snakeDialogue.active) {
+    if (keys.spaceJustPressed) {
+      snakeDialogue.index++;
+      if (snakeDialogue.index >= snakeLines.length) snakeDialogue.active = false;
+    }
+    return;
+  }
+  if (keys.spaceJustPressed && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 20, 20, 15) && lampLit) {
+    snakeDialogue.active = true;
+    snakeDialogue.index = 0;
+  }
+}
+
+// shiny marble -- the payoff for hopping all the way across the right
+// shelf sequence, past the snake, to the far shelf
+const marbleSpot = { x: 1210, y: 55, collected: false };
+function drawMarble(camX) {
+  if (marbleSpot.collected || !lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const mx = marbleSpot.x - camX, my = marbleSpot.y;
+  const dist = Math.hypot(mx - playerScreenX, my - (gy - player.y));
+  if (dist > LAMP_LIGHT_RADIUS) return;
+  const twinkle = 0.6 + 0.4 * Math.sin(performance.now() * 0.003);
+  ctx.save();
+  ctx.globalAlpha = twinkle;
+  ctx.fillStyle = "#c85a8a";
+  ctx.beginPath();
+  ctx.arc(mx, my, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.beginPath();
+  ctx.arc(mx - 1, my - 1, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+function updateMarble() {
+  if (marbleSpot.collected || !lampLit) return;
+  if (keys.spaceJustPressed && isPlayerNear(marbleSpot.x, gy - marbleSpot.y, 18, 15, 12)) {
+    marbleSpot.collected = true;
+    inventory.marble = (inventory.marble || 0) + 1;
+    touchInventoryOrder("marble");
+    updateInventoryUI();
+    startCollectAnimation({ x: marbleSpot.x, y: gy - marbleSpot.y, size: 5, rotation: 0 }, "marble");
+  }
 }
 
 
@@ -11648,8 +11897,12 @@ function drawRatRoomScene(camX) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   drawRatRoomHighShelf(camX);
+  drawSpider(camX);
+  drawSnake(camX);
+  drawMarble(camX);
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
+  drawPressedLeaf(camX);
   drawCarvedInitials(camX);
   drawFoundSymbol(camX);
   drawFoundMap(camX);
@@ -12406,6 +12659,9 @@ const ratLampFoundLines = [["Oh! You found it -- the little lamp!", "Wonderful, 
 function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
+  updateSpider(deltaTime);
+  updateSnake(deltaTime);
+  updateMarble();
   updateAcornFeedAnim(deltaTime);
   updateRatRoomFeather();
   updateFeatherUnravelAnim(deltaTime);
@@ -12434,6 +12690,26 @@ function updateRatRoomScene(deltaTime) {
   if (isPlayerNear(topStep.x, topStep.heightAboveGround, 20, 20, 15) && keys.spaceJustPressed) {
     startSeasonTransition("oak");
   }
+
+  // high-shelf collision -- these had none before despite being called
+  // hoppable; shelf.y is a screen-y coordinate, converted to an
+  // equivalent height-above-ground for the landing check
+  ratRoomHighShelves.forEach(shelf => {
+    const shelfTop = gy - shelf.y;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > shelf.x - shelf.w / 2 - 4 &&
+      player.x < shelf.x + shelf.w / 2 + 4 &&
+      playerBottom <= shelfTop &&
+      playerBottom >= shelfTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = shelfTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
 
   // stair collision — same landing pattern as the oak room's platforms,
   // making each step a genuine hoppable surface
