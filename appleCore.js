@@ -265,6 +265,28 @@ function cycleHeldItem() {
 // anything without a good emoji match. Bucket is the first user; any
 // future item can opt in the same way.
 const ITEM_CANVAS_RENDER = {
+  paperAirplane: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    iconCtx.save();
+    iconCtx.translate(10, 10);
+    iconCtx.rotate(-0.2);
+    iconCtx.fillStyle = "#f0e8d8";
+    iconCtx.beginPath();
+    iconCtx.moveTo(8, 0);
+    iconCtx.lineTo(-7, -5);
+    iconCtx.lineTo(-3, 0);
+    iconCtx.lineTo(-7, 5);
+    iconCtx.closePath();
+    iconCtx.fill();
+    iconCtx.strokeStyle = "rgba(0,0,0,0.2)";
+    iconCtx.lineWidth = 0.6;
+    iconCtx.stroke();
+    iconCtx.beginPath();
+    iconCtx.moveTo(8, 0);
+    iconCtx.lineTo(-3, 0);
+    iconCtx.stroke();
+    iconCtx.restore();
+  },
   marble: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     iconCtx.fillStyle = "#c85a8a";
@@ -4800,19 +4822,72 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 // trailing down with some pooling gently on the ground
 const pothosSpot = { x: 2825, hangY: 260 };
 
-const lavenderSpot = { x: 2590 };
+const lavenderSpot = { x: 2540 };
 // Joshua tree, tucked into the ratroom's right side -- a real
 // personal touch rather than a generic desert plant, with its actual
 // distinctive silhouette: a thick, gnarled, irregularly-branching
 // trunk, each branch ending in a spiky rosette of pointed leaves
 // radiating outward, not a smooth-armed saguaro shape
 const joshuaTreeSpot = { x: 1280 };
+// a single old, dusty, ragged book pile for the ratroom -- distinct
+// from the clean stacks in the oak scene: duller palette, torn page
+// edges instead of clean rectangles, a couple of loose pages fallen
+// nearby
+const raggedPileSpot = { x: 870 };
+const raggedPileColors = ["#5a4a3a", "#4a4238", "#6a5648", "#544840"];
+function drawRaggedBookPile(camX) {
+  const px = raggedPileSpot.x - camX, py = gy;
+  const count = 7;
+  let dy = 0;
+  for (let i = 0; i < count; i++) {
+    const w = 22 + ((i * 7) % 10);
+    const h = 5 + ((i * 3) % 3);
+    const rot = (((i * 11) % 30) - 15) / 55;
+    const dx = ((i * 5) % 8) - 4;
+    ctx.save();
+    ctx.translate(px + dx, py - dy);
+    ctx.rotate(rot);
+    ctx.fillStyle = raggedPileColors[i % raggedPileColors.length];
+    // frayed edge -- a jagged top line instead of a clean rectangle
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, 0);
+    const teeth = 5;
+    for (let t = 0; t <= teeth; t++) {
+      const tx = -w / 2 + (w / teeth) * t;
+      const ty = -h + (t % 2 === 0 ? 0 : 1.5);
+      ctx.lineTo(tx, ty);
+    }
+    ctx.lineTo(w / 2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.restore();
+    dy += h;
+  }
+  // a couple of loose pages, fallen and resting beside the pile
+  [{ ox: -22, oy: -2, rot: -0.4 }, { ox: 20, oy: -1, rot: 0.5 }].forEach(page => {
+    ctx.save();
+    ctx.translate(px + page.ox, py + page.oy);
+    ctx.rotate(page.rot);
+    ctx.fillStyle = "#c8bca4";
+    ctx.beginPath();
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(6, -0.5);
+    ctx.lineTo(5, -3.5);
+    ctx.lineTo(-5.5, -3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
 function drawJoshuaTree(camX) {
-  if (!lampLit) return;
-  const playerScreenX = player.x + player.width / 2 - camX;
   const px = joshuaTreeSpot.x - camX, py = gy;
-  const dist = Math.hypot(px - playerScreenX, py - (gy - player.y));
-  if (dist > LAMP_LIGHT_RADIUS) return;
   const trunkColor = "#6a5a42";
   const leafColor = "#5a8a48";
   const leafColorDark = "#4a7a3a";
@@ -4977,6 +5052,82 @@ function drawFireflies(camX) {
     }
   });
 }
+
+// dust motes -- small particles drifting within the lamp's light zone,
+// each with its own offset from the player and gentle independent
+// wander, only ever visible while the lamp is lit (they only catch
+// light that's actually there, unlike the fireflies which glow on
+// their own)
+const dustMotes = Array.from({ length: 22 }, (_, i) => ({
+  offsetAngle: (i / 22) * Math.PI * 2 + (i * 0.7) % 1,
+  offsetDist: 20 + (i * 13) % 65,
+  seed: i * 3.7,
+  driftSeed: i * 1.9
+}));
+function drawDustMotes(camX) {
+  if (!lampLit) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const playerScreenY = gy - player.y - player.height / 2;
+  dustMotes.forEach(d => {
+    const baseX = playerScreenX + Math.cos(d.offsetAngle) * d.offsetDist;
+    const baseY = playerScreenY + Math.sin(d.offsetAngle) * d.offsetDist * 0.6;
+    const dist = Math.hypot(baseX - playerScreenX, baseY - playerScreenY);
+    if (dist > LAMP_LIGHT_RADIUS * 0.85) return; // stay a little inside the lit edge, not right at the boundary
+    const driftX = Math.sin(fireflyT * 0.0003 + d.driftSeed) * 6;
+    const driftY = Math.cos(fireflyT * 0.0002 + d.driftSeed * 1.4) * 4;
+    const dx = baseX + driftX, dy = baseY + driftY;
+    const twinkle = 0.15 + 0.15 * Math.sin(fireflyT * 0.0015 + d.seed);
+    ctx.fillStyle = `rgba(230,220,190,${twinkle})`;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// moth -- flutters gradually closer to the player the longer the lamp
+// stays continuously lit, easing back out (not snapping) once it goes
+// off, since a moth vanishing instantly would read as a bug rather
+// than losing interest
+const mothState = { approachT: 0, wanderSeed: 7.3 };
+const MOTH_MAX_APPROACH_MS = 9000;
+function updateMoth(deltaTime) {
+  if (currentScene !== "ratroom") return;
+  if (lampLit) {
+    mothState.approachT = Math.min(MOTH_MAX_APPROACH_MS, mothState.approachT + deltaTime * 1000);
+  } else {
+    mothState.approachT = Math.max(0, mothState.approachT - deltaTime * 1000 * 0.6); // eases back out slower than it approached
+  }
+}
+function drawMoth(camX) {
+  if (mothState.approachT <= 0) return;
+  const playerScreenX = player.x + player.width / 2 - camX;
+  const playerScreenY = gy - player.y - player.height / 2;
+  const approachP = mothState.approachT / MOTH_MAX_APPROACH_MS;
+  const dist = 130 - (130 - 22) * approachP; // starts far, flutters down to a close hover
+  const wanderAngle = fireflyT * 0.0011 + mothState.wanderSeed;
+  const flutterX = Math.sin(wanderAngle) * dist;
+  const flutterY = Math.cos(wanderAngle * 1.3) * dist * 0.5 - 20;
+  const mx = playerScreenX + flutterX, my = playerScreenY + flutterY;
+  ctx.save();
+  ctx.translate(mx, my);
+  const bodyAngle = Math.atan2(flutterY, flutterX);
+  ctx.rotate(bodyAngle + Math.PI / 2);
+  ctx.fillStyle = "rgba(210,200,170,0.75)";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 1.2, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const flap = Math.sin(fireflyT * 0.03 + mothState.wanderSeed) * 0.5 + 0.6;
+  ctx.fillStyle = "rgba(190,180,150,0.55)";
+  [-1, 1].forEach(side => {
+    ctx.save();
+    ctx.rotate(side * flap);
+    ctx.beginPath();
+    ctx.ellipse(side * 3, -0.5, 3, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+}
 function drawLavenderPlant(camX) {
   const px = lavenderSpot.x - camX, py = gy;
   // small terracotta pot
@@ -5034,7 +5185,7 @@ function drawLavenderPlant(camX) {
 }
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
-const snakePlantSpot = { x: 1349, y: 0 };
+const snakePlantSpot = { x: 760, y: 0 };
 const entrywayFernSpot = { x: 420, y: 0 };
 function drawEntrywayFern(camX) {
   const px = entrywayFernSpot.x - camX, py = gy - entrywayFernSpot.y;
@@ -9075,9 +9226,33 @@ const bookPiles = [
   { x: 839, seed: 23, count: 3, heightAboveGround: 24 },
   { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
   { x: 1147, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
-  { x: 1259, seed: 17, count: 5, heightAboveGround: 34 } // new -- fills the gap before the nook, more hop opportunities
+  { x: 1259, seed: 17, count: 5, heightAboveGround: 34 }, // new -- fills the gap before the nook, more hop opportunities
+  { x: 2820, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
+  { x: 2923, seed: 74, count: 15, heightAboveGround: 80 },
+  { x: 2996, seed: 81, count: 5, heightAboveGround: 30 },
+  { x: 3107, seed: 88, count: 10, heightAboveGround: 55 },
+  { x: 3221, seed: 95, count: 14, heightAboveGround: 78 },
+  { x: 3294, seed: 102, count: 5, heightAboveGround: 28 },
+  { x: 3404, seed: 109, count: 11, heightAboveGround: 60 },
+  { x: 3518, seed: 116, count: 15, heightAboveGround: 80 },
+  { x: 3682, seed: 123, count: 32, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
+  { x: 3737, seed: 130, count: 26, heightAboveGround: 145 },
+  { x: 3798, seed: 137, count: 18, heightAboveGround: 100 },
+  { x: 3853, seed: 144, count: 13, heightAboveGround: 70 },
+  { x: 3903, seed: 151, count: 9, heightAboveGround: 50 }, // medium/high only from here on, no more lows
+  { x: 4013, seed: 158, count: 15, heightAboveGround: 80 },
+  { x: 4065, seed: 165, count: 10, heightAboveGround: 55 },
+  { x: 4176, seed: 172, count: 15, heightAboveGround: 80 },
+  { x: 4226, seed: 179, count: 11, heightAboveGround: 60 },
+  { x: 4340, seed: 186, count: 14, heightAboveGround: 78 },
+  { x: 4455, seed: 193, count: 16, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
+  { x: 4565, seed: 200, count: 22, heightAboveGround: 120 },
+  { x: 4675, seed: 207, count: 27, heightAboveGround: 150 },
+  { x: 4785, seed: 214, count: 33, heightAboveGround: 180 },
+  { x: 4895, seed: 221, count: 38, heightAboveGround: 210 },
+  { x: 5006, seed: 228, count: 43, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
 ];
-const BOOK_PILE_WIDTH = 24; // rough horizontal footprint for collision purposes
+const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but not so wide that adjacent piles in a dense sequence intercept each other's jumps
 const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
 
 // a book pile spread across the floor -- low, wide, several separate
@@ -9973,14 +10148,14 @@ function drawTeaNook(camX) {
 
 function drawTeaPlayerCup(tx, tableTop) {
   if (teaAnim.phase === "idle") return;
-  const cupX = tx - 16, cupY = tableTop + 5;
+  const cupX = tx - 2, cupY = tableTop + 5;
   const isFull = teaAnim.phase === "full" || teaAnim.phase === "sipping";
   let bx = cupX, by = cupY;
   if (teaAnim.phase === "sipping") {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping);
     const bob = Math.sin(p * Math.PI);
     const towardPlayer = player.x < teaSpot.x ? -1 : 1; // bobs toward wherever the player actually is, not always to the right
-    const reachDist = towardPlayer === 1 ? 34 : 24; // further right, since that side's interaction zone extends further -- should read as reaching a genuinely farther player
+    const reachDist = towardPlayer === 1 ? 50 : 24; // further right, since that side's interaction zone extends further -- should read as reaching a genuinely farther player
     bx = cupX + bob * reachDist * towardPlayer; by = cupY - bob * 6;
   }
   // pouring stream, from the kettle spout's actual current tip
@@ -9997,11 +10172,12 @@ function drawTeaPlayerCup(tx, tableTop) {
     const spoutTipX = spoutTipWorld.x, spoutTipY = spoutTipWorld.y;
     const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
     const wob = Math.sin(performance.now() * 0.02) * 1.2;
-    const bowAmount = 20; // consistent downward sag from gravity, on top of the small time-wobble -- accounts for the quadratic bezier's control point only being 50% weighted in the actual curve
+    const controlX = streamEndX + (spoutTipX - streamEndX) * 0.15 + wob;
+    const controlY = spoutTipY + (streamEndY - spoutTipY) * 0.5;
     ctx.strokeStyle = "rgba(140,86,36,0.9)"; ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(spoutTipX, spoutTipY);
-    ctx.quadraticCurveTo((spoutTipX + streamEndX) / 2 + wob, (spoutTipY + streamEndY) / 2 + bowAmount, streamEndX, streamEndY);
+    ctx.quadraticCurveTo(controlX, controlY, streamEndX, streamEndY);
     ctx.stroke();
     // a couple traveling droplets along the stream
     for (let d = 0; d < 2; d++) {
@@ -10572,7 +10748,7 @@ function drawOakScene(camX) {
       const isLong = (seed + i * 7) % 5 === 0; // some books noticeably longer, matching the shelf's horizontal-stack book width
       const w = isLong ? 42 + ((seed + i * 3) % 10) : 20 + ((seed + i * 5) % 10);
       const h = 4 + ((seed + i * 3) % 3);
-      const rot = (((seed + i * 7) % 20) - 10) / 80;
+      const rot = (((seed + i * 7) % 36) - 18) / 60;
       const dx = (((seed + i * 4) % 6) - 3);
       ctx.save();
       ctx.translate(baseX - camX + dx, baseY - dy);
@@ -10588,6 +10764,7 @@ function drawOakScene(camX) {
   }
   // drawn from the shared bookPiles array (also used for collision below)
   bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count));
+  drawPaperAirplane(camX);
   bookSpreads.forEach(spread => drawBookSpread(spread, camX));
 
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
@@ -10974,7 +11151,7 @@ function updateOakScene(deltaTime) {
       player.x + player.width > pile.x - BOOK_PILE_WIDTH / 2 &&
       player.x < pile.x + BOOK_PILE_WIDTH / 2 &&
       playerBottom <= pileTop &&
-      playerBottom >= pileTop - 24 &&
+      playerBottom >= pileTop - 30 &&
       player.vy <= 0
     ) {
       player.y = pileTop;
@@ -10983,6 +11160,7 @@ function updateOakScene(deltaTime) {
       player.usedDoubleJump = false;
     }
   });
+  updatePaperAirplane();
 
   // book spread collision — wide and low, same landing pattern
   bookSpreads.forEach(spread => {
@@ -12729,6 +12907,47 @@ function updateSnake(deltaTime) {
   }
 }
 
+// paper airplane -- the payoff waiting at the top of the giant capstone
+// book pile, after the whole long jump run
+const paperAirplaneSpot = { x: 5006, y: 245, collected: false };
+function drawPaperAirplane(camX) {
+  if (paperAirplaneSpot.collected) return;
+  const ax0 = paperAirplaneSpot.x - camX, ay0 = gy - paperAirplaneSpot.y;
+  const bob = Math.sin(performance.now() * 0.0018) * 3;
+  const drift = Math.sin(performance.now() * 0.001) * 4;
+  const ax = ax0 + drift, ay = ay0 - bob;
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.rotate(Math.sin(performance.now() * 0.0009) * 0.15);
+  ctx.fillStyle = "#f0e8d8";
+  ctx.beginPath();
+  ctx.moveTo(9, 0);
+  ctx.lineTo(-7, -5);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(-7, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.moveTo(9, 0);
+  ctx.lineTo(-3, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+function updatePaperAirplane() {
+  if (paperAirplaneSpot.collected) return;
+  if (keys.spaceJustPressed && isPlayerNear(paperAirplaneSpot.x, paperAirplaneSpot.y, 20, 18, 15)) {
+    paperAirplaneSpot.collected = true;
+    inventory.paperAirplane = (inventory.paperAirplane || 0) + 1;
+    touchInventoryOrder("paperAirplane");
+    updateInventoryUI();
+    startCollectAnimation({ x: paperAirplaneSpot.x, y: paperAirplaneSpot.y, size: 7, rotation: 0 }, "paperAirplane");
+  }
+}
+
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
 const marbleSpot = { x: 1295, y: 93, collected: false };
@@ -12817,7 +13036,10 @@ function drawRatRoomScene(camX) {
   drawSpider(camX);
   drawSnake(camX);
   drawJoshuaTree(camX);
+  drawRaggedBookPile(camX);
   drawFireflies(camX);
+  drawDustMotes(camX);
+  drawMoth(camX);
   drawMarble(camX);
   drawRatRoomEyes(camX);
   drawRatRoomArt(camX);
@@ -13153,6 +13375,34 @@ function drawRatRoomFeather(camX) {
   const fx = ratRoomFeather.x - camX, fy = gy - ratRoomFeather.y;
   const dist = Math.hypot(fx - playerScreenX, fy - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
+  // small dirt ledge, jutting out from the wall -- gives the feather
+  // an actual physical perch at this height rather than floating with
+  // nothing visibly holding it up, which is what made it read as
+  // pinned to the wall rather than resting in the room
+  ctx.fillStyle = "#4a3a26";
+  ctx.beginPath();
+  ctx.moveTo(fx - 14, fy + 6);
+  ctx.quadraticCurveTo(fx - 6, fy + 10, fx + 2, fy + 7);
+  ctx.quadraticCurveTo(fx + 10, fy + 5, fx + 15, fy + 9);
+  ctx.lineTo(fx + 15, fy + 16);
+  ctx.lineTo(fx - 14, fy + 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(30,22,12,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(fx - 14, fy + 6);
+  ctx.quadraticCurveTo(fx - 6, fy + 10, fx + 2, fy + 7);
+  ctx.quadraticCurveTo(fx + 10, fy + 5, fx + 15, fy + 9);
+  ctx.stroke();
+  // a couple loose pebbles on the ledge for texture
+  ctx.fillStyle = "#6a5a44";
+  [[-8, 9, 1.4], [6, 10, 1.1]].forEach(([dx, dy, r]) => {
+    ctx.beginPath();
+    ctx.arc(fx + dx, fy + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   // tucked at an angle among the clutter, leaning slightly right --
   // reduced from a steep angle that read as too deliberately posed
   drawFeatherShape(ctx, fx, fy, 9, 0.2);
@@ -13639,6 +13889,7 @@ function updateRatRoomScene(deltaTime) {
   updateRatNPC(deltaTime);
   updateRatRoomEyes(deltaTime);
   updateSpider(deltaTime);
+  updateMoth(deltaTime);
   updateFireflies(deltaTime);
   updateShelfTierUnlocks();
   updateSnake(deltaTime);
