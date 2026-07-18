@@ -991,16 +991,42 @@ function drawSeasonTransition(ctx) {
         ctx.lineTo(-9, 4 + dy);
         ctx.stroke();
       });
-      // winking eye -- one closed (a curved line), one open (a dot)
+      // winking eye -- a genuine squint rather than the flat emoji-arc
+      // curve: an asymmetric closed lid with a small crease above it
+      // for real dimension, plus a smirk on the snout that wasn't
+      // there at all before
       ctx.strokeStyle = "#1a1a1a";
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.3;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.arc(-4, -1, 2, 0.2, Math.PI - 0.2);
+      ctx.moveTo(-6.2, -0.8);
+      ctx.quadraticCurveTo(-4, 0.4, -1.8, -0.6);
       ctx.stroke();
+      // eyelid crease just above the squint, the detail that actually
+      // reads as a real closed eye instead of a cartoon curve
+      ctx.strokeStyle = "rgba(26,26,26,0.55)";
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(-5.8, -2);
+      ctx.quadraticCurveTo(-4, -1.6, -2.3, -2);
+      ctx.stroke();
+      // open eye, with a tiny highlight for some life
       ctx.fillStyle = "#1a1a1a";
       ctx.beginPath();
       ctx.arc(4, -1, 1.2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.beginPath();
+      ctx.arc(4.4, -1.4, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      // smirk -- asymmetric, corner raised on the winking side, not a
+      // symmetric smile
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(-3, 5.5);
+      ctx.quadraticCurveTo(0, 6.6, 3.5, 5);
+      ctx.stroke();
       ctx.restore();
       ctx.globalAlpha = 1;
       return;
@@ -9346,8 +9372,6 @@ function drawTeaNook(camX) {
   ctx.translate(kx, ky);
   ctx.scale(0.85, 0.85);
   ctx.translate(-kx, -ky);
-  ctx.scale(0.85, 0.85);
-  ctx.translate(-kx, -ky);
   ctx.fillStyle = "#a8342a";
   ctx.beginPath();
   ctx.ellipse(kx, ky, 11, 9, 0, 0, Math.PI * 2);
@@ -11770,24 +11794,24 @@ function drawPressedLeaf(camX) {
 const ratRoomHighShelves = [
   // left cluster -- leads up to the spider. Every shelf, including
   // this first one, is lamp-gated -- none are visible in the dark at
-  // all, matching the room's established light-reveals-everything
-  // pattern. Heights recomputed -- the previous values put every
-  // shelf 200+ units above ground while the lamp's radius is only 90,
-  // meaning the lamp could never physically reach any of them from
-  // anywhere a player could actually stand, including tier 0 from the
-  // ground itself. ~45-unit spacing between tiers now, comfortably
-  // within both the lamp radius and a real jump (the stairs, known to
-  // work, use ~34-unit steps).
+  // all. Heights recomputed again -- max jump height works out to
+  // exactly 90 units (v0=12, gravity=0.8: v0^2/2g), and the previous
+  // ~45-unit spacing meant a single full jump from ground could
+  // overshoot tier 0 and land directly on tier 1. ~70-unit gaps now,
+  // comfortably reachable from the tier below but not skippable from
+  // ground, and still within the lamp's own 90-unit radius.
   { x: 170, y: 255, w: 32, tier: 0, cluster: "left" },
-  { x: 170, y: 210, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's shelf
+  { x: 195, y: 185, w: 30, tier: 1, cluster: "left", unlocked: false }, // offset from tier 0, not stacked directly above it
   // right cluster -- ground shelf, then two middle shelves revealed
-  // from it, then the snake's own shelf revealed from those, then the
-  // marble one tier beyond that
+  // from it at slightly different heights for visual variety, then
+  // the snake's own shelf pushed up a further, larger jump for real
+  // height, then the marble beyond that. Snake's shelf widened so
+  // part of it can stay bare -- somewhere for an uncoiled tail to rest.
   { x: 1000, y: 255, w: 32, tier: 0, cluster: "right" },
-  { x: 1040, y: 210, w: 30, tier: 1, cluster: "right", unlocked: false },
-  { x: 1075, y: 210, w: 30, tier: 1, cluster: "right", unlocked: false },
-  { x: 1130, y: 165, w: 30, tier: 2, cluster: "right", unlocked: false }, // snake's shelf
-  { x: 1190, y: 120, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
+  { x: 1030, y: 185, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1080, y: 175, w: 28, tier: 1, cluster: "right", unlocked: false },
+  { x: 1140, y: 85, w: 55, tier: 2, cluster: "right", unlocked: false }, // snake's shelf, wider, and a full extra jump higher
+  { x: 1210, y: 15, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -11829,7 +11853,7 @@ function drawRatRoomHighShelf(camX) {
 // with the lamp lit, same discovery pattern as everything else here.
 // The shelf itself is always visible from ground, so it invites the
 // jump on its own; the spider is the payoff for actually taking it.
-const spiderSpot = { x: 170, y: 203 };
+const spiderSpot = { x: 140, y: 175 };
 const spiderState = { legDanceT: 0, legDanceNextAt: 4000 + Math.random() * 5000, legDancing: 0 };
 function drawSpider(camX) {
   if (!lampLit) return;
@@ -11920,7 +11944,7 @@ function updateSpider(deltaTime) {
 // blind timer regardless of whether anyone's there. Greeting and the
 // reveal of what it's hoarding are one slow combined beat, not two
 // separate triggers.
-const snakeSpot = { x: 1130, y: 157 };
+const snakeSpot = { x: 1125, y: 78 };
 const snakeState = { tailWaveT: 0 };
 const snakeDialogue = { active: false, index: 0 };
 const snakeLines = [
@@ -11934,48 +11958,87 @@ function drawSnake(camX) {
   const dist = Math.hypot(nx - playerScreenX, ny - (gy - player.y));
   if (dist > LAMP_LIGHT_RADIUS) return;
 
-  const nearPlayer = dist < 40;
-  const tailWave = nearPlayer ? Math.sin(snakeState.tailWaveT * 0.004) * 8 : 0;
+  const nearPlayer = dist < 55;
+  const tailWave = nearPlayer ? Math.sin(snakeState.tailWaveT * 0.004) * 14 : Math.sin(snakeState.tailWaveT * 0.0012) * 3;
+
+  ctx.save();
+  ctx.translate(nx, ny);
+  ctx.scale(1.9, 1.9); // much bigger than before, a real presence on its shelf
 
   // the small hoarded object, coiled around by the body
   ctx.fillStyle = "#8ac8d8";
   ctx.beginPath();
-  ctx.arc(nx, ny + 3, 2.2, 0, Math.PI * 2);
+  ctx.arc(0, 3, 2.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "rgba(255,255,255,0.4)";
   ctx.beginPath();
-  ctx.arc(nx - 0.6, ny + 2.4, 0.6, 0, Math.PI * 2);
+  ctx.arc(-0.6, 2.4, 0.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // coiled body, a simple spiral, with the tail extending out and waving
-  ctx.strokeStyle = "#4a6a3a";
-  ctx.lineWidth = 3;
+  // garter-snake styling -- green base with longitudinal cream
+  // stripes rather than a plain brown-green body. Coil first (base
+  // color, thick), then the tail (base color), then stripes drawn as
+  // thinner offset strokes following the same paths on top.
+  const bodyColor = "#3f7a3a";
+  const stripeColor = "#d8cf8a";
   ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.arc(nx, ny + 3, 6, 0.2, Math.PI * 1.7);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(nx, ny + 3, 3.5, Math.PI * 0.1, Math.PI * 1.9);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(nx + 8, ny + 1);
-  ctx.quadraticCurveTo(nx + 14 + tailWave * 0.5, ny - 2, nx + 18 + tailWave, ny + 2);
-  ctx.stroke();
+
+  const coilPaths = [
+    () => { ctx.arc(0, 3, 6, 0.2, Math.PI * 1.7); },
+    () => { ctx.arc(0, 3, 3.5, Math.PI * 0.1, Math.PI * 1.9); }
+  ];
+  const tailPath = () => {
+    ctx.moveTo(8, 1);
+    ctx.quadraticCurveTo(16 + tailWave * 0.4, -3, 26 + tailWave, 0);
+    ctx.quadraticCurveTo(34 + tailWave * 1.3, 2, 40 + tailWave * 1.6, -2);
+  };
+
+  ctx.strokeStyle = bodyColor;
+  ctx.lineWidth = 3.4;
+  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
+  ctx.beginPath(); tailPath(); ctx.stroke();
+
+  // stripe overlay, offset slightly to each side of the same paths
+  ctx.strokeStyle = stripeColor;
+  ctx.lineWidth = 0.9;
+  ctx.save();
+  ctx.translate(0, -1.1);
+  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
+  ctx.beginPath(); tailPath(); ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(0, 1.1);
+  coilPaths.forEach(p => { ctx.beginPath(); p(); ctx.stroke(); });
+  ctx.beginPath(); tailPath(); ctx.stroke();
+  ctx.restore();
 
   // head, resting on top of the coil, glowing eyes matching the room's motif
-  ctx.fillStyle = "#4a6a3a";
+  ctx.fillStyle = bodyColor;
   ctx.beginPath();
-  ctx.ellipse(nx - 6, ny - 3, 3.5, 2.6, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(-6, -3, 3.5, 2.6, -0.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "rgba(220,190,120,0.9)";
   ctx.beginPath();
-  ctx.arc(nx - 7, ny - 3.5, 0.8, 0, Math.PI * 2);
-  ctx.arc(nx - 5, ny - 4, 0.8, 0, Math.PI * 2);
+  ctx.arc(-7, -3.5, 0.8, 0, Math.PI * 2);
+  ctx.arc(-5, -4, 0.8, 0, Math.PI * 2);
   ctx.fill();
+  // small forked tongue flick, since it's a snake after all
+  ctx.strokeStyle = "#c85a5a";
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(-9.5, -2.5);
+  ctx.lineTo(-12, -2.2);
+  ctx.moveTo(-12, -2.2);
+  ctx.lineTo(-13, -2.8);
+  ctx.moveTo(-12, -2.2);
+  ctx.lineTo(-13, -1.6);
+  ctx.stroke();
+
+  ctx.restore();
 
   if (snakeDialogue.active) {
     const beat = snakeLines[snakeDialogue.index];
-    drawFittedSpeechBubble(ctx, nx, ny - 20, beat);
+    drawFittedSpeechBubble(ctx, nx, ny - 30, beat);
   }
 }
 function updateSnake(deltaTime) {
@@ -11996,7 +12059,7 @@ function updateSnake(deltaTime) {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1190, y: 110, collected: false };
+const marbleSpot = { x: 1210, y: 8, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -12748,8 +12811,8 @@ const ratRoomEyes = [
   { x: 55, y: 268, phase: 0.2, blinkSpeed: 0.9 },
   { x: 125, y: 290, phase: 1.8, blinkSpeed: 1.1 },
   { x: 78, y: 210, phase: 3.1, blinkSpeed: 0.8 },
-  { x: 165, y: 255, phase: 0.6, blinkSpeed: 1.3 },
-  { x: 200, y: 235, phase: 2.4, blinkSpeed: 1.0 },
+  { x: 245, y: 255, phase: 0.6, blinkSpeed: 1.3 },
+  { x: 285, y: 235, phase: 2.4, blinkSpeed: 1.0 },
   { x: 32, y: 278, phase: 4.0, blinkSpeed: 0.95 },
   { x: 105, y: 225, phase: 1.2, blinkSpeed: 1.05 },
   { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
@@ -12909,7 +12972,6 @@ function updateRatRoomScene(deltaTime) {
   // equivalent height-above-ground for the landing check
   ratRoomHighShelves.forEach(shelf => {
     if (shelf.tier > 0 && !shelf.unlocked) return;
-    if (!lampLit) return;
     const shelfTop = gy - shelf.y;
     const playerBottom = player.y;
     if (
