@@ -665,7 +665,25 @@ function rectEdgeIntersection(cx, cy, halfW, halfH, dirX, dirY) {
 // drifts out of sync with discoveredScenes/currentScene
 function updateMapUI() {
   if (!mapEl) return;
-  mapEl.innerHTML = "";
+  // burnt-paper edges -- jagged, choppy charred-dark-brown shapes
+  // around the border, plus a few crinkle-fold lines across the
+  // interior, injected directly here (rather than as a CSS
+  // background-image, which may not have been rendering reliably)
+  // so it's guaranteed present on every single refresh
+  mapEl.innerHTML = `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible" viewBox="0 0 400 260" preserveAspectRatio="none">
+    <path d="M0,0 L38,0 L30,9 L48,14 L36,22 L52,30 L28,34 L0,34 Z" fill="#2a180a" opacity="0.55"/>
+    <path d="M400,0 L360,0 L370,10 L350,16 L368,26 L346,32 L400,32 Z" fill="#2a180a" opacity="0.55"/>
+    <path d="M0,260 L0,222 L14,230 L8,214 L26,224 L20,206 L44,222 L0,222 Z" fill="#2a180a" opacity="0.55"/>
+    <path d="M400,260 L400,220 L382,230 L392,212 L370,222 L378,204 L400,220 Z" fill="#2a180a" opacity="0.55"/>
+    <path d="M150,0 L172,0 L164,7 L180,11 L158,15 L150,0" fill="#2a180a" opacity="0.4"/>
+    <path d="M0,120 L0,140 L10,132 L4,148 L0,140" fill="#2a180a" opacity="0.4"/>
+    <path d="M400,110 L400,132 L390,122 L396,140 L400,132" fill="#2a180a" opacity="0.4"/>
+    <g stroke="rgba(60,40,20,0.25)" stroke-width="1" fill="none">
+      <path d="M60,40 Q90,55 70,80 Q100,95 85,120"/>
+      <path d="M320,50 Q290,70 310,95"/>
+      <path d="M180,200 Q210,190 195,170 Q225,165 210,145"/>
+    </g>
+  </svg>`;
 
   const NODE_W = 120, NODE_H = 60; // matches .map-node's CSS dimensions
 
@@ -728,20 +746,6 @@ function updateMapUI() {
 // don't overlap — done here in JS rather than editing index.html's CSS
 if (mapEl) {
   mapEl.style.marginTop = "70px";
-
-  // faded decorative background -- a few tree outlines and a wiggly
-  // trail line, via CSS background-image since it's a child-independent
-  // property and survives updateMapUI's innerHTML clears on every refresh
-  const mapDecorSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='260' viewBox='0 0 400 260'>
-    <g stroke='rgba(120,140,100,0.18)' stroke-width='2' fill='none'>
-      <path d='M300,230 L300,190 M285,200 Q300,165 315,200 Q300,180 285,200' />
-      <path d='M340,240 L340,200 M328,208 Q340,178 352,208 Q340,190 328,208' />
-      <path d='M20,230 L20,195 M8,202 Q20,170 32,202 Q20,185 8,202' />
-    </g>
-    <path d='M60,20 Q90,60 70,100 Q50,140 90,170 Q120,190 100,230' stroke='rgba(180,160,110,0.14)' stroke-width='1.5' fill='none' stroke-dasharray='3,4' />
-  </svg>`;
-  mapEl.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(mapDecorSvg)}")`;
-  mapEl.style.backgroundRepeat = "no-repeat";
 }
 
 updateMapUI(); // populate once at load, so autumn shows up immediately
@@ -9324,10 +9328,24 @@ function drawTeaNook(camX) {
     ctx.fill();
   });
 
-  // red ornate kettle, right-middle of the table -- shrunk down
+  // red ornate kettle, right-middle of the table -- shrunk down.
+  // During pouring the owl actually lifts and tilts it rather than it
+  // staying fixed on the table -- first half of the pour is the wing
+  // reaching to grab the handle, second half is the lift-and-pour itself.
+  const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
+  const grabP = Math.min(1, pourWingLift / 0.45);
+  const liftP = Math.max(0, (pourWingLift - 0.45) / 0.55);
+  const kettleLiftX = -liftP * 6, kettleLiftY = -liftP * 10;
+  const kettleTiltAngle = -liftP * 0.55;
   const kx = tx + 14, ky = tableTop + 2;
   ctx.save();
+  ctx.translate(kettleLiftX, kettleLiftY);
   ctx.translate(kx, ky);
+  ctx.rotate(kettleTiltAngle);
+  ctx.translate(-kx, -ky);
+  ctx.translate(kx, ky);
+  ctx.scale(0.85, 0.85);
+  ctx.translate(-kx, -ky);
   ctx.scale(0.85, 0.85);
   ctx.translate(-kx, -ky);
   ctx.fillStyle = "#a8342a";
@@ -9352,10 +9370,10 @@ function drawTeaNook(camX) {
   ctx.moveTo(kx + 10, ky - 2);
   ctx.quadraticCurveTo(kx + 17, ky - 2, kx + 15, ky + 5);
   ctx.stroke();
-  const spoutTiltActive = teaAnim.phase === "pouring";
+  const spoutOwnTilt = -0.15 - liftP * 0.35;
   ctx.save();
   ctx.translate(kx - 9, ky - 1);
-  ctx.rotate(spoutTiltActive ? -0.5 : -0.15);
+  ctx.rotate(spoutOwnTilt);
   ctx.strokeStyle = "#7a1f18"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 3); ctx.stroke();
   ctx.restore();
@@ -9366,7 +9384,6 @@ function drawTeaNook(camX) {
   // Wings animate with the pour and the cup-giving beats.
   const oxBase = tx - 8, oy = tableTop - 22;
   const ox = oxBase + babyOwl.idleShift;
-  const pourWingLift = teaAnim.phase === "pouring" ? Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) : 0;
   const giveWingLift = teaAnim.phase === "sipping" ? Math.sin(Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping) * Math.PI) : 0;
   const leanY = pourWingLift * 20; // leans down toward the table while pouring, since it stands well back at floor level
   const leanX = pourWingLift * 15; // also shifts right toward the kettle, to actually reach it with its right wing
@@ -9394,19 +9411,28 @@ function drawTeaNook(camX) {
   // wings -- right wing stretches and rotates to actually reach the
   // kettle's handle while pouring, as one continuous shape rather than
   // a fixed-size ellipse plus a separate connecting line
-  const handleLocalX = (kx - (ox + leanX) + 10) / 1.3, handleLocalY = (ky - (oy + leanY) - 2) / 1.3;
+  // handle's actual transformed position -- the kettle now lifts and
+  // tilts as a whole during the pour, so the handle moves with it;
+  // computed here by applying the same scale/rotate/lift chain the
+  // kettle itself uses, rather than assuming a fixed spot
+  const handleRelX = 14.75, handleRelY = -0.25; // bezier midpoint of the handle curve, relative to kx,ky
+  const hScaledX = handleRelX * 0.85, hScaledY = handleRelY * 0.85;
+  const hRotX = hScaledX * Math.cos(kettleTiltAngle) - hScaledY * Math.sin(kettleTiltAngle);
+  const hRotY = hScaledX * Math.sin(kettleTiltAngle) + hScaledY * Math.cos(kettleTiltAngle);
+  const handleWorldX = kx + hRotX + kettleLiftX, handleWorldY = ky + hRotY + kettleLiftY;
+  const handleLocalX = (handleWorldX - (ox + leanX)) / 1.3, handleLocalY = (handleWorldY - (oy + leanY)) / 1.3;
   const pivotX = 7, pivotY = 2;
   const toHandleDist = Math.hypot(handleLocalX - pivotX, handleLocalY - pivotY);
   const toHandleAngle = Math.atan2(handleLocalY - pivotY, handleLocalX - pivotX);
   const restAngle = -0.3 - Math.PI / 2; // wing's natural resting angle, in the same atan2 frame
-  const wingAngle = restAngle + (toHandleAngle - restAngle) * pourWingLift;
-  const wingLen = 8 + (toHandleDist - 8) * pourWingLift;
+  const wingAngle = restAngle + (toHandleAngle - restAngle) * grabP;
+  const wingLen = 8 + (toHandleDist - 8) * grabP;
   ctx.fillStyle = "#584428";
   ctx.save();
   ctx.translate(pivotX, pivotY);
   ctx.rotate(wingAngle + Math.PI / 2);
   ctx.beginPath();
-  ctx.ellipse(0, -wingLen * 0.5 + 4, 4, wingLen * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -wingLen * 0.5 + 4, 4.5, wingLen * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
   ctx.save();
@@ -9496,6 +9522,20 @@ function drawTeaNook(camX) {
 
   // baby owl's own cup -- always held, not resting on anything, which
   // reinforces the tea moment even when the kettle isn't the focus
+  // a curved band matching the arch's own top curvature and fill,
+  // drawn after the owl so it dips down and covers the very top of
+  // its head slightly -- suggests the owl is genuinely tucked back
+  // into the recess rather than floating in front of a flat wall
+  ctx.fillStyle = "#241608";
+  ctx.beginPath();
+  ctx.moveTo(tx - archR, springY - 30);
+  ctx.lineTo(tx - archR, springY);
+  ctx.arc(tx, springY, archR, Math.PI, Math.PI * 2, true);
+  ctx.lineTo(tx + archR, springY - 30);
+  ctx.quadraticCurveTo(tx, springY - 22, tx - archR, springY - 30);
+  ctx.closePath();
+  ctx.fill();
+
   const ownCupBob = babyOwl.sipping > 0 ? Math.sin(Math.min(1, babyOwl.sipping) * Math.PI) * 5 : 0;
   ctx.fillStyle = "#e8ddc0";
   ctx.beginPath();
@@ -9523,14 +9563,25 @@ function drawTeaPlayerCup(tx, tableTop) {
   }
   // pouring stream, from the kettle spout's actual current tip
   // (computed from its real rotation) down into the cup, wavy and
-  // animated with traveling droplets for a genuine pour feel
-  if (teaAnim.phase === "pouring") {
+  // animated with traveling droplets for a genuine pour feel -- only
+  // once the kettle is actually tilted, not during the earlier reach
+  if (teaAnim.phase === "pouring" && Math.max(0, (Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring) - 0.45) / 0.55) > 0.05) {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.pouring);
     const kx = tx + 14, ky = tableTop + 2;
-    const spoutPivotX = kx - 9, spoutPivotY = ky - 1;
-    const spoutAngle = -0.5;
-    const spoutTipX = spoutPivotX - 8 * Math.cos(spoutAngle) - 3 * Math.sin(spoutAngle);
-    const spoutTipY = spoutPivotY - 8 * Math.sin(spoutAngle) + 3 * Math.cos(spoutAngle);
+    const grabP2 = Math.min(1, p / 0.45);
+    const liftP2 = Math.max(0, (p - 0.45) / 0.55);
+    const kettleLiftX2 = -liftP2 * 6, kettleLiftY2 = -liftP2 * 10;
+    const kettleTiltAngle2 = -liftP2 * 0.55;
+    const spoutOwnTilt2 = -0.15 - liftP2 * 0.35;
+    // spout pivot and tip in untransformed kettle-local space, then
+    // through the same scale/rotate/lift chain the kettle itself uses
+    const pivotRelX = -9 * 0.85, pivotRelY = -1 * 0.85;
+    const tipLocalX = -8 * Math.cos(spoutOwnTilt2) - 3 * Math.sin(spoutOwnTilt2);
+    const tipLocalY = -8 * Math.sin(spoutOwnTilt2) + 3 * Math.cos(spoutOwnTilt2);
+    const tipRelX = pivotRelX + tipLocalX * 0.85, tipRelY = pivotRelY + tipLocalY * 0.85;
+    const tipRotX = tipRelX * Math.cos(kettleTiltAngle2) - tipRelY * Math.sin(kettleTiltAngle2);
+    const tipRotY = tipRelX * Math.sin(kettleTiltAngle2) + tipRelY * Math.cos(kettleTiltAngle2);
+    const spoutTipX = kx + tipRotX + kettleLiftX2, spoutTipY = ky + tipRotY + kettleLiftY2;
     const streamEndX = cupX, streamEndY = cupY - 6 + (1 - p) * 6;
     const wob = Math.sin(performance.now() * 0.02) * 1.2;
     ctx.strokeStyle = "rgba(120,74,32,0.75)"; ctx.lineWidth = 1.3;
@@ -9601,9 +9652,9 @@ function updateTeaNook(deltaTime) {
     babyOwl.idleT = 0;
     babyOwl.idleNextAt = 3000 + Math.random() * 4000;
   }
-  if (babyOwl.idleShiftT < 400) {
+  if (babyOwl.idleShiftT < 900) {
     babyOwl.idleShiftT += dtMs;
-    const p = Math.min(1, babyOwl.idleShiftT / 400);
+    const p = Math.min(1, babyOwl.idleShiftT / 900);
     babyOwl.idleShift = Math.sin(p * Math.PI) * 3;
   } else {
     babyOwl.idleShift = 0;
@@ -11719,17 +11770,24 @@ function drawPressedLeaf(camX) {
 const ratRoomHighShelves = [
   // left cluster -- leads up to the spider. Every shelf, including
   // this first one, is lamp-gated -- none are visible in the dark at
-  // all, matching the room's established light-reveals-everything pattern
-  { x: 170, y: 95, w: 32, tier: 0, cluster: "left" },
-  { x: 170, y: 55, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's shelf
+  // all, matching the room's established light-reveals-everything
+  // pattern. Heights recomputed -- the previous values put every
+  // shelf 200+ units above ground while the lamp's radius is only 90,
+  // meaning the lamp could never physically reach any of them from
+  // anywhere a player could actually stand, including tier 0 from the
+  // ground itself. ~45-unit spacing between tiers now, comfortably
+  // within both the lamp radius and a real jump (the stairs, known to
+  // work, use ~34-unit steps).
+  { x: 170, y: 255, w: 32, tier: 0, cluster: "left" },
+  { x: 170, y: 210, w: 30, tier: 1, cluster: "left", unlocked: false }, // spider's shelf
   // right cluster -- ground shelf, then two middle shelves revealed
   // from it, then the snake's own shelf revealed from those, then the
   // marble one tier beyond that
-  { x: 1000, y: 100, w: 32, tier: 0, cluster: "right" },
-  { x: 1050, y: 68, w: 30, tier: 1, cluster: "right", unlocked: false },
-  { x: 1100, y: 78, w: 30, tier: 1, cluster: "right", unlocked: false },
-  { x: 1130, y: 50, w: 30, tier: 2, cluster: "right", unlocked: false }, // snake's shelf
-  { x: 1210, y: 65, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
+  { x: 1000, y: 255, w: 32, tier: 0, cluster: "right" },
+  { x: 1040, y: 210, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1075, y: 210, w: 30, tier: 1, cluster: "right", unlocked: false },
+  { x: 1130, y: 165, w: 30, tier: 2, cluster: "right", unlocked: false }, // snake's shelf
+  { x: 1190, y: 120, w: 30, tier: 3, cluster: "right", unlocked: false } // marble, one tier further up
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -11771,7 +11829,7 @@ function drawRatRoomHighShelf(camX) {
 // with the lamp lit, same discovery pattern as everything else here.
 // The shelf itself is always visible from ground, so it invites the
 // jump on its own; the spider is the payoff for actually taking it.
-const spiderSpot = { x: 170, y: 48 };
+const spiderSpot = { x: 170, y: 203 };
 const spiderState = { legDanceT: 0, legDanceNextAt: 4000 + Math.random() * 5000, legDancing: 0 };
 function drawSpider(camX) {
   if (!lampLit) return;
@@ -11862,7 +11920,7 @@ function updateSpider(deltaTime) {
 // blind timer regardless of whether anyone's there. Greeting and the
 // reveal of what it's hoarding are one slow combined beat, not two
 // separate triggers.
-const snakeSpot = { x: 1130, y: 42 };
+const snakeSpot = { x: 1130, y: 157 };
 const snakeState = { tailWaveT: 0 };
 const snakeDialogue = { active: false, index: 0 };
 const snakeLines = [
@@ -11938,7 +11996,7 @@ function updateSnake(deltaTime) {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1210, y: 55, collected: false };
+const marbleSpot = { x: 1190, y: 110, collected: false };
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -12282,6 +12340,7 @@ const nestFabricScraps = [
   { dx: -18, dy: -2, w: 16, color: "#5a5450", rot: 0.4 },
   { dx: -6, dy: -1, w: 13, color: "#4a5058", rot: -0.3 },
   { dx: 30, dy: 2, w: 15, color: "#6a5848", rot: 0.6 },
+  { dx: 55, dy: -1, w: 14, color: "#6a2812", rot: 0.15 }, // deep rusty red, sampled from the actual cheese art image's most saturated red tone
   // strays, scattered further into the hay
   { dx: -160, dy: 0, w: 14, color: "#5a5450", rot: -0.5 },
   { dx: 220, dy: 3, w: 15, color: "#4a5058", rot: 0.2 },
@@ -12342,40 +12401,39 @@ function drawRatRoomFeather(camX) {
   // reduced from a steep angle that read as too deliberately posed
   drawFeatherShape(ctx, fx, fy, 9, 0.2);
 
-  // string wrapped around it -- messy and tangled, not a clean spiral:
-  // irregular loops at varying angles and sizes, some crossing over
-  // each other, that progressively fall away during the unravel
+  // string -- thin, loose, mostly-horizontal strands rather than
+  // neat wound loops, since real string just tossed on wouldn't form
+  // tidy shapes at all
   const unravelP = featherUnravelAnim.active ? Math.min(1, featherUnravelAnim.t / FEATHER_UNRAVEL_MS) : 0;
   const loopCount = 4;
   ctx.strokeStyle = "rgba(210,195,160,0.85)";
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 0.55;
   for (let i = 0; i < loopCount; i++) {
     const loopUnravelStart = i / loopCount;
-    if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this loop has fully fallen away
-    const loopP = Math.max(0, (unravelP - loopUnravelStart) * loopCount); // 0 to 1 for this specific loop's own unwind
+    if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this strand has fully fallen away
+    const loopP = Math.max(0, (unravelP - loopUnravelStart) * loopCount); // 0 to 1 for this specific strand's own unwind
     const seed = i * 17 + 5;
-    const loopY = fy - 7 + i * 4.5 + ((seed * 3) % 5) - 2; // irregular vertical spacing, not evenly stepped
-    const loopAngle = ((seed * 7) % 60 - 30) / 100; // varied tilt per loop, not all parallel
-    const loopRx = 5 + ((seed * 11) % 4); // varied size per loop
-    const loopRy = 0.9 + ((seed * 5) % 3) * 0.25;
+    const loopY = fy - 6 + i * 4 + ((seed * 3) % 5) - 2; // irregular vertical spacing, not evenly stepped
+    const loopAngle = ((seed * 7) % 30 - 15) / 100; // small tilt range -- stays mostly horizontal rather than varied angles
+    const loopRx = 6 + ((seed * 11) % 5); // varied horizontal spread per strand
+    const loopRy = 0.4 + ((seed * 5) % 3) * 0.12; // quite flat
     const droop = loopP * 11 + Math.sin(loopP * 9 + seed) * loopP * 2.5; // irregular jitter on the way down, not a smooth linear drift
     const sideJitter = Math.sin(loopP * 7 + seed * 1.7) * loopP * 4;
     ctx.save();
     ctx.globalAlpha = 1 - loopP * 0.7;
     ctx.translate(fx + ((seed * 13) % 5) - 2 + loopP * 3 + sideJitter, loopY + droop);
     ctx.rotate(loopAngle + loopP * 0.5 + Math.sin(loopP * 11 + seed) * loopP * 0.4);
-    // irregular loop shape, not a clean ellipse -- a few uneven
-    // segments around the loop so it reads as actual wound string
+    // open, loose squiggly strand -- not a closed loop, so it reads as
+    // haphazardly tossed rather than deliberately wound
     ctx.beginPath();
-    const segs = 7;
+    const segs = 6;
     for (let s = 0; s <= segs; s++) {
-      const a = (s / segs) * Math.PI * 2;
-      const wobble = 1 + Math.sin(a * 2.3 + seed) * 0.25;
-      const px2 = Math.cos(a) * loopRx * wobble * (1 - loopP * 0.3);
-      const py2 = Math.sin(a) * loopRy * wobble;
+      const t = s / segs;
+      const wobble = Math.sin(t * Math.PI * 2.6 + seed) * loopRy;
+      const px2 = (t - 0.5) * loopRx * 2 * (1 - loopP * 0.3);
+      const py2 = wobble;
       if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
     }
-    ctx.closePath();
     ctx.stroke();
     ctx.restore();
   }
