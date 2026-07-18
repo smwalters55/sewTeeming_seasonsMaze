@@ -1026,19 +1026,6 @@ function drawSeasonTransition(ctx) {
       ctx.beginPath();
       ctx.arc(0, 2, 1.8, 0, Math.PI * 2);
       ctx.fill();
-      // whiskers, same as the real rat
-      ctx.strokeStyle = "rgba(230,230,230,0.6)";
-      ctx.lineWidth = 0.5;
-      [-1.5, 0, 1.5].forEach(dy => {
-        ctx.beginPath();
-        ctx.moveTo(1, 1 + dy * 0.5);
-        ctx.lineTo(9, dy);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-1, 1 + dy * 0.5);
-        ctx.lineTo(-9, dy);
-        ctx.stroke();
-      });
       // winking eye -- a genuine squint rather than the flat emoji-arc
       // curve: an asymmetric closed lid with a small crease above it
       // for real dimension, plus a smirk on the snout that wasn't
@@ -1059,6 +1046,20 @@ function drawSeasonTransition(ctx) {
       ctx.beginPath();
       ctx.arc(4.4, -1.4, 0.35, 0, Math.PI * 2);
       ctx.fill();
+      // whiskers, same as the real rat -- drawn after the eyes since
+      // they sit in front of them on the face
+      ctx.strokeStyle = "rgba(230,230,230,0.6)";
+      ctx.lineWidth = 0.5;
+      [-1.5, 0, 1.5].forEach(dy => {
+        ctx.beginPath();
+        ctx.moveTo(1, 1 + dy * 0.5);
+        ctx.lineTo(9, dy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-1, 1 + dy * 0.5);
+        ctx.lineTo(-9, dy);
+        ctx.stroke();
+      });
       // smirk -- genuinely asymmetric this time, corner clearly raised
       // on the winking side (left), not the roughly-symmetric curve
       // from before that peaked at dead center despite the comment
@@ -1523,8 +1524,9 @@ function handleInput(){
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
   if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted) {
-    if (keys.left) { player.x -= player.speed; player.facing = -1; }
-    if (keys.right) { player.x += player.speed; player.facing = 1; }
+    const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
+    if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
+    if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
 
     // CONFIRMED BUG FIX: aboutToMountSeesaw was excluding the entire
     // movement block above (left/right included), not just the jump —
@@ -1702,11 +1704,12 @@ function applyPhysics(){
     }
   }
 
-  // gravity -- much slower during the snake's knockback specifically,
-  // so that moment reads clearly as an intentional dramatic push
-  // rather than happening too fast to actually see
+  // gravity -- much slower during the snake's knockback, and even
+  // slower during the giant pile's scripted collapse fall, so both
+  // moments read as clearly intentional and dramatic rather than
+  // happening too fast to actually see
   player.y += player.vy;
-  player.vy -= snakeState.hissing > 0 ? 0.22 : 0.8;
+  player.vy -= giantPileCollapse.phase === "falling" ? 0.12 : (snakeState.hissing > 0 ? 0.22 : 0.8);
 
   // ground collision
   if (player.y <= 0) {
@@ -4854,11 +4857,11 @@ const joshuaTreeSpot = { x: 1280 };
 // from the clean stacks in the oak scene: duller palette, torn page
 // edges instead of clean rectangles, a couple of loose pages fallen
 // nearby
-const raggedPileSpot = { x: 870 };
+const raggedPileSpot = { x: 1000 };
 const raggedPileColors = ["#5a4a3a", "#4a4238", "#6a5648", "#544840"];
 function drawRaggedBookPile(camX) {
   const px = raggedPileSpot.x - camX, py = gy;
-  const count = 7;
+  const count = 9;
   let dy = 0;
   for (let i = 0; i < count; i++) {
     const w = 24 + ((i * 7) % 10);
@@ -9278,32 +9281,84 @@ const bookPiles = [
   { x: 912, seed: 31, count: 12, heightAboveGround: 66 }, // much taller than the others
   { x: 1147, seed: 13, count: 2, heightAboveGround: 16 }, // moved off the door, now between the right shelf and the nook
   { x: 1259, seed: 17, count: 5, heightAboveGround: 34 }, // new -- fills the gap before the nook, more hop opportunities
-  { x: 3000, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
-  { x: 3100, seed: 74, count: 13, heightAboveGround: 80 },
-  { x: 3170, seed: 81, count: 7, heightAboveGround: 30 },
-  { x: 3278, seed: 88, count: 11, heightAboveGround: 55 },
-  { x: 3390, seed: 95, count: 13, heightAboveGround: 78 },
-  { x: 3458, seed: 102, count: 7, heightAboveGround: 28 },
-  { x: 3566, seed: 109, count: 12, heightAboveGround: 60 },
-  { x: 3678, seed: 116, count: 13, heightAboveGround: 80 },
-  { x: 3840, seed: 123, count: 44, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
-  { x: 3908, seed: 130, count: 29, heightAboveGround: 145 },
-  { x: 3982, seed: 137, count: 17, heightAboveGround: 100 },
-  { x: 4050, seed: 144, count: 17, heightAboveGround: 70 },
-  { x: 4113, seed: 151, count: 10, heightAboveGround: 50 }, // medium/high only from here on, no more lows
-  { x: 4221, seed: 158, count: 13, heightAboveGround: 80 },
-  { x: 4271, seed: 165, count: 14, heightAboveGround: 55 },
-  { x: 4379, seed: 172, count: 16, heightAboveGround: 80 },
-  { x: 4426, seed: 179, count: 10, heightAboveGround: 60 },
-  { x: 4538, seed: 186, count: 19, heightAboveGround: 78 },
-  { x: 4650, seed: 193, count: 18, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
-  { x: 4758, seed: 200, count: 20, heightAboveGround: 120 },
-  { x: 4866, seed: 207, count: 37, heightAboveGround: 150 },
-  { x: 4974, seed: 214, count: 36, heightAboveGround: 180 },
-  { x: 5082, seed: 221, count: 35, heightAboveGround: 210 },
-  { x: 5190, seed: 228, count: 59, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
+  { isJumpRun: true, x: 3000, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
+  { isJumpRun: true, x: 3100, seed: 74, count: 13, heightAboveGround: 80 },
+  { isJumpRun: true, x: 3170, seed: 81, count: 7, heightAboveGround: 30 },
+  { isJumpRun: true, x: 3278, seed: 88, count: 11, heightAboveGround: 55 },
+  { isJumpRun: true, x: 3390, seed: 95, count: 13, heightAboveGround: 78 },
+  { isJumpRun: true, x: 3458, seed: 102, count: 7, heightAboveGround: 28 },
+  { isJumpRun: true, x: 3566, seed: 109, count: 12, heightAboveGround: 60 },
+  { isJumpRun: true, x: 3678, seed: 116, count: 13, heightAboveGround: 80 },
+  { isJumpRun: true, x: 3840, seed: 123, count: 44, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
+  { isJumpRun: true, x: 3908, seed: 130, count: 29, heightAboveGround: 145 },
+  { isJumpRun: true, x: 3982, seed: 137, count: 17, heightAboveGround: 100 },
+  { isJumpRun: true, x: 4050, seed: 144, count: 17, heightAboveGround: 70 },
+  { isJumpRun: true, x: 4113, seed: 151, count: 10, heightAboveGround: 50 }, // medium/high only from here on, no more lows
+  { isJumpRun: true, x: 4221, seed: 158, count: 13, heightAboveGround: 80 },
+  { isJumpRun: true, x: 4271, seed: 165, count: 14, heightAboveGround: 55 },
+  { isJumpRun: true, x: 4379, seed: 172, count: 16, heightAboveGround: 80 },
+  { isJumpRun: true, x: 4426, seed: 179, count: 10, heightAboveGround: 60 },
+  { isJumpRun: true, x: 4538, seed: 186, count: 19, heightAboveGround: 78 },
+  { isJumpRun: true, x: 4650, seed: 193, count: 18, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
+  { isJumpRun: true, x: 4758, seed: 200, count: 20, heightAboveGround: 120 },
+  { isJumpRun: true, x: 4866, seed: 207, count: 37, heightAboveGround: 150 },
+  { isJumpRun: true, x: 4974, seed: 214, count: 36, heightAboveGround: 180 },
+  { isJumpRun: true, x: 5082, seed: 221, count: 35, heightAboveGround: 210 },
+  { isJumpRun: true, x: 5190, seed: 228, count: 59, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
 ];
 const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but not so wide that adjacent piles in a dense sequence intercept each other's jumps
+
+// fall punishment for the book-pile jump run -- landing back at ground
+// level after having been on a pile triggers a brief woozy stun, plus
+// (only the first time for a given pile) a scatter-then-rebuild
+// animation that leaves the pile permanently looking a little messier
+// afterward. Later falls from the same pile are just the stun, since
+// the pile's already settled into its messy look.
+const pileFallState = {}; // keyed by pile.x -- { everFallen, scattering, scatterT, messy }
+const PILE_SCATTER_MS = 1000;
+const WOOZY_MS = 1300;
+let playerWoozyT = 0;
+let playerWasFalling = false; // tracks vy<0 across frames to detect the actual landing moment, not just "currently on ground"
+
+function getPileFallState(pileX) {
+  if (!pileFallState[pileX]) pileFallState[pileX] = { everFallen: false, scattering: false, scatterT: 0, messy: false };
+  return pileFallState[pileX];
+}
+
+function updateBookPileFalls(deltaTime) {
+  const dtMs = deltaTime * 1000;
+
+  // detect the actual landing moment: was falling last frame, now at
+  // ground level, and remembers a pile they were on before this fall
+  if (currentScene === "oak") {
+    if (playerWasFalling && player.y <= 0 && player.lastPileX !== null && player.lastPileX !== undefined) {
+      const state = getPileFallState(player.lastPileX);
+      playerWoozyT = WOOZY_MS;
+      if (!state.everFallen) {
+        state.everFallen = true;
+        state.scattering = true;
+        state.scatterT = 0;
+        state.messy = true; // permanent cosmetic tell, set the moment the first fall happens
+      }
+      player.lastPileX = null;
+    }
+  }
+  playerWasFalling = player.vy < 0;
+
+  if (playerWoozyT > 0) playerWoozyT = Math.max(0, playerWoozyT - dtMs);
+
+  // advance any pile currently mid-scatter back toward settled
+  Object.keys(pileFallState).forEach(key => {
+    const state = pileFallState[key];
+    if (state.scattering) {
+      state.scatterT += dtMs;
+      if (state.scatterT >= PILE_SCATTER_MS) {
+        state.scattering = false;
+      }
+    }
+  });
+}
+
 const pileColors = ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f", "#7a4a2f", "#5a3a5a", "#2f5a6a"];
 
 // a book pile spread across the floor -- low, wide, several separate
@@ -10793,16 +10848,66 @@ function drawOakScene(camX) {
   // genuinely different colors, not perfectly stacked uniform rectangles.
   // Scattered at several spots around the room, each pile shaped
   // differently via its own seed rather than being identical copies.
-  function drawBookPile(baseX, baseY, seed, count) {
+  function drawBookPile(baseX, baseY, seed, count, fallKey) {
+    // giant pile wobble -- shakes with increasing amplitude as the
+    // collapse sequence builds toward the actual fall. Slow, heavy
+    // oscillation with both positional shake and rotational sway,
+    // not a fast shiver.
+    let wobbleOffsetX = 0;
+    let wobbleRot = 0;
+    if (fallKey === GIANT_PILE_X && giantPileCollapse.phase === "wobble") {
+      const wobbleP = Math.min(1, giantPileCollapse.t / COLLAPSE_WOBBLE_MS);
+      const amplitude = 2 + wobbleP * 14; // builds from a small shiver to a real, heavy sway
+      wobbleOffsetX = Math.sin(performance.now() * 0.008) * amplitude;
+      wobbleRot = Math.sin(performance.now() * 0.006 + 1) * 0.06 * wobbleP;
+    }
+    const fallState = fallKey !== undefined ? pileFallState[fallKey] : null;
+    if (fallState && fallState.scattering) {
+      // mid-scatter: books tumble outward, then ease back toward their
+      // normal stacked positions as scatterT approaches PILE_SCATTER_MS
+      const settleP = Math.min(1, fallState.scatterT / PILE_SCATTER_MS); // 0 = fully scattered, 1 = settled
+      const eased = settleP * settleP * (3 - 2 * settleP); // smoothstep
+      let dy = 0;
+      for (let i = 0; i < count; i++) {
+        const isLong = (seed + i * 7) % 5 === 0;
+        const w = isLong ? 42 + ((seed + i * 3) % 10) : 20 + ((seed + i * 5) % 10);
+        const h = 4 + ((seed + i * 3) % 3);
+        const stackedRot = (((seed + i * 7) % 36) - 18) / 60;
+        const stackedDx = (((seed + i * 4) % 6) - 3);
+        // scattered target: flung outward and rotated much further
+        const flingDir = i % 2 === 0 ? 1 : -1;
+        const scatterDx = flingDir * (18 + (i * 9) % 22);
+        const scatterDyOffset = -((i * 13) % 10);
+        const scatterRot = flingDir * (0.8 + (i * 0.3) % 1.2);
+        const dx = scatterDx + (stackedDx - scatterDx) * eased;
+        const dyThis = dy + scatterDyOffset * (1 - eased);
+        const rot = scatterRot + (stackedRot - scatterRot) * eased;
+        ctx.save();
+        ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dyThis);
+        ctx.rotate(rot);
+        ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
+        ctx.fillRect(-w / 2, -h, w, h);
+        ctx.strokeStyle = "rgba(0,0,0,0.25)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-w / 2, -h, w, h);
+        ctx.restore();
+        dy += h;
+      }
+      return;
+    }
+    // messy permanent look, once this pile has ever fallen from --
+    // wider jitter than the normal neat stack, suggesting it never
+    // got put back together quite right
+    const messy = fallState && fallState.messy;
     let dy = 0;
     for (let i = 0; i < count; i++) {
       const isLong = (seed + i * 7) % 5 === 0; // some books noticeably longer, matching the shelf's horizontal-stack book width
       const w = isLong ? 42 + ((seed + i * 3) % 10) : 20 + ((seed + i * 5) % 10);
       const h = 4 + ((seed + i * 3) % 3);
-      const rot = (((seed + i * 7) % 36) - 18) / 60;
-      const dx = (((seed + i * 4) % 6) - 3);
+      const rot = (((seed + i * 7) % 36) - 18) / (messy ? 32 : 60) + wobbleRot;
+      const dx = (((seed + i * 4) % 6) - 3) * (messy ? 1.8 : 1);
       ctx.save();
-      ctx.translate(baseX - camX + dx, baseY - dy);
+      ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dy);
       ctx.rotate(rot);
       ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
       ctx.fillRect(-w / 2, -h, w, h);
@@ -10814,8 +10919,9 @@ function drawOakScene(camX) {
     }
   }
   // drawn from the shared bookPiles array (also used for collision below)
-  bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count));
+  bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count, pile.x));
   drawPaperAirplane(camX);
+  drawScatteredBooksField(camX);
   bookSpreads.forEach(spread => drawBookSpread(spread, camX));
 
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
@@ -11196,6 +11302,7 @@ function updateOakScene(deltaTime) {
   // (like the medium shelf), so landing was a coin flip depending on
   // exact frame timing -- widened with real margin.
   bookPiles.forEach(pile => {
+    if (pile.collapsed) return; // mid-collapse -- no collision, player falls straight through
     const pileTop = pile.heightAboveGround;
     const playerBottom = player.y;
     if (
@@ -11209,9 +11316,16 @@ function updateOakScene(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      if (pile.isJumpRun) {
+        player.lastPileX = pile.x; // remembers which pile to blame if they later fall to ground
+      } else {
+        player.lastPileX = null; // landing on a decorative pile clears any stale jump-run reference
+      }
     }
   });
   updatePaperAirplane();
+  updateBookPileFalls(deltaTime);
+  updateGiantPileCollapse(deltaTime);
 
   // book spread collision — wide and low, same landing pattern
   bookSpreads.forEach(spread => {
@@ -12585,6 +12699,10 @@ function drawRatRoomHighShelf(camX) {
     if (!lampLit) return;
     const dist = Math.hypot(sx - playerScreenX, sy - (gy - player.y));
     if (dist > LAMP_LIGHT_RADIUS) return;
+    if (shelf.id === "right0") {
+      drawRaggedBookPile(camX);
+      return;
+    }
     ctx.fillStyle = "#4a3018";
     ctx.fillRect(sx - w / 2, sy, w, 5);
     // wood-grain streaks, varying shade, for a genuinely wood-like
@@ -12988,6 +13106,85 @@ function drawPaperAirplane(camX) {
   ctx.stroke();
   ctx.restore();
 }
+// giant pile collapse -- a one-time scripted sequence triggered by
+// picking up the paper airplane. Beat, then wobble, then the whole
+// pile drops out from under the player and they fall together with
+// it, landing on a permanently squat, collapsed version. Exempt from
+// the general fall-punishment system since this is a reward moment,
+// not a failure.
+const giantPileCollapse = { phase: "idle", t: 0 }; // idle -> beat -> wobble -> falling -> settled
+const GIANT_PILE_X = 5190;
+const COLLAPSE_BEAT_MS = 500;
+const COLLAPSE_WOBBLE_MS = 3200;
+const COLLAPSED_HEIGHT = 25;
+const scatteredBooksField = []; // permanent -- populated once when the giant pile settles, never re-piled
+function generateScatteredBooksField(centerX) {
+  const bookCount = 36;
+  for (let i = 0; i < bookCount; i++) {
+    const spread = 170; // wide spread across the ground, not a tidy small pile
+    const ox = (Math.sin(i * 12.9898) * 43758.5453 % 1) * spread;
+    const oySeed = (Math.sin(i * 78.233 + 1) * 12345.6789 % 1);
+    const oy = Math.abs(oySeed) * 6; // slight vertical variation, mostly flat on the ground
+    const rotHash = Math.sin(i * 39.346 + 2) * 6543.21 % 1;
+    const rotBase = rotHash > 0 ? 0 : Math.PI; // lying flat, either right-side-up or upside-down -- not standing on its spine
+    const rot = rotBase + rotHash * 0.35; // small deviation for natural messiness, never far from horizontal
+    const isLong = i % 4 === 0;
+    const w = isLong ? 30 + (i % 10) : 16 + (i % 8);
+    const h = 5 + (i % 3);
+    scatteredBooksField.push({
+      x: centerX + ox,
+      y: oy,
+      rot,
+      w,
+      h,
+      color: pileColors[i % pileColors.length]
+    });
+  }
+}
+function drawScatteredBooksField(camX) {
+  scatteredBooksField.forEach(book => {
+    ctx.save();
+    ctx.translate(book.x - camX, gy - book.y);
+    ctx.rotate(book.rot);
+    ctx.fillStyle = book.color;
+    ctx.fillRect(-book.w / 2, -book.h / 2, book.w, book.h);
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-book.w / 2, -book.h / 2, book.w, book.h);
+    ctx.restore();
+  });
+}
+
+function startGiantPileCollapse() {
+  giantPileCollapse.phase = "beat";
+  giantPileCollapse.t = 0;
+  player.lastPileX = null; // scripted fall -- exempt from the fall-punishment system
+}
+
+function updateGiantPileCollapse(deltaTime) {
+  if (giantPileCollapse.phase === "idle") return;
+  const dtMs = deltaTime * 1000;
+  giantPileCollapse.t += dtMs;
+
+  if (giantPileCollapse.phase === "beat" && giantPileCollapse.t >= COLLAPSE_BEAT_MS) {
+    giantPileCollapse.phase = "wobble";
+    giantPileCollapse.t = 0;
+  } else if (giantPileCollapse.phase === "wobble" && giantPileCollapse.t >= COLLAPSE_WOBBLE_MS) {
+    giantPileCollapse.phase = "falling";
+    giantPileCollapse.t = 0;
+    const giantPile = bookPiles.find(p => p.x === GIANT_PILE_X);
+    if (giantPile) giantPile.collapsed = true; // collision drops out, real gravity takes over
+    player.lastPileX = null; // re-clear in case it got set again during the wobble
+  } else if (giantPileCollapse.phase === "falling" && player.y <= 0 && player.vy === 0) {
+    giantPileCollapse.phase = "settled";
+    const giantPileIdx = bookPiles.findIndex(p => p.x === GIANT_PILE_X);
+    if (giantPileIdx !== -1) {
+      generateScatteredBooksField(GIANT_PILE_X);
+      bookPiles.splice(giantPileIdx, 1); // no longer a climbable pile -- books are permanently scattered on the ground instead
+    }
+  }
+}
+
 function updatePaperAirplane() {
   if (paperAirplaneSpot.collected) return;
   if (keys.spaceJustPressed && isPlayerNear(paperAirplaneSpot.x, paperAirplaneSpot.y, 20, 18, 15)) {
@@ -12996,6 +13193,7 @@ function updatePaperAirplane() {
     touchInventoryOrder("paperAirplane");
     updateInventoryUI();
     startCollectAnimation({ x: paperAirplaneSpot.x, y: paperAirplaneSpot.y, size: 7, rotation: 0 }, "paperAirplane");
+    startGiantPileCollapse();
   }
 }
 
@@ -13087,7 +13285,6 @@ function drawRatRoomScene(camX) {
   drawSpider(camX);
   drawSnake(camX);
   drawJoshuaTree(camX);
-  drawRaggedBookPile(camX);
   drawFireflies(camX);
   drawDustMotes(camX);
   drawMoth(camX);
@@ -14206,6 +14403,16 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
   ctx.rect(px - 2, 0, player.width + 4, gy); // only the region above ground level is visible
   ctx.clip();
 
+  // woozy sway -- a gentle wobble on the body itself while stunned
+  // from a hard fall, nested inside the clip so the clip region
+  // itself stays axis-aligned and only the sprite tilts
+  ctx.save();
+  const swayAngle = playerWoozyT > 0 ? Math.sin(performance.now() * 0.012) * 0.12 * (playerWoozyT / WOOZY_MS) : 0;
+  const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
+  ctx.translate(swayCx, swayCy);
+  ctx.rotate(swayAngle);
+  ctx.translate(-swayCx, -swayCy);
+
   // body
   ctx.fillStyle = "#7a78b8";
   roundRect(ctx, px, drawPy, player.width, player.height, 8);
@@ -14229,7 +14436,8 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
   ctx.arc(px + 28, drawPy + 17, 1.5, 0, Math.PI*2);
   ctx.fill();
 
-  ctx.restore();
+  ctx.restore(); // closes the sway rotation
+  ctx.restore(); // closes the clip
 }
 
 drawCrown(camX);
