@@ -126,8 +126,8 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 400, // TEMPORARY — was 120, matched to oak's spawn point while actively working there
-  y: 0,               // height above ground
+  x: 5421, // TEMPORARY — placed at the top of the giant capstone pile (pre-paper-airplane) to test the collapse sequence directly
+  y: 235,               // height above ground
   width: 40,
   height: 54,
   speed: 3,
@@ -9265,27 +9265,27 @@ const bookPiles = [
   { isJumpRun: true, x: 3000, seed: 67, count: 5, heightAboveGround: 25 }, // scrambled jump run start -- deliberately mixed heights, no pattern
   { isJumpRun: true, x: 3100, seed: 74, count: 13, heightAboveGround: 80 },
   { isJumpRun: true, x: 3170, seed: 81, count: 7, heightAboveGround: 30 },
-  { isJumpRun: true, x: 3278, seed: 88, count: 11, heightAboveGround: 55 },
-  { isJumpRun: true, x: 3390, seed: 95, count: 13, heightAboveGround: 78 },
-  { isJumpRun: true, x: 3458, seed: 102, count: 7, heightAboveGround: 28 },
-  { isJumpRun: true, x: 3566, seed: 109, count: 12, heightAboveGround: 60 },
-  { isJumpRun: true, x: 3678, seed: 116, count: 13, heightAboveGround: 80 },
-  { isJumpRun: true, x: 3840, seed: 123, count: 44, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
-  { isJumpRun: true, x: 3908, seed: 130, count: 29, heightAboveGround: 145 },
-  { isJumpRun: true, x: 3982, seed: 137, count: 17, heightAboveGround: 100 },
-  { isJumpRun: true, x: 4050, seed: 144, count: 17, heightAboveGround: 70 },
-  { isJumpRun: true, x: 4113, seed: 151, count: 10, heightAboveGround: 50 }, // medium/high only from here on, no more lows
-  { isJumpRun: true, x: 4221, seed: 158, count: 13, heightAboveGround: 80 },
-  { isJumpRun: true, x: 4271, seed: 165, count: 14, heightAboveGround: 55 },
-  { isJumpRun: true, x: 4379, seed: 172, count: 16, heightAboveGround: 80 },
-  { isJumpRun: true, x: 4426, seed: 179, count: 10, heightAboveGround: 60 },
-  { isJumpRun: true, x: 4538, seed: 186, count: 19, heightAboveGround: 78 },
-  { isJumpRun: true, x: 4650, seed: 193, count: 18, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
-  { isJumpRun: true, x: 4758, seed: 200, count: 20, heightAboveGround: 120 },
-  { isJumpRun: true, x: 4866, seed: 207, count: 37, heightAboveGround: 150 },
-  { isJumpRun: true, x: 4974, seed: 214, count: 36, heightAboveGround: 180 },
-  { isJumpRun: true, x: 5082, seed: 221, count: 35, heightAboveGround: 210 },
-  { isJumpRun: true, x: 5190, seed: 228, count: 59, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
+  { isJumpRun: true, x: 3355, seed: 88, count: 11, heightAboveGround: 55 }, // second forced double jump -- wide horizontal gap at a modest height gain, not just a tall vertical one
+  { isJumpRun: true, x: 3467, seed: 95, count: 13, heightAboveGround: 78 },
+  { isJumpRun: true, x: 3535, seed: 102, count: 7, heightAboveGround: 28 },
+  { isJumpRun: true, x: 3643, seed: 109, count: 12, heightAboveGround: 60 },
+  { isJumpRun: true, x: 3755, seed: 116, count: 13, heightAboveGround: 80 },
+  { isJumpRun: true, x: 3917, seed: 123, count: 44, heightAboveGround: 175 }, // genuine double jump required here -- climbs well past single-jump range
+  { isJumpRun: true, x: 3985, seed: 130, count: 29, heightAboveGround: 145 },
+  { isJumpRun: true, x: 4059, seed: 137, count: 17, heightAboveGround: 100 },
+  { isJumpRun: true, x: 4127, seed: 144, count: 17, heightAboveGround: 70 },
+  { isJumpRun: true, x: 4190, seed: 151, count: 10, heightAboveGround: 50 }, // medium/high only from here on, no more lows
+  { isJumpRun: true, x: 4298, seed: 158, count: 13, heightAboveGround: 80 },
+  { isJumpRun: true, x: 4348, seed: 165, count: 14, heightAboveGround: 55 },
+  { isJumpRun: true, x: 4533, seed: 172, count: 16, heightAboveGround: 80 }, // third forced double jump, on the correct ascending transition this time
+  { isJumpRun: true, x: 4580, seed: 179, count: 10, heightAboveGround: 60 },
+  { isJumpRun: true, x: 4692, seed: 186, count: 19, heightAboveGround: 78 },
+  { isJumpRun: true, x: 4804, seed: 193, count: 18, heightAboveGround: 90 }, // capstone approach -- each pile taller than the last, leading to the giant final pile
+  { isJumpRun: true, x: 4912, seed: 200, count: 20, heightAboveGround: 120 },
+  { isJumpRun: true, x: 5097, seed: 207, count: 37, heightAboveGround: 150 }, // fourth forced double jump, in the capstone climb itself
+  { isJumpRun: true, x: 5205, seed: 214, count: 36, heightAboveGround: 180 },
+  { isJumpRun: true, x: 5313, seed: 221, count: 35, heightAboveGround: 210 },
+  { isJumpRun: true, x: 5421, seed: 228, count: 59, heightAboveGround: 235 } // the giant capstone pile -- paper airplane waits at the top
 ];
 const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but not so wide that adjacent piles in a dense sequence intercept each other's jumps
 
@@ -10832,14 +10832,17 @@ function drawOakScene(camX) {
   function drawBookPile(baseX, baseY, seed, count, fallKey) {
     // giant pile wobble -- shakes with increasing amplitude as the
     // collapse sequence builds toward the actual fall. Slow, heavy
-    // oscillation with both positional shake and rotational sway,
-    // not a fast shiver.
+    // oscillation with positional shake on both axes plus rotational
+    // sway, deliberately overdone for the whimsy rather than a
+    // realistic subtle tremor.
     let wobbleOffsetX = 0;
+    let wobbleOffsetY = 0;
     let wobbleRot = 0;
     if (fallKey === GIANT_PILE_X && giantPileCollapse.phase === "wobble") {
       const wobbleP = Math.min(1, giantPileCollapse.t / COLLAPSE_WOBBLE_MS);
       const amplitude = 2 + wobbleP * 14; // builds from a small shiver to a real, heavy sway
       wobbleOffsetX = Math.sin(performance.now() * 0.008) * amplitude;
+      wobbleOffsetY = Math.sin(performance.now() * 0.013 + 2.4) * amplitude * 0.7; // different frequency/phase than X, so it doesn't just slide side to side
       wobbleRot = Math.sin(performance.now() * 0.006 + 1) * 0.06 * wobbleP;
     }
     const fallState = fallKey !== undefined ? pileFallState[fallKey] : null;
@@ -10864,7 +10867,7 @@ function drawOakScene(camX) {
         const dyThis = dy + scatterDyOffset * (1 - eased);
         const rot = scatterRot + (stackedRot - scatterRot) * eased;
         ctx.save();
-        ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dyThis);
+        ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dyThis + wobbleOffsetY);
         ctx.rotate(rot);
         ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
         ctx.fillRect(-w / 2, -h, w, h);
@@ -10888,7 +10891,7 @@ function drawOakScene(camX) {
       const rot = (((seed + i * 7) % 36) - 18) / (messy ? 32 : 60) + wobbleRot;
       const dx = (((seed + i * 4) % 6) - 3) * (messy ? 1.8 : 1);
       ctx.save();
-      ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dy);
+      ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dy + wobbleOffsetY);
       ctx.rotate(rot);
       ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
       ctx.fillRect(-w / 2, -h, w, h);
@@ -13063,7 +13066,7 @@ function updateSnake(deltaTime) {
 
 // paper airplane -- the payoff waiting at the top of the giant capstone
 // book pile, after the whole long jump run
-const paperAirplaneSpot = { x: 5190, y: 240, collected: false };
+const paperAirplaneSpot = { x: 5421, y: 240, collected: false };
 function drawPaperAirplane(camX) {
   if (paperAirplaneSpot.collected) return;
   const ax0 = paperAirplaneSpot.x - camX, ay0 = gy - paperAirplaneSpot.y;
@@ -13098,7 +13101,7 @@ function drawPaperAirplane(camX) {
 // the general fall-punishment system since this is a reward moment,
 // not a failure.
 const giantPileCollapse = { phase: "idle", t: 0 }; // idle -> beat -> wobble -> falling -> settled
-const GIANT_PILE_X = 5190;
+const GIANT_PILE_X = 5421;
 const COLLAPSE_BEAT_MS = 500;
 const COLLAPSE_WOBBLE_MS = 3200;
 const COLLAPSED_HEIGHT = 25;
@@ -13135,7 +13138,7 @@ function generateScatteredBooksField(centerX) {
       startX: centerX + startDx,
       startY,
       startRot,
-      fallDelay: (i * 37) % 400 // staggers when each book starts falling, for a real cascade rather than everything dropping in lockstep
+      fallDelay: (i * 17) % 200 // staggers when each book starts falling, for a real cascade rather than everything dropping in lockstep -- kept modest so books don't sit visibly frozen for too long at the start
     });
   }
 }
@@ -13153,7 +13156,7 @@ function drawScatteredBooksField(camX) {
   });
 }
 
-const COLLAPSE_FALL_ESTIMATE_MS = 1700; // roughly how long the slow-motion fall actually takes, used to time each book's individual descent
+const COLLAPSE_FALL_ESTIMATE_MS = 950; // matches the actual measured fall duration (~1024ms) with a small safety margin, so books finish their own animation just before the player lands, not mid-fall
 function drawFallingBooks(camX) {
   scatteredBooksField.forEach(book => {
     const localT = giantPileCollapse.t - book.fallDelay;
