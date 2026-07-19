@@ -10888,10 +10888,16 @@ function drawOakScene(camX) {
       const isLong = (seed + i * 7) % 5 === 0; // some books noticeably longer, matching the shelf's horizontal-stack book width
       const w = isLong ? 42 + ((seed + i * 3) % 10) : 20 + ((seed + i * 5) % 10);
       const h = 4 + ((seed + i * 3) % 3);
-      const rot = (((seed + i * 7) % 36) - 18) / (messy ? 32 : 60) + wobbleRot;
+      // how far up the stack this book sits -- the bottom stays
+      // grounded while a wave of motion passes through toward the top,
+      // rather than the whole pile appearing to jump as one rigid unit
+      const heightP = Math.min(1, dy / 180);
+      const verticalScale = heightP; // bottom book: no vertical lift at all
+      const horizontalScale = 0.3 + heightP * 0.7; // bottom book still sways a little side to side, just less than the top
+      const rot = (((seed + i * 7) % 36) - 18) / (messy ? 32 : 60) + wobbleRot * horizontalScale;
       const dx = (((seed + i * 4) % 6) - 3) * (messy ? 1.8 : 1);
       ctx.save();
-      ctx.translate(baseX - camX + dx + wobbleOffsetX, baseY - dy + wobbleOffsetY);
+      ctx.translate(baseX - camX + dx + wobbleOffsetX * horizontalScale, baseY - dy + wobbleOffsetY * verticalScale);
       ctx.rotate(rot);
       ctx.fillStyle = pileColors[(seed + i * 2) % pileColors.length];
       ctx.fillRect(-w / 2, -h, w, h);
@@ -14980,6 +14986,7 @@ updateSeasonTransition(deltaTime);
 
   const targetCam = player.x - canvas.width*0.4;
   cameraX += (targetCam - cameraX)*0.08;
+  if (Math.abs(targetCam - cameraX) < 0.1) cameraX = targetCam; // snaps once negligibly close -- the easing formula alone never mathematically settles, causing a perpetual sub-pixel drift in everything drawn relative to the camera
   if (cameraX<0) cameraX=0;
   // ratroom's own right-side camera clamp, mirroring the left-side
   // pattern -- caps the camera a bit past where the hay ground cover
