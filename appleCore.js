@@ -3840,6 +3840,7 @@ ramps.forEach(r => {
 drawAppleTree(220, camX);
 drawTallOak(camX);
 drawVines(camX);
+drawHayBales(camX);
 drawAcorns(camX);
 drawHopAcorns(camX);
 drawVinePumpkin(camX);
@@ -4012,13 +4013,17 @@ ctx.stroke();
 if (frog.active && isPlayerNear(frog.x + frog.width / 2, 0, 70, 6, 999)) {
   const bubbleY = fy - 96; // ← lift bubble above hat
 
-  // dialogue SELECTION stays frog-specific (knows about apple.landed, etc.)
-  // — only the bubble rendering itself is shared
+  // welcome dialogue -- whimsical, not formal, gently foreshadows the
+  // boomerang the player is about to find just past the frog without
+  // naming it outright
   drawSpeechBubble(ctx, fx, bubbleY, [
-    apple.landed ? "Ah… it has chosen its place." : "The orchard listens.",
-    "What's freshly fallen opens new paths."
+    "Welcome to the autumn lands — not quite what they seem.",
+    "What you cast away may return, like the tail of a dream."
   ]);
 }
+
+drawCrow(camX);
+drawTreeCrow(camX);
 
 
 
@@ -4467,6 +4472,87 @@ const acorns = [
 
 const vinePumpkin = { x: 2641, heightAboveGround: 232, collected: false, collecting: false }; // genuinely requires the vine now — previous position (h:102) was comfortably within double-jump range (140.6), reachable by simply walking up and jumping, never checked against that. This one is safely beyond it (232), verified with a real generous margin: moderate-strong swing closest approach 0.4, weak swing closest approach 26.2
 
+// hay bales -- right of the spring door (x=3400), visible early as a
+// standing pile that blocks passage entirely. Once the player has
+// visited both oak and the ratden, the next time they're actually
+// looking at the bales (not off-screen), they topple over into a
+// climbable platform leading up toward the pumpkin carving area.
+const hayBales = {
+  x: 3480,
+  toppled: false,
+  toppling: false,
+  toppleT: 0
+};
+const HAY_BALE_STANDING_HEIGHT = 85; // tall enough to genuinely block passage, not just a bump
+const HAY_BALE_TOPPLED_HEIGHT = 32;  // low, climbable platform once fallen
+const HAY_BALE_TOPPLE_MS = 900;
+
+function updateHayBales(deltaTime) {
+  if (hayBales.toppled) return;
+  if (!hayBales.toppling) {
+    if (!discoveredScenes.oak || !discoveredScenes.ratroom) return;
+    // only trigger while the bales are actually visible on screen --
+    // this event needs to be witnessed, not happen off-camera
+    const screenX = hayBales.x - cameraX;
+    if (screenX < -40 || screenX > canvas.width + 40) return;
+    hayBales.toppling = true;
+    hayBales.toppleT = 0;
+    return;
+  }
+  hayBales.toppleT += deltaTime * 1000;
+  if (hayBales.toppleT >= HAY_BALE_TOPPLE_MS) {
+    hayBales.toppling = false;
+    hayBales.toppled = true;
+  }
+}
+
+// crow -- sly, mischievous, waits past the toppled hay bales at the
+// pumpkin carving area. Not interactable until the bales have
+// actually toppled, since the area isn't reachable before then.
+const crow = {
+  x: 3630,
+  y: HAY_BALE_TOPPLED_HEIGHT,
+  width: 52,
+  height: 40,
+  bob: 0,
+  bobSpeed: 0.035,
+  active: false,
+  tip: 0
+};
+let crowTalked = false;
+
+// tree-sighting crow -- a smaller, wordless glimpse of the same crow,
+// perched in the maple tree's canopy. Flies off if the player gets
+// close, no dialogue, no interaction -- just a "wait, was that a
+// bird?" moment that plants the crow's presence before the real
+// meeting at the carving area later.
+const treeCrow = {
+  x: 1820,
+  y: 175, // perched in the maple's upper canopy
+  width: 26,
+  height: 20,
+  bob: 0,
+  bobSpeed: 0.03,
+  fleeing: false,
+  fleeT: 0
+};
+const TREE_CROW_FLEE_RADIUS = 140;
+const TREE_CROW_FLEE_MS = 1100;
+
+function updateTreeCrow(deltaTime) {
+  if (currentScene !== "autumn") return;
+  updateNPCIdle(treeCrow);
+  if (!treeCrow.fleeing) {
+    const dist = Math.abs((player.x + player.width / 2) - (treeCrow.x + treeCrow.width / 2));
+    if (dist < TREE_CROW_FLEE_RADIUS) {
+      treeCrow.fleeing = true;
+      treeCrow.fleeT = 0;
+    }
+  } else {
+    treeCrow.fleeT += deltaTime * 1000;
+  }
+}
+
 function updateVines(deltaTime) {
   // idle sway for everything not mounted
   vines.forEach((v, i) => {
@@ -4575,6 +4661,203 @@ function drawSmallTree(tx, canopyScreenY) {
   ctx.fill();
 }
 
+function drawHayBales(camX) {
+  const hx = hayBales.x - camX;
+  const baseY = gy;
+  const strawColor = "#c9a24a", strawDark = "#a8802f", strawLine = "rgba(90,64,18,0.4)", strawWisp = "#d4af5a";
+
+  function drawBale(cx, cy, w, h, rot, seed) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    // individual straw strands sticking out from the edges -- drawn
+    // first so the rectangle body sits on top of their base, only the
+    // tips poke out visibly
+    ctx.strokeStyle = strawWisp;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 9; i++) {
+      const hash = Math.sin(seed + i * 12.9898) * 43758.5453 % 1; // seeded, not random -- stays consistent frame to frame
+      const edge = i % 4; // 0=top, 1=bottom, 2=left, 3=right
+      let sx, sy, ex, ey;
+      const along = (hash + 1) * 0.5 * (edge < 2 ? w : h) - (edge < 2 ? w / 2 : h / 2);
+      const len = 5 + Math.abs(hash) * 5;
+      const spread = hash * 0.7;
+      if (edge === 0) { sx = along; sy = -h / 2; ex = along + spread * len; ey = -h / 2 - len; }
+      else if (edge === 1) { sx = along; sy = h / 2; ex = along + spread * len; ey = h / 2 + len; }
+      else if (edge === 2) { sx = -w / 2; sy = along; ex = -w / 2 - len; ey = along + spread * len; }
+      else { sx = w / 2; sy = along; ex = w / 2 + len; ey = along + spread * len; }
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+    // the bale body itself -- a rectangle with slightly rounded
+    // corners, not a plain round shape
+    ctx.fillStyle = strawColor;
+    const r = 3;
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + r, -h / 2);
+    ctx.lineTo(w / 2 - r, -h / 2);
+    ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+    ctx.lineTo(w / 2, h / 2 - r);
+    ctx.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+    ctx.lineTo(-w / 2 + r, h / 2);
+    ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+    ctx.lineTo(-w / 2, -h / 2 + r);
+    ctx.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = strawDark;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // binding lines, twine wrapped around the bale
+    ctx.strokeStyle = strawLine;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.28, -h / 2);
+    ctx.lineTo(-w * 0.28, h / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w * 0.28, -h / 2);
+    ctx.lineTo(w * 0.28, h / 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (hayBales.toppled) {
+    // settled, low mound -- four bales lying on their sides, forming
+    // the climbable platform
+    drawBale(hx - 33, baseY - 15, 26, 30, Math.PI / 2, 1);
+    drawBale(hx - 11, baseY - 15, 26, 30, Math.PI / 2, 2);
+    drawBale(hx + 11, baseY - 15, 26, 30, Math.PI / 2, 3);
+    drawBale(hx + 33, baseY - 15, 26, 30, Math.PI / 2, 4);
+  } else if (hayBales.toppling) {
+    // mid-topple -- each bale falls independently, staggered rather
+    // than the whole stack rotating as one rigid unit. The top bale
+    // (least stable) starts falling first, each one below follows
+    // with increasing delay, tumbling extra as it falls and settling
+    // right as it lands
+    const standingY = [-11, -33, -55, -77]; // bottom to top
+    const toppledX = [-33, -11, 11, 33];
+    for (let i = 0; i < 4; i++) {
+      const fallDelay = (3 - i) * 150; // top bale (i=3) falls first
+      const localT = Math.max(0, hayBales.toppleT - fallDelay);
+      const totalForThis = HAY_BALE_TOPPLE_MS - fallDelay;
+      const rawP = Math.min(1, localT / Math.max(1, totalForThis));
+      const eased = rawP * rawP * (3 - 2 * rawP);
+      const startX = 0, startY = standingY[i];
+      const targetX = toppledX[i], targetY = -15;
+      const x = startX + (targetX - startX) * eased;
+      const y = startY + (targetY - startY) * eased;
+      const tumble = (1 - eased) * 2.5; // extra spin while still falling, settles as it lands
+      const rot = eased * (Math.PI / 2) + tumble;
+      drawBale(hx + x, baseY + y, 34, 22, rot, i + 1);
+    }
+  } else {
+    // standing wall -- four bales stacked, blocking passage entirely
+    drawBale(hx, baseY - 11, 34, 22, 0, 1);
+    drawBale(hx, baseY - 33, 34, 22, 0, 2);
+    drawBale(hx, baseY - 55, 34, 22, 0, 3);
+    drawBale(hx, baseY - 77, 34, 22, 0, 4);
+  }
+}
+
+// shared shape -- both the main crow and the smaller tree-sighting
+// crow use this exact same visual language, just at different scales
+function drawCrowShape(w, h) {
+  // tail feathers, behind the body -- angles diagonally down and
+  // back, like a real crow's tail, with a slightly fanned tip
+  ctx.fillStyle = "#1e1e22";
+  ctx.beginPath();
+  ctx.moveTo(2, h * 0.5);
+  ctx.lineTo(-14, h * 0.78);
+  ctx.lineTo(-19, h * 0.92);
+  ctx.lineTo(-9, h * 0.68);
+  ctx.closePath();
+  ctx.fill();
+
+  // body -- rounded, dark, slightly glossy
+  ctx.fillStyle = "#26262b";
+  ctx.beginPath();
+  ctx.ellipse(w * 0.42, h * 0.55, w * 0.4, h * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head, slightly forward and raised
+  ctx.beginPath();
+  ctx.arc(w * 0.72, h * 0.32, h * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a hint of gloss -- a small lighter patch, catches the eye without
+  // being a full highlight
+  ctx.fillStyle = "rgba(120,120,150,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(w * 0.4, h * 0.42, w * 0.16, h * 0.12, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // beak
+  ctx.fillStyle = "#3a2a1a";
+  ctx.beginPath();
+  ctx.moveTo(w * 0.95, h * 0.3);
+  ctx.lineTo(w * 1.15, h * 0.34);
+  ctx.lineTo(w * 0.95, h * 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  // eye -- small, sharp, a little knowing
+  ctx.fillStyle = "#e8d888";
+  ctx.beginPath();
+  ctx.arc(w * 0.78, h * 0.28, 3.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.arc(w * 0.8, h * 0.28, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCrow(camX) {
+  if (!hayBales.toppled) return;
+  const cx = crow.x - camX;
+  const cy = gy - crow.height - crow.y + Math.sin(crow.bob) * 2;
+
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(cx + crow.width / 2, gy - crow.y + 3, 24, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  drawCrowShape(crow.width, crow.height);
+  ctx.restore();
+
+  if (crow.active && isPlayerNear(crow.x + crow.width / 2, crow.y, 70, 6, 999)) {
+    const bubbleY = cy - 60;
+    drawSpeechBubble(ctx, cx, bubbleY, [
+      "Well now — got a squash on you, by any chance?"
+    ]);
+  }
+}
+
+function drawTreeCrow(camX) {
+  const cx = treeCrow.x - camX;
+  let flyOffsetX = 0, flyOffsetY = 0, alpha = 1;
+  if (treeCrow.fleeing) {
+    const p = Math.min(1, treeCrow.fleeT / TREE_CROW_FLEE_MS);
+    // flies up and away, fading out as it goes -- gone, not lingering
+    flyOffsetX = p * 90;
+    flyOffsetY = -p * 70;
+    alpha = 1 - p;
+    if (p >= 1) return; // fully fled, nothing left to draw
+  }
+  const cy = gy - treeCrow.height - treeCrow.y + Math.sin(treeCrow.bob) * 1.5 + flyOffsetY;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx + flyOffsetX, cy);
+  drawCrowShape(treeCrow.width, treeCrow.height);
+  ctx.restore();
+}
+
 function drawVines(camX) {
   vines.forEach(v => {
     const ax = v.x - camX, ay = gy - v.anchorHeight;
@@ -4607,7 +4890,7 @@ const VINE_CATCH_GRACE_MS = 350; // coyote-time window — once genuinely in ran
 function updateAcorns() {
   acorns.forEach(a => {
     if (a.collected || a.collecting) return;
-    const inRange = isPlayerNear(a.x, a.heightAboveGround, 20, 15, 15);
+    const inRange = isPlayerNear(a.x, a.heightAboveGround, 20, 40, 40);
     if (player.vineFlying && inRange) {
       // auto-collect on contact during vine-to-vine flight — no space
       // press needed, removes the mid-air timing problem entirely
@@ -6333,7 +6616,7 @@ function updateSeesaw(deltaTime) {
   }
 
   // talk to the NPC first
-  if (!seesawNPC.talkedTo && keys.spaceJustPressed && isPlayerNear(seesawNPC.x, 0, 30, 15, 15)) {
+  if (!seesawNPC.talkedTo && keys.spaceJustPressed && isPlayerNear(seesawNPC.x, 0, 45, 25, 25)) {
     seesawNPC.talkedTo = true;
   }
 
@@ -9297,7 +9580,7 @@ const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but n
 // the pile's already settled into its messy look.
 const pileFallState = {}; // keyed by pile.x -- { everFallen, scattering, scatterT, messy }
 const PILE_SCATTER_MS = 1000;
-const WOOZY_MS = 1300;
+const WOOZY_MS = 2600;
 let playerWoozyT = 0;
 let playerWasFalling = false; // tracks vy<0 across frames to detect the actual landing moment, not just "currently on ground"
 
@@ -9791,6 +10074,201 @@ function drawCushionPile(camX) {
     ctx.stroke();
     ctx.restore();
   });
+
+  // a soft blanket draped over the dark orange (brown blob) cushion on
+  // the right, following its bump on the left side, then curving down
+  // to the ground with a real crease at the fold, trailing flat along
+  // the floor rather than tapering back into a symmetric oval
+  ctx.save();
+  ctx.translate(cx + 52, baseY - 11);
+  ctx.fillStyle = "#7a5a72";
+  ctx.beginPath();
+  ctx.moveTo(-18, -10);
+  ctx.quadraticCurveTo(-9, -17, 4, -12);
+  ctx.quadraticCurveTo(12, -8, 16, -3);
+  ctx.quadraticCurveTo(20, 4, 27, 10);
+  ctx.lineTo(31, 13);
+  ctx.lineTo(16, 13);
+  ctx.quadraticCurveTo(4, 12, -6, 6);
+  ctx.quadraticCurveTo(-15, 2, -21, -3);
+  ctx.quadraticCurveTo(-23, -7, -18, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // fold lines -- suggests real fabric bunching, not a flat painted shape
+  ctx.strokeStyle = "rgba(50,32,48,0.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-11, -11);
+  ctx.quadraticCurveTo(0, -10, 10, -5);
+  ctx.stroke();
+  // the crease itself -- a distinct fold line right where the
+  // blanket bends from the curved descent into the flat ground segment
+  ctx.strokeStyle = "rgba(50,32,48,0.5)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(20, 6);
+  ctx.lineTo(29, 12);
+  ctx.stroke();
+  // fringe along the lower-right edge, trailing flat on the ground --
+  // each strand splays slightly outward from center rather than
+  // hanging perfectly straight, suggesting they've settled and spread
+  // against the floor
+  ctx.strokeStyle = "#5a3f54";
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 5; i++) {
+    const fx = 12 + i * 4;
+    const fy = 13.5;
+    const splay = (i - 2) * 1.3; // negative for left strands, 0 for center, positive for right
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(fx + splay, fy + 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  /* FUTURE USE -- embroidery hoop, pulled after several positioning
+     attempts still read as floating/pasted-on rather than genuinely
+     resting on the cushions underneath. Left fully intact below in
+     case a different approach (or a different spot entirely) works
+     better later.
+
+  // a small embroidery hoop, its bottom sitting right at the boundary
+  // where the blue cushion's edge crosses the green one -- an
+  // in-progress project set down mid-work, not a finished piece
+  ctx.save();
+  ctx.translate(cx - 20, baseY - 27);
+  ctx.rotate(-0.15);
+  // fabric inside the hoop
+  ctx.fillStyle = "#e8ddc0";
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.fill();
+  // partial stitched design -- a couple of colored thread lines
+  // suggesting a shape still being worked on, not complete
+  ctx.strokeStyle = "#7a3a4a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-4, -2);
+  ctx.quadraticCurveTo(0, -6, 4, -2);
+  ctx.stroke();
+  ctx.strokeStyle = "#c9863a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-3, 2);
+  ctx.lineTo(3, 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#4a6a8a";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-2, 4);
+  ctx.lineTo(2, 5);
+  ctx.stroke();
+  // the wooden hoop ring itself, drawn on top of the fabric edge --
+  // a distinct golden-tan tone, not matching any cushion color
+  ctx.strokeStyle = "#b08850";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.stroke();
+  // needle resting across the edge, thread trailing off it
+  ctx.strokeStyle = "#c8c0a8";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(6, -5);
+  ctx.lineTo(12, -9);
+  ctx.stroke();
+  ctx.strokeStyle = "#7a3a4a";
+  ctx.lineWidth = 0.55;
+  ctx.beginPath();
+  ctx.moveTo(6, -5);
+  ctx.quadraticCurveTo(3, -7, 2, -3);
+  ctx.stroke();
+  ctx.restore();
+  */
+  ctx.restore();
+
+  /* FUTURE USE -- sketchbook + microns, pulled from this scene since
+     the cushion pile was getting too visually busy once the
+     embroidery hoop was added. Sketchbook is a bigger, more
+     deliberate object than a small detail (rounded corners, spine,
+     elastic wrap, ribbon bookmark, plus two pens) -- probably belongs
+     somewhere with more room to breathe, possibly tied to wherever
+     painting/drawing eventually lives as its own zone, rather than
+     competing for attention here. Left fully intact below in case
+     it's useful as-is later.
+
+  // a small sketchbook, dark olive moleskine-style -- rounded corners,
+  // a spine edge, elastic band wrap, and a ribbon bookmark peeking
+  // out, so it reads as an actual sketchbook rather than a rectangle
+  ctx.save();
+  ctx.translate(cx + 58, baseY - 10);
+  ctx.rotate(-0.1);
+  const sbW = 20, sbH = 15;
+  ctx.fillStyle = "#3a4a2a";
+  ctx.beginPath();
+  ctx.moveTo(-sbW / 2 + 2, -sbH / 2);
+  ctx.lineTo(sbW / 2 - 2, -sbH / 2);
+  ctx.quadraticCurveTo(sbW / 2, -sbH / 2, sbW / 2, -sbH / 2 + 2);
+  ctx.lineTo(sbW / 2, sbH / 2 - 2);
+  ctx.quadraticCurveTo(sbW / 2, sbH / 2, sbW / 2 - 2, sbH / 2);
+  ctx.lineTo(-sbW / 2 + 2, sbH / 2);
+  ctx.quadraticCurveTo(-sbW / 2, sbH / 2, -sbW / 2, sbH / 2 - 2);
+  ctx.lineTo(-sbW / 2, -sbH / 2 + 2);
+  ctx.quadraticCurveTo(-sbW / 2, -sbH / 2, -sbW / 2 + 2, -sbH / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+  // spine edge -- a darker strip along the binding side
+  ctx.fillStyle = "#2a3a1e";
+  ctx.fillRect(-sbW / 2, -sbH / 2 + 1, 2.5, sbH - 2);
+  // elastic band wrapped vertically around the book, slightly off
+  // center toward the open edge, away from the spine
+  ctx.strokeStyle = "#1a2412";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(sbW * 0.18, -sbH / 2);
+  ctx.lineTo(sbW * 0.18, sbH / 2);
+  ctx.stroke();
+  // small ribbon bookmark peeking out from the bottom edge
+  ctx.fillStyle = "#8a3a3a";
+  ctx.beginPath();
+  ctx.moveTo(sbW / 2 - 6, sbH / 2 - 1);
+  ctx.lineTo(sbW / 2 - 4, sbH / 2 + 4);
+  ctx.lineTo(sbW / 2 - 5, sbH / 2 + 2);
+  ctx.lineTo(sbW / 2 - 6, sbH / 2 + 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // a couple of micron pens resting beside the sketchbook -- thin
+  // dark bodies with color-coded caps, like real drawing pens
+  const microns = [
+    { dx: 82, dy: -6, rot: 0.6, capColor: "#1a1a1a" },
+    { dx: 88, dy: 4, rot: 0.75, capColor: "#7a4a2a" }
+  ];
+  microns.forEach(m => {
+    ctx.save();
+    ctx.translate(cx + m.dx, baseY + m.dy - 10);
+    ctx.rotate(m.rot);
+    ctx.fillStyle = "#2a2a28";
+    ctx.fillRect(-9, -1, 16, 2);
+    ctx.fillStyle = m.capColor;
+    ctx.fillRect(7, -1, 5, 2);
+    ctx.beginPath();
+    ctx.moveTo(-9, -1);
+    ctx.lineTo(-11, 0);
+    ctx.lineTo(-9, 1);
+    ctx.closePath();
+    ctx.fillStyle = "#4a4a48";
+    ctx.fill();
+    ctx.restore();
+  });
+  */
 }
 
 // fairy lights -- a gently sagging string draped above the cushion
@@ -10289,8 +10767,10 @@ function drawTeaPlayerCup(tx, tableTop) {
     ctx.ellipse(bx, by - 1, 4, 2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (teaAnim.phase === "full") {
-    const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.full);
+  if (teaAnim.phase === "full" || teaAnim.phase === "sipping") {
+    const totalDuration = TEA_SEGMENT_MS.full + TEA_SEGMENT_MS.sipping;
+    const elapsed = teaAnim.phase === "full" ? teaAnim.t : TEA_SEGMENT_MS.full + teaAnim.t;
+    const p = Math.min(1, elapsed / totalDuration);
     for (let i = 0; i < 3; i++) {
       const wob = Math.sin(performance.now() * 0.004 + i * 2) * 1.5;
       ctx.strokeStyle = `rgba(220,220,210,${0.3 * (1 - p)})`;
@@ -14434,7 +14914,7 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
   // from a hard fall, nested inside the clip so the clip region
   // itself stays axis-aligned and only the sprite tilts
   ctx.save();
-  const swayAngle = playerWoozyT > 0 ? Math.sin(performance.now() * 0.012) * 0.12 * (playerWoozyT / WOOZY_MS) : 0;
+  const swayAngle = playerWoozyT > 0 ? Math.sin(performance.now() * 0.009) * 0.28 * (playerWoozyT / WOOZY_MS) : 0;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(swayAngle);
@@ -14749,6 +15229,17 @@ if (apple.splitTimer > 0) apple.splitTimer--;
     frog.tip = 30;
   }
 
+  // --- CROW INTERACTION -- only once the hay bales have toppled,
+  // since the crow's own area isn't reachable before then ---
+  if (hayBales.toppled) {
+    updateNPCIdle(crow);
+    const crowCenterX = crow.x + crow.width / 2;
+    if (pressedDownNear(crowCenterX, crow.y, 70, 6, 999) && !crow.active && !pickupHandledThisFrame) {
+      crow.active = true;
+      crow.tip = 30;
+    }
+  }
+
 if (apple.landed && !frogNoticedApple) {
   frogNoticedApple = true;
   frog.tip = 40;
@@ -14946,6 +15437,34 @@ lastTime = now;
 
   handleInput();
   applyPhysics();
+
+  if (currentScene === "autumn") {
+    updateHayBales(deltaTime);
+    updateTreeCrow(deltaTime);
+    if (!hayBales.toppled) {
+      // standing wall -- blocks passage entirely until toppled
+      if (player.x + player.width > hayBales.x - 20 && player.x < hayBales.x + 20) {
+        if (player.x < hayBales.x) player.x = hayBales.x - 20 - player.width;
+        else player.x = hayBales.x + 20;
+      }
+    } else {
+      // toppled -- now a climbable platform, same landing pattern as
+      // every other jumpable ledge in the game
+      const pileTop = HAY_BALE_TOPPLED_HEIGHT;
+      if (
+        player.x + player.width > hayBales.x - 40 &&
+        player.x < hayBales.x + 40 &&
+        player.y <= pileTop &&
+        player.y >= pileTop - 30 &&
+        player.vy <= 0
+      ) {
+        player.y = pileTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
+    }
+  }
 
 
 
