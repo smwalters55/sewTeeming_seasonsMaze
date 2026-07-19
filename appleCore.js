@@ -417,7 +417,7 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble"];
+      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane"];
       if (!NO_COUNT_LABEL.includes(type)) {
         const label = document.createElement("span");
         label.textContent = ` x${count}`;
@@ -698,29 +698,10 @@ function rectEdgeIntersection(cx, cy, halfW, halfH, dirX, dirY) {
 // drifts out of sync with discoveredScenes/currentScene
 function updateMapUI() {
   if (!mapEl) return;
-  // aged paper look -- cream background with brown undertones, since
-  // the map itself should read as an old physical object, matching
-  // the burnt-edge treatment already applied to its border
+  // aged paper look -- cream background, reads as an old physical
+  // object without needing burnt edges or a peeling corner on top of it
   mapEl.style.backgroundColor = "#ddd0a8";
-  // burnt-paper edges -- jagged, choppy charred-dark-brown shapes
-  // around the border, plus a few crinkle-fold lines across the
-  // interior, injected directly here (rather than as a CSS
-  // background-image, which may not have been rendering reliably)
-  // so it's guaranteed present on every single refresh
-  mapEl.innerHTML = `<svg style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:5" viewBox="0 0 400 260" preserveAspectRatio="none">
-    <path d="M0,0 L60,0 L48,14 L72,20 L54,32 L78,44 L42,50 L0,50 Z" fill="#1c1006" opacity="0.85"/>
-    <path d="M400,0 L340,0 L354,15 L326,22 L350,36 L318,46 L400,46 Z" fill="#1c1006" opacity="0.85"/>
-    <path d="M0,260 L0,205 L22,216 L14,192 L38,206 L28,180 L58,204 L0,204 Z" fill="#1c1006" opacity="0.85"/>
-    <path d="M400,260 L400,200 L372,214 L386,188 L358,200 L372,176 L400,196 Z" fill="#1c1006" opacity="0.85"/>
-    <path d="M150,0 L185,0 L172,10 L196,16 L162,22 L150,0" fill="#1c1006" opacity="0.65"/>
-    <path d="M0,110 L0,145 L16,133 L6,155 L0,145" fill="#1c1006" opacity="0.65"/>
-    <path d="M400,100 L400,138 L380,120 L392,148 L400,138" fill="#1c1006" opacity="0.65"/>
-    <g transform-origin="400px 260px">
-      <path d="M400,260 L400,215 Q380,225 372,245 Q385,238 400,260 Z" fill="rgba(20,13,6,0.3)"/>
-      <path d="M400,260 L400,212 Q378,222 368,244 Q383,236 400,260 Z" fill="#ddd0a8" stroke="rgba(90,64,32,0.4)" stroke-width="0.8"/>
-      <animateTransform attributeName="transform" type="rotate" values="0;-3;0;-1.5;0" dur="4.5s" repeatCount="indefinite" />
-    </g>
-  </svg>`;
+  mapEl.innerHTML = "";
 
   const NODE_W = 120, NODE_H = 60; // matches .map-node's CSS dimensions
 
@@ -5143,7 +5124,7 @@ function drawDustMotes(camX) {
 // off, since a moth vanishing instantly would read as a bug rather
 // than losing interest
 const mothState = { approachT: 0, wanderSeed: 7.3 };
-const MOTH_MAX_APPROACH_MS = 9000;
+const MOTH_MAX_APPROACH_MS = 16000;
 function updateMoth(deltaTime) {
   if (currentScene !== "ratroom") return;
   if (lampLit) {
@@ -10261,7 +10242,7 @@ function drawTeaPlayerCup(tx, tableTop) {
     const p = Math.min(1, teaAnim.t / TEA_SEGMENT_MS.sipping);
     const bob = Math.sin(p * Math.PI);
     const towardPlayer = player.x < teaSpot.x ? -1 : 1; // bobs toward wherever the player actually is, not always to the right
-    const reachDist = towardPlayer === 1 ? 50 : 24; // further right, since that side's interaction zone extends further -- should read as reaching a genuinely farther player
+    const reachDist = towardPlayer === 1 ? 50 : 34; // right confirmed perfect -- left increased a bit further to match better
     bx = cupX + bob * reachDist * towardPlayer; by = cupY - bob * 6;
   }
   // pouring stream, from the kettle spout's actual current tip
@@ -10921,7 +10902,11 @@ function drawOakScene(camX) {
   // drawn from the shared bookPiles array (also used for collision below)
   bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count, pile.x));
   drawPaperAirplane(camX);
-  drawScatteredBooksField(camX);
+  if (giantPileCollapse.phase === "falling") {
+    drawFallingBooks(camX);
+  } else {
+    drawScatteredBooksField(camX);
+  }
   bookSpreads.forEach(spread => drawBookSpread(spread, camX));
 
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
@@ -13120,6 +13105,8 @@ const COLLAPSED_HEIGHT = 25;
 const scatteredBooksField = []; // permanent -- populated once when the giant pile settles, never re-piled
 function generateScatteredBooksField(centerX) {
   const bookCount = 36;
+  const seed = 228; // matches the giant pile's own seed, so starting stack heights line up with how it actually looked
+  let stackDy = 0;
   for (let i = 0; i < bookCount; i++) {
     const spread = 170; // wide spread across the ground, not a tidy small pile
     const ox = (Math.sin(i * 12.9898) * 43758.5453 % 1) * spread;
@@ -13131,13 +13118,24 @@ function generateScatteredBooksField(centerX) {
     const isLong = i % 4 === 0;
     const w = isLong ? 30 + (i % 10) : 16 + (i % 8);
     const h = 5 + (i % 3);
+    // this book's original position in the stack, before the collapse --
+    // its actual starting point for the individual fall animation
+    const stackH = 4 + ((seed + i * 3) % 3);
+    const startY = COLLAPSED_HEIGHT + 210 - stackDy; // roughly matches the giant pile's real height range
+    const startRot = (((seed + i * 7) % 36) - 18) / 32;
+    const startDx = (((seed + i * 4) % 6) - 3) * 1.8;
+    stackDy += stackH;
     scatteredBooksField.push({
       x: centerX + ox,
       y: oy,
       rot,
       w,
       h,
-      color: pileColors[i % pileColors.length]
+      color: pileColors[i % pileColors.length],
+      startX: centerX + startDx,
+      startY,
+      startRot,
+      fallDelay: (i * 37) % 400 // staggers when each book starts falling, for a real cascade rather than everything dropping in lockstep
     });
   }
 }
@@ -13146,6 +13144,28 @@ function drawScatteredBooksField(camX) {
     ctx.save();
     ctx.translate(book.x - camX, gy - book.y);
     ctx.rotate(book.rot);
+    ctx.fillStyle = book.color;
+    ctx.fillRect(-book.w / 2, -book.h / 2, book.w, book.h);
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-book.w / 2, -book.h / 2, book.w, book.h);
+    ctx.restore();
+  });
+}
+
+const COLLAPSE_FALL_ESTIMATE_MS = 1700; // roughly how long the slow-motion fall actually takes, used to time each book's individual descent
+function drawFallingBooks(camX) {
+  scatteredBooksField.forEach(book => {
+    const localT = giantPileCollapse.t - book.fallDelay;
+    const rawP = Math.max(0, Math.min(1, localT / (COLLAPSE_FALL_ESTIMATE_MS - book.fallDelay)));
+    const eased = rawP * rawP; // accelerating, like something actually falling under gravity
+    const x = book.startX + (book.x - book.startX) * eased;
+    const y = book.startY + (book.y - book.startY) * eased;
+    const tumble = (1 - eased) * 4; // extra spin while still falling, settles out as it lands
+    const rot = book.startRot + (book.rot - book.startRot) * eased + tumble;
+    ctx.save();
+    ctx.translate(x - camX, gy - y);
+    ctx.rotate(rot);
     ctx.fillStyle = book.color;
     ctx.fillRect(-book.w / 2, -book.h / 2, book.w, book.h);
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
@@ -13172,16 +13192,14 @@ function updateGiantPileCollapse(deltaTime) {
   } else if (giantPileCollapse.phase === "wobble" && giantPileCollapse.t >= COLLAPSE_WOBBLE_MS) {
     giantPileCollapse.phase = "falling";
     giantPileCollapse.t = 0;
-    const giantPile = bookPiles.find(p => p.x === GIANT_PILE_X);
-    if (giantPile) giantPile.collapsed = true; // collision drops out, real gravity takes over
-    player.lastPileX = null; // re-clear in case it got set again during the wobble
-  } else if (giantPileCollapse.phase === "falling" && player.y <= 0 && player.vy === 0) {
-    giantPileCollapse.phase = "settled";
     const giantPileIdx = bookPiles.findIndex(p => p.x === GIANT_PILE_X);
     if (giantPileIdx !== -1) {
       generateScatteredBooksField(GIANT_PILE_X);
-      bookPiles.splice(giantPileIdx, 1); // no longer a climbable pile -- books are permanently scattered on the ground instead
+      bookPiles.splice(giantPileIdx, 1); // no longer a climbable pile -- books are permanently scattered on the ground instead, animated falling there during this phase
     }
+    player.lastPileX = null; // re-clear in case it got set again during the wobble
+  } else if (giantPileCollapse.phase === "falling" && player.y <= 0 && player.vy === 0) {
+    giantPileCollapse.phase = "settled";
   }
 }
 
