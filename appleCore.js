@@ -4577,6 +4577,7 @@ const carvingUI = {
   closeT: 0,
   step: "eyes", // "eyes" -> "eyeRight" -> "mouth" -> "finalize"
   cursorIndex: 0,
+  transitionT: 999, // time since cursorIndex last changed -- starts high so nothing animates before the first change
   eyeLeft: 0,
   eyeRight: 0,
   mouth: 0
@@ -4605,8 +4606,11 @@ function finalizeCarvedPumpkin() {
   carvingUI.active = false;
   carvingUI.closing = true;
   carvingUI.closeT = 0;
+  // shifts the player left of the station so they can actually see
+  // the pumpkin being carved, rather than standing right in front of
+  // it -- stays within the station's own platform range
+  player.x = carvingStation.x - 26 - player.width / 2;
   startCarvingStation();
-  // NOT YET BUILT (piece 6) -- placement + sparkle + grow-large finale
 }
 
 // carving station -- physically near the crow, where the finalized
@@ -4625,6 +4629,7 @@ const carvingStation = {
 };
 const CARVING_PLACE_SPARKLE_MS = 900;
 const CARVING_STATION_DURATION_MS = 2600;
+const CARVING_LID_REVEAL_AT = 0.16; // fraction of the duration when the top lid cut completes
 const CARVING_EYES_REVEAL_AT = 0.42; // fraction of the duration when eyes appear
 const CARVING_MOUTH_REVEAL_AT = 0.75; // fraction of the duration when mouth appears
 
@@ -4675,11 +4680,12 @@ function updateCarvingStation(deltaTime) {
 // a carved cutout at position (x,y) scaled by s. Shared between the
 // live UI preview and the eventual in-world finished pumpkin, so the
 // two always match exactly.
-function drawPumpkinEye(idx, x, y, s) {
+function drawPumpkinEye(idx, x, y, s, fillColor) {
+  fillColor = fillColor || "#2a1608";
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = "#2a1608";
-  ctx.strokeStyle = "#2a1608";
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = fillColor;
   if (idx === 0) { // round
     ctx.beginPath();
     ctx.arc(0, 0, s * 0.5, 0, Math.PI * 2);
@@ -4738,11 +4744,12 @@ function drawPumpkinEye(idx, x, y, s) {
   ctx.restore();
 }
 
-function drawPumpkinMouth(idx, x, y, s) {
+function drawPumpkinMouth(idx, x, y, s, fillColor) {
+  fillColor = fillColor || "#2a1608";
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = "#2a1608";
-  ctx.strokeStyle = "#2a1608";
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = fillColor;
   if (idx === 0) { // simple grin
     ctx.lineWidth = s * 0.16;
     ctx.lineCap = "round";
@@ -4802,22 +4809,34 @@ function drawPumpkinMouth(idx, x, y, s) {
   ctx.restore();
 }
 
-function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLeftReveal, eyeRightReveal, mouthReveal) {
+function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLeftReveal, eyeRightReveal, mouthReveal, glowColor) {
   if (eyeLeftReveal === undefined) eyeLeftReveal = 1;
   if (eyeRightReveal === undefined) eyeRightReveal = 1;
   if (mouthReveal === undefined) mouthReveal = 1;
 
   // pumpkin body -- round, warm orange, ribbed like a real pumpkin
+  const bodyRx = size * 0.55, bodyRy = size * 0.5;
   ctx.fillStyle = "#c9863a";
   ctx.beginPath();
-  ctx.ellipse(cx, cy, size * 0.55, size * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "rgba(120,60,20,0.4)";
   ctx.lineWidth = 2;
+  // each rib follows the ellipse's actual contour -- computed from
+  // the real ellipse equation at every point along its height, so it
+  // narrows in step with the pumpkin's own silhouette instead of
+  // poking straight through it near the top and bottom
+  const vInset = 0.94; // stops just short of the very pole, where a rib would go vertical
   for (let i = -2; i <= 2; i++) {
+    const lateral = i / 2.6; // how far toward the side this particular rib sits, as a fraction
     ctx.beginPath();
-    ctx.moveTo(cx + i * size * 0.16, cy - size * 0.48);
-    ctx.quadraticCurveTo(cx + i * size * 0.2, cy, cx + i * size * 0.16, cy + size * 0.48);
+    for (let s = 0; s <= 12; s++) {
+      const t = (s / 12) * 2 - 1; // -1 (top) to 1 (bottom)
+      const y = cy + t * bodyRy * vInset;
+      const localHalfWidth = bodyRx * Math.sqrt(Math.max(0, 1 - t * t * vInset * vInset));
+      const x = cx + lateral * localHalfWidth * 0.92; // stays inside the actual edge, not riding right on it
+      if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
     ctx.stroke();
   }
   // stem
@@ -4840,13 +4859,14 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
     ctx.restore();
   }
 
-  if (eyeLeftIdx !== null) drawRevealed(eyeLeftReveal, () => drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26));
-  if (eyeRightIdx !== null) drawRevealed(eyeRightReveal, () => drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26));
-  if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3));
+  if (eyeLeftIdx !== null) drawRevealed(eyeLeftReveal, () => drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
+  if (eyeRightIdx !== null) drawRevealed(eyeRightReveal, () => drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
+  if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3, glowColor));
 }
 
 function updateCarvingUI(deltaTime) {
   const dtMs = deltaTime * 1000;
+  carvingUI.transitionT += dtMs;
 
   if (carvingUI.opening) {
     carvingUI.openT += dtMs;
@@ -4871,8 +4891,10 @@ function updateCarvingUI(deltaTime) {
 
   if (keys.rightJustPressed) {
     carvingUI.cursorIndex = (carvingUI.cursorIndex + 1) % count;
+    carvingUI.transitionT = 0;
   } else if (keys.leftJustPressed) {
     carvingUI.cursorIndex = (carvingUI.cursorIndex - 1 + count) % count;
+    carvingUI.transitionT = 0;
   } else if (keys.upJustPressed) {
     // go back a step, restoring the cursor to whatever was previously
     // chosen for that step rather than resetting to the first option
@@ -5380,6 +5402,17 @@ function drawPumpkinGuts(gx, gy2) {
   });
 }
 
+// the thin lid outline left after cutting the top off -- reusable
+// across every phase once the cut is done, scales with the pumpkin's
+// current size so it stays correctly placed as it grows
+function drawLidOutline(cx, cy, size) {
+  ctx.strokeStyle = "rgba(42,22,8,0.6)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - size * 0.58, size * 0.19, size * 0.19 * 0.7, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function drawCarvingStation(camX) {
   if (!hayBales.toppled) return;
   const sx = carvingStation.x - camX;
@@ -5454,6 +5487,7 @@ function drawCarvingStation(camX) {
   if (carvingStation.phase === "beat2") {
     // carving just finished -- the guts are now sitting there
     drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawLidOutline(sx, sy, 130);
     drawPumpkinGuts(sx - 145, gy - 8);
     return;
   }
@@ -5462,6 +5496,8 @@ function drawCarvingStation(camX) {
     // knife visibly cutting each feature in, reusing the same
     // eyes-then-mouth staggered timing as before
     const progress = carvingStation.carveT / CARVING_CARVE_MS;
+    const lidRevealed = progress >= CARVING_LID_REVEAL_AT;
+    const lidCutProgress = progress / CARVING_LID_REVEAL_AT;
     const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
     const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
     const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
@@ -5475,6 +5511,29 @@ function drawCarvingStation(camX) {
       mouthRevealAmount > 0 ? carvedPumpkinDesign.mouth : null,
       eyeRevealAmount, eyeRevealAmount, mouthRevealAmount
     );
+    // lid cut -- knife traces a full circle around the stem before
+    // any of the face carving begins, same as cutting the top off a
+    // real pumpkin first
+    const lidCx = sx, lidCy = sy - 130 * 0.58, lidR = 130 * 0.19;
+    if (lidCutProgress >= 0 && lidCutProgress <= 1) {
+      const ang = lidCutProgress * Math.PI * 2 - Math.PI / 2;
+      const kx = lidCx + Math.cos(ang) * lidR;
+      const ky = lidCy + Math.sin(ang) * lidR * 0.7;
+      drawKnife(kx, ky - 8, ang + Math.PI / 2);
+      // the cut arc traced so far
+      ctx.strokeStyle = "#2a1608";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(lidCx, lidCy, lidR, lidR * 0.7, 0, -Math.PI / 2, ang);
+      ctx.stroke();
+    } else if (lidRevealed) {
+      // lid fully cut -- a thin outline remains, showing where it lifts off
+      ctx.strokeStyle = "rgba(42,22,8,0.6)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(lidCx, lidCy, lidR, lidR * 0.7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
       const kAngle = sawPosition(eyesCutProgress, -0.15, 0.15, 7);
@@ -5497,6 +5556,7 @@ function drawCarvingStation(camX) {
   if (carvingStation.phase === "sparkle") {
     const p = carvingStation.carveT / CARVING_SPARKLE_MS;
     drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawLidOutline(sx, sy, 130);
     drawPumpkinGuts(sx - 145, gy - 8);
     drawSparkleBurst(sx, sy, p, 1.8);
     return;
@@ -5513,7 +5573,28 @@ function drawCarvingStation(camX) {
     // expanding downward -- the base stays exactly where it started
     // instead of creeping down over where the player is standing
     const growY = -(size - 130) * 0.5;
-    drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    let glowColor = null;
+    if (carvingStation.phase === "done") {
+      // layered sine waves at different frequencies for a natural,
+      // irregular flicker rather than a smooth mechanical pulse
+      const t = performance.now();
+      const flicker = 0.5 + Math.sin(t * 0.006) * 0.22 + Math.sin(t * 0.017 + 1.3) * 0.15 + Math.sin(t * 0.041 + 2.7) * 0.08;
+      const brightness = Math.max(0.15, Math.min(1, flicker));
+      const r = Math.round(255 * brightness);
+      const g = Math.round(180 * brightness + 40);
+      const b = Math.round(40 * brightness);
+      glowColor = `rgb(${r},${g},${b})`;
+      // soft warm halo behind the pumpkin, flickering along with the candle
+      const haloGrad = ctx.createRadialGradient(sx, sy + growY + bob, size * 0.1, sx, sy + growY + bob, size * 0.75);
+      haloGrad.addColorStop(0, `rgba(255,180,60,${0.28 * brightness})`);
+      haloGrad.addColorStop(1, "rgba(255,180,60,0)");
+      ctx.fillStyle = haloGrad;
+      ctx.beginPath();
+      ctx.arc(sx, sy + growY + bob, size * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, glowColor);
+    drawLidOutline(sx, sy + growY + bob, size);
     drawPumpkinGuts(sx - 145, gy - 8);
   }
 }
@@ -13724,7 +13805,16 @@ function drawCarvingUI() {
   } else if (carvingUI.step === "mouth") {
     previewMouth = carvingUI.cursorIndex;
   }
+  const transitionWindow = 180;
+  const tProgress = Math.min(1, carvingUI.transitionT / transitionWindow);
+  const easedT = 1 - Math.pow(1 - tProgress, 3); // ease-out cubic
+  const popScale = 0.9 + easedT * 0.1; // settles from 90pct to full scale, not an instant snap
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(popScale, popScale);
+  ctx.translate(-cx, -cy);
   drawPumpkinFace(cx, cy, 100, previewEyeLeft, previewEyeRight, previewMouth);
+  ctx.restore();
 
   // step-specific prompt text
   ctx.fillStyle = "#3a2818";
