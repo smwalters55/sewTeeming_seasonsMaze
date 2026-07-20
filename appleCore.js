@@ -4630,7 +4630,6 @@ const carvingStation = {
 };
 const CARVING_PLACE_SPARKLE_MS = 900;
 const CARVING_STATION_DURATION_MS = 2600;
-const CARVING_LID_REVEAL_AT = 0.16; // fraction of the duration when the top lid cut completes
 const CARVING_EYES_REVEAL_AT = 0.42; // fraction of the duration when eyes appear
 const CARVING_MOUTH_REVEAL_AT = 0.75; // fraction of the duration when mouth appears
 
@@ -5403,17 +5402,6 @@ function drawPumpkinGuts(gx, gy2) {
   });
 }
 
-// the thin lid outline left after cutting the top off -- reusable
-// across every phase once the cut is done, scales with the pumpkin's
-// current size so it stays correctly placed as it grows
-function drawLidOutline(cx, cy, size) {
-  ctx.strokeStyle = "rgba(42,22,8,0.6)";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - size * 0.58, size * 0.19, size * 0.19 * 0.7, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
 function drawCarvingStation(camX) {
   if (!hayBales.toppled) return;
   const sx = carvingStation.x - camX;
@@ -5496,8 +5484,6 @@ function drawCarvingStation(camX) {
     // knife visibly cutting each feature in, reusing the same
     // eyes-then-mouth staggered timing as before
     const progress = carvingStation.carveT / CARVING_CARVE_MS;
-    const lidRevealed = progress >= CARVING_LID_REVEAL_AT;
-    const lidCutProgress = progress / CARVING_LID_REVEAL_AT;
     const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
     const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
     const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
@@ -5511,22 +5497,6 @@ function drawCarvingStation(camX) {
       mouthRevealAmount > 0 ? carvedPumpkinDesign.mouth : null,
       eyeRevealAmount, eyeRevealAmount, mouthRevealAmount
     );
-    // lid cut -- knife traces a full circle around the stem before
-    // any of the face carving begins, same as cutting the top off a
-    // real pumpkin first
-    const lidCx = sx, lidCy = sy - 130 * 0.58, lidR = 130 * 0.19;
-    if (lidCutProgress >= 0 && lidCutProgress <= 1) {
-      const ang = lidCutProgress * Math.PI * 2 - Math.PI / 2;
-      const kx = lidCx + Math.cos(ang) * lidR;
-      const ky = lidCy + Math.sin(ang) * lidR * 0.7;
-      drawKnife(kx, ky - 8, ang + Math.PI / 2);
-      // the cut arc traced so far
-      ctx.strokeStyle = "#2a1608";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.ellipse(lidCx, lidCy, lidR, lidR * 0.7, 0, -Math.PI / 2, ang);
-      ctx.stroke();
-    }
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
       const kAngle = sawPosition(eyesCutProgress, -0.15, 0.15, 7);
