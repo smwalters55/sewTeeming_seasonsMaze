@@ -4609,7 +4609,8 @@ function finalizeCarvedPumpkin() {
   // shifts the player left of the station so they can actually see
   // the pumpkin being carved, rather than standing right in front of
   // it -- stays within the station's own platform range
-  player.x = carvingStation.x - 40 - player.width / 2;
+  player.x = carvingStation.x - 102 - player.width / 2;
+  player.y = 0; // ground level, not the station's own platform
   startCarvingStation();
 }
 
@@ -5487,7 +5488,6 @@ function drawCarvingStation(camX) {
   if (carvingStation.phase === "beat2") {
     // carving just finished -- the guts are now sitting there
     drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
-    drawLidOutline(sx, sy, 130);
     drawPumpkinGuts(sx - 145, gy - 8);
     return;
   }
@@ -5549,7 +5549,6 @@ function drawCarvingStation(camX) {
   if (carvingStation.phase === "sparkle") {
     const p = carvingStation.carveT / CARVING_SPARKLE_MS;
     drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
-    drawLidOutline(sx, sy, 130);
     drawPumpkinGuts(sx - 145, gy - 8);
     drawSparkleBurst(sx, sy, p, 1.8);
     return;
@@ -5587,7 +5586,6 @@ function drawCarvingStation(camX) {
       ctx.fill();
     }
     drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, glowColor);
-    drawLidOutline(sx, sy + growY + bob, size);
     drawPumpkinGuts(sx - 145, gy - 8);
   }
 }
