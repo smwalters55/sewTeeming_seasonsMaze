@@ -4609,7 +4609,7 @@ function finalizeCarvedPumpkin() {
   // shifts the player left of the station so they can actually see
   // the pumpkin being carved, rather than standing right in front of
   // it -- stays within the station's own platform range
-  player.x = carvingStation.x - 26 - player.width / 2;
+  player.x = carvingStation.x - 40 - player.width / 2;
   startCarvingStation();
 }
 
@@ -5526,13 +5526,6 @@ function drawCarvingStation(camX) {
       ctx.beginPath();
       ctx.ellipse(lidCx, lidCy, lidR, lidR * 0.7, 0, -Math.PI / 2, ang);
       ctx.stroke();
-    } else if (lidRevealed) {
-      // lid fully cut -- a thin outline remains, showing where it lifts off
-      ctx.strokeStyle = "rgba(42,22,8,0.6)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.ellipse(lidCx, lidCy, lidR, lidR * 0.7, 0, 0, Math.PI * 2);
-      ctx.stroke();
     }
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
@@ -5578,8 +5571,8 @@ function drawCarvingStation(camX) {
       // layered sine waves at different frequencies for a natural,
       // irregular flicker rather than a smooth mechanical pulse
       const t = performance.now();
-      const flicker = 0.5 + Math.sin(t * 0.006) * 0.22 + Math.sin(t * 0.017 + 1.3) * 0.15 + Math.sin(t * 0.041 + 2.7) * 0.08;
-      const brightness = Math.max(0.15, Math.min(1, flicker));
+      const flicker = 0.7 + Math.sin(t * 0.0012) * 0.14 + Math.sin(t * 0.0034 + 1.3) * 0.09 + Math.sin(t * 0.0081 + 2.7) * 0.05;
+      const brightness = Math.max(0.5, Math.min(1, flicker));
       const r = Math.round(255 * brightness);
       const g = Math.round(180 * brightness + 40);
       const b = Math.round(40 * brightness);
@@ -5638,7 +5631,7 @@ const smallCrows = [
 const SMALL_CROW_RISE_MS = 1300;
 const SMALL_CROW_HOLD_MS = 500;
 const SMALL_CROW_SETTLE_MS = 1100;
-const SMALL_CROW_RISE_HEIGHT = 26;
+const SMALL_CROW_RISE_HEIGHT = 60;
 
 function updateSmallCrows(deltaTime) {
   const dtMs = deltaTime * 1000;
@@ -5660,16 +5653,21 @@ function updateSmallCrows(deltaTime) {
       if (p >= 1) { c.flyState = "holding"; c.flyT = 0; }
     } else if (c.flyState === "holding") {
       c.flyT += dtMs;
+      // gentle horizontal loop while up there -- reads as actual
+      // flying around, not just hovering statically in place
+      c.flyOffsetX = Math.sin(c.flyT * 0.0025) * 14;
       if (c.flyT >= SMALL_CROW_HOLD_MS) { c.flyState = "settling"; c.flyT = 0; }
     } else if (c.flyState === "settling") {
       c.flyT += dtMs;
       const p = Math.min(1, c.flyT / SMALL_CROW_SETTLE_MS);
       const eased = p * p * (3 - 2 * p);
       c.flyOffset = (1 - eased) * SMALL_CROW_RISE_HEIGHT;
+      c.flyOffsetX = (1 - eased) * (c.flyOffsetX || 0);
       if (p >= 1) {
         c.flyState = "perched";
         c.flyT = 0;
         c.flyOffset = 0;
+        c.flyOffsetX = 0;
         c.flyCooldown = 3500 + Math.random() * 3000; // wait a while before flying again
       }
     }
@@ -5678,7 +5676,7 @@ function updateSmallCrows(deltaTime) {
 
 function drawSmallCrows(camX) {
   smallCrows.forEach(c => {
-    const cx = c.x - camX;
+    const cx = c.x - camX + (c.flyOffsetX || 0);
     if (cx < -40 || cx > canvas.width + 40) return;
     const flyOffset = c.flyOffset || 0;
     const cy = gy - c.height - c.y + Math.sin(c.bob) * 1.5 - flyOffset;
