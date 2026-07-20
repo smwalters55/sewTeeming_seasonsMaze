@@ -1829,7 +1829,7 @@ function wrapText(ctx, text, maxWidth) {
 // the bubble figures out how many lines that actually takes and sizes
 // itself accordingly, so nothing overflows regardless of length.
 function drawSpeechBubble(ctx, x, y, sentences) {
-  const bubbleWidth = 160;
+  const bubbleWidth = 180;
   const maxTextWidth = bubbleWidth - 34; // padding on both sides
   const lineHeight = 13;
 
@@ -1840,7 +1840,7 @@ function drawSpeechBubble(ctx, x, y, sentences) {
     allLines.push(...wrapText(ctx, sentence, maxTextWidth));
   });
 
-  const bubbleHeight = Math.max(38, allLines.length * lineHeight + 14);
+  const bubbleHeight = Math.max(40, allLines.length * lineHeight + 20);
 
   ctx.fillStyle = "rgba(255,255,248,0.95)";
   roundRect(ctx, x - 24, y, bubbleWidth, bubbleHeight, 9);
@@ -1851,7 +1851,7 @@ function drawSpeechBubble(ctx, x, y, sentences) {
 
   ctx.fillStyle = "#2b2b2b";
   allLines.forEach((line, i) => {
-    ctx.fillText(line, x - 12, y + 15 + i * lineHeight);
+    ctx.fillText(line, x - 12, y + 18 + i * lineHeight);
   });
 }
 
@@ -4636,7 +4636,7 @@ function startCarvingStation() {
 }
 
 const CARVING_BEAT1_MS = 700;
-const CARVING_CARVE_MS = 2600;
+const CARVING_CARVE_MS = 5500;
 const CARVING_BEAT2_MS = 600;
 const CARVING_SPARKLE_MS = 800;
 const CARVING_GROW_MS = 2400;
@@ -5086,6 +5086,24 @@ function drawHayBaleShape(cx, cy, w, h, rot, seed) {
   ctx.restore();
 }
 
+// shared scatter generator -- both drawHayBales and the per-bale
+// collision system call this, so what's visually drawn and what's
+// actually climbable always match exactly, never drift apart
+function getHayBaleToppledPositions() {
+  const positions = [];
+  for (let i = 0; i < 20; i++) {
+    const hashX = Math.sin(i * 12.9898) * 43758.5453 % 1;
+    const hashY = Math.sin(i * 78.233 + 1) * 12345.6789 % 1;
+    const hashRot = Math.sin(i * 39.346 + 2) * 6543.21 % 1;
+    positions.push({
+      dx: 90 + hashX * 140,
+      dy: -4 - Math.abs(hashY) * 50,
+      rot: Math.PI / 2 + hashRot * 2.2
+    });
+  }
+  return positions;
+}
+
 function drawHayBales(camX) {
   const hx = hayBales.x - camX;
   const baseY = gy;
@@ -5105,20 +5123,9 @@ function drawHayBales(camX) {
   }
   // toppled layout -- a genuinely messy scatter, same seeded-hash
   // approach used for the giant book pile's own collapse, rather than
-  // an organized grid. Spread wide, varied height and rotation per
-  // bale. Collision height for the actual climbable platform stays
-  // fixed regardless of how messy the visual scatter looks.
-  const toppledPositions = [];
-  for (let i = 0; i < 20; i++) {
-    const hashX = Math.sin(i * 12.9898) * 43758.5453 % 1;
-    const hashY = Math.sin(i * 78.233 + 1) * 12345.6789 % 1;
-    const hashRot = Math.sin(i * 39.346 + 2) * 6543.21 % 1;
-    toppledPositions.push({
-      dx: 90 + hashX * 140,
-      dy: -4 - Math.abs(hashY) * 50,
-      rot: Math.PI / 2 + hashRot * 2.2
-    });
-  }
+  // an organized grid. Now each bale is individually jumpable
+  // matching its own actual height, not one flat zone across the pile
+  const toppledPositions = getHayBaleToppledPositions();
 
   if (hayBales.toppled) {
     toppledPositions.forEach((p, i) => {
@@ -5389,19 +5396,19 @@ function drawCarvingStation(camX) {
       eyesRevealed ? carvedPumpkinDesign.eyeRight : null,
       mouthRevealed ? carvedPumpkinDesign.mouth : null
     );
-    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.1)) / 0.1;
+    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
-      const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 4);
-      const kAngle = -0.5 + sawPosition(eyesCutProgress, 0, 1, 4);
+      const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
+      const kAngle = -0.5 + sawPosition(eyesCutProgress, 0, 1, 7);
       drawKnife(kx, sy - 16, kAngle);
     } else if (eyesRevealed) {
       const sparkleP = Math.min(1, (progress - CARVING_EYES_REVEAL_AT) / 0.12);
       if (sparkleP <= 1) { drawSparkleBurst(sx - 26, sy - 16, sparkleP); drawSparkleBurst(sx + 26, sy - 16, sparkleP); }
     }
-    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.08)) / 0.08;
+    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.18)) / 0.18;
     if (mouthCutProgress >= 0 && mouthCutProgress <= 1) {
-      const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 3);
-      const kAngle = sawPosition(mouthCutProgress, 0, 0.6, 3);
+      const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 6);
+      const kAngle = sawPosition(mouthCutProgress, 0, 0.6, 6);
       drawKnife(kx, sy + 24, kAngle);
     } else if (mouthRevealed) {
       const sparkleP = Math.min(1, (progress - CARVING_MOUTH_REVEAL_AT) / 0.12);
@@ -5422,9 +5429,13 @@ function drawCarvingStation(camX) {
     // dragged out either
     const p = carvingStation.phase === "done" ? 1 : carvingStation.carveT / CARVING_GROW_MS;
     const eased = p * p * (3 - 2 * p);
-    const size = 130 + eased * 65;
+    const size = 130 + eased * 55;
     const bob = carvingStation.phase === "done" ? Math.sin(performance.now() * 0.003) * 3 : 0;
-    drawPumpkinFace(sx, sy - eased * 30 + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    // anchors the bottom edge in place as it grows, rather than
+    // expanding downward -- the base stays exactly where it started
+    // instead of creeping down over where the player is standing
+    const growY = -(size - 130) * 0.5;
+    drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
     if (carvingStation.phase === "done") {
       ctx.fillStyle = "#3a2818";
       ctx.font = "12px Georgia, serif";
@@ -13573,7 +13584,7 @@ function drawCarvingUI() {
   } else if (carvingUI.step === "mouth") {
     previewMouth = carvingUI.cursorIndex;
   }
-  drawPumpkinFace(cx, cy, 140, previewEyeLeft, previewEyeRight, previewMouth);
+  drawPumpkinFace(cx, cy, 100, previewEyeLeft, previewEyeRight, previewMouth);
 
   // step-specific prompt text
   ctx.fillStyle = "#3a2818";
@@ -16309,7 +16320,7 @@ if (apple.splitTimer > 0) apple.splitTimer--;
       crow.active = true;
       crow.tip = 30;
     } else if (crow.active && keys.spaceJustPressed && isPlayerNear(crowCenterX, crow.y, 130, 45, 999) &&
-               inventory.pumpkin > 0 && !crow.offeredPumpkin) {
+               heldItem === "pumpkin" && inventory.pumpkin > 0 && !crow.offeredPumpkin) {
       // pumpkin isn't deducted here -- the player still carries it and
       // needs to walk it over and place it themselves at the station
       crow.offeredPumpkin = true;
@@ -16318,10 +16329,12 @@ if (apple.splitTimer > 0) apple.splitTimer--;
   }
 
   // --- CARVING STATION PLACEMENT -- space near the station's own
-  // platform, with a pumpkin in hand, places it down on the cloth ---
-  if (!carvingStation.pumpkinPlaced && !carvingStation.active && inventory.pumpkin > 0 &&
+  // platform, with the pumpkin specifically in hand, places it down
+  // on the cloth ---
+  if (!carvingStation.pumpkinPlaced && !carvingStation.active && heldItem === "pumpkin" && inventory.pumpkin > 0 &&
       keys.spaceJustPressed && isPlayerNear(carvingStation.x, carvingStation.platformHeight, 40, 20, 999)) {
     inventory.pumpkin -= 1;
+    if (inventory.pumpkin <= 0) { delete inventory.pumpkin; heldItem = null; }
     updateInventoryUI();
     carvingStation.pumpkinPlaced = true;
     carvingStation.placingT = 0;
@@ -16558,17 +16571,30 @@ lastTime = now;
         else player.x = hayBales.x + 20;
       }
     } else {
-      // toppled -- now a climbable platform, same landing pattern as
-      // every other jumpable ledge in the game
-      const pileTop = HAY_BALE_TOPPLED_HEIGHT;
-      if (
-        player.x + player.width > hayBales.x - 20 &&
-        player.x < hayBales.x + 235 &&
-        player.y <= pileTop &&
-        player.y >= pileTop - 30 &&
-        player.vy <= 0
-      ) {
-        player.y = pileTop;
+      // toppled -- each bale is now individually jumpable, matching
+      // its own actual scattered position and height rather than one
+      // flat zone across the whole pile. Finds the single best
+      // (highest) matching bale first, since overlapping bales could
+      // otherwise have a later one in the array incorrectly override
+      // a more correct landing
+      const toppledPositions = getHayBaleToppledPositions();
+      const BALE_HALF_WIDTH = 15, BALE_HALF_HEIGHT = 13;
+      let bestBaleTop = null;
+      toppledPositions.forEach(p => {
+        const baleX = hayBales.x + p.dx;
+        const baleTop = -p.dy + BALE_HALF_HEIGHT;
+        if (
+          player.x + player.width > baleX - BALE_HALF_WIDTH &&
+          player.x < baleX + BALE_HALF_WIDTH &&
+          player.y <= baleTop &&
+          player.y >= baleTop - 30 &&
+          player.vy <= 0
+        ) {
+          if (bestBaleTop === null || baleTop > bestBaleTop) bestBaleTop = baleTop;
+        }
+      });
+      if (bestBaleTop !== null) {
+        player.y = bestBaleTop;
         player.vy = 0;
         player.jumping = false;
         player.usedDoubleJump = false;
