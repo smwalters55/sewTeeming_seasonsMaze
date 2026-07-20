@@ -95,7 +95,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "oak"; // TEMPORARY — was "autumn", switched for easy viewing while actively working in the oak scene
+let currentScene = "autumn"; // normal starting scene
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -126,7 +126,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 400, // TEMPORARY — was 120, matched to oak's spawn point while actively working there
+  x: 3450, // TEMPORARY — positioned near the hay bales in autumn to test the topple/crow/carving sequence, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { acorn: 1, lamp: 1 }; // e.g. { appleSlice: 2, boomerang: 1 } -- acorn/lamp seeded for debug-start convenience
+const inventory = { acorn: 1, pumpkin: 1 }; // TEMPORARY — seeded for debug-start convenience, revert to {} when done
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -180,7 +180,7 @@ const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
 // into a slot. Click an inventory chip to select/deselect it.
-let heldItem = "lamp"; // defaulted for debug-start convenience -- ready to light immediately
+let heldItem = null; // nothing held by default -- lamp is no longer seeded, so there's nothing to default to holding
 // separate from heldItem/inventory -- books are unique, non-stackable,
 // and picking up a new one swaps out whatever was already carried,
 // rather than accumulating like normal collectibles
@@ -207,7 +207,7 @@ let honeyScoops = 0; // set to 8 on collection
 // this instead of raw object key order, which was never actually
 // designed on purpose (it just happened to put whichever item type was
 // FIRST ever collected at the front, forever)
-let inventoryOrder = ["lamp", "acorn"];
+let inventoryOrder = ["acorn", "pumpkin"];
 function touchInventoryOrder(itemType) {
   const idx = inventoryOrder.indexOf(itemType);
   if (idx !== -1) inventoryOrder.splice(idx, 1);
@@ -512,7 +512,7 @@ function updateCarryingUI() {
    FROG NPC
    ====================================================== */
 const frog = {
-  x: 1207,
+  x: 820, // middle of the gap between the two platforms (560 and 1080)
   y: 0,
   width: 48,
   height: 36,
@@ -661,7 +661,7 @@ const sceneMapInfo = {
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
 };
 
-const discoveredScenes = { autumn: true, oak: true }; // autumn is where you normally start; oak added too while the temporary debug-start is active
+const discoveredScenes = { autumn: true, oak: true, ratroom: true }; // TEMPORARY — oak/ratroom added for debug-start convenience, revert to just { autumn: true } when done
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -2066,6 +2066,19 @@ function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
 // prettier layered trees — multiple overlapping canopy clusters instead of
 // one flat circle, warm autumn tones pulled from the same palette their
 // own leaves use, instead of a mismatched green
+// scales an existing leaf tree up around its own base point (ground
+// level, at its x position) -- avoids touching drawLeafTree's own
+// internal coordinate math, which is long and easy to break
+function drawProminentLeafTree(x, camX, shape, scale) {
+  const tx = x - camX;
+  ctx.save();
+  ctx.translate(tx, gy);
+  ctx.scale(scale, scale);
+  ctx.translate(-tx, -gy);
+  drawLeafTree(x, camX, shape);
+  ctx.restore();
+}
+
 function drawLeafTree(x, camX, shape) {
   const tx = x - camX;
   const baseColor = shape === "maple" ? "#e8481f" : "#ffcc18";
@@ -4024,6 +4037,15 @@ if (frog.active && isPlayerNear(frog.x + frog.width / 2, 0, 70, 6, 999)) {
 
 drawCrow(camX);
 drawTreeCrow(camX);
+drawCarvingStation(camX);
+if (hayBales.toppled) {
+  drawProminentLeafTree(4210, camX, "maple", 1.35);
+  drawProminentLeafTree(5010, camX, "round", 1.3);
+}
+drawDecorativeHayPiles(camX);
+drawSmallCrows(camX);
+drawBat(camX);
+drawDecorativeSquashField(camX);
 
 
 
@@ -4480,46 +4502,389 @@ const vinePumpkin = { x: 2641, heightAboveGround: 232, collected: false, collect
 const hayBales = {
   x: 3480,
   toppled: false,
+  waiting: false, // the beat before toppling actually begins, giving the player a moment to register what's about to happen
+  waitT: 0,
   toppling: false,
   toppleT: 0
 };
-const HAY_BALE_STANDING_HEIGHT = 85; // tall enough to genuinely block passage, not just a bump
+const HAY_BALE_ROWS = 10; // tall stack, two columns wide -- reads as genuinely imposing, "all the way up"
+const HAY_BALE_ROW_HEIGHT = 22;
+const HAY_BALE_STANDING_HEIGHT = HAY_BALE_ROWS * HAY_BALE_ROW_HEIGHT;
 const HAY_BALE_TOPPLED_HEIGHT = 32;  // low, climbable platform once fallen
-const HAY_BALE_TOPPLE_MS = 900;
+const HAY_BALE_WAIT_MS = 2200; // the pause before the topple actually starts
+const HAY_BALE_TOPPLE_MS = 1300; // faster fall -- the waiting beat beforehand already gives time to register what's about to happen
 
 function updateHayBales(deltaTime) {
   if (hayBales.toppled) return;
-  if (!hayBales.toppling) {
-    if (!discoveredScenes.oak || !discoveredScenes.ratroom) return;
-    // only trigger while the bales are actually visible on screen --
-    // this event needs to be witnessed, not happen off-camera
-    const screenX = hayBales.x - cameraX;
-    if (screenX < -40 || screenX > canvas.width + 40) return;
-    hayBales.toppling = true;
-    hayBales.toppleT = 0;
+  if (hayBales.toppling) {
+    hayBales.toppleT += deltaTime * 1000;
+    if (hayBales.toppleT >= HAY_BALE_TOPPLE_MS) {
+      hayBales.toppling = false;
+      hayBales.toppled = true;
+    }
     return;
   }
-  hayBales.toppleT += deltaTime * 1000;
-  if (hayBales.toppleT >= HAY_BALE_TOPPLE_MS) {
-    hayBales.toppling = false;
-    hayBales.toppled = true;
+  if (hayBales.waiting) {
+    hayBales.waitT += deltaTime * 1000;
+    if (hayBales.waitT >= HAY_BALE_WAIT_MS) {
+      hayBales.waiting = false;
+      hayBales.toppling = true;
+      hayBales.toppleT = 0;
+    }
+    return;
   }
+  if (!discoveredScenes.oak || !discoveredScenes.ratroom) return;
+  // only trigger while the bales are actually visible on screen --
+  // this event needs to be witnessed, not happen off-camera
+  const screenX = hayBales.x - cameraX;
+  if (screenX < -40 || screenX > canvas.width + 40) return;
+  hayBales.waiting = true;
+  hayBales.waitT = 0;
 }
 
 // crow -- sly, mischievous, waits past the toppled hay bales at the
 // pumpkin carving area. Not interactable until the bales have
 // actually toppled, since the area isn't reachable before then.
 const crow = {
-  x: 3630,
+  x: 4050,
   y: HAY_BALE_TOPPLED_HEIGHT,
   width: 52,
   height: 40,
   bob: 0,
   bobSpeed: 0.035,
   active: false,
-  tip: 0
+  tip: 0,
+  facing: -1, // -1 = default/left, 1 = flipped to face right, toward the carving station
+  offeredPumpkin: false // true once the player has offered the pumpkin and heard the second line
 };
 let crowTalked = false;
+
+// pumpkin carving UI -- keyboard only, matching the book reader's own
+// interaction language (left/right to browse, space to confirm/
+// advance). Eyes are chosen together first (mirrored live preview),
+// then the right eye can be edited independently before moving on to
+// the mouth, so someone who wants a normal symmetric face never has
+// to make the same choice twice, but mismatched eyes are just as easy.
+const CARVING_EYE_COUNT = 8;
+const CARVING_MOUTH_COUNT = 8;
+const CARVING_OPEN_CLOSE_MS = 500;
+
+const carvingUI = {
+  active: false,
+  opening: false,
+  openT: 0,
+  closing: false,
+  closeT: 0,
+  step: "eyes", // "eyes" -> "eyeRight" -> "mouth" -> "finalize"
+  cursorIndex: 0,
+  eyeLeft: 0,
+  eyeRight: 0,
+  mouth: 0
+};
+
+function startCarvingUI() {
+  carvingUI.opening = true;
+  carvingUI.openT = 0;
+  carvingUI.step = "eyes";
+  carvingUI.cursorIndex = 0;
+  carvingUI.eyeLeft = 0;
+  carvingUI.eyeRight = 0;
+  carvingUI.mouth = 0;
+}
+
+// the finalized design -- what the compositing render (piece 4) reads
+// from, and what the in-world carving animation (piece 5) will
+// eventually act on
+const carvedPumpkinDesign = { eyeLeft: 0, eyeRight: 0, mouth: 0, ready: false };
+
+function finalizeCarvedPumpkin() {
+  carvedPumpkinDesign.eyeLeft = carvingUI.eyeLeft;
+  carvedPumpkinDesign.eyeRight = carvingUI.eyeRight;
+  carvedPumpkinDesign.mouth = carvingUI.mouth;
+  carvedPumpkinDesign.ready = true;
+  carvingUI.active = false;
+  carvingUI.closing = true;
+  carvingUI.closeT = 0;
+  startCarvingStation();
+  // NOT YET BUILT (piece 6) -- placement + sparkle + grow-large finale
+}
+
+// carving station -- physically near the crow, where the finalized
+// design actually gets carved in-world. Blank pumpkin appears first,
+// then eyes reveal with a sparkle flash, then the mouth, ending in a
+// finished pumpkin the player can pick up.
+const carvingStation = {
+  x: 4655, // pulled back in from the overly-wide layout, middle ground
+  platformHeight: 26,
+  pumpkinPlaced: false,
+  placingT: 0,
+  active: false,
+  phase: "carving", // "carving" -> "done"
+  carveT: 0,
+  pickedUp: false
+};
+const CARVING_PLACE_SPARKLE_MS = 900;
+const CARVING_STATION_DURATION_MS = 2600;
+const CARVING_EYES_REVEAL_AT = 0.42; // fraction of the duration when eyes appear
+const CARVING_MOUTH_REVEAL_AT = 0.75; // fraction of the duration when mouth appears
+
+function startCarvingStation() {
+  carvingStation.active = true;
+  carvingStation.phase = "beat1";
+  carvingStation.carveT = 0;
+  carvingStation.pickedUp = false;
+}
+
+const CARVING_BEAT1_MS = 700;
+const CARVING_CARVE_MS = 2600;
+const CARVING_BEAT2_MS = 600;
+const CARVING_SPARKLE_MS = 800;
+const CARVING_GROW_MS = 2400;
+
+function updateCarvingStation(deltaTime) {
+  if (carvingStation.pumpkinPlaced && !carvingStation.active) {
+    carvingStation.placingT += deltaTime * 1000;
+    if (carvingStation.placingT >= CARVING_PLACE_SPARKLE_MS) {
+      startCarvingUI();
+    }
+    return;
+  }
+  if (!carvingStation.active) return;
+  const dtMs = deltaTime * 1000;
+  carvingStation.carveT += dtMs;
+
+  if (carvingStation.phase === "beat1" && carvingStation.carveT >= CARVING_BEAT1_MS) {
+    carvingStation.phase = "carving";
+    carvingStation.carveT = 0;
+  } else if (carvingStation.phase === "carving" && carvingStation.carveT >= CARVING_CARVE_MS) {
+    carvingStation.phase = "beat2";
+    carvingStation.carveT = 0;
+  } else if (carvingStation.phase === "beat2" && carvingStation.carveT >= CARVING_BEAT2_MS) {
+    carvingStation.phase = "sparkle";
+    carvingStation.carveT = 0;
+  } else if (carvingStation.phase === "sparkle" && carvingStation.carveT >= CARVING_SPARKLE_MS) {
+    carvingStation.phase = "growing";
+    carvingStation.carveT = 0;
+  } else if (carvingStation.phase === "growing" && carvingStation.carveT >= CARVING_GROW_MS) {
+    carvingStation.phase = "done";
+    carvingStation.carveT = CARVING_GROW_MS;
+  }
+}
+
+// -- compositing render: 7 eye shapes, 7 mouth shapes, each drawn as
+// a carved cutout at position (x,y) scaled by s. Shared between the
+// live UI preview and the eventual in-world finished pumpkin, so the
+// two always match exactly.
+function drawPumpkinEye(idx, x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#2a1608";
+  ctx.strokeStyle = "#2a1608";
+  if (idx === 0) { // round
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 1) { // classic triangle
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.55);
+    ctx.lineTo(s * 0.5, s * 0.4);
+    ctx.lineTo(-s * 0.5, s * 0.4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 2) { // wink -- a thick curved squint, not a cutout shape
+    ctx.lineWidth = s * 0.22;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.5, 0);
+    ctx.quadraticCurveTo(0, s * 0.35, s * 0.5, 0);
+    ctx.stroke();
+  } else if (idx === 3) { // star
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? s * 0.55 : s * 0.24;
+      const a = (Math.PI / 5) * i - Math.PI / 2;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 4) { // diamond
+    ctx.save();
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-s * 0.35, -s * 0.35, s * 0.7, s * 0.7);
+    ctx.restore();
+  } else if (idx === 5) { // angry slant
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.5, -s * 0.3);
+    ctx.lineTo(s * 0.5, s * 0.1);
+    ctx.lineTo(s * 0.3, s * 0.4);
+    ctx.lineTo(-s * 0.5, s * 0.15);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 6) { // wide surprised oval
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.55, s * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else { // hexagon
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      const px = Math.cos(a) * s * 0.5, py = Math.sin(a) * s * 0.5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPumpkinMouth(idx, x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#2a1608";
+  ctx.strokeStyle = "#2a1608";
+  if (idx === 0) { // simple grin
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.7, s * 0.1);
+    ctx.quadraticCurveTo(0, s * 0.55, s * 0.7, s * 0.1);
+    ctx.stroke();
+  } else if (idx === 1) { // jagged teeth
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.7, 0);
+    for (let i = 0; i < 6; i++) {
+      const px = -s * 0.7 + (s * 1.4 / 6) * (i + 1);
+      const py = i % 2 === 0 ? s * 0.4 : -s * 0.05;
+      ctx.lineTo(px, py);
+    }
+    ctx.lineTo(s * 0.7, -s * 0.2);
+    ctx.lineTo(-s * 0.7, -s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 2) { // round o
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.15, s * 0.32, s * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 3) { // frown
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.6, s * 0.35);
+    ctx.quadraticCurveTo(0, -s * 0.05, s * 0.6, s * 0.35);
+    ctx.stroke();
+  } else if (idx === 4) { // wide grin with teeth gaps
+    ctx.fillRect(-s * 0.75, -s * 0.05, s * 1.5, s * 0.4);
+    ctx.fillStyle = "#c9863a"; // punches tooth gaps back to the pumpkin's own color
+    for (let i = 1; i < 5; i++) {
+      ctx.fillRect(-s * 0.75 + (s * 1.5 / 5) * i - s * 0.03, -s * 0.05, s * 0.06, s * 0.4);
+    }
+  } else if (idx === 5) { // smirk -- asymmetric, one corner raised
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.55, s * 0.3);
+    ctx.quadraticCurveTo(0, s * 0.15, s * 0.6, -s * 0.15);
+    ctx.stroke();
+  } else if (idx === 6) { // straight slit
+    ctx.fillRect(-s * 0.6, -s * 0.06, s * 1.2, s * 0.12);
+  } else { // wide open happy mouth -- a big genuine laugh, corners
+    // curling up into a smile rather than a flat oval
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.65, s * 0.05);
+    ctx.quadraticCurveTo(-s * 0.55, -s * 0.28, 0, -s * 0.3);
+    ctx.quadraticCurveTo(s * 0.55, -s * 0.28, s * 0.65, s * 0.05);
+    ctx.quadraticCurveTo(s * 0.5, s * 0.42, 0, s * 0.48);
+    ctx.quadraticCurveTo(-s * 0.5, s * 0.42, -s * 0.65, s * 0.05);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx) {
+  // pumpkin body -- round, warm orange, ribbed like a real pumpkin
+  ctx.fillStyle = "#c9863a";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, size * 0.55, size * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,60,20,0.4)";
+  ctx.lineWidth = 2;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * size * 0.16, cy - size * 0.48);
+    ctx.quadraticCurveTo(cx + i * size * 0.2, cy, cx + i * size * 0.16, cy + size * 0.48);
+    ctx.stroke();
+  }
+  // stem
+  ctx.fillStyle = "#5a7a3a";
+  ctx.fillRect(cx - size * 0.06, cy - size * 0.62, size * 0.12, size * 0.16);
+
+  if (eyeLeftIdx !== null) drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26);
+  if (eyeRightIdx !== null) drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26);
+  if (mouthIdx !== null) drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3);
+}
+
+function updateCarvingUI(deltaTime) {
+  const dtMs = deltaTime * 1000;
+
+  if (carvingUI.opening) {
+    carvingUI.openT += dtMs;
+    if (carvingUI.openT >= CARVING_OPEN_CLOSE_MS) {
+      carvingUI.opening = false;
+      carvingUI.active = true;
+    }
+    return;
+  }
+
+  if (carvingUI.closing) {
+    carvingUI.closeT += dtMs;
+    if (carvingUI.closeT >= CARVING_OPEN_CLOSE_MS) {
+      carvingUI.closing = false;
+    }
+    return;
+  }
+
+  if (!carvingUI.active) return;
+
+  const count = carvingUI.step === "mouth" ? CARVING_MOUTH_COUNT : CARVING_EYE_COUNT;
+
+  if (keys.rightJustPressed) {
+    carvingUI.cursorIndex = (carvingUI.cursorIndex + 1) % count;
+  } else if (keys.leftJustPressed) {
+    carvingUI.cursorIndex = (carvingUI.cursorIndex - 1 + count) % count;
+  } else if (keys.upJustPressed) {
+    // go back a step, restoring the cursor to whatever was previously
+    // chosen for that step rather than resetting to the first option
+    if (carvingUI.step === "eyeRight") {
+      carvingUI.step = "eyes";
+      carvingUI.cursorIndex = carvingUI.eyeLeft;
+    } else if (carvingUI.step === "mouth") {
+      carvingUI.step = "eyeRight";
+      carvingUI.cursorIndex = carvingUI.eyeRight;
+    } else if (carvingUI.step === "finalize") {
+      carvingUI.step = "mouth";
+      carvingUI.cursorIndex = carvingUI.mouth;
+    }
+  } else if (keys.spaceJustPressed) {
+    if (carvingUI.step === "eyes") {
+      carvingUI.eyeLeft = carvingUI.cursorIndex;
+      carvingUI.eyeRight = carvingUI.cursorIndex; // mirrored by default
+      carvingUI.step = "eyeRight";
+      carvingUI.cursorIndex = carvingUI.eyeRight;
+    } else if (carvingUI.step === "eyeRight") {
+      carvingUI.eyeRight = carvingUI.cursorIndex;
+      carvingUI.step = "mouth";
+      carvingUI.cursorIndex = carvingUI.mouth;
+    } else if (carvingUI.step === "mouth") {
+      carvingUI.mouth = carvingUI.cursorIndex;
+      carvingUI.step = "finalize";
+    } else if (carvingUI.step === "finalize") {
+      finalizeCarvedPumpkin();
+    }
+  }
+}
+
 
 // tree-sighting crow -- a smaller, wordless glimpse of the same crow,
 // perched in the maple tree's canopy. Flies off if the player gets
@@ -4536,8 +4901,8 @@ const treeCrow = {
   fleeing: false,
   fleeT: 0
 };
-const TREE_CROW_FLEE_RADIUS = 140;
-const TREE_CROW_FLEE_MS = 1100;
+const TREE_CROW_FLEE_RADIUS = 95;
+const TREE_CROW_FLEE_MS = 1400;
 
 function updateTreeCrow(deltaTime) {
   if (currentScene !== "autumn") return;
@@ -4661,104 +5026,147 @@ function drawSmallTree(tx, canopyScreenY) {
   ctx.fill();
 }
 
+const HAY_BALE_STRAW_COLOR = "#c9a24a", HAY_BALE_STRAW_DARK = "#a8802f", HAY_BALE_STRAW_LINE = "rgba(90,64,18,0.4)", HAY_BALE_STRAW_WISP = "#d4af5a";
+
+function drawHayBaleShape(cx, cy, w, h, rot, seed) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  // individual straw strands sticking out from the edges -- drawn
+  // first so the rectangle body sits on top of their base, only the
+  // tips poke out visibly
+  ctx.strokeStyle = HAY_BALE_STRAW_WISP;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 9; i++) {
+    const hash = Math.sin(seed + i * 12.9898) * 43758.5453 % 1; // seeded, not random -- stays consistent frame to frame
+    const edge = i % 4; // 0=top, 1=bottom, 2=left, 3=right
+    let sx, sy, ex, ey;
+    const along = (hash + 1) * 0.5 * (edge < 2 ? w : h) - (edge < 2 ? w / 2 : h / 2);
+    const len = 5 + Math.abs(hash) * 5;
+    const spread = hash * 0.7;
+    if (edge === 0) { sx = along; sy = -h / 2; ex = along + spread * len; ey = -h / 2 - len; }
+    else if (edge === 1) { sx = along; sy = h / 2; ex = along + spread * len; ey = h / 2 + len; }
+    else if (edge === 2) { sx = -w / 2; sy = along; ex = -w / 2 - len; ey = along + spread * len; }
+    else { sx = w / 2; sy = along; ex = w / 2 + len; ey = along + spread * len; }
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  }
+  // the bale body itself -- a rectangle with slightly rounded
+  // corners, not a plain round shape
+  ctx.fillStyle = HAY_BALE_STRAW_COLOR;
+  const r = 3;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2 + r, -h / 2);
+  ctx.lineTo(w / 2 - r, -h / 2);
+  ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  ctx.lineTo(w / 2, h / 2 - r);
+  ctx.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  ctx.lineTo(-w / 2 + r, h / 2);
+  ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  ctx.lineTo(-w / 2, -h / 2 + r);
+  ctx.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = HAY_BALE_STRAW_DARK;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // binding lines, twine wrapped around the bale
+  ctx.strokeStyle = HAY_BALE_STRAW_LINE;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.28, -h / 2);
+  ctx.lineTo(-w * 0.28, h / 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(w * 0.28, -h / 2);
+  ctx.lineTo(w * 0.28, h / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawHayBales(camX) {
   const hx = hayBales.x - camX;
   const baseY = gy;
-  const strawColor = "#c9a24a", strawDark = "#a8802f", strawLine = "rgba(90,64,18,0.4)", strawWisp = "#d4af5a";
+  const drawBale = drawHayBaleShape;
 
-  function drawBale(cx, cy, w, h, rot, seed) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(rot);
-    // individual straw strands sticking out from the edges -- drawn
-    // first so the rectangle body sits on top of their base, only the
-    // tips poke out visibly
-    ctx.strokeStyle = strawWisp;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 9; i++) {
-      const hash = Math.sin(seed + i * 12.9898) * 43758.5453 % 1; // seeded, not random -- stays consistent frame to frame
-      const edge = i % 4; // 0=top, 1=bottom, 2=left, 3=right
-      let sx, sy, ex, ey;
-      const along = (hash + 1) * 0.5 * (edge < 2 ? w : h) - (edge < 2 ? w / 2 : h / 2);
-      const len = 5 + Math.abs(hash) * 5;
-      const spread = hash * 0.7;
-      if (edge === 0) { sx = along; sy = -h / 2; ex = along + spread * len; ey = -h / 2 - len; }
-      else if (edge === 1) { sx = along; sy = h / 2; ex = along + spread * len; ey = h / 2 + len; }
-      else if (edge === 2) { sx = -w / 2; sy = along; ex = -w / 2 - len; ey = along + spread * len; }
-      else { sx = w / 2; sy = along; ex = w / 2 + len; ey = along + spread * len; }
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
+  // standing layout -- 2 columns x 10 rows, generated programmatically
+  // rather than hardcoded, since 20 individual bale positions would be
+  // unwieldy to hand-write
+  const standingPositions = [];
+  for (let row = 0; row < HAY_BALE_ROWS; row++) {
+    for (let col = 0; col < 2; col++) {
+      standingPositions.push({
+        dx: col === 0 ? -9 : 9,
+        dy: -11 - row * HAY_BALE_ROW_HEIGHT
+      });
     }
-    // the bale body itself -- a rectangle with slightly rounded
-    // corners, not a plain round shape
-    ctx.fillStyle = strawColor;
-    const r = 3;
-    ctx.beginPath();
-    ctx.moveTo(-w / 2 + r, -h / 2);
-    ctx.lineTo(w / 2 - r, -h / 2);
-    ctx.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
-    ctx.lineTo(w / 2, h / 2 - r);
-    ctx.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
-    ctx.lineTo(-w / 2 + r, h / 2);
-    ctx.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
-    ctx.lineTo(-w / 2, -h / 2 + r);
-    ctx.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = strawDark;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // binding lines, twine wrapped around the bale
-    ctx.strokeStyle = strawLine;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(-w * 0.28, -h / 2);
-    ctx.lineTo(-w * 0.28, h / 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(w * 0.28, -h / 2);
-    ctx.lineTo(w * 0.28, h / 2);
-    ctx.stroke();
-    ctx.restore();
+  }
+  // toppled layout -- a genuinely messy scatter, same seeded-hash
+  // approach used for the giant book pile's own collapse, rather than
+  // an organized grid. Spread wide, varied height and rotation per
+  // bale. Collision height for the actual climbable platform stays
+  // fixed regardless of how messy the visual scatter looks.
+  const toppledPositions = [];
+  for (let i = 0; i < 20; i++) {
+    const hashX = Math.sin(i * 12.9898) * 43758.5453 % 1;
+    const hashY = Math.sin(i * 78.233 + 1) * 12345.6789 % 1;
+    const hashRot = Math.sin(i * 39.346 + 2) * 6543.21 % 1;
+    toppledPositions.push({
+      dx: 90 + hashX * 140,
+      dy: -4 - Math.abs(hashY) * 50,
+      rot: Math.PI / 2 + hashRot * 2.2
+    });
   }
 
   if (hayBales.toppled) {
-    // settled, low mound -- four bales lying on their sides, forming
-    // the climbable platform
-    drawBale(hx - 33, baseY - 15, 26, 30, Math.PI / 2, 1);
-    drawBale(hx - 11, baseY - 15, 26, 30, Math.PI / 2, 2);
-    drawBale(hx + 11, baseY - 15, 26, 30, Math.PI / 2, 3);
-    drawBale(hx + 33, baseY - 15, 26, 30, Math.PI / 2, 4);
+    toppledPositions.forEach((p, i) => {
+      drawBale(hx + p.dx, baseY + p.dy, 26, 30, p.rot, i + 1);
+    });
   } else if (hayBales.toppling) {
     // mid-topple -- each bale falls independently, staggered rather
-    // than the whole stack rotating as one rigid unit. The top bale
-    // (least stable) starts falling first, each one below follows
-    // with increasing delay, tumbling extra as it falls and settling
-    // right as it lands
-    const standingY = [-11, -33, -55, -77]; // bottom to top
-    const toppledX = [-33, -11, 11, 33];
-    for (let i = 0; i < 4; i++) {
-      const fallDelay = (3 - i) * 150; // top bale (i=3) falls first
+    // than the whole stack rotating as one rigid unit. Bales higher
+    // up in the stack (least stable) start falling first
+    for (let i = 0; i < 20; i++) {
+      const row = Math.floor(i / 2); // which row this bale started in
+      const jitterHash = Math.sin(i * 91.345 + 7) * 24681.35 % 1; // per-bale timing jitter, breaks up the lockstep look
+      const fallDelay = (HAY_BALE_ROWS - 1 - row) * 38 + Math.abs(jitterHash) * 150;
       const localT = Math.max(0, hayBales.toppleT - fallDelay);
       const totalForThis = HAY_BALE_TOPPLE_MS - fallDelay;
       const rawP = Math.min(1, localT / Math.max(1, totalForThis));
-      const eased = rawP * rawP * (3 - 2 * rawP);
-      const startX = 0, startY = standingY[i];
-      const targetX = toppledX[i], targetY = -15;
-      const x = startX + (targetX - startX) * eased;
-      const y = startY + (targetY - startY) * eased;
-      const tumble = (1 - eased) * 2.5; // extra spin while still falling, settles as it lands
-      const rot = eased * (Math.PI / 2) + tumble;
+
+      // per-bale easing style -- not every bale moves the same way.
+      // some overshoot past their target and settle back, some snap
+      // fast then coast, some build up speed toward the end
+      const styleHash = Math.abs(Math.sin(i * 13.7 + 2));
+      let eased;
+      if (styleHash < 0.34) {
+        const overshoot = 1.18;
+        eased = rawP < 0.68 ? (rawP / 0.68) * overshoot : overshoot - (overshoot - 1) * ((rawP - 0.68) / 0.32);
+      } else if (styleHash < 0.67) {
+        eased = 1 - Math.pow(1 - rawP, 3);
+      } else {
+        eased = Math.pow(rawP, 2.3);
+      }
+
+      const start = standingPositions[i];
+      const target = toppledPositions[i];
+      // wobble along the actual path -- decays as the fall completes,
+      // oscillates a couple of times so it's not a clean straight line
+      const wobbleSeed = Math.sin(i * 47.3 + 3) * 10;
+      const wobble = Math.sin(rawP * Math.PI * 3 + wobbleSeed) * (1 - rawP) * 9;
+      const x = start.dx + (target.dx - start.dx) * eased + wobble;
+      const y = start.dy + (target.dy - start.dy) * eased - Math.abs(wobble) * 0.4;
+      const tumble = (1 - eased) * 3; // extra spin while still falling, settles as it lands
+      const rot = eased * target.rot + tumble;
       drawBale(hx + x, baseY + y, 34, 22, rot, i + 1);
     }
   } else {
-    // standing wall -- four bales stacked, blocking passage entirely
-    drawBale(hx, baseY - 11, 34, 22, 0, 1);
-    drawBale(hx, baseY - 33, 34, 22, 0, 2);
-    drawBale(hx, baseY - 55, 34, 22, 0, 3);
-    drawBale(hx, baseY - 77, 34, 22, 0, 4);
+    // standing wall -- two columns, ten rows tall, blocking passage entirely
+    standingPositions.forEach((p, i) => {
+      drawBale(hx + p.dx, baseY + p.dy, 34, 22, 0, i + 1);
+    });
   }
 }
 
@@ -4766,13 +5174,14 @@ function drawHayBales(camX) {
 // crow use this exact same visual language, just at different scales
 function drawCrowShape(w, h) {
   // tail feathers, behind the body -- angles diagonally down and
-  // back, like a real crow's tail, with a slightly fanned tip
+  // back, like a real crow's tail, thick and fanned rather than a
+  // thin point
   ctx.fillStyle = "#1e1e22";
   ctx.beginPath();
-  ctx.moveTo(2, h * 0.5);
-  ctx.lineTo(-14, h * 0.78);
-  ctx.lineTo(-19, h * 0.92);
-  ctx.lineTo(-9, h * 0.68);
+  ctx.moveTo(5, h * 0.42);
+  ctx.lineTo(-18, h * 0.75);
+  ctx.lineTo(-24, h * 1.0);
+  ctx.lineTo(-6, h * 0.72);
   ctx.closePath();
   ctx.fill();
 
@@ -4822,31 +5231,612 @@ function drawCrow(camX) {
   // shadow
   ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
-  ctx.ellipse(cx + crow.width / 2, gy - crow.y + 3, 24, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + crow.width / 2, gy + 3, 24, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
   ctx.translate(cx, cy);
+  ctx.scale(crow.facing, 1);
   drawCrowShape(crow.width, crow.height);
   ctx.restore();
 
-  if (crow.active && isPlayerNear(crow.x + crow.width / 2, crow.y, 70, 6, 999)) {
+  if (crow.active && isPlayerNear(crow.x + crow.width / 2, crow.y, 130, 45, 999)) {
     const bubbleY = cy - 60;
-    drawSpeechBubble(ctx, cx, bubbleY, [
-      "Well now — got a squash on you, by any chance?"
-    ]);
+    if (!crow.offeredPumpkin) {
+      drawSpeechBubble(ctx, cx, bubbleY, [
+        "Well now — got a squash on you, by any chance?"
+      ]);
+    } else {
+      drawSpeechBubble(ctx, cx, bubbleY, [
+        "There's a nice place to carve such a squash, over yonder."
+      ]);
+    }
   }
+}
+
+function drawSparkleBurst(cx, cy, progress, scale) {
+  // progress 0-1 across a short window right at a reveal moment --
+  // a handful of points radiating outward, fading as they go. scale
+  // defaults to 1, used larger for the initial placement sparkle
+  scale = scale || 1;
+  const count = 6;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + progress * 0.6;
+    const dist = progress * 26 * scale;
+    const px = cx + Math.cos(angle) * dist;
+    const py = cy + Math.sin(angle) * dist;
+    const alpha = Math.max(0, 1 - progress);
+    ctx.fillStyle = `rgba(255,230,160,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 2.2 * scale * (1 - progress * 0.4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// moves from startX to endX overall, but oscillates back and forth
+// several times along the way rather than one clean sweep -- the
+// oscillation shrinks to zero as p approaches 1, so it still lands
+// exactly on endX at completion
+function sawPosition(p, startX, endX, passes) {
+  const amplitude = (1 - p) * 0.55;
+  const saw = Math.sin(p * Math.PI * passes) * amplitude;
+  const eased = Math.max(0, Math.min(1, p + saw));
+  return startX + (endX - startX) * eased;
+}
+
+function drawKnife(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  // blade -- tapers to an actual sharp point, not a blunt rectangle
+  ctx.fillStyle = "#c8c8c0";
+  ctx.beginPath();
+  ctx.moveTo(0, -22);      // sharp tip
+  ctx.lineTo(2.2, -6);     // back edge, slight belly
+  ctx.lineTo(2.2, 2);
+  ctx.lineTo(-2.2, 2);
+  ctx.lineTo(-1.6, -6);    // cutting edge, straighter
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(80,80,75,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.fillStyle = "#5a3a20";
+  ctx.fillRect(-3, 2, 6, 10);
+  ctx.restore();
+}
+
+function drawCarvingStation(camX) {
+  if (!hayBales.toppled) return;
+  const sx = carvingStation.x - camX;
+  const stationTopY = gy - carvingStation.platformHeight;
+
+  // small hay bale platform -- two bales lying on their side, same
+  // shape and straw detail as every other bale in the game
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy + 3, 32, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawHayBaleShape(sx - 17, gy - 15, 26, 30, Math.PI / 2, 41);
+  drawHayBaleShape(sx + 17, gy - 15, 26, 30, Math.PI / 2, 42);
+
+  // off-white cloth draped over the bales -- hangs down over the left
+  // and right sides where there's nothing underneath to support it,
+  // staying higher in the middle where the bales do. Tighter angle on
+  // the side droop -- hugs the bales rather than flaring out wide.
+  ctx.fillStyle = "#e8ddc0";
+  ctx.beginPath();
+  ctx.moveTo(sx - 32, stationTopY - 8);
+  ctx.quadraticCurveTo(sx - 33, stationTopY + 6, sx - 27, stationTopY + 12); // left edge hangs down, tighter and steeper
+  ctx.quadraticCurveTo(sx - 16, stationTopY + 6, sx - 8, stationTopY + 7);  // wavy drape along the bottom
+  ctx.quadraticCurveTo(sx, stationTopY + 4, sx + 8, stationTopY + 7);
+  ctx.quadraticCurveTo(sx + 16, stationTopY + 6, sx + 27, stationTopY + 12);
+  ctx.quadraticCurveTo(sx + 33, stationTopY + 6, sx + 32, stationTopY - 8); // right edge hangs down, tighter and steeper
+  ctx.quadraticCurveTo(sx + 16, stationTopY - 14, sx, stationTopY - 12); // top edge, flatter across the middle
+  ctx.quadraticCurveTo(sx - 16, stationTopY - 14, sx - 32, stationTopY - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // a couple of soft fold lines for a little fabric texture
+  ctx.strokeStyle = "rgba(140,120,90,0.25)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx - 30, stationTopY - 4);
+  ctx.quadraticCurveTo(sx - 32, stationTopY + 3, sx - 28, stationTopY + 8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx + 30, stationTopY - 4);
+  ctx.quadraticCurveTo(sx + 32, stationTopY + 3, sx + 28, stationTopY + 8);
+  ctx.stroke();
+
+  // knife resting off-center to the right, when nothing else is using it
+  if (!carvingStation.pumpkinPlaced || (carvingStation.active && carvingStation.phase !== "carving")) {
+    drawKnife(sx + 20, stationTopY - 8, 0.3);
+  }
+
+  if (carvingStation.pickedUp || !carvingStation.pumpkinPlaced) return;
+
+  const sy = stationTopY - 18;
+
+  if (!carvingStation.active) {
+    // placement sparkle -- larger particles than the reveal bursts,
+    // pumpkin sitting blank while it settles onto the cloth
+    const p = Math.min(1, carvingStation.placingT / CARVING_PLACE_SPARKLE_MS);
+    drawPumpkinFace(sx, sy, 100, null, null, null);
+    drawSparkleBurst(sx, sy - 10, p, 1.6);
+    drawSparkleBurst(sx - 18, sy + 6, p, 1.3);
+    drawSparkleBurst(sx + 18, sy + 6, p, 1.3);
+    return;
+  }
+
+  if (carvingStation.phase === "beat1" || carvingStation.phase === "beat2") {
+    // a genuine pause -- nothing happening, blank pumpkin sitting still
+    drawPumpkinFace(sx, sy, 130, null, null, null);
+    return;
+  }
+
+  if (carvingStation.phase === "carving") {
+    // knife visibly cutting each feature in, reusing the same
+    // eyes-then-mouth staggered timing as before
+    const progress = carvingStation.carveT / CARVING_CARVE_MS;
+    const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
+    const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
+    drawPumpkinFace(
+      sx, sy, 130,
+      eyesRevealed ? carvedPumpkinDesign.eyeLeft : null,
+      eyesRevealed ? carvedPumpkinDesign.eyeRight : null,
+      mouthRevealed ? carvedPumpkinDesign.mouth : null
+    );
+    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.1)) / 0.1;
+    if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
+      const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 4);
+      const kAngle = -0.5 + sawPosition(eyesCutProgress, 0, 1, 4);
+      drawKnife(kx, sy - 16, kAngle);
+    } else if (eyesRevealed) {
+      const sparkleP = Math.min(1, (progress - CARVING_EYES_REVEAL_AT) / 0.12);
+      if (sparkleP <= 1) { drawSparkleBurst(sx - 26, sy - 16, sparkleP); drawSparkleBurst(sx + 26, sy - 16, sparkleP); }
+    }
+    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.08)) / 0.08;
+    if (mouthCutProgress >= 0 && mouthCutProgress <= 1) {
+      const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 3);
+      const kAngle = sawPosition(mouthCutProgress, 0, 0.6, 3);
+      drawKnife(kx, sy + 24, kAngle);
+    } else if (mouthRevealed) {
+      const sparkleP = Math.min(1, (progress - CARVING_MOUTH_REVEAL_AT) / 0.12);
+      if (sparkleP <= 1) drawSparkleBurst(sx, sy + 24, sparkleP);
+    }
+    return;
+  }
+
+  if (carvingStation.phase === "sparkle") {
+    const p = carvingStation.carveT / CARVING_SPARKLE_MS;
+    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawSparkleBurst(sx, sy, p, 1.8);
+    return;
+  }
+
+  if (carvingStation.phase === "growing" || carvingStation.phase === "done") {
+    // slow but genuinely visible growth, not a sudden pop and not
+    // dragged out either
+    const p = carvingStation.phase === "done" ? 1 : carvingStation.carveT / CARVING_GROW_MS;
+    const eased = p * p * (3 - 2 * p);
+    const size = 130 + eased * 65;
+    const bob = carvingStation.phase === "done" ? Math.sin(performance.now() * 0.003) * 3 : 0;
+    drawPumpkinFace(sx, sy - eased * 30 + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    if (carvingStation.phase === "done") {
+      ctx.fillStyle = "#3a2818";
+      ctx.font = "12px Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("space to pick up", sx, sy - size * 0.5 - 20);
+    }
+  }
+}
+
+// decorative hay piles scattered around the carving area -- purely
+// visual dressing, no collision, reusing the same bale shape as the
+// main pile. Varied arrangements (not identical repeats) so the area
+// reads as a real hay-strewn space rather than a copy-pasted prop
+const decorativeHayPiles = [
+  { x: 4226, topHeight: 22, bales: [{ dx: 0, dy: -11, rot: 0.08, seed: 5 }] },
+  { x: 4434, topHeight: 44, bales: [{ dx: 0, dy: -11, rot: 0, seed: 11 }, { dx: 0, dy: -33, rot: 0, seed: 12 }] },
+  { x: 4850, topHeight: 22, bales: [{ dx: -12, dy: -11, rot: -0.1, seed: 16 }, { dx: 12, dy: -11, rot: 0.12, seed: 17 }] },
+  { x: 5032, topHeight: 41, bales: [{ dx: -14, dy: -11, rot: Math.PI / 2, seed: 21 }, { dx: 14, dy: -11, rot: Math.PI / 2, seed: 22 }, { dx: 0, dy: -30, rot: 0.15, seed: 23 }] },
+  { x: 5253, topHeight: 66, bales: [{ dx: 0, dy: -11, rot: 0, seed: 31 }, { dx: 0, dy: -33, rot: 0, seed: 32 }, { dx: 0, dy: -55, rot: 0, seed: 33 }] },
+  { x: 5435, topHeight: 28, bales: [{ dx: -13, dy: -11, rot: Math.PI / 2, seed: 41 }, { dx: 13, dy: -11, rot: Math.PI / 2, seed: 42 }] },
+  { x: 5591, topHeight: 44, bales: [{ dx: 0, dy: -11, rot: -0.06, seed: 51 }, { dx: 0, dy: -33, rot: 0.1, seed: 52 }] }
+];
+
+function drawDecorativeHayPiles(camX) {
+  decorativeHayPiles.forEach(pile => {
+    const px = pile.x - camX;
+    if (px < -60 || px > canvas.width + 60) return; // skip off-screen piles
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.beginPath();
+    ctx.ellipse(px, gy + 3, 22, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    pile.bales.forEach(b => {
+      drawHayBaleShape(px + b.dx, gy + b.dy, 34, 22, b.rot, b.seed);
+    });
+  });
+}
+
+// small ambient crows -- perched on the decorative piles, purely for
+// atmosphere. Reuses the same shared crow shape at a smaller scale.
+const smallCrows = [
+  { x: 4434, y: 46, width: 20, height: 15, bob: 0, bobSpeed: 0.04, facing: 1,
+    baseY: 46, flyState: "perched", flyT: 0, flyCooldown: 3000 + Math.random() * 2500, flyOffset: 0 },
+  { x: 5253, y: 68, width: 18, height: 14, bob: 1.2, bobSpeed: 0.045, facing: -1 }
+];
+
+const SMALL_CROW_RISE_MS = 1300;
+const SMALL_CROW_HOLD_MS = 500;
+const SMALL_CROW_SETTLE_MS = 1100;
+const SMALL_CROW_RISE_HEIGHT = 26;
+
+function updateSmallCrows(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  smallCrows.forEach(c => {
+    c.bob += c.bobSpeed;
+    if (c.flyState === undefined) return; // this crow just idle-bobs, no fly cycle
+
+    if (c.flyState === "perched") {
+      c.flyT += dtMs;
+      if (c.flyT >= c.flyCooldown) {
+        c.flyState = "rising";
+        c.flyT = 0;
+      }
+    } else if (c.flyState === "rising") {
+      c.flyT += dtMs;
+      const p = Math.min(1, c.flyT / SMALL_CROW_RISE_MS);
+      const eased = p * p * (3 - 2 * p);
+      c.flyOffset = eased * SMALL_CROW_RISE_HEIGHT;
+      if (p >= 1) { c.flyState = "holding"; c.flyT = 0; }
+    } else if (c.flyState === "holding") {
+      c.flyT += dtMs;
+      if (c.flyT >= SMALL_CROW_HOLD_MS) { c.flyState = "settling"; c.flyT = 0; }
+    } else if (c.flyState === "settling") {
+      c.flyT += dtMs;
+      const p = Math.min(1, c.flyT / SMALL_CROW_SETTLE_MS);
+      const eased = p * p * (3 - 2 * p);
+      c.flyOffset = (1 - eased) * SMALL_CROW_RISE_HEIGHT;
+      if (p >= 1) {
+        c.flyState = "perched";
+        c.flyT = 0;
+        c.flyOffset = 0;
+        c.flyCooldown = 3500 + Math.random() * 3000; // wait a while before flying again
+      }
+    }
+  });
+}
+
+function drawSmallCrows(camX) {
+  smallCrows.forEach(c => {
+    const cx = c.x - camX;
+    if (cx < -40 || cx > canvas.width + 40) return;
+    const flyOffset = c.flyOffset || 0;
+    const cy = gy - c.height - c.y + Math.sin(c.bob) * 1.5 - flyOffset;
+    // shadow fades out a little as it rises, since it's further from the ground
+    ctx.fillStyle = `rgba(0,0,0,${0.18 * (1 - flyOffset / (SMALL_CROW_RISE_HEIGHT * 1.5))})`;
+    ctx.beginPath();
+    ctx.ellipse(cx + c.width / 2, gy + 2, 10, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(c.facing, 1);
+    drawCrowShape(c.width, c.height);
+    ctx.restore();
+  });
+}
+
+// decorative squash -- varied shapes and colors scattered around the
+// carving area, matching the range actually sold at Halloween rather
+// than uniform orange pumpkins
+function drawDecorativeSquash(cx, cy, size, type) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  if (type === "white") {
+    // pale cream pumpkin, same rounded shape as the main pumpkin
+    ctx.fillStyle = "#e8e0cc";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.55, size * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(180,170,140,0.5)";
+    ctx.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * size * 0.16, -size * 0.48);
+      ctx.quadraticCurveTo(i * size * 0.2, 0, i * size * 0.16, size * 0.48);
+      ctx.stroke();
+    }
+  } else if (type === "gourd") {
+    // dark green, warty/bumpy irregular surface
+    ctx.fillStyle = "#3a5a2e";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.5, size * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(60,90,40,0.6)";
+    for (let i = 0; i < 10; i++) {
+      const a = Math.sin(i * 17.3) * 43758.5453 % 1;
+      const angle = (i / 10) * Math.PI * 2;
+      const r = size * (0.25 + Math.abs(a) * 0.18);
+      const wx = Math.cos(angle) * r, wy = Math.sin(angle) * r * 0.85;
+      ctx.beginPath();
+      ctx.arc(wx, wy, size * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (type === "hubbard") {
+    // tall blue-gray teardrop shape, distinct silhouette from a round
+    // pumpkin -- with real ribbing and warty texture so it reads
+    // clearly as a squash rather than an abstract smooth shape
+    ctx.fillStyle = "#6b7a82";
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.65);
+    ctx.quadraticCurveTo(size * 0.45, -size * 0.2, size * 0.38, size * 0.35);
+    ctx.quadraticCurveTo(size * 0.2, size * 0.62, 0, size * 0.62);
+    ctx.quadraticCurveTo(-size * 0.2, size * 0.62, -size * 0.38, size * 0.35);
+    ctx.quadraticCurveTo(-size * 0.45, -size * 0.2, 0, -size * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    // warty texture, same seeded-bump approach as the gourd
+    ctx.fillStyle = "rgba(90,100,108,0.55)";
+    for (let i = 0; i < 8; i++) {
+      const a = Math.sin(i * 21.7) * 43758.5453 % 1;
+      const t = (i + 0.5) / 8;
+      const wy = -size * 0.55 + t * size * 1.05;
+      const maxWx = size * (0.42 - Math.abs(t - 0.5) * 0.3);
+      const wx = (a * 2 - 1) * maxWx * 0.7;
+      ctx.beginPath();
+      ctx.arc(wx, wy, size * 0.045, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // multiple ribbing lines, not just one center seam
+    ctx.strokeStyle = "rgba(40,50,55,0.4)";
+    ctx.lineWidth = 1.2;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * size * 0.16, -size * 0.6);
+      ctx.quadraticCurveTo(i * size * 0.22 + size * 0.06, 0, i * size * 0.16, size * 0.58);
+      ctx.stroke();
+    }
+  } else if (type === "turban") {
+    // single continuous silhouette -- wide base narrowing gently to a
+    // subtle waist, then the cap bulging back out before rounding off.
+    // One closed path, not two stacked shapes, so there's no seam
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.58); // top of cap
+    ctx.bezierCurveTo(size * 0.26, -size * 0.56, size * 0.34, -size * 0.42, size * 0.3, -size * 0.28);
+    ctx.bezierCurveTo(size * 0.27, -size * 0.16, size * 0.3, -size * 0.1, size * 0.4, size * 0.02);
+    ctx.bezierCurveTo(size * 0.52, size * 0.16, size * 0.5, size * 0.32, size * 0.34, size * 0.42);
+    ctx.bezierCurveTo(size * 0.2, size * 0.5, -size * 0.2, size * 0.5, -size * 0.34, size * 0.42);
+    ctx.bezierCurveTo(-size * 0.5, size * 0.32, -size * 0.52, size * 0.16, -size * 0.4, size * 0.02);
+    ctx.bezierCurveTo(-size * 0.3, -size * 0.1, -size * 0.27, -size * 0.16, -size * 0.3, -size * 0.28);
+    ctx.bezierCurveTo(-size * 0.34, -size * 0.42, -size * 0.26, -size * 0.56, 0, -size * 0.58);
+    ctx.closePath();
+    ctx.fillStyle = "#c9863a";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,60,20,0.4)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // cream cap color, clipped to just the top portion so it blends
+    // into the base color rather than sitting behind a hard outline
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = "#e8ddb8";
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.4, size * 0.36, size * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // ribbing that flows continuously from base through cap, following
+    // the same silhouette rather than two separate sets of lines
+    ctx.strokeStyle = "rgba(120,70,30,0.35)";
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * size * 0.12, -size * 0.55);
+      ctx.quadraticCurveTo(i * size * 0.22, -size * 0.05, i * size * 0.12, size * 0.46);
+      ctx.stroke();
+    }
+  } else if (type === "pattypan") {
+    // wide, flattened shape with a scalloped wavy rim all the way
+    // around -- pale yellow, the classic Trader Joe's autumn scallop squash
+    ctx.fillStyle = "#e0d060";
+    const bumps = 11;
+    ctx.beginPath();
+    for (let i = 0; i <= bumps; i++) {
+      const t = i / bumps;
+      const angle = t * Math.PI * 2 - Math.PI / 2;
+      const wobble = Math.sin(t * bumps * Math.PI * 2) * size * 0.05;
+      const r = size * 0.52 + wobble;
+      const px = Math.cos(angle) * r, py = Math.sin(angle) * r * 0.42;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(160,140,30,0.45)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    // faint ridge lines radiating from the center, echoing a real
+    // scallop squash's segmented look
+    ctx.strokeStyle = "rgba(160,140,30,0.3)";
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < bumps; i++) {
+      const angle = (i / bumps) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(angle) * size * 0.46, Math.sin(angle) * size * 0.46 * 0.42);
+      ctx.stroke();
+    }
+  } else {
+    // wonky lopsided orange pumpkin -- asymmetric, one side bulging more
+    ctx.fillStyle = "#c9863a";
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.06, size * 0.02, size * 0.56, size * 0.46, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,60,20,0.4)";
+    ctx.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * size * 0.15 - size * 0.06, -size * 0.42);
+      ctx.quadraticCurveTo(i * size * 0.2 - size * 0.06, size * 0.02, i * size * 0.15 - size * 0.06, size * 0.44);
+      ctx.stroke();
+    }
+  }
+
+  // stem, shared across all types
+  ctx.fillStyle = "#5a7a3a";
+  ctx.fillRect(-size * 0.05, -size * 0.68, size * 0.1, size * 0.14);
+
+  ctx.restore();
+}
+
+const decorativeSquash = [
+  { x: 4505, size: 30, type: "gourd" },
+  { x: 5110, size: 34, type: "white" },
+  { x: 4915, size: 42, type: "hubbard" },
+  { x: 5318, size: 32, type: "wonky" },
+  { x: 5656, size: 28, type: "white" },
+  { x: 5740, size: 30, type: "gourd" },
+  { x: 4265, size: 38, type: "turban" },
+  { x: 5500, size: 36, type: "pattypan" }
+];
+
+// each squash type has a different actual vertical extent -- a flat
+// pattypan is much shorter than a round pumpkin -- so a single
+// one-size-fits-all ground offset left some floating and others
+// sinking in. This maps each type to how far its own bottom edge
+// actually extends below its center, as a fraction of size.
+const SQUASH_BOTTOM_EXTENT = {
+  white: 0.5,
+  gourd: 0.42,
+  hubbard: 0.62,
+  turban: 0.5,
+  pattypan: 0.22,
+  wonky: 0.48
+};
+
+function drawDecorativeSquashField(camX) {
+  decorativeSquash.forEach(s => {
+    const sx = s.x - camX;
+    if (sx < -50 || sx > canvas.width + 50) return;
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.beginPath();
+    ctx.ellipse(sx, gy + 3, s.size * 0.4, s.size * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const bottomExtent = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
+    drawDecorativeSquash(sx, gy - s.size * bottomExtent, s.size, s.type);
+  });
+}
+
+// fly nothing like birds: sharp unpredictable direction changes, a
+// fluttery bounce rather than a smooth glide, erratic zigzagging
+// instead of clean arcs. Purely ambient, no interaction.
+const bat = {
+  x: 4600,
+  y: 90,
+  vx: 0.15,
+  vy: 0,
+  turnT: 0,
+  turnInterval: 500 + Math.random() * 500,
+  wingPhase: 0,
+  boundsMinX: 3550,
+  boundsMaxX: 5850,
+  boundsMinY: 45,
+  boundsMaxY: 135
+};
+
+function updateBat(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  bat.wingPhase += dtMs * 0.03;
+  bat.turnT += dtMs;
+
+  if (bat.turnT >= bat.turnInterval) {
+    bat.turnT = 0;
+    bat.turnInterval = 650 + Math.random() * 600; // slightly longer between direction changes -- a touch less erratic
+    const speed = 0.09 + Math.random() * 0.14; // slower still
+    const angle = Math.random() * Math.PI * 2;
+    bat.vx = Math.cos(angle) * speed;
+    bat.vy = Math.sin(angle) * speed;
+  }
+
+  bat.x += bat.vx * dtMs;
+  bat.y -= bat.vy * dtMs; // y here is height-above-ground, so positive vy should raise it
+
+  // soft bounds -- steer back in rather than hard clamp, keeps the
+  // erratic feel instead of snapping to a wall
+  if (bat.x < bat.boundsMinX) bat.vx = Math.abs(bat.vx) + 0.08;
+  if (bat.x > bat.boundsMaxX) bat.vx = -Math.abs(bat.vx) - 0.08;
+  if (bat.y < bat.boundsMinY) bat.vy = -Math.abs(bat.vy) - 0.08;
+  if (bat.y > bat.boundsMaxY) bat.vy = Math.abs(bat.vy) + 0.08;
+}
+
+function drawBat(camX) {
+  if (!hayBales.toppled) return;
+  const bx = bat.x - camX;
+  if (bx < -40 || bx > canvas.width + 40) return;
+  const by = gy - bat.y;
+
+  ctx.save();
+  ctx.translate(bx, by);
+
+  const flap = Math.sin(bat.wingPhase) * 0.9; // fast flutter, not a slow glide
+
+  ctx.fillStyle = "#1c1c20";
+  // wings -- membranous, jagged finger segments, distinct from any bird
+  [-1, 1].forEach(side => {
+    ctx.save();
+    ctx.scale(side, 1);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(10, -6 - flap * 5);
+    ctx.lineTo(16, -2 - flap * 3);
+    ctx.lineTo(13, 2);
+    ctx.lineTo(8, 1 - flap * 2);
+    ctx.lineTo(4, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // small round body
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 4.5, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small pointed ears
+  ctx.beginPath();
+  ctx.moveTo(-3, -4);
+  ctx.lineTo(-4.5, -8);
+  ctx.lineTo(-1.5, -5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(3, -4);
+  ctx.lineTo(4.5, -8);
+  ctx.lineTo(1.5, -5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function drawTreeCrow(camX) {
   const cx = treeCrow.x - camX;
-  let flyOffsetX = 0, flyOffsetY = 0, alpha = 1;
+  let flyOffsetX = 0, flyOffsetY = 0, alpha = 1, tilt = 0;
   if (treeCrow.fleeing) {
     const p = Math.min(1, treeCrow.fleeT / TREE_CROW_FLEE_MS);
-    // flies up and away, fading out as it goes -- gone, not lingering
-    flyOffsetX = p * 90;
-    flyOffsetY = -p * 70;
-    alpha = 1 - p;
+    const eased = p * p; // accelerates -- slow start (still registers as a real takeoff), faster as it goes
+    // flies further and faster before fading -- stays fully visible
+    // through almost the whole flight, only fading in the last stretch
+    // once it's genuinely flown off into the distance
+    flyOffsetX = eased * 160;
+    flyOffsetY = -eased * 130 + Math.sin(p * Math.PI * 4) * 6; // fluttery bounce along the climb, not a smooth glide
+    alpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
+    tilt = -0.3 - eased * 0.25; // banks upward into the flight direction
     if (p >= 1) return; // fully fled, nothing left to draw
   }
   const cy = gy - treeCrow.height - treeCrow.y + Math.sin(treeCrow.bob) * 1.5 + flyOffsetY;
@@ -4854,6 +5844,7 @@ function drawTreeCrow(camX) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(cx + flyOffsetX, cy);
+  ctx.rotate(tilt);
   drawCrowShape(treeCrow.width, treeCrow.height);
   ctx.restore();
 }
@@ -5447,6 +6438,7 @@ function drawMoth(camX) {
   ctx.restore();
 }
 function drawLavenderPlant(camX) {
+  if (!oakLamp.collected) return; // same unlock condition as the rest of this cozy corner
   const px = lavenderSpot.x - camX, py = gy;
   // small terracotta pot
   ctx.fillStyle = "#a85838";
@@ -9466,10 +10458,14 @@ wallArtArch.src = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBw
 const wallArtCircles = new Image();
 wallArtCircles.src = "data:image/jpeg;base64,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";
 
+const wallArtTeaNook = new Image();
+wallArtTeaNook.src = "data:image/jpeg;base64,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";
+
 const wallArtPieces = [
   { img: wallArtWaterBird, x: 518, y: 60, w: 95, h: 63, frame: "ornate" },
   { img: wallArtArch, x: 1102, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
-  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval", darken: true } // right side of the nook, moved with it, made smaller per request
+  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval", darken: true }, // right side of the nook, moved with it, made smaller per request
+  { img: wallArtTeaNook, x: 2285, y: 120, w: 88, h: 56, frame: "thin", requiresLamp: true } // lower on the wall, midpoint between the previous two positions -- a personal piece, someone close to the developer's own art. thin frame since a heavy border overwhelms the delicate subject. gated behind the lamp, same as the rest of this cozy corner
 ];
 
 function drawAntiqueFrame(x, y, w, h, style) {
@@ -9497,6 +10493,14 @@ function drawAntiqueFrame(x, y, w, h, style) {
     ctx.beginPath();
     ctx.ellipse(x + w / 2, y + h / 2, w / 2 + pad, h / 2 + pad, 0, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (style === "thin") {
+    // delicate, minimal frame -- a single hairline border, no heavy
+    // solid block, for pieces where a heavy frame would overpower
+    // a soft/delicate subject
+    const thinPad = 3;
+    ctx.strokeStyle = "rgba(196,155,90,0.85)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - thinPad, y - thinPad, w + thinPad * 2, h + thinPad * 2);
   } else {
     // plain -- simple dark wood, slightly thicker for the bigger piece
     ctx.fillStyle = "#3a2818";
@@ -9509,6 +10513,7 @@ function drawAntiqueFrame(x, y, w, h, style) {
 
 function drawWallArt(camX) {
   wallArtPieces.forEach(piece => {
+    if (piece.requiresLamp && !oakLamp.collected) return;
     const px = piece.x - camX;
     if (piece.frame === "oval") {
       drawAntiqueFrame(px, piece.y, piece.w, piece.h, piece.frame);
@@ -10794,7 +11799,7 @@ function drawTeaPlayerCup(tx, tableTop) {
   }
 }
 
-const oakLamp = { x: 1069, collected: true }; // seeded true for debug-start convenience -- unlocks cushion pile, pothos, fairy lights, and the Metaphors book immediately for testing
+const oakLamp = { x: 1069, collected: false };
 
 function updateTeaNook(deltaTime) {
   if (!cushionPile.unlocked()) return;
@@ -12540,6 +13545,70 @@ function updateBookReader(deltaTime) {
   }
 }
 
+function drawCarvingUI() {
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2 - 10;
+
+  // cream, old-paper background -- same tone as the top-down map, so
+  // this UI reads as visually related to the game's other paper-like
+  // surfaces rather than a one-off color choice
+  ctx.fillStyle = "#ddd0a8";
+  ctx.fillRect(0, 0, w, h);
+
+  let alpha = 1;
+  if (carvingUI.opening) alpha = Math.min(1, carvingUI.openT / CARVING_OPEN_CLOSE_MS);
+  else if (carvingUI.closing) alpha = Math.max(0, 1 - carvingUI.closeT / CARVING_OPEN_CLOSE_MS);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // live preview -- whichever feature is currently being browsed
+  // updates in real time, everything already confirmed stays fixed
+  let previewEyeLeft = carvingUI.eyeLeft, previewEyeRight = carvingUI.eyeRight, previewMouth = carvingUI.mouth;
+  if (carvingUI.step === "eyes") {
+    previewEyeLeft = carvingUI.cursorIndex;
+    previewEyeRight = carvingUI.cursorIndex;
+  } else if (carvingUI.step === "eyeRight") {
+    previewEyeRight = carvingUI.cursorIndex;
+  } else if (carvingUI.step === "mouth") {
+    previewMouth = carvingUI.cursorIndex;
+  }
+  drawPumpkinFace(cx, cy, 140, previewEyeLeft, previewEyeRight, previewMouth);
+
+  // step-specific prompt text
+  ctx.fillStyle = "#3a2818";
+  ctx.font = "16px Georgia, serif";
+  ctx.textAlign = "center";
+  let promptLine1 = "", promptLine2 = "";
+  if (carvingUI.step === "eyes") {
+    promptLine1 = "Choose a pair of eyes";
+    promptLine2 = "← → to browse   •   space to confirm";
+  } else if (carvingUI.step === "eyeRight") {
+    promptLine1 = "Want the right eye different? Browse to change it";
+    promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
+  } else if (carvingUI.step === "mouth") {
+    promptLine1 = "Choose a mouth";
+    promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
+  } else if (carvingUI.step === "finalize") {
+    promptLine1 = "All set?";
+    promptLine2 = "space to finish carving   •   ↑ to go back and revise";
+  }
+  ctx.fillText(promptLine1, cx, h - 70);
+  ctx.font = "13px Georgia, serif";
+  ctx.fillStyle = "#6a5a48";
+  ctx.fillText(promptLine2, cx, h - 48);
+
+  // option counter, shown while actively browsing (not on finalize)
+  if (carvingUI.step !== "finalize") {
+    const count = carvingUI.step === "mouth" ? CARVING_MOUTH_COUNT : CARVING_EYE_COUNT;
+    ctx.font = "12px Georgia, serif";
+    ctx.fillStyle = "#8a7a68";
+    ctx.fillText((carvingUI.cursorIndex + 1) + " / " + count, cx, h - 26);
+  }
+
+  ctx.restore();
+}
+
 function drawBookReader() {
   const w = canvas.width, h = canvas.height;
   const spineX = 90, pageRight = w - 40, pageW = pageRight - spineX;
@@ -13903,7 +14972,7 @@ const hayPiles = [
   { x: 720, seed: 61, count: 8 }
 ];
 
-const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false, facingRight: false, fed: true }; // fed seeded true for debug-start convenience -- unlocks lamp table / cushion pile immediately for testing
+const ratNPC = { x: 460, tailSwayT: 0, talkedTo: false, facingRight: false, fed: false };
 
 // dialogue system -- space near the rat starts it, space again advances
 // through each beat, closes automatically after the last line. Every
@@ -14846,6 +15915,8 @@ ctx.clearRect(0,0,canvas.width,canvas.height);
 
 if (bookReader.active || bookReader.opening || bookReader.closing) {
   drawBookReader();
+} else if (carvingUI.active || carvingUI.opening || carvingUI.closing) {
+  drawCarvingUI();
 } else if (camera.topDown) {
   ctx.fillStyle="rgba(245,245,240,0.94)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -15234,10 +16305,35 @@ if (apple.splitTimer > 0) apple.splitTimer--;
   if (hayBales.toppled) {
     updateNPCIdle(crow);
     const crowCenterX = crow.x + crow.width / 2;
-    if (pressedDownNear(crowCenterX, crow.y, 70, 6, 999) && !crow.active && !pickupHandledThisFrame) {
+    if (pressedDownNear(crowCenterX, crow.y, 130, 45, 999) && !crow.active && !pickupHandledThisFrame) {
       crow.active = true;
       crow.tip = 30;
+    } else if (crow.active && keys.spaceJustPressed && isPlayerNear(crowCenterX, crow.y, 130, 45, 999) &&
+               inventory.pumpkin > 0 && !crow.offeredPumpkin) {
+      // pumpkin isn't deducted here -- the player still carries it and
+      // needs to walk it over and place it themselves at the station
+      crow.offeredPumpkin = true;
+      crow.facing = 1; // flips to face right, toward the station
     }
+  }
+
+  // --- CARVING STATION PLACEMENT -- space near the station's own
+  // platform, with a pumpkin in hand, places it down on the cloth ---
+  if (!carvingStation.pumpkinPlaced && !carvingStation.active && inventory.pumpkin > 0 &&
+      keys.spaceJustPressed && isPlayerNear(carvingStation.x, carvingStation.platformHeight, 40, 20, 999)) {
+    inventory.pumpkin -= 1;
+    updateInventoryUI();
+    carvingStation.pumpkinPlaced = true;
+    carvingStation.placingT = 0;
+  }
+
+  // --- CARVING STATION PICKUP -- once the reveal animation finishes,
+  // space near it collects the finished pumpkin ---
+  if (carvingStation.active && carvingStation.phase === "done" && !carvingStation.pickedUp &&
+      keys.spaceJustPressed && isPlayerNear(carvingStation.x, carvingStation.platformHeight, 70, 20, 999)) {
+    carvingStation.pickedUp = true;
+    inventory.carvedPumpkin = (inventory.carvedPumpkin || 0) + 1;
+    updateInventoryUI();
   }
 
 if (apple.landed && !frogNoticedApple) {
@@ -15435,12 +16531,26 @@ lastTime = now;
     return;
   }
 
+  if (carvingUI.active || carvingUI.opening || carvingUI.closing) {
+    updateCarvingUI(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
+
   handleInput();
   applyPhysics();
 
   if (currentScene === "autumn") {
     updateHayBales(deltaTime);
     updateTreeCrow(deltaTime);
+    updateSmallCrows(deltaTime);
+    if (hayBales.toppled) updateBat(deltaTime);
+    updateCarvingStation(deltaTime);
     if (!hayBales.toppled) {
       // standing wall -- blocks passage entirely until toppled
       if (player.x + player.width > hayBales.x - 20 && player.x < hayBales.x + 20) {
@@ -15452,8 +16562,8 @@ lastTime = now;
       // every other jumpable ledge in the game
       const pileTop = HAY_BALE_TOPPLED_HEIGHT;
       if (
-        player.x + player.width > hayBales.x - 40 &&
-        player.x < hayBales.x + 40 &&
+        player.x + player.width > hayBales.x - 20 &&
+        player.x < hayBales.x + 235 &&
         player.y <= pileTop &&
         player.y >= pileTop - 30 &&
         player.vy <= 0
@@ -15463,6 +16573,39 @@ lastTime = now;
         player.jumping = false;
         player.usedDoubleJump = false;
       }
+
+      // the carving station's own small platform -- separate from the
+      // main pile, only reachable once that pile itself has toppled
+      const stationTop = carvingStation.platformHeight;
+      if (
+        player.x + player.width > carvingStation.x - 30 &&
+        player.x < carvingStation.x + 30 &&
+        player.y <= stationTop &&
+        player.y >= stationTop - 30 &&
+        player.vy <= 0
+      ) {
+        player.y = stationTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
+
+      // decorative hay piles -- all genuinely jumpable now, same
+      // landing pattern as every other platform in this area
+      decorativeHayPiles.forEach(pile => {
+        if (
+          player.x + player.width > pile.x - 24 &&
+          player.x < pile.x + 24 &&
+          player.y <= pile.topHeight &&
+          player.y >= pile.topHeight - 30 &&
+          player.vy <= 0
+        ) {
+          player.y = pile.topHeight;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+        }
+      });
     }
   }
 
@@ -15504,8 +16647,20 @@ updateSeasonTransition(deltaTime);
   draw();
 
   const targetCam = player.x - canvas.width*0.4;
-  cameraX += (targetCam - cameraX)*0.08;
-  if (Math.abs(targetCam - cameraX) < 0.1) cameraX = targetCam; // snaps once negligibly close -- the easing formula alone never mathematically settles, causing a perpetual sub-pixel drift in everything drawn relative to the camera
+  if (hayBales.waiting) {
+    // tight during the pause -- just a sliver of space to the right,
+    // the tower dominates the frame before anything happens
+    cameraX = hayBales.x - (canvas.width - 40);
+  } else if (hayBales.toppling) {
+    // eases open as the fall actually progresses, revealing more
+    // space to the right the further along the topple gets
+    const p = Math.min(1, hayBales.toppleT / HAY_BALE_TOPPLE_MS);
+    const margin = 40 + p * 260;
+    cameraX = hayBales.x - (canvas.width - margin);
+  } else {
+    cameraX += (targetCam - cameraX)*0.08;
+    if (Math.abs(targetCam - cameraX) < 0.1) cameraX = targetCam; // snaps once negligibly close -- the easing formula alone never mathematically settles, causing a perpetual sub-pixel drift in everything drawn relative to the camera
+  }
   if (cameraX<0) cameraX=0;
   // ratroom's own right-side camera clamp, mirroring the left-side
   // pattern -- caps the camera a bit past where the hay ground cover
@@ -15525,6 +16680,7 @@ updateSeasonTransition(deltaTime);
 }
 
 
+updateInventoryUI(); // syncs the display with the initial seeded inventory -- without this, seeded debug items (acorn/lamp/pumpkin) exist in data but never actually render in the UI until something else triggers a refresh
 update();
 
 
