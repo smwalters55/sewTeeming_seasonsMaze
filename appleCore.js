@@ -4802,7 +4802,11 @@ function drawPumpkinMouth(idx, x, y, s) {
   ctx.restore();
 }
 
-function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx) {
+function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLeftReveal, eyeRightReveal, mouthReveal) {
+  if (eyeLeftReveal === undefined) eyeLeftReveal = 1;
+  if (eyeRightReveal === undefined) eyeRightReveal = 1;
+  if (mouthReveal === undefined) mouthReveal = 1;
+
   // pumpkin body -- round, warm orange, ribbed like a real pumpkin
   ctx.fillStyle = "#c9863a";
   ctx.beginPath();
@@ -4820,9 +4824,25 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx) {
   ctx.fillStyle = "#5a7a3a";
   ctx.fillRect(cx - size * 0.06, cy - size * 0.62, size * 0.12, size * 0.16);
 
-  if (eyeLeftIdx !== null) drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26);
-  if (eyeRightIdx !== null) drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26);
-  if (mouthIdx !== null) drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3);
+  // each feature clips to a rectangle that grows left-to-right as its
+  // own reveal progresses, so the shape looks like it's genuinely
+  // being cut into existence by the knife's sweep rather than
+  // appearing all at once the instant the cut window ends
+  function drawRevealed(reveal, drawFn) {
+    if (reveal >= 1) { drawFn(); return; }
+    if (reveal <= 0) return;
+    ctx.save();
+    ctx.beginPath();
+    const clipW = size * 0.7 * reveal;
+    ctx.rect(cx - size * 0.55, cy - size * 0.5, clipW, size);
+    ctx.clip();
+    drawFn();
+    ctx.restore();
+  }
+
+  if (eyeLeftIdx !== null) drawRevealed(eyeLeftReveal, () => drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26));
+  if (eyeRightIdx !== null) drawRevealed(eyeRightReveal, () => drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26));
+  if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3));
 }
 
 function updateCarvingUI(deltaTime) {
@@ -5295,22 +5315,69 @@ function drawKnife(x, y, angle) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  // blade -- tapers to an actual sharp point, not a blunt rectangle
+  // blade -- tapers to an actual sharp point, tip pointing down by
+  // default (angle=0), the natural orientation for actively cutting
+  // into a surface below rather than pointing away from it
   ctx.fillStyle = "#c8c8c0";
   ctx.beginPath();
-  ctx.moveTo(0, -22);      // sharp tip
-  ctx.lineTo(2.2, -6);     // back edge, slight belly
-  ctx.lineTo(2.2, 2);
-  ctx.lineTo(-2.2, 2);
-  ctx.lineTo(-1.6, -6);    // cutting edge, straighter
+  ctx.moveTo(0, 22);        // sharp tip, pointing down
+  ctx.lineTo(2.2, 6);       // back edge, slight belly
+  ctx.lineTo(2.2, -2);
+  ctx.lineTo(-2.2, -2);
+  ctx.lineTo(-1.6, 6);      // cutting edge, straighter
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "rgba(80,80,75,0.5)";
   ctx.lineWidth = 0.8;
   ctx.stroke();
   ctx.fillStyle = "#5a3a20";
-  ctx.fillRect(-3, 2, 6, 10);
+  ctx.fillRect(-3, -12, 6, 10);
   ctx.restore();
+}
+
+function drawPumpkinGuts(gx, gy2) {
+  // gooey stringy insides -- irregular pale orange-yellow blob
+  ctx.fillStyle = "#d4a24a";
+  ctx.beginPath();
+  ctx.moveTo(gx - 18, gy2);
+  ctx.quadraticCurveTo(gx - 20, gy2 - 10, gx - 10, gy2 - 9);
+  ctx.quadraticCurveTo(gx - 2, gy2 - 14, gx + 6, gy2 - 8);
+  ctx.quadraticCurveTo(gx + 16, gy2 - 10, gx + 17, gy2 - 2);
+  ctx.quadraticCurveTo(gx + 20, gy2 + 4, gx + 10, gy2 + 5);
+  ctx.quadraticCurveTo(gx, gy2 + 8, gx - 10, gy2 + 5);
+  ctx.quadraticCurveTo(gx - 20, gy2 + 4, gx - 18, gy2);
+  ctx.closePath();
+  ctx.fill();
+  // stringy texture within the blob
+  ctx.strokeStyle = "rgba(180,130,50,0.5)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const sx2 = gx - 14 + i * 7;
+    ctx.beginPath();
+    ctx.moveTo(sx2, gy2 - 6);
+    ctx.quadraticCurveTo(sx2 + 2, gy2, sx2 - 1, gy2 + 5);
+    ctx.stroke();
+  }
+  // a couple of curved skin scraps peeking out from beneath
+  ctx.fillStyle = "#c9863a";
+  ctx.beginPath();
+  ctx.ellipse(gx - 20, gy2 + 4, 8, 4, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(gx + 19, gy2 + 3, 7, 3.5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // seeds scattered across the top
+  ctx.fillStyle = "#e8dcb0";
+  const seedSpots = [[-8, -4], [-2, -8], [5, -6], [10, -2], [-4, 2], [3, 4], [-11, 0]];
+  seedSpots.forEach(([dx, dy]) => {
+    ctx.save();
+    ctx.translate(gx + dx, gy2 + dy);
+    ctx.rotate(dx * 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 2.6, 1.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
 }
 
 function drawCarvingStation(camX) {
@@ -5363,7 +5430,7 @@ function drawCarvingStation(camX) {
     drawKnife(sx + 20, stationTopY - 8, 0.3);
   }
 
-  if (carvingStation.pickedUp || !carvingStation.pumpkinPlaced) return;
+  if (!carvingStation.pumpkinPlaced) return;
 
   const sy = stationTopY - 18;
 
@@ -5378,9 +5445,16 @@ function drawCarvingStation(camX) {
     return;
   }
 
-  if (carvingStation.phase === "beat1" || carvingStation.phase === "beat2") {
-    // a genuine pause -- nothing happening, blank pumpkin sitting still
+  if (carvingStation.phase === "beat1") {
+    // a genuine pause before carving even starts -- nothing happening yet
     drawPumpkinFace(sx, sy, 130, null, null, null);
+    return;
+  }
+
+  if (carvingStation.phase === "beat2") {
+    // carving just finished -- the guts are now sitting there
+    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawPumpkinGuts(sx - 145, gy - 8);
     return;
   }
 
@@ -5390,26 +5464,29 @@ function drawCarvingStation(camX) {
     const progress = carvingStation.carveT / CARVING_CARVE_MS;
     const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
     const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
+    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
+    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.18)) / 0.18;
+    const eyeRevealAmount = eyesRevealed ? 1 : Math.max(0, Math.min(1, eyesCutProgress));
+    const mouthRevealAmount = mouthRevealed ? 1 : Math.max(0, Math.min(1, mouthCutProgress));
     drawPumpkinFace(
       sx, sy, 130,
-      eyesRevealed ? carvedPumpkinDesign.eyeLeft : null,
-      eyesRevealed ? carvedPumpkinDesign.eyeRight : null,
-      mouthRevealed ? carvedPumpkinDesign.mouth : null
+      eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeLeft : null,
+      eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeRight : null,
+      mouthRevealAmount > 0 ? carvedPumpkinDesign.mouth : null,
+      eyeRevealAmount, eyeRevealAmount, mouthRevealAmount
     );
-    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
-      const kAngle = -0.5 + sawPosition(eyesCutProgress, 0, 1, 7);
-      drawKnife(kx, sy - 16, kAngle);
+      const kAngle = sawPosition(eyesCutProgress, -0.15, 0.15, 7);
+      drawKnife(kx, sy - 16 - 22, kAngle); // shifted up so the tip (22 below origin) lands on the cut line
     } else if (eyesRevealed) {
       const sparkleP = Math.min(1, (progress - CARVING_EYES_REVEAL_AT) / 0.12);
       if (sparkleP <= 1) { drawSparkleBurst(sx - 26, sy - 16, sparkleP); drawSparkleBurst(sx + 26, sy - 16, sparkleP); }
     }
-    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.18)) / 0.18;
     if (mouthCutProgress >= 0 && mouthCutProgress <= 1) {
       const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 6);
-      const kAngle = sawPosition(mouthCutProgress, 0, 0.6, 6);
-      drawKnife(kx, sy + 24, kAngle);
+      const kAngle = sawPosition(mouthCutProgress, -0.15, 0.15, 6);
+      drawKnife(kx, sy + 24 - 22, kAngle);
     } else if (mouthRevealed) {
       const sparkleP = Math.min(1, (progress - CARVING_MOUTH_REVEAL_AT) / 0.12);
       if (sparkleP <= 1) drawSparkleBurst(sx, sy + 24, sparkleP);
@@ -5420,6 +5497,7 @@ function drawCarvingStation(camX) {
   if (carvingStation.phase === "sparkle") {
     const p = carvingStation.carveT / CARVING_SPARKLE_MS;
     drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawPumpkinGuts(sx - 145, gy - 8);
     drawSparkleBurst(sx, sy, p, 1.8);
     return;
   }
@@ -5436,12 +5514,7 @@ function drawCarvingStation(camX) {
     // instead of creeping down over where the player is standing
     const growY = -(size - 130) * 0.5;
     drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
-    if (carvingStation.phase === "done") {
-      ctx.fillStyle = "#3a2818";
-      ctx.font = "12px Georgia, serif";
-      ctx.textAlign = "center";
-      ctx.fillText("space to pick up", sx, sy - size * 0.5 - 20);
-    }
+    drawPumpkinGuts(sx - 145, gy - 8);
   }
 }
 
@@ -5698,9 +5771,11 @@ function drawDecorativeSquash(cx, cy, size, type) {
     }
   }
 
-  // stem, shared across all types
+  // stem, positioned relative to each type's own actual top edge --
+  // fixes it floating way above the flatter shapes like the pattypan
+  const topExtent = SQUASH_TOP_EXTENT[type] || 0.5;
   ctx.fillStyle = "#5a7a3a";
-  ctx.fillRect(-size * 0.05, -size * 0.68, size * 0.1, size * 0.14);
+  ctx.fillRect(-size * 0.05, -size * (topExtent + 0.1), size * 0.1, size * 0.14);
 
   ctx.restore();
 }
@@ -5728,6 +5803,18 @@ const SQUASH_BOTTOM_EXTENT = {
   turban: 0.5,
   pattypan: 0.22,
   wonky: 0.48
+};
+
+// each type's actual top edge, computed from its own shape -- used
+// to position the stem correctly instead of one fixed height that
+// left it floating way above flatter shapes like the pattypan
+const SQUASH_TOP_EXTENT = {
+  white: 0.5,
+  gourd: 0.42,
+  hubbard: 0.65,
+  turban: 0.58,
+  pattypan: 0.218,
+  wonky: 0.44
 };
 
 function drawDecorativeSquashField(camX) {
@@ -13556,6 +13643,33 @@ function updateBookReader(deltaTime) {
   }
 }
 
+// draws text following a curved arc -- used for the carving UI's
+// title, arcing above the pumpkin like an old carnival sign
+function drawArcText(text, cx, cy, radius, centerAngle, totalArc, font, color) {
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const widths = text.split("").map(ch => ctx.measureText(ch).width);
+  const totalWidth = widths.reduce((a, b) => a + b, 0);
+  let angleAccum = -totalArc / 2;
+  for (let i = 0; i < text.length; i++) {
+    const charWidth = widths[i];
+    const charAngle = (charWidth / totalWidth) * totalArc;
+    const angle = centerAngle + angleAccum + charAngle / 2;
+    const px = cx + Math.sin(angle) * radius;
+    const py = cy - Math.cos(angle) * radius;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.fillText(text[i], 0, 0);
+    ctx.restore();
+    angleAccum += charAngle;
+  }
+  ctx.restore();
+}
+
 function drawCarvingUI() {
   const w = canvas.width, h = canvas.height;
   const cx = w / 2, cy = h / 2 - 10;
@@ -13572,6 +13686,32 @@ function drawCarvingUI() {
 
   ctx.save();
   ctx.globalAlpha = alpha;
+
+  // fanfare -- curved title arcing above the pumpkin like an old
+  // carnival sign, plus a few small decorative flourishes so opening
+  // this feels like an occasion, not another menu to get through
+  drawArcText("Carve your own Pumpkin!", cx, cy + 40, 175, 0, 1.1, "bold 20px Georgia, serif", "#5a3a1a");
+  [[cx - 230, 60, 0.3], [cx + 230, 60, -0.3], [cx - 210, h - 90, -0.4], [cx + 210, h - 90, 0.4]].forEach(([lx, ly, lrot]) => {
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(lrot);
+    ctx.fillStyle = "#b5651d";
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.quadraticCurveTo(8, -4, 8, 4);
+    ctx.quadraticCurveTo(4, 10, 0, 10);
+    ctx.quadraticCurveTo(-4, 10, -8, 4);
+    ctx.quadraticCurveTo(-8, -4, 0, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90,50,10,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(0, 9);
+    ctx.stroke();
+    ctx.restore();
+  });
 
   // live preview -- whichever feature is currently being browsed
   // updates in real time, everything already confirmed stays fixed
@@ -16340,14 +16480,9 @@ if (apple.splitTimer > 0) apple.splitTimer--;
     carvingStation.placingT = 0;
   }
 
-  // --- CARVING STATION PICKUP -- once the reveal animation finishes,
-  // space near it collects the finished pumpkin ---
-  if (carvingStation.active && carvingStation.phase === "done" && !carvingStation.pickedUp &&
-      keys.spaceJustPressed && isPlayerNear(carvingStation.x, carvingStation.platformHeight, 70, 20, 999)) {
-    carvingStation.pickedUp = true;
-    inventory.carvedPumpkin = (inventory.carvedPumpkin || 0) + 1;
-    updateInventoryUI();
-  }
+  // the finished pumpkin now stays permanently at the station once
+  // grown -- no pickup, no inventory item. It's a fixture, not
+  // something carried away.
 
 if (apple.landed && !frogNoticedApple) {
   frogNoticedApple = true;
