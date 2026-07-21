@@ -126,7 +126,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 3450, // TEMPORARY — positioned near the hay bales in autumn to test the topple/crow/carving sequence, revert to 400 when done
+  x: 400,
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { acorn: 1, pumpkin: 1 }; // TEMPORARY — seeded for debug-start convenience, revert to {} when done
+const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 } -- empty for a normal game start
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -661,7 +661,7 @@ const sceneMapInfo = {
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
 };
 
-const discoveredScenes = { autumn: true, oak: true, ratroom: true }; // TEMPORARY — oak/ratroom added for debug-start convenience, revert to just { autumn: true } when done
+const discoveredScenes = { autumn: true }; // autumn is where you normally start; everything else is discovered through normal play
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
