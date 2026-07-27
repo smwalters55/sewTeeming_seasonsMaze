@@ -9290,7 +9290,10 @@ function drawForestScene(camX) {
   }
 
   drawForestEntranceFerns(camX);
+  drawForestBrambleBehind(camX);
   drawForestSnake(camX);
+  drawForestBrambleFront(camX);
+  drawForestBridgePlatform(camX);
 
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
@@ -9413,6 +9416,118 @@ function getForestSnakePoint(progress) {
   };
 }
 
+// bramble barrier -- blocks ground travel entirely between the two
+// snake docks, dense enough that walking through isn't a readable
+// option. Split into behind/front layers around the snake's own
+// drawing call so it genuinely weaves through rather than just
+// passing in front of a flat backdrop.
+const FOREST_BRAMBLE_X1 = 530;
+const FOREST_BRAMBLE_X2 = 770;
+
+function drawForestBrambleBehind(camX) {
+  const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  const baseY = gy - 6;
+  ctx.strokeStyle = "#2e3520";
+  ctx.lineWidth = 10;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1, baseY - 24);
+  ctx.bezierCurveTo(x1 + 50, baseY - 50, x1 + 90, baseY - 10, x1 + 140, baseY - 40);
+  ctx.bezierCurveTo(x1 + 180, baseY - 62, x1 + 200, baseY - 20, x2, baseY - 44);
+  ctx.stroke();
+  ctx.strokeStyle = "#3f5527";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(x1 + 10, baseY - 46);
+  ctx.bezierCurveTo(x1 + 60, baseY - 24, x1 + 100, baseY - 64, x1 + 150, baseY - 34);
+  ctx.bezierCurveTo(x1 + 190, baseY - 10, x1 + 210, baseY - 52, x2 - 5, baseY - 20);
+  ctx.stroke();
+  // thorns and flowers, low tier
+  ctx.fillStyle = "#2e3520";
+  [[x1 + 40, baseY - 34], [x1 + 110, baseY - 48], [x1 + 175, baseY - 30]].forEach(([tx, ty]) => {
+    ctx.beginPath();
+    ctx.moveTo(tx, ty); ctx.lineTo(tx + 8, ty - 9); ctx.lineTo(tx + 2, ty + 7);
+    ctx.closePath(); ctx.fill();
+  });
+  ctx.fillStyle = "#d98fae";
+  [[x1 + 75, baseY - 40], [x1 + 155, baseY - 55]].forEach(([fx, fy]) => {
+    ctx.beginPath(); ctx.arc(fx, fy, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f0d8c8";
+    ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#d98fae";
+  });
+}
+
+function drawForestBrambleFront(camX) {
+  const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  const baseY = gy - 6;
+  ctx.strokeStyle = "#2e3520";
+  ctx.lineWidth = 11;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1 - 5, baseY);
+  ctx.bezierCurveTo(x1 + 55, baseY - 70, x1 + 95, baseY - 90, x1 + 150, baseY - 65);
+  ctx.bezierCurveTo(x1 + 195, baseY - 45, x1 + 225, baseY - 85, x2 + 5, baseY - 60);
+  ctx.stroke();
+  ctx.strokeStyle = "#3f5527";
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(x1 + 5, baseY - 10);
+  ctx.bezierCurveTo(x1 + 65, baseY - 88, x1 + 115, baseY - 62, x1 + 165, baseY - 95);
+  ctx.bezierCurveTo(x1 + 205, baseY - 118, x1 + 230, baseY - 68, x2, baseY - 95);
+  ctx.stroke();
+  ctx.strokeStyle = "#2e3520";
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(x1 + 20, baseY - 5);
+  ctx.bezierCurveTo(x1 + 80, baseY - 55, x1 + 130, baseY - 30, x1 + 185, baseY - 60);
+  ctx.bezierCurveTo(x1 + 220, baseY - 78, x1 + 240, baseY - 40, x2 - 10, baseY - 55);
+  ctx.stroke();
+  // thorns and flowers, upper tier
+  ctx.fillStyle = "#2e3520";
+  [[x1 + 65, baseY - 80], [x1 + 140, baseY - 100], [x1 + 200, baseY - 70], [x1 + 100, baseY - 40]].forEach(([tx, ty]) => {
+    ctx.beginPath();
+    ctx.moveTo(tx, ty); ctx.lineTo(tx + 9, ty - 10); ctx.lineTo(tx + 2, ty + 8);
+    ctx.closePath(); ctx.fill();
+  });
+  [[x1 + 95, baseY - 88], [x1 + 175, baseY - 45]].forEach(([fx, fy]) => {
+    ctx.fillStyle = "#e0a8c0";
+    ctx.beginPath(); ctx.arc(fx, fy, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f0d8c8";
+    ctx.beginPath(); ctx.arc(fx, fy, 2.2, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+// bridge-piece platform -- sits within the bramble span, below the
+// snake's own height, reachable only by hopping off mid-crossing.
+// Collect it here, then hop back on the snake before it moves too
+// far away, or wait for the next crossing.
+const FOREST_BRIDGE_PLATFORM_X = 650;
+const FOREST_BRIDGE_PLATFORM_HEIGHT = 22;
+
+function drawForestBridgePlatform(camX) {
+  if (inventory.bridgePiece) return; // already collected, nothing left to show
+  const px = FOREST_BRIDGE_PLATFORM_X - camX;
+  const py = gy - FOREST_BRIDGE_PLATFORM_HEIGHT;
+  ctx.fillStyle = "#6b4a2a";
+  ctx.fillRect(px - 22, py, 44, 8);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(px - 22, py, 44, 8);
+  // the bridge piece itself -- a small log-like chunk
+  ctx.fillStyle = "#8a6030";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 8, 11, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#c9a878";
+  ctx.beginPath();
+  ctx.ellipse(px - 6, py - 8, 3, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawForestSnake(camX) {
   const segments = 60; // how finely to sample the loop for a smooth body
   const basePoints = [];
@@ -9525,6 +9640,50 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  // bramble blocks ground-level travel entirely -- only passable by
+  // riding the snake over it, well above the ground-level threshold
+  if (player.y < 18) {
+    if (player.x + player.width > FOREST_BRAMBLE_X1 && player.x < FOREST_BRAMBLE_X1 && keys.right) {
+      player.x = FOREST_BRAMBLE_X1 - player.width;
+    }
+    if (player.x < FOREST_BRAMBLE_X2 && player.x + player.width > FOREST_BRAMBLE_X2 && keys.left) {
+      player.x = FOREST_BRAMBLE_X2;
+    }
+    if (player.x > FOREST_BRAMBLE_X1 - player.width && player.x < FOREST_BRAMBLE_X2) {
+      // already inside somehow (e.g. hopped off the snake mid-span) -- push back out the nearest side
+      const distToLeft = player.x - FOREST_BRAMBLE_X1;
+      const distToRight = FOREST_BRAMBLE_X2 - player.x;
+      player.x = Math.abs(distToLeft) < Math.abs(distToRight) ? FOREST_BRAMBLE_X1 - player.width : FOREST_BRAMBLE_X2;
+    }
+  }
+
+  // bridge-piece platform -- standard platform landing, then a space
+  // press while standing on it collects the piece
+  if (!inventory.bridgePiece) {
+    const platTop = FOREST_BRIDGE_PLATFORM_HEIGHT;
+    if (
+      player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
+      player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
+      player.y <= platTop &&
+      player.y >= platTop - 20 &&
+      player.vy <= 0
+    ) {
+      player.y = platTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    if (
+      Math.abs(player.y - platTop) < 2 &&
+      player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
+      player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
+      keys.spaceJustPressed
+    ) {
+      inventory.bridgePiece = 1;
+      updateInventoryUI();
+    }
+  }
+
   forestSnake.t += deltaTime * 1000;
 
   if (forestSnake.state === "docked") {
@@ -9576,13 +9735,6 @@ function updateForestScene(deltaTime) {
     const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
     player.x = riderP.x - player.width / 2;
     player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
-
-    // grab the bridge piece -- needs a timed press near the grab
-    // spot, not automatic; missing it just means continuing the ride
-    if (Math.abs(forestSnake.riderBodyProgress - FOREST_SNAKE_GRAB_AT) < 0.06 && keys.spaceJustPressed) {
-      inventory.bridgePiece = (inventory.bridgePiece || 0) + 1;
-      updateInventoryUI();
-    }
 
     // hop off with the jump key
     if (keys.upJustPressed) {
