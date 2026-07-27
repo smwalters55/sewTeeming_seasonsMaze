@@ -95,7 +95,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn"; // normal starting scene
+let currentScene = "spring"; // TEMPORARY — starting in spring to test the new Forest entrance easily, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -126,7 +126,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 400,
+  x: 3050, // TEMPORARY — spawns near the new spring-forest door for easy testing, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 } -- empty for a normal game start
+const inventory = { appleSlice: 2 }; // TEMPORARY — seeded for testing the new forest door, revert to {} when done
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -169,6 +169,7 @@ const ITEM_ICONS = {
   pumpkin: "🎃",
   goldPile: "🪙",
   lamp: "🏮",
+  bridgePiece: "🪵",
   feather: "🪶"
 };
 
@@ -207,7 +208,7 @@ let honeyScoops = 0; // set to 8 on collection
 // this instead of raw object key order, which was never actually
 // designed on purpose (it just happened to put whichever item type was
 // FIRST ever collected at the front, forever)
-let inventoryOrder = ["acorn", "pumpkin"];
+let inventoryOrder = ["appleSlice"]; // TEMPORARY — matches the current debug inventory seed, revert to ["acorn", "pumpkin"] when done
 function touchInventoryOrder(itemType) {
   const idx = inventoryOrder.indexOf(itemType);
   if (idx !== -1) inventoryOrder.splice(idx, 1);
@@ -594,6 +595,10 @@ const DOOR_GLOW = {
   autumn: { // seen while standing in spring, leads to autumn — med-dark amber
     stops: ["rgba(165,115,58,0.92)", "rgba(122,82,42,0.8)", "rgba(80,55,28,0.65)"],
     bleed: "120,80,40"
+  },
+  forest: { // seen while standing in spring, leads to forest — deep mossy green, darker and stranger than spring's own light green
+    stops: ["rgba(90,120,70,0.9)", "rgba(60,90,50,0.75)", "rgba(35,60,32,0.6)"],
+    bleed: "55,85,45"
   }
 };
 
@@ -605,6 +610,16 @@ const connections = [
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
+    filled: true, // TEMPORARY — pre-unlocked since starting directly in spring for testing, revert to false when done
+    filledItemType: "appleSlice"
+  },
+  {
+    id: "spring-forest",
+    doors: {
+      spring: { x: 3100, width: 56, height: 92, leadsTo: "forest" },
+      forest: { x: 200,  width: 56, height: 92, leadsTo: "spring" }
+    },
+    acceptsItemType: "appleSlice", // same item type -- the apple already splits into 3 pieces, so a second slice is already reachable without any new collection mechanic
     filled: false,
     filledItemType: null
   },
@@ -656,12 +671,13 @@ const connections = [
 const sceneMapInfo = {
   autumn: { label: "Autumn", x: 40,  y: 110 },
   spring: { label: "Spring", x: 220, y: 110 },
+  forest: { label: "Forest", x: 400, y: 110 }, // continues the main line past spring
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
 };
 
-const discoveredScenes = { autumn: true }; // autumn is where you normally start; everything else is discovered through normal play
+const discoveredScenes = { autumn: true, spring: true }; // TEMPORARY -- spring added since starting there directly to test forest, revert to just { autumn: true } when done
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -773,6 +789,7 @@ updateMapUI(); // populate once at load, so autumn shows up immediately
 const sceneSpawns = {
   autumn: { x: connections[0].doors.autumn.x - 25 },
   spring: { x: connections[0].doors.spring.x - 25 },
+  forest: { x: connections[1].doors.forest.x - 25 },
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
   oak: { x: 380 }, // arrives via seesaw launch -- moved closer to the actual entrance door (oakReturnDoor at x:294), was landing 370 units away from it despite the door being the visual entry point
   ratroom: { x: 310 } // arrives via the trap door, lands near the base of the stairs
@@ -794,6 +811,17 @@ const placementSlots = [
       // reflect it, and both show the item that unlocked them
       connections[0].filled = true;
       connections[0].filledItemType = itemType;
+    }
+  },
+  {
+    id: "forestDoorwaySlot",
+    x: connections[1].doors.spring.x + connections[1].doors.spring.width / 2,
+    heightAboveGround: 8,
+    acceptsItemType: connections[1].acceptsItemType,
+    filled: false,
+    onFill: (itemType) => {
+      connections[1].filled = true;
+      connections[1].filledItemType = itemType;
     }
   }
 ];
@@ -2956,7 +2984,7 @@ function drawConnectionDoor(ctx, camX, doorDef, connection) {
 
   // wooden frame (slightly larger than the interior, forms the border)
   tracePath(postWidth);
-  ctx.fillStyle = "#6b4026";
+  ctx.fillStyle = "#4a2c18";
   ctx.fill();
 
   // interior glow — visible even while locked, just faint; color hints destination
@@ -2983,7 +3011,9 @@ function drawConnectionDoor(ctx, camX, doorDef, connection) {
   bleed.addColorStop(0, `rgba(${glow.bleed},${bleedAlpha})`);
   bleed.addColorStop(1, `rgba(${glow.bleed},0)`);
   ctx.fillStyle = bleed;
-  ctx.fillRect(dx - 50, gy - 25, frameWidth + 100, 50);
+  ctx.beginPath();
+  ctx.ellipse(archCenterX, gy, 78, 25, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 
@@ -4056,6 +4086,7 @@ drawDecorativeSquashField(camX);
    ====================================================== */
 const GRASS_SHADES = ["rgba(84,142,66,0.55)", "rgba(122,178,92,0.5)", "rgba(58,104,48,0.55)"];
 const FLOWER_COLORS = ["#e0793f", "#8a5fae", "#4a90c4"];
+const FOREST_BORROWED_FLOWER_COLOR = "#5a7846"; // deep mossy green, doesn't belong to spring's own palette -- mixed in near the forest door
 
 // Grass and flowers are generated procedurally from camX each frame,
 // rather than a fixed-size array — so they extend infinitely as you walk
@@ -4066,13 +4097,16 @@ function drawSpringGrass(camX) {
   const step = 14;
   const startX = Math.floor((camX - 40) / step) * step;
   const endX = camX + canvas.width + 40;
+  const forestDoorX = connections[1].doors.spring.x;
+  const STRANGE_RADIUS = 320;
 
-  ctx.lineWidth = 1.5;
   for (let x = startX; x < endX; x += step) {
+    const proximity = Math.max(0, 1 - Math.abs(x - forestDoorX) / STRANGE_RADIUS);
     const shade = Math.floor(pseudoRandom(x * 0.71 + 3) * GRASS_SHADES.length);
-    const h = 4 + pseudoRandom(x * 0.37 + 7) * 7;
+    const h = (4 + pseudoRandom(x * 0.37 + 7) * 7) * (1 + proximity * 1.6); // noticeably taller near the door
     const y = gy + 2 + pseudoRandom(x * 0.19 + 11) * 14;
 
+    ctx.lineWidth = 1.5 + proximity * 0.8;
     ctx.strokeStyle = GRASS_SHADES[shade];
     ctx.beginPath();
     ctx.moveTo(x - camX, y);
@@ -4102,24 +4136,34 @@ function drawSpringFlowers(camX) {
   const step = 55;
   const startX = Math.floor((camX - 40) / step) * step;
   const endX = camX + canvas.width + 40;
+  const forestDoorX = connections[1].doors.spring.x;
+  const STRANGE_RADIUS = 320; // how far out the door's influence gradually spreads
 
   for (let x = startX; x < endX; x += step) {
-    if (pseudoRandom(x * 0.05 + 3) < 0.45) continue; // not every slot gets a flower
+    const proximity = Math.max(0, 1 - Math.abs(x - forestDoorX) / STRANGE_RADIUS); // 0 = normal spring, 1 = right at the door
+
+    // denser near the door -- fewer slots skipped, so it reads as
+    // genuinely more filled in, not just stranger-shaped
+    if (pseudoRandom(x * 0.05 + 3) < 0.45 - proximity * 0.35) continue;
 
     const y = gy + 4 + pseudoRandom(x * 0.23 + 9) * 10;
+    const isOddColor = proximity > 0.3 && pseudoRandom(x * 0.71 + 11) < proximity * 0.6;
     const colorIdx = Math.floor(pseudoRandom(x * 0.61 + 5) * FLOWER_COLORS.length);
-    const petalCount = 3 + Math.floor(pseudoRandom(x * 0.83 + 2) * 3); // 3-5
+    const petalCount = 3 + Math.floor(pseudoRandom(x * 0.83 + 2) * (3 + proximity * 3)); // shaggier -- more petals possible near the door
     const shape = pseudoRandom(x * 0.97 + 6) < 0.5 ? "teardrop" : "heart";
     const baseRotation = pseudoRandom(x * 0.44 + 8) * Math.PI * 2;
-    const petalLength = 4 + pseudoRandom(x * 0.29 + 4) * 2.5;
-    const petalWidth = 1.6 + pseudoRandom(x * 0.13 + 10) * 1.1;
+    const rotationLooseness = proximity * 0.5; // petals sit less evenly spaced the closer to the door
+    const sizeBoost = 1 + proximity * 0.7; // noticeably bigger near the door, not just shaggier
+    const petalLength = (4 + pseudoRandom(x * 0.29 + 4) * (2.5 + proximity * 2)) * sizeBoost;
+    const petalWidth = (1.6 + pseudoRandom(x * 0.13 + 10) * 1.1) * sizeBoost;
 
     ctx.save();
     ctx.translate(x - camX, y);
-    ctx.fillStyle = FLOWER_COLORS[colorIdx];
+    ctx.fillStyle = isOddColor ? FOREST_BORROWED_FLOWER_COLOR : FLOWER_COLORS[colorIdx];
 
     for (let i = 0; i < petalCount; i++) {
-      const angle = baseRotation + (Math.PI * 2 * i) / petalCount;
+      const jitter = (pseudoRandom(x * 1.3 + i * 7.1) - 0.5) * rotationLooseness;
+      const angle = baseRotation + (Math.PI * 2 * i) / petalCount + jitter;
       ctx.save();
       ctx.rotate(angle);
       drawPetal(petalLength, petalWidth, shape);
@@ -8137,8 +8181,8 @@ const DIG_ANIM_DURATION = 1800;
 
 const peanutVine = {
   x: 2680,
-  growProgress: 0, // 0 to 1 over GROW_DURATION
-  grown: false,
+  growProgress: 1, // TEMPORARY — fully grown for the door-decoration debug view, revert to 0 when done
+  grown: true, // TEMPORARY — revert to false when done
   climbHeight: 250, // reduced — verified: 50px margin below screen top, still well beyond double-jump max (~140.6)
   mounted: false,
   playerClimbHeight: 0
@@ -9114,6 +9158,392 @@ function drawSpringScene(camX) {
   drawRabbit(camX);
 
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
+  drawConnectionDoor(ctx, camX, connections[1].doors.spring, connections[1]);
+  drawSpringDoorVineTendril(camX);
+}
+
+// a single thin, pale tendril curling onto one corner of the spring-side
+// door's arch -- reads as something recently reaching through, not an
+// established mossy growth. Computed from the door's real arch geometry
+// (same approach as the forest-side vine fix) so it sits on the curve
+// properly instead of floating above it.
+function drawSpringDoorVineTendril(camX) {
+  const doorDef = connections[1].doors.spring;
+  const dx = doorDef.x - camX;
+  const frameWidth = doorDef.width;
+  const frameHeight = doorDef.height;
+  const postWidth = 10;
+  const archRadius = (frameWidth - postWidth * 2) / 2;
+  const archCenterX = dx + frameWidth / 2;
+  const archCenterY = gy - frameHeight + archRadius + postWidth;
+
+  // anchored near the top-right of the arch
+  const anchorVx = archRadius - 3;
+  const anchorY = archCenterY - Math.sqrt(Math.max(0, archRadius * archRadius - anchorVx * anchorVx));
+  const anchorX = archCenterX + anchorVx;
+
+  ctx.strokeStyle = "#7a9e5a"; // pale spring green, not forest's deep moss
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+
+  // main tendril, longer reach and a real curl at the end
+  ctx.beginPath();
+  ctx.moveTo(anchorX, anchorY);
+  ctx.quadraticCurveTo(anchorX + 18, anchorY - 10, anchorX + 30, anchorY + 8);
+  ctx.quadraticCurveTo(anchorX + 36, anchorY + 18, anchorX + 28, anchorY + 22);
+  ctx.stroke();
+
+  // a second, shorter tendril branching off for more presence
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(anchorX + 12, anchorY - 2);
+  ctx.quadraticCurveTo(anchorX + 16, anchorY - 14, anchorX + 8, anchorY - 18);
+  ctx.stroke();
+
+  // a bud at the tip of the main tendril
+  ctx.fillStyle = "#c98fae";
+  ctx.beginPath();
+  ctx.arc(anchorX + 28, anchorY + 22, 3.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e0a8c0";
+  ctx.beginPath();
+  ctx.arc(anchorX + 27, anchorY + 20.5, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a smaller bud on the second tendril
+  ctx.fillStyle = "#c98fae";
+  ctx.beginPath();
+  ctx.arc(anchorX + 8, anchorY - 18, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // several leaves along both curls, bigger and more visible
+  ctx.fillStyle = "#8fbf6a";
+  [[anchorX + 8, anchorY - 4, -0.4], [anchorX + 20, anchorY, 0.5], [anchorX + 26, anchorY + 14, -0.3], [anchorX + 13, anchorY - 9, 0.7]].forEach(([lx, ly, rot]) => {
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// FOREST -- entered from Spring via a second apple slice, same door
+// mechanic reused deliberately (keeps the game's language consistent)
+// but everything about the space itself signals "this isn't the next
+// season, this is somewhere else": darker, mossier, a little wilder.
+// Base environment only for this pass -- stream/snake/branches come later.
+function drawForestScene(camX) {
+  // deep, muted under-canopy sky -- darker and greener than spring's
+  // light pastels, no bright horizon glow
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#2e3b26");
+  sky.addColorStop(0.4, "#3a4a2e");
+  sky.addColorStop(0.75, "#4a5c38");
+  sky.addColorStop(1, "#5a6a42");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // dappled light -- a few soft, irregular pale patches, like sun
+  // breaking weakly through a canopy rather than an open sky
+  ctx.fillStyle = "rgba(220,225,180,0.06)";
+  for (let i = 0; i < 6; i++) {
+    const dx = (i * 260 + 90) - camX * 0.35;
+    ctx.beginPath();
+    ctx.ellipse(dx, 60 + Math.sin(i * 1.7) * 30, 70, 40, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // dense background tree silhouettes, tall and close together --
+  // reads as thicker, more enclosed than spring's open orchard feel
+  ctx.fillStyle = "rgba(20,28,16,0.5)";
+  for (let i = 0; i < 10; i++) {
+    const tx = i * 150 - camX * 0.4 + Math.sin(i * 2.3) * 30;
+    const th = 220 + Math.sin(i * 1.1) * 40;
+    ctx.fillRect(tx - 9, gy - th, 18, th);
+    ctx.beginPath();
+    ctx.arc(tx, gy - th, 48 + Math.sin(i * 0.7) * 10, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // mid-distance foliage clusters, a touch warmer/lighter so the
+  // background doesn't read as one flat wall of dark green
+  ctx.fillStyle = "rgba(70,95,45,0.4)";
+  for (let i = 0; i < 6; i++) {
+    const tx = i * 240 - camX * 0.55;
+    ctx.beginPath();
+    ctx.arc(tx + 30, gy - 90, 55, 0, Math.PI * 2);
+    ctx.arc(tx + 80, gy - 100, 50, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ground -- mossy green, lightened a touch per feedback, no
+  // grass-blade texture yet, kept simple for this base pass
+  ctx.fillStyle = "#4d5c35";
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  ctx.fillStyle = "rgba(30,38,20,0.35)";
+  for (let i = -30; i < canvas.width + 30; i += 26) {
+    ctx.beginPath();
+    ctx.ellipse((i - camX % 26), gy + 6, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawForestEntranceFerns(camX);
+  drawForestSnake(camX);
+
+  drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
+  drawMossyDoorOverlay(camX);
+}
+
+// moss patches and hanging vines layered on top of the standard door
+// shape -- reuses the proven door mechanic underneath while still
+// giving this entrance its own distinct, overgrown look
+function drawMossyDoorOverlay(camX) {
+  const doorDef = connections[1].doors.forest;
+  const dx = doorDef.x - camX;
+  const frameWidth = doorDef.width;
+  const frameHeight = doorDef.height;
+  const postWidth = 10;
+  const archRadius = (frameWidth - postWidth * 2) / 2;
+  const archCenterX = dx + frameWidth / 2;
+  const archCenterY = gy - frameHeight + archRadius + postWidth;
+
+  // vines now start from the door's actual curved arch surface -- each
+  // one's starting y is computed from the real circle geometry at its
+  // x-offset, so it always sits right on the door instead of floating
+  // above it once the offset goes past the arch's own radius
+  ctx.strokeStyle = "#4a6a2e";
+  ctx.lineWidth = 3;
+  const vineOffsets = [-14, -3, 8, 16];
+  vineOffsets.forEach((vx, i) => {
+    const clampedVx = Math.max(-archRadius + 2, Math.min(archRadius - 2, vx));
+    const archY = archCenterY - Math.sqrt(Math.max(0, archRadius * archRadius - clampedVx * clampedVx));
+    const startX = archCenterX + clampedVx;
+    const dropLen = 26 + (i % 3) * 10;
+    ctx.beginPath();
+    ctx.moveTo(startX, archY);
+    ctx.quadraticCurveTo(startX + Math.sin(i * 1.7) * 5, archY + dropLen * 0.6, startX + Math.sin(i * 2.3) * 4, archY + dropLen);
+    ctx.stroke();
+    // a couple small leaves along each vine
+    ctx.fillStyle = "#5d7a3a";
+    ctx.beginPath();
+    ctx.ellipse(startX + 3, archY + dropLen * 0.5, 4, 2.4, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // moss patches on the frame itself
+  ctx.fillStyle = "rgba(90,120,60,0.55)";
+  [[dx + 6, gy - 30, 12], [dx + frameWidth - 10, gy - 60, 10], [dx + 10, gy - frameHeight + 20, 9], [dx + frameWidth - 8, gy - frameHeight + 35, 8]].forEach(([mx, my, mr]) => {
+    ctx.beginPath();
+    ctx.arc(mx, my, mr, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// a few ferns scattered near the entrance, simple ground texture for
+// this first pass
+function drawForestEntranceFerns(camX) {
+  const fernSpots = [connections[1].doors.forest.x + 60, connections[1].doors.forest.x + 140, connections[1].doors.forest.x + 220];
+  fernSpots.forEach((fx, i) => {
+    const sx = fx - camX;
+    ctx.strokeStyle = "#4a6a2e";
+    ctx.lineWidth = 2;
+    for (let j = -2; j <= 2; j++) {
+      ctx.beginPath();
+      ctx.moveTo(sx, gy);
+      ctx.quadraticCurveTo(sx + j * 8, gy - 18, sx + j * 14, gy - 30 - Math.abs(j) * 2);
+      ctx.stroke();
+    }
+  });
+}
+
+// forest snake -- a big, loosely-winding creature doing its own slow
+// loop, entirely on the near side (never crosses the eventual stream).
+// The player can hop on, ride the loop, and grab a bridge piece at
+// one specific point along it if the timing lines up -- missing it
+// just means going around again, no fail state. Positioned close to
+// the entrance for now; will move further into the zone once more
+// content exists to fill that gap.
+const FOREST_SNAKE_BASE_X = 350; // offset from the forest door -- move this further right later
+const forestSnake = {
+  baseX: FOREST_SNAKE_BASE_X,
+  loopProgress: 0, // 0 to 1 around the loop
+  speed: 0.00009, // base crawl speed, varies per-segment for the "loosy goosy" feel
+  riding: false,
+  grabbed: false // whether the bridge piece at the grab spot has been collected this loop... actually collected globally, see forestBridgePieces
+};
+
+// closed loop of waypoints, relative to forestSnake.baseX -- winds
+// with some vertical undulation (dips low, rises up as if passing
+// over roots) rather than a flat circle. Loop returns to its own
+// start point.
+const FOREST_SNAKE_LOOP = [
+  { dx: 0, dy: 0 },
+  { dx: 40, dy: -18 },
+  { dx: 90, dy: -6 },
+  { dx: 130, dy: -28 },
+  { dx: 170, dy: -10 },
+  { dx: 210, dy: -22 },
+  { dx: 240, dy: 0 },
+  { dx: 210, dy: 14 },
+  { dx: 160, dy: 6 },
+  { dx: 110, dy: 16 },
+  { dx: 60, dy: 4 },
+  { dx: 20, dy: 12 }
+];
+
+// where along the loop (0 to 1) the bridge piece can be grabbed
+const FOREST_SNAKE_GRAB_AT = 0.42;
+
+function getForestSnakePoint(progress) {
+  const n = FOREST_SNAKE_LOOP.length;
+  const scaled = ((progress % 1) + 1) % 1 * n;
+  const i0 = Math.floor(scaled) % n;
+  const i1 = (i0 + 1) % n;
+  const t = scaled - Math.floor(scaled);
+  const p0 = FOREST_SNAKE_LOOP[i0];
+  const p1 = FOREST_SNAKE_LOOP[i1];
+  return {
+    x: forestSnake.baseX + p0.dx + (p1.dx - p0.dx) * t,
+    y: p0.dy + (p1.dy - p0.dy) * t
+  };
+}
+
+function drawForestSnake(camX) {
+  const segments = 60; // how finely to sample the loop for a smooth body
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    const p = getForestSnakePoint(i / segments);
+    points.push({ x: p.x - camX, y: gy - 8 + p.y });
+  }
+
+  // body -- thick rounded-line path, dark outline then lighter fill,
+  // same two-pass technique as the color-pattern sketch
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#3a2c14";
+  ctx.lineWidth = 30;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#c99a2e";
+  ctx.lineWidth = 23;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+
+  // diamond markings along the body, alternating rust-red and olive,
+  // sized to actually fit within the body width
+  const diamondColors = ["#a8452e", "#8a9a5a"];
+  for (let i = 0; i < segments; i += 3) {
+    const p = points[i];
+    const next = points[Math.min(i + 1, points.length - 1)];
+    const angle = Math.atan2(next.y - p.y, next.x - p.x);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(angle);
+    ctx.strokeStyle = "#3a2c14";
+    ctx.lineWidth = 1.2;
+    ctx.fillStyle = diamondColors[(i / 3) % 2];
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(9, 0);
+    ctx.lineTo(0, 9);
+    ctx.lineTo(-9, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // head at the loop's start point, with a bigger eye
+  const headP = points[0];
+  const headNext = points[1];
+  const headAngle = Math.atan2(headNext.y - headP.y, headNext.x - headP.x);
+  ctx.save();
+  ctx.translate(headP.x, headP.y);
+  ctx.rotate(headAngle);
+  ctx.fillStyle = "#c99a2e";
+  ctx.strokeStyle = "#3a2c14";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 19, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // eye -- light iris ring, dark pupil, sized to actually read at this scale
+  ctx.fillStyle = "#f0ead9";
+  ctx.strokeStyle = "#3a2c14";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(6, -3, 4.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#20200f";
+  ctx.beginPath();
+  ctx.arc(5, -3, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function updateForestScene(deltaTime) {
+  // snake's own loop progress -- speed varies a little over time for
+  // the loosy-goosy feel rather than a perfectly uniform crawl
+  const speedWobble = 1 + Math.sin(performance.now() * 0.0004) * 0.4;
+  forestSnake.loopProgress += forestSnake.speed * deltaTime * 1000 * speedWobble;
+  forestSnake.loopProgress = forestSnake.loopProgress % 1;
+
+  if (!forestSnake.riding) {
+    // check if the player is near any point along the current body,
+    // hop on at whichever point they're closest to
+    if (keys.spaceJustPressed) {
+      const segments = 60;
+      let closestDist = Infinity, closestProgress = null;
+      for (let i = 0; i <= segments; i++) {
+        const p = getForestSnakePoint(i / segments);
+        const dist = Math.abs((player.x + player.width / 2) - p.x);
+        if (dist < closestDist) { closestDist = dist; closestProgress = i / segments; }
+      }
+      if (closestDist < 45) {
+        forestSnake.riding = true;
+        forestSnake.loopProgress = closestProgress;
+        player.jumping = false;
+        player.vy = 0;
+      }
+    }
+  } else {
+    // while riding, follow the snake's head position
+    const headP = getForestSnakePoint(forestSnake.loopProgress);
+    player.x = headP.x - player.width / 2;
+    player.y = -headP.y + 8; // heightAboveGround, matching the visual offset used when drawing
+
+    // grab the bridge piece -- needs a timed press near the grab
+    // spot, not automatic; missing it just means continuing the ride
+    const distToGrabSpot = Math.abs(((forestSnake.loopProgress - FOREST_SNAKE_GRAB_AT + 1.5) % 1) - 0.5) ; // wrapped distance
+    if (distToGrabSpot < 0.02 && keys.spaceJustPressed) {
+      inventory.bridgePiece = (inventory.bridgePiece || 0) + 1;
+      updateInventoryUI();
+    }
+
+    // hop off with the jump key
+    if (keys.upJustPressed) {
+      forestSnake.riding = false;
+    }
+  }
+
+  if (
+    connections[1].filled &&
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(
+      connections[1].doors.forest.x + connections[1].doors.forest.width / 2,
+      0, 30, 6, 6
+    )
+  ) {
+    startSeasonTransition("spring");
+  }
 }
 
 // swing: rope + wooden seat, position derived from its current angle
@@ -16137,6 +16567,8 @@ if (currentScene === "autumn") {
   drawAutumnScene(camX);
 } else if (currentScene === "spring") {
   drawSpringScene(camX);
+} else if (currentScene === "forest") {
+  drawForestScene(camX);
 } else if (currentScene === "clouds") {
   drawCloudsScene(camX);
 } else if (currentScene === "oak") {
@@ -16554,41 +16986,50 @@ if (frog.active && apple.cracked && inventory.appleSlice > 0 && orchardChoice ==
   });
 }
 
-// PLACEMENT SLOTS: place the currently held item into a matching slot
-placementSlots.forEach(slot => {
-  if (slot.filled) return;
-
-  if (
-    heldItem === slot.acceptsItemType &&
-    inventory[heldItem] > 0 &&
-    pressedDownNear(slot.x, slot.heightAboveGround, 30, 10, 10)
-  ) {
-    const itemToPlace = heldItem;
-
-    inventory[itemToPlace]--;
-    if (inventory[itemToPlace] <= 0) delete inventory[itemToPlace];
-    heldItem = null;
-    updateInventoryUI();
-
-    startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround, () => {
-      slot.filled = true;
-      slot.onFill(itemToPlace);
-    });
-  }
-});
-
-// DOORWAY: only enterable once the connection is unlocked
-if (
-  connections[0].filled &&
-  seasonTransition.phase === "idle" &&
-  pressedDownNear(
-    connections[0].doors.autumn.x + connections[0].doors.autumn.width / 2,
-    0, 30, 6, 6
-  )
-) {
-  startSeasonTransition("spring");
 }
 
+// PLACEMENT SLOTS and the autumn-side doorway check -- extracted out
+// of updateAutumnScene since these are scene-independent concepts
+// (holding an item, walking up to any slot or door, wherever the
+// player currently is). Previously nested inside updateAutumnScene,
+// which meant any placement slot meant to be used from a different
+// scene (like the new forest door's slot, used from spring) would
+// never actually be checked.
+function updateGenericPlacementAndDoors() {
+  // PLACEMENT SLOTS: place the currently held item into a matching slot
+  placementSlots.forEach(slot => {
+    if (slot.filled) return;
+
+    if (
+      heldItem === slot.acceptsItemType &&
+      inventory[heldItem] > 0 &&
+      pressedDownNear(slot.x, slot.heightAboveGround, 30, 10, 10)
+    ) {
+      const itemToPlace = heldItem;
+
+      inventory[itemToPlace]--;
+      if (inventory[itemToPlace] <= 0) delete inventory[itemToPlace];
+      heldItem = null;
+      updateInventoryUI();
+
+      startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround, () => {
+        slot.filled = true;
+        slot.onFill(itemToPlace);
+      });
+    }
+  });
+
+  // DOORWAY: only enterable once the connection is unlocked
+  if (
+    connections[0].filled &&
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(
+      connections[0].doors.autumn.x + connections[0].doors.autumn.width / 2,
+      0, 30, 6, 6
+    )
+  ) {
+    startSeasonTransition("spring");
+  }
 }
 
 // shared — the brief "settled on the cloud" beat, then the real transition fires
@@ -16714,6 +17155,18 @@ function updateSpringScene(deltaTime) {
   ) {
     startSeasonTransition("autumn");
   }
+
+  // forward through the new door into forest
+  if (
+    connections[1].filled &&
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(
+      connections[1].doors.spring.x + connections[1].doors.spring.width / 2,
+      0, 30, 6, 6
+    )
+  ) {
+    startSeasonTransition("forest");
+  }
 }
 
 function update(){
@@ -16835,11 +17288,14 @@ if (inventory.boomerang > 0 && !boomerangPromptState.promptEverShown && boomeran
   boomerangPromptState.promptAnimT += deltaTime * 1000;
 }
 updateLampLighting(); // scene-independent check inside, so it correctly turns off if the scene changes mid-hold
+updateGenericPlacementAndDoors(); // placement slots and the autumn-side doorway -- runs regardless of current scene
 
 if (currentScene === "autumn") {
   updateAutumnScene(deltaTime);
 } else if (currentScene === "spring") {
   updateSpringScene(deltaTime);
+} else if (currentScene === "forest") {
+  updateForestScene(deltaTime);
 } else if (currentScene === "clouds") {
   updateCloudsScene(deltaTime);
 } else if (currentScene === "oak") {
