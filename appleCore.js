@@ -9363,60 +9363,77 @@ function drawForestEntranceFerns(camX) {
 // The player can hop on, ride the loop, and grab a bridge piece at
 // one specific point along it if the timing lines up -- missing it
 // just means going around again, no fail state. Positioned close to
-// the entrance for now; will move further into the zone once more
-// content exists to fill that gap.
-const FOREST_SNAKE_BASE_X = 350; // offset from the forest door -- move this further right later
+// the entrance for now; will move dockB further into the zone once
+// more content exists to fill that gap.
+const FOREST_SNAKE_HEIGHT_ABOVE_GROUND = 32; // raised enough that reaching it actually requires a jump
 const forestSnake = {
-  baseX: FOREST_SNAKE_BASE_X,
-  loopProgress: 0, // 0 to 1 around the loop
-  speed: 0.00009, // base crawl speed, varies per-segment for the "loosy goosy" feel
-  riding: false,
-  grabbed: false // whether the bridge piece at the grab spot has been collected this loop... actually collected globally, see forestBridgePieces
+  dockA: { x: 350 }, // offset from the forest door
+  dockB: { x: 750 }, // move this further right later, once more content fills the gap
+  state: "docked", // "docked" | "traveling"
+  dockedAt: "A",
+  t: 0,
+  DOCK_TIME: 3500,
+  TRAVEL_TIME: 6000, // slow, deliberate crossing
+  currentX: 350,
+  riding: false
 };
 
-// closed loop of waypoints, relative to forestSnake.baseX -- winds
-// with some vertical undulation (dips low, rises up as if passing
-// over roots) rather than a flat circle. Loop returns to its own
-// start point.
-const FOREST_SNAKE_LOOP = [
+// fixed relative body shape, trailing behind the head (dx=0) with
+// some vertical undulation -- direction of the trail flips depending
+// on which way the snake is currently heading, so the body always
+// trails behind rather than leading
+const FOREST_SNAKE_BODY = [
   { dx: 0, dy: 0 },
-  { dx: 40, dy: -18 },
-  { dx: 90, dy: -6 },
-  { dx: 130, dy: -28 },
-  { dx: 170, dy: -10 },
-  { dx: 210, dy: -22 },
-  { dx: 240, dy: 0 },
-  { dx: 210, dy: 14 },
-  { dx: 160, dy: 6 },
-  { dx: 110, dy: 16 },
-  { dx: 60, dy: 4 },
-  { dx: 20, dy: 12 }
+  { dx: -20, dy: 6 },
+  { dx: -45, dy: -3 },
+  { dx: -70, dy: 8 },
+  { dx: -95, dy: -4 },
+  { dx: -120, dy: 7 },
+  { dx: -145, dy: -2 },
+  { dx: -170, dy: 5 }
 ];
 
-// where along the loop (0 to 1) the bridge piece can be grabbed
-const FOREST_SNAKE_GRAB_AT = 0.42;
+// where along the body (0 to 1, head to tail) the bridge piece can be grabbed
+const FOREST_SNAKE_GRAB_AT = 0.5;
 
 function getForestSnakePoint(progress) {
-  const n = FOREST_SNAKE_LOOP.length;
-  const scaled = ((progress % 1) + 1) % 1 * n;
-  const i0 = Math.floor(scaled) % n;
-  const i1 = (i0 + 1) % n;
-  const t = scaled - Math.floor(scaled);
-  const p0 = FOREST_SNAKE_LOOP[i0];
-  const p1 = FOREST_SNAKE_LOOP[i1];
+  // progress 0 = head, 1 = tail
+  const n = FOREST_SNAKE_BODY.length;
+  const scaled = Math.max(0, Math.min(1, progress)) * (n - 1);
+  const i0 = Math.floor(scaled);
+  const i1 = Math.min(i0 + 1, n - 1);
+  const t = scaled - i0;
+  const p0 = FOREST_SNAKE_BODY[i0];
+  const p1 = FOREST_SNAKE_BODY[i1];
+  const headingRight = forestSnake.dockedAt === "A"; // traveling toward dockB
+  const dir = headingRight ? -1 : 1; // trail behind, opposite the direction of travel
   return {
-    x: forestSnake.baseX + p0.dx + (p1.dx - p0.dx) * t,
+    x: forestSnake.currentX + dir * (p0.dx + (p1.dx - p0.dx) * t),
     y: p0.dy + (p1.dy - p0.dy) * t
   };
 }
 
 function drawForestSnake(camX) {
   const segments = 60; // how finely to sample the loop for a smooth body
-  const points = [];
+  const basePoints = [];
   for (let i = 0; i <= segments; i++) {
     const p = getForestSnakePoint(i / segments);
-    points.push({ x: p.x - camX, y: gy - 8 + p.y });
+    basePoints.push({ x: p.x - camX, y: gy - FOREST_SNAKE_HEIGHT_ABOVE_GROUND + p.y });
   }
+
+  // slithering wave -- perpendicular offset that travels along the
+  // body over time, purely visual, doesn't affect the actual loop
+  // position used for riding
+  const t = performance.now();
+  const points = basePoints.map((pt, i) => {
+    const prev = basePoints[Math.max(0, i - 1)];
+    const next = basePoints[Math.min(basePoints.length - 1, i + 1)];
+    const dx = next.x - prev.x, dy = next.y - prev.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len, ny = dx / len; // perpendicular unit vector
+    const wave = Math.sin(i * 0.5 - t * 0.006) * 5;
+    return { x: pt.x + nx * wave, y: pt.y + ny * wave };
+  });
 
   // body -- thick rounded-line path, dark outline then lighter fill,
   // same two-pass technique as the color-pattern sketch
@@ -9490,40 +9507,61 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
-  // snake's own loop progress -- speed varies a little over time for
-  // the loosy-goosy feel rather than a perfectly uniform crawl
-  const speedWobble = 1 + Math.sin(performance.now() * 0.0004) * 0.4;
-  forestSnake.loopProgress += forestSnake.speed * deltaTime * 1000 * speedWobble;
-  forestSnake.loopProgress = forestSnake.loopProgress % 1;
+  forestSnake.t += deltaTime * 1000;
+
+  if (forestSnake.state === "docked") {
+    const dock = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
+    forestSnake.currentX = dock.x;
+    if (forestSnake.t >= forestSnake.DOCK_TIME) {
+      forestSnake.state = "traveling";
+      forestSnake.t = 0;
+    }
+  } else {
+    const from = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
+    const to = forestSnake.dockedAt === "A" ? forestSnake.dockB : forestSnake.dockA;
+    const progress = Math.min(forestSnake.t / forestSnake.TRAVEL_TIME, 1);
+    forestSnake.currentX = from.x + (to.x - from.x) * progress;
+    if (progress >= 1) {
+      forestSnake.state = "docked";
+      forestSnake.dockedAt = forestSnake.dockedAt === "A" ? "B" : "A";
+      forestSnake.t = 0;
+    }
+  }
 
   if (!forestSnake.riding) {
-    // check if the player is near any point along the current body,
-    // hop on at whichever point they're closest to
-    if (keys.spaceJustPressed) {
-      const segments = 60;
-      let closestDist = Infinity, closestProgress = null;
+    // requires an actual jump and landing on the body, same pattern
+    // as landing on any other platform -- not just standing nearby
+    // and pressing a button
+    if (player.vy <= 0) {
+      const segments = 30;
       for (let i = 0; i <= segments; i++) {
         const p = getForestSnakePoint(i / segments);
-        const dist = Math.abs((player.x + player.width / 2) - p.x);
-        if (dist < closestDist) { closestDist = dist; closestProgress = i / segments; }
-      }
-      if (closestDist < 45) {
-        forestSnake.riding = true;
-        forestSnake.loopProgress = closestProgress;
-        player.jumping = false;
-        player.vy = 0;
+        const bodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - p.y;
+        if (
+          player.x + player.width > p.x - 16 &&
+          player.x < p.x + 16 &&
+          player.y <= bodyTop &&
+          player.y >= bodyTop - 15
+        ) {
+          forestSnake.riding = true;
+          forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
+          player.jumping = false;
+          player.usedDoubleJump = false;
+          player.vy = 0;
+          break;
+        }
       }
     }
   } else {
-    // while riding, follow the snake's head position
-    const headP = getForestSnakePoint(forestSnake.loopProgress);
-    player.x = headP.x - player.width / 2;
-    player.y = -headP.y + 8; // heightAboveGround, matching the visual offset used when drawing
+    // while riding, follow the same fixed point along the body,
+    // which travels along with the snake as a whole
+    const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
+    player.x = riderP.x - player.width / 2;
+    player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
 
     // grab the bridge piece -- needs a timed press near the grab
     // spot, not automatic; missing it just means continuing the ride
-    const distToGrabSpot = Math.abs(((forestSnake.loopProgress - FOREST_SNAKE_GRAB_AT + 1.5) % 1) - 0.5) ; // wrapped distance
-    if (distToGrabSpot < 0.02 && keys.spaceJustPressed) {
+    if (Math.abs(forestSnake.riderBodyProgress - FOREST_SNAKE_GRAB_AT) < 0.06 && keys.spaceJustPressed) {
       inventory.bridgePiece = (inventory.bridgePiece || 0) + 1;
       updateInventoryUI();
     }
