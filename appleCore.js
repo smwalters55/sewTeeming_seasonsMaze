@@ -9292,7 +9292,10 @@ function drawForestScene(camX) {
   drawForestEntranceFerns(camX);
   drawForestBrambleBehind(camX);
   drawForestSnake(camX);
-  drawForestBrambleFront(camX);
+  // drawForestBrambleFront now called after the player sprite in the
+  // main draw() function -- the player is drawn globally after the
+  // whole scene, so calling it here never actually put anything in
+  // front of the player
   drawForestBridgePlatform(camX);
 
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
@@ -9378,7 +9381,9 @@ const forestSnake = {
   DOCK_TIME: 3500,
   TRAVEL_TIME: 6000, // slow, deliberate crossing
   currentX: 450,
-  riding: false
+  riding: false,
+  dismountCooldown: 0, // brief window after hopping off where re-mounting is suppressed, so hopping off doesn't immediately re-catch the player at the same height
+  facingDir: 1 // smoothly eased toward the target direction, rather than snapping instantly when dockedAt flips -- fixes the body jumping to the opposite side of the head the moment it turns around
 };
 
 // fixed relative body shape, trailing behind the head (dx=0) with
@@ -9408,8 +9413,7 @@ function getForestSnakePoint(progress) {
   const t = scaled - i0;
   const p0 = FOREST_SNAKE_BODY[i0];
   const p1 = FOREST_SNAKE_BODY[i1];
-  const headingRight = forestSnake.dockedAt === "A"; // traveling toward dockB
-  const dir = headingRight ? 1 : -1; // trail behind, opposite the direction of travel
+  const dir = forestSnake.facingDir; // smoothly eased, not an instant flip -- see updateForestScene
   return {
     x: forestSnake.currentX + dir * (p0.dx + (p1.dx - p0.dx) * t),
     y: p0.dy + (p1.dy - p0.dy) * t
@@ -9426,71 +9430,89 @@ const FOREST_BRAMBLE_X2 = 770;
 
 function drawForestBrambleBehind(camX) {
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  const w = x2 - x1;
   const baseY = gy - 6;
+  ctx.lineCap = "round";
+
   ctx.strokeStyle = "#2e3520";
   ctx.lineWidth = 10;
-  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(x1, baseY - 24);
-  ctx.bezierCurveTo(x1 + 50, baseY - 50, x1 + 90, baseY - 10, x1 + 140, baseY - 40);
-  ctx.bezierCurveTo(x1 + 180, baseY - 62, x1 + 200, baseY - 20, x2, baseY - 44);
+  ctx.bezierCurveTo(x1 + w * 0.22, baseY - 55, x1 + w * 0.37, baseY - 12, x1 + w * 0.52, baseY - 48);
+  ctx.bezierCurveTo(x1 + w * 0.67, baseY - 78, x1 + w * 0.78, baseY - 25, x2, baseY - 50);
   ctx.stroke();
+
   ctx.strokeStyle = "#3f5527";
   ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.moveTo(x1 + 10, baseY - 46);
-  ctx.bezierCurveTo(x1 + 60, baseY - 24, x1 + 100, baseY - 64, x1 + 150, baseY - 34);
-  ctx.bezierCurveTo(x1 + 190, baseY - 10, x1 + 210, baseY - 52, x2 - 5, baseY - 20);
+  ctx.moveTo(x1 + w * 0.04, baseY - 50);
+  ctx.bezierCurveTo(x1 + w * 0.26, baseY - 20, x1 + w * 0.4, baseY - 68, x1 + w * 0.58, baseY - 32);
+  ctx.bezierCurveTo(x1 + w * 0.74, baseY - 10, x1 + w * 0.84, baseY - 58, x2 - 5, baseY - 18);
   ctx.stroke();
-  // thorns and flowers, low tier
+
+  ctx.strokeStyle = "#2e3520";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(x1 + w * 0.1, baseY - 8);
+  ctx.bezierCurveTo(x1 + w * 0.3, baseY - 42, x1 + w * 0.46, baseY - 6, x1 + w * 0.63, baseY - 40);
+  ctx.bezierCurveTo(x1 + w * 0.8, baseY - 68, x1 + w * 0.9, baseY - 15, x2 - w * 0.02, baseY - 36);
+  ctx.stroke();
+
   ctx.fillStyle = "#2e3520";
-  [[x1 + 40, baseY - 34], [x1 + 110, baseY - 48], [x1 + 175, baseY - 30]].forEach(([tx, ty]) => {
+  [0.14, 0.3, 0.45, 0.6, 0.75, 0.88].forEach((f, i) => {
+    const tx = x1 + w * f, ty = baseY - (25 + (i % 3) * 15);
     ctx.beginPath();
     ctx.moveTo(tx, ty); ctx.lineTo(tx + 8, ty - 9); ctx.lineTo(tx + 2, ty + 7);
     ctx.closePath(); ctx.fill();
   });
-  ctx.fillStyle = "#d98fae";
-  [[x1 + 75, baseY - 40], [x1 + 155, baseY - 55]].forEach(([fx, fy]) => {
+  [0.22, 0.5, 0.7].forEach((f, i) => {
+    const fx = x1 + w * f, fy = baseY - (35 + (i % 2) * 18);
+    ctx.fillStyle = "#d98fae";
     ctx.beginPath(); ctx.arc(fx, fy, 5.5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#f0d8c8";
     ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#d98fae";
   });
 }
 
 function drawForestBrambleFront(camX) {
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  const w = x2 - x1;
   const baseY = gy - 6;
+  ctx.lineCap = "round";
+
   ctx.strokeStyle = "#2e3520";
   ctx.lineWidth = 11;
-  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(x1 - 5, baseY);
-  ctx.bezierCurveTo(x1 + 55, baseY - 70, x1 + 95, baseY - 90, x1 + 150, baseY - 65);
-  ctx.bezierCurveTo(x1 + 195, baseY - 45, x1 + 225, baseY - 85, x2 + 5, baseY - 60);
+  ctx.bezierCurveTo(x1 + w * 0.24, baseY - 82, x1 + w * 0.4, baseY - 100, x1 + w * 0.56, baseY - 70);
+  ctx.bezierCurveTo(x1 + w * 0.72, baseY - 45, x1 + w * 0.86, baseY - 95, x2 + 5, baseY - 62);
   ctx.stroke();
+
   ctx.strokeStyle = "#3f5527";
   ctx.lineWidth = 7;
   ctx.beginPath();
-  ctx.moveTo(x1 + 5, baseY - 10);
-  ctx.bezierCurveTo(x1 + 65, baseY - 88, x1 + 115, baseY - 62, x1 + 165, baseY - 95);
-  ctx.bezierCurveTo(x1 + 205, baseY - 118, x1 + 230, baseY - 68, x2, baseY - 95);
+  ctx.moveTo(x1 + w * 0.02, baseY - 10);
+  ctx.bezierCurveTo(x1 + w * 0.28, baseY - 92, x1 + w * 0.44, baseY - 62, x1 + w * 0.6, baseY - 100);
+  ctx.bezierCurveTo(x1 + w * 0.76, baseY - 130, x1 + w * 0.88, baseY - 68, x2, baseY - 100);
   ctx.stroke();
+
   ctx.strokeStyle = "#2e3520";
   ctx.lineWidth = 9;
   ctx.beginPath();
-  ctx.moveTo(x1 + 20, baseY - 5);
-  ctx.bezierCurveTo(x1 + 80, baseY - 55, x1 + 130, baseY - 30, x1 + 185, baseY - 60);
-  ctx.bezierCurveTo(x1 + 220, baseY - 78, x1 + 240, baseY - 40, x2 - 10, baseY - 55);
+  ctx.moveTo(x1 + w * 0.08, baseY - 5);
+  ctx.bezierCurveTo(x1 + w * 0.32, baseY - 58, x1 + w * 0.5, baseY - 28, x1 + w * 0.68, baseY - 62);
+  ctx.bezierCurveTo(x1 + w * 0.82, baseY - 82, x1 + w * 0.92, baseY - 40, x2 - 10, baseY - 55);
   ctx.stroke();
-  // thorns and flowers, upper tier
+
   ctx.fillStyle = "#2e3520";
-  [[x1 + 65, baseY - 80], [x1 + 140, baseY - 100], [x1 + 200, baseY - 70], [x1 + 100, baseY - 40]].forEach(([tx, ty]) => {
+  [0.1, 0.24, 0.4, 0.53, 0.68, 0.82, 0.93].forEach((f, i) => {
+    const tx = x1 + w * f, ty = baseY - (40 + (i % 4) * 18);
     ctx.beginPath();
     ctx.moveTo(tx, ty); ctx.lineTo(tx + 9, ty - 10); ctx.lineTo(tx + 2, ty + 8);
     ctx.closePath(); ctx.fill();
   });
-  [[x1 + 95, baseY - 88], [x1 + 175, baseY - 45]].forEach(([fx, fy]) => {
+  [0.18, 0.46, 0.64, 0.85].forEach((f, i) => {
+    const fx = x1 + w * f, fy = baseY - (48 + (i % 3) * 20);
     ctx.fillStyle = "#e0a8c0";
     ctx.beginPath(); ctx.arc(fx, fy, 6, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#f0d8c8";
@@ -9596,9 +9618,8 @@ function drawForestSnake(camX) {
   // toward its own trailing body, which was the earlier bug) -- a
   // small wobble keeps it from looking perfectly rigid
   const headP = points[0];
-  const headingRight = forestSnake.dockedAt === "A";
   const headWobble = Math.sin(t * 0.006) * 0.12;
-  const headAngle = (headingRight ? 0 : Math.PI) + headWobble;
+  const headAngle = Math.acos(Math.max(-1, Math.min(1, forestSnake.facingDir))) + headWobble;
   ctx.save();
   ctx.translate(headP.x, headP.y);
   ctx.rotate(headAngle);
@@ -9686,6 +9707,18 @@ function updateForestScene(deltaTime) {
 
   forestSnake.t += deltaTime * 1000;
 
+  // ease the facing direction smoothly toward whichever way the snake
+  // is currently supposed to be heading, rather than snapping
+  // instantly -- this is what stops the body jumping to the opposite
+  // side of the head the moment it docks and turns around
+  const targetDir = forestSnake.dockedAt === "A" ? 1 : -1;
+  const dirDiff = targetDir - forestSnake.facingDir;
+  if (Math.abs(dirDiff) > 0.01) {
+    forestSnake.facingDir += dirDiff * Math.min(1, 0.005 * deltaTime * 1000);
+  } else {
+    forestSnake.facingDir = targetDir;
+  }
+
   if (forestSnake.state === "docked") {
     const dock = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
     forestSnake.currentX = dock.x;
@@ -9705,11 +9738,15 @@ function updateForestScene(deltaTime) {
     }
   }
 
+  if (forestSnake.dismountCooldown > 0) forestSnake.dismountCooldown -= deltaTime * 1000;
+
   if (!forestSnake.riding) {
     // requires an actual jump and landing on the body, same pattern
     // as landing on any other platform -- not just standing nearby
-    // and pressing a button
-    if (player.vy <= 0) {
+    // and pressing a button. Suppressed briefly right after hopping
+    // off so it doesn't immediately re-catch the player at the same
+    // height they just dismounted from.
+    if (player.vy <= 0 && forestSnake.dismountCooldown <= 0) {
       const segments = 30;
       for (let i = 0; i <= segments; i++) {
         const p = getForestSnakePoint(i / segments);
@@ -9736,9 +9773,14 @@ function updateForestScene(deltaTime) {
     player.x = riderP.x - player.width / 2;
     player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
 
-    // hop off with the jump key
-    if (keys.upJustPressed) {
+    // hop off with the down key -- upJustPressed was also triggering
+    // a normal jump in handleInput() (which runs before this scene
+    // code), launching the player upward unexpectedly right as they
+    // tried to dismount. down matches the same pattern already used
+    // to dismount the rabbit shuttle elsewhere in the game.
+    if (keys.down) {
       forestSnake.riding = false;
+      forestSnake.dismountCooldown = 400;
     }
   }
 
@@ -16864,6 +16906,11 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
   ctx.restore(); // closes the sway rotation
   ctx.restore(); // closes the clip
 }
+
+if (currentScene === "forest") {
+  drawForestBrambleFront(camX);
+}
+
 
 drawCrown(camX);
 drawBoomerangPrompt(camX);
