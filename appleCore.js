@@ -9367,14 +9367,14 @@ function drawForestEntranceFerns(camX) {
 // more content exists to fill that gap.
 const FOREST_SNAKE_HEIGHT_ABOVE_GROUND = 32; // raised enough that reaching it actually requires a jump
 const forestSnake = {
-  dockA: { x: 350 }, // offset from the forest door
-  dockB: { x: 750 }, // move this further right later, once more content fills the gap
+  dockA: { x: 450 }, // offset from the forest door
+  dockB: { x: 850 }, // move this further right later, once more content fills the gap
   state: "docked", // "docked" | "traveling"
   dockedAt: "A",
   t: 0,
   DOCK_TIME: 3500,
   TRAVEL_TIME: 6000, // slow, deliberate crossing
-  currentX: 350,
+  currentX: 450,
   riding: false
 };
 
@@ -9406,7 +9406,7 @@ function getForestSnakePoint(progress) {
   const p0 = FOREST_SNAKE_BODY[i0];
   const p1 = FOREST_SNAKE_BODY[i1];
   const headingRight = forestSnake.dockedAt === "A"; // traveling toward dockB
-  const dir = headingRight ? -1 : 1; // trail behind, opposite the direction of travel
+  const dir = headingRight ? 1 : -1; // trail behind, opposite the direction of travel
   return {
     x: forestSnake.currentX + dir * (p0.dx + (p1.dx - p0.dx) * t),
     y: p0.dy + (p1.dy - p0.dy) * t
@@ -9477,10 +9477,13 @@ function drawForestSnake(camX) {
     ctx.restore();
   }
 
-  // head at the loop's start point, with a bigger eye
+  // head at the front, facing the actual direction of travel (not
+  // toward its own trailing body, which was the earlier bug) -- a
+  // small wobble keeps it from looking perfectly rigid
   const headP = points[0];
-  const headNext = points[1];
-  const headAngle = Math.atan2(headNext.y - headP.y, headNext.x - headP.x);
+  const headingRight = forestSnake.dockedAt === "A";
+  const headWobble = Math.sin(t * 0.006) * 0.12;
+  const headAngle = (headingRight ? 0 : Math.PI) + headWobble;
   ctx.save();
   ctx.translate(headP.x, headP.y);
   ctx.rotate(headAngle);
@@ -9491,6 +9494,21 @@ function drawForestSnake(camX) {
   ctx.ellipse(0, 0, 19, 15, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  // tongue -- flicks in and out rather than staying fixed
+  const tongueOut = Math.max(0, Math.sin(t * 0.004));
+  if (tongueOut > 0.05) {
+    ctx.strokeStyle = "#a8302a";
+    ctx.lineWidth = 1.3;
+    const tongueLen = 10 * tongueOut;
+    ctx.beginPath();
+    ctx.moveTo(18, 2);
+    ctx.lineTo(18 + tongueLen, 2);
+    ctx.moveTo(18 + tongueLen, 2);
+    ctx.lineTo(18 + tongueLen + 3, -1.5);
+    ctx.moveTo(18 + tongueLen, 2);
+    ctx.lineTo(18 + tongueLen + 3, 5.5);
+    ctx.stroke();
+  }
   // eye -- light iris ring, dark pupil, sized to actually read at this scale
   ctx.fillStyle = "#f0ead9";
   ctx.strokeStyle = "#3a2c14";
