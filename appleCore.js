@@ -6209,7 +6209,15 @@ function drawBridgePieceShape(ctx, x, y, size, rotation) {
   // sawn-end detail below can never bleed past the real silhouette
   function tracePillBody() {
     ctx.beginPath();
-    ctx.arc(-half, 0, r, Math.PI / 2, -Math.PI / 2, true);
+    // left cap must sweep through its OUTER point (angle PI, the
+    // leftmost point of the circle) to bulge away from the body --
+    // the previous `true` (anticlockwise) here swept through angle 0
+    // instead, which is the INNER point facing back into the body,
+    // producing a self-intersecting path. Under the canvas default
+    // nonzero-winding fill rule that inner loop rendered as a stray
+    // "circle cut out of the log" -- this is the actual root cause of
+    // that bug, not something the earlier clip-based fix could reach.
+    ctx.arc(-half, 0, r, Math.PI / 2, -Math.PI / 2, false);
     ctx.lineTo(capX, -r);
     ctx.arc(capX, 0, r, -Math.PI / 2, Math.PI / 2);
     ctx.closePath();
@@ -10120,13 +10128,15 @@ const forestSnake = {
 };
 
 // player position that kicks off the snake's very first departure from
-// dock B -- placed just past the raccoon, so the whole intro gear row
-// doubles as the snake's head-start travel buffer. The snake still has
-// to cover the full dockB->dockA span either way, so triggering it here
-// (rather than the moment the player actually reaches the wall) means
-// it's already well on its way, and often visibly approaching, by the
-// time the player finishes the gears and gets there.
-const FOREST_SNAKE_TRIGGER_X = raccoon.x + raccoon.width + 40;
+// dock B -- placed right at the raccoon (pulled back in from +40 past
+// it, per "make snake start arriving a little earlier"), so the whole
+// intro gear row doubles as the snake's head-start travel buffer. The
+// snake still has to cover the full dockB->dockA span either way, so
+// triggering it here (rather than the moment the player actually
+// reaches the wall) means it's already well on its way, and often
+// visibly approaching, by the time the player finishes the gears and
+// gets there.
+const FOREST_SNAKE_TRIGGER_X = raccoon.x + raccoon.width;
 
 // obstacle course -- small bramble-snag clumps sticking up along the
 // crossing that you have to jump-while-riding to clear, or get
@@ -10699,18 +10709,26 @@ function drawForestClockworkGears(camX) {
    instead of just dropping onto flat ground. A much longer, more
    deliberate arc instead of a quick hop across a small gap.
 
-   Position verified against the actual physics, not eyeballed: the
-   capstone's gTop is 226, launch is vy=8 / LAUNCH_GRAVITY=0.3, so
-   height gain at frame n is 8n - 0.15n(n-1). Solving for a gain of 74
-   (piece height 300 - gTop 226) lands at frame ~11.5 ascending, x
-   offset 3*11.5 ≈ 35 -> piece sits at x=2912. Peak of the whole arc is
-   ~332.7 (226 + 8^2/(2*0.3)), so 300 is comfortably below that (still
-   reachable) and nowhere near any real jump or double-jump's range
-   (nothing to even jump FROM out there in open air). Gated on
-   player.launched in the pickup check too, as a hard backstop.
+   Position re-verified against the actual frame-by-frame physics
+   (canvas is only 400px tall and gy/ground is fixed at y=300, so
+   anything above screen-height 300 renders at py<=0 -- literally off
+   the top edge). The original placement (height 300, on the ascent)
+   sat right at that edge and read as half-clipped. Simulated the real
+   per-frame integration (x+=vx; y+=vy; vy-=gravity each frame,
+   LAUNCH_GRAVITY=0.3 ascending / FLOATY_FALL_GRAVITY=0.13 descending)
+   from the capstone's gTop=226, vx=3, vy=8: peak is ~336.6 around
+   frame 27 (well off-screen), then the DESCENDING half of the arc
+   comes back down through comfortably-on-screen heights further out
+   to the right. At frame 64 the sim lands at x=3069, y=246.4 -- solidly
+   below the 300 screen ceiling (py≈54, fully visible with room for the
+   glow ring), still well above any real jump/double-jump's reach
+   (nothing to even jump FROM out there in open air), and well short of
+   the flightLanding gear's own catch zone (x 3085-3195) so it can't be
+   swallowed by that check first. Gated on player.launched in the
+   pickup check too, as a hard backstop.
    ====================================================== */
-const FOREST_FLIGHT_PIECE_X = 2912; // where the capstone launch's arc passes through height 300 on its way up (~frame 11.5 of the flight)
-const FOREST_FLIGHT_PIECE_HEIGHT = 300;
+const FOREST_FLIGHT_PIECE_X = 3069; // capstone launch's arc, descending side, ~frame 64
+const FOREST_FLIGHT_PIECE_HEIGHT = 246;
 let forestFlightPieceCollected = false;
 
 function drawForestFlightPiece(camX) {
@@ -10785,17 +10803,36 @@ function drawForestGnawSecret(camX) {
   }
 
   // the leaf clump covering it -- two halves that swing apart as
-  // partAmount rises and settle back closed as it falls
+  // partAmount rises and settle back closed as it falls. Swing/size
+  // bumped up from the original pass -- at flight speed, past the
+  // original small swing, it was reading as "nothing happened" rather
+  // than a deliberate reveal.
   ctx.fillStyle = "#3a5228";
   [-1, 1].forEach(side => {
     ctx.save();
-    ctx.translate(sx + side * 4, sy);
-    ctx.rotate(side * (0.3 + partAmount * 0.9));
+    ctx.translate(sx + side * (4 + partAmount * 6), sy);
+    ctx.rotate(side * (0.3 + partAmount * 1.5));
     ctx.beginPath();
-    ctx.ellipse(side * 6, -2, 11, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * 8, -2, 14, 9, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   });
+
+  // a quick scatter burst right at the moment of the reveal -- same
+  // "something physically just happened here" cue as the lever's own
+  // dust burst, so the reveal reads even at flight speed when the
+  // player only glimpses this spot for a fraction of a second
+  if (elapsed >= 0 && elapsed < 400) {
+    const burstP = elapsed / 400;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const d = burstP * 26;
+      ctx.fillStyle = `rgba(150,180,110,${(1 - burstP) * 0.7})`;
+      ctx.beginPath();
+      ctx.arc(sx + Math.cos(a) * d, sy - 6 + Math.sin(a) * d * 0.6, 2 * (1 - burstP * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 // patchy dark-green rust/patina spots on the gear's own metal face --
@@ -11284,9 +11321,11 @@ function updateForestScene(deltaTime) {
     // plain timer -- see FOREST_SNAKE_TRIGGER_X. A small minimum dock
     // time still applies even once triggered, so it doesn't feel like
     // it launches the instant you take a step (matches the "startled
-    // into moving" read rather than "was already leaving").
+    // into moving" read rather than "was already leaving") -- trimmed
+    // from 500 to 150 per "make snake start arriving a little earlier",
+    // on top of pulling the trigger point itself back too.
     const readyToDepart = !forestSnake.firstDepartureTriggered
-      ? player.x > FOREST_SNAKE_TRIGGER_X && forestSnake.t >= 500
+      ? player.x > FOREST_SNAKE_TRIGGER_X && forestSnake.t >= 150
       : forestSnake.t >= forestSnake.DOCK_TIME;
     if (readyToDepart) {
       forestSnake.state = "traveling";
@@ -11477,6 +11516,11 @@ function updateForestScene(deltaTime) {
   FOREST_CLOCKWORK_GEARS.forEach(g => {
     const gTop = g.height + g.outerR; // top surface, not the gear's center
     if (
+      !player.launched && // mid-flight, this generic snap must never
+      // grab the player just because the arc's y happens to pass
+      // through some other gear's landing band -- flight has its own
+      // dedicated flightLanding catch below, which is deliberately
+      // more generous/forgiving than this plain landing check
       player.x + player.width > g.x - g.outerR &&
       player.x < g.x + g.outerR &&
       player.y <= gTop &&
