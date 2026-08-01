@@ -10425,24 +10425,34 @@ function drawForestBoomerangTarget(camX) {
    with their neighbors, just alternating direction -- good enough to
    sell the look without full mesh physics.
 
-   Two clusters now, with real size/height variety instead of one flat
+   Four clusters now, with real size/height variety instead of one flat
    row of identical gears. Within a cluster the gears actually TOUCH
    (adjacent radii sum to the center distance, same as real meshed
    gears) rather than sitting a few px apart -- that few-px gap used to
    be smaller than the player's own width, so standing near the seam
    could straddle both gears' hit-tests at once and cause a stuck,
-   jittery landing. Between clusters there's a real gap wider than the
-   player, an intentional jump rather than an ambiguous sliver.
+   jittery landing. Between clusters there are real gaps wider than the
+   player -- genuine jumps, all math'd out edge-to-edge rather than
+   eyeballed from center distances (an earlier pass had a "gap" that
+   was actually only 20px once both radii were subtracted out). One of
+   those gaps combines a big climb with real horizontal distance
+   specifically to require a double jump, same idea as the intro row's
+   capstone gear.
    ====================================================== */
 const FOREST_CLOCKWORK_LEVER_X = 2480; // pushed further out past the bramble's transition-out (ends 2330) for more breathing room after the crossing
 const FOREST_CLOCKWORK_GEARS = [
-  // cluster 1 -- three touching gears, real size/height variety
+  // cluster A -- three touching gears, real size/height variety
   { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false },
-  { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0 }, // touches gear 1 (24+26=50 apart)
-  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0 }, // touches gear 2 (26+20=46 apart)
-  // real gap here (~70px, wider than the player) -- an intentional jump between clusters, not every gear needs to mesh with the next
-  { x: 2726, height: 90, outerR: 30, dir: -1, rot: 0, piece: true, pieceCollected: false }, // cluster 2 -- tallest, its own little peak
-  { x: 2778, height: 55, outerR: 22, dir: 1, rot: 0 } // touches gear 4 (30+22=52 apart)
+  { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0 }, // touches gear A1 (edge-to-edge, 2584=2584)
+  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0 }, // touches gear A2 (2636=2636)
+  // real single-jump gap (65px edge-to-edge) into cluster B
+  { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0 }, // cluster B starts
+  { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0 }, // touches gear B1 (2785=2785)
+  // real double-jump gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
+  { x: 2877, height: 212, outerR: 14, dir: -1, rot: 0, piece: true, pieceCollected: false }, // the hardest single jump in the whole grove -- reward piece on top
+  // real gap (55px) descending into the final cluster -- falling is easier than climbing, so this one's more forgiving despite the height drop
+  { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
+  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 } // touches gear D1 (2998=2998), easy landing to close it out
 ];
 const FOREST_CLOCKWORK_SPIN_SPEED = 0.0011; // radians/ms, applied per gear's own `dir` -- halved from the first pass, was spinning too fast to read clearly
 
@@ -10454,7 +10464,7 @@ const FOREST_CLOCKWORK_SPIN_SPEED = 0.0011; // radians/ms, applied per gear's ow
 // can be pulled again as many times as needed.
 const FOREST_CLOCKWORK_ACTIVE_MS = 9000;
 const FOREST_CLOCKWORK_WINDDOWN_MS = 2500;
-const FOREST_CLOCKWORK_LEVER_ANIM_MS = 420; // duration of the handle's own swing animation
+const FOREST_CLOCKWORK_LEVER_ANIM_MS = 950; // duration of the handle's own swing animation -- slowed down a good amount, was reading as an instant snap rather than a real pull
 let forestClockworkState = "idle"; // "idle" | "active" | "windingDown"
 let forestClockworkStateT = 0; // ms elapsed since entering the current state
 let forestClockworkLeverPullTime = -Infinity; // performance.now() of the last idle->active pull, drives the punchy swing + dust burst
@@ -10496,7 +10506,13 @@ function drawForestClockworkLever(camX) {
   // toward the pulled side. Freshly reset (wound down back to idle):
   // a gentler ease back toward resting, since that's a passive
   // timeout, not something the player physically yanked.
-  const restAngle = -0.9, pulledAngle = 0.9;
+  // canvas rotation on a locally-downward-pointing handle: a POSITIVE
+  // angle swings the tip toward screen-left, a NEGATIVE angle swings it
+  // toward screen-right (this is the opposite of the naive "positive =
+  // clockwise" assumption -- worked it out by hand from the actual
+  // rotation matrix rather than guessing). Rest state should read as
+  // facing left, pulled/active should read as pushed over to the right.
+  const restAngle = 0.9, pulledAngle = -0.9;
   let handleAngle;
   if (pullElapsed >= 0 && pullElapsed < FOREST_CLOCKWORK_LEVER_ANIM_MS) {
     const p = pullElapsed / FOREST_CLOCKWORK_LEVER_ANIM_MS;
@@ -10556,10 +10572,54 @@ function drawForestClockworkGears(camX) {
     const gx = g.x - camX;
     const gy2 = gy - g.height;
     drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 8, g.rot, "#6b5030", "#2e2014", g.x * 3.7);
+    // tarnish is on the metal itself, so it rotates WITH the gear face.
+    // Moss and vines are external growth draped over the mechanism, so
+    // they stay put in world space even while the gear underneath spins.
+    if (pseudoRandom(g.x * 1.9) < 0.5) {
+      drawGearTarnish(gx, gy2, g.outerR, g.rot, g.x * 2.3);
+    }
+    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1);
+    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4);
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
   });
+}
+
+// patchy dark-green rust/patina spots on the gear's own metal face --
+// rotates along with the gear since it's part of the surface, not
+// draped growth. Only about half the gears get it (see the caller), for
+// variety rather than every single gear looking uniformly weathered.
+function drawGearTarnish(gx, gy2, outerR, rot, seed) {
+  ctx.save();
+  ctx.translate(gx, gy2);
+  ctx.rotate(rot);
+  for (let i = 0; i < 3; i++) {
+    const sSeed = seed + i * 17.3;
+    const a = pseudoRandom(sSeed) * Math.PI * 2;
+    const d = pseudoRandom(sSeed + 1) * outerR * 0.6;
+    const r = 3 + pseudoRandom(sSeed + 2) * 4;
+    ctx.fillStyle = `rgba(65,85,50,${0.3 + pseudoRandom(sSeed + 3) * 0.25})`;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * d, Math.sin(a) * d, r, r * 0.7, a, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// small moss patches along the rim -- same color language as the
+// mossy door overlay, kept independent of the gear's own rotation
+function drawGearMoss(gx, gy2, outerR, seed) {
+  ctx.fillStyle = "rgba(90,120,60,0.55)";
+  for (let i = 0; i < 3; i++) {
+    const pSeed = seed + i * 9.1;
+    const a = pseudoRandom(pSeed) * Math.PI * 2;
+    const d = outerR * (0.8 + pseudoRandom(pSeed + 1) * 0.3);
+    const r = 4 + pseudoRandom(pSeed + 2) * 4;
+    ctx.beginPath();
+    ctx.ellipse(gx + Math.cos(a) * d, gy2 + Math.sin(a) * d * 0.8, r, r * 0.7, a, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 // snag knot -- the EXACT ground-rooted strand technique the wall
@@ -11090,20 +11150,18 @@ function updateForestScene(deltaTime) {
       }
     }
 
-    // Bridge-piece-platform grace catch -- deliberately much more
-    // forgiving than the precision window above. The block above is
-    // tuned for "did you time a deliberate jump to land back on the
-    // moving snake" (narrow height band, since that's a real skill
-    // moment). This one is answering a totally different question --
-    // "the floor just vanished under you, is the snake still there at
-    // all" -- so it only checks x-overlap with the body, plus that
-    // you haven't already fallen well past it. No tight height band,
-    // because a player free-falling from platform height (80) down to
-    // the snake's actual ride height (~32) sweeps through that whole
-    // range in a couple of frames, and the earlier version of this
-    // fix required the snake to happen to be at the right x on the
-    // exact frame the player passed through a ~40px slice -- which is
-    // exactly what kept failing.
+    // Bridge-piece-platform grace catch -- more forgiving than the
+    // precision window above on X (checks the whole grace window, not
+    // just one frame), but it DOES still require the player to have
+    // actually fallen most of the way down to the snake's height first
+    // (player.y <= bodyTop + 20) rather than catching on the very
+    // first frame after the platform vanishes. That first-frame catch
+    // used to fire at full platform height (80) with only a lower
+    // bound on the check, which was an instant warp straight onto the
+    // snake with no visible fall at all -- now it plays out as a real
+    // short drop from the platform down to riding height, and only
+    // catches once you're actually close to that height, same as a
+    // normal landing would.
     if (!forestSnake.riding && performance.now() < forestPlatformDropGraceUntil && player.vy <= 0) {
       const segments = 30;
       for (let i = 0; i <= segments; i++) {
@@ -11112,6 +11170,7 @@ function updateForestScene(deltaTime) {
         if (
           player.x + player.width > p.x - 24 &&
           player.x < p.x + 24 &&
+          player.y <= bodyTop + 20 &&
           player.y >= bodyTop - 60
         ) {
           forestSnake.riding = true;
@@ -11236,7 +11295,23 @@ function updateForestScene(deltaTime) {
     }
   });
 
-  if (onSpinningGear) {
+  // jumping off a gear that's ACTUALLY spinning gets flung, not just a
+  // normal hop -- reuses the same launched-flight physics as the swing
+  // release (floaty descent, ignores platform collision mid-arc), just
+  // with its own horizontal kick in the gear's spin direction. Gives
+  // the spinning an actual purpose beyond visual flavor: timed right,
+  // it's a real shortcut across the harder gaps in the grove, not just
+  // a taller jump. Checked BEFORE the normal ride-carry below so this
+  // frame does the launch instead of the small per-frame nudge.
+  if (onSpinningGear && keys.upJustPressed) {
+    player.vx = onSpinningGear.dir * 9;
+    player.vy = 14;
+    player.launched = true;
+    player.launchPeakHeight = player.y;
+    player.jumping = true;
+  }
+
+  if (onSpinningGear && !player.launched) {
     // riding a turning gear -- carried along by the tangential motion
     // at the contact point (top of a turning circle moves purely
     // horizontally: radius * angular velocity). The visual lean eases
@@ -18329,7 +18404,16 @@ ctx.fill();
 if (drawPy < gy) { // still at least partly above ground — worth drawing
   ctx.save();
   ctx.beginPath();
-  ctx.rect(px - 2, 0, player.width + 4, gy); // only the region above ground level is visible
+  // widened well past the sprite's own bounding box -- the clip only
+  // NEEDS to hide what's below ground (the gy cutoff, for the
+  // hole-fall sink effect), not hug the sprite horizontally. A tight
+  // +/-2px margin was fine for an upright box, but once the clockwork
+  // grove's ride-tilt rotates the sprite even a bounded amount, its
+  // corners swing outside that margin and get visibly chopped off by
+  // this same clip. Generous horizontal padding costs nothing since
+  // there's nothing else in this narrow vertical strip to accidentally
+  // reveal.
+  ctx.rect(px - 24, 0, player.width + 48, gy); // only the region above ground level is visible
   ctx.clip();
 
   // woozy sway -- a gentle wobble on the body itself while stunned
