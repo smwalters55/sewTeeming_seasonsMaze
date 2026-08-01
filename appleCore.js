@@ -9426,9 +9426,12 @@ function drawForestForegroundTrees(camX) {
     const trunkW = 14 + pseudoRandom(seed + 3) * 6;
     const lean = (pseudoRandom(seed + 4) - 0.5) * 0.12;
     const warm = pseudoRandom(seed + 5) < 0.5;
-    const trunkColor = warm ? "#3c2c1c" : "#332318";
-    const canopyBase = warm ? "#3a5228" : "#2f4a24";
-    const canopyHi = warm ? "#4d6b35" : "#3f5c2e";
+    // pulled darker/mossier across the board -- read as too clean/flat
+    // before, wanted something closer to real dense-forest shade
+    const trunkColor = warm ? "#2e2013" : "#241a10";
+    const canopyShadow = warm ? "#212e15" : "#1a2712";
+    const canopyBase = warm ? "#2c4019" : "#233a1a";
+    const canopyHi = warm ? "#3d5726" : "#324a24";
 
     ctx.save();
     ctx.translate(tx, gy);
@@ -9461,22 +9464,50 @@ function drawForestForegroundTrees(camX) {
     ctx.quadraticCurveTo(trunkW / 2, -4, trunkW / 2 + 7, 5);
     ctx.fill();
 
-    // layered canopy -- several overlapping blobs for a fuller shape,
-    // then a lighter highlight cluster offset toward one side for depth
+    // layered, bushier canopy -- a darker solid silhouette underneath
+    // (keeps the overall shape from looking sparse/see-through), then
+    // actual small leaf shapes scattered over it instead of flat
+    // circles, so it reads as real foliage texture rather than a
+    // smooth blob, finished with a lighter highlight leaf cluster
+    // offset toward one side for depth
     const cy0 = -trunkH;
-    ctx.fillStyle = canopyBase;
-    [[-27, -16, 34], [11, -30, 39], [31, -4, 30], [-9, -40, 31]].forEach(([dx, dy, r]) => {
+    const canopyBlobs = [[-27, -16, 34], [11, -30, 39], [31, -4, 30], [-9, -40, 31]];
+    ctx.fillStyle = canopyShadow;
+    canopyBlobs.forEach(([dx, dy, r]) => {
       ctx.beginPath();
       ctx.arc(dx, cy0 + dy, r, 0, Math.PI * 2);
       ctx.fill();
     });
-    ctx.fillStyle = canopyHi;
-    [[-6, -34, 20], [17, -20, 16]].forEach(([dx, dy, r]) => {
-      ctx.beginPath();
-      ctx.arc(dx, cy0 + dy, r, 0, Math.PI * 2);
-      ctx.fill();
+    canopyBlobs.forEach(([dx, dy, r], ci) => {
+      drawForestTreeLeafCluster(dx, cy0 + dy, r * 0.9, canopyBase, seed + ci * 37, 15);
+    });
+    [[-6, -34, 20], [17, -20, 16]].forEach(([dx, dy, r], ci) => {
+      drawForestTreeLeafCluster(dx, cy0 + dy, r, canopyHi, seed + 500 + ci * 29, 9);
     });
 
+    ctx.restore();
+  }
+}
+
+// scatters small pointed leaf shapes (not circles) within a radius --
+// used to texture the tree canopies so they read as bushy foliage
+// rather than smooth flat blobs
+function drawForestTreeLeafCluster(cx, cy, r, color, seed, count) {
+  ctx.fillStyle = color;
+  for (let i = 0; i < count; i++) {
+    const lSeed = seed + i * 3.3;
+    const a = pseudoRandom(lSeed) * Math.PI * 2;
+    const d = pseudoRandom(lSeed + 1) * r;
+    const lx = cx + Math.cos(a) * d;
+    const ly = cy + Math.sin(a) * d * 0.85;
+    const lw = 3.5 + pseudoRandom(lSeed + 2) * 3;
+    const rot = pseudoRandom(lSeed + 3) * Math.PI * 2;
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, lw, lw * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 }
@@ -9538,20 +9569,31 @@ function drawForestEntranceFerns(camX) {
   ];
   fernSpots.forEach(f => {
     const sx = f.x - camX;
-    drawFernPlant(sx, gy, f.scale, f.x * 3.1);
+    const seed = f.x * 3.1;
+    // each plant leans/fans toward its own overall direction -- some
+    // tilted left, some right, some more upright -- instead of every
+    // fern fanning symmetrically around straight-up. Occasionally
+    // mirrored outright for a real "grew the other way" look.
+    const lean = (pseudoRandom(seed + 90) - 0.5) * 1.1;
+    const flip = pseudoRandom(seed + 91) < 0.35;
+    drawFernPlant(sx, gy, f.scale, seed, lean, flip);
   });
 }
 
 // one fern plant -- a fan of curved fronds around a base point, each
 // frond built from several segments that bend increasingly toward a
 // droop as they rise (so tips curl over, like a real frond) with small
-// paired leaflets sprouting along the spine, shrinking toward the tip
-function drawFernPlant(baseX, baseY, s, seed) {
+// paired leaflets sprouting along the spine, shrinking toward the tip.
+// `lean` biases the whole fan toward one overall direction and `flip`
+// mirrors it outright, so plants read as individually grown rather
+// than stamped copies of the same shape.
+function drawFernPlant(baseX, baseY, s, seed, lean, flip) {
   const frondCount = 5;
+  const dir = flip ? -1 : 1;
   for (let i = 0; i < frondCount; i++) {
     const fSeed = seed + i * 11.7;
     const spread = frondCount === 1 ? 0 : (i - (frondCount - 1) / 2) / (frondCount - 1); // -0.5..0.5
-    const angle = spread * 1.3 + (pseudoRandom(fSeed) - 0.5) * 0.15; // fan out from vertical
+    const angle = dir * (spread * 1.3 + lean) + (pseudoRandom(fSeed) - 0.5) * 0.15; // fan out around the plant's own lean direction
     const len = (32 + pseudoRandom(fSeed + 1) * 12) * s;
     const droop = 0.4 + pseudoRandom(fSeed + 2) * 0.3;
     drawFernFrond(baseX, baseY, angle, len, droop, s, fSeed);
@@ -9699,7 +9741,7 @@ function drawRaccoon(camX) {
     // the raccoon entirely.
     const bubbleY = ry - 62;
     const line = raccoon.step === 1
-      ? "There's thorns ahead that don't part for walking feet."
+      ? "There's thorns ahead that don't part for walking feet..."
       : "There's one who knows them well enough to cross — mind the tangles along the way.";
     drawSpeechBubble(ctx, bubbleX, bubbleY, [line]);
   }
@@ -9717,22 +9759,27 @@ function drawRaccoon(camX) {
 // jump ~140 max): most gaps stay comfortably within single-jump range,
 // but a few combine a real horizontal gap with a big climb specifically
 // to require a double jump, both directions at once. Also carries some
-// of the bridge-piece collectibles now -- the goal is roughly 6-8
-// pieces total scattered across the whole forest run before the water
-// crossing, not just the two down in the bramble (platform + boomerang
-// gear), so a handful of these gears -- weighted toward the harder,
-// double-jump ones -- carry a piece too.
+// of the bridge-piece collectibles now, but kept deliberately sparse --
+// just two here (one easy, one on the capstone), so the intro row
+// doesn't turn into the main piece-farming zone; the rest of the 6-8
+// total live down in the bramble (platform + boomerang gear + knots).
+// Gaps between the easy/moderate gears were widened noticeably (was
+// reading as "almost adjacent") -- the bramble itself shifted another
+// +200 to make the room for it. The hard double-jump gaps were only
+// nudged, not widened by the same amount, so they stay genuinely
+// double-jump-only rather than becoming trivially spannable.
 // Starts at x=630 (gear1 left edge 608), clear of the raccoon's
-// speech bubble. Ends at x=1090 (1070 + outerR 20), still clear of the
-// bramble transition-in at 1100.
+// speech bubble. Ends at x=1248 (1230 + outerR 18), well clear of the
+// bramble transition-in at 1300.
 const FOREST_INTRO_GEARS = [
   { x: 630, height: 26, outerR: 22 }, // big, low, easy first hop from the ground
-  { x: 715, height: 82, outerR: 14, piece: true, pieceCollected: false }, // single-jump climb -- first (easy) piece
-  { x: 790, height: 36, outerR: 25 }, // biggest, low again -- a breather before the hard one
-  { x: 860, height: 136, outerR: 13, piece: true, pieceCollected: false }, // smallest -- needs a real double jump (100px climb + horizontal gap together)
-  { x: 920, height: 60, outerR: 19, piece: true, pieceCollected: false }, // easier landing, a breather piece before the last double-jumper
-  { x: 1015, height: 150, outerR: 13, piece: true, pieceCollected: false }, // tallest of the row -- big climb AND a real horizontal gap, the hardest one here
-  { x: 1070, height: 45, outerR: 20 } // easy landing to close out the sequence before the bramble transition
+  { x: 760, height: 82, outerR: 14, piece: true, pieceCollected: false }, // single-jump climb, comfortably spaced out now -- first (easy) piece
+  { x: 855, height: 36, outerR: 25 }, // biggest, low again -- a breather before the hard one
+  { x: 938, height: 136, outerR: 13 }, // smallest -- needs a real double jump (climb + horizontal gap together)
+  { x: 1015, height: 60, outerR: 19 }, // easier landing, a breather before the "higher gear situation" below
+  { x: 1105, height: 80, outerR: 16 }, // stepping stone leading up into the capstone jump
+  { x: 1175, height: 185, outerR: 12, piece: true, pieceCollected: false }, // the capstone -- tallest, hardest jump in the whole row, second (hard) piece
+  { x: 1230, height: 30, outerR: 18 } // easy landing back down to close out the sequence before the bramble transition
 ];
 
 function drawForestIntroGears(camX) {
@@ -9935,8 +9982,8 @@ function drawForestHintGear(camX) {
 // more content exists to fill that gap.
 const FOREST_SNAKE_HEIGHT_ABOVE_GROUND = 32; // raised enough that reaching it actually requires a jump
 const forestSnake = {
-  dockA: { x: 1090 }, // near/left dock, close to the bramble -- shifted another +100 (was 990) for more room after the intro gears
-  dockB: { x: 2060 }, // far/right dock, beyond the wall -- shifted +100 to match. Span (dockB - dockA) unchanged, so TRAVEL_TIME below still applies
+  dockA: { x: 1290 }, // near/left dock, close to the bramble -- shifted another +200 (was 1090) for a more spread-out intro gear row
+  dockB: { x: 2260 }, // far/right dock, beyond the wall -- shifted +200 to match. Span (dockB - dockA) unchanged, so TRAVEL_TIME below still applies
   state: "docked", // "docked" | "traveling"
   dockedAt: "B", // starts docked at the FAR side (was "A") -- so the player sees the empty bramble first, and only after the initial dock pause does the snake start traveling B->A, appearing to come toward them through the wall rather than just sitting there waiting at the entrance
   t: 0,
@@ -9969,9 +10016,9 @@ const forestSnake = {
 // clear than they look, since double-jumping over the full visual
 // height was proving too hard in practice.
 const FOREST_SNAKE_OBSTACLES = [
-  { x: 1260, clearHeight: 48, bumpHeight: 30 }, // shifted another +100 (was 1160) for more room after the intro gears
-  { x: 1440, clearHeight: 48, bumpHeight: 30 }, // was 1340
-  { x: 1690, clearHeight: 48, bumpHeight: 30 } // was 1590
+  { x: 1460, clearHeight: 48, bumpHeight: 30 }, // shifted another +200 (was 1260) for a more spread-out intro gear row
+  { x: 1640, clearHeight: 48, bumpHeight: 30 }, // was 1440
+  { x: 1890, clearHeight: 48, bumpHeight: 30 } // was 1690
 ];
 
 // boomerang hard-spot -- a small gear positioned well above the
@@ -9980,7 +10027,7 @@ const FOREST_SNAKE_OBSTACLES = [
 // Requires throwing the boomerang while airborne (mid-ride jump) and
 // catching it at the peak of its arc. A hit knocks a bridge piece
 // loose, which falls nearby and needs to be collected separately.
-const forestBoomerangTarget = { x: 1800, heightAboveGround: 150, hit: false }; // shifted another +100 (was 1700) -- keeps the same clearance from knot 3 and the exit
+const forestBoomerangTarget = { x: 2000, heightAboveGround: 150, hit: false }; // shifted another +200 (was 1800) -- keeps the same clearance from knot 3 and the exit
 const forestFallingBridgePiece = { x: 0, heightAboveGround: 0, falling: false, available: false, collected: false, collecting: false };
 const FOREST_BRIDGE_PIECE_FALL_SPEED = 60;
 
@@ -10035,10 +10082,10 @@ function getForestSnakePoint(progress) {
 // option. Split into behind/front layers around the snake's own
 // drawing call so it genuinely weaves through rather than just
 // passing in front of a flat backdrop.
-const FOREST_BRAMBLE_X1 = 1140; // shifted another +100 (was 1040) -- more breathing room after the intro gears (which now end around x=939)
-const FOREST_BRAMBLE_X2 = 2010; // shifted +100 (was 1910)
-const FOREST_BRAMBLE_TRANSITION_IN_X1 = 1100; // looser vines building up to the main wall (was 1000)
-const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 2050; // looser vines tapering off after the main wall (was 1950)
+const FOREST_BRAMBLE_X1 = 1340; // shifted another +200 (was 1140) -- more breathing room for the now more spread-out intro gears
+const FOREST_BRAMBLE_X2 = 2210; // shifted +200 (was 2010)
+const FOREST_BRAMBLE_TRANSITION_IN_X1 = 1300; // looser vines building up to the main wall (was 1100)
+const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 2250; // looser vines tapering off after the main wall (was 2050)
 
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -10169,7 +10216,7 @@ function drawForestBrambleFront(camX) {
 // knot 2 is what grabs the piece -- not a separate hop-off-and-walk
 // errand. Was a low platform near ground level requiring a dismount;
 // moved up so it's caught naturally mid-arc while clearing the knot.
-const FOREST_BRIDGE_PLATFORM_X = 1440; // aligned with the second obstacle, shifted another +100 (was 1340)
+const FOREST_BRIDGE_PLATFORM_X = 1640; // aligned with the second obstacle, shifted another +200 (was 1440)
 const FOREST_BRIDGE_PLATFORM_HEIGHT = 80; // was 22 (ground-level) -- now well above the knot's clearHeight (48), inside single-jump range
 
 // inventory.bridgePiece only actually updates once the collect
