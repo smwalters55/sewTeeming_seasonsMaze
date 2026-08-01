@@ -1619,12 +1619,21 @@ function handleInput(){
           for (const g of FOREST_CLOCKWORK_GEARS) {
             const gTop = g.height + g.outerR;
             if (
+              g.launchPad &&
               player.x + player.width > g.x - g.outerR &&
               player.x < g.x + g.outerR &&
               Math.abs(player.y - gTop) < 1
             ) {
-              player.vx = g.dir * 9;
-              player.vy = 14;
+              // this reuses the swing's FLOATY_FALL_GRAVITY descent
+              // (very gentle -- tuned for a big sweeping cross-screen
+              // arc), so even modest values here hang in the air a
+              // long time and rack up a lot of horizontal distance per
+              // frame of vx. Cut down hard from the first pass (was
+              // vx=9, vy=14 -- around 1000px of travel over ~2 seconds
+              // of hangtime, way too much) to a real but contained
+              // boost instead.
+              player.vx = g.dir * 3;
+              player.vy = 8;
               player.launched = true;
               player.launchPeakHeight = player.y;
               player.jumping = true;
@@ -6188,17 +6197,61 @@ function drawBridgePieceShape(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
-  ctx.fillStyle = "#8a6030";
+
+  const r = size * 0.58;    // log radius (half-thickness)
+  const half = size * 1.1;  // half the visible body length
+
+  // log body -- a capsule shape (a bark-brown cylinder seen side-on),
+  // not a flat oval -- this is what actually reads as "log" rather
+  // than "brown pebble"
+  ctx.fillStyle = "#6b4423";
   ctx.beginPath();
-  ctx.ellipse(0, 0, size * 1.1, size * 0.7, 0, 0, Math.PI * 2);
+  ctx.arc(-half, 0, r, Math.PI / 2, -Math.PI / 2, true);
+  ctx.lineTo(half * 0.35, -r);
+  ctx.arc(half * 0.35, 0, r, -Math.PI / 2, Math.PI / 2);
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = size * 0.1;
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = Math.max(1, size * 0.09);
   ctx.stroke();
-  ctx.fillStyle = "#c9a878";
+
+  // bark ridge lines along the body, breaking up the flat fill so it
+  // reads as rough bark texture rather than a smooth painted tube
+  ctx.strokeStyle = "rgba(35,22,10,0.4)";
+  ctx.lineWidth = Math.max(0.6, size * 0.05);
+  [-r * 0.45, r * 0.45].forEach(oy => {
+    ctx.beginPath();
+    ctx.moveTo(-half * 0.8, oy);
+    ctx.lineTo(half * 0.1, oy);
+    ctx.stroke();
+  });
+
+  // the sawn end -- pale wood with a couple of growth rings and a small
+  // pith center, ringed by a dark bark edge, so it reads as an actual
+  // cut log end rather than a brown oval with a highlight smear
+  const capX = half * 0.35;
+  ctx.fillStyle = "#d8b988";
   ctx.beginPath();
-  ctx.ellipse(-size * 0.55, 0, size * 0.3, size * 0.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(capX, 0, r * 0.95, r, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = "#a9865a";
+  ctx.lineWidth = Math.max(0.6, size * 0.045);
+  ctx.beginPath();
+  ctx.ellipse(capX, 0, r * 0.62, r * 0.66, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(capX, 0, r * 0.3, r * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#6b4a2c";
+  ctx.beginPath();
+  ctx.arc(capX, 0, Math.max(0.6, size * 0.07), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = Math.max(0.8, size * 0.08);
+  ctx.beginPath();
+  ctx.ellipse(capX, 0, r * 0.95, r, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
   ctx.restore();
 }
 
@@ -9424,6 +9477,7 @@ function drawForestScene(camX) {
   drawForestBoomerangTarget(camX);
   drawForestClockworkLever(camX);
   drawForestClockworkGears(camX);
+  drawForestFlightPiece(camX);
   // drawForestBrambleFront and drawForestBridgePlatform now called
   // after the player sprite in the main draw() function -- the
   // bridge platform/item specifically needs to be drawn after the
@@ -9878,17 +9932,7 @@ function drawForestGearVines(gx, gy2, outerR, seed) {
 // nested into any woven perch here.
 function drawGearBridgePiece(gx, topY) {
   const py = topY - 10;
-  ctx.fillStyle = "#8a6030";
-  ctx.beginPath();
-  ctx.ellipse(gx, py, 9, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = "#c9a878";
-  ctx.beginPath();
-  ctx.ellipse(gx - 5, py, 2.5, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
+  drawBridgePieceShape(ctx, gx, py, 8, -0.25); // slight resting tilt, not perfectly level
 }
 
 // entrance hint gear -- a single small vine-wrapped gear among the
@@ -10313,18 +10357,8 @@ function drawForestBridgePlatform(camX) {
   ctx.fill();
   ctx.restore();
 
-  // the bridge piece itself -- a small log-like chunk
-  ctx.fillStyle = "#8a6030";
-  ctx.beginPath();
-  ctx.ellipse(px, py - 8, 11, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = "#c9a878";
-  ctx.beginPath();
-  ctx.ellipse(px - 6, py - 8, 3, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // the bridge piece itself -- an actual log shape, not a brown oval
+  drawBridgePieceShape(ctx, px, py - 8, 10, 0.15);
 }
 
 // branch + leaf clump drawn AFTER the gear so it partially occludes
@@ -10385,10 +10419,10 @@ function drawForestBoomerangTarget(camX) {
     ctx.quadraticCurveTo(gx - 4, gy2 - 22, gx + 18, gy2 - 8);
     ctx.stroke();
 
-    // small bridge-piece plank lashed to the gear's lower-right, tied
-    // on with a bit of twine -- concrete visual evidence there's an
+    // small bridge-piece log lashed to the gear's lower-right, tied on
+    // with a bit of twine -- concrete visual evidence there's an
     // actual item here (not just decoration), even before the foliage
-    // partially covers it. Same plank look as the falling piece below,
+    // partially covers it. Same log look as the falling piece below,
     // just smaller and pinned in place.
     ctx.strokeStyle = "#4a3018";
     ctx.lineWidth = 1.5;
@@ -10396,17 +10430,7 @@ function drawForestBoomerangTarget(camX) {
     ctx.moveTo(gx + 6, gy2 + 10);
     ctx.lineTo(gx + 15, gy2 + 17);
     ctx.stroke();
-    ctx.fillStyle = "#8a6030";
-    ctx.beginPath();
-    ctx.ellipse(gx + 18, gy2 + 20, 8, 5, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#4a3018";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "#c9a878";
-    ctx.beginPath();
-    ctx.ellipse(gx + 15, gy2 + 21, 2.5, 4, 0.4, 0, Math.PI * 2);
-    ctx.fill();
+    drawBridgePieceShape(ctx, gx + 18, gy2 + 20, 8, 0.4);
 
     // slow pulsing glint over the whole thing -- catches the eye while
     // scrolling past, without undoing the branch occlusion
@@ -10422,17 +10446,7 @@ function drawForestBoomerangTarget(camX) {
   if (forestFallingBridgePiece.available && !forestFallingBridgePiece.collected) {
     const px = forestFallingBridgePiece.x - camX;
     const py = gy - forestFallingBridgePiece.heightAboveGround;
-    ctx.fillStyle = "#8a6030";
-    ctx.beginPath();
-    ctx.ellipse(px, py, 11, 7, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#4a3018";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "#c9a878";
-    ctx.beginPath();
-    ctx.ellipse(px - 6, py, 3, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+    drawBridgePieceShape(ctx, px, py, 11, 0);
   }
 }
 
@@ -10468,16 +10482,20 @@ function drawForestBoomerangTarget(camX) {
    capstone gear.
    ====================================================== */
 const FOREST_CLOCKWORK_LEVER_X = 2480; // pushed further out past the bramble's transition-out (ends 2330) for more breathing room after the crossing
+// launchPad marks the gears sitting right before a real gap -- ONLY
+// those fling on jump. Every other gear needs a plain, predictable
+// jump to hop between touching neighbors (different heights within
+// the same cluster) without getting launched by accident every time.
 const FOREST_CLOCKWORK_GEARS = [
   // cluster A -- three touching gears, real size/height variety
   { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false },
   { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0 }, // touches gear A1 (edge-to-edge, 2584=2584)
-  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0 }, // touches gear A2 (2636=2636)
+  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true }, // touches gear A2 (2636=2636) -- last of cluster A, launches across the gap into B
   // real single-jump gap (65px edge-to-edge) into cluster B
   { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0 }, // cluster B starts
-  { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0 }, // touches gear B1 (2785=2785)
+  { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true }, // touches gear B1 (2785=2785) -- last of cluster B, launches across the double-jump gap into the capstone
   // real double-jump gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 2877, height: 212, outerR: 14, dir: -1, rot: 0, piece: true, pieceCollected: false }, // the hardest single jump in the whole grove -- reward piece on top
+  { x: 2877, height: 212, outerR: 14, dir: -1, rot: 0, piece: true, pieceCollected: false, launchPad: true }, // the hardest single jump in the whole grove -- reward piece on top, also its own launch pad for the send-off down into cluster D
   // real gap (55px) descending into the final cluster -- falling is easier than climbing, so this one's more forgiving despite the height drop
   { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
   { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 } // touches gear D1 (2998=2998), easy landing to close it out
@@ -10612,6 +10630,45 @@ function drawForestClockworkGears(camX) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
   });
+}
+
+/* ======================================================
+   FLIGHT-ONLY BONUS PIECE — floats out over the first launch gap,
+   well clear of any gear. Reachable ONLY while actually mid-flight
+   from a launch pad -- and this time actually verified, not just
+   assumed: the established ceiling elsewhere in this file for a
+   double jump is ~140 height, so an earlier version of this sat AT
+   that same 140, which a well-timed double jump could plausibly have
+   reached. Pushed the height to 155 -- a real 15px margin above the
+   double-jump ceiling, while still comfortably under this specific
+   launch's own computed peak (~171.7 height, worked out from
+   vy=8 and LAUNCH_GRAVITY=0.3: peak gain = vy^2/(2*LAUNCH_GRAVITY) =
+   106.7, plus the A3 launch pad's own gTop of 65). So it's actually
+   above what a jump can reach AND actually inside what the flight
+   itself can reach -- not just gated in code, genuinely unreachable
+   any other way. The player.launched gate in updateForestScene's
+   pickup check is still there too, as a hard backstop.
+   ====================================================== */
+const FOREST_FLIGHT_PIECE_X = 2710; // where the A3 launch pad's arc passes through height 155 on its way up (~frame 16 of the flight)
+const FOREST_FLIGHT_PIECE_HEIGHT = 155;
+let forestFlightPieceCollected = false;
+
+function drawForestFlightPiece(camX) {
+  if (forestFlightPieceCollected) return;
+  const px = FOREST_FLIGHT_PIECE_X - camX;
+  const bob = Math.sin(performance.now() * 0.0025) * 4;
+  const py = gy - FOREST_FLIGHT_PIECE_HEIGHT + bob;
+
+  // soft pulsing glow ring -- marks it as something floating/special
+  // rather than a piece sitting on a surface like the others
+  const pulse = 0.3 + Math.sin(performance.now() * 0.004) * 0.2;
+  ctx.strokeStyle = `rgba(255,244,200,${Math.max(0, pulse)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(px, py, 17, 0, Math.PI * 2);
+  ctx.stroke();
+
+  drawBridgePieceShape(ctx, px, py, 11, (performance.now() * 0.0012) % (Math.PI * 2));
 }
 
 // patchy dark-green rust/patina spots on the gear's own metal face --
@@ -11322,6 +11379,22 @@ function updateForestScene(deltaTime) {
       );
     }
   });
+
+  // flight-only bonus piece -- auto-collects on contact while mid-flight
+  // (no space press; a manual press mid-arc is an awkward ask). Gated
+  // directly on player.launched, not just position, so it's genuinely
+  // unreachable by any other means.
+  if (!forestFlightPieceCollected && player.launched) {
+    const dx = (player.x + player.width / 2) - FOREST_FLIGHT_PIECE_X;
+    const dy = player.y - FOREST_FLIGHT_PIECE_HEIGHT;
+    if (Math.sqrt(dx * dx + dy * dy) < 34) {
+      forestFlightPieceCollected = true;
+      startCollectAnimation(
+        { x: FOREST_FLIGHT_PIECE_X, y: gy - FOREST_FLIGHT_PIECE_HEIGHT, size: 10, rotation: 0 },
+        "bridgePiece"
+      );
+    }
+  }
 
   // NOTE: the gear-launch trigger itself lives in handleInput(), not
   // here -- by the time this function runs, handleInput() + applyPhysics()
