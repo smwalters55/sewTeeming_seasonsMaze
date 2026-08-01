@@ -1606,10 +1606,38 @@ function handleInput(){
         peanutVine.mounted = true;
         peanutVine.playerClimbHeight = 0;
       } else if (!player.jumping) {
-        // first jump
-        player.jumping = true;
-        player.vy = 12;
-        player.usedDoubleJump = false;
+        // first jump -- but if you're currently standing on an actively
+        // spinning forest clockwork gear, this becomes a real launch
+        // instead (reuses the swing-release flight physics). Has to be
+        // checked HERE, before applyPhysics() integrates vy into
+        // player.y for this frame -- checking this later (inside
+        // updateForestScene) meant player.y had already moved off the
+        // gear's surface by the time the check ran, so it silently
+        // fell back to a normal jump every time.
+        let launchedFromGear = false;
+        if (currentScene === "forest" && forestClockworkState !== "idle") {
+          for (const g of FOREST_CLOCKWORK_GEARS) {
+            const gTop = g.height + g.outerR;
+            if (
+              player.x + player.width > g.x - g.outerR &&
+              player.x < g.x + g.outerR &&
+              Math.abs(player.y - gTop) < 1
+            ) {
+              player.vx = g.dir * 9;
+              player.vy = 14;
+              player.launched = true;
+              player.launchPeakHeight = player.y;
+              player.jumping = true;
+              launchedFromGear = true;
+              break;
+            }
+          }
+        }
+        if (!launchedFromGear) {
+          player.jumping = true;
+          player.vy = 12;
+          player.usedDoubleJump = false;
+        }
       } else if (!player.usedDoubleJump) {
         // double jump — a bit weaker than the first, so it reads as a
         // secondary boost rather than an equally strong second jump
@@ -10454,7 +10482,7 @@ const FOREST_CLOCKWORK_GEARS = [
   { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
   { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 } // touches gear D1 (2998=2998), easy landing to close it out
 ];
-const FOREST_CLOCKWORK_SPIN_SPEED = 0.0011; // radians/ms, applied per gear's own `dir` -- halved from the first pass, was spinning too fast to read clearly
+const FOREST_CLOCKWORK_SPIN_SPEED = 0.0014; // radians/ms, applied per gear's own `dir` -- nudged back up a bit from 0.0011, was reading as a touch too slow
 
 // the gears run in a real WINDOW now, not forever once triggered --
 // pull the lever, they spin at full speed for FOREST_CLOCKWORK_ACTIVE_MS,
@@ -11295,21 +11323,14 @@ function updateForestScene(deltaTime) {
     }
   });
 
-  // jumping off a gear that's ACTUALLY spinning gets flung, not just a
-  // normal hop -- reuses the same launched-flight physics as the swing
-  // release (floaty descent, ignores platform collision mid-arc), just
-  // with its own horizontal kick in the gear's spin direction. Gives
-  // the spinning an actual purpose beyond visual flavor: timed right,
-  // it's a real shortcut across the harder gaps in the grove, not just
-  // a taller jump. Checked BEFORE the normal ride-carry below so this
-  // frame does the launch instead of the small per-frame nudge.
-  if (onSpinningGear && keys.upJustPressed) {
-    player.vx = onSpinningGear.dir * 9;
-    player.vy = 14;
-    player.launched = true;
-    player.launchPeakHeight = player.y;
-    player.jumping = true;
-  }
+  // NOTE: the gear-launch trigger itself lives in handleInput(), not
+  // here -- by the time this function runs, handleInput() + applyPhysics()
+  // have already moved player.y for this frame's jump (vy=12 applied),
+  // so checking "is player.y still resting on a gear" at this point in
+  // the frame was always false the instant you pressed jump, which is
+  // why it silently did nothing but a normal hop. handleInput() runs
+  // BEFORE that integration, while player.y is still exactly at the
+  // gear's surface, so that's where the check has to happen.
 
   if (onSpinningGear && !player.launched) {
     // riding a turning gear -- carried along by the tangential motion
