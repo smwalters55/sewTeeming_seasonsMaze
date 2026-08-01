@@ -9394,6 +9394,8 @@ function drawForestScene(camX) {
   drawForestSnake(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
+  drawForestClockworkLever(camX);
+  drawForestClockworkGears(camX);
   // drawForestBrambleFront and drawForestBridgePlatform now called
   // after the player sprite in the main draw() function -- the
   // bridge platform/item specifically needs to be drawn after the
@@ -9989,7 +9991,8 @@ const forestSnake = {
   t: 0,
   DOCK_TIME: 3500,
   TRAVEL_TIME: 14550, // span (dockB - dockA) unchanged by the shift, so this still applies as-is
-  currentX: 2060, // matches dockB, since that's now the starting dock
+  currentX: 2260, // matches dockB, since that's now the starting dock
+  firstDepartureTriggered: false, // the snake's FIRST departure from dock B is gated on player proximity (see FOREST_SNAKE_TRIGGER_X below), not the plain DOCK_TIME timer -- otherwise the player can reach the bramble wall, get blocked, and have no idea why with the snake nowhere in sight, possibly for a long stretch. Once it's departed the first time, every later cycle just uses the normal timer again.
   riding: false,
   dismountCooldown: 0, // brief window after hopping off where re-mounting is suppressed, so hopping off doesn't immediately re-catch the player at the same height
   prevDir: -1, // direction before the current turn began -- starts at -1 (facing left/toward the player) since the first leg now travels B->A, not A->B like before the dock swap
@@ -9999,6 +10002,15 @@ const forestSnake = {
   jumpGraceUntil: 0, // timestamp until which obstacle collision is suppressed right after initiating a jump, so the physics has time to actually lift the player before the check re-applies
   midJump: false // true while airborne from a mid-ride jump (not a full dismount) -- keeps x tracking the snake's movement so a jump can actually carry the player past an obstacle, not just straight up and back down
 };
+
+// player position that kicks off the snake's very first departure from
+// dock B -- placed just past the raccoon, so the whole intro gear row
+// doubles as the snake's head-start travel buffer. The snake still has
+// to cover the full dockB->dockA span either way, so triggering it here
+// (rather than the moment the player actually reaches the wall) means
+// it's already well on its way, and often visibly approaching, by the
+// time the player finishes the gears and gets there.
+const FOREST_SNAKE_TRIGGER_X = raccoon.x + raccoon.width + 40;
 
 // obstacle course -- small bramble-snag clumps sticking up along the
 // crossing that you have to jump-while-riding to clear, or get
@@ -10394,6 +10406,89 @@ function drawForestBoomerangTarget(camX) {
     ctx.ellipse(px - 6, py, 3, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+/* ======================================================
+   CLOCKWORK GROVE — the "full clockwork grove" the entrance hint gear
+   foreshadows, picking up right after the bramble crossing. A row of
+   gears sits idle (still jumpable/static) until the player pulls a
+   lever, at which point they all start turning -- alternating spin
+   direction gear to gear so they read as meshing into each other, same
+   idea as real interlocking gears. A couple carry bridge pieces.
+   Standing on a SPINNING gear carries the player along with it (the
+   contact point at the top of a turning circle moves purely
+   horizontally -- radius * angular velocity -- so that's what drives
+   the ride), and the player sprite itself tilts along with the turn
+   rather than staying perfectly upright (see forestGearRideAngle,
+   read from the shared player draw() in the main render function).
+   First pass: gears don't have precise tooth-phase synchronization
+   with their neighbors, just alternating direction -- good enough to
+   sell the look without full mesh physics.
+   ====================================================== */
+const FOREST_CLOCKWORK_LEVER_X = 2280; // just past the bramble's transition-out (ends 2250), so it's the first thing the player meets crossing over
+const FOREST_CLOCKWORK_GEARS = [
+  { x: 2360, height: 55, outerR: 30, dir: 1, rot: 0, piece: true, pieceCollected: false },
+  { x: 2430, height: 55, outerR: 30, dir: -1, rot: 0 },
+  { x: 2500, height: 55, outerR: 30, dir: 1, rot: 0 },
+  { x: 2570, height: 55, outerR: 30, dir: -1, rot: 0, piece: true, pieceCollected: false }
+];
+const FOREST_CLOCKWORK_SPIN_SPEED = 0.0022; // radians/ms, applied per gear's own `dir`
+let forestClockworkTriggered = false;
+// eased toward the current ride tilt while riding, eased back to 0 once
+// the player steps off -- read directly by the shared player draw()
+let forestGearRideAngle = 0;
+
+function drawForestClockworkLever(camX) {
+  const lx = FOREST_CLOCKWORK_LEVER_X - camX;
+  const baseY = gy;
+
+  // post
+  ctx.strokeStyle = "#4a3a28";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(lx, baseY);
+  ctx.lineTo(lx, baseY - 46);
+  ctx.stroke();
+
+  // small gear-shaped cap, ties it visually to the grove it controls
+  drawForestGear(lx, baseY - 50, 10, 7.7, 6, forestClockworkTriggered ? 0.8 : 0, "#6b5030", "#2e2014", 1234);
+
+  // handle -- rests one way, swings the other once pulled
+  ctx.save();
+  ctx.translate(lx, baseY - 30);
+  ctx.rotate(forestClockworkTriggered ? 0.9 : -0.9);
+  ctx.strokeStyle = "#8a6030";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 26);
+  ctx.stroke();
+  ctx.fillStyle = "#c9a878";
+  ctx.beginPath();
+  ctx.arc(0, 28, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (forestClockworkTriggered) {
+    ctx.strokeStyle = "rgba(230,210,120,0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(lx, baseY - 50, 16, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawForestClockworkGears(camX) {
+  FOREST_CLOCKWORK_GEARS.forEach(g => {
+    const gx = g.x - camX;
+    const gy2 = gy - g.height;
+    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 8, g.rot, "#6b5030", "#2e2014", g.x * 3.7);
+    if (g.piece && !g.pieceCollected) {
+      drawGearBridgePiece(gx, gy2 - g.outerR);
+    }
+  });
 }
 
 // snag knot -- the EXACT ground-rooted strand technique the wall
@@ -10836,9 +10931,18 @@ function updateForestScene(deltaTime) {
   if (forestSnake.state === "docked") {
     const dock = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
     forestSnake.currentX = dock.x;
-    if (forestSnake.t >= forestSnake.DOCK_TIME) {
+    // the very first departure waits on player proximity instead of the
+    // plain timer -- see FOREST_SNAKE_TRIGGER_X. A small minimum dock
+    // time still applies even once triggered, so it doesn't feel like
+    // it launches the instant you take a step (matches the "startled
+    // into moving" read rather than "was already leaving").
+    const readyToDepart = !forestSnake.firstDepartureTriggered
+      ? player.x > FOREST_SNAKE_TRIGGER_X && forestSnake.t >= 500
+      : forestSnake.t >= forestSnake.DOCK_TIME;
+    if (readyToDepart) {
       forestSnake.state = "traveling";
       forestSnake.t = 0;
+      forestSnake.firstDepartureTriggered = true;
     }
   } else {
     const from = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
@@ -10986,6 +11090,73 @@ function updateForestScene(deltaTime) {
     )
   ) {
     startSeasonTransition("spring");
+  }
+
+  // CLOCKWORK GROVE -- lever trigger, gear spin, landing, ride-carry,
+  // and piece pickup for the gear cluster just past the bramble
+  if (!forestClockworkTriggered && keys.spaceJustPressed && isPlayerNear(FOREST_CLOCKWORK_LEVER_X, 0, 40, 30, 10)) {
+    forestClockworkTriggered = true;
+  }
+
+  if (forestClockworkTriggered) {
+    FOREST_CLOCKWORK_GEARS.forEach(g => {
+      g.rot += g.dir * FOREST_CLOCKWORK_SPIN_SPEED * deltaTime * 1000;
+    });
+  }
+
+  let onSpinningGear = null;
+  FOREST_CLOCKWORK_GEARS.forEach(g => {
+    const gTop = g.height + g.outerR; // top surface, not the gear's center
+    if (
+      player.x + player.width > g.x - g.outerR &&
+      player.x < g.x + g.outerR &&
+      player.y <= gTop &&
+      player.y >= gTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = gTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    // currently standing still on this particular gear -- drives both
+    // the ride-carry and the sprite-tilt effect below
+    if (
+      forestClockworkTriggered &&
+      Math.abs(player.y - gTop) < 1 &&
+      player.x + player.width > g.x - g.outerR &&
+      player.x < g.x + g.outerR
+    ) {
+      onSpinningGear = g;
+    }
+    if (
+      g.piece && !g.pieceCollected &&
+      Math.abs(player.y - gTop) < 2 &&
+      player.x + player.width > g.x - g.outerR &&
+      player.x < g.x + g.outerR &&
+      keys.spaceJustPressed
+    ) {
+      g.pieceCollected = true;
+      startCollectAnimation(
+        { x: g.x, y: gy - gTop - 16, size: 9, rotation: 0 },
+        "bridgePiece"
+      );
+    }
+  });
+
+  if (onSpinningGear) {
+    // riding a turning gear -- carried along by the tangential motion
+    // at the contact point (top of a turning circle moves purely
+    // horizontally: radius * angular velocity), and the ride-tilt
+    // angle accumulates so the player sprite visibly turns with it
+    const angularDelta = onSpinningGear.dir * FOREST_CLOCKWORK_SPIN_SPEED * deltaTime * 1000;
+    player.x += onSpinningGear.outerR * angularDelta;
+    forestGearRideAngle += angularDelta;
+  } else if (forestGearRideAngle !== 0) {
+    // eases back to upright once you've stepped off, rather than
+    // snapping straight back
+    forestGearRideAngle *= 0.8;
+    if (Math.abs(forestGearRideAngle) < 0.01) forestGearRideAngle = 0;
   }
 }
 
@@ -18065,12 +18236,17 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 
   // woozy sway -- a gentle wobble on the body itself while stunned
   // from a hard fall, nested inside the clip so the clip region
-  // itself stays axis-aligned and only the sprite tilts
+  // itself stays axis-aligned and only the sprite tilts. Also carries
+  // forestGearRideAngle -- the forest clockwork grove's spinning gears
+  // tilt the player's sprite along with the turn while riding one (see
+  // updateForestScene). The two never really overlap in practice, so
+  // just summing them is fine.
   ctx.save();
   const swayAngle = playerWoozyT > 0 ? Math.sin(performance.now() * 0.009) * 0.28 * (playerWoozyT / WOOZY_MS) : 0;
+  const totalTilt = swayAngle + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0);
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
-  ctx.rotate(swayAngle);
+  ctx.rotate(totalTilt);
   ctx.translate(-swayCx, -swayCy);
 
   // body
