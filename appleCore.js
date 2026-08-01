@@ -95,7 +95,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "spring"; // TEMPORARY — starting in spring to test the new Forest entrance easily, revert to "autumn" when done
+let currentScene = "forest"; // TEMPORARY — starting in forest to test new gear/vine ideas, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -126,7 +126,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 3050, // TEMPORARY — spawns near the new spring-forest door for easy testing, revert to 400 when done
+  x: 175, // TEMPORARY — spawns near the forest door, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -146,7 +146,7 @@ const player = {
 /* ======================================================
    INVENTORY
    ====================================================== */
-const inventory = { appleSlice: 2 }; // TEMPORARY — seeded for testing the new forest door, revert to {} when done
+const inventory = {}; // e.g. { appleSlice: 2, boomerang: 1 } -- empty for a normal game start
 
 const ITEM_ICONS = {
   appleSlice: "🍎",
@@ -208,7 +208,7 @@ let honeyScoops = 0; // set to 8 on collection
 // this instead of raw object key order, which was never actually
 // designed on purpose (it just happened to put whichever item type was
 // FIRST ever collected at the front, forever)
-let inventoryOrder = ["appleSlice"]; // TEMPORARY — matches the current debug inventory seed, revert to ["acorn", "pumpkin"] when done
+let inventoryOrder = []; // normal empty start -- items get added here as they're collected
 function touchInventoryOrder(itemType) {
   const idx = inventoryOrder.indexOf(itemType);
   if (idx !== -1) inventoryOrder.splice(idx, 1);
@@ -513,7 +513,7 @@ function updateCarryingUI() {
    FROG NPC
    ====================================================== */
 const frog = {
-  x: 820, // middle of the gap between the two platforms (560 and 1080)
+  x: 750, // moved further left, away from the ramp (starts at 870) -- was only 26 units clear and read as overlapping oddly
   y: 0,
   width: 48,
   height: 36,
@@ -610,7 +610,7 @@ const connections = [
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
-    filled: true, // TEMPORARY — pre-unlocked since starting directly in spring for testing, revert to false when done
+    filled: true, // TEMPORARY — pre-unlocked since starting directly in forest, revert to false when done
     filledItemType: "appleSlice"
   },
   {
@@ -620,8 +620,8 @@ const connections = [
       forest: { x: 200,  width: 56, height: 92, leadsTo: "spring" }
     },
     acceptsItemType: "appleSlice", // same item type -- the apple already splits into 3 pieces, so a second slice is already reachable without any new collection mechanic
-    filled: false,
-    filledItemType: null
+    filled: true, // TEMPORARY — pre-unlocked since starting directly in forest, revert to false when done
+    filledItemType: "appleSlice"
   },
   {
     // map-only entry — spring<->clouds travel is already handled by the
@@ -677,7 +677,7 @@ const sceneMapInfo = {
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
 };
 
-const discoveredScenes = { autumn: true, spring: true }; // TEMPORARY -- spring added since starting there directly to test forest, revert to just { autumn: true } when done
+const discoveredScenes = { autumn: true, spring: true, forest: true }; // TEMPORARY -- spring and forest added since starting there directly, revert to just { autumn: true } when done
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -1458,6 +1458,21 @@ function updateBoomerangThrow(deltaTime) {
           b.returnFromX = b.x;
           b.returnFromY = b.y;
         }
+      }
+    } else if (withinPeakWindow && currentScene === "forest" && !forestBoomerangTarget.hit && b.thrownWhileAirborne) {
+      const dx = b.x - forestBoomerangTarget.x;
+      const dy = b.y - forestBoomerangTarget.heightAboveGround;
+      if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+        forestBoomerangTarget.hit = true;
+        forestFallingBridgePiece.x = forestBoomerangTarget.x + 20; // falls just past the target, not straight down onto it
+        forestFallingBridgePiece.heightAboveGround = forestBoomerangTarget.heightAboveGround;
+        forestFallingBridgePiece.available = true;
+        forestFallingBridgePiece.falling = true;
+
+        b.phase = "returning";
+        b.t = 0;
+        b.returnFromX = b.x;
+        b.returnFromY = b.y;
       }
     }
 
@@ -2347,10 +2362,13 @@ function drawCrown(camX) {
 
   if (crownState.worn) {
     drawCrownOnHead(camX, sinkAmount);
-  } else if (!crownState.ready) {
+  } else if (!crownState.ready && currentScene === "autumn") {
     // in-progress — visible beside the player so catching a leaf feels
     // like real, immediate progress. Moves to the Special UI slot once
     // complete, so it doesn't linger in the world indefinitely after that.
+    // Stays in autumn specifically -- the leaves are only ever collected
+    // there, so a half-built crown showing up in oak/spring/etc would
+    // read as out of place.
     drawCrownProcedural(ctx, px + 24, py, 13);
   }
 
@@ -6685,7 +6703,7 @@ function drawLavenderPlant(camX) {
 // snake plant -- tall, stiff upright blades with dark mottled banding,
 // near the entry door as a welcoming statement piece
 const snakePlantSpot = { x: 760, y: 0 };
-const entrywayFernSpot = { x: 420, y: 0 };
+const entrywayFernSpot = { x: 515, y: 0 }; // moved to sit centered between the two book piles at 460 and 571, which are to its previous position's right
 function drawEntrywayFern(camX) {
   const px = entrywayFernSpot.x - camX, py = gy - entrywayFernSpot.y;
   // small terracotta pot, simpler than the snake plant's since this
@@ -7968,7 +7986,7 @@ function drawSeesawNPC(camX) {
   };
 
   ctx.fillStyle = "#2e2314";
-  for (let i = -11; i <= 8; i++) {
+  for (let i = -15; i <= 8; i++) {
     const jitter = Math.sin(i * 2.7) * 0.07; // breaks the perfectly uniform spacing
     const ang = -Math.PI / 2 + i * 0.28 + jitter;
     const spikeLen = 13 + Math.sin(i * 0.9) * 4; // 9-17, verified clear of the body radius (15) at every value
@@ -7992,7 +8010,8 @@ function drawSeesawNPC(camX) {
     [-7, 2, 0.9], [5, -1, 0.2],
     [8, -3, 1.4], [7, 4, -1.1], [-1, -6, 0.5], [-3, 6, 1.2],
     [3, -2, -0.4], [-9, 4, 0.7], [0, 8, -0.9], [6, -6, 0.3],
-    [-5, -6, -0.8], [2, 2, 1.0], [-1, 3, -0.2], [4, 7, 0.5]
+    [-5, -6, -0.8], [2, 2, 1.0], [-1, 3, -0.2], [4, 7, 0.5],
+    [-9, 6, -0.6], [-7, 8, 0.4], [-10, 3, -1.0], [-8, 9, 0.8], [-6, 6, -0.3]
   ];
   onBodySpikes.forEach(([dx, dy, tilt], idx) => {
     const len = 6 + (idx % 4) * 1.5; // 6-10.5, comparable visual scale to edge spikes given the different starting offset
@@ -8181,8 +8200,8 @@ const DIG_ANIM_DURATION = 1800;
 
 const peanutVine = {
   x: 2680,
-  growProgress: 1, // TEMPORARY — fully grown for the door-decoration debug view, revert to 0 when done
-  grown: true, // TEMPORARY — revert to false when done
+  growProgress: 0, // 0 to 1 over GROW_DURATION
+  grown: false,
   climbHeight: 250, // reduced — verified: 50px margin below screen top, still well beyond double-jump max (~140.6)
   mounted: false,
   playerClimbHeight: 0
@@ -9290,14 +9309,16 @@ function drawForestScene(camX) {
   }
 
   drawForestEntranceFerns(camX);
+  drawForestHintGear(camX);
+  drawForestBrambleTransition(camX);
   drawForestBrambleBehind(camX);
   drawForestSnake(camX);
-  // drawForestBrambleFront now called after the player sprite in the
-  // main draw() function -- the player is drawn globally after the
-  // whole scene, so calling it here never actually put anything in
-  // front of the player
-  drawForestBridgePlatform(camX);
-
+  drawForestSnakeObstacles(camX);
+  drawForestBoomerangTarget(camX);
+  // drawForestBrambleFront and drawForestBridgePlatform now called
+  // after the player sprite in the main draw() function -- the
+  // bridge platform/item specifically needs to be drawn after the
+  // bramble front layer so it's never obscured by it
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
 }
@@ -9364,6 +9385,113 @@ function drawForestEntranceFerns(camX) {
   });
 }
 
+// entrance hint gear -- a single small vine-wrapped gear among the
+// ferns, foreshadowing the full clockwork grove that comes after the
+// bramble/snake crossing. Anchored to one named constant so shifting
+// the whole grove later (once that area's layout is finalized) is a
+// one-line change, not a re-positioning job.
+const FOREST_HINT_GEAR_X = 240; // moved further right and to the side, clear of the door's own footprint (door spans roughly 200-256) -- was sitting directly behind it
+const FOREST_HINT_GEAR_HEIGHT = 22;
+const FOREST_HINT_GEAR_OUTER_R = 30; // back to original size
+const FOREST_HINT_GEAR_INNER_R = 24;
+const FOREST_HINT_GEAR_TEETH = 8;
+
+function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeColor) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  const step = (Math.PI * 2) / teeth;
+  for (let i = 0; i < teeth; i++) {
+    const a0 = i * step;
+    const toothWidth = step * 0.42;
+    const a1 = a0 + toothWidth;
+    const a2 = a0 + step * 0.5;
+    ctx.lineTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
+    ctx.lineTo(Math.cos(a0) * outerR, Math.sin(a0) * outerR);
+    ctx.lineTo(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
+    ctx.lineTo(Math.cos(a1) * innerR, Math.sin(a1) * innerR);
+    ctx.lineTo(Math.cos(a2) * innerR, Math.sin(a2) * innerR);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // tarnish/verdigris patches -- irregular greenish patina blotches
+  // scattered across the face, so it reads as aged bronze rather
+  // than a flat, clean color. Seeded by position for consistent
+  // per-gear variation.
+  ctx.save();
+  ctx.clip(); // keep patches confined to the gear's own silhouette
+  const patchSeed = Math.abs(cx * 3.7 + cy * 1.3 + outerR * 11);
+  for (let p = 0; p < 5; p++) {
+    const pSeed = patchSeed + p * 23.1;
+    const px = (pseudoRandom(pSeed) - 0.5) * outerR * 1.6;
+    const py = (pseudoRandom(pSeed + 1) - 0.5) * outerR * 1.6;
+    const pr = outerR * (0.15 + pseudoRandom(pSeed + 2) * 0.2);
+    ctx.fillStyle = pseudoRandom(pSeed + 3) < 0.5 ? "rgba(90,120,95,0.55)" : "rgba(60,85,68,0.5)";
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // hub
+  ctx.beginPath();
+  ctx.arc(0, 0, innerR * 0.55, 0, Math.PI * 2);
+  ctx.fillStyle = strokeColor;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, innerR * 0.2, 0, Math.PI * 2);
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawForestHintGear(camX) {
+  const gx = FOREST_HINT_GEAR_X - camX;
+  const gy2 = gy - FOREST_HINT_GEAR_HEIGHT;
+
+  // soft glow behind it so it reads clearly against the dark background
+  const glow = ctx.createRadialGradient(gx, gy2, 10, gx, gy2, FOREST_HINT_GEAR_OUTER_R + 25);
+  glow.addColorStop(0, "rgba(216,160,70,0.35)");
+  glow.addColorStop(1, "rgba(216,160,70,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, FOREST_HINT_GEAR_OUTER_R + 25, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(gx, gy2);
+  ctx.scale(1, 0.8); // slight vertical squash -- reads as a gentle tilt, shows more of its face
+  drawForestGear(0, 0, FOREST_HINT_GEAR_OUTER_R, FOREST_HINT_GEAR_INNER_R, FOREST_HINT_GEAR_TEETH, 0.3, "#6b5030", "#2e2014");
+  ctx.restore();
+
+  // vines wrapped around it, thin -- gear vines should read thinner than the bramble's
+  ctx.strokeStyle = "#4a6a2e";
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(gx - 34, gy2 + 10);
+  ctx.quadraticCurveTo(gx - 10, gy2 - 30, gx + 20, gy2 - 15);
+  ctx.quadraticCurveTo(gx + 38, gy2 - 5, gx + 25, gy2 + 22);
+  ctx.stroke();
+
+  ctx.fillStyle = "#5d7a3a";
+  [[gx - 22, gy2 - 12, 0.4], [gx + 4, gy2 - 26, -0.3], [gx + 30, gy2 - 8, 0.5], [gx + 18, gy2 + 15, -0.4]].forEach(([lx, ly, rot]) => {
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
 // forest snake -- a big, loosely-winding creature doing its own slow
 // loop, entirely on the near side (never crosses the eventual stream).
 // The player can hop on, ride the loop, and grab a bridge piece at
@@ -9383,8 +9511,31 @@ const forestSnake = {
   currentX: 450,
   riding: false,
   dismountCooldown: 0, // brief window after hopping off where re-mounting is suppressed, so hopping off doesn't immediately re-catch the player at the same height
-  facingDir: 1 // smoothly eased toward the target direction, rather than snapping instantly when dockedAt flips -- fixes the body jumping to the opposite side of the head the moment it turns around
+  prevDir: 1, // direction before the current turn began
+  targetDir: 1, // direction being turned toward
+  turnStartTime: 0, // performance.now() when the current turn began, drives the staggered per-segment easing
+  bumpedCooldown: 0, // brief window after getting bumped off by an obstacle, before re-mounting is allowed
+  jumpGraceUntil: 0, // timestamp until which obstacle collision is suppressed right after initiating a jump, so the physics has time to actually lift the player before the check re-applies
+  midJump: false // true while airborne from a mid-ride jump (not a full dismount) -- keeps x tracking the snake's movement so a jump can actually carry the player past an obstacle, not just straight up and back down
 };
+
+// obstacle course -- small bramble-snag clumps sticking up along the
+// crossing that you have to jump-while-riding to clear, or get
+// bumped off. Starting with 3 for this first pass.
+const FOREST_SNAKE_OBSTACLES = [
+  { x: 540, clearHeight: 42 },
+  { x: 650, clearHeight: 42 },
+  { x: 760, clearHeight: 42 }
+];
+
+// boomerang hard-spot -- a small gear positioned above the snake's
+// normal riding height, along the crossing. Requires throwing the
+// boomerang while airborne (mid-ride jump) and catching it at the
+// peak of its arc. A hit knocks a bridge piece loose, which falls
+// nearby and needs to be collected separately.
+const forestBoomerangTarget = { x: 700, heightAboveGround: 150, hit: false };
+const forestFallingBridgePiece = { x: 0, heightAboveGround: 0, falling: false, available: false, collected: false, collecting: false };
+const FOREST_BRIDGE_PIECE_FALL_SPEED = 60;
 
 // fixed relative body shape, trailing behind the head (dx=0) with
 // some vertical undulation -- direction of the trail flips depending
@@ -9407,13 +9558,25 @@ const FOREST_SNAKE_GRAB_AT = 0.5;
 function getForestSnakePoint(progress) {
   // progress 0 = head, 1 = tail
   const n = FOREST_SNAKE_BODY.length;
-  const scaled = Math.max(0, Math.min(1, progress)) * (n - 1);
+  const clampedProgress = Math.max(0, Math.min(1, progress));
+  const scaled = clampedProgress * (n - 1);
   const i0 = Math.floor(scaled);
   const i1 = Math.min(i0 + 1, n - 1);
   const t = scaled - i0;
   const p0 = FOREST_SNAKE_BODY[i0];
   const p1 = FOREST_SNAKE_BODY[i1];
-  const dir = forestSnake.facingDir; // smoothly eased, not an instant flip -- see updateForestScene
+
+  // staggered turn -- this segment's own transition starts a little
+  // later than the head's, proportional to how far back along the
+  // body it sits, so the turn reads as a curl propagating tail-ward
+  // rather than the whole body uniformly collapsing through a point
+  const HEAD_TURN_DURATION = 700;
+  const PER_SEGMENT_DELAY = 350;
+  const elapsed = performance.now() - forestSnake.turnStartTime - clampedProgress * PER_SEGMENT_DELAY;
+  const rawProgress = Math.max(0, Math.min(1, elapsed / HEAD_TURN_DURATION));
+  const eased = rawProgress < 0.5 ? 2 * rawProgress * rawProgress : 1 - Math.pow(-2 * rawProgress + 2, 2) / 2;
+  const dir = forestSnake.prevDir + (forestSnake.targetDir - forestSnake.prevDir) * eased;
+
   return {
     x: forestSnake.currentX + dir * (p0.dx + (p1.dx - p0.dx) * t),
     y: p0.dy + (p1.dy - p0.dy) * t
@@ -9425,99 +9588,133 @@ function getForestSnakePoint(progress) {
 // option. Split into behind/front layers around the snake's own
 // drawing call so it genuinely weaves through rather than just
 // passing in front of a flat backdrop.
-const FOREST_BRAMBLE_X1 = 530;
-const FOREST_BRAMBLE_X2 = 770;
+const FOREST_BRAMBLE_X1 = 500; // expanded from 530 -- was reading as a small isolated chunk
+const FOREST_BRAMBLE_X2 = 800; // expanded from 770
+const FOREST_BRAMBLE_TRANSITION_IN_X1 = 460; // looser vines building up to the main wall
+const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 840; // looser vines tapering off after the main wall
 
-function drawForestBrambleBehind(camX) {
-  const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawForestBrambleStrands(camX, x1World, x2World, seedBase, colorA, colorB, heightScale, lineWidthBase, strandCount, baseHeightOffset) {
+  const x1 = x1World - camX, x2 = x2World - camX;
   const w = x2 - x1;
   const baseY = gy - 6;
   ctx.lineCap = "round";
 
-  ctx.strokeStyle = "#2e3520";
-  ctx.lineWidth = 10;
-  ctx.beginPath();
-  ctx.moveTo(x1, baseY - 24);
-  ctx.bezierCurveTo(x1 + w * 0.22, baseY - 55, x1 + w * 0.37, baseY - 12, x1 + w * 0.52, baseY - 48);
-  ctx.bezierCurveTo(x1 + w * 0.67, baseY - 78, x1 + w * 0.78, baseY - 25, x2, baseY - 50);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#3f5527";
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.moveTo(x1 + w * 0.04, baseY - 50);
-  ctx.bezierCurveTo(x1 + w * 0.26, baseY - 20, x1 + w * 0.4, baseY - 68, x1 + w * 0.58, baseY - 32);
-  ctx.bezierCurveTo(x1 + w * 0.74, baseY - 10, x1 + w * 0.84, baseY - 58, x2 - 5, baseY - 18);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#2e3520";
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.moveTo(x1 + w * 0.1, baseY - 8);
-  ctx.bezierCurveTo(x1 + w * 0.3, baseY - 42, x1 + w * 0.46, baseY - 6, x1 + w * 0.63, baseY - 40);
-  ctx.bezierCurveTo(x1 + w * 0.8, baseY - 68, x1 + w * 0.9, baseY - 15, x2 - w * 0.02, baseY - 36);
-  ctx.stroke();
-
-  ctx.fillStyle = "#2e3520";
-  [0.14, 0.3, 0.45, 0.6, 0.75, 0.88].forEach((f, i) => {
-    const tx = x1 + w * f, ty = baseY - (25 + (i % 3) * 15);
+  for (let s = 0; s < strandCount; s++) {
+    const seed = seedBase + s * 17.3;
+    const startFrac = pseudoRandom(seed) * 0.15;
+    const yBase = (baseHeightOffset || 0) + 5 + pseudoRandom(seed + 1) * 8;
+    const segments = 3 + Math.floor(pseudoRandom(seed + 2) * 2);
+    const baseColor = pseudoRandom(seed + 3) < 0.5 ? colorA : colorB;
+    const alpha = 0.7 + pseudoRandom(seed + 40) * 0.3; // softens the flat, fully-opaque look
+    ctx.strokeStyle = hexToRgba(baseColor, alpha);
+    ctx.lineWidth = lineWidthBase * (0.85 + pseudoRandom(seed + 4) * 0.3); // narrower variance -- reads more uniform, less one-strand-dominates
     ctx.beginPath();
-    ctx.moveTo(tx, ty); ctx.lineTo(tx + 8, ty - 9); ctx.lineTo(tx + 2, ty + 7);
+    let curX = x1 + w * startFrac, curY = baseY - yBase;
+    ctx.moveTo(curX, curY);
+    for (let seg = 0; seg < segments; seg++) {
+      const nextFrac = startFrac + (seg + 1) * (0.85 / segments);
+      const horizontalWiggle = (pseudoRandom(seed + 25 + seg) - 0.5) * 16; // more horizontal wander as it climbs, not just a straight vertical progression
+      const nx = x1 + w * Math.min(1, nextFrac) + horizontalWiggle;
+      const ny = baseY - (yBase + pseudoRandom(seed + 5 + seg) * heightScale * (0.4 + pseudoRandom(seed + 9 + seg) * 0.8));
+      const cx = (curX + nx) / 2 + (pseudoRandom(seed + 13 + seg) - 0.5) * 42;
+      const cy = Math.min(curY, ny) - pseudoRandom(seed + 21 + seg) * heightScale * 0.5;
+      ctx.quadraticCurveTo(cx, cy, nx, ny);
+      curX = nx; curY = ny;
+    }
+    ctx.stroke();
+
+    // small curling tendril at the end of some strands, for real
+    // organic texture rather than every strand ending in a smooth arc
+    if (pseudoRandom(seed + 30) < 0.45) {
+      ctx.beginPath();
+      const curlR = 5 + pseudoRandom(seed + 31) * 4;
+      ctx.arc(curX + curlR, curY - curlR * 0.3, curlR, Math.PI, Math.PI * 2.3);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawForestBrambleThorns(camX, x1World, x2World, seedBase, count, heightScale) {
+  const x1 = x1World - camX, x2 = x2World - camX;
+  const w = x2 - x1;
+  const baseY = gy - 6;
+  ctx.fillStyle = "#2e3520";
+  for (let i = 0; i < count; i++) {
+    const seed = seedBase + i * 11.7;
+    const tx = x1 + w * (0.05 + pseudoRandom(seed) * 0.9);
+    const ty = baseY - (8 + pseudoRandom(seed + 1) * heightScale);
+    const rot = (pseudoRandom(seed + 2) - 0.5) * 1.4;
+    ctx.save();
+    ctx.translate(tx, ty);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(8, -3); ctx.lineTo(1, 6);
     ctx.closePath(); ctx.fill();
-  });
-  [0.22, 0.5, 0.7].forEach((f, i) => {
-    const fx = x1 + w * f, fy = baseY - (35 + (i % 2) * 18);
-    ctx.fillStyle = "#d98fae";
-    ctx.beginPath(); ctx.arc(fx, fy, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawForestBrambleFlowers(camX, seedBase, count, heightScale) {
+  const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  const w = x2 - x1;
+  const baseY = gy - 6;
+  for (let i = 0; i < count; i++) {
+    const seed = seedBase + i * 19.3;
+    const fx = x1 + w * (0.08 + pseudoRandom(seed) * 0.85);
+    const fy = baseY - (10 + pseudoRandom(seed + 1) * heightScale);
+    ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#d98fae" : "#e0a8c0";
+    ctx.beginPath(); ctx.arc(fx, fy, 4.5 + pseudoRandom(seed + 3) * 2, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#f0d8c8";
-    ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI * 2); ctx.fill();
-  });
+    ctx.beginPath(); ctx.arc(fx, fy, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawForestBrambleTransition(camX) {
+  // looser vines building up to the main wall from dockA's side
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_TRANSITION_IN_X1, FOREST_BRAMBLE_X1, 900, "#2e3520", "#3f5527", 22, 2.8, 4, 0);
+  // looser vines tapering off past the main wall toward dockB's side
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X2, FOREST_BRAMBLE_TRANSITION_OUT_X2, 950, "#2e3520", "#3f5527", 22, 2.8, 4, 0);
+}
+
+function drawForestBrambleBehind(camX) {
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 100, "#2e3520", "#3f5527", 30, 4.5, 10, 0);
+  drawForestBrambleThorns(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 200, 7, 30);
+  drawForestBrambleFlowers(camX, 300, 3, 24);
 }
 
 function drawForestBrambleFront(camX) {
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 400, "#2e3520", "#3f5527", 55, 5.5, 10, 0);
+  drawForestBrambleThorns(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 500, 9, 55);
+  drawForestBrambleFlowers(camX, 600, 4, 48);
+
+  // deliberately-placed vertical crossing strands, evenly spaced
+  // across the full span and spanning through the snake's height
+  // range -- guarantees real coverage wherever the snake happens to
+  // be, rather than hoping randomized curves cross its exact path
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
   const w = x2 - x1;
   const baseY = gy - 6;
   ctx.lineCap = "round";
-
-  ctx.strokeStyle = "#2e3520";
-  ctx.lineWidth = 11;
-  ctx.beginPath();
-  ctx.moveTo(x1 - 5, baseY);
-  ctx.bezierCurveTo(x1 + w * 0.24, baseY - 82, x1 + w * 0.4, baseY - 100, x1 + w * 0.56, baseY - 70);
-  ctx.bezierCurveTo(x1 + w * 0.72, baseY - 45, x1 + w * 0.86, baseY - 95, x2 + 5, baseY - 62);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#3f5527";
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.moveTo(x1 + w * 0.02, baseY - 10);
-  ctx.bezierCurveTo(x1 + w * 0.28, baseY - 92, x1 + w * 0.44, baseY - 62, x1 + w * 0.6, baseY - 100);
-  ctx.bezierCurveTo(x1 + w * 0.76, baseY - 130, x1 + w * 0.88, baseY - 68, x2, baseY - 100);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#2e3520";
-  ctx.lineWidth = 9;
-  ctx.beginPath();
-  ctx.moveTo(x1 + w * 0.08, baseY - 5);
-  ctx.bezierCurveTo(x1 + w * 0.32, baseY - 58, x1 + w * 0.5, baseY - 28, x1 + w * 0.68, baseY - 62);
-  ctx.bezierCurveTo(x1 + w * 0.82, baseY - 82, x1 + w * 0.92, baseY - 40, x2 - 10, baseY - 55);
-  ctx.stroke();
-
-  ctx.fillStyle = "#2e3520";
-  [0.1, 0.24, 0.4, 0.53, 0.68, 0.82, 0.93].forEach((f, i) => {
-    const tx = x1 + w * f, ty = baseY - (40 + (i % 4) * 18);
+  const crossingCount = 4;
+  for (let i = 0; i < crossingCount; i++) {
+    const seed = 800 + i * 23.1;
+    const cx = x1 + w * ((i + 0.5) / crossingCount) + (pseudoRandom(seed) - 0.5) * 20;
+    const topY = baseY - (60 + pseudoRandom(seed + 1) * 20);
+    const sway = (pseudoRandom(seed + 2) - 0.5) * 24;
+    ctx.strokeStyle = pseudoRandom(seed + 3) < 0.5 ? "#2e3520" : "#3f5527";
+    ctx.lineWidth = 3.5 + pseudoRandom(seed + 4) * 1.5;
     ctx.beginPath();
-    ctx.moveTo(tx, ty); ctx.lineTo(tx + 9, ty - 10); ctx.lineTo(tx + 2, ty + 8);
-    ctx.closePath(); ctx.fill();
-  });
-  [0.18, 0.46, 0.64, 0.85].forEach((f, i) => {
-    const fx = x1 + w * f, fy = baseY - (48 + (i % 3) * 20);
-    ctx.fillStyle = "#e0a8c0";
-    ctx.beginPath(); ctx.arc(fx, fy, 6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#f0d8c8";
-    ctx.beginPath(); ctx.arc(fx, fy, 2.2, 0, Math.PI * 2); ctx.fill();
-  });
+    ctx.moveTo(cx, baseY + 4);
+    ctx.quadraticCurveTo(cx + sway, (baseY + topY) / 2, cx + sway * 0.4, topY);
+    ctx.stroke();
+  }
 }
 
 // bridge-piece platform -- sits within the bramble span, below the
@@ -9531,11 +9728,36 @@ function drawForestBridgePlatform(camX) {
   if (inventory.bridgePiece) return; // already collected, nothing left to show
   const px = FOREST_BRIDGE_PLATFORM_X - camX;
   const py = gy - FOREST_BRIDGE_PLATFORM_HEIGHT;
-  ctx.fillStyle = "#6b4a2a";
-  ctx.fillRect(px - 22, py, 44, 8);
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(px - 22, py, 44, 8);
+
+  // woven nest/perch -- built from the same kind of strands as the
+  // bramble itself, flattened into a standable shape, so it reads as
+  // part of the same tangle rather than a manufactured plank pasted
+  // on top of it
+  ctx.lineCap = "round";
+  for (let i = 0; i < 6; i++) {
+    const seed = 900 + i * 7.3;
+    const yOff = pseudoRandom(seed) * 3 - 1.5;
+    ctx.strokeStyle = pseudoRandom(seed + 1) < 0.5 ? "#3f5527" : "#2e3520";
+    ctx.lineWidth = 4 + pseudoRandom(seed + 2) * 2;
+    ctx.beginPath();
+    ctx.moveTo(px - 26, py + 4 + yOff - i * 0.6);
+    ctx.quadraticCurveTo(px, py - 3 + yOff + Math.sin(i) * 3, px + 26, py + 4 + yOff - i * 0.6);
+    ctx.stroke();
+  }
+  // a couple of thorns and leaves along the perch edge for continuity with the bramble
+  ctx.fillStyle = "#2e3520";
+  ctx.beginPath();
+  ctx.moveTo(px - 20, py); ctx.lineTo(px - 13, py - 7); ctx.lineTo(px - 18, py + 3);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#5d7a3a";
+  ctx.save();
+  ctx.translate(px + 20, py - 2);
+  ctx.rotate(0.5);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   // the bridge piece itself -- a small log-like chunk
   ctx.fillStyle = "#8a6030";
   ctx.beginPath();
@@ -9548,6 +9770,57 @@ function drawForestBridgePlatform(camX) {
   ctx.beginPath();
   ctx.ellipse(px - 6, py - 8, 3, 5, 0, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawForestBoomerangTarget(camX) {
+  if (!forestBoomerangTarget.hit) {
+    const gx = forestBoomerangTarget.x - camX;
+    const gy2 = gy - forestBoomerangTarget.heightAboveGround;
+    drawForestGear(gx, gy2, 22, 17, 7, 0.4, "#6b5030", "#2e2014");
+    // small vine wrap for continuity with the other gears in this zone
+    ctx.strokeStyle = "#4a6a2e";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(gx - 24, gy2 + 6);
+    ctx.quadraticCurveTo(gx - 4, gy2 - 22, gx + 18, gy2 - 8);
+    ctx.stroke();
+  }
+
+  if (forestFallingBridgePiece.available && !forestFallingBridgePiece.collected) {
+    const px = forestFallingBridgePiece.x - camX;
+    const py = gy - forestFallingBridgePiece.heightAboveGround;
+    ctx.fillStyle = "#8a6030";
+    ctx.beginPath();
+    ctx.ellipse(px, py, 11, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#c9a878";
+    ctx.beginPath();
+    ctx.ellipse(px - 6, py, 3, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawForestSnakeObstacles(camX) {
+  FOREST_SNAKE_OBSTACLES.forEach((obs, i) => {
+    const seedBase = 1000 + i * 300;
+    const localX1 = obs.x - 14, localX2 = obs.x + 14;
+    const crawlX1 = obs.x - 26, crawlX2 = obs.x + 26;
+    // low strands crawling along the ground, spreading a bit wider
+    // than the main clump -- much lighter touch than before, just a
+    // hint of spillover rather than a wide mass
+    drawForestBrambleStrands(camX, crawlX1, crawlX2, seedBase + 700, "#2e3520", "#3f5527", 8, 2.8, 2, 0);
+    drawForestBrambleThorns(camX, crawlX1, crawlX2, seedBase + 800, 2, 10);
+
+    // ground-anchored, same proven technique as the main bramble --
+    // grows up from the ground to past the clear height, but much
+    // sparser than a full bramble wall since this only needs to read
+    // as a small snag, not something that visually swallows the snake
+    drawForestBrambleStrands(camX, localX1, localX2, seedBase, "#2e3520", "#3f5527", obs.clearHeight + 10, 3, 3, 0);
+    drawForestBrambleThorns(camX, localX1, localX2, seedBase + 100, 3, obs.clearHeight + 10);
+  });
 }
 
 function drawForestSnake(camX) {
@@ -9590,24 +9863,30 @@ function drawForestSnake(camX) {
   for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
 
-  // diamond markings along the body, alternating rust-red and olive,
-  // sized to actually fit within the body width
-  const diamondColors = ["#a8452e", "#8a9a5a"];
-  for (let i = 0; i < segments; i += 3) {
+  // diamond markings along the body -- varied sizes and spacing
+  // instead of uniform squares, staggered slightly off the
+  // centerline for a more organic, scale-like arrangement, with an
+  // occasional third accent color mixed into the alternation
+  const diamondColors = ["#a8452e", "#8a9a5a", "#c9863a"];
+  for (let i = 0; i < segments; i += 5) {
     const p = points[i];
     const next = points[Math.min(i + 1, points.length - 1)];
     const angle = Math.atan2(next.y - p.y, next.x - p.x);
+    const seed = i * 3.7;
+    const size = 6 + pseudoRandom(seed) * 4; // 6-10, varied instead of a fixed 9
+    const offset = (pseudoRandom(seed + 1) - 0.5) * 6; // staggered off the centerline
+    const colorIdx = pseudoRandom(seed + 2) < 0.15 ? 2 : (i / 5) % 2; // mostly alternating, occasional accent color
     ctx.save();
-    ctx.translate(p.x, p.y);
+    ctx.translate(p.x, p.y + offset);
     ctx.rotate(angle);
     ctx.strokeStyle = "#3a2c14";
     ctx.lineWidth = 1.2;
-    ctx.fillStyle = diamondColors[(i / 3) % 2];
+    ctx.fillStyle = diamondColors[colorIdx];
     ctx.beginPath();
-    ctx.moveTo(0, -9);
-    ctx.lineTo(9, 0);
-    ctx.lineTo(0, 9);
-    ctx.lineTo(-9, 0);
+    ctx.moveTo(0, -size);
+    ctx.lineTo(size, 0);
+    ctx.lineTo(0, size);
+    ctx.lineTo(-size, 0);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -9619,7 +9898,11 @@ function drawForestSnake(camX) {
   // small wobble keeps it from looking perfectly rigid
   const headP = points[0];
   const headWobble = Math.sin(t * 0.006) * 0.12;
-  const headAngle = Math.acos(Math.max(-1, Math.min(1, forestSnake.facingDir))) + headWobble;
+  const headElapsed = performance.now() - forestSnake.turnStartTime; // head has no stagger delay
+  const headRaw = Math.max(0, Math.min(1, headElapsed / 700));
+  const headEased = headRaw < 0.5 ? 2 * headRaw * headRaw : 1 - Math.pow(-2 * headRaw + 2, 2) / 2;
+  const headDir = forestSnake.prevDir + (forestSnake.targetDir - forestSnake.prevDir) * headEased;
+  const headAngle = Math.acos(Math.max(-1, Math.min(1, headDir))) + headWobble;
   ctx.save();
   ctx.translate(headP.x, headP.y);
   ctx.rotate(headAngle);
@@ -9661,6 +9944,65 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  // forest bridge piece falling, once knocked loose by the boomerang hit
+  if (forestFallingBridgePiece.falling) {
+    forestFallingBridgePiece.heightAboveGround -= FOREST_BRIDGE_PIECE_FALL_SPEED * deltaTime;
+    if (forestFallingBridgePiece.heightAboveGround <= 15) {
+      forestFallingBridgePiece.heightAboveGround = 15;
+      forestFallingBridgePiece.falling = false; // settled -- now pickupable
+    }
+  }
+
+  if (forestFallingBridgePiece.available && !forestFallingBridgePiece.collected && !forestFallingBridgePiece.collecting && !forestFallingBridgePiece.falling) {
+    if (pressedDownNear(forestFallingBridgePiece.x, forestFallingBridgePiece.heightAboveGround, 26, 20, 20)) {
+      forestFallingBridgePiece.collecting = true;
+      forestFallingBridgePiece.collected = true;
+      startCollectAnimation(
+        { x: forestFallingBridgePiece.x, y: gy - forestFallingBridgePiece.heightAboveGround, size: 10, rotation: 0 },
+        "bridgePiece"
+      );
+    }
+  }
+
+  if (forestSnake.bumpedCooldown > 0) forestSnake.bumpedCooldown -= deltaTime * 1000;
+
+  // obstacle collision -- jump-while-riding to clear these, or get
+  // bumped off. The bramble already blocks ground travel through
+  // here, so the only legitimate way to be in this x-range is via
+  // the snake.
+  if ((forestSnake.riding || player.vy !== 0) && forestSnake.bumpedCooldown <= 0 && performance.now() > forestSnake.jumpGraceUntil) {
+    FOREST_SNAKE_OBSTACLES.forEach(obs => {
+      const playerCenterX = player.x + player.width / 2;
+      if (
+        playerCenterX > obs.x - 12 &&
+        playerCenterX < obs.x + 12 &&
+        player.y < obs.clearHeight
+      ) {
+        forestSnake.riding = false;
+        forestSnake.dismountCooldown = 400;
+        forestSnake.bumpedCooldown = 600;
+        player.vy = -2; // small knockback, drops the player rather than launching them
+      }
+    });
+  }
+
+  // entrance hint gear -- standard platform landing, jumpable
+  {
+    const gTop = FOREST_HINT_GEAR_HEIGHT;
+    if (
+      player.x + player.width > FOREST_HINT_GEAR_X - FOREST_HINT_GEAR_OUTER_R &&
+      player.x < FOREST_HINT_GEAR_X + FOREST_HINT_GEAR_OUTER_R &&
+      player.y <= gTop &&
+      player.y >= gTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = gTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // bramble blocks ground-level travel entirely -- only passable by
   // riding the snake over it, well above the ground-level threshold
   if (player.y < 18) {
@@ -9700,24 +10042,11 @@ function updateForestScene(deltaTime) {
       player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
       keys.spaceJustPressed
     ) {
-      inventory.bridgePiece = 1;
-      updateInventoryUI();
+      addToInventory("bridgePiece");
     }
   }
 
   forestSnake.t += deltaTime * 1000;
-
-  // ease the facing direction smoothly toward whichever way the snake
-  // is currently supposed to be heading, rather than snapping
-  // instantly -- this is what stops the body jumping to the opposite
-  // side of the head the moment it docks and turns around
-  const targetDir = forestSnake.dockedAt === "A" ? 1 : -1;
-  const dirDiff = targetDir - forestSnake.facingDir;
-  if (Math.abs(dirDiff) > 0.01) {
-    forestSnake.facingDir += dirDiff * Math.min(1, 0.005 * deltaTime * 1000);
-  } else {
-    forestSnake.facingDir = targetDir;
-  }
 
   if (forestSnake.state === "docked") {
     const dock = forestSnake.dockedAt === "A" ? forestSnake.dockA : forestSnake.dockB;
@@ -9733,7 +10062,10 @@ function updateForestScene(deltaTime) {
     forestSnake.currentX = from.x + (to.x - from.x) * progress;
     if (progress >= 1) {
       forestSnake.state = "docked";
+      forestSnake.prevDir = forestSnake.dockedAt === "A" ? 1 : -1;
       forestSnake.dockedAt = forestSnake.dockedAt === "A" ? "B" : "A";
+      forestSnake.targetDir = forestSnake.dockedAt === "A" ? 1 : -1;
+      forestSnake.turnStartTime = performance.now();
       forestSnake.t = 0;
     }
   }
@@ -9741,6 +10073,14 @@ function updateForestScene(deltaTime) {
   if (forestSnake.dismountCooldown > 0) forestSnake.dismountCooldown -= deltaTime * 1000;
 
   if (!forestSnake.riding) {
+    // mid-jump (not a full dismount) -- x keeps tracking the snake's
+    // own movement so the jump actually carries the player forward
+    // with it, only y is free for the jump arc
+    if (forestSnake.midJump) {
+      const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
+      player.x = riderP.x - player.width / 2;
+    }
+
     // requires an actual jump and landing on the body, same pattern
     // as landing on any other platform -- not just standing nearby
     // and pressing a button. Suppressed briefly right after hopping
@@ -9758,6 +10098,7 @@ function updateForestScene(deltaTime) {
           player.y >= bodyTop - 15
         ) {
           forestSnake.riding = true;
+          forestSnake.midJump = false;
           forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
           player.jumping = false;
           player.usedDoubleJump = false;
@@ -9767,20 +10108,30 @@ function updateForestScene(deltaTime) {
       }
     }
   } else {
-    // while riding, follow the same fixed point along the body,
-    // which travels along with the snake as a whole
-    const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
-    player.x = riderP.x - player.width / 2;
-    player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
-
-    // hop off with the down key -- upJustPressed was also triggering
-    // a normal jump in handleInput() (which runs before this scene
-    // code), launching the player upward unexpectedly right as they
-    // tried to dismount. down matches the same pattern already used
-    // to dismount the rabbit shuttle elsewhere in the game.
-    if (keys.down) {
+    // jumping off the fixed position (not dismounting) lets the
+    // normal jump physics handleInput already applied this frame
+    // actually play out -- the hop-on check below will naturally
+    // re-catch the player on the snake's body as it continues moving
+    if (keys.upJustPressed) {
       forestSnake.riding = false;
-      forestSnake.dismountCooldown = 400;
+      forestSnake.midJump = true;
+      forestSnake.jumpGraceUntil = performance.now() + 250;
+    } else {
+      // while riding, follow the same fixed point along the body,
+      // which travels along with the snake as a whole
+      const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
+      player.x = riderP.x - player.width / 2;
+      player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
+
+      // hop off with the down key -- upJustPressed was also triggering
+      // a normal jump in handleInput() (which runs before this scene
+      // code), launching the player upward unexpectedly right as they
+      // tried to dismount. down matches the same pattern already used
+      // to dismount the rabbit shuttle elsewhere in the game.
+      if (keys.down) {
+        forestSnake.riding = false;
+        forestSnake.dismountCooldown = 400;
+      }
     }
   }
 
@@ -12780,7 +13131,7 @@ function updateOakLampTable() {
   }
 }
 
-const shortShelf = { x: 1987, width: 110, top: 170, bottom: gy - 2 };
+const shortShelf = { x: 1480, width: 110, top: 170, bottom: gy - 2 }; // moved much closer to the door, into the gap between the tree/hive cluster and the monstera
 const mediumShelf = { x: 2166, width: 85, top: 110, bottom: gy - 2 };
 function drawMediumShelf(camX) {
   const sx = mediumShelf.x - camX;
@@ -16909,6 +17260,7 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 
 if (currentScene === "forest") {
   drawForestBrambleFront(camX);
+  drawForestBridgePlatform(camX);
 }
 
 
@@ -17595,6 +17947,10 @@ updateSeasonTransition(deltaTime);
   // actually ends, so the camera stops there even if the player keeps
   // walking on toward their own boundary further out
   if (currentScene === "ratroom" && cameraX > 625) cameraX = 625;
+  // oak's own left-side clamp -- caps how much empty space shows to
+  // the left of the entrance door once the shelf moved closer in,
+  // mirroring the ratroom's right-side pattern above
+  if (currentScene === "oak" && cameraX < 150) cameraX = 150;
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
