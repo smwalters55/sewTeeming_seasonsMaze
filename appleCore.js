@@ -3590,6 +3590,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawFeatherShape(ctx, x, y, size, rotation);
   } else if (itemType === "bridgePiece") {
     drawBridgePieceShape(ctx, x, y, size, rotation);
+  } else if (itemType === "gnawedStick") {
+    drawGnawedStickShape(ctx, x, y, size, rotation);
   } else if (itemType === "acorn") {
     drawAcornShape(ctx, x, y, size, rotation);
   } else if (itemType === "pumpkin") {
@@ -6200,16 +6202,24 @@ function drawBridgePieceShape(ctx, x, y, size, rotation) {
 
   const r = size * 0.58;    // log radius (half-thickness)
   const half = size * 1.1;  // half the visible body length
+  const capX = half * 0.35; // center of the sawn end, matches the body's own right-end arc
+
+  // traces the capsule body outline -- called twice: once to actually
+  // fill/stroke the body, and again right before clipping so the
+  // sawn-end detail below can never bleed past the real silhouette
+  function tracePillBody() {
+    ctx.beginPath();
+    ctx.arc(-half, 0, r, Math.PI / 2, -Math.PI / 2, true);
+    ctx.lineTo(capX, -r);
+    ctx.arc(capX, 0, r, -Math.PI / 2, Math.PI / 2);
+    ctx.closePath();
+  }
 
   // log body -- a capsule shape (a bark-brown cylinder seen side-on),
   // not a flat oval -- this is what actually reads as "log" rather
   // than "brown pebble"
+  tracePillBody();
   ctx.fillStyle = "#6b4423";
-  ctx.beginPath();
-  ctx.arc(-half, 0, r, Math.PI / 2, -Math.PI / 2, true);
-  ctx.lineTo(half * 0.35, -r);
-  ctx.arc(half * 0.35, 0, r, -Math.PI / 2, Math.PI / 2);
-  ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#3a2410";
   ctx.lineWidth = Math.max(1, size * 0.09);
@@ -6227,9 +6237,15 @@ function drawBridgePieceShape(ctx, x, y, size, rotation) {
   });
 
   // the sawn end -- pale wood with a couple of growth rings and a small
-  // pith center, ringed by a dark bark edge, so it reads as an actual
-  // cut log end rather than a brown oval with a highlight smear
-  const capX = half * 0.35;
+  // pith center. Clipped to the body's own silhouette first: drawing
+  // these as plain full ellipses without a clip let their far side
+  // poke out into the middle of the log, which is exactly the stray
+  // "circle cut out of the back" bug -- clipping means they can only
+  // ever render within the actual end-cap area, however they're drawn.
+  ctx.save();
+  tracePillBody();
+  ctx.clip();
+
   ctx.fillStyle = "#d8b988";
   ctx.beginPath();
   ctx.ellipse(capX, 0, r * 0.95, r, 0, 0, Math.PI * 2);
@@ -6246,11 +6262,7 @@ function drawBridgePieceShape(ctx, x, y, size, rotation) {
   ctx.beginPath();
   ctx.arc(capX, 0, Math.max(0.6, size * 0.07), 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#3a2410";
-  ctx.lineWidth = Math.max(0.8, size * 0.08);
-  ctx.beginPath();
-  ctx.ellipse(capX, 0, r * 0.95, r, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.restore(); // drop the clip
 
   ctx.restore();
 }
@@ -9478,6 +9490,7 @@ function drawForestScene(camX) {
   drawForestClockworkLever(camX);
   drawForestClockworkGears(camX);
   drawForestFlightPiece(camX);
+  drawForestGnawSecret(camX);
   // drawForestBrambleFront and drawForestBridgePlatform now called
   // after the player sprite in the main draw() function -- the
   // bridge platform/item specifically needs to be drawn after the
@@ -9856,22 +9869,53 @@ function drawRaccoon(camX) {
 // speech bubble. Ends at x=1248 (1230 + outerR 18), well clear of the
 // bramble transition-in at 1300.
 const FOREST_INTRO_GEARS = [
-  { x: 630, height: 26, outerR: 22 }, // big, low, easy first hop from the ground
-  { x: 760, height: 82, outerR: 14, piece: true, pieceCollected: false }, // single-jump climb, comfortably spaced out now -- first (easy) piece
-  { x: 855, height: 36, outerR: 25 }, // biggest, low again -- a breather before the hard one
-  { x: 938, height: 136, outerR: 13 }, // smallest -- needs a real double jump (climb + horizontal gap together)
-  { x: 1015, height: 60, outerR: 19 }, // easier landing, a breather before the "higher gear situation" below
-  { x: 1105, height: 80, outerR: 16 }, // stepping stone leading up into the capstone jump
-  { x: 1175, height: 185, outerR: 12, piece: true, pieceCollected: false }, // the capstone -- tallest, hardest jump in the whole row, second (hard) piece
-  { x: 1230, height: 30, outerR: 18 } // easy landing back down to close out the sequence before the bramble transition
+  { x: 630, height: 26, outerR: 22, horizontal: true, overgrown: 3 }, // big, low, easy first hop from the ground -- lying flat, like a turntable, and buried in growth
+  { x: 760, height: 82, outerR: 14, piece: true, pieceCollected: false, overgrown: 0 }, // single-jump climb, comfortably spaced out now -- first (easy) piece, kept clean/bare so the piece itself stays the visual focus
+  { x: 855, height: 36, outerR: 25, overgrown: 1 }, // biggest, low again -- a breather before the hard one
+  { x: 938, height: 136, outerR: 13, overgrown: 2 }, // smallest -- needs a real double jump (climb + horizontal gap together)
+  { x: 1015, height: 60, outerR: 19, horizontal: true, overgrown: 0 }, // easier landing, a breather before the "higher gear situation" below -- also lying flat, bare this time for contrast with gear 1
+  { x: 1105, height: 80, outerR: 16, overgrown: 3 }, // stepping stone leading up into the capstone jump -- heavily overgrown
+  { x: 1175, height: 185, outerR: 12, piece: true, pieceCollected: false, overgrown: 1 }, // the capstone -- tallest, hardest jump in the whole row, second (hard) piece
+  { x: 1230, height: 30, outerR: 18, overgrown: 2 } // easy landing back down to close out the sequence before the bramble transition
 ];
+
+// overgrown tier -> (vine wraps, moss patches). 0 keeps a gear reading
+// as mostly bare/mechanical, 3 buries it in growth -- gives the row
+// real variety instead of every gear getting identical decoration.
+const FOREST_OVERGROWN_TIERS = [
+  { wraps: 0, moss: 0 },  // bare
+  { wraps: 2, moss: 1 },  // light
+  { wraps: 4, moss: 3 },  // normal (matches the original fixed amount)
+  { wraps: 7, moss: 6 }   // heavy
+];
+
+// FOREST_GEAR_FLAT_SQUASH -- how thin a "horizontal" (lying flat, seen
+// edge-on) gear renders compared to a normal upright one. Used both
+// for the visual squash and to match the landing collision to the
+// actual squashed top edge, so jumping onto one doesn't feel like
+// landing a little short of or into the drawn surface.
+const FOREST_GEAR_FLAT_SQUASH = 0.42;
 
 function drawForestIntroGears(camX) {
   FOREST_INTRO_GEARS.forEach((g, i) => {
     const gx = g.x - camX;
     const gy2 = gy - g.height;
-    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, 0.3 + i * 0.15, "#6b5030", "#2e2014", g.x * 3.7);
-    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1);
+    if (g.horizontal) {
+      // lying flat, like a turntable rather than a standing wheel --
+      // squash vertically around its own center so it reads as a disc
+      // seen edge-on instead of a face-on gear
+      ctx.save();
+      ctx.translate(gx, gy2);
+      ctx.scale(1, FOREST_GEAR_FLAT_SQUASH);
+      ctx.translate(-gx, -gy2);
+      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, 0.3 + i * 0.15, "#6b5030", "#2e2014", g.x * 3.7);
+      ctx.restore();
+    } else {
+      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, 0.3 + i * 0.15, "#6b5030", "#2e2014", g.x * 3.7);
+    }
+    const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? 2];
+    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
+    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
@@ -9883,10 +9927,10 @@ function drawForestIntroGears(camX) {
 // the rim, each with a couple of small leaves, so the gears read as
 // properly overgrown rather than just a bare mechanical shape with one
 // token vine.
-function drawForestGearVines(gx, gy2, outerR, seed) {
+function drawForestGearVines(gx, gy2, outerR, seed, wraps = 4) {
+  if (wraps <= 0) return;
   ctx.save();
   ctx.lineCap = "round";
-  const wraps = 4;
   for (let i = 0; i < wraps; i++) {
     const wSeed = seed + i * 13.1;
     const startAngle = (i / wraps) * Math.PI * 2 + pseudoRandom(wSeed) * 0.7;
@@ -10489,16 +10533,26 @@ const FOREST_CLOCKWORK_LEVER_X = 2480; // pushed further out past the bramble's 
 const FOREST_CLOCKWORK_GEARS = [
   // cluster A -- three touching gears, real size/height variety
   { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false },
-  { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0 }, // touches gear A1 (edge-to-edge, 2584=2584)
+  { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge, 2584=2584) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near x=2584)
   { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true }, // touches gear A2 (2636=2636) -- last of cluster A, launches across the gap into B
   // real single-jump gap (65px edge-to-edge) into cluster B
   { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0 }, // cluster B starts
   { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true }, // touches gear B1 (2785=2785) -- last of cluster B, launches across the double-jump gap into the capstone
   // real double-jump gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 2877, height: 212, outerR: 14, dir: -1, rot: 0, piece: true, pieceCollected: false, launchPad: true }, // the hardest single jump in the whole grove -- reward piece on top, also its own launch pad for the send-off down into cluster D
-  // real gap (55px) descending into the final cluster -- falling is easier than climbing, so this one's more forgiving despite the height drop
+  { x: 2877, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece and the landing gear below
+  // real gap (55px) descending into cluster D -- falling is easier than climbing, so this one's more forgiving despite the height drop
   { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
-  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 } // touches gear D1 (2998=2998), easy landing to close it out
+  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 }, // touches gear D1 (2998=2998), easy landing
+  // the capstone's flight sails clean over cluster D (launched flight
+  // ignores platform collision mid-arc) and comes down further out --
+  // this is that landing, a real terminal gear rather than the flight
+  // just dropping the player onto flat ground. Has its own catch logic
+  // in updateForestScene since raw physics is too precise to reliably
+  // land ON a specific gear on its own. No piece here -- the mid-air
+  // grab earlier in the arc is already the reward for this whole
+  // sequence, this is just a clean place to stick the landing. Right
+  // after this, the grove's done and the mole hole picks up.
+  { x: 3140, height: 80, outerR: 30, dir: -1, rot: 0, flightLanding: true }
 ];
 const FOREST_CLOCKWORK_SPIN_SPEED = 0.0014; // radians/ms, applied per gear's own `dir` -- nudged back up a bit from 0.0011, was reading as a touch too slow
 
@@ -10624,8 +10678,12 @@ function drawForestClockworkGears(camX) {
     if (pseudoRandom(g.x * 1.9) < 0.5) {
       drawGearTarnish(gx, gy2, g.outerR, g.rot, g.x * 2.3);
     }
-    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1);
-    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4);
+    // these still spin, so heavier growth on an active gear reads as
+    // "been turning a long time, nobody's tended it" -- stable per-gear
+    // variety from x rather than every gear getting the same amount
+    const tier = FOREST_OVERGROWN_TIERS[Math.floor(pseudoRandom(g.x * 0.7) * FOREST_OVERGROWN_TIERS.length)];
+    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
+    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
@@ -10633,24 +10691,26 @@ function drawForestClockworkGears(camX) {
 }
 
 /* ======================================================
-   FLIGHT-ONLY BONUS PIECE — floats out over the first launch gap,
-   well clear of any gear. Reachable ONLY while actually mid-flight
-   from a launch pad -- and this time actually verified, not just
-   assumed: the established ceiling elsewhere in this file for a
-   double jump is ~140 height, so an earlier version of this sat AT
-   that same 140, which a well-timed double jump could plausibly have
-   reached. Pushed the height to 155 -- a real 15px margin above the
-   double-jump ceiling, while still comfortably under this specific
-   launch's own computed peak (~171.7 height, worked out from
-   vy=8 and LAUNCH_GRAVITY=0.3: peak gain = vy^2/(2*LAUNCH_GRAVITY) =
-   106.7, plus the A3 launch pad's own gTop of 65). So it's actually
-   above what a jump can reach AND actually inside what the flight
-   itself can reach -- not just gated in code, genuinely unreachable
-   any other way. The player.launched gate in updateForestScene's
-   pickup check is still there too, as a hard backstop.
+   FLIGHT-ONLY BONUS PIECE — moved from the small first gap to the big
+   showcase flight instead: launches off the CAPSTONE gear (tallest in
+   the grove, and the one that reads best as a real launch), sails
+   through this piece mid-arc, then actually sticks a landing on a new
+   terminal gear further out (see `flightLanding` on FOREST_CLOCKWORK_GEARS)
+   instead of just dropping onto flat ground. A much longer, more
+   deliberate arc instead of a quick hop across a small gap.
+
+   Position verified against the actual physics, not eyeballed: the
+   capstone's gTop is 226, launch is vy=8 / LAUNCH_GRAVITY=0.3, so
+   height gain at frame n is 8n - 0.15n(n-1). Solving for a gain of 74
+   (piece height 300 - gTop 226) lands at frame ~11.5 ascending, x
+   offset 3*11.5 ≈ 35 -> piece sits at x=2912. Peak of the whole arc is
+   ~332.7 (226 + 8^2/(2*0.3)), so 300 is comfortably below that (still
+   reachable) and nowhere near any real jump or double-jump's range
+   (nothing to even jump FROM out there in open air). Gated on
+   player.launched in the pickup check too, as a hard backstop.
    ====================================================== */
-const FOREST_FLIGHT_PIECE_X = 2710; // where the A3 launch pad's arc passes through height 155 on its way up (~frame 16 of the flight)
-const FOREST_FLIGHT_PIECE_HEIGHT = 155;
+const FOREST_FLIGHT_PIECE_X = 2912; // where the capstone launch's arc passes through height 300 on its way up (~frame 11.5 of the flight)
+const FOREST_FLIGHT_PIECE_HEIGHT = 300;
 let forestFlightPieceCollected = false;
 
 function drawForestFlightPiece(camX) {
@@ -10669,6 +10729,73 @@ function drawForestFlightPiece(camX) {
   ctx.stroke();
 
   drawBridgePieceShape(ctx, px, py, 11, (performance.now() * 0.0012) % (Math.PI * 2));
+}
+
+/* ======================================================
+   GNAWED-STICK SECRET — the payoff for the mystery backward launch
+   pad (the plain-looking middle gear in cluster A). No creature ever
+   appears here, on purpose -- this is a lore seed for the beaver NPC
+   reserved for later at the dam/bridge, and actually meeting it here
+   first would undercut that proper introduction. Instead, flying past
+   at speed physically brushes the leaf clump aside for a couple of
+   seconds, revealing a small stash of gnawed sticks and shavings
+   underneath before it settles back closed -- ties the reveal to the
+   player's own motion (that's WHY the flight triggers it) rather than
+   it just popping open on a timer or a walk-up trigger.
+   ====================================================== */
+const FOREST_GNAW_SECRET_X = 2584; // roughly where the mystery gear's backward arc passes low, near ground
+const FOREST_GNAW_SECRET_HEIGHT = 16;
+const FOREST_GNAW_REVEAL_MS = 2200;
+const FOREST_GNAW_RETRIGGER_COOLDOWN_MS = 3000; // re-openable on a later pass, not just once ever
+let forestGnawSecretRevealTime = -Infinity;
+
+function drawForestGnawSecret(camX) {
+  const sx = FOREST_GNAW_SECRET_X - camX;
+  const sy = gy - FOREST_GNAW_SECRET_HEIGHT;
+  const elapsed = performance.now() - forestGnawSecretRevealTime;
+  const revealing = elapsed >= 0 && elapsed < FOREST_GNAW_REVEAL_MS;
+
+  // parting amount -- eases open quickly, holds open, eases shut
+  let partAmount = 0;
+  if (revealing) {
+    const p = elapsed / FOREST_GNAW_REVEAL_MS;
+    partAmount = p < 0.25 ? p / 0.25 : p > 0.75 ? (1 - p) / 0.25 : 1;
+  }
+
+  // the stash underneath -- a few gnawed sticks and a curl of pale
+  // shavings, only actually visible once the leaves have parted enough
+  if (partAmount > 0.15) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (partAmount - 0.15) / 0.3);
+    ctx.fillStyle = "#6b4a2c";
+    for (let i = 0; i < 3; i++) {
+      const sSeed = 777 + i * 13;
+      const ang = (pseudoRandom(sSeed) - 0.5) * 1.2;
+      ctx.save();
+      ctx.translate(sx + (i - 1) * 5, sy + 4);
+      ctx.rotate(ang);
+      ctx.fillRect(-9, -1.5, 18, 3);
+      ctx.restore();
+    }
+    ctx.fillStyle = "#d8b988";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 6, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // the leaf clump covering it -- two halves that swing apart as
+  // partAmount rises and settle back closed as it falls
+  ctx.fillStyle = "#3a5228";
+  [-1, 1].forEach(side => {
+    ctx.save();
+    ctx.translate(sx + side * 4, sy);
+    ctx.rotate(side * (0.3 + partAmount * 0.9));
+    ctx.beginPath();
+    ctx.ellipse(side * 6, -2, 11, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
 }
 
 // patchy dark-green rust/patina spots on the gear's own metal face --
@@ -10694,9 +10821,10 @@ function drawGearTarnish(gx, gy2, outerR, rot, seed) {
 
 // small moss patches along the rim -- same color language as the
 // mossy door overlay, kept independent of the gear's own rotation
-function drawGearMoss(gx, gy2, outerR, seed) {
+function drawGearMoss(gx, gy2, outerR, seed, patches = 3) {
+  if (patches <= 0) return;
   ctx.fillStyle = "rgba(90,120,60,0.55)";
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < patches; i++) {
     const pSeed = seed + i * 9.1;
     const a = pseudoRandom(pSeed) * Math.PI * 2;
     const d = outerR * (0.8 + pseudoRandom(pSeed + 1) * 0.3);
@@ -10995,7 +11123,12 @@ function updateForestScene(deltaTime) {
   // also carry a bridge-piece collectible -- once landed, a space press
   // grabs it, same pattern as the bramble platform's piece.
   FOREST_INTRO_GEARS.forEach(g => {
-    const gTop = g.height + g.outerR; // top surface, not the gear's center -- same fix as the other gears
+    // horizontal gears are squashed vertically when drawn (see
+    // drawForestIntroGears), so their actual visible top sits much
+    // closer to center than a normal upright gear's -- match that here
+    // or landing feels like it's floating above / sinking into the
+    // drawn surface
+    const gTop = g.height + (g.horizontal ? g.outerR * FOREST_GEAR_FLAT_SQUASH : g.outerR);
     if (
       player.x + player.width > g.x - g.outerR &&
       player.x < g.x + g.outerR &&
@@ -11380,19 +11513,60 @@ function updateForestScene(deltaTime) {
     }
   });
 
-  // flight-only bonus piece -- auto-collects on contact while mid-flight
-  // (no space press; a manual press mid-arc is an awkward ask). Gated
-  // directly on player.launched, not just position, so it's genuinely
-  // unreachable by any other means.
-  if (!forestFlightPieceCollected && player.launched) {
+  // gnawed-stick secret -- flying past at speed (from the mystery
+  // backward launch pad) brushes the leaf clump open for a couple of
+  // seconds. No pickup, no inventory change -- just a discoverable
+  // detail, re-openable on a later pass rather than a once-ever flag.
+  if (
+    player.launched &&
+    Math.abs((player.x + player.width / 2) - FOREST_GNAW_SECRET_X) < 55 &&
+    performance.now() - forestGnawSecretRevealTime > FOREST_GNAW_RETRIGGER_COOLDOWN_MS
+  ) {
+    forestGnawSecretRevealTime = performance.now();
+  }
+
+  // flight-only bonus piece -- a real deliberate mid-air catch: needs an
+  // actual space press while overlapping it, not just flying through.
+  // Gated directly on player.launched too, not just position, so it's
+  // genuinely unreachable by any other means. Radius stays generous
+  // (40) since timing a button press against a fast-moving arc is
+  // already the harder ask -- position shouldn't also be punishing.
+  if (!forestFlightPieceCollected && player.launched && keys.spaceJustPressed) {
     const dx = (player.x + player.width / 2) - FOREST_FLIGHT_PIECE_X;
     const dy = player.y - FOREST_FLIGHT_PIECE_HEIGHT;
-    if (Math.sqrt(dx * dx + dy * dy) < 34) {
+    if (Math.sqrt(dx * dx + dy * dy) < 40) {
       forestFlightPieceCollected = true;
       startCollectAnimation(
         { x: FOREST_FLIGHT_PIECE_X, y: gy - FOREST_FLIGHT_PIECE_HEIGHT, size: 10, rotation: 0 },
         "bridgePiece"
       );
+    }
+  }
+
+  // flight landing catch -- lets a launched flight actually STICK a
+  // landing on the terminal gear (flightLanding: true) instead of
+  // sailing past it and dropping all the way to true ground. Raw
+  // physics landed the capstone's flight within ~7px of this gear's x
+  // by the numbers, but that's still too precise to rely on for a
+  // real landing feel, so this is deliberately generous on position --
+  // same idea as the earlier bramble platform -> snake grace catch,
+  // where design intent (land HERE) matters more than exact trajectory
+  // math.
+  const flightLandingGear = FOREST_CLOCKWORK_GEARS.find(g => g.flightLanding);
+  if (flightLandingGear && player.launched && player.vy <= 0) {
+    const gTop = flightLandingGear.height + flightLandingGear.outerR;
+    if (
+      player.x + player.width > flightLandingGear.x - flightLandingGear.outerR - 25 &&
+      player.x < flightLandingGear.x + flightLandingGear.outerR + 25 &&
+      player.y <= gTop + 60 &&
+      player.y >= gTop - 25
+    ) {
+      player.launched = false;
+      player.vx = 0;
+      player.vy = 0;
+      player.y = gTop;
+      player.jumping = false;
+      player.usedDoubleJump = false;
     }
   }
 
