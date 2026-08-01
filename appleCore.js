@@ -1358,6 +1358,12 @@ const BOOMERANG_OUT_DISTANCE = 250;
 const BOOMERANG_OUT_DURATION = 850;     // ms — slower, matches the game's slower pace
 const BOOMERANG_RETURN_DURATION = 1000; // ms
 const BOOMERANG_HIT_RADIUS = 15; // tightened further — verified honey/vault windows narrow to ~40-60px real zones, not "anywhere"
+// forest target gets its own, more forgiving radius -- unlike the other
+// boomerang targets, this throw has to land while the player's OWN
+// height is also varying continuously (mid-jump off a moving snake),
+// stacked on top of the throw arc's own vertical curve. That double
+// variability made the shared 15px radius nearly impossible to land.
+const FOREST_BOOMERANG_HIT_RADIUS = 45; // pulled back way down (was 150 -- that was landing hits without even trying, which stopped feeling like a real throw at all). The actual fix for "impossible to hit" was dropping the thrownWhileAirborne requirement below, not this radius -- so this can now be a normal, visually-sane radius plus a bit of real slack for the moving target, not an enormous catch-all
 
 let boomerangThrow = null; // null when not in flight
 
@@ -1459,10 +1465,34 @@ function updateBoomerangThrow(deltaTime) {
           b.returnFromY = b.y;
         }
       }
-    } else if (withinPeakWindow && currentScene === "forest" && !forestBoomerangTarget.hit && b.thrownWhileAirborne) {
+    } else if (currentScene === "forest" && p >= 0.25 && p <= 0.75 && !forestBoomerangTarget.hit && (forestSnake.riding || forestSnake.midJump)) {
+      // Uses its own wider window (25%-75% of the flight, not the
+      // shared narrow 45%-55% peak window the other targets use) --
+      // the player is ALSO moving the whole time here (riding/jumping
+      // on a moving snake), unlike the other stationary targets, so it
+      // still needs more slack than a stationary target's precise peak
+      // timing. But not the full flight -- that combined with the
+      // 150px radius made it land without really aiming at all.
+      //
+      // Also dropped the `b.thrownWhileAirborne` requirement entirely --
+      // this was the real bug behind "still can't get it no matter what
+      // I do": it required the throw to be initiated WHILE mid-jump
+      // (player.jumping already true at the exact moment space was
+      // pressed). Throwing while just calmly riding -- the natural
+      // thing to try -- silently could never connect, no matter how
+      // good the aim was, since that flag would already be locked in
+      // false for the whole flight. This isn't meant to be a skill
+      // check at all, so now just being on the snake (riding or
+      // mid-jump) is enough to throw and land it.
+      //
+      // requires actually being on the snake (or mid-jump off it) at
+      // throw time, not just any jump -- otherwise the gear is deep
+      // inside the now-impassable bramble but could still be hit from
+      // outside it with a well-aimed throw+jump from solid ground,
+      // skipping the snake entirely
       const dx = b.x - forestBoomerangTarget.x;
       const dy = b.y - forestBoomerangTarget.heightAboveGround;
-      if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+      if (Math.sqrt(dx * dx + dy * dy) < FOREST_BOOMERANG_HIT_RADIUS) {
         forestBoomerangTarget.hit = true;
         forestFallingBridgePiece.x = forestBoomerangTarget.x + 20; // falls just past the target, not straight down onto it
         forestFallingBridgePiece.heightAboveGround = forestBoomerangTarget.heightAboveGround;
@@ -3521,6 +3551,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLampShape(ctx, x, y, size, rotation, false);
   } else if (itemType === "feather") {
     drawFeatherShape(ctx, x, y, size, rotation);
+  } else if (itemType === "bridgePiece") {
+    drawBridgePieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "acorn") {
     drawAcornShape(ctx, x, y, size, rotation);
   } else if (itemType === "pumpkin") {
@@ -6117,6 +6149,29 @@ function drawHopAcorns(camX) {
     if (ha.collected || ha.collecting) return;
     drawAcornShape(ctx, ha.displayX - camX, gy - ha.displayHeight, 6, 0);
   });
+}
+
+// small wooden plank -- same look as the forest bridge piece wherever
+// it's drawn in-world (the perch, the falling piece), just as a
+// reusable shape function so the collect-animation zoom shows the
+// actual item instead of falling through to the default apple-piece
+// shape (drawCollectible had no "bridgePiece" case at all before this)
+function drawBridgePieceShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = "#8a6030";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 1.1, size * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = size * 0.1;
+  ctx.stroke();
+  ctx.fillStyle = "#c9a878";
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.55, 0, size * 0.3, size * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawAcornShape(ctx, x, y, size, rotation) {
@@ -9301,15 +9356,37 @@ function drawForestScene(camX) {
   // grass-blade texture yet, kept simple for this base pass
   ctx.fillStyle = "#4d5c35";
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
-  ctx.fillStyle = "rgba(30,38,20,0.35)";
-  for (let i = -30; i < canvas.width + 30; i += 26) {
+  // mossy/dirt patches -- randomized per WORLD tile (size, position
+  // jitter, alpha, occasional skip, occasional brownish dirt tint).
+  // Iterates true world-space tile indices (derived from camX), not
+  // a screen-space loop wrapped with "i - camX % 26" -- that old trick
+  // only looks seamless if every tile is visually identical, since the
+  // wrap silently jumps every dot's screen position by 26px each cycle.
+  // Once each tile got its own distinct jitter, that jump became a
+  // visible "reshuffle" every ~26px of camera movement. Keying the
+  // seed off a stable per-tile world index fixes it: each tile's
+  // appearance is fixed forever, only which tiles are on screen changes.
+  const GROUND_TILE = 26;
+  const firstGroundTile = Math.floor((camX - 30) / GROUND_TILE);
+  const lastGroundTile = Math.floor((camX + canvas.width + 30) / GROUND_TILE);
+  for (let t = firstGroundTile; t <= lastGroundTile; t++) {
+    const worldX = t * GROUND_TILE;
+    const seed = t * 137.7 + 500;
+    if (pseudoRandom(seed + 5) < 0.15) continue; // occasional gap breaks the strict rhythm
+    const jx = (pseudoRandom(seed) - 0.5) * 12;
+    const jy = (pseudoRandom(seed + 1) - 0.5) * 5;
+    const rx = 5 + pseudoRandom(seed + 2) * 8;
+    const ry = 2.5 + pseudoRandom(seed + 3) * 2.5;
+    const alpha = 0.16 + pseudoRandom(seed + 4) * 0.26;
+    ctx.fillStyle = pseudoRandom(seed + 6) < 0.25 ? `rgba(58,46,26,${alpha * 0.8})` : `rgba(30,38,20,${alpha})`;
     ctx.beginPath();
-    ctx.ellipse((i - camX % 26), gy + 6, 10, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse((worldX - camX) + jx, gy + 6 + jy, rx, ry, pseudoRandom(seed + 7) * Math.PI, 0, Math.PI * 2);
     ctx.fill();
   }
 
   drawForestEntranceFerns(camX);
   drawForestHintGear(camX);
+  drawRaccoon(camX);
   drawForestBrambleTransition(camX);
   drawForestBrambleBehind(camX);
   drawForestSnake(camX);
@@ -9385,6 +9462,105 @@ function drawForestEntranceFerns(camX) {
   });
 }
 
+/* ======================================================
+   RACCOON NPC — forest entrance, stationed between the ferns and
+   the bramble transition-in. Gives the player a vague, fairy-tale
+   warning about the wall before they hit it blind and get bumped
+   off with no context. Uses the same generic shell as frog/rabbit
+   (updateNPCIdle, drawSpeechBubble); art + dialogue bespoke.
+   ====================================================== */
+const raccoon = {
+  x: 360,
+  y: 0,
+  width: 38,
+  height: 30,
+  bob: 0,
+  bobSpeed: 0.045,
+  active: false,
+  tip: 0
+};
+
+function drawRaccoon(camX) {
+  const rx = raccoon.x - camX;
+  const ry = gy - raccoon.height + Math.sin(raccoon.bob) * 2;
+
+  // shadow
+  ctx.fillStyle = "rgba(20,15,10,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(rx + raccoon.width / 2, gy + 4, 19, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const earTwitch = raccoon.tip > 0 ? Math.sin(raccoon.tip * 0.3) * 3 : 0;
+
+  // ringed tail, curling out behind the body -- alternating dark/light
+  // bands, the single most identifying raccoon feature
+  ctx.save();
+  ctx.translate(rx - 4, ry + raccoon.height - 6);
+  ctx.rotate(-0.4);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i % 2 === 0 ? "#5a4a3a" : "#c9bfae";
+    ctx.beginPath();
+    ctx.ellipse(-i * 7, -i * 2, 5.5, 6.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // ears (behind body/mask, dark tips)
+  ctx.fillStyle = "#4a3d30";
+  ctx.beginPath();
+  ctx.ellipse(rx + 9, ry - 8 + earTwitch, 5, 6, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(rx + 27, ry - 8 - earTwitch, 5, 6, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8a7a68"; // inner ear
+  ctx.beginPath();
+  ctx.ellipse(rx + 9, ry - 6 + earTwitch, 2.4, 3, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(rx + 27, ry - 6 - earTwitch, 2.4, 3, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body -- grey-brown fur
+  ctx.fillStyle = "#8a7a68";
+  roundRect(ctx, rx, ry, raccoon.width, raccoon.height, 13);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(30,22,16,0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // pale belly patch
+  ctx.fillStyle = "#c9bfae";
+  ctx.beginPath();
+  ctx.ellipse(rx + raccoon.width / 2, ry + raccoon.height - 6, 10, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the signature black eye mask
+  ctx.fillStyle = "#2b241d";
+  ctx.beginPath();
+  ctx.ellipse(rx + 12, ry + 12, 6, 4.5, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(rx + 26, ry + 12, 6, 4.5, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eyes, bright against the dark mask
+  ctx.fillStyle = "#f0ead8";
+  ctx.beginPath();
+  ctx.arc(rx + 12, ry + 12, 1.6, 0, Math.PI * 2);
+  ctx.arc(rx + 26, ry + 12, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small dark snout/nose
+  ctx.fillStyle = "#3a2f24";
+  ctx.beginPath();
+  ctx.ellipse(rx + 19, ry + 18, 3, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (raccoon.active && isPlayerNear(raccoon.x + raccoon.width / 2, 0, 70, 6, 999)) {
+    const bubbleX = rx + raccoon.width + 15;
+    const bubbleY = ry - 10;
+    drawSpeechBubble(ctx, bubbleX, bubbleY, [
+      "Thorns like that don't part for walking feet.",
+      "There's one who knows them well enough to cross — mind the tangles along the way."
+    ]);
+  }
+}
+
 // entrance hint gear -- a single small vine-wrapped gear among the
 // ferns, foreshadowing the full clockwork grove that comes after the
 // bramble/snake crossing. Anchored to one named constant so shifting
@@ -9396,7 +9572,7 @@ const FOREST_HINT_GEAR_OUTER_R = 30; // back to original size
 const FOREST_HINT_GEAR_INNER_R = 24;
 const FOREST_HINT_GEAR_TEETH = 8;
 
-function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeColor) {
+function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeColor, stableSeed) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(rot);
@@ -9422,11 +9598,16 @@ function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeCol
 
   // tarnish/verdigris patches -- irregular greenish patina blotches
   // scattered across the face, so it reads as aged bronze rather
-  // than a flat, clean color. Seeded by position for consistent
-  // per-gear variation.
+  // than a flat, clean color. Seeded by a caller-supplied stable value
+  // when given (falls back to cx/cy otherwise) -- a gear drawn via
+  // ctx.translate(gx,gy) first and called with (0,0) gets a stable
+  // seed "for free", but a gear drawn by passing screen-space gx/gy
+  // straight in (which shift every frame as the camera scrolls) would
+  // re-roll its patch positions every frame without this, reading as
+  // the gear "blinking".
   ctx.save();
   ctx.clip(); // keep patches confined to the gear's own silhouette
-  const patchSeed = Math.abs(cx * 3.7 + cy * 1.3 + outerR * 11);
+  const patchSeed = Math.abs((stableSeed !== undefined ? stableSeed : cx * 3.7 + cy * 1.3) + outerR * 11);
   for (let p = 0; p < 5; p++) {
     const pSeed = patchSeed + p * 23.1;
     const px = (pseudoRandom(pSeed) - 0.5) * outerR * 1.6;
@@ -9502,12 +9683,12 @@ function drawForestHintGear(camX) {
 const FOREST_SNAKE_HEIGHT_ABOVE_GROUND = 32; // raised enough that reaching it actually requires a jump
 const forestSnake = {
   dockA: { x: 450 }, // offset from the forest door
-  dockB: { x: 850 }, // move this further right later, once more content fills the gap
+  dockB: { x: 1420 }, // moved out again with the further-lengthened bramble (was 1320) -- keeps the same 66.7px/s crossing speed via TRAVEL_TIME below
   state: "docked", // "docked" | "traveling"
   dockedAt: "A",
   t: 0,
   DOCK_TIME: 3500,
-  TRAVEL_TIME: 6000, // slow, deliberate crossing
+  TRAVEL_TIME: 14550, // was 13050 for the old 870px dockA->dockB span; scaled up for the new 970px span so the ride speed doesn't change, just the length
   currentX: 450,
   riding: false,
   dismountCooldown: 0, // brief window after hopping off where re-mounting is suppressed, so hopping off doesn't immediately re-catch the player at the same height
@@ -9522,18 +9703,31 @@ const forestSnake = {
 // obstacle course -- small bramble-snag clumps sticking up along the
 // crossing that you have to jump-while-riding to clear, or get
 // bumped off. Starting with 3 for this first pass.
+//
+// First one moved from 540 to 620: its detection window is checked
+// against the player's CENTER (x + width/2), so with the old +-20
+// window the real trigger point started around raw x=500 -- literally
+// the bramble's own entrance, giving zero runway to react. Now there's
+// ~100px of clear riding room after entering before the first check.
+// clearHeight drives the KNOT'S VISUAL size (how tall it's drawn) and
+// stays as-is. bumpHeight is the actual collision threshold you need
+// to jump above to clear it -- kept lower than clearHeight so the
+// knots still look like a real obstacle but are technically easier to
+// clear than they look, since double-jumping over the full visual
+// height was proving too hard in practice.
 const FOREST_SNAKE_OBSTACLES = [
-  { x: 540, clearHeight: 42 },
-  { x: 650, clearHeight: 42 },
-  { x: 760, clearHeight: 42 }
+  { x: 620, clearHeight: 48, bumpHeight: 30 },
+  { x: 800, clearHeight: 48, bumpHeight: 30 },
+  { x: 1050, clearHeight: 48, bumpHeight: 30 } // pushed out from 980 -- more recovery room right after the knot-2/bridge-piece combo before the next obstacle
 ];
 
-// boomerang hard-spot -- a small gear positioned above the snake's
-// normal riding height, along the crossing. Requires throwing the
-// boomerang while airborne (mid-ride jump) and catching it at the
-// peak of its arc. A hit knocks a bridge piece loose, which falls
-// nearby and needs to be collected separately.
-const forestBoomerangTarget = { x: 700, heightAboveGround: 150, hit: false };
+// boomerang hard-spot -- a small gear positioned well above the
+// snake's riding height, off to the side of the knot-2/bridge-piece
+// perch so the two items don't read as stacked on top of each other.
+// Requires throwing the boomerang while airborne (mid-ride jump) and
+// catching it at the peak of its arc. A hit knocks a bridge piece
+// loose, which falls nearby and needs to be collected separately.
+const forestBoomerangTarget = { x: 1160, heightAboveGround: 150, hit: false }; // shifted with knot 3's move (was 1090) -- keeps the same ~110px clearance from knot 3 and the exit
 const forestFallingBridgePiece = { x: 0, heightAboveGround: 0, falling: false, available: false, collected: false, collecting: false };
 const FOREST_BRIDGE_PIECE_FALL_SPEED = 60;
 
@@ -9589,9 +9783,9 @@ function getForestSnakePoint(progress) {
 // drawing call so it genuinely weaves through rather than just
 // passing in front of a flat backdrop.
 const FOREST_BRAMBLE_X1 = 500; // expanded from 530 -- was reading as a small isolated chunk
-const FOREST_BRAMBLE_X2 = 800; // expanded from 770
+const FOREST_BRAMBLE_X2 = 1370; // lengthened again (was 1270), gear position unchanged -- gives more visual distance between the boomerang gear and the open ground past the wall, so it doesn't look throwable from solid ground
 const FOREST_BRAMBLE_TRANSITION_IN_X1 = 460; // looser vines building up to the main wall
-const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 840; // looser vines tapering off after the main wall
+const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 1410; // looser vines tapering off after the main wall (was 1310)
 
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -9603,7 +9797,7 @@ function hexToRgba(hex, alpha) {
 function drawForestBrambleStrands(camX, x1World, x2World, seedBase, colorA, colorB, heightScale, lineWidthBase, strandCount, baseHeightOffset) {
   const x1 = x1World - camX, x2 = x2World - camX;
   const w = x2 - x1;
-  const baseY = gy - 6;
+  const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
   ctx.lineCap = "round";
 
   for (let s = 0; s < strandCount; s++) {
@@ -9644,7 +9838,7 @@ function drawForestBrambleStrands(camX, x1World, x2World, seedBase, colorA, colo
 function drawForestBrambleThorns(camX, x1World, x2World, seedBase, count, heightScale) {
   const x1 = x1World - camX, x2 = x2World - camX;
   const w = x2 - x1;
-  const baseY = gy - 6;
+  const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
   ctx.fillStyle = "#2e3520";
   for (let i = 0; i < count; i++) {
     const seed = seedBase + i * 11.7;
@@ -9664,7 +9858,7 @@ function drawForestBrambleThorns(camX, x1World, x2World, seedBase, count, height
 function drawForestBrambleFlowers(camX, seedBase, count, heightScale) {
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
   const w = x2 - x1;
-  const baseY = gy - 6;
+  const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
   for (let i = 0; i < count; i++) {
     const seed = seedBase + i * 19.3;
     const fx = x1 + w * (0.08 + pseudoRandom(seed) * 0.85);
@@ -9700,7 +9894,7 @@ function drawForestBrambleFront(camX) {
   // be, rather than hoping randomized curves cross its exact path
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
   const w = x2 - x1;
-  const baseY = gy - 6;
+  const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
   ctx.lineCap = "round";
   const crossingCount = 4;
   for (let i = 0; i < crossingCount; i++) {
@@ -9717,15 +9911,25 @@ function drawForestBrambleFront(camX) {
   }
 }
 
-// bridge-piece platform -- sits within the bramble span, below the
-// snake's own height, reachable only by hopping off mid-crossing.
-// Collect it here, then hop back on the snake before it moves too
-// far away, or wait for the next crossing.
-const FOREST_BRIDGE_PLATFORM_X = 650;
-const FOREST_BRIDGE_PLATFORM_HEIGHT = 22;
+// bridge-piece perch -- sits directly above the second knot, within
+// reach of the SAME jump that clears it, so successfully clearing
+// knot 2 is what grabs the piece -- not a separate hop-off-and-walk
+// errand. Was a low platform near ground level requiring a dismount;
+// moved up so it's caught naturally mid-arc while clearing the knot.
+const FOREST_BRIDGE_PLATFORM_X = 800; // aligned with the second obstacle
+const FOREST_BRIDGE_PLATFORM_HEIGHT = 80; // was 22 (ground-level) -- now well above the knot's clearHeight (48), inside single-jump range
+
+// inventory.bridgePiece only actually updates once the collect
+// animation reaches the basket (~2s later), but the platform's own
+// gating used the live inventory count directly -- so during that
+// window `!inventory.bridgePiece` was still true, letting a repeated
+// space press while still standing there re-trigger the whole
+// collect animation over and over. This flags it the INSTANT
+// collection starts, independent of when inventory actually updates.
+let forestBridgePieceCollected = false;
 
 function drawForestBridgePlatform(camX) {
-  if (inventory.bridgePiece) return; // already collected, nothing left to show
+  if (forestBridgePieceCollected || inventory.bridgePiece) return; // already collected, nothing left to show
   const px = FOREST_BRIDGE_PLATFORM_X - camX;
   const py = gy - FOREST_BRIDGE_PLATFORM_HEIGHT;
 
@@ -9772,11 +9976,56 @@ function drawForestBridgePlatform(camX) {
   ctx.fill();
 }
 
+// branch + leaf clump drawn AFTER the gear so it partially occludes
+// it -- reads as the gear sitting tucked into the tree's branches
+// rather than floating in open air beside it. Kept off the lower-right
+// and the center hub so the actual aim point (BOOMERANG_HIT_RADIUS is
+// centered on the gear, not on any particular pixel) stays legible.
+function drawForestBoomerangTargetFoliage(gx, gy2) {
+  ctx.save();
+
+  // branch -- thick, dark, crossing diagonally through the upper-left
+  ctx.strokeStyle = "#3a2c1a";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(gx - 36, gy2 - 32);
+  ctx.quadraticCurveTo(gx - 14, gy2 - 20, gx + 8, gy2 - 4);
+  ctx.stroke();
+  // a short twig branching off
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(gx - 22, gy2 - 25);
+  ctx.quadraticCurveTo(gx - 18, gy2 - 15, gx - 24, gy2 - 6);
+  ctx.stroke();
+
+  // leaf clumps, clustered over the top and upper-left so the gear
+  // reads as nested under them, not centered/covered evenly
+  ctx.fillStyle = "#33452a";
+  [
+    { dx: -22, dy: -27, r: 15 },
+    { dx: -4, dy: -33, r: 13 },
+    { dx: 13, dy: -25, r: 11 },
+    { dx: -31, dy: -9, r: 10 }
+  ].forEach(s => {
+    ctx.beginPath();
+    ctx.arc(gx + s.dx, gy2 + s.dy, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // a lighter highlight clump for a little depth in the foliage itself
+  ctx.fillStyle = "#44582f";
+  ctx.beginPath();
+  ctx.arc(gx - 9, gy2 - 31, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 function drawForestBoomerangTarget(camX) {
   if (!forestBoomerangTarget.hit) {
     const gx = forestBoomerangTarget.x - camX;
     const gy2 = gy - forestBoomerangTarget.heightAboveGround;
-    drawForestGear(gx, gy2, 22, 17, 7, 0.4, "#6b5030", "#2e2014");
+    drawForestGear(gx, gy2, 22, 17, 7, 0.4, "#6b5030", "#2e2014", forestBoomerangTarget.x * 3.7); // stable world-space seed, not the screen-space gx which shifts every frame as the camera scrolls
     // small vine wrap for continuity with the other gears in this zone
     ctx.strokeStyle = "#4a6a2e";
     ctx.lineWidth = 2;
@@ -9784,6 +10033,39 @@ function drawForestBoomerangTarget(camX) {
     ctx.moveTo(gx - 24, gy2 + 6);
     ctx.quadraticCurveTo(gx - 4, gy2 - 22, gx + 18, gy2 - 8);
     ctx.stroke();
+
+    // small bridge-piece plank lashed to the gear's lower-right, tied
+    // on with a bit of twine -- concrete visual evidence there's an
+    // actual item here (not just decoration), even before the foliage
+    // partially covers it. Same plank look as the falling piece below,
+    // just smaller and pinned in place.
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(gx + 6, gy2 + 10);
+    ctx.lineTo(gx + 15, gy2 + 17);
+    ctx.stroke();
+    ctx.fillStyle = "#8a6030";
+    ctx.beginPath();
+    ctx.ellipse(gx + 18, gy2 + 20, 8, 5, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#c9a878";
+    ctx.beginPath();
+    ctx.ellipse(gx + 15, gy2 + 21, 2.5, 4, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // slow pulsing glint over the whole thing -- catches the eye while
+    // scrolling past, without undoing the branch occlusion
+    const pulse = 0.35 + Math.sin(performance.now() * 0.003) * 0.25;
+    ctx.fillStyle = `rgba(255, 244, 200, ${Math.max(0, pulse)})`;
+    ctx.beginPath();
+    ctx.arc(gx + 18, gy2 + 20, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawForestBoomerangTargetFoliage(gx, gy2);
   }
 
   if (forestFallingBridgePiece.available && !forestFallingBridgePiece.collected) {
@@ -9803,23 +10085,47 @@ function drawForestBoomerangTarget(camX) {
   }
 }
 
+// snag knot -- the EXACT ground-rooted strand technique the wall
+// itself uses (drawForestBrambleStrands always roots each strand
+// right at baseY, so it can never read as floating), just aimed at a
+// much narrower band with far more strands packed into it and a
+// dried-brown color mixed in with the usual greens. "Knot" difference
+// from "wall" is density + width + color, not a different silhouette
+// technique -- a filled/looped shape read as a rock or a floating
+// ball no matter how it was tuned, because it wasn't actually rooted
+// the way every other piece of bramble in this scene is.
+function drawForestSnakeObstacleKnot(camX, obs, seedBase) {
+  const x1 = obs.x - 11, x2 = obs.x + 11; // tight span -- the wall's own wiggle amplitude, packed into a fifth of the width, is what reads as "knotted" rather than "spread out"
+  drawForestBrambleStrands(camX, x1, x2, seedBase, "#2e3520", "#3f5527", obs.clearHeight - 4, 3.5, 7, 0);
+  drawForestBrambleStrands(camX, x1, x2, seedBase + 500, "#6b5236", "#5a4326", obs.clearHeight - 10, 3, 6, 0); // dried-back brown growth mixed through the green
+  drawForestBrambleThorns(camX, x1, x2, seedBase + 900, 6, obs.clearHeight - 4);
+}
+
+// low ground-level continuity strands only -- drawn in the normal
+// mid-stack position (before the snake/behind layer settles), same
+// wispy-strand technique as the wall on purpose, since this bit is
+// only meant to visually tie the knot's base into the surrounding
+// bramble, not to read as the obstacle itself
 function drawForestSnakeObstacles(camX) {
   FOREST_SNAKE_OBSTACLES.forEach((obs, i) => {
     const seedBase = 1000 + i * 300;
-    const localX1 = obs.x - 14, localX2 = obs.x + 14;
     const crawlX1 = obs.x - 26, crawlX2 = obs.x + 26;
-    // low strands crawling along the ground, spreading a bit wider
-    // than the main clump -- much lighter touch than before, just a
-    // hint of spillover rather than a wide mass
     drawForestBrambleStrands(camX, crawlX1, crawlX2, seedBase + 700, "#2e3520", "#3f5527", 8, 2.8, 2, 0);
     drawForestBrambleThorns(camX, crawlX1, crawlX2, seedBase + 800, 2, 10);
+  });
+}
 
-    // ground-anchored, same proven technique as the main bramble --
-    // grows up from the ground to past the clear height, but much
-    // sparser than a full bramble wall since this only needs to read
-    // as a small snag, not something that visually swallows the snake
-    drawForestBrambleStrands(camX, localX1, localX2, seedBase, "#2e3520", "#3f5527", obs.clearHeight + 10, 3, 3, 0);
-    drawForestBrambleThorns(camX, localX1, localX2, seedBase + 100, 3, obs.clearHeight + 10);
+// the actual knots -- called separately, AFTER drawForestBrambleFront,
+// because Front is drawn on top of literally everything else in the
+// scene (including the player) by design, so it can weave in front of
+// the snake. A knot drawn earlier in the stack was getting buried under
+// Front's crossing strands no matter how it was styled -- this was the
+// real reason density/opacity tweaks never fixed the read: the shape
+// was never the topmost thing on screen in the first place.
+function drawForestSnakeObstacleKnots(camX) {
+  FOREST_SNAKE_OBSTACLES.forEach((obs, i) => {
+    const seedBase = 1000 + i * 300;
+    drawForestSnakeObstacleKnot(camX, obs, seedBase);
   });
 }
 
@@ -9844,6 +10150,19 @@ function drawForestSnake(camX) {
     const wave = Math.sin(i * 0.5 - t * 0.006) * 5;
     return { x: pt.x + nx * wave, y: pt.y + ny * wave };
   });
+
+  // ground shadow -- FOREST_SNAKE_HEIGHT_ABOVE_GROUND (32) keeps the
+  // whole snake permanently elevated with nothing visibly holding it
+  // up, which read as floating with no explanation. A soft shadow
+  // strip along its footprint (same idea as the player's own shadow)
+  // ties it back to the ground without changing the actual ride height.
+  ctx.fillStyle = "rgba(20,22,10,0.22)";
+  for (let i = 0; i <= segments; i += 4) {
+    const p = points[i];
+    ctx.beginPath();
+    ctx.ellipse(p.x, gy + 3, 17, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // body -- thick rounded-line path, dark outline then lighter fill,
   // same two-pass technique as the color-pattern sketch
@@ -9944,17 +10263,30 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
-  // forest bridge piece falling, once knocked loose by the boomerang hit
+  // RACCOON INTERACTION — same shape as frog/rabbit's trigger
+  const raccoonCenterX = raccoon.x + raccoon.width / 2;
+  if (pressedDownNear(raccoonCenterX, 0, 70, 6, 999) && !raccoon.active) {
+    raccoon.active = true;
+    raccoon.tip = 30;
+  }
+  updateNPCIdle(raccoon);
+
+  // forest bridge piece falling, once knocked loose by the boomerang hit.
+  // Settles at the snake's riding height, not the ground -- the ground
+  // inside the bramble is impassable on foot, so a piece that landed
+  // there the normal way (like every other falling collectible) would
+  // be permanently unreachable. Landing it at riding height means you
+  // catch it by simply passing under it while on the snake.
   if (forestFallingBridgePiece.falling) {
     forestFallingBridgePiece.heightAboveGround -= FOREST_BRIDGE_PIECE_FALL_SPEED * deltaTime;
-    if (forestFallingBridgePiece.heightAboveGround <= 15) {
-      forestFallingBridgePiece.heightAboveGround = 15;
+    if (forestFallingBridgePiece.heightAboveGround <= FOREST_SNAKE_HEIGHT_ABOVE_GROUND) {
+      forestFallingBridgePiece.heightAboveGround = FOREST_SNAKE_HEIGHT_ABOVE_GROUND;
       forestFallingBridgePiece.falling = false; // settled -- now pickupable
     }
   }
 
   if (forestFallingBridgePiece.available && !forestFallingBridgePiece.collected && !forestFallingBridgePiece.collecting && !forestFallingBridgePiece.falling) {
-    if (pressedDownNear(forestFallingBridgePiece.x, forestFallingBridgePiece.heightAboveGround, 26, 20, 20)) {
+    if (pressedDownNear(forestFallingBridgePiece.x, forestFallingBridgePiece.heightAboveGround, 30, 24, 24)) {
       forestFallingBridgePiece.collecting = true;
       forestFallingBridgePiece.collected = true;
       startCollectAnimation(
@@ -9970,15 +10302,38 @@ function updateForestScene(deltaTime) {
   // bumped off. The bramble already blocks ground travel through
   // here, so the only legitimate way to be in this x-range is via
   // the snake.
-  if ((forestSnake.riding || player.vy !== 0) && forestSnake.bumpedCooldown <= 0 && performance.now() > forestSnake.jumpGraceUntil) {
+  //
+  // Window widened from +-12 to +-20: a standard jump (vy=12) only
+  // stays above clearHeight for ~24px of the snake's forward travel,
+  // which is barely wider than the old +-12 (24px) detection window --
+  // a single jump had to be nearly pixel-perfect to land inside it,
+  // which read as "you need a double jump" when really the window was
+  // just too tight for the hang-time a single jump actually gives you.
+  // Trigger condition uses `midJump` (the deliberate jump-to-clear
+  // attempt), not a blanket `player.vy !== 0` -- vy stays nonzero for
+  // the player's ENTIRE fall after any bump (gravity keeps changing
+  // it right up until landing), so the old condition kept this whole
+  // block re-evaluating throughout that fall, not just during an
+  // actual ride/jump. Combined with the bug below, that's what caused
+  // repeated, cascading re-bumps while just falling near the cluster.
+  if ((forestSnake.riding || forestSnake.midJump) && forestSnake.bumpedCooldown <= 0 && performance.now() > forestSnake.jumpGraceUntil) {
     FOREST_SNAKE_OBSTACLES.forEach(obs => {
       const playerCenterX = player.x + player.width / 2;
       if (
-        playerCenterX > obs.x - 12 &&
-        playerCenterX < obs.x + 12 &&
-        player.y < obs.clearHeight
+        playerCenterX > obs.x - 15 &&
+        playerCenterX < obs.x + 15 &&
+        player.y < obs.bumpHeight
       ) {
         forestSnake.riding = false;
+        // THE core bug: midJump was never cleared here. Elsewhere,
+        // "while midJump is true, keep snapping player.x to the
+        // snake's current position" is what makes jump arcs feel
+        // right *while actually riding*. Left true after a bump, it
+        // kept puppeting the player's x to the snake's movement for
+        // the whole fall afterward -- fighting every frame against
+        // the bramble's separate "slide back out" logic, which is
+        // exactly the chaotic tug-of-war being described.
+        forestSnake.midJump = false;
         forestSnake.dismountCooldown = 400;
         forestSnake.bumpedCooldown = 600;
         player.vy = -2; // small knockback, drops the player rather than launching them
@@ -9988,7 +10343,11 @@ function updateForestScene(deltaTime) {
 
   // entrance hint gear -- standard platform landing, jumpable
   {
-    const gTop = FOREST_HINT_GEAR_HEIGHT;
+    // FOREST_HINT_GEAR_HEIGHT is the gear's CENTER height (drawForestGear
+    // draws centered on it) -- landing needs the gear's actual top surface,
+    // one outer-radius above that center, or the player's feet snap down
+    // to the gear's middle and it visually reads as "stuck to the center"
+    const gTop = FOREST_HINT_GEAR_HEIGHT + FOREST_HINT_GEAR_OUTER_R;
     if (
       player.x + player.width > FOREST_HINT_GEAR_X - FOREST_HINT_GEAR_OUTER_R &&
       player.x < FOREST_HINT_GEAR_X + FOREST_HINT_GEAR_OUTER_R &&
@@ -10003,26 +10362,73 @@ function updateForestScene(deltaTime) {
     }
   }
 
-  // bramble blocks ground-level travel entirely -- only passable by
-  // riding the snake over it, well above the ground-level threshold
-  if (player.y < 18) {
+  // boomerang-target gear -- same standard platform landing as the
+  // hint gear. It's positioned high enough (150 above ground) that
+  // it's not reachable by an ordinary jump -- its intended path is the
+  // boomerang throw -- but if a player DOES manage to reach it (via
+  // jump-while-riding, or any future height changes), it should catch
+  // them like any other gear rather than being pass-through. This is
+  // purely a position check against the player and doesn't touch the
+  // boomerang-hit detection at all, which is a separate check against
+  // the thrown boomerang's own position.
+  if (!forestBoomerangTarget.hit) {
+    // heightAboveGround is the gear's CENTER height (matches gy2 in the
+    // draw call, which drawForestGear treats as its center) -- add the
+    // gear's outer radius (22, matching the drawForestGear call above) to
+    // land on its actual top surface instead of snapping down to its middle
+    const bgTop = forestBoomerangTarget.heightAboveGround + 22;
+    if (
+      player.x + player.width > forestBoomerangTarget.x - 22 &&
+      player.x < forestBoomerangTarget.x + 22 &&
+      player.y <= bgTop &&
+      player.y >= bgTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = bgTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
+  // bramble blocks travel entirely -- only passable by riding the
+  // snake over it (or mid-jump off the snake's back, still tracked to
+  // its position). This used to gate on `player.y < 18`, meaning it
+  // only blocked near ground level -- so an ordinary jump (not riding
+  // at all) climbed straight past y=18 and sailed clean over every
+  // knot with no snake required. Gating on riding/midJump status
+  // instead of height means a plain jump gets stopped at the wall
+  // just like walking into it would, while a legitimate snake-linked
+  // jump (midJump === true) still passes through untouched.
+  if (!forestSnake.riding && !forestSnake.midJump) {
     if (player.x + player.width > FOREST_BRAMBLE_X1 && player.x < FOREST_BRAMBLE_X1 && keys.right) {
       player.x = FOREST_BRAMBLE_X1 - player.width;
     }
     if (player.x < FOREST_BRAMBLE_X2 && player.x + player.width > FOREST_BRAMBLE_X2 && keys.left) {
       player.x = FOREST_BRAMBLE_X2;
     }
-    if (player.x > FOREST_BRAMBLE_X1 - player.width && player.x < FOREST_BRAMBLE_X2) {
-      // already inside somehow (e.g. hopped off the snake mid-span) -- push back out the nearest side
+    if (player.x > FOREST_BRAMBLE_X1 - player.width && player.x < FOREST_BRAMBLE_X2 && player.y <= 0) {
+      // already inside somehow (e.g. bumped off an obstacle mid-span,
+      // or fell off the bridge-piece perch without remounting) --
+      // slide back out toward the nearest side over a few frames
+      // rather than an instant teleport. Gated on player.y <= 0 (truly
+      // on the ground) rather than any height -- without that, this
+      // fired every frame of the FALL itself, dragging the player
+      // sideways while still airborne and fighting gravity, which is
+      // what read as "clunky" landing in the bramble. Now it only
+      // engages once they've actually touched down inside the wall.
       const distToLeft = player.x - FOREST_BRAMBLE_X1;
       const distToRight = FOREST_BRAMBLE_X2 - player.x;
-      player.x = Math.abs(distToLeft) < Math.abs(distToRight) ? FOREST_BRAMBLE_X1 - player.width : FOREST_BRAMBLE_X2;
+      const targetX = Math.abs(distToLeft) < Math.abs(distToRight) ? FOREST_BRAMBLE_X1 - player.width : FOREST_BRAMBLE_X2;
+      const slideSpeed = 6;
+      if (player.x < targetX) player.x = Math.min(targetX, player.x + slideSpeed);
+      else player.x = Math.max(targetX, player.x - slideSpeed);
     }
   }
 
   // bridge-piece platform -- standard platform landing, then a space
   // press while standing on it collects the piece
-  if (!inventory.bridgePiece) {
+  if (!forestBridgePieceCollected && !inventory.bridgePiece) {
     const platTop = FOREST_BRIDGE_PLATFORM_HEIGHT;
     if (
       player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
@@ -10035,6 +10441,15 @@ function updateForestScene(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      // landing here is usually mid-jump off the snake (midJump still
+      // true) -- without clearing it, standing still on this platform
+      // kept force-tracking player.x to the snake's own moving
+      // position every frame (see the `if (forestSnake.midJump)` block
+      // below), silently dragging the player off the platform and
+      // leaving them in a position that no longer lined up with the
+      // snake body when they then fell. Clearing it here means once
+      // you land, you actually stay put until you choose to fall.
+      forestSnake.midJump = false;
     }
     if (
       Math.abs(player.y - platTop) < 2 &&
@@ -10042,7 +10457,47 @@ function updateForestScene(deltaTime) {
       player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
       keys.spaceJustPressed
     ) {
-      addToInventory("bridgePiece");
+      forestBridgePieceCollected = true; // set immediately -- inventory.bridgePiece itself doesn't update until the animation lands, ~2s later
+      // addToInventory happens automatically once the collect animation
+      // reaches the basket (see updateFlyingItems) -- calling it here
+      // too would double-count it
+      startCollectAnimation(
+        { x: FOREST_BRIDGE_PLATFORM_X, y: gy - platTop, size: 10, rotation: 0 },
+        "bridgePiece"
+      );
+
+      // the platform disappears the instant it's collected (its own
+      // draw call returns early once inventory.bridgePiece is set), so
+      // without this the player just drops through empty air on the
+      // very next frame. If the snake genuinely happens to be passing
+      // underneath right now, catch them directly onto it instead --
+      // a one-time check right at the moment of collection, not an
+      // ongoing passive-fall catch (that stays gated on player.jumping
+      // elsewhere, so a random walk-off-a-ledge fall is still a
+      // consistent, predictable slide-out).
+      // NOTE: no height check here on purpose. The platform (80) sits
+      // well above the snake's actual riding height (~32) by design --
+      // that gap is the whole point, it's what the knot-clearing jump
+      // is for. Comparing bodyTop to platTop directly (like the old
+      // version of this check did) meant it could almost never pass,
+      // since those two heights are never close. All that matters is
+      // whether the snake is passing under this X position at all --
+      // if so, catch the player and let the normal riding code (a few
+      // lines below) snap them down to the body's actual height, same
+      // visual snap as landing back on the snake after any other jump.
+      const segments = 30;
+      for (let i = 0; i <= segments; i++) {
+        const p = getForestSnakePoint(i / segments);
+        if (player.x + player.width > p.x - 30 && player.x < p.x + 30) {
+          forestSnake.riding = true;
+          forestSnake.midJump = false;
+          forestSnake.riderBodyProgress = i / segments;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+          player.vy = 0;
+          break;
+        }
+      }
     }
   }
 
@@ -10085,17 +10540,38 @@ function updateForestScene(deltaTime) {
     // as landing on any other platform -- not just standing nearby
     // and pressing a button. Suppressed briefly right after hopping
     // off so it doesn't immediately re-catch the player at the same
-    // height they just dismounted from.
-    if (player.vy <= 0 && forestSnake.dismountCooldown <= 0) {
+    // height they just dismounted from. Also gated on bumpedCooldown
+    // (not just dismountCooldown) -- that cooldown is 600ms vs.
+    // dismount's 400ms specifically so a fresh obstacle bump stays
+    // fully immune for its own duration; without checking it here,
+    // there was a ~200ms window where you could get re-caught by the
+    // snake right where you'd just been bumped, then bumped off again
+    // moments later as soon as the obstacle re-armed -- reading as a
+    // confusing flicker between riding and falling.
+    //
+    // Also gated on player.jumping -- only an active, deliberate jump
+    // (initial mount from the dock, or a real jump-to-clear/catch-up
+    // attempt, or manually jumping again to try to get back on) gets a
+    // chance to reconnect with the snake mid-air. A passive fall (off
+    // the bridge-piece platform without jumping, after a bump) does
+    // NOT attempt this -- it falls straight through to the ground and
+    // the bramble's own slide-out logic pushes it to the nearest edge
+    // instead. That's a predictable, consistent outcome rather than a
+    // coin-flip on whether gravity happened to carry you through the
+    // catch window. (Using midJump here instead of player.jumping was
+    // a bug -- midJump is ONLY ever set true by jumping OFF the snake
+    // while already riding, so gating on it made it impossible to ever
+    // mount the snake for the first time.)
+    if (player.jumping && player.vy <= 0 && forestSnake.dismountCooldown <= 0 && forestSnake.bumpedCooldown <= 0) {
       const segments = 30;
       for (let i = 0; i <= segments; i++) {
         const p = getForestSnakePoint(i / segments);
         const bodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - p.y;
         if (
-          player.x + player.width > p.x - 16 &&
-          player.x < p.x + 16 &&
-          player.y <= bodyTop &&
-          player.y >= bodyTop - 15
+          player.x + player.width > p.x - 24 &&
+          player.x < p.x + 24 &&
+          player.y <= bodyTop + 6 &&
+          player.y >= bodyTop - 34
         ) {
           forestSnake.riding = true;
           forestSnake.midJump = false;
@@ -17260,6 +17736,7 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 
 if (currentScene === "forest") {
   drawForestBrambleFront(camX);
+  drawForestSnakeObstacleKnots(camX); // after Front, so the knot silhouette is never buried under its crossing strands
   drawForestBridgePlatform(camX);
 }
 
@@ -17964,8 +18441,8 @@ updateSeasonTransition(deltaTime);
 }
 
 
+addToInventory("boomerang"); // seeded starting item, per request -- boomerang is available from the start instead of needing to be found
 updateInventoryUI(); // syncs the display with the initial seeded inventory -- without this, seeded debug items (acorn/lamp/pumpkin) exist in data but never actually render in the UI until something else triggers a refresh
 update();
-
 
 });
