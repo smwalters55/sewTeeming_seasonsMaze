@@ -101,7 +101,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "molehole"; // TEMPORARY — debugging the mole hole atmosphere pass, revert to "autumn" when done
+let currentScene = "tunneltown"; // TEMPORARY — debugging the elder trio/dig-wall/dig-spots pass, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -132,7 +132,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 620, // TEMPORARY — spawns near the new dirt platforms/cushion shaft in the mole hole, revert to 400 when done
+  x: 60, // TEMPORARY — spawns right at the tunnel town entrance, near the elders, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -176,7 +176,8 @@ const ITEM_ICONS = {
   goldPile: "🪙",
   lamp: "🏮",
   bridgePiece: "🪵",
-  feather: "🪶"
+  feather: "🪶",
+  cushionPart: "⚙️"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -688,6 +689,19 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // map-only entry — molehole<->tunneltown travel is handled by the
+    // second, larger ground hole (tunnelTownEntrance) and its return
+    // spawn, same pattern as forest-molehole above.
+    id: "molehole-tunneltown",
+    doors: {
+      molehole: { leadsTo: "tunneltown" },
+      tunneltown: { leadsTo: "molehole" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -703,7 +717,8 @@ const sceneMapInfo = {
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
-  molehole: { label: "Mole Hole", x: 400, y: 180, w: 70, h: 30 } // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node
+  molehole: { label: "Mole Hole", x: 400, y: 180, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node
+  tunneltown: { label: "Tunnel Town", x: 460, y: 250, w: 70, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself
 };
 
 const discoveredScenes = { autumn: true };
@@ -824,7 +839,8 @@ const sceneSpawns = {
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
   oak: { x: 380 }, // arrives via seesaw launch -- moved closer to the actual entrance door (oakReturnDoor at x:294), was landing 370 units away from it despite the door being the visual entry point
   ratroom: { x: 310 }, // arrives via the trap door, lands near the base of the stairs
-  molehole: { x: 150 } // arrives via the ground hole, lands a little in from the entrance
+  molehole: { x: 150 }, // arrives via the ground hole, lands a little in from the entrance
+  tunneltown: { x: 150 } // arrives via the second hole, lands a little in from that entrance
 };
 
 /* ======================================================
@@ -937,6 +953,8 @@ function updateSeasonTransition(deltaTime) {
         player.x = seesaw.x - 120; // land just left of the seesaw, clear of the plank itself
       } else if (currentScene === "forest" && previousScene === "molehole") {
         player.x = moleHoleEntrance.x; // climb back out right where you fell in, not the generic forest spawn
+      } else if (currentScene === "molehole" && previousScene === "tunneltown") {
+        player.x = tunnelTownEntrance.x; // climb back out right where you fell in, not the generic molehole spawn
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -1000,6 +1018,10 @@ function drawSeasonTransition(ctx) {
     wash.addColorStop(0, "#6b4526");   // warm soil-orange center -- distinct from ratroom's cooler dark brown
     wash.addColorStop(0.55, "#432c18"); // deeper earth
     wash.addColorStop(1, "#1c1208");   // near-black edge
+  } else if (target === "tunneltown") {
+    wash.addColorStop(0, "#4a4238");   // cooler, greyer earth -- distinct from molehole's warm soil-orange
+    wash.addColorStop(0.55, "#2e2822"); // damp grey-brown
+    wash.addColorStop(1, "#100e0c");   // near-black edge
   } else {
     wash.addColorStop(0, "#f7f4ee");
     wash.addColorStop(1, "#f7f4ee");
@@ -1735,6 +1757,15 @@ function handleInput(){
   // molehole's own right boundary, same small-enclosed-room pattern as
   // ratroom above -- placed at the room's own declared width
   if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
+
+  // tunnel town's own right boundary -- clamped to the blocked wall
+  // itself until it's actually been dug through, then opens up to the
+  // room's full declared width, same small-enclosed-room pattern as
+  // ratroom/molehole otherwise
+  if (currentScene === "tunneltown") {
+    const rightBound = tunnelWallBroken ? TUNNELTOWN_WIDTH : TUNNELTOWN_WALL_X - 6;
+    if (player.x > rightBound) player.x = rightBound;
+  }
 
   if (keys.ctrl && !camera.locked) {
     camera.topDown = !camera.topDown;
@@ -3670,6 +3701,27 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawWholeAppleShape(ctx, x, y, size, rotation);
   } else if (itemType === "shovel") {
     drawShovelShape(ctx, x, y, size, rotation);
+  } else if (itemType === "cushionPart") {
+    // a small dug-up gear -- the mechanical piece the cushion shaft
+    // needs to extend further, found buried in the tunnel town dig
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    const r = size * 0.4;
+    ctx.fillStyle = "#8a8478";
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const rr = i % 2 === 0 ? r : r * 0.65;
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#3a3630";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else if (itemType === "plumStick" || itemType === "pearStick" || itemType === "peachStick") {
     const treeType = itemType.replace("Stick", "");
     drawStickShape(ctx, x, y, size * 1.3, rotation + 0.5, sticks[treeType].color);
@@ -20002,50 +20054,218 @@ function drawMoleholeShaftPreview(camX) {
 // shows would need an actual vertical-scrolling camera, which the
 // engine doesn't have yet (only horizontal cameraX exists anywhere).
 // This is the first working chain, not the full climb.
+// each cushion also gets its own wMult/hMult/cornerMult so they don't
+// all read as the same stamped shape at slightly different sizes --
+// a wide flat bolster, a plump almost-round pouf, and something in
+// between, per the ask for real variety beyond just color
+// swingSpeed/phase deliberately spread far apart across the three (not
+// just slightly offset) so each cushion's own pass behind the pole
+// falls out of step with the others fairly quickly, instead of all
+// three reading as one synchronized loop
 const MOLEHOLE_CUSHIONS = [
-  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 70, radius: 20, swingAmp: 16, swingSpeed: 0.0011, phase: 0 },
-  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 145, radius: 19, swingAmp: 20, swingSpeed: 0.0013, phase: 1.8 },
-  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 210, radius: 17, swingAmp: 18, swingSpeed: 0.0012, phase: 3.4 }
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 70, radius: 22, swingAmp: 16, swingSpeed: 0.0009, phase: 0, color: "#a3607a", colorLight: "#c98da4", wMult: 3.6, hMult: 0.62, cornerMult: 0.4 },
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 145, radius: 16, swingAmp: 20, swingSpeed: 0.0022, phase: 2.4, color: "#7a8348", colorLight: "#a3af6a", wMult: 2.3, hMult: 1.15, cornerMult: 0.9 },
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 210, radius: 19, swingAmp: 18, swingSpeed: 0.0016, phase: 5.0, color: "#8a6a3a", colorLight: "#c9a05a", wMult: 3.0, hMult: 0.8, cornerMult: 0.55 }
 ];
 
 function moleholeCushionX(c) {
   return c.x + Math.sin(performance.now() * c.swingSpeed + c.phase) * c.swingAmp;
 }
 
+// a synchronized "depth" value for the same swing -- since x-offset is
+// sin(phase), this is cos(phase) of that identical phase, so depth is
+// most extreme (fully front/back) exactly when the cushion's x is
+// closest to the pole's own x (sin near 0), and washes out toward 0
+// (neither) as the cushion swings out to the side, away from the pole
+// -- which is exactly when occlusion should stop mattering anyway.
+// Negative = currently passing behind the pole.
+function moleholeCushionDepth(c) {
+  return Math.cos(performance.now() * c.swingSpeed + c.phase);
+}
+
+// redraws a short segment of the shaft pole directly on top of a
+// cushion, sized to roughly its own height -- gives the illusion the
+// cushion is dipping behind the pole as it swings through, rather than
+// always floating in front of it
+function drawMoleholeShaftPoleSegment(c, camX) {
+  const px = MOLEHOLE_SHAFT_X - camX;
+  const bob = Math.sin(performance.now() * 0.0016 + c.phase * 1.7) * 2;
+  const cy = gy - c.heightAboveGround + bob;
+  const h = c.radius * (c.hMult ?? 0.85);
+  const segTop = cy - h * 1.1;
+  const segBottom = cy + h * 1.1;
+  ctx.strokeStyle = "#3a2814";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(px, segTop);
+  ctx.lineTo(px, segBottom);
+  ctx.stroke();
+  ctx.strokeStyle = "#241708";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - 1.5, segTop);
+  ctx.lineTo(px - 1.5, segBottom);
+  ctx.stroke();
+}
+
+// an actual tufted cushion -- a soft rounded-square pillow (piped edge,
+// a diamond-tufted center button, a fold crease, and four little corner
+// tassels) instead of a plain gradient ball, plus a gentle independent
+// "breathing" bob so the whole shaft doesn't sit dead still
 function drawMoleholeCushion(c, camX) {
   const cx = moleholeCushionX(c) - camX;
-  if (cx < -40 || cx > canvas.width + 40) return;
-  const cy = gy - c.heightAboveGround;
+  if (cx < -50 || cx > canvas.width + 50) return;
+  const bob = Math.sin(performance.now() * 0.0016 + c.phase * 1.7) * 2;
+  const cy = gy - c.heightAboveGround + bob;
   const r = c.radius;
+  // flat/lying-down proportions -- reads as a squashed pillow you land
+  // ON, not an upright standing box -- with each cushion's own
+  // wMult/hMult/cornerMult giving it a genuinely different silhouette
+  const w = r * (c.wMult ?? 3.2), h = r * (c.hMult ?? 0.85);
+  const hw = w / 2, hh = h / 2;
+  const cornerR = Math.min(r * (c.cornerMult ?? 0.55), hh * 0.9); // clamped so the corner radius never exceeds half the height
+  const color = c.color || "#a3607a";
+  const colorLight = c.colorLight || "#c98da4";
+  const colorDark = "#2e1620";
 
-  // soft round cushion body, lit from the upper-left like the room's
-  // other lantern-lit surfaces
-  const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 1, cx, cy, r);
-  grad.addColorStop(0, "#a3607a");
-  grad.addColorStop(1, "#6e3a52");
-  ctx.fillStyle = grad;
+  // soft drop shadow beneath, so it reads as floating rather than
+  // pasted flat against the background
+  ctx.fillStyle = "rgba(20,10,14,0.3)";
   ctx.beginPath();
-  ctx.ellipse(cx, cy, r, r * 0.72, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy + hh + 3, hw * 0.85, 4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // a seam crease across the middle, reads as a stitched cushion
-  // rather than a plain ball
-  ctx.strokeStyle = "rgba(40,20,28,0.4)";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cx - r * 0.7, cy);
-  ctx.quadraticCurveTo(cx, cy + r * 0.18, cx + r * 0.7, cy);
-  ctx.stroke();
+  // main puffed body -- rounded-square silhouette filled with a
+  // gradient angled toward the room's lantern light (upper-left)
+  const grad = ctx.createRadialGradient(cx - hw * 0.35, cy - hh * 0.4, 1, cx, cy, w * 0.75);
+  grad.addColorStop(0, colorLight);
+  grad.addColorStop(1, color);
+  ctx.fillStyle = grad;
+  roundRect(ctx, cx - hw, cy - hh, w, h, cornerR);
+  ctx.fill();
 
-  // small tassels at the seam ends
-  [-1, 1].forEach(dir => {
-    ctx.strokeStyle = "#3a2030";
-    ctx.lineWidth = 1;
+  // piped edge trim -- a slightly inset lighter outline, the classic
+  // "piped cushion" detail
+  ctx.strokeStyle = colorLight;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.55;
+  roundRect(ctx, cx - hw + 2, cy - hh + 2, w - 4, h - 4, Math.max(1, cornerR - 2));
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // diamond-tuft creases -- four soft fold lines running from each
+  // corner in to a center button, the look that actually reads as
+  // "stuffed cushion" rather than a flat pillow shape
+  ctx.strokeStyle = colorDark;
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = 1.2;
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
     ctx.beginPath();
-    ctx.moveTo(cx + dir * r * 0.7, cy);
-    ctx.lineTo(cx + dir * r * 0.7, cy + 4);
+    ctx.moveTo(cx + sx * hw * 0.62, cy + sy * hh * 0.55);
+    ctx.quadraticCurveTo(cx + sx * hw * 0.25, cy + sy * hh * 0.2, cx, cy);
     ctx.stroke();
   });
+  ctx.globalAlpha = 1;
+
+  // the center tuft button itself
+  ctx.fillStyle = colorDark;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small fringe tassels dangling from the two bottom corners
+  [-1, 1].forEach(dir => {
+    const tx = cx + dir * hw * 0.78;
+    const ty = cy + hh - 1;
+    ctx.strokeStyle = colorDark;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx, ty + 5);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(tx, ty + 6, 2, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/* ======================================================
+   TUNNEL TOWN ENTRANCE -- a second, larger hole within the
+   mole hole room itself (distinct from the small hole up in
+   the forest that leads down INTO the mole hole), leading
+   further in to the elders' dug-out area. Same fall-in/sink
+   mechanic as the forest entrance, just a bigger, rougher-edged
+   hole to read as "further, older digging" rather than a fresh
+   surface entrance.
+   ====================================================== */
+const tunnelTownEntrance = { x: 1500, active: false, t: 0 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it
+const TUNNELTOWN_FALL_MS = 700;
+
+function updateTunnelTownEntrance(deltaTime) {
+  if (tunnelTownEntrance.active) {
+    tunnelTownEntrance.t += deltaTime * 1000;
+    if (tunnelTownEntrance.t >= TUNNELTOWN_FALL_MS) {
+      tunnelTownEntrance.active = false;
+      startSeasonTransition("tunneltown");
+    }
+    return;
+  }
+  if (keys.spaceJustPressed && isPlayerNear(tunnelTownEntrance.x, 0, 28, 15, 15)) {
+    tunnelTownEntrance.active = true;
+    tunnelTownEntrance.t = 0;
+  }
+}
+
+function drawTunnelTownEntrance(camX) {
+  const hx = tunnelTownEntrance.x - camX, hy = gy;
+
+  // a genuinely bigger hole than the forest's entrance -- wider rim,
+  // rougher/more irregular dirt clumps, reads as older and cruder
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(hx, hy - 2, 40, 15, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#120c05";
+  ctx.fill();
+  ctx.strokeStyle = "#3a2814";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  for (let i = 0; i < 10; i++) {
+    const seed = tunnelTownEntrance.x * 2.7 + i * 9.1;
+    const angle = (i / 10) * Math.PI * 2 + pseudoRandom(seed) * 0.5;
+    const dist = 36 + pseudoRandom(seed + 1) * 14;
+    const cx = hx + Math.cos(angle) * dist;
+    const cy = hy - 2 + Math.sin(angle) * dist * 0.36;
+    const r = 3 + pseudoRandom(seed + 2) * 4;
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#4a3018" : "#2e2014";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.6, angle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // a small worn support beam leaning at the rim -- hints this dig is
+  // old/unfinished business rather than a fresh discovery
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(hx - 48, hy - 2);
+  ctx.lineTo(hx - 34, hy - 34);
+  ctx.stroke();
+
+  if (tunnelTownEntrance.active) {
+    const p = Math.min(1, tunnelTownEntrance.t / TUNNELTOWN_FALL_MS);
+    ctx.save();
+    ctx.globalAlpha = 1 - p * 0.7;
+    ctx.beginPath();
+    ctx.ellipse(hx, hy - 2 - p * 10, 40 * (1 - p * 0.4), 15 * (1 - p * 0.4), 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#0a0603";
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawMoleholeScene(camX) {
@@ -20078,7 +20298,10 @@ function drawMoleholeScene(camX) {
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
   MOLEHOLE_PLATFORMS.forEach(p => drawMoleholePlatform(p, camX));
-  MOLEHOLE_CUSHIONS.forEach(c => drawMoleholeCushion(c, camX));
+  MOLEHOLE_CUSHIONS.forEach(c => {
+    drawMoleholeCushion(c, camX);
+    if (moleholeCushionDepth(c) < 0) drawMoleholeShaftPoleSegment(c, camX); // currently passing behind the pole
+  });
 
   // hanging roots dangling from the ceiling, scattered across the room
   // -- count scaled up to match the wider room, keeps the same density
@@ -20153,6 +20376,7 @@ function drawMoleholeScene(camX) {
   ctx.closePath();
   ctx.fill();
 
+  drawTunnelTownEntrance(camX);
   drawMoleholeSpores(camX);
 }
 
@@ -20182,11 +20406,12 @@ function updateMoleholeScene(deltaTime) {
   // actually timing the jump onto a moving target
   MOLEHOLE_CUSHIONS.forEach(c => {
     const cx = moleholeCushionX(c);
+    const cHalfWidth = (c.radius * (c.wMult ?? 3.2)) / 2; // matches the actual drawn width, which now varies a lot per cushion
     const platformTop = c.heightAboveGround;
     const playerBottom = player.y;
     if (
-      player.x + player.width > cx - c.radius &&
-      player.x < cx + c.radius &&
+      player.x + player.width > cx - cHalfWidth &&
+      player.x < cx + cHalfWidth &&
       playerBottom <= platformTop &&
       playerBottom >= platformTop - 14 &&
       player.vy <= 0
@@ -20200,6 +20425,457 @@ function updateMoleholeScene(deltaTime) {
 
   if (keys.spaceJustPressed && isPlayerNear(moleHoleExit.x, 0, 24, 15, 15)) {
     startSeasonTransition("forest");
+  }
+
+  updateTunnelTownEntrance(deltaTime);
+}
+
+/* ======================================================
+   TUNNEL TOWN -- offshoot of the mole hole, reached through the
+   second, larger hole in that room. This is where the elders live
+   and where the actual "help us dig further" storyline + dig-maze
+   minigame will go. First pass: bare atmosphere shell only (same
+   build order as the mole hole itself -- room + mood first,
+   NPCs/mechanics after), narrower and more worn/cramped than the
+   mole hole's own open market space, since this is meant to read
+   as older, smaller, and closer to collapse.
+   ====================================================== */
+const TUNNELTOWN_WIDTH = 900; // smaller than the mole hole (1600) -- a tighter, older-feeling space
+const tunnelTownExit = { x: 150 };
+
+/* ------------------------------------------------------
+   ELDER TRIO -- found at the literal dead end (the wall just
+   past them), not flagged down earlier in the mole hole. Talk to
+   them, then dig the wall with the shovel to open the first branch.
+   ------------------------------------------------------ */
+const elderTrio = [
+  { dx: -20, color: "#8a7a5a", capeColor: "#5a4e38" },
+  { dx: 0,   color: "#7a6a4a", capeColor: "#4a3e2a" },
+  { dx: 20,  color: "#9a8a6a", capeColor: "#6a5c42" }
+];
+const ELDER_X = 210;
+let elderTalkedTo = false;
+let elderThanksQueued = false;
+
+const elderGreetingLines = [
+  ["Oh! A visitor -- haven't had one of those in some time.", "This old passage used to go further, you know."],
+  ["Collapsed years back. We've meant to clear it, but...", "well, digging isn't quite what it used to be, at our age."],
+  ["If you've got a shovel on you, and don't mind the work...", "we'd be ever so grateful."]
+];
+const elderThanksLines = [
+  ["Oh, wonderful! You're really going to try.", "Careful in there -- it's been untouched a long, long time."]
+];
+const elderDialogue = { active: false, index: 0, lines: elderGreetingLines };
+
+function startElderDialogue() {
+  if (elderThanksQueued) {
+    elderDialogue.active = true;
+    elderDialogue.index = 0;
+    elderDialogue.lines = elderThanksLines.slice();
+    elderThanksQueued = false;
+    elderTalkedTo = true;
+    return;
+  }
+  elderDialogue.active = true;
+  elderDialogue.index = 0;
+  elderDialogue.lines = elderGreetingLines.slice();
+  elderTalkedTo = true;
+}
+
+function advanceElderDialogue() {
+  elderDialogue.index++;
+  if (elderDialogue.index >= elderDialogue.lines.length) {
+    elderDialogue.active = false;
+  }
+}
+
+// bodies only -- kept separate from the speech bubble (drawElderSpeechBubble
+// below) so the bubble can be drawn AFTER the wall/rubble, on top of
+// everything, instead of getting cut off by whatever's drawn next
+function drawElderTrio(camX) {
+  elderTrio.forEach(elder => {
+    const ex = ELDER_X + elder.dx - camX;
+    const bodyW = 18, bodyH = 24, bodyBottom = gy - 2, bodyTop = bodyBottom - bodyH;
+    // small hunched body -- rounder and shorter than the shopkeepers,
+    // reads as older/stooped
+    ctx.fillStyle = elder.color;
+    roundRect(ctx, ex - bodyW / 2, bodyTop, bodyW, bodyH, 8);
+    ctx.fill();
+    // a little cape/shawl over the shoulders
+    ctx.fillStyle = elder.capeColor;
+    ctx.beginPath();
+    ctx.moveTo(ex - bodyW / 2 - 1, bodyTop + 4);
+    ctx.quadraticCurveTo(ex, bodyTop - 2, ex + bodyW / 2 + 1, bodyTop + 4);
+    ctx.lineTo(ex + bodyW / 2 - 1, bodyTop + 12);
+    ctx.quadraticCurveTo(ex, bodyTop + 6, ex - bodyW / 2 + 1, bodyTop + 12);
+    ctx.closePath();
+    ctx.fill();
+    // dot eyes
+    ctx.fillStyle = "#1c1208";
+    ctx.beginPath();
+    ctx.arc(ex - 3.5, bodyTop + 10, 1.6, 0, Math.PI * 2);
+    ctx.arc(ex + 3.5, bodyTop + 10, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    // a wispy little beard, the clearest "elder" tell
+    ctx.strokeStyle = "rgba(220,215,200,0.8)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ex - 3, bodyTop + 14);
+    ctx.quadraticCurveTo(ex, bodyTop + 20, ex + 3, bodyTop + 14);
+    ctx.stroke();
+    // a small cane, planted at their side
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ex + bodyW / 2 + 1, bodyBottom);
+    ctx.lineTo(ex + bodyW / 2 + 1, bodyTop + 6);
+    ctx.stroke();
+  });
+}
+
+function drawElderSpeechBubble(camX) {
+  if (!elderDialogue.active) return;
+  const beat = elderDialogue.lines[elderDialogue.index];
+  const isLast = elderDialogue.index === elderDialogue.lines.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  drawFittedSpeechBubble(ctx, ELDER_X - camX - 10, gy - 110, displayLines);
+}
+
+/* ------------------------------------------------------
+   THE BLOCKED WALL -- solid until dug (shovel + space, only once
+   the elders have actually been talked to), then breaks open into
+   the first branch of the dig-maze area beyond it.
+   ------------------------------------------------------ */
+const TUNNELTOWN_WALL_X = 260;
+let tunnelWallBroken = false;
+let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
+
+function drawTunnelWall(camX) {
+  const wx = TUNNELTOWN_WALL_X - camX;
+  if (!tunnelWallBroken) {
+    // solid packed-earth blockage, filling the passage floor to ceiling
+    ctx.fillStyle = "#241c14";
+    ctx.fillRect(wx - 4, 0, 40, gy);
+    ctx.strokeStyle = "rgba(90,80,70,0.3)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      const wy = 15 + i * 45;
+      ctx.beginPath();
+      ctx.moveTo(wx - 4, wy);
+      ctx.lineTo(wx + 36, wy + pseudoRandom(wy) * 6);
+      ctx.stroke();
+    }
+    // a marked "soft spot" -- slightly lighter patch showing where to dig
+    ctx.fillStyle = "rgba(120,95,60,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(wx + 16, gy - 40, 16, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // broken opening -- dark passage through, rubble at the edges
+    ctx.fillStyle = "#0a0603";
+    ctx.fillRect(wx - 2, 20, 36, gy - 20);
+    ctx.fillStyle = "#241c14";
+    for (let i = 0; i < 6; i++) {
+      const seed = 5000 + i * 11.3;
+      const rx = wx + (pseudoRandom(seed) - 0.5) * 50;
+      const ry = gy - pseudoRandom(seed + 1) * 20;
+      const r = 5 + pseudoRandom(seed + 2) * 6;
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, r, r * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // brief dirt-burst the moment it breaks
+    if (wallBreakPoofT < 500) {
+      const p = wallBreakPoofT / 500;
+      ctx.globalAlpha = 1 - p;
+      for (let i = 0; i < 10; i++) {
+        const seed = 6000 + i * 7.7;
+        const angle = pseudoRandom(seed) * Math.PI * 2;
+        const dist = p * (20 + pseudoRandom(seed + 1) * 40);
+        ctx.fillStyle = "#3a2e22";
+        ctx.beginPath();
+        ctx.ellipse(wx + 16 + Math.cos(angle) * dist, gy - 30 + Math.sin(angle) * dist * 0.5, 3, 2.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/* ------------------------------------------------------
+   BRANCH DIG SPOTS -- revealed once the wall breaks. Each is dug
+   independently (shovel + space, one press each). Some hide the
+   mechanical piece the cushion shaft needs, some don't -- the
+   "sometimes does, sometimes doesn't" gamble. dir:"side" are ground-
+   level, walk-up-and-dig spots (the tunnel keeps going sideways);
+   dir:"up" sit higher on the wall (heightAboveGround > 0) and need an
+   actual jump to reach, reading as digging UP into the earth rather
+   than just further along -- real vertical variety instead of every
+   dig being the same flat corridor move.
+   ------------------------------------------------------ */
+const TUNNELTOWN_DIG_SPOTS = [
+  { x: 420, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { x: 560, heightAboveGround: 85, dir: "up", hasItem: true, dug: false }, // single-jump reachable (~90 max elsewhere in the game)
+  { x: 700, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { x: 830, heightAboveGround: 80, dir: "up", hasItem: false, dug: false }
+];
+
+function drawTunnelDigSpot(spot, camX) {
+  const sx = spot.x - camX;
+  if (sx < -30 || sx > canvas.width + 30) return;
+  const cy = gy - spot.heightAboveGround;
+
+  if (spot.dir === "up") {
+    // vertical soft patch -- taller than wide, sitting up on the wall
+    // rather than at floor level, so it visually reads as "dig upward"
+    if (!spot.dug) {
+      ctx.fillStyle = "rgba(120,95,60,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(sx, cy - 12, 10, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(160,130,85,0.3)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#0f0a06";
+      ctx.beginPath();
+      ctx.ellipse(sx, cy - 14, 9, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // undug soft patch -- same visual language as the wall's own
+    // marked spot, so the player learns to recognize "diggable" dirt
+    if (!spot.dug) {
+      ctx.fillStyle = "rgba(120,95,60,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(sx, gy - 34, 15, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(160,130,85,0.3)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else {
+      // dug out -- a shallow dark pit, empty either way (the item, if
+      // any, has already flown off to the inventory by now)
+      ctx.fillStyle = "#0f0a06";
+      ctx.beginPath();
+      ctx.ellipse(sx, gy - 6, 16, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/* ------------------------------------------------------
+   DIGGING FLOURISH -- a real brief animation (shovel swings, dirt
+   kicks up) instead of the wall/spot instantly snapping to "dug" the
+   moment space is pressed. Shared by both the wall and every branch
+   spot, since it's the same action either way.
+   ------------------------------------------------------ */
+const TUNNEL_DIG_ANIM_DURATION = 650;
+let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t }
+
+function drawDiggingFlourish(camX) {
+  if (!activeDig) return;
+  const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
+  const sx = activeDig.x - camX;
+  const sy = gy - activeDig.heightAboveGround;
+  const swings = 3;
+  const angle = Math.sin(p * Math.PI * swings) * 0.7 + 0.15;
+
+  drawShovelShape(ctx, sx, sy - 16, 13, angle);
+
+  // dirt kicks up right at each swing's peak, not just once at the end
+  const kick = Math.max(0, Math.sin(p * Math.PI * swings));
+  if (kick > 0.55) {
+    ctx.fillStyle = "#4a3018";
+    for (let i = 0; i < 5; i++) {
+      const seed = activeDig.t * 0.7 + i * 13.1;
+      const ang = pseudoRandom(seed) * Math.PI * 2;
+      const dist = 6 + pseudoRandom(seed + 1) * 10;
+      ctx.beginPath();
+      ctx.ellipse(sx + Math.cos(ang) * dist, sy - 6 + Math.sin(ang) * dist * 0.5, 2.4, 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawTunnelTownScene(camX) {
+  // nothing past the undug wall should be visible at all -- clip
+  // everything "room" related to the currently-revealed width (just
+  // the wall itself while it's solid, the full room once it's open),
+  // then paint flat solid earth over whatever's left of the screen so
+  // there's no glimpse of beams/floor/etc. leaking through from an
+  // area that hasn't been dug into yet
+  const revealLimit = tunnelWallBroken ? TUNNELTOWN_WIDTH : TUNNELTOWN_WALL_X;
+  const revealScreenX = Math.max(0, revealLimit - camX);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, revealScreenX, canvas.height);
+  ctx.clip();
+
+  // cooler, greyer earth tones than the mole hole's warm soil-orange --
+  // this place reads as older, damper, less lived-in
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#2e2620");
+  sky.addColorStop(1, "#161210");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // rougher wall texture -- less regular than the mole hole's neat
+  // packed-earth bands, more like crumbling old digging
+  ctx.strokeStyle = "rgba(90,80,70,0.2)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const wy = 25 + i * 50;
+    ctx.beginPath();
+    ctx.moveTo(0, wy);
+    for (let x = 0; x <= canvas.width; x += 35) {
+      ctx.lineTo(x, wy + Math.sin((x + i * 60) * 0.025) * 6 + pseudoRandom(x + i * 13) * 3);
+    }
+    ctx.stroke();
+  }
+
+  // a few old, leaning support beams, kept past the wall so they don't
+  // clutter the small elder nook -- unlike the mole hole's tidy shop
+  // set, these look like they're barely holding
+  const beams = [340, 550, 780];
+  beams.forEach((bx0, i) => {
+    const bx = bx0 - camX;
+    if (bx < -20 || bx > canvas.width + 20) return;
+    const lean = (i % 2 === 0 ? 1 : -1) * 6;
+    ctx.strokeStyle = "#3a2e22";
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(bx, gy);
+    ctx.lineTo(bx + lean, gy - 90);
+    ctx.stroke();
+    ctx.strokeStyle = "#241c14";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(bx - 22, gy - 70);
+    ctx.lineTo(bx + lean, gy - 90);
+    ctx.stroke();
+  });
+
+  // branch dig spots, only meaningful (and only drawn) once the wall
+  // is actually open
+  if (tunnelWallBroken) {
+    TUNNELTOWN_DIG_SPOTS.forEach(spot => drawTunnelDigSpot(spot, camX));
+  }
+
+  // ground
+  ctx.fillStyle = "#181310";
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  ctx.strokeStyle = "rgba(90,80,70,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, gy);
+  ctx.lineTo(canvas.width, gy);
+  ctx.stroke();
+
+  // dim pebble/rubble scatter along the floor
+  for (let i = 0; i < 30; i++) {
+    const seed = i * 23.1 + 700;
+    const px = i * (TUNNELTOWN_WIDTH / 30) + pseudoRandom(seed) * 26 - camX;
+    if (px < -10 || px > canvas.width + 10) continue;
+    ctx.fillStyle = "rgba(90,80,70,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(px, gy + 4 + pseudoRandom(seed + 1) * 4, 2.2 + pseudoRandom(seed + 2) * 2, 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // exit -- climb back up to the mole hole
+  const ex = tunnelTownExit.x - camX;
+  const beam = ctx.createLinearGradient(ex, 0, ex, gy);
+  beam.addColorStop(0, "rgba(200,180,150,0.25)");
+  beam.addColorStop(1, "rgba(200,180,150,0)");
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(ex - 24, 0);
+  ctx.lineTo(ex + 24, 0);
+  ctx.lineTo(ex + 9, gy);
+  ctx.lineTo(ex - 9, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore(); // end of the reveal clip
+
+  // beyond the reveal limit, it's just solid, undifferentiated earth --
+  // literally can't see what hasn't been dug into yet
+  if (!tunnelWallBroken && revealScreenX < canvas.width) {
+    ctx.fillStyle = "#241c14";
+    ctx.fillRect(revealScreenX, 0, canvas.width - revealScreenX, canvas.height);
+  }
+
+  // the elders, sitting right where the passage dead-ends -- drawn
+  // after the clip/fill above so they're never accidentally clipped
+  drawElderTrio(camX);
+
+  // the blockage itself -- solid until dug, then a broken opening into
+  // the branch dig area beyond -- also drawn after, on top of the flat
+  // fill, so its own detail (the marked soft spot, the rubble) shows
+  drawTunnelWall(camX);
+
+  drawDiggingFlourish(camX);
+
+  // speech bubble drawn dead last so it's never covered by the wall or
+  // anything else in the scene
+  drawElderSpeechBubble(camX);
+}
+
+function updateTunnelTownScene(deltaTime) {
+  wallBreakPoofT += deltaTime * 1000;
+
+  // mid-dig -- the actual wall-break/spot-dug state change only lands
+  // once the flourish finishes, not the instant space is pressed
+  if (activeDig) {
+    activeDig.t += deltaTime * 1000;
+    if (activeDig.t >= TUNNEL_DIG_ANIM_DURATION) {
+      if (activeDig.kind === "wall") {
+        tunnelWallBroken = true;
+        wallBreakPoofT = 0;
+        elderThanksQueued = true;
+      } else {
+        const spot = TUNNELTOWN_DIG_SPOTS[activeDig.index];
+        spot.dug = true;
+        if (spot.hasItem) {
+          startCollectAnimation({ x: spot.x, y: spot.heightAboveGround + 14, size: 8, rotation: 0 }, "cushionPart");
+        }
+      }
+      activeDig = null;
+    }
+    return; // nothing else happens while a dig is in progress
+  }
+
+  if (elderDialogue.active) {
+    if (keys.spaceJustPressed) advanceElderDialogue();
+    return; // mid-conversation -- don't also process digging/exit this frame
+  }
+
+  if (isPlayerNear(ELDER_X, 0, 55, 25, 20) && keys.spaceJustPressed) {
+    startElderDialogue();
+    return;
+  }
+
+  if (!tunnelWallBroken) {
+    // only diggable once the elders have actually explained what's
+    // going on -- ties the action to the ask instead of just being a
+    // wall you happen to have a shovel for
+    if (elderTalkedTo && heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(TUNNELTOWN_WALL_X + 16, 0, 26, 20, 20)) {
+      activeDig = { kind: "wall", x: TUNNELTOWN_WALL_X + 16, heightAboveGround: 0, t: 0 };
+    }
+  } else {
+    TUNNELTOWN_DIG_SPOTS.forEach((spot, i) => {
+      if (spot.dug) return;
+      if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(spot.x, spot.heightAboveGround, 22, 25, 25)) {
+        activeDig = { kind: "spot", index: i, x: spot.x, heightAboveGround: spot.heightAboveGround, t: 0 };
+      }
+    });
+  }
+
+  if (keys.spaceJustPressed && isPlayerNear(tunnelTownExit.x, 0, 24, 15, 15)) {
+    startSeasonTransition("molehole");
   }
 }
 
@@ -20339,6 +21015,8 @@ if (currentScene === "autumn") {
   drawRatRoomScene(camX);
 } else if (currentScene === "molehole") {
   drawMoleholeScene(camX);
+} else if (currentScene === "tunneltown") {
+  drawTunnelTownScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -21095,6 +21773,8 @@ if (currentScene === "autumn") {
   updateRatRoomScene(deltaTime);
 } else if (currentScene === "molehole") {
   updateMoleholeScene(deltaTime);
+} else if (currentScene === "tunneltown") {
+  updateTunnelTownScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
@@ -21135,6 +21815,7 @@ updateSeasonTransition(deltaTime);
   if (currentScene === "ratroom" && cameraX > 625) cameraX = 625;
   // molehole's own right-side camera clamp, same small-room pattern
   if (currentScene === "molehole" && cameraX > MOLEHOLE_WIDTH - canvas.width + 40) cameraX = Math.max(0, MOLEHOLE_WIDTH - canvas.width + 40);
+  if (currentScene === "tunneltown" && cameraX > TUNNELTOWN_WIDTH - canvas.width + 40) cameraX = Math.max(0, TUNNELTOWN_WIDTH - canvas.width + 40);
   // oak's left side has its own tall bookshelf (x:192) that should be
   // visible/reachable from directly left of the entrance door (x:294) --
   // clamped a little past the shelf's own left edge (~157) so there's a
@@ -21152,6 +21833,13 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
+
+// TEMPORARY — seeds the shovel so the elder-trio/dig-wall/dig-spots
+// pass can be tested immediately without backtracking to the willow
+// tree first. Revert (remove this block) when done.
+addToInventory("shovel");
+heldItem = "shovel";
+updateInventoryUI();
 
 update();
 
