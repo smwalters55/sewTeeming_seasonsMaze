@@ -20,6 +20,15 @@ const invEl = document.getElementById("inv");
 const overlayEl = document.getElementById("overlay");
 const mapEl = document.getElementById("map");
 
+// the basket bar reads as cramped once a few item chips are in it --
+// loosening it up here (rather than in index.html, which this workflow
+// doesn't push) so it travels with appleCore.js like everything else.
+const basketEl = document.getElementById("basket");
+if (basketEl) {
+  basketEl.style.padding = "8px 14px";
+  basketEl.style.fontSize = "15px";
+}
+
 /* ======================================================
    WORLD CONSTANTS
    ====================================================== */
@@ -424,9 +433,10 @@ function updateInventoryUI() {
   entries.forEach(([type, count]) => {
     const chip = document.createElement("span");
     chip.style.cursor = "pointer";
-    chip.style.marginRight = "8px";
-    chip.style.padding = "1px 5px";
-    chip.style.borderRadius = "4px";
+    chip.style.marginRight = "14px";
+    chip.style.padding = "3px 8px";
+    chip.style.borderRadius = "5px";
+    chip.style.gap = "4px"; // breathing room between the icon and its "x<count>" label -- flex children were touching edge-to-edge before
     chip.style.border = heldItem === type ? "2px solid #2b2b2b" : "2px solid transparent";
     chip.style.display = "inline-flex";
     chip.style.alignItems = "center";
@@ -2051,11 +2061,7 @@ function applyPhysics(){
     TUNNEL_NODES.forEach(node => {
       if (!node.dug || node.heightAboveGround <= 0) return;
       const platformTop = node.heightAboveGround;
-      let left = node.x - 24, right = node.x + 24;
-      const parentPos = tunnelNodeParentPos(node);
-      if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
-        left = Math.min(left, parentPos.x);
-      }
+      const { left, right } = tunnelMergedLedgeSpan(node);
       const playerBottom = player.y;
 
       if (
@@ -19800,7 +19806,12 @@ const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches s
 // reference image's market halls -- pure atmosphere for this pass.
 const MOLEHOLE_ALCOVES = [
   { x: 330, w: 130, wareColors: ["#b8862f", "#7a2f2f", "#3f5766"], shopColor: "#8a6a3a" },
-  { x: 530, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
+  // pulled right, from 530 -- at 530 (w110, edges 475-585) this was
+  // actually overlapping the shop arch's own left edge (565) by 20px.
+  // 500 clears real, if still modest, gaps on both sides: 50px back to
+  // alcove one, 10px up to the shop -- checked against MOLE_SHOP_X's
+  // archR (95) rather than eyeballed
+  { x: 500, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -19820,14 +19831,14 @@ const MOLE_SHOP_X = 660;
 let moleShopTraded = false;
 const moleShopDialogue = { active: false, index: 0, lines: [] };
 const moleShopGreetingLines = [
-  ["Ah, a traveler! Don't get many of those in so deep.", "I deal in odds and ends -- bridge timber, mostly, if you can believe it."]
+  ["Eyyy, look what the tunnel dragged in. Don't get many of your kind down this deep.", "I deal in... let's say, hard-to-find things. Bridge timber, if you're lucky."]
 ];
 const moleShopTradeLines = [
-  ["Tell you what -- one good acorn, and that piece is yours.", "Can't eat timber, after all. Fair trade, I'd say."]
+  ["Tell you what, friend -- you slip me one good acorn from up top, and that timber's yours.", "Everybody walks away happy. That's how I like it."]
 ];
-const moleShopNoAcornLines = [["Come back when you've got an acorn on you.", "I don't haggle, I'm afraid."]];
-const moleShopThanksLines = [["A pleasure doing business!", "Put that timber to good use."]];
-const moleShopAlreadyTradedLines = [["That's all I've got for now.", "Good luck out there."]];
+const moleShopNoAcornLines = [["Ehh, no acorn, no timber. That's just business, friend.", "Come back when you're carrying something worth my while."]];
+const moleShopThanksLines = [["Pleasure doing business, as always.", "Don't go telling everyone where you found me now, eh?"]];
+const moleShopAlreadyTradedLines = [["That's the last of it -- cleaned me right out.", "Come back another time, friend. I'll have more... probably."]];
 
 function startMoleShopDialogue() {
   moleShopDialogue.active = true;
@@ -19903,26 +19914,122 @@ function drawMoleShopAlcove(camX) {
   ctx.lineTo(ax + archR + 3, gy);
   ctx.stroke();
 
-  // shopkeeper -- larger than the two background figures, with its own
-  // little vest for personality
-  const bodyW = 26, bodyH = 32, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
-  ctx.fillStyle = "#8a6a4a";
-  roundRect(ctx, ax - bodyW / 2, bodyTop, bodyW, bodyH, 7);
-  ctx.fill();
+  // shopkeeper -- tall, thin, dapper trickster: grey fur, a top hat with
+  // a teal band (ties into the shop's own wares palette), one eye mid-
+  // wink, a little waistcoat, and a cane. Replaces the original generic
+  // body -- this is mockup "A" of three, picked for reading sly/cunning
+  // (matches the trade-ee dialogue) without going full-caricature villain.
+  const bodyW = 18, bodyH = 46, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
+  const headCX = ax, headCY = bodyTop - 4;
+
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
   ctx.beginPath();
-  ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 5);
-  ctx.lineTo(ax, bodyTop - 13);
-  ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 5);
+  ctx.ellipse(ax, bodyBottom + 3, bodyW * 0.8, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#1c1712";
+  ctx.beginPath();
+  ctx.ellipse(ax - 6, bodyBottom, 4.5, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(ax + 6, bodyBottom, 4.5, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // cane, drawn before the body so the near arm overlaps its top
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(ax + bodyW * 0.7, bodyTop + bodyH * 0.5);
+  ctx.lineTo(ax + bodyW * 0.7 + 2, bodyBottom);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(ax + bodyW * 0.7, bodyTop + bodyH * 0.42, 4, Math.PI, Math.PI * 2.2);
+  ctx.stroke();
+
+  // tall, thin, tapered body
+  ctx.fillStyle = "#6a6258";
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.45, bodyTop + bodyH * 0.3);
+  ctx.quadraticCurveTo(ax - bodyW * 0.5, bodyTop, ax, bodyTop - 2);
+  ctx.quadraticCurveTo(ax + bodyW * 0.5, bodyTop, ax + bodyW * 0.45, bodyTop + bodyH * 0.3);
+  ctx.quadraticCurveTo(ax + bodyW * 0.35, bodyBottom - 6, ax + bodyW * 0.18, bodyBottom);
+  ctx.lineTo(ax - bodyW * 0.18, bodyBottom);
+  ctx.quadraticCurveTo(ax - bodyW * 0.35, bodyBottom - 6, ax - bodyW * 0.45, bodyTop + bodyH * 0.3);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#5a4028";
-  roundRect(ctx, ax - bodyW / 2 + 2, bodyTop + bodyH * 0.4, bodyW - 4, bodyH * 0.5, 3);
+
+  // thin arms
+  ctx.beginPath();
+  ctx.ellipse(ax - bodyW * 0.55, bodyTop + bodyH * 0.5, 3, 8, 0.15, 0, Math.PI * 2);
+  ctx.ellipse(ax + bodyW * 0.55, bodyTop + bodyH * 0.5, 3, 8, -0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // waistcoat
+  ctx.fillStyle = "#5a3a24";
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.4, bodyTop + bodyH * 0.35);
+  ctx.lineTo(ax, bodyTop + bodyH * 0.42);
+  ctx.lineTo(ax + bodyW * 0.4, bodyTop + bodyH * 0.35);
+  ctx.lineTo(ax + bodyW * 0.3, bodyBottom - 4);
+  ctx.lineTo(ax - bodyW * 0.3, bodyBottom - 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2414";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ax, bodyTop + bodyH * 0.42);
+  ctx.lineTo(ax, bodyBottom - 6);
+  ctx.stroke();
+
+  // head + snout
+  ctx.fillStyle = "#6a6258";
+  ctx.beginPath();
+  ctx.arc(headCX, headCY, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(headCX - 3, headCY + 5);
+  ctx.lineTo(headCX + 3, headCY + 5);
+  ctx.lineTo(headCX + 1.5, headCY + 11);
+  ctx.lineTo(headCX - 1.5, headCY + 11);
+  ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#1c1208";
   ctx.beginPath();
-  ctx.arc(ax - 5, bodyTop + 14, 2, 0, Math.PI * 2);
-  ctx.arc(ax + 5, bodyTop + 14, 2, 0, Math.PI * 2);
+  ctx.arc(headCX, headCY + 10, 1.2, 0, Math.PI * 2);
   ctx.fill();
+
+  // sly wink -- one closed line, one open dot
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(headCX - 5, headCY - 1);
+  ctx.lineTo(headCX - 1.5, headCY);
+  ctx.stroke();
+  ctx.fillStyle = "#1c1208";
+  ctx.beginPath();
+  ctx.arc(headCX + 3.5, headCY - 2, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // whiskers
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(headCX - 7, headCY + 7);
+  ctx.lineTo(headCX - 11, headCY + 5);
+  ctx.moveTo(headCX + 7, headCY + 7);
+  ctx.lineTo(headCX + 11, headCY + 5);
+  ctx.stroke();
+
+  // top hat -- black with a teal band
+  const hatBrimY = headCY - 9;
+  ctx.fillStyle = "#141010";
+  ctx.beginPath();
+  ctx.ellipse(headCX, hatBrimY, 10, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(headCX - 6, hatBrimY - 16, 12, 16);
+  ctx.beginPath();
+  ctx.ellipse(headCX, hatBrimY - 16, 6, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a5a4a";
+  ctx.fillRect(headCX - 6, hatBrimY - 6, 12, 3);
 
   // wide counter, richer wares than the two plain stalls
   const counterTop = gy - 24;
@@ -20077,7 +20184,7 @@ function drawMoleholeAlcove(alcove, camX) {
 // language as the game's other carved-wood prompts, purely decorative
 // here (no readable text yet, just marks -- matches the reference's
 // "Meeting Tomorrow After Lunch" notice board)
-const moleHoleNoticeBoard = { x: 430, y: 60 }; // shifted with the shop set (+70), stays between the two alcoves
+const moleHoleNoticeBoard = { x: 420, y: 60 }; // re-centered in the (now wider, 50px) gap between the two alcoves after alcove two moved
 
 function drawMoleHoleNoticeBoard(camX) {
   const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
@@ -20862,7 +20969,7 @@ const tunnelTownExit = { x: 150 };
 // distinct per elder, so they read as having more character than a
 // generic bounce alone.
 const elderTrio = [
-  { dx: -46, color: "#9c6b52", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#3f6e64", bob: 0, bobSpeed: 0.032, tip: 0, gestureOffset: 0 }, // short and round, warm reddish-brown fur, a cozy old scarf
+  { dx: -46, color: "#9c6b52", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#3f6e64", bonnet: true, bonnetColor: "#c98a9e", fem: true, bob: 0, bobSpeed: 0.032, tip: 0, gestureOffset: 0 }, // short and round, warm reddish-brown fur, a cozy old scarf AND a little bonnet -- reads more fem than the other two (no beard, rosy cheeks instead -- see the beard block below)
   { dx: 2,   color: "#847d6e", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0, gestureOffset: 2200 }, // tall and thin, cooler grey fur, neat little round glasses
   { dx: 50,  color: "#c2a679", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0, gestureOffset: 4300 } // average build, lighter sandy-tan fur, a flat cap over a balding head
 ];
@@ -20976,13 +21083,20 @@ function drawElderTrio(camX) {
     ctx.ellipse(ex + bodyW / 2 + 1.5, bodyTop + bodyH * 0.6, 3, 5.5, -0.25, 0, Math.PI * 2);
     ctx.fill();
 
-    // a little cape/shawl over the shoulders
+    // a little cape/shawl over the shoulders -- sized as a fixed 14
+    // units tall regardless of the elder's own height, which was nearly
+    // HALF the total body height on the shortest elder (bodyH:30) --
+    // looked like an oversized floppy hood swallowing his shoulders.
+    // Now scales down with bodyH so it stays proportional across all
+    // three builds instead of only looking right on the tallest one.
+    const capePeak = Math.min(2, bodyH * 0.06);
+    const capeH = Math.min(12, bodyH * 0.32);
     ctx.fillStyle = elder.capeColor;
     ctx.beginPath();
-    ctx.moveTo(ex - bodyW / 2 - 1, bodyTop + 4);
-    ctx.quadraticCurveTo(ex, bodyTop - 2, ex + bodyW / 2 + 1, bodyTop + 4);
-    ctx.lineTo(ex + bodyW / 2 - 1, bodyTop + 12);
-    ctx.quadraticCurveTo(ex, bodyTop + 6, ex - bodyW / 2 + 1, bodyTop + 12);
+    ctx.moveTo(ex - bodyW / 2 - 1, bodyTop + capePeak * 2);
+    ctx.quadraticCurveTo(ex, bodyTop - capePeak, ex + bodyW / 2 + 1, bodyTop + capePeak * 2);
+    ctx.lineTo(ex + bodyW / 2 - 1, bodyTop + capeH);
+    ctx.quadraticCurveTo(ex, bodyTop + capeH * 0.5, ex - bodyW / 2 + 1, bodyTop + capeH);
     ctx.closePath();
     ctx.fill();
     // dot eyes
@@ -20991,13 +21105,22 @@ function drawElderTrio(camX) {
     ctx.arc(headCX - 3.5, headCY + 4, 1.6, 0, Math.PI * 2);
     ctx.arc(headCX + 3.5, headCY + 4, 1.6, 0, Math.PI * 2);
     ctx.fill();
-    // a wispy little beard, the clearest "elder" tell
-    ctx.strokeStyle = "rgba(220,215,200,0.8)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(headCX - 3, headCY + 8);
-    ctx.quadraticCurveTo(headCX, headCY + 14, headCX + 3, headCY + 8);
-    ctx.stroke();
+    // a wispy little beard, the clearest "elder" tell -- skipped for the
+    // fem-coded elder in favor of a couple of rosy cheeks instead
+    if (!elder.fem) {
+      ctx.strokeStyle = "rgba(220,215,200,0.8)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(headCX - 3, headCY + 8);
+      ctx.quadraticCurveTo(headCX, headCY + 14, headCX + 3, headCY + 8);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "rgba(224,120,120,0.4)";
+      ctx.beginPath();
+      ctx.arc(headCX - 5.5, headCY + 6.5, 2, 0, Math.PI * 2);
+      ctx.arc(headCX + 5.5, headCY + 6.5, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // one small signature accessory each, so the trio has real personality
     if (elder.accessory === "glasses") {
@@ -21028,21 +21151,19 @@ function drawElderTrio(camX) {
       // exact position, since an ellipse + a curved fold line IS a mouth
       // shape. A straight-edged wrapped band with a knot reads as fabric
       // instead, regardless of where it sits.
-      // fixed +19 put it almost at the very bottom of this elder's
-      // (shorter, bodyH:30) body -- reading as sitting on the belly
-      // instead of the neck. Clamped relative to bodyH so it always
-      // sits just below the beard with real clearance above the bottom,
-      // regardless of how tall/short a given elder's body is.
-      const neckY = headCY + Math.min(15, bodyH - 14);
-      // a straight rectangle only ever spanned about 2/3 of the body's
-      // width, sitting narrower than the belly it was supposed to wrap --
-      // that gap on both sides is exactly why it read as a flat patch
-      // floating in the middle instead of actual fabric wrapped around a
-      // round shape. Now spans almost the full body width at that height
-      // AND follows the body's own curvature (arcs up slightly on top,
-      // droops down on the bottom edge) instead of being ruler-straight,
-      // so it visually hugs the roundness instead of sitting flat on it.
-      const scarfHalfW = bodyW * 0.42;
+      // both previous attempts (fixed +19, then a bodyH-relative clamp
+      // that only shaved a few units off) still landed way down near the
+      // bottom of the belly on this short elder -- wide AND low read as
+      // a diaper, not a scarf. Pinned to a small fixed offset below the
+      // head instead, right where the beard already sits -- reads as
+      // "wrapped at the neck" regardless of how tall the body is, since
+      // it no longer scales down toward the belly on shorter builds.
+      const neckY = headCY + 12;
+      // also narrower and less droopy than the last pass -- full body
+      // width read fine higher up, but that same width down at the belly
+      // was a big part of the diaper look. A snugger wrap now that it's
+      // actually at neck height.
+      const scarfHalfW = bodyW * 0.36;
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
       ctx.moveTo(ex - scarfHalfW, neckY);
@@ -21077,6 +21198,45 @@ function drawElderTrio(camX) {
       ctx.moveTo(ex - scarfHalfW + 3, neckY + 1);
       ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 1.5, ex + scarfHalfW * 0.15 - 2, neckY);
       ctx.stroke();
+
+      // the little bonnet -- a soft ruffled dome over the head, tied
+      // with a small bow under the chin. Drawn last (on top of
+      // everything above) so it sits over the head rather than under
+      // the scarf's own draw order.
+      if (elder.bonnet) {
+        const bonnetColor = elder.bonnetColor || "#c98a9e";
+        const bonnetTopY = headCY - 8;
+        ctx.fillStyle = bonnetColor;
+        ctx.beginPath();
+        ctx.ellipse(headCX, bonnetTopY, bodyW / 2 + 2, 7.5, 0, Math.PI, Math.PI * 2);
+        ctx.fill();
+        // a ruffled brim -- a little scalloped row of bumps along the
+        // front edge, rather than a flat cutoff, so it reads as soft
+        // gathered fabric instead of a hard helmet shape
+        ctx.beginPath();
+        for (let i = -3; i <= 3; i++) {
+          const bx = headCX + i * (bodyW / 7);
+          ctx.moveTo(bx + 2.2, bonnetTopY + 5.5);
+          ctx.arc(bx, bonnetTopY + 5.5, 2.2, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        // ribbon ties, looping down to a small bow under the chin
+        ctx.strokeStyle = bonnetColor;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(headCX - 5, bonnetTopY + 7);
+        ctx.quadraticCurveTo(headCX, headCY + 11, headCX + 5, bonnetTopY + 7);
+        ctx.stroke();
+        ctx.fillStyle = bonnetColor;
+        ctx.beginPath();
+        ctx.ellipse(headCX - 2, headCY + 10, 2.2, 1.4, 0.6, 0, Math.PI * 2);
+        ctx.ellipse(headCX + 2, headCY + 10, 2.2, 1.4, -0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.beginPath();
+        ctx.arc(headCX, headCY + 10, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out
       // back. Gesture: gives the cap a quick tilt as if scratching
@@ -21305,7 +21465,7 @@ const TUNNEL_NODES = [
   // jumps away (diagonal, both in x and height) instead of sitting
   // right on top of u1's own marker, which read as two dig spots
   // confusingly crammed right next to each other
-  { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 140, dir: "up", hasItem: false, dug: false },
+  { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 155, dir: "up", hasItem: false, dug: false },
   { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // top of the left leg
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
   { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // top of the right leg -- the "dig deep to find one" bridge piece
@@ -21319,12 +21479,12 @@ const TUNNEL_NODES = [
   // from one into the other -- climb the left leg, cross the horizontal
   // top tunnel here, drop down into the right leg's shaft, and come back
   // down (u3 -> u2 -> u1) without having to backtrack the way you came.
-  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 290, dir: "side", hasItem: false, dug: false },
+  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 296, dir: "side", hasItem: false, dug: false },
   // digging DOWN from the top crossing -- was previously just an invisible
   // drop-through into u2/u3 with nothing marking it as an actual action,
   // which read as a dead end. Now a real dig, with its own small find at
   // the bottom, tucked into the safe gap next to the permanent dirt core.
-  { id: "uDeep", parent: "uTop", x: 600, heightAboveGround: 175, dir: "side", hasItem: true, itemType: "crystal", dug: false },
+  { id: "uDeep", parent: "uTop", x: 600, heightAboveGround: 115, dir: "side", hasItem: true, itemType: "crystal", dug: false }, // pulled further down -- was only 15 above u2h's ledge, close enough to read as a second useless platform right on top of it
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
@@ -21334,7 +21494,7 @@ const TUNNEL_NODES = [
   // it's dug the two openings physically merge into one -- from then
   // on it's walkable from either side, even though it's still just a
   // normal parent-chain node under the hood, no graph rework needed.
-  { id: "u2h", parent: "u2", x: 600, heightAboveGround: 160, dir: "side", hasItem: false, dug: false },
+  { id: "u2h", parent: "u2", x: 665, heightAboveGround: 165, dir: "side", hasItem: false, dug: false },
   { id: "u1r", parent: "u2h", x: 655, heightAboveGround: 85, dir: "side", hasItem: false, dug: false, needsStone: true },
 
   // side-chain -- continues along the ground, dips through a low sunken
@@ -21364,7 +21524,14 @@ const TUNNEL_NODES = [
   // gives the right half of the maze its own vertical movement too
   { id: "s5u1", parent: "s5r", x: 1150, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
   { id: "s5u2", parent: "s5u1", x: 1100, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
-  { id: "s5u3", parent: "s5u2", x: 1130, heightAboveGround: 330, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // built the vertical branch out one more climb, real dead end reward at the top
+  // the climb used to just keep going straight up -- bent it left into an
+  // actual horizontal turn partway up instead, then kept climbing from
+  // there, and gave the bend its own little side branch so the extra
+  // turn has a reward too, not just a direction change
+  { id: "s5uTurn", parent: "s5u2", x: 1040, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
+  { id: "s5uSide", parent: "s5uTurn", x: 965, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
+  { id: "s5u2b", parent: "s5uTurn", x: 1010, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
+  { id: "s5u3", parent: "s5u2b", x: 1045, heightAboveGround: 405, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // real dead end reward, now at the top of the bent climb
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep
@@ -21381,6 +21548,26 @@ function tunnelNodeParentPos(node) {
   if (node.parent === "wall") return { x: TUNNELTOWN_WALL_X + 16, h: 0 };
   const parent = TUNNEL_NODES.find(n => n.id === node.parent);
   return parent ? { x: parent.x, h: parent.heightAboveGround } : null;
+}
+
+// any two dug nodes that land at nearly the same height read as one
+// physical shelf, whether or not they're actually parent/child -- e.g.
+// u1r sits right on top of u1's own opening by design (see comment at
+// its definition), so their little ledges should merge into a single
+// wide one rather than draw as two separate, uselessly-stacked planks.
+// Used by both the physics floor and the ledge render so they always
+// agree on where the walkable span actually is.
+const TUNNEL_LEDGE_MERGE_TOLERANCE = 10;
+function tunnelMergedLedgeSpan(node) {
+  let left = node.x - 24, right = node.x + 24;
+  TUNNEL_NODES.forEach(other => {
+    if (other === node || !other.dug || other.heightAboveGround <= 0) return;
+    if (Math.abs(other.heightAboveGround - node.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE) {
+      left = Math.min(left, other.x - 24);
+      right = Math.max(right, other.x + 24);
+    }
+  });
+  return { left, right };
 }
 
 // how far you can physically WALK -- right up to the edge of any
@@ -21627,12 +21814,8 @@ function drawTunnelDigSpot(node, camX) {
     // applyPhysics, which bridges all the way back to an already-dug
     // parent at the same height instead of leaving separate islands
     if (node.heightAboveGround > 0) {
-      const parentPos = tunnelNodeParentPos(node);
-      let ledgeLeftWorld = node.x - 24;
-      if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
-        ledgeLeftWorld = Math.min(ledgeLeftWorld, parentPos.x);
-      }
-      const ledgeLeft = ledgeLeftWorld - camX, ledgeRight = sx + 24;
+      const mergedSpan = tunnelMergedLedgeSpan(node);
+      const ledgeLeft = mergedSpan.left - camX, ledgeRight = mergedSpan.right - camX;
       // a couple of stubby support posts underneath, reaching down into
       // the dug pocket below the ledge -- without these, an elevated
       // ledge just floated in the dark with nothing visibly holding it
@@ -21823,12 +22006,12 @@ const TUNNEL_CORE_MOUND_SEED = 41000;
 // to fill as much of the safely-open middle as it can without eating
 // into any node's own dig space
 const TUNNEL_CORE_MOUND_BASE_PTS = [
-  { x: 612, y: 135 }, // bottom point
-  { x: 578, y: 180 },
-  { x: 578, y: 225 }, // top-left
-  { x: 608, y: 236 },
-  { x: 628, y: 220 }, // top-right
-  { x: 635, y: 178 }
+  { x: 615, y: 120 }, // bottom point
+  { x: 562, y: 172 },
+  { x: 558, y: 232 }, // top-left
+  { x: 608, y: 252 },
+  { x: 622, y: 225 }, // top-right
+  { x: 648, y: 178 }
 ];
 
 // the same jitter every time (seeded purely by index, not time), so the
