@@ -1325,9 +1325,15 @@ function updateFlyingItems(deltaTime, camX) {
 
     if (f.mode === "collect") {
       if (f.phase === "reveal") {
-        // pop in and hold, right where it was uncovered
-        const p = Math.min(f.t / (f.revealDuration * 0.4), 1);
-        f.scale = 0.2 + easeOutCubic(p) * 0.9; // settles around 1.1x, a little bigger than normal so it reads clearly
+        // pop in noticeably oversized (was only ~1.1x, which read as barely
+        // bigger than normal and got lost against the dirt background),
+        // then ease back down to a normal, clearly-visible resting size,
+        // with a light bob so it keeps drawing the eye for the whole hold
+        const growP = Math.min(f.t / (f.revealDuration * 0.35), 1);
+        const settleP = Math.max(0, Math.min((f.t - f.revealDuration * 0.35) / (f.revealDuration * 0.35), 1));
+        const overshoot = 0.2 + easeOutCubic(growP) * 2.1; // pops up to ~2.3x
+        const settled = 1.3 + Math.sin(f.t * 0.012) * 0.15; // eases to a bobbing ~1.3x
+        f.scale = settleP < 1 ? overshoot + (settled - overshoot) * settleP : settled;
         if (f.t >= f.revealDuration) {
           f.phase = "toCenter";
           f.t = 0;
@@ -1793,7 +1799,7 @@ function handleInput(){
   // you could physically walk straight through undug earth into areas
   // that haven't been carved (or even seen) yet.
   if (currentScene === "tunneltown") {
-    const rightBound = tunnelWalkLimit();
+    const rightBound = tunnelWalkLimit(player.y);
     if (player.x > rightBound) player.x = rightBound;
   }
 
@@ -19797,6 +19803,190 @@ const MOLEHOLE_ALCOVES = [
   { x: 530, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
 ];
 
+// a secret bridge piece, perched right on top of the first alcove's own
+// stone arch -- not marked at all beyond a small mossy lump that blends
+// into the stone, since the whole point is that nobody would think to
+// double-jump up onto what reads as pure background scenery
+const moleHoleSecretPiece = { x: MOLEHOLE_ALCOVES[0].x, heightAboveGround: 108, collected: false };
+
+/* ------------------------------------------------------
+   MOLE HOLE SHOPKEEPER -- a real, interactive third alcove, bigger and
+   more done-up than the two background market stalls, tucked in the gap
+   just past them. Trades a bridge piece for one acorn -- a different
+   way to get a piece than digging for one (tunnel town) or finding one
+   tucked away (the secret arch piece above).
+   ------------------------------------------------------ */
+const MOLE_SHOP_X = 660;
+let moleShopTraded = false;
+const moleShopDialogue = { active: false, index: 0, lines: [] };
+const moleShopGreetingLines = [
+  ["Ah, a traveler! Don't get many of those in so deep.", "I deal in odds and ends -- bridge timber, mostly, if you can believe it."]
+];
+const moleShopTradeLines = [
+  ["Tell you what -- one good acorn, and that piece is yours.", "Can't eat timber, after all. Fair trade, I'd say."]
+];
+const moleShopNoAcornLines = [["Come back when you've got an acorn on you.", "I don't haggle, I'm afraid."]];
+const moleShopThanksLines = [["A pleasure doing business!", "Put that timber to good use."]];
+const moleShopAlreadyTradedLines = [["That's all I've got for now.", "Good luck out there."]];
+
+function startMoleShopDialogue() {
+  moleShopDialogue.active = true;
+  moleShopDialogue.index = 0;
+  if (moleShopTraded) {
+    moleShopDialogue.lines = moleShopAlreadyTradedLines.slice();
+    return;
+  }
+  if (inventory.acorn > 0) {
+    // the trade completes right away, same moment the offer is made --
+    // simpler and more reliable than trying to time it to a later line
+    inventory.acorn -= 1;
+    if (inventory.acorn <= 0) delete inventory.acorn;
+    if (heldItem === "acorn") heldItem = null;
+    updateInventoryUI();
+    moleShopTraded = true;
+    startCollectAnimation({ x: MOLE_SHOP_X, y: gy - 30, size: 10, rotation: 0 }, "bridgePiece");
+    moleShopDialogue.lines = moleShopGreetingLines.concat(moleShopTradeLines, moleShopThanksLines);
+  } else {
+    moleShopDialogue.lines = moleShopGreetingLines.concat(moleShopNoAcornLines);
+  }
+}
+
+function advanceMoleShopDialogue() {
+  moleShopDialogue.index++;
+  if (moleShopDialogue.index >= moleShopDialogue.lines.length) {
+    moleShopDialogue.active = false;
+  }
+}
+
+function drawMoleShopSpeechBubble(camX) {
+  if (!moleShopDialogue.active) return;
+  const beat = moleShopDialogue.lines[moleShopDialogue.index];
+  const isLast = moleShopDialogue.index === moleShopDialogue.lines.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  drawFittedSpeechBubble(ctx, MOLE_SHOP_X - camX - 10, gy - 150, displayLines);
+}
+
+// bigger and more done-up than the two background stalls -- a proper
+// double-wide arch, two lanterns instead of one, a richer counter
+// spread, and an actual standable, talkable figure instead of
+// glimpsed-depth atmosphere
+function drawMoleShopAlcove(camX) {
+  const ax = MOLE_SHOP_X - camX;
+  const w = 190, h = 120, archR = w / 2;
+  const top = gy - h;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ax - archR, gy);
+  ctx.lineTo(ax - archR, top + archR);
+  ctx.arc(ax, top + archR, archR, Math.PI, 0, false);
+  ctx.lineTo(ax + archR, gy);
+  ctx.closePath();
+  ctx.fillStyle = "#140d06";
+  ctx.fill();
+
+  const glow = ctx.createRadialGradient(ax, gy - 24, 4, ax, gy - 24, archR + 34);
+  glow.addColorStop(0, "rgba(255,205,130,0.45)");
+  glow.addColorStop(1, "rgba(255,205,130,0)");
+  ctx.fillStyle = glow;
+  ctx.fill();
+  ctx.restore();
+
+  // a decorative frame around the arch mouth -- what makes this one
+  // read as a "real" built stall rather than just a recess in the wall
+  ctx.strokeStyle = "#6a4a28";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(ax - archR - 3, gy);
+  ctx.lineTo(ax - archR - 3, top + archR);
+  ctx.arc(ax, top + archR, archR + 3, Math.PI, 0, false);
+  ctx.lineTo(ax + archR + 3, gy);
+  ctx.stroke();
+
+  // shopkeeper -- larger than the two background figures, with its own
+  // little vest for personality
+  const bodyW = 26, bodyH = 32, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
+  ctx.fillStyle = "#8a6a4a";
+  roundRect(ctx, ax - bodyW / 2, bodyTop, bodyW, bodyH, 7);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 5);
+  ctx.lineTo(ax, bodyTop - 13);
+  ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#5a4028";
+  roundRect(ctx, ax - bodyW / 2 + 2, bodyTop + bodyH * 0.4, bodyW - 4, bodyH * 0.5, 3);
+  ctx.fill();
+  ctx.fillStyle = "#1c1208";
+  ctx.beginPath();
+  ctx.arc(ax - 5, bodyTop + 14, 2, 0, Math.PI * 2);
+  ctx.arc(ax + 5, bodyTop + 14, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // wide counter, richer wares than the two plain stalls
+  const counterTop = gy - 24;
+  ctx.fillStyle = "#3a2814";
+  ctx.fillRect(ax - archR + 10, counterTop, w - 20, 12);
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ax - archR + 10, counterTop, w - 20, 12);
+  ["#c98a3a", "#7a2f2f", "#3f5766", "#5c8a35", "#b09040"].forEach((color, i) => {
+    const wx = ax - archR + 26 + i * ((w - 52) / 4);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(wx, counterTop - 5, 7, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // two lanterns instead of one
+  [-archR + 24, archR - 24].forEach(dx => {
+    const lx = ax + dx, ly = top + 24;
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(lx, top + 6);
+    ctx.lineTo(lx, ly - 6);
+    ctx.stroke();
+    ctx.fillStyle = "#e8a850";
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8a5a20";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // small hanging sign, so it's clearly a real stall worth walking up to
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(ax - 22, top - 6, 44, 16);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax - 22, top - 6, 44, 16);
+  ctx.fillStyle = "rgba(230,200,140,0.7)";
+  ctx.font = "9px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("WARES", ax, top + 5);
+  ctx.textAlign = "left";
+}
+
+// the secret piece's only tell -- a small mossy lump on top of the
+// first alcove's arch, colored close enough to the stone that it
+// doesn't jump out unless you're already looking right at it
+function drawMoleHoleSecretPiece(camX) {
+  if (moleHoleSecretPiece.collected) return;
+  const sx = moleHoleSecretPiece.x - camX, sy = gy - moleHoleSecretPiece.heightAboveGround;
+  ctx.fillStyle = "#3a4a2e";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 3, 16, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4a5c3a";
+  ctx.beginPath();
+  ctx.ellipse(sx - 4, sy + 1, 5, 3, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx + 5, sy + 2, 4, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawMoleholeAlcove(alcove, camX) {
   const ax = alcove.x - camX;
   const w = alcove.w, h = 100;
@@ -20250,12 +20440,24 @@ function drawMoleholeCushion(c, camX) {
   const colorLight = c.colorLight || "#c98da4";
   const colorDark = "#2e1620";
 
+  // a real pendulum lean, not just a straight side-to-side slide -- the
+  // swing's own instantaneous direction (moleholeCushionDepth is the
+  // exact derivative of the x-motion) tilts the whole cushion into its
+  // swing like actual hanging fabric with weight and momentum, instead
+  // of an upright shape just sliding flatly back and forth
+  const tilt = moleholeCushionDepth(c) * 0.16;
+
   // soft drop shadow beneath, so it reads as floating rather than
   // pasted flat against the background
   ctx.fillStyle = "rgba(20,10,14,0.3)";
   ctx.beginPath();
   ctx.ellipse(cx, cy + hh + 3, hw * 0.85, 4, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(tilt);
+  ctx.translate(-cx, -cy);
 
   // main puffed body -- rounded-square silhouette filled with a
   // gradient angled toward the room's lantern light (upper-left)
@@ -20266,13 +20468,38 @@ function drawMoleholeCushion(c, camX) {
   roundRect(ctx, cx - hw, cy - hh, w, h, cornerR);
   ctx.fill();
 
-  // piped edge trim -- a slightly inset lighter outline, the classic
-  // "piped cushion" detail
+  // a soft ambient-occlusion shadow hugging the lower-right inside edge
+  // -- opposite the lantern-lit highlight -- so the puff actually reads
+  // as a rounded 3D form instead of a flat gradient disc
+  const shade = ctx.createRadialGradient(cx + hw * 0.4, cy + hh * 0.45, 1, cx + hw * 0.4, cy + hh * 0.45, w * 0.55);
+  shade.addColorStop(0, "rgba(10,4,6,0.28)");
+  shade.addColorStop(1, "rgba(10,4,6,0)");
+  ctx.save();
+  roundRect(ctx, cx - hw, cy - hh, w, h, cornerR);
+  ctx.clip();
+  ctx.fillStyle = shade;
+  ctx.fillRect(cx - hw, cy - hh, w, h);
+  ctx.restore();
+
+  // a thin bright fabric sheen along the top edge, like real quilted
+  // material catching the lantern light -- distinct from (and on top
+  // of) the base gradient's own highlight
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(cx - hw * 0.55, cy - hh * 0.72);
+  ctx.quadraticCurveTo(cx - hw * 0.1, cy - hh * 0.95, cx + hw * 0.4, cy - hh * 0.68);
+  ctx.stroke();
+
+  // piped edge trim -- stitched (dashed), the classic "piped cushion"
+  // seam detail, rather than a single unbroken outline
   ctx.strokeStyle = colorLight;
   ctx.lineWidth = 1.5;
   ctx.globalAlpha = 0.55;
+  ctx.setLineDash([3, 2.5]);
   roundRect(ctx, cx - hw + 2, cy - hh + 2, w - 4, h - 4, Math.max(1, cornerR - 2));
   ctx.stroke();
+  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 
   // diamond-tuft creases -- four soft fold lines running from each
@@ -20310,6 +20537,8 @@ function drawMoleholeCushion(c, camX) {
     ctx.ellipse(tx, ty + 6, 2, 2.5, 0, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  ctx.restore(); // matches the tilt transform's save() above
 }
 
 /* ======================================================
@@ -20416,6 +20645,8 @@ function drawMoleholeScene(camX) {
   // market alcoves, behind the roots/notice board so nothing floats in
   // front of the wall they're carved into
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
+  drawMoleShopAlcove(camX);
+  drawMoleHoleSecretPiece(camX);
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
   MOLEHOLE_PLATFORMS.forEach(p => drawMoleholePlatform(p, camX));
@@ -20499,6 +20730,10 @@ function drawMoleholeScene(camX) {
 
   drawTunnelTownEntrance(camX);
   drawMoleholeSpores(camX);
+
+  // drawn dead last, same as the elders' bubble in tunnel town, so it's
+  // never covered by anything else in the scene
+  drawMoleShopSpeechBubble(camX);
 }
 
 function updateMoleholeScene(deltaTime) {
@@ -20543,6 +20778,45 @@ function updateMoleholeScene(deltaTime) {
       player.usedDoubleJump = false;
     }
   });
+
+  // the secret arch piece -- standard platform landing (same pattern as
+  // every other collectible platform), then a space press while
+  // standing on it grabs it
+  if (!moleHoleSecretPiece.collected) {
+    const platTop = moleHoleSecretPiece.heightAboveGround;
+    if (
+      player.x + player.width > moleHoleSecretPiece.x - 16 &&
+      player.x < moleHoleSecretPiece.x + 16 &&
+      player.y <= platTop &&
+      player.y >= platTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    if (
+      Math.abs(player.y - platTop) < 2 &&
+      player.x + player.width > moleHoleSecretPiece.x - 16 &&
+      player.x < moleHoleSecretPiece.x + 16 &&
+      keys.spaceJustPressed
+    ) {
+      moleHoleSecretPiece.collected = true;
+      startCollectAnimation({ x: moleHoleSecretPiece.x, y: gy - platTop, size: 9, rotation: 0 }, "bridgePiece");
+    }
+  }
+
+  // shopkeeper dialogue takes priority over anything else this frame,
+  // same pattern as the tunnel town elders
+  if (moleShopDialogue.active) {
+    if (keys.spaceJustPressed) advanceMoleShopDialogue();
+    return;
+  }
+  if (isPlayerNear(MOLE_SHOP_X, 0, 45, 25, 20) && keys.spaceJustPressed) {
+    startMoleShopDialogue();
+    return;
+  }
 
   if (keys.spaceJustPressed && isPlayerNear(moleHoleExit.x, 0, 24, 15, 15)) {
     startSeasonTransition("forest");
@@ -20760,27 +21034,48 @@ function drawElderTrio(camX) {
       // sits just below the beard with real clearance above the bottom,
       // regardless of how tall/short a given elder's body is.
       const neckY = headCY + Math.min(15, bodyH - 14);
-      const scarfHalfW = bodyW * 0.34;
+      // a straight rectangle only ever spanned about 2/3 of the body's
+      // width, sitting narrower than the belly it was supposed to wrap --
+      // that gap on both sides is exactly why it read as a flat patch
+      // floating in the middle instead of actual fabric wrapped around a
+      // round shape. Now spans almost the full body width at that height
+      // AND follows the body's own curvature (arcs up slightly on top,
+      // droops down on the bottom edge) instead of being ruler-straight,
+      // so it visually hugs the roundness instead of sitting flat on it.
+      const scarfHalfW = bodyW * 0.42;
       ctx.fillStyle = elder.accessoryColor;
-      roundRect(ctx, ex - scarfHalfW, neckY - 2.5, scarfHalfW * 2, 5, 2);
+      ctx.beginPath();
+      ctx.moveTo(ex - scarfHalfW, neckY);
+      ctx.quadraticCurveTo(ex, neckY - 3, ex + scarfHalfW, neckY);
+      ctx.quadraticCurveTo(ex + scarfHalfW * 0.85, neckY + 9, ex, neckY + 10);
+      ctx.quadraticCurveTo(ex - scarfHalfW * 0.85, neckY + 9, ex - scarfHalfW, neckY);
+      ctx.closePath();
       ctx.fill();
       // a small knot, off to one side rather than dead center
       ctx.fillStyle = elder.accessoryColor;
-      roundRect(ctx, ex + scarfHalfW * 0.15, neckY - 3, 4, 6, 1.5);
+      roundRect(ctx, ex + scarfHalfW * 0.2, neckY - 1, 4, 6, 1.5);
       ctx.fill();
       // one short hanging tail from the knot
       ctx.beginPath();
-      ctx.moveTo(ex + scarfHalfW * 0.15, neckY + 2);
-      ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 9);
-      ctx.lineTo(ex + scarfHalfW * 0.15 + 3, neckY + 9);
+      ctx.moveTo(ex + scarfHalfW * 0.2, neckY + 4);
+      ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 12);
+      ctx.lineTo(ex + scarfHalfW * 0.2 + 3, neckY + 12);
       ctx.closePath();
+      ctx.fill();
+      // a shaded underside where the wrap droops, so it reads as cloth
+      // draped over a curve rather than a flat cutout shape
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.beginPath();
+      ctx.moveTo(ex - scarfHalfW * 0.7, neckY + 4);
+      ctx.quadraticCurveTo(ex, neckY + 10, ex + scarfHalfW * 0.7, neckY + 4);
+      ctx.quadraticCurveTo(ex, neckY + 7, ex - scarfHalfW * 0.7, neckY + 4);
       ctx.fill();
       // a couple of stitch-line creases, so it reads as wrapped cloth
       ctx.strokeStyle = "rgba(0,0,0,0.2)";
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(ex - scarfHalfW + 3, neckY);
-      ctx.lineTo(ex + scarfHalfW * 0.15 - 2, neckY);
+      ctx.moveTo(ex - scarfHalfW + 3, neckY + 1);
+      ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 1.5, ex + scarfHalfW * 0.15 - 2, neckY);
       ctx.stroke();
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out
@@ -21013,7 +21308,7 @@ const TUNNEL_NODES = [
   { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 140, dir: "up", hasItem: false, dug: false },
   { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // top of the left leg
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
-  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false }, // top of the right leg
+  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // top of the right leg -- the "dig deep to find one" bridge piece
 
   // the two legs connect at the top -- dig across from u1s2 and it opens
   // just above u3's own hole (not exactly on top of it anymore -- sitting
@@ -21025,6 +21320,11 @@ const TUNNEL_NODES = [
   // top tunnel here, drop down into the right leg's shaft, and come back
   // down (u3 -> u2 -> u1) without having to backtrack the way you came.
   { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 290, dir: "side", hasItem: false, dug: false },
+  // digging DOWN from the top crossing -- was previously just an invisible
+  // drop-through into u2/u3 with nothing marking it as an actual action,
+  // which read as a dead end. Now a real dig, with its own small find at
+  // the bottom, tucked into the safe gap next to the permanent dirt core.
+  { id: "uDeep", parent: "uTop", x: 600, heightAboveGround: 175, dir: "side", hasItem: true, itemType: "crystal", dug: false },
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
@@ -21047,7 +21347,7 @@ const TUNNEL_NODES = [
   // same fix here -- a real two-jump detour up and away from s1, instead
   // of a dead-end spot sitting directly above it
   { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end
+  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // dead end -- another small found treasure instead of nothing
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   // s3a/s3b used to sit only 20-60 units apart -- close enough that
   // their two markers visually overlapped into what read as one
@@ -21063,7 +21363,12 @@ const TUNNEL_NODES = [
   // a real climbing branch out here mirrors the left side's up-chain and
   // gives the right half of the maze its own vertical movement too
   { id: "s5u1", parent: "s5r", x: 1150, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
-  { id: "s5u2", parent: "s5u1", x: 1100, heightAboveGround: 250, dir: "up", hasItem: false, dug: false } // dead end, up high above the reward path
+  { id: "s5u2", parent: "s5u1", x: 1100, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
+  { id: "s5u3", parent: "s5u2", x: 1130, heightAboveGround: 330, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // built the vertical branch out one more climb, real dead end reward at the top
+  // a bit more flat ground out past the reward too -- built out
+  // horizontally as well as vertically, matching the same "further in"
+  // read as everything else this deep
+  { id: "s5r2", parent: "s5r", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
@@ -21083,11 +21388,22 @@ function tunnelNodeParentPos(node) {
 // not that node itself has been dug yet, so you can always reach the
 // next spot to dig it. Deliberately tight (not a wide flood-lit
 // stretch) -- separate from the visual carve shapes below.
-function tunnelWalkLimit() {
+function tunnelWalkLimit(playerH) {
   if (!tunnelWallBroken) return TUNNELTOWN_WALL_X - 6;
   let limit = TUNNELTOWN_WALL_X + 40;
+  // was pure x, with no regard for height at all -- meaning a node dug
+  // way up in the air (like the far end of the raised reward path) pushed
+  // this boundary out just as far at GROUND level too, letting you just
+  // walk the floor straight past where any ground-level path actually
+  // exists, underneath a tunnel that's really only open up in the air.
+  // Only nodes reasonably close to the player's own current height now
+  // count toward the limit -- matches the same margin the real 2D
+  // dig-collision uses, so this coarse backup stays consistent with it.
+  const ry = TUNNEL_PASSAGE_HEIGHT / 2 + 20;
   TUNNEL_NODES.forEach(node => {
-    if (tunnelNodeParentDug(node)) limit = Math.max(limit, node.x + 30);
+    if (tunnelNodeParentDug(node) && Math.abs(node.heightAboveGround - (playerH || 0)) <= ry) {
+      limit = Math.max(limit, node.x + 30);
+    }
   });
   return limit;
 }
@@ -21115,6 +21431,12 @@ function tunnelHoleContains(cx, ch, x, h) {
 // reveals, so solid-looking dirt is always solid in every direction,
 // not just blocked by a single rightward x-limit.
 function tunnelPositionRevealed(x, h) {
+  // the permanent dirt core is solid no matter what -- checked FIRST, so
+  // it overrides any tube/hole that happens to reach into the same area.
+  // Without this it was purely decorative: it drew on top of already-open
+  // space but never actually blocked movement, so you could just walk
+  // straight through what looked like solid ground.
+  if (tunnelCoreMoundContains(x, h)) return false;
   if (x < TUNNELTOWN_WALL_X + 6) return true; // the always-open starting nook
   if (!tunnelWallBroken) return false;
   if (tunnelHoleContains(TUNNELTOWN_WALL_X + 16, 0, x, h)) return true;
@@ -21485,26 +21807,59 @@ function drawRootStrand(cx, cy, len, seed, color) {
 
 // the permanent wedge of dirt hanging in the middle of the up-chain loop
 // -- point down, wide at top, tucked into the real gap left between the
-// left leg (u1 -> u1s1 -> u1s2 -> uTop) and right leg (u1 -> u2 -> u3),
-// well clear of either tube's own carved width so it never overlaps a
-// walkable passage. Fixed in world space, drawn fresh every frame, and
-// never affected by dig state -- this is dirt that simply never comes out.
-function drawTunnelCoreMound(camX) {
-  const basePts = [
-    { x: 610, y: 135 }, // bottom point
-    { x: 588, y: 185 },
-    { x: 583, y: 228 }, // top-left
-    { x: 610, y: 236 },
-    { x: 636, y: 226 }, // top-right
-    { x: 630, y: 178 }
-  ];
-  const seedBase = 41000;
-  const screenPts = basePts.map((p, i) => {
-    const jx = (pseudoRandom(seedBase + i * 6.1) - 0.5) * 10;
-    const jy = (pseudoRandom(seedBase + i * 6.1 + 3) - 0.5) * 10;
-    return { x: p.x - camX + jx, y: gy + cameraY - p.y + jy };
+// left leg (u1 -> u1s1 -> u1s2 -> uTop) and right leg (u1 -> u2 -> u3).
+// Fixed in world space (x, heightAboveGround -- same coordinate space as
+// every TUNNEL_NODE), and never affected by dig state -- this is dirt
+// that simply never comes out. Bigger than the original pass, with real
+// breathing room around it, AND actually solid now -- see
+// tunnelCoreMoundContains below, which the player collision checks
+// against directly, since being purely decorative meant you could just
+// walk straight through it.
+const TUNNEL_CORE_MOUND_SEED = 41000;
+// kept clear of every surrounding node's own tube corridor (u1s1/u1s2 on
+// the left, u2/u3 on the right, uTop above) with real margin on all
+// sides -- the actual open gap between those corridors pinches down to
+// almost nothing near the very bottom and the very top, so this is sized
+// to fill as much of the safely-open middle as it can without eating
+// into any node's own dig space
+const TUNNEL_CORE_MOUND_BASE_PTS = [
+  { x: 612, y: 135 }, // bottom point
+  { x: 578, y: 180 },
+  { x: 578, y: 225 }, // top-left
+  { x: 608, y: 236 },
+  { x: 628, y: 220 }, // top-right
+  { x: 635, y: 178 }
+];
+
+// the same jitter every time (seeded purely by index, not time), so the
+// collision shape and the rendered shape are always identical
+function tunnelCoreMoundWorldPoints() {
+  return TUNNEL_CORE_MOUND_BASE_PTS.map((p, i) => {
+    const jx = (pseudoRandom(TUNNEL_CORE_MOUND_SEED + i * 6.1) - 0.5) * 10;
+    const jy = (pseudoRandom(TUNNEL_CORE_MOUND_SEED + i * 6.1 + 3) - 0.5) * 10;
+    return { x: p.x + jx, h: p.y + jy };
   });
+}
+
+// standard ray-casting point-in-polygon test, in world (x, heightAboveGround) space
+function tunnelCoreMoundContains(x, h) {
+  const pts = tunnelCoreMoundWorldPoints();
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const pi = pts[i], pj = pts[j];
+    if (((pi.h > h) !== (pj.h > h)) &&
+        (x < (pj.x - pi.x) * (h - pi.h) / (pj.h - pi.h) + pi.x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function drawTunnelCoreMound(camX) {
+  const worldPts = tunnelCoreMoundWorldPoints();
+  const screenPts = worldPts.map(p => ({ x: p.x - camX, y: gy + cameraY - p.h }));
   if (screenPts.every(p => p.x < -40) || screenPts.every(p => p.x > canvas.width + 40)) return;
+  const seedBase = TUNNEL_CORE_MOUND_SEED;
 
   ctx.save();
   pathFromPoints(screenPts);
@@ -21956,6 +22311,32 @@ if (currentScene === "autumn") {
 // flying (collecting/placing) items — shared across scenes, drawn here so
 // a pickup animation started in ANY scene actually renders, not just autumn's
 flyingItems.forEach(f => {
+  // a bright radiating glow + a few outward sparkle flecks behind
+  // anything mid-reveal -- the oversized pop alone still wasn't enough
+  // to catch the eye against a dark, busy dirt background, so this adds
+  // actual light where there wasn't any, which is what real attention-
+  // grabbing "you found something" moments need underground
+  if (f.phase === "reveal") {
+    const fx = f.x - camX, fy = f.y;
+    const glowP = Math.min(f.t / (f.revealDuration * 0.35), 1);
+    const glowR = (f.size * f.scale) * (2.5 + glowP * 1.5);
+    const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, glowR);
+    glow.addColorStop(0, "rgba(255,240,180,0.55)");
+    glow.addColorStop(0.5, "rgba(255,215,120,0.25)");
+    glow.addColorStop(1, "rgba(255,215,120,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(fx, fy, glowR, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + f.t * 0.002;
+      const dist = (glowR * 0.55) * (0.6 + 0.4 * Math.sin(f.t * 0.006 + i));
+      ctx.fillStyle = "rgba(255,245,210,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(fx + Math.cos(a) * dist, fy + Math.sin(a) * dist, 1.8, 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   if (f.itemType === "leaf" && f.extra) {
     drawLeafShape(ctx, f.x - camX, f.y, f.size * f.scale, f.rotation, f.extra.shape, f.extra.color);
   } else {
