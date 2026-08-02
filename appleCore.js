@@ -20754,7 +20754,12 @@ function drawElderTrio(camX) {
       // exact position, since an ellipse + a curved fold line IS a mouth
       // shape. A straight-edged wrapped band with a knot reads as fabric
       // instead, regardless of where it sits.
-      const neckY = headCY + 19;
+      // fixed +19 put it almost at the very bottom of this elder's
+      // (shorter, bodyH:30) body -- reading as sitting on the belly
+      // instead of the neck. Clamped relative to bodyH so it always
+      // sits just below the beard with real clearance above the bottom,
+      // regardless of how tall/short a given elder's body is.
+      const neckY = headCY + Math.min(15, bodyH - 14);
       const scarfHalfW = bodyW * 0.34;
       ctx.fillStyle = elder.accessoryColor;
       roundRect(ctx, ex - scarfHalfW, neckY - 2.5, scarfHalfW * 2, 5, 2);
@@ -20897,6 +20902,17 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
     ctx.stroke();
   }
 
+  // a handful of actual gnarly old roots, distinct from the thin straight
+  // cracks above -- curved, sometimes forked, real character rather than
+  // pure geometric fill
+  const rootCount = Math.max(2, Math.round(w / 90));
+  for (let i = 0; i < rootCount; i++) {
+    const seed = seedBase + 1300 + i * 29.3;
+    const rx = x0 + pseudoRandom(seed) * w;
+    const ry = pseudoRandom(seed + 1) * h;
+    drawRootStrand(rx, ry, 14 + pseudoRandom(seed + 2) * 16, seed);
+  }
+
   ctx.restore();
 }
 
@@ -21008,7 +21024,7 @@ const TUNNEL_NODES = [
   // from one into the other -- climb the left leg, cross the horizontal
   // top tunnel here, drop down into the right leg's shaft, and come back
   // down (u3 -> u2 -> u1) without having to backtrack the way you came.
-  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 280, dir: "side", hasItem: false, dug: false },
+  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 290, dir: "side", hasItem: false, dug: false },
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
@@ -21146,29 +21162,92 @@ function addTunnelTubeToPath(camX, x1, h1, x2, h2) {
 // radiating out so it doesn't look like a plain blob. Used for every
 // undug spot in the scene (the wall's own soft spot included) so the
 // player learns one consistent visual language for "diggable here".
+// builds an irregular ellipse-ish outline -- same overall size as a true
+// ellipse but with each point nudged in/out along its own radius, so the
+// shape reads as an actual ragged hole torn in dirt rather than a clean
+// geometric oval "pasted on" over the texture underneath
+function irregularOvalPoints(cx, cy, rx, ry, seed, jitter, count) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const wobble = 1 + (pseudoRandom(seed + i * 7.3) - 0.5) * jitter;
+    pts.push({ x: cx + Math.cos(a) * rx * wobble, y: cy + Math.sin(a) * ry * wobble });
+  }
+  return pts;
+}
+
+function pathFromPoints(pts) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i <= pts.length; i++) {
+    const p = pts[i % pts.length];
+    const prev = pts[(i - 1) % pts.length];
+    ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + p.x) / 2, (prev.y + p.y) / 2);
+  }
+  ctx.closePath();
+}
+
 function drawDigSoftSpot(cx, cy, rx, ry, seed) {
+  // a solid clump of dirt behind the marker itself, noticeably bigger
+  // than the marker -- without this, any marker sitting inside an
+  // already-carved-open pocket (like a gated reconnect spot positioned
+  // right where an earlier dig already opened things up) reads as
+  // floating in empty space instead of being embedded in something.
+  // Always drawn first, regardless of what's already open around it.
+  const backdropR = Math.max(rx, ry) * 1.5;
+  ctx.fillStyle = "#241c14";
+  pathFromPoints(irregularOvalPoints(cx, cy - ry * 0.15, backdropR, backdropR * 0.85, seed + 900, 0.3, 9));
+  ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  pathFromPoints(irregularOvalPoints(cx, cy - ry * 0.15, backdropR * 0.92, backdropR * 0.78, seed + 901, 0.28, 9));
+  ctx.fill();
+
+  // a ragged, hand-torn outline instead of a perfect ellipse -- this alone
+  // does most of the work of making it read as an actual hole in the dirt
+  // rather than a sticker laid on top
+  const raggedPts = irregularOvalPoints(cx, cy, rx, ry, seed, 0.22, 10);
+
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
   grad.addColorStop(0, "rgba(150,120,75,0.55)");
   grad.addColorStop(0.65, "rgba(120,95,60,0.4)");
   grad.addColorStop(1, "rgba(80,62,40,0.12)");
   ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  pathFromPoints(raggedPts);
   ctx.fill();
+
+  // a darker cavity right at the center -- gives the impression of actual
+  // depth/recess instead of a flat tinted patch
+  const cavityGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry) * 0.55);
+  cavityGrad.addColorStop(0, "rgba(20,14,8,0.5)");
+  cavityGrad.addColorStop(1, "rgba(20,14,8,0)");
+  ctx.fillStyle = cavityGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.55, ry * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   // a slow, subtle pulsing rim -- this is what actually marks it as a
   // real, interactive dig spot rather than just ambient dirt texture
   // (the surrounding dark blotches can look similar at a glance otherwise)
   const pulse = 0.35 + Math.sin(performance.now() * 0.0022 + seed) * 0.2;
   ctx.strokeStyle = `rgba(230,200,130,${pulse})`;
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx + 1.5, ry + 1.5, 0, 0, Math.PI * 2);
+  pathFromPoints(irregularOvalPoints(cx, cy, rx + 1.5, ry + 1.5, seed + 50, 0.22, 10));
   ctx.stroke();
-  ctx.strokeStyle = "rgba(55,42,24,0.5)";
+  ctx.strokeStyle = "rgba(55,42,24,0.55)";
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  pathFromPoints(raggedPts);
   ctx.stroke();
+  // loose crumbs of dirt sitting right at the torn edge, so the rim
+  // itself looks disturbed/broken rather than a clean drawn line
+  ctx.fillStyle = "rgba(60,46,28,0.6)";
+  for (let i = 0; i < 5; i++) {
+    const a = pseudoRandom(seed + 80 + i * 4.1) * Math.PI * 2;
+    const rr = 0.95 + pseudoRandom(seed + 81 + i * 3.3) * 0.25;
+    const px = cx + Math.cos(a) * rx * rr, py = cy + Math.sin(a) * ry * rr;
+    ctx.beginPath();
+    ctx.ellipse(px, py, 1.6 + pseudoRandom(seed + 82 + i) * 1.4, 1.1, a, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.strokeStyle = "rgba(80,62,36,0.4)";
   ctx.lineWidth = 1;
   for (let i = 0; i < 4; i++) {
@@ -21195,8 +21274,12 @@ function drawTunnelDigSpot(node, camX) {
   // reward path) the marker used to draw itself all the way down at
   // ground level instead of up at the node's real position.
   const markY = isUp ? cy - 12 : cy - (isSunken ? 26 : 34);
-  const markRX = isUp ? 10 : (isSunken ? 22 : 15);
-  const markRY = isUp ? 22 : (isSunken ? 14 : 20);
+  // "up" markers shrunk down (was 10x22) -- at the up-chain's tighter
+  // vertical spacing, the old size left almost no visible dirt between
+  // consecutive markers, so several frontier holes in a row read as one
+  // smeared-together patch instead of distinct spots
+  const markRX = isUp ? 8 : (isSunken ? 22 : 15);
+  const markRY = isUp ? 15 : (isSunken ? 14 : 20);
 
   // a low rock lip overhanging any sunken spot -- hints at the lower
   // ceiling without actually changing the (ground-level) collision
@@ -21334,6 +21417,17 @@ function drawDiggingFlourish(camX) {
     bobY = 4 - 9 * t;
     bobX = 4 * animDir - 2 * t * animDir;
   }
+  // for a needsStone spot, the stone itself is doing real work here, not
+  // just sitting in the bag while the shovel does everything -- show it
+  // wedged right into the hole, taking a little jolt on the plunge beat
+  // of every swing, so using it up the moment the spot opens actually
+  // reads as earned rather than an invisible inventory check
+  const digNode = activeDig.kind === "spot" ? TUNNEL_NODES.find(n => n.id === activeDig.id) : null;
+  if (digNode && digNode.needsStone) {
+    const jolt = swingLocalT > 0.3 && swingLocalT < 0.6 ? (0.6 - Math.abs(swingLocalT - 0.45) * 6) * 3 : 0;
+    drawCollectible(ctx, activeDig.x - camX, sy - 8 - jolt, 9, jolt * 0.3, "stone");
+  }
+
   drawShovelShape(ctx, sx + bobX, sy - 16 + bobY, 13, angle);
 
   // each swing throws a real clump of dirt out in a visible arc (rises
@@ -21362,6 +21456,96 @@ function drawDiggingFlourish(camX) {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// a small gnarly root, poking out from a patch of dirt -- a curved main
+// strand with one or two thinner branch forks, distinct from the
+// straight crack-lines already scattered through the dirt texture
+function drawRootStrand(cx, cy, len, seed, color) {
+  ctx.strokeStyle = color || "rgba(120,95,60,0.5)";
+  ctx.lineWidth = 1.3;
+  const ang = pseudoRandom(seed) * Math.PI * 2;
+  const midX = cx + Math.cos(ang) * len * 0.55 + (pseudoRandom(seed + 1) - 0.5) * len * 0.4;
+  const midY = cy + Math.sin(ang) * len * 0.55 + (pseudoRandom(seed + 2) - 0.5) * len * 0.4;
+  const endX = cx + Math.cos(ang) * len, endY = cy + Math.sin(ang) * len;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.quadraticCurveTo(midX, midY, endX, endY);
+  ctx.stroke();
+  if (pseudoRandom(seed + 3) < 0.6) {
+    ctx.lineWidth = 0.8;
+    const forkX = midX + Math.cos(ang + 0.9) * len * 0.3;
+    const forkY = midY + Math.sin(ang + 0.9) * len * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(midX, midY);
+    ctx.lineTo(forkX, forkY);
+    ctx.stroke();
+  }
+}
+
+// the permanent wedge of dirt hanging in the middle of the up-chain loop
+// -- point down, wide at top, tucked into the real gap left between the
+// left leg (u1 -> u1s1 -> u1s2 -> uTop) and right leg (u1 -> u2 -> u3),
+// well clear of either tube's own carved width so it never overlaps a
+// walkable passage. Fixed in world space, drawn fresh every frame, and
+// never affected by dig state -- this is dirt that simply never comes out.
+function drawTunnelCoreMound(camX) {
+  const basePts = [
+    { x: 610, y: 135 }, // bottom point
+    { x: 588, y: 185 },
+    { x: 583, y: 228 }, // top-left
+    { x: 610, y: 236 },
+    { x: 636, y: 226 }, // top-right
+    { x: 630, y: 178 }
+  ];
+  const seedBase = 41000;
+  const screenPts = basePts.map((p, i) => {
+    const jx = (pseudoRandom(seedBase + i * 6.1) - 0.5) * 10;
+    const jy = (pseudoRandom(seedBase + i * 6.1 + 3) - 0.5) * 10;
+    return { x: p.x - camX + jx, y: gy + cameraY - p.y + jy };
+  });
+  if (screenPts.every(p => p.x < -40) || screenPts.every(p => p.x > canvas.width + 40)) return;
+
+  ctx.save();
+  pathFromPoints(screenPts);
+  ctx.clip();
+
+  ctx.fillStyle = "#241c14";
+  ctx.fillRect(screenPts[0].x - 60, Math.min(...screenPts.map(p => p.y)) - 20, 140, 140);
+
+  // a little internal shading so it reads as a rounded mass, not a flat cutout
+  const cx = screenPts.reduce((s, p) => s + p.x, 0) / screenPts.length;
+  const cy = screenPts.reduce((s, p) => s + p.y, 0) / screenPts.length;
+  const shade = ctx.createRadialGradient(cx, cy - 15, 4, cx, cy, 55);
+  shade.addColorStop(0, "rgba(90,72,50,0.4)");
+  shade.addColorStop(1, "rgba(0,0,0,0.25)");
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 55, 55, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a couple of embedded rocks and root strands so it matches the rest
+  // of the dirt's texture instead of reading as a flat silhouette
+  for (let i = 0; i < 3; i++) {
+    const seed = seedBase + 100 + i * 19.3;
+    const rx = cx + (pseudoRandom(seed) - 0.5) * 70;
+    const ry = cy + (pseudoRandom(seed + 1) - 0.5) * 70;
+    const rr = 3 + pseudoRandom(seed + 2) * 5;
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#6a6154" : "#453d32";
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, rr, rr * 0.8, pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath();
+    ctx.ellipse(rx - rr * 0.3, ry - rr * 0.3, rr * 0.35, rr * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 3; i++) {
+    const seed = seedBase + 300 + i * 23.7;
+    drawRootStrand(cx + (pseudoRandom(seed) - 0.5) * 60, cy + (pseudoRandom(seed + 1) - 0.5) * 60, 16 + pseudoRandom(seed + 2) * 12, seed);
+  }
+
+  ctx.restore();
 }
 
 function drawTunnelTownScene(camX) {
@@ -21404,6 +21588,11 @@ function drawTunnelTownScene(camX) {
   sky.addColorStop(1, "#161210");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, groundY);
+
+  // the permanent dirt core hanging in the middle of the up-chain loop --
+  // drawn right on top of the open sky fill, so it reads as a real solid
+  // mass sitting inside the carved-open cave, never removed by any digging
+  drawTunnelCoreMound(camX);
 
   // rougher wall texture -- less regular than the mole hole's neat
   // packed-earth bands, more like crumbling old digging
@@ -21511,7 +21700,7 @@ function drawTunnelBlockedHint(camX) {
   const sx = tunnelBlockedHint.x - camX;
   const sy = gy + cameraY - tunnelBlockedHint.heightAboveGround - 46;
   ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["This spot feels too solid to dig...", "might need something sturdier to work it loose."]);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["This spot feels too solid to dig...", "a stone wedged in with the shovel might work it loose."]);
   ctx.globalAlpha = 1;
 }
 
@@ -21545,9 +21734,27 @@ function updateTunnelTownScene(deltaTime) {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
         if (node.hasItem) {
+          // was never converted into actual screen space (just the raw
+          // heightAboveGround + 14, treated as if that WERE a screen y) --
+          // it was popping into existence off in the corner of the canvas
+          // instead of at the dig spot, which is exactly why it was never
+          // visible sitting in the dirt before flying off. Needs the same
+          // gy + cameraY - height conversion every other tunnel-town draw uses.
+          const revealY = gy + cameraY - node.heightAboveGround - 14;
           // a beat longer than the default reveal -- these are found buried
           // in dirt, easy to miss entirely if it flies off immediately
-          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, node.itemType || "cushionPart", null, 900);
+          startCollectAnimation({ x: node.x, y: revealY, size: 8, rotation: 0 }, node.itemType || "cushionPart", null, 900);
+        }
+        // the stone is what actually breaks a needsStone spot open, not
+        // just the shovel with the stone incidentally sitting in your bag --
+        // it gets used up right here, the same moment the hole opens
+        if (node.needsStone) {
+          inventory.stone -= 1;
+          if (inventory.stone <= 0) {
+            delete inventory.stone;
+            if (heldItem === "stone") heldItem = null;
+          }
+          updateInventoryUI();
         }
       }
       activeDig = null;
