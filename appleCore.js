@@ -896,11 +896,16 @@ const cloudLanding = { active: false, t: 0 };
 const CLOUD_LANDING_HOLD = 550; // ms
 
 const TRANSITION_DURATIONS = { fadeOut: 600, hold: 1400, fadeIn: 600 };
+// tunnel town sits a lot deeper than any other transition in the game --
+// a noticeably longer hold (and slightly longer fades) sells "we're going
+// a long way down" instead of the usual quick scene-swap beat
+const TUNNELTOWN_TRANSITION_DURATIONS = { fadeOut: 900, hold: 2600, fadeIn: 900 };
 
 function startSeasonTransition(targetScene) {
   seasonTransition.phase = "fadeOut";
   seasonTransition.t = 0;
   seasonTransition.targetScene = targetScene;
+  seasonTransition.durations = targetScene === "tunneltown" ? TUNNELTOWN_TRANSITION_DURATIONS : TRANSITION_DURATIONS;
 
   // clear every special-movement state — a transition firing mid-vine,
   // mid-swing, etc. was leaving that state permanently true, which
@@ -922,7 +927,7 @@ function updateSeasonTransition(deltaTime) {
   if (seasonTransition.phase === "idle") return;
 
   seasonTransition.t += deltaTime * 1000;
-  const dur = TRANSITION_DURATIONS[seasonTransition.phase];
+  const dur = (seasonTransition.durations || TRANSITION_DURATIONS)[seasonTransition.phase];
 
   if (seasonTransition.t >= dur) {
     seasonTransition.t = 0;
@@ -987,11 +992,12 @@ function updateSeasonTransition(deltaTime) {
 function drawSeasonTransition(ctx) {
   if (seasonTransition.phase === "idle") return;
 
+  const durations = seasonTransition.durations || TRANSITION_DURATIONS;
   let alpha = 1;
   if (seasonTransition.phase === "fadeOut") {
-    alpha = seasonTransition.t / TRANSITION_DURATIONS.fadeOut;
+    alpha = seasonTransition.t / durations.fadeOut;
   } else if (seasonTransition.phase === "fadeIn") {
-    alpha = 1 - seasonTransition.t / TRANSITION_DURATIONS.fadeIn;
+    alpha = 1 - seasonTransition.t / durations.fadeIn;
   }
   alpha = Math.min(Math.max(alpha, 0), 1);
 
@@ -1264,7 +1270,8 @@ function pseudoRandom(n) {
   return x - Math.floor(x);
 }
 
-function startCollectAnimation(piece, itemType, extra) {
+function startCollectAnimation(piece, itemType, extra, revealMs) {
+  const hasReveal = revealMs > 0;
   flyingItems.push({
     mode: "collect",
     itemType,
@@ -1272,10 +1279,15 @@ function startCollectAnimation(piece, itemType, extra) {
     y: piece.y,
     startX: piece.x,
     startY: piece.y,
-    phase: "toCenter",       // "toCenter" -> "hold" -> "toBasket"
+    // an optional beat where the item just sits in place (popping in with
+    // a little scale-up) before it starts flying to the basket -- without
+    // this, items revealed inside dirt/a dig hole snap straight to the
+    // inventory and are never actually seen where they were found
+    phase: hasReveal ? "reveal" : "toCenter", // "reveal"? -> "toCenter" -> "hold" -> "toBasket"
+    revealDuration: hasReveal ? revealMs : 0,
     t: 0,
     size: piece.size,
-    scale: 1,
+    scale: hasReveal ? 0.2 : 1,
     rotation: piece.rotation,
     extra: extra || null
   });
@@ -1312,7 +1324,15 @@ function updateFlyingItems(deltaTime, camX) {
     f.t += dtMs;
 
     if (f.mode === "collect") {
-      if (f.phase === "toCenter") {
+      if (f.phase === "reveal") {
+        // pop in and hold, right where it was uncovered
+        const p = Math.min(f.t / (f.revealDuration * 0.4), 1);
+        f.scale = 0.2 + easeOutCubic(p) * 0.9; // settles around 1.1x, a little bigger than normal so it reads clearly
+        if (f.t >= f.revealDuration) {
+          f.phase = "toCenter";
+          f.t = 0;
+        }
+      } else if (f.phase === "toCenter") {
         const dur = COLLECT_DURATIONS.toCenter;
         const p = easeOutCubic(Math.min(f.t / dur, 1));
 
@@ -2025,7 +2045,7 @@ function applyPhysics(){
     TUNNEL_NODES.forEach(node => {
       if (!node.dug || node.heightAboveGround <= 0) return;
       const platformTop = node.heightAboveGround;
-      let left = node.x - 28, right = node.x + 28;
+      let left = node.x - 24, right = node.x + 24;
       const parentPos = tunnelNodeParentPos(node);
       if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
         left = Math.min(left, parentPos.x);
@@ -20302,7 +20322,7 @@ function drawMoleholeCushion(c, camX) {
    surface entrance.
    ====================================================== */
 const tunnelTownEntrance = { x: 1500, active: false, t: 0 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it
-const TUNNELTOWN_FALL_MS = 700;
+const TUNNELTOWN_FALL_MS = 1300; // longer than a normal hole -- this one goes a lot deeper
 
 function updateTunnelTownEntrance(deltaTime) {
   if (tunnelTownEntrance.active) {
@@ -20556,10 +20576,21 @@ const tunnelTownExit = { x: 150 };
 // bob/bobSpeed give each one the same light idle bounce every other NPC
 // in the game already has (updateNPCIdle) -- staggered speeds so all
 // three don't bounce in perfect unison
+// real, distinct hues per elder now -- not just three shades of the same
+// muted tan (which was hard to tell apart at a glance even with the
+// accessories). The scarf also moved off red entirely -- a red oval at
+// roughly mouth height on a body with no visible neckline kept reading
+// as a smiling mouth/tongue no matter where exactly it sat, so it's now
+// a muted teal AND a completely different shape (see drawElderTrio).
+// gestureOffset staggers each one's little idle tic (see
+// ELDER_GESTURE_PERIOD in drawElderTrio) so they never all fidget in
+// sync -- a small periodic "bit of business" layered on top of the bob,
+// distinct per elder, so they read as having more character than a
+// generic bounce alone.
 const elderTrio = [
-  { dx: -46, color: "#8a7a5a", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#a23e3e", bob: 0, bobSpeed: 0.032, tip: 0 }, // short and round, a cozy old scarf
-  { dx: 2,   color: "#7a6a4a", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0 }, // tall and thin, neat little round glasses
-  { dx: 50,  color: "#9a8a6a", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0 } // average build, a flat cap over a balding head
+  { dx: -46, color: "#9c6b52", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#3f6e64", bob: 0, bobSpeed: 0.032, tip: 0, gestureOffset: 0 }, // short and round, warm reddish-brown fur, a cozy old scarf
+  { dx: 2,   color: "#847d6e", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0, gestureOffset: 2200 }, // tall and thin, cooler grey fur, neat little round glasses
+  { dx: 50,  color: "#c2a679", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0, gestureOffset: 4300 } // average build, lighter sandy-tan fur, a flat cap over a balding head
 ];
 const ELDER_X = 260; // pushed further right (was 210) -- more approach distance from the entrance, and real breathing room before the wall
 let elderTalkedTo = false;
@@ -20597,12 +20628,30 @@ function advanceElderDialogue() {
   }
 }
 
+// each elder's little periodic "bit of business" -- a brief eased pulse
+// near the start of every cycle, staggered per elder via gestureOffset,
+// then nothing for the rest of the period. Layered on top of the bob,
+// this is what actually reads as personality/character rather than a
+// generic idle animation.
+const ELDER_GESTURE_PERIOD = 5200;
+const ELDER_GESTURE_WINDOW = 650;
+function elderGesturePulse(elder) {
+  const gt = (performance.now() + elder.gestureOffset) % ELDER_GESTURE_PERIOD;
+  if (gt >= ELDER_GESTURE_WINDOW) return 0;
+  return Math.sin((gt / ELDER_GESTURE_WINDOW) * Math.PI); // eases up to 1 at the midpoint, back to 0
+}
+
 // bodies only -- kept separate from the speech bubble (drawElderSpeechBubble
 // below) so the bubble can be drawn AFTER the wall/rubble, on top of
 // everything, instead of getting cut off by whatever's drawn next
 function drawElderTrio(camX) {
   elderTrio.forEach(elder => {
-    const ex = ELDER_X + elder.dx - camX;
+    const gesture = elderGesturePulse(elder);
+    // the scarf-wearer's gesture is a little full-body shiver -- a tiny
+    // horizontal jitter -- so it needs to shift ex itself, not just an
+    // accessory. Everyone else's gesture stays local to their accessory.
+    const shiverX = elder.accessory === "scarf" ? Math.sin(performance.now() * 0.05) * gesture * 1.4 : 0;
+    const ex = ELDER_X + elder.dx - camX + shiverX;
     // pinned to the tunnel-town ground line, which itself scrolls with
     // cameraY as the player climbs (a no-op everywhere else, since
     // cameraY is 0 in every other scene)
@@ -20678,45 +20727,65 @@ function drawElderTrio(camX) {
 
     // one small signature accessory each, so the trio has real personality
     if (elder.accessory === "glasses") {
-      // neat little round glasses, perched right at eye level
+      // neat little round glasses, perched right at eye level -- the
+      // gesture: they slip down a touch, then get pushed back up by a
+      // tiny hand, a classic "glasses" tic
+      const slip = gesture < 0.5 ? gesture * 2 : (1 - gesture) * 2; // down then back up within the pulse
+      const glassesY = headCY + 4 + slip * 1.8;
       ctx.strokeStyle = "#2a2018";
       ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.arc(headCX - 3.5, headCY + 4, 3, 0, Math.PI * 2);
-      ctx.arc(headCX + 3.5, headCY + 4, 3, 0, Math.PI * 2);
-      ctx.moveTo(headCX - 0.5, headCY + 4);
-      ctx.lineTo(headCX + 0.5, headCY + 4);
+      ctx.arc(headCX - 3.5, glassesY, 3, 0, Math.PI * 2);
+      ctx.arc(headCX + 3.5, glassesY, 3, 0, Math.PI * 2);
+      ctx.moveTo(headCX - 0.5, glassesY);
+      ctx.lineTo(headCX + 0.5, glassesY);
       ctx.stroke();
+      if (gesture > 0.35) {
+        // the little hand nub doing the pushing, only visible mid-gesture
+        ctx.fillStyle = elder.color;
+        ctx.beginPath();
+        ctx.ellipse(headCX + 4.5, glassesY - 1, 2, 2.6, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else if (elder.accessory === "scarf") {
-      // a cozy, slightly frayed old scarf looped around the NECK --
-      // previous version sat right on top of the beard/mouth and was
-      // nearly as wide as the whole body, which read as a big red smear
-      // across the face instead of a scarf. Pushed well clear below the
-      // beard, narrowed so it hugs just the neck instead of spanning
-      // the full body width, and the hanging tail shrunk to match.
+      // a wrapped rectangular band instead of an oval -- ANY oval sitting
+      // at roughly mouth-height on a body with no visible neckline kept
+      // reading as a smiling mouth (or worse) no matter the color or
+      // exact position, since an ellipse + a curved fold line IS a mouth
+      // shape. A straight-edged wrapped band with a knot reads as fabric
+      // instead, regardless of where it sits.
       const neckY = headCY + 19;
-      const scarfRX = bodyW * 0.32;
+      const scarfHalfW = bodyW * 0.34;
       ctx.fillStyle = elder.accessoryColor;
-      ctx.beginPath();
-      ctx.ellipse(ex, neckY, scarfRX, 3, 0, 0, Math.PI * 2);
+      roundRect(ctx, ex - scarfHalfW, neckY - 2.5, scarfHalfW * 2, 5, 2);
       ctx.fill();
-      // a subtle fold line, so it reads as wrapped fabric rather than a
-      // flat painted band
-      ctx.strokeStyle = "rgba(0,0,0,0.18)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(ex, neckY, scarfRX * 0.6, 1.6, 0, 0, Math.PI);
-      ctx.stroke();
-      // one short hanging tail, off to the side rather than dead center
+      // a small knot, off to one side rather than dead center
       ctx.fillStyle = elder.accessoryColor;
+      roundRect(ctx, ex + scarfHalfW * 0.15, neckY - 3, 4, 6, 1.5);
+      ctx.fill();
+      // one short hanging tail from the knot
       ctx.beginPath();
-      ctx.moveTo(ex + scarfRX * 0.3, neckY + 1);
-      ctx.lineTo(ex + scarfRX * 0.7, neckY + 7);
-      ctx.lineTo(ex + scarfRX * 0.1, neckY + 7);
+      ctx.moveTo(ex + scarfHalfW * 0.15, neckY + 2);
+      ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 9);
+      ctx.lineTo(ex + scarfHalfW * 0.15 + 3, neckY + 9);
       ctx.closePath();
       ctx.fill();
+      // a couple of stitch-line creases, so it reads as wrapped cloth
+      ctx.strokeStyle = "rgba(0,0,0,0.2)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(ex - scarfHalfW + 3, neckY);
+      ctx.lineTo(ex + scarfHalfW * 0.15 - 2, neckY);
+      ctx.stroke();
     } else if (elder.accessory === "cap") {
-      // a flat cap over a balding head -- a little wispy tuft peeking out back
+      // a flat cap over a balding head -- a little wispy tuft peeking out
+      // back. Gesture: gives the cap a quick tilt as if scratching
+      // underneath it, a little hand appearing at the brim mid-pulse.
+      const tilt = Math.sin(gesture * Math.PI) * 0.12;
+      ctx.save();
+      ctx.translate(headCX, headCY - 5);
+      ctx.rotate(tilt);
+      ctx.translate(-headCX, -(headCY - 5));
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
       ctx.ellipse(headCX, headCY - 5, bodyW / 2 + 1, 3.5, 0, Math.PI, Math.PI * 2);
@@ -20730,6 +20799,13 @@ function drawElderTrio(camX) {
       ctx.moveTo(headCX + bodyW / 2 - 1, headCY - 3);
       ctx.quadraticCurveTo(headCX + bodyW / 2 + 3, headCY, headCX + bodyW / 2 - 1, headCY + 3);
       ctx.stroke();
+      ctx.restore();
+      if (gesture > 0.3) {
+        ctx.fillStyle = elder.color;
+        ctx.beginPath();
+        ctx.ellipse(headCX - bodyW / 2 + 2, headCY - 3, 2, 2.6, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // a small cane, planted at their side -- scaled to each one's own height
@@ -20859,9 +20935,15 @@ function drawTunnelWall(camX) {
     // beat right as the wall breaks, rather than snapping to full
     // height instantly
     const openGrowP = Math.min(1, wallBreakPoofT / 300); // grows in over 300ms right as it breaks, then stays open
-    const openHeight = TUNNEL_PASSAGE_HEIGHT * openGrowP;
+    const openHeight = TUNNEL_PASSAGE_HEIGHT * 0.82 * openGrowP; // a touch shorter than the full passage height
+    // an actual hole shape -- rounded oval opening, not a flat black slab,
+    // so it reads the same visual language as every other dig spot/hole
+    const holeCX = wx + 16, holeBottomY = gy + cameraY;
+    const holeRY = openHeight / 2, holeRX = 20;
     ctx.fillStyle = "#0a0603";
-    ctx.fillRect(wx - 2, gy + cameraY - openHeight, 36, openHeight);
+    ctx.beginPath();
+    ctx.ellipse(holeCX, holeBottomY - holeRY, holeRX, holeRY, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = "#241c14";
     for (let i = 0; i < 6; i++) {
       const seed = 5000 + i * 11.3;
@@ -20917,11 +20999,16 @@ const TUNNEL_NODES = [
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
   { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false }, // top of the right leg
 
-  // the two legs connect at the top -- dig across from u1s2 and it
-  // opens right on top of u3's own hole, merging the two into one loop.
-  // Climb the left leg, cross here, and come back down the right leg
-  // (u3 -> u2 -> u1) without having to backtrack the way you came.
-  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 240, dir: "side", hasItem: false, dug: false },
+  // the two legs connect at the top -- dig across from u1s2 and it opens
+  // just above u3's own hole (not exactly on top of it anymore -- sitting
+  // at the identical spot made the two read as one featureless blob, no
+  // sense that you'd actually crossed from a horizontal passage into a
+  // separate vertical shaft). Now there's a real pocket of dirt between
+  // the two holes, with just enough overlap to still walk/drop straight
+  // from one into the other -- climb the left leg, cross the horizontal
+  // top tunnel here, drop down into the right leg's shaft, and come back
+  // down (u3 -> u2 -> u1) without having to backtrack the way you came.
+  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 280, dir: "side", hasItem: false, dug: false },
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
@@ -20955,7 +21042,12 @@ const TUNNEL_NODES = [
   { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
   { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
-  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: false, dug: false } // more passage continuing right past the reward, its own dead end
+  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }, // more passage continuing right past the reward, its own dead end
+  // the right side was all flat side-to-side walking past the reward --
+  // a real climbing branch out here mirrors the left side's up-chain and
+  // gives the right half of the maze its own vertical movement too
+  { id: "s5u1", parent: "s5r", x: 1150, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
+  { id: "s5u2", parent: "s5u1", x: 1100, heightAboveGround: 250, dir: "up", hasItem: false, dug: false } // dead end, up high above the reward path
 ];
 
 function tunnelNodeParentDug(node) {
@@ -21131,11 +21223,11 @@ function drawTunnelDigSpot(node, camX) {
     // parent at the same height instead of leaving separate islands
     if (node.heightAboveGround > 0) {
       const parentPos = tunnelNodeParentPos(node);
-      let ledgeLeftWorld = node.x - 28;
+      let ledgeLeftWorld = node.x - 24;
       if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
         ledgeLeftWorld = Math.min(ledgeLeftWorld, parentPos.x);
       }
-      const ledgeLeft = ledgeLeftWorld - camX, ledgeRight = sx + 28;
+      const ledgeLeft = ledgeLeftWorld - camX, ledgeRight = sx + 24;
       // a couple of stubby support posts underneath, reaching down into
       // the dug pocket below the ledge -- without these, an elevated
       // ledge just floated in the dark with nothing visibly holding it
@@ -21453,7 +21545,9 @@ function updateTunnelTownScene(deltaTime) {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
         if (node.hasItem) {
-          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, node.itemType || "cushionPart");
+          // a beat longer than the default reveal -- these are found buried
+          // in dirt, easy to miss entirely if it flies off immediately
+          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, node.itemType || "cushionPart", null, 900);
         }
       }
       activeDig = null;
