@@ -132,7 +132,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 200, // TEMPORARY — spawns in the mole hole, near the first market alcove, revert to 400 when done
+  x: 620, // TEMPORARY — spawns near the new dirt platforms/cushion shaft in the mole hole, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -19612,7 +19612,7 @@ function updateRatRoomScene(deltaTime) {
    of rotating cushion-lifts) is next, once this room has a real feel
    to build it inside of. Climb back out the way you came.
    ====================================================== */
-const MOLEHOLE_WIDTH = 700; // widened from the bare-shell pass so a couple of market alcoves fit comfortably
+const MOLEHOLE_WIDTH = 1600; // widened again -- this room is bigger than ratroom (~1400), real room for the market set AND the shaft AND whatever comes after it
 const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches sceneSpawns.molehole's arrival point
 
 // market alcoves -- recessed archways carved into the back wall, each
@@ -19826,14 +19826,41 @@ function drawMoleholeRoot(rx, len, seed) {
     }
   }
 
+  // mini root hairs -- several tiny thin sprigs sprouting straight off
+  // the main root's length (distinct from the larger forks above),
+  // scattered at random points/depths so the root reads as genuinely
+  // fibrous/rootier instead of just one strand plus a couple of forks
+  const hairCount = 4 + Math.floor(pseudoRandom(seed + 40) * 4); // 4-7 hairs
+  for (let h = 0; h < hairCount; h++) {
+    const hSeed = seed + 60 + h * 13.7;
+    const hairT = 0.15 + pseudoRandom(hSeed) * 0.75; // where along the main root, avoid the very tip
+    const hairY = len * hairT;
+    // interpolate the main root's centerline x at this depth, same
+    // piecewise approach used for the forks' origin point
+    const hairOriginX = rx + w1x * Math.min(1, hairY / y1 || 0) + (hairY > y1 ? (w2x - w1x) * ((hairY - y1) / Math.max(1, y2 - y1)) : 0);
+    const hairDir = pseudoRandom(hSeed + 1) < 0.5 ? -1 : 1;
+    const hairLen = 4 + pseudoRandom(hSeed + 2) * 7; // short and fine
+    const hairBend = (pseudoRandom(hSeed + 3) - 0.5) * 3;
+    const hairW = baseW * (0.08 + pseudoRandom(hSeed + 4) * 0.06);
+    drawMoleholeRootTube(
+      hairOriginX, hairY,
+      hairOriginX + hairDir * hairLen * 0.5 + hairBend, hairY + hairLen * 0.5,
+      hairOriginX + hairDir * hairLen * 0.8 + hairBend, hairY + hairLen * 0.8,
+      hairOriginX + hairDir * hairLen, hairY + hairLen,
+      hairW, hairW * 0.6, hairW * 0.3, 0.2,
+      "#3a2814"
+    );
+  }
+
   ctx.restore();
 }
 
 // ambient floating spores/dust -- always drifting, not gated behind
 // holding anything (unlike ratroom's lamp-lit motes), so the room
 // never feels static. Warm-lit like the lanterns, gentle upward drift.
-const MOLEHOLE_SPORES = Array.from({ length: 16 }, (_, i) => ({
-  x: (i * 47.3) % MOLEHOLE_WIDTH,
+const MOLEHOLE_SPORE_COUNT = 34; // scaled up with the room width, and spread across the FULL width below (was clustering in just the first ~750 units before the room widened)
+const MOLEHOLE_SPORES = Array.from({ length: MOLEHOLE_SPORE_COUNT }, (_, i) => ({
+  x: i * (MOLEHOLE_WIDTH / MOLEHOLE_SPORE_COUNT) + (i * 47.3) % 40,
   yBase: 20 + (i * 31.7) % 120,
   seed: i * 5.3,
   speed: 0.4 + (i % 5) * 0.15
@@ -19878,11 +19905,74 @@ function drawMoleholeRootPillar(x, camX) {
   ctx.restore();
 }
 
+// dirt/earthen jump platforms scattered around the room -- simple
+// packed-earth slabs, reachable via ordinary single/double jumps
+// (spacing kept within the ~90-unit single-jump / ~245-unit
+// double-jump reach used elsewhere in the game), giving the player
+// something to hop around on besides the market floor while exploring
+const MOLEHOLE_PLATFORMS = [
+  { x: 250, heightAboveGround: 55, width: 65 },
+  { x: 700, heightAboveGround: 60, width: 60 },
+  { x: 800, heightAboveGround: 130, width: 55 }, // double-jump up from the 700 slab
+  { x: 950, heightAboveGround: 55, width: 65 },
+  { x: 1080, heightAboveGround: 115, width: 55 },
+  { x: 1350, heightAboveGround: 65, width: 65 },
+  { x: 1480, heightAboveGround: 120, width: 55 }
+];
+
+function drawMoleholePlatform(p, camX) {
+  const px = p.x - camX;
+  if (px < -80 || px > canvas.width + 80) return;
+  const py = gy - p.heightAboveGround;
+  const w = p.width, h = 13;
+
+  // main packed-earth slab -- slightly tapered sides so it doesn't
+  // read as a flat painted rectangle
+  ctx.fillStyle = "#5a3d20";
+  ctx.beginPath();
+  ctx.moveTo(px - w / 2, py);
+  ctx.lineTo(px + w / 2, py);
+  ctx.lineTo(px + w / 2 - 4, py + h);
+  ctx.lineTo(px - w / 2 + 4, py + h);
+  ctx.closePath();
+  ctx.fill();
+
+  // ragged dirt clumps dripping off the underside, so it reads as
+  // broken-off earth rather than a built platform
+  ctx.fillStyle = "#4a3018";
+  for (let i = 0; i < 4; i++) {
+    const seed = p.x + i * 3.7;
+    const cx = px - w / 2 + 8 + i * (w - 16) / 3;
+    const cy = py + h + pseudoRandom(seed) * 4;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 5 + pseudoRandom(seed + 1) * 3, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // lighter, packed-earth highlight along the standable top edge
+  ctx.strokeStyle = "rgba(150,115,72,0.6)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - w / 2, py);
+  ctx.lineTo(px + w / 2, py);
+  ctx.stroke();
+
+  // a few small pebbles resting on top for texture
+  for (let i = 0; i < 3; i++) {
+    const seed = p.x + 50 + i * 4.1;
+    const cx = px - w / 2 + 10 + i * (w - 20) / 2;
+    ctx.fillStyle = "rgba(120,90,55,0.6)";
+    ctx.beginPath();
+    ctx.ellipse(cx, py - 1, 2 + pseudoRandom(seed) * 1.5, 1.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // a bare wooden support pole, standing where the cushion-lift shaft
 // will eventually go -- pure preview/landmark for now, nothing rides
 // on it yet, just enough presence that the room already hints at its
 // own future mechanic
-const MOLEHOLE_SHAFT_X = 650;
+const MOLEHOLE_SHAFT_X = 1200; // moved further right now that the room's much bigger -- real distance from the market set before you reach it
 
 function drawMoleholeShaftPreview(camX) {
   const px = MOLEHOLE_SHAFT_X - camX;
@@ -19899,6 +19989,63 @@ function drawMoleholeShaftPreview(camX) {
   ctx.moveTo(px - 1.5, 4);
   ctx.lineTo(px - 1.5, gy - 2);
   ctx.stroke();
+}
+
+// jump-timed cushion-lift chain -- the first real pass at the shaft
+// mechanic. Each cushion drifts side to side (a sine wave of its own
+// phase/speed), so catching the next one takes actual jump timing
+// rather than just walking/riding straight up, per the confirmed
+// direction: skill-based jumping, not automatic. Capped for now at a
+// height that still keeps the player's own head on-screen (~210,
+// under the ~246 ceiling this room already clamps to elsewhere) --
+// climbing higher toward "the surface" the way the reference image
+// shows would need an actual vertical-scrolling camera, which the
+// engine doesn't have yet (only horizontal cameraX exists anywhere).
+// This is the first working chain, not the full climb.
+const MOLEHOLE_CUSHIONS = [
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 70, radius: 20, swingAmp: 16, swingSpeed: 0.0011, phase: 0 },
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 145, radius: 19, swingAmp: 20, swingSpeed: 0.0013, phase: 1.8 },
+  { x: MOLEHOLE_SHAFT_X, heightAboveGround: 210, radius: 17, swingAmp: 18, swingSpeed: 0.0012, phase: 3.4 }
+];
+
+function moleholeCushionX(c) {
+  return c.x + Math.sin(performance.now() * c.swingSpeed + c.phase) * c.swingAmp;
+}
+
+function drawMoleholeCushion(c, camX) {
+  const cx = moleholeCushionX(c) - camX;
+  if (cx < -40 || cx > canvas.width + 40) return;
+  const cy = gy - c.heightAboveGround;
+  const r = c.radius;
+
+  // soft round cushion body, lit from the upper-left like the room's
+  // other lantern-lit surfaces
+  const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 1, cx, cy, r);
+  grad.addColorStop(0, "#a3607a");
+  grad.addColorStop(1, "#6e3a52");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r, r * 0.72, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a seam crease across the middle, reads as a stitched cushion
+  // rather than a plain ball
+  ctx.strokeStyle = "rgba(40,20,28,0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.7, cy);
+  ctx.quadraticCurveTo(cx, cy + r * 0.18, cx + r * 0.7, cy);
+  ctx.stroke();
+
+  // small tassels at the seam ends
+  [-1, 1].forEach(dir => {
+    ctx.strokeStyle = "#3a2030";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + dir * r * 0.7, cy);
+    ctx.lineTo(cx + dir * r * 0.7, cy + 4);
+    ctx.stroke();
+  });
 }
 
 function drawMoleholeScene(camX) {
@@ -19930,11 +20077,14 @@ function drawMoleholeScene(camX) {
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
+  MOLEHOLE_PLATFORMS.forEach(p => drawMoleholePlatform(p, camX));
+  MOLEHOLE_CUSHIONS.forEach(c => drawMoleholeCushion(c, camX));
 
   // hanging roots dangling from the ceiling, scattered across the room
-  for (let i = 0; i < 10; i++) {
+  // -- count scaled up to match the wider room, keeps the same density
+  for (let i = 0; i < 22; i++) {
     const seed = i * 71.3;
-    const rx = (i * (MOLEHOLE_WIDTH / 10) + pseudoRandom(seed) * 40) - camX;
+    const rx = (i * (MOLEHOLE_WIDTH / 22) + pseudoRandom(seed) * 40) - camX;
     if (rx < -20 || rx > canvas.width + 20) continue;
     const len = 26 + pseudoRandom(seed + 1) * 34;
     drawMoleholeRoot(rx, len, seed);
@@ -19943,7 +20093,7 @@ function drawMoleholeScene(camX) {
   // a handful of warm lantern points along the walls between the
   // alcoves, so the room reads as lived-in and lit rather than just
   // the two shop-glow pools
-  const wallLanterns = [130, 620];
+  const wallLanterns = [130, 620, 900, 1050, 1400, 1550]; // spread across the wider room -- clustered a bit tighter near the shaft (900/1050) so that area doesn't read as darker/emptier than the market end
   wallLanterns.forEach(lx0 => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
@@ -19978,9 +20128,9 @@ function drawMoleholeScene(camX) {
   ctx.stroke();
 
   // faint pebble scatter along the floor for texture
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 45; i++) {
     const seed = i * 19.7 + 400;
-    const px = i * (MOLEHOLE_WIDTH / 20) + pseudoRandom(seed) * 30 - camX;
+    const px = i * (MOLEHOLE_WIDTH / 45) + pseudoRandom(seed) * 30 - camX;
     if (px < -10 || px > canvas.width + 10) continue;
     ctx.fillStyle = "rgba(120,90,55,0.5)";
     ctx.beginPath();
@@ -20007,6 +20157,47 @@ function drawMoleholeScene(camX) {
 }
 
 function updateMoleholeScene(deltaTime) {
+  // dirt platform collision -- same generic landing pattern used for
+  // the ratroom shelves and forest gears elsewhere in the game
+  MOLEHOLE_PLATFORMS.forEach(p => {
+    const platformTop = p.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > p.x - p.width / 2 &&
+      player.x < p.x + p.width / 2 &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
+  // cushion-lift collision -- same generic landing pattern as the
+  // dirt platforms above, but the standable x-range follows each
+  // cushion's own side-to-side drift every frame, so landing means
+  // actually timing the jump onto a moving target
+  MOLEHOLE_CUSHIONS.forEach(c => {
+    const cx = moleholeCushionX(c);
+    const platformTop = c.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > cx - c.radius &&
+      player.x < cx + c.radius &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
   if (keys.spaceJustPressed && isPlayerNear(moleHoleExit.x, 0, 24, 15, 15)) {
     startSeasonTransition("forest");
   }
