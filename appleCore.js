@@ -20586,12 +20586,38 @@ function drawElderTrio(camX) {
     // silhouettes still read as sitting on the same ground.
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.beginPath();
-    ctx.ellipse(ex, bodyBottom + 3, bodyW * 0.55, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex, bodyBottom + 3, bodyW * 0.6, 3, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = elder.color;
-    roundRect(ctx, ex - bodyW / 2, bodyTop, bodyW, bodyH, Math.min(8, bodyW / 2));
+    // little stubby feet, peeking out from under the body -- drawn
+    // first so the body silhouette overlaps their tops
+    ctx.fillStyle = elder.capeColor;
+    ctx.beginPath();
+    ctx.ellipse(ex - bodyW * 0.26, bodyBottom, 4, 2.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex + bodyW * 0.26, bodyBottom, 4, 2.6, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // an organic, rounded body -- soft shoulders, a gentle taper at the
+    // waist, and a rounded bottom -- rather than a straight-sided box,
+    // so it actually reads as a soft little round body
+    ctx.fillStyle = elder.color;
+    ctx.beginPath();
+    ctx.moveTo(ex - bodyW / 2, bodyTop + bodyH * 0.45);
+    ctx.quadraticCurveTo(ex - bodyW / 2, bodyTop, ex, bodyTop);
+    ctx.quadraticCurveTo(ex + bodyW / 2, bodyTop, ex + bodyW / 2, bodyTop + bodyH * 0.45);
+    ctx.quadraticCurveTo(ex + bodyW / 2 + 1, bodyBottom - bodyH * 0.15, ex + bodyW * 0.32, bodyBottom - 1);
+    ctx.quadraticCurveTo(ex, bodyBottom + 3, ex - bodyW * 0.32, bodyBottom - 1);
+    ctx.quadraticCurveTo(ex - bodyW / 2 - 1, bodyBottom - bodyH * 0.15, ex - bodyW / 2, bodyTop + bodyH * 0.45);
+    ctx.closePath();
+    ctx.fill();
+
+    // small rounded arms tucked at the sides
+    ctx.fillStyle = elder.color;
+    ctx.beginPath();
+    ctx.ellipse(ex - bodyW / 2 - 1.5, bodyTop + bodyH * 0.6, 3, 5.5, 0.25, 0, Math.PI * 2);
+    ctx.ellipse(ex + bodyW / 2 + 1.5, bodyTop + bodyH * 0.6, 3, 5.5, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+
     // a little cape/shawl over the shoulders
     ctx.fillStyle = elder.capeColor;
     ctx.beginPath();
@@ -20627,22 +20653,24 @@ function drawElderTrio(camX) {
       ctx.lineTo(headCX + 0.5, headCY + 4);
       ctx.stroke();
     } else if (elder.accessory === "scarf") {
-      // a cozy, slightly frayed old scarf looped around the neck
+      // a cozy, slightly frayed old scarf looped around the NECK, below
+      // the beard/face -- not up over the head, which read as a hat
+      const neckY = headCY + 12;
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
-      ctx.ellipse(ex, bodyTop + 3, bodyW / 2 + 2, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, neckY, bodyW / 2, 3.5, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(ex + 3, bodyTop + 5);
-      ctx.lineTo(ex + 6, bodyTop + 16);
-      ctx.lineTo(ex + 2, bodyTop + 16);
+      ctx.moveTo(ex + 2, neckY + 1);
+      ctx.lineTo(ex + 5, neckY + 11);
+      ctx.lineTo(ex + 1, neckY + 11);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,0.2)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(ex + 2, bodyTop + 12);
-      ctx.lineTo(ex + 6, bodyTop + 12);
+      ctx.moveTo(ex + 1, neckY + 7);
+      ctx.lineTo(ex + 5, neckY + 7);
       ctx.stroke();
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out back
@@ -20830,7 +20858,12 @@ const TUNNEL_NODES = [
   // up-chain -- three stacked digs straight up off n1, the branch that
   // really exercises the vertical camera. Dead-ends at the top, empty.
   { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "u1s", parent: "u1", x: 610, heightAboveGround: 80, dir: "side", hasItem: false, dug: false }, // a little pocket off the first up-dig, its own dead end
+  // a real spaced-out side pocket off the first up-dig -- two actual
+  // jumps away (diagonal, both in x and height) instead of sitting
+  // right on top of u1's own marker, which read as two dig spots
+  // confusingly crammed right next to each other
+  { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 140, dir: "up", hasItem: false, dug: false },
+  { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // dead end
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
   { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false },
 
@@ -20840,7 +20873,10 @@ const TUNNEL_NODES = [
   // ground-collision code, so this is the stand-in for now), then
   // splits into a true dead end and the path to the reward, buried deep
   { id: "s1", parent: "n1", x: 760, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
-  { id: "s1u", parent: "s1", x: 760, heightAboveGround: 70, dir: "up", hasItem: false, dug: false }, // a dead-end peek upward mid-chain
+  // same fix here -- a real two-jump detour up and away from s1, instead
+  // of a dead-end spot sitting directly above it
+  { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
+  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: false, dug: false }, // true dead end
   { id: "s3b", parent: "s2", x: 900, heightAboveGround: 60, dir: "up", hasItem: false, dug: false }, // small step up, continues the reward path
@@ -21043,15 +21079,23 @@ let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t
 function drawDiggingFlourish(camX) {
   if (!activeDig) return;
   const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
-  // drawn relative to the player's own position and facing, not the
-  // fixed dig-spot coordinate -- anchored to the spot itself, the
-  // swing sat right behind the player's own sprite (which draws on top
-  // of it) unless you happened to be standing a little past it. This
-  // way it always reads as happening just in front of wherever the
-  // player is actually standing, whichever way they're facing.
+  // only follows the player (drawn just in front of them, offset by
+  // whichever way they're facing) while they're actually still facing
+  // the hole. If they turn around mid-dig, the animation stays put at
+  // the hole itself instead of dragging along behind their back, which
+  // read as wrong/confusing.
+  const holeDir = Math.sign(activeDig.x - (player.x + player.width / 2)) || (player.facing || 1);
   const faceDir = player.facing || 1;
-  const sx = (player.x - camX) + player.width / 2 + faceDir * 30;
+  const facingHole = faceDir === holeDir;
+  const sx = facingHole
+    ? (player.x - camX) + player.width / 2 + faceDir * 30
+    : activeDig.x - camX;
   const sy = gy + cameraY - activeDig.heightAboveGround;
+  // the swing/throw motion itself should always point INTO the hole --
+  // when anchored at the player, that's their facing; when anchored at
+  // the hole itself (player turned away), it's just the hole's own dig
+  // direction, so the animation doesn't look like it's digging backwards
+  const animDir = facingHole ? faceDir : holeDir;
 
   // a real three-part digging stroke each swing -- windup (raise back),
   // plunge (drive the blade down and forward into the dirt), then lift
@@ -21066,21 +21110,21 @@ function drawDiggingFlourish(camX) {
   if (swingLocalT < 0.3) {
     // windup -- raised back and up
     const t = swingLocalT / 0.3;
-    angle = faceDir * (-0.9 + t * 0.15);
+    angle = animDir * (-0.9 + t * 0.15);
     bobY = -7 * t;
-    bobX = -4 * t * faceDir;
+    bobX = -4 * t * animDir;
   } else if (swingLocalT < 0.55) {
     // plunge -- drives down and forward into the ground
     const t = (swingLocalT - 0.3) / 0.25;
-    angle = faceDir * (-0.75 + t * 1.6);
+    angle = animDir * (-0.75 + t * 1.6);
     bobY = -7 + 11 * t;
-    bobX = -4 * faceDir + 8 * t * faceDir;
+    bobX = -4 * animDir + 8 * t * animDir;
   } else {
     // lift -- hauls the loaded blade back up and out, toward the throw
     const t = (swingLocalT - 0.55) / 0.45;
-    angle = faceDir * (0.85 - t * 0.65);
+    angle = animDir * (0.85 - t * 0.65);
     bobY = 4 - 9 * t;
-    bobX = 4 * faceDir - 2 * t * faceDir;
+    bobX = 4 * animDir - 2 * t * animDir;
   }
   drawShovelShape(ctx, sx + bobX, sy - 16 + bobY, 13, angle);
 
@@ -21094,7 +21138,7 @@ function drawDiggingFlourish(camX) {
     const localT = activeDig.t - throwStart;
     if (localT < 0 || localT > throwDuration) continue;
     const lp = localT / throwDuration;
-    const throwDir = faceDir; // tossed forward, the same way the shovel's actually digging
+    const throwDir = animDir; // tossed forward, the same way the shovel's actually digging
     for (let i = 0; i < 4; i++) {
       const seed = s * 71.3 + i * 11.7;
       const spread = pseudoRandom(seed) * 8 - 4;
@@ -21571,8 +21615,12 @@ if (currentScene === "forest") {
 drawCrown(camX);
 drawBoomerangPrompt(camX);
 
-// held item — floats above the head while selected, so it's clear it's "in play"
-if (heldItem && !fallState.active) {
+// held item — floats above the head while selected, so it's clear it's
+// "in play". Hidden during an active dig -- the digging flourish
+// already shows the shovel being swung down at the hole, so keeping a
+// second copy floating above the player's head at the same time just
+// read as cluttered/confusing.
+if (heldItem && !fallState.active && !activeDig) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
     drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 8);
