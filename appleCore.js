@@ -5,7 +5,13 @@ document.addEventListener("DOMContentLoaded",()=>{
    CANVAS + CONTEXT
    ====================================================== */
 const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+// `let`, not `const` -- the bramble decor caching below temporarily
+// points this at an offscreen canvas's context so the existing draw
+// functions (which all just call the shared `ctx` directly) can render
+// into that cache without every single one of them needing a ctx
+// parameter threaded through. Always restored to the real context
+// synchronously, same frame, before anything else reads it.
+let ctx = canvas.getContext("2d");
 
 /* ======================================================
    DOM UI (inventory box + map overlay from index.html)
@@ -389,6 +395,14 @@ const ITEM_CANVAS_RENDER = {
   }
 };
 
+// items that never show a "x<count>" label in the inventory strip --
+// hoisted out of updateInventoryUI so it applies to EVERY render branch,
+// not just the canvas-icon one. Boomerang was still slipping through:
+// it has no entry in ITEM_CANVAS_RENDER, so it fell into the plain-text
+// `else` branch below, which unconditionally appended the count and
+// showed "x1" even though boomerang was already listed here.
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane"];
+
 function updateInventoryUI() {
   const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
   invEl.innerHTML = "";
@@ -418,7 +432,6 @@ function updateInventoryUI() {
       ITEM_CANVAS_RENDER[type](iconCanvas.getContext("2d"));
       chip.appendChild(iconCanvas);
 
-      const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane"];
       if (!NO_COUNT_LABEL.includes(type)) {
         const label = document.createElement("span");
         label.textContent = ` x${count}`;
@@ -440,7 +453,9 @@ function updateInventoryUI() {
         ], { duration: 500, easing: "ease-out" });
       }
     } else {
-      chip.textContent = `${ITEM_ICONS[type] || "?"} x${count}`;
+      chip.textContent = NO_COUNT_LABEL.includes(type)
+        ? `${ITEM_ICONS[type] || "?"} `
+        : `${ITEM_ICONS[type] || "?"} x${count}`;
       chip.title = "Click to hold this item";
     }
 
@@ -9490,8 +9505,7 @@ function drawForestScene(camX) {
   drawForestHintGear(camX);
   drawRaccoon(camX);
   drawForestIntroGears(camX);
-  drawForestBrambleTransition(camX);
-  drawForestBrambleBehind(camX);
+  drawForestBrambleBehindLayer(camX); // cached -- covers both the transition tapers and the main wall's behind layer
   drawForestSnake(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
@@ -10542,17 +10556,17 @@ const FOREST_CLOCKWORK_LEVER_X = 2480; // pushed further out past the bramble's 
 // the same cluster) without getting launched by accident every time.
 const FOREST_CLOCKWORK_GEARS = [
   // cluster A -- three touching gears, real size/height variety
-  { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false },
+  { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false, overgrown: 0 }, // no moss/vines, per "4 or so w none on them"
   { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge, 2584=2584) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near x=2584)
-  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true }, // touches gear A2 (2636=2636) -- last of cluster A, launches across the gap into B
+  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true, overgrown: 0 }, // touches gear A2 (2636=2636) -- last of cluster A, launches across the gap into B -- bare
   // real single-jump gap (65px edge-to-edge) into cluster B
-  { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0 }, // cluster B starts
+  { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0, overgrown: 0 }, // cluster B starts -- bare
   { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true }, // touches gear B1 (2785=2785) -- last of cluster B, launches across the double-jump gap into the capstone
   // real double-jump gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 2877, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece and the landing gear below
+  { x: 2877, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece and the landing gear below. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear"
   // real gap (55px) descending into cluster D -- falling is easier than climbing, so this one's more forgiving despite the height drop
   { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
-  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0 }, // touches gear D1 (2998=2998), easy landing
+  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1 (2998=2998), easy landing -- bare
   // the capstone's flight sails clean over cluster D (launched flight
   // ignores platform collision mid-arc) and comes down further out --
   // this is that landing, a real terminal gear rather than the flight
@@ -10560,11 +10574,28 @@ const FOREST_CLOCKWORK_GEARS = [
   // in updateForestScene since raw physics is too precise to reliably
   // land ON a specific gear on its own. No piece here -- the mid-air
   // grab earlier in the arc is already the reward for this whole
-  // sequence, this is just a clean place to stick the landing. Right
-  // after this, the grove's done and the mole hole picks up.
-  { x: 3140, height: 80, outerR: 30, dir: -1, rot: 0, flightLanding: true }
+  // sequence, this is just a clean place to stick the landing.
+  { x: 3140, height: 80, outerR: 30, dir: -1, rot: 0, flightLanding: true },
+  // real gap (60px) into the big slow centerpiece gear -- a normal
+  // single jump off the landing gear, nothing launch-related required.
+  // Deliberately oversized and deliberately slow (see spinMult below)
+  // so it reads as heavier/older machinery, a different flavor of ride
+  // than the snappier smaller gears earlier in the sequence. Right
+  // after this, the grove's done and the mole hole picks up -- once
+  // that's built, this is the natural spot for a jump-off-it launch
+  // into the hole, but for now it's just a resting beat at the end.
+  { x: 3280, height: 70, outerR: 50, dir: 1, rot: 0, spinMult: 0.35, overgrown: 2 }
 ];
 const FOREST_CLOCKWORK_SPIN_SPEED = 0.0014; // radians/ms, applied per gear's own `dir` -- nudged back up a bit from 0.0011, was reading as a touch too slow
+// per-gear speed variety -- explicit `spinMult` (like the big slow
+// gear above) wins; otherwise a stable-but-"random" variance keyed off
+// each gear's own x, so the grove doesn't read as one perfectly
+// synchronized machine. Shared by both the visual spin update and the
+// ride-carry math below so a gear's carry speed always actually
+// matches how fast it looks like it's turning.
+function forestGearSpinMult(g) {
+  return g.spinMult ?? (0.8 + pseudoRandom(g.x * 4.1) * 0.4);
+}
 
 // the gears run in a real WINDOW now, not forever once triggered --
 // pull the lever, they spin at full speed for FOREST_CLOCKWORK_ACTIVE_MS,
@@ -10681,7 +10712,11 @@ function drawForestClockworkGears(camX) {
   FOREST_CLOCKWORK_GEARS.forEach(g => {
     const gx = g.x - camX;
     const gy2 = gy - g.height;
-    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 8, g.rot, "#6b5030", "#2e2014", g.x * 3.7);
+    // teeth count scales with radius -- a fixed 8 looked fine across
+    // the normal 12-30px range, but on the big 50px centerpiece gear
+    // that same 8 read as sparse/blocky compared to its size
+    const teeth = Math.max(5, Math.round(8 * (g.outerR / 22)));
+    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, teeth, g.rot, "#6b5030", "#2e2014", g.x * 3.7);
     // tarnish is on the metal itself, so it rotates WITH the gear face.
     // Moss and vines are external growth draped over the mechanism, so
     // they stay put in world space even while the gear underneath spins.
@@ -10690,8 +10725,10 @@ function drawForestClockworkGears(camX) {
     }
     // these still spin, so heavier growth on an active gear reads as
     // "been turning a long time, nobody's tended it" -- stable per-gear
-    // variety from x rather than every gear getting the same amount
-    const tier = FOREST_OVERGROWN_TIERS[Math.floor(pseudoRandom(g.x * 0.7) * FOREST_OVERGROWN_TIERS.length)];
+    // variety from x rather than every gear getting the same amount,
+    // unless a gear specifies its own overgrown tier explicitly (same
+    // pattern as the static intro gears)
+    const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? Math.floor(pseudoRandom(g.x * 0.7) * FOREST_OVERGROWN_TIERS.length)];
     drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
     drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
     if (g.piece && !g.pieceCollected) {
@@ -10833,6 +10870,36 @@ function drawForestGnawSecret(camX) {
       ctx.fill();
     }
   }
+
+  // bright, high-contrast "something happened HERE" callout -- the
+  // muted greens/browns above read fine standing still, but this whole
+  // scene is a dark, low-contrast palette and the player only glimpses
+  // this spot for a fraction of a second mid-flight, so a same-toned
+  // burst was never going to win against that background. This is
+  // deliberately loud (gold/white, expanding ring + upward sparks that
+  // reach well above ground level, into the player's actual eyeline
+  // during the arc) rather than trying to be tasteful about it --
+  // visibility beats subtlety here.
+  if (elapsed >= 0 && elapsed < 900) {
+    const p = elapsed / 900;
+    const ringR = 10 + p * 34;
+    ctx.strokeStyle = `rgba(255,235,150,${Math.max(0, 1 - p) * 0.9})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy - 6, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const reach = 10 + p * 46;
+      const sparkX = sx + Math.cos(a) * reach;
+      const sparkY = (sy - 6) - Math.abs(Math.sin(a)) * reach * 1.4 - p * 20; // biased upward, into flight altitude
+      ctx.fillStyle = `rgba(255,244,190,${Math.max(0, 1 - p) })`;
+      ctx.beginPath();
+      ctx.arc(sparkX, sparkY, 3 * (1 - p * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 // patchy dark-green rust/patina spots on the gear's own metal face --
@@ -10914,6 +10981,76 @@ function drawForestSnakeObstacleKnots(camX) {
     const seedBase = 1000 + i * 300;
     drawForestSnakeObstacleKnot(camX, obs, seedBase);
   });
+}
+
+/* ======================================================
+   BRAMBLE DECOR CACHING -- the bramble wall (front + behind layers,
+   plus the looser transition tapers on either side) and the snake
+   obstacle knots are entirely deterministic: every strand/thorn/flower
+   is driven off a fixed world-space seed, nothing about their shape
+   ever changes frame to frame. Recomputing dozens of quadraticCurveTo
+   strands from scratch every single frame was pure wasted work,
+   concentrated exactly in the bramble/snake crossing -- which is the
+   one spot in the whole scene already stacking the MOST other
+   per-frame work on top (the 30-segment snake body, obstacle bump
+   checks, mount/dismount checks, all running every frame too). That's
+   almost certainly what was reading as slowdown/stutter there, and
+   screen-recording software fighting the same CPU for encoding on top
+   of it would explain the "flashing" -- compression artifacts get
+   much worse exactly when a capture drops frames.
+
+   Rendered ONCE into two offscreen canvases (one for the "behind"
+   layer, one for the "front" layer -- they composite at different
+   points in the draw stack, before vs. after the player/snake) sized
+   to the whole world-space span, then each frame is just a single
+   drawImage blit instead of the full procedural redraw.
+   ====================================================== */
+const FOREST_BRAMBLE_CACHE_X1 = FOREST_BRAMBLE_TRANSITION_IN_X1 - 10;
+const FOREST_BRAMBLE_CACHE_X2 = FOREST_BRAMBLE_TRANSITION_OUT_X2 + 10;
+const FOREST_BRAMBLE_CACHE_W = FOREST_BRAMBLE_CACHE_X2 - FOREST_BRAMBLE_CACHE_X1;
+const FOREST_BRAMBLE_CACHE_H = gy + 40; // strands/thorns reach up to ~85px above baseY (gy+15) at most; ground-dot band needs a little below gy too
+let forestBrambleBehindCache = null;
+let forestBrambleFrontCache = null;
+
+function buildForestBrambleCaches() {
+  const behindCanvas = document.createElement("canvas");
+  behindCanvas.width = FOREST_BRAMBLE_CACHE_W;
+  behindCanvas.height = FOREST_BRAMBLE_CACHE_H;
+  const frontCanvas = document.createElement("canvas");
+  frontCanvas.width = FOREST_BRAMBLE_CACHE_W;
+  frontCanvas.height = FOREST_BRAMBLE_CACHE_H;
+
+  // swap the shared ctx so the existing draw functions -- unchanged,
+  // still just calling `ctx.*` directly -- render into the cache
+  // canvases instead. Using FOREST_BRAMBLE_CACHE_X1 as the "camX" for
+  // this one-time render means world coordinate X lands at canvas
+  // pixel (X - FOREST_BRAMBLE_CACHE_X1), i.e. the cache canvas IS the
+  // world-space strip, ready to be blitted at (worldX1 - realCamX)
+  // each frame.
+  const realCtx = ctx;
+
+  ctx = behindCanvas.getContext("2d");
+  drawForestBrambleTransition(FOREST_BRAMBLE_CACHE_X1);
+  drawForestBrambleBehind(FOREST_BRAMBLE_CACHE_X1);
+
+  ctx = frontCanvas.getContext("2d");
+  drawForestBrambleFront(FOREST_BRAMBLE_CACHE_X1);
+  drawForestSnakeObstacleKnots(FOREST_BRAMBLE_CACHE_X1);
+
+  ctx = realCtx;
+
+  forestBrambleBehindCache = behindCanvas;
+  forestBrambleFrontCache = frontCanvas;
+}
+
+function drawForestBrambleBehindLayer(camX) {
+  if (!forestBrambleBehindCache) buildForestBrambleCaches();
+  ctx.drawImage(forestBrambleBehindCache, FOREST_BRAMBLE_CACHE_X1 - camX, 0);
+}
+
+function drawForestBrambleFrontLayer(camX) {
+  if (!forestBrambleFrontCache) buildForestBrambleCaches();
+  ctx.drawImage(forestBrambleFrontCache, FOREST_BRAMBLE_CACHE_X1 - camX, 0);
 }
 
 function drawForestSnake(camX) {
@@ -11508,7 +11645,7 @@ function updateForestScene(deltaTime) {
 
   if (clockworkSpeedFactor > 0) {
     FOREST_CLOCKWORK_GEARS.forEach(g => {
-      g.rot += g.dir * FOREST_CLOCKWORK_SPIN_SPEED * clockworkSpeedFactor * deltaTime * 1000;
+      g.rot += g.dir * FOREST_CLOCKWORK_SPIN_SPEED * forestGearSpinMult(g) * clockworkSpeedFactor * deltaTime * 1000;
     });
   }
 
@@ -11633,7 +11770,7 @@ function updateForestScene(deltaTime) {
     // axis-aligned clip rect used for the fall-through-hole effect and
     // got visibly chopped off at a corner. A bounded lean still reads
     // as "turning with the gear" without that.
-    const angularDelta = onSpinningGear.dir * FOREST_CLOCKWORK_SPIN_SPEED * clockworkSpeedFactor * deltaTime * 1000;
+    const angularDelta = onSpinningGear.dir * FOREST_CLOCKWORK_SPIN_SPEED * forestGearSpinMult(onSpinningGear) * clockworkSpeedFactor * deltaTime * 1000;
     player.x += onSpinningGear.outerR * angularDelta;
     const targetLean = onSpinningGear.dir * 0.3;
     forestGearRideAngle += (targetLean - forestGearRideAngle) * 0.15;
@@ -18771,8 +18908,7 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 }
 
 if (currentScene === "forest") {
-  drawForestBrambleFront(camX);
-  drawForestSnakeObstacleKnots(camX); // after Front, so the knot silhouette is never buried under its crossing strands
+  drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
   drawForestBridgePlatform(camX);
 }
 
