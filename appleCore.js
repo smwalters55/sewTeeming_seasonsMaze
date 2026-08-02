@@ -20688,25 +20688,33 @@ function drawElderTrio(camX) {
       ctx.lineTo(headCX + 0.5, headCY + 4);
       ctx.stroke();
     } else if (elder.accessory === "scarf") {
-      // a cozy, slightly frayed old scarf looped around the NECK, below
-      // the beard/face -- not up over the head, which read as a hat
-      const neckY = headCY + 12;
+      // a cozy, slightly frayed old scarf looped around the NECK --
+      // previous version sat right on top of the beard/mouth and was
+      // nearly as wide as the whole body, which read as a big red smear
+      // across the face instead of a scarf. Pushed well clear below the
+      // beard, narrowed so it hugs just the neck instead of spanning
+      // the full body width, and the hanging tail shrunk to match.
+      const neckY = headCY + 19;
+      const scarfRX = bodyW * 0.32;
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
-      ctx.ellipse(ex, neckY, bodyW / 2, 3.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, neckY, scarfRX, 3, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(ex + 2, neckY + 1);
-      ctx.lineTo(ex + 5, neckY + 11);
-      ctx.lineTo(ex + 1, neckY + 11);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.2)";
+      // a subtle fold line, so it reads as wrapped fabric rather than a
+      // flat painted band
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(ex + 1, neckY + 7);
-      ctx.lineTo(ex + 5, neckY + 7);
+      ctx.ellipse(ex, neckY, scarfRX * 0.6, 1.6, 0, 0, Math.PI);
       ctx.stroke();
+      // one short hanging tail, off to the side rather than dead center
+      ctx.fillStyle = elder.accessoryColor;
+      ctx.beginPath();
+      ctx.moveTo(ex + scarfRX * 0.3, neckY + 1);
+      ctx.lineTo(ex + scarfRX * 0.7, neckY + 7);
+      ctx.lineTo(ex + scarfRX * 0.1, neckY + 7);
+      ctx.closePath();
+      ctx.fill();
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out back
       ctx.fillStyle = elder.accessoryColor;
@@ -20905,9 +20913,15 @@ const TUNNEL_NODES = [
   // right on top of u1's own marker, which read as two dig spots
   // confusingly crammed right next to each other
   { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 140, dir: "up", hasItem: false, dug: false },
-  { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // dead end
+  { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // top of the left leg
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
-  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false },
+  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false }, // top of the right leg
+
+  // the two legs connect at the top -- dig across from u1s2 and it
+  // opens right on top of u3's own hole, merging the two into one loop.
+  // Climb the left leg, cross here, and come back down the right leg
+  // (u3 -> u2 -> u1) without having to backtrack the way you came.
+  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 240, dir: "side", hasItem: false, dug: false },
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
@@ -20932,11 +20946,16 @@ const TUNNEL_NODES = [
   { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
   { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
-  { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
-  { id: "s3b", parent: "s2", x: 900, heightAboveGround: 60, dir: "up", hasItem: false, dug: false }, // small step up, continues the reward path
-  { id: "s4", parent: "s3b", x: 980, heightAboveGround: 60, dir: "side", hasItem: false, dug: false },
-  { id: "s5", parent: "s4", x: 1060, heightAboveGround: 60, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
-  { id: "s5r", parent: "s5", x: 1140, heightAboveGround: 60, dir: "side", hasItem: false, dug: false } // more passage continuing right past the reward, its own dead end
+  // s3a/s3b used to sit only 20-60 units apart -- close enough that
+  // their two markers visually overlapped into what read as one
+  // confusing double-hole. Spaced them further apart: the stone's dead
+  // end continues straight along the ground well to the right, while
+  // the path onward breaks off up and away instead of nearly on top of it.
+  { id: "s3a", parent: "s2", x: 970, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
+  { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
+  { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
+  { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
+  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: false, dug: false } // more passage continuing right past the reward, its own dead end
 ];
 
 function tunnelNodeParentDug(node) {
@@ -21117,13 +21136,33 @@ function drawTunnelDigSpot(node, camX) {
         ledgeLeftWorld = Math.min(ledgeLeftWorld, parentPos.x);
       }
       const ledgeLeft = ledgeLeftWorld - camX, ledgeRight = sx + 28;
-      ctx.fillStyle = "#3a2e22";
-      ctx.fillRect(ledgeLeft, cy - 4, ledgeRight - ledgeLeft, 6);
+      // a couple of stubby support posts underneath, reaching down into
+      // the dug pocket below the ledge -- without these, an elevated
+      // ledge just floated in the dark with nothing visibly holding it
+      // up. Only reaches as far as this node's own carved-out hole (not
+      // all the way to true ground, which for a high climb would be way
+      // outside the small revealed oval and get clipped away invisibly).
+      const postBottom = cy + (TUNNEL_PASSAGE_HEIGHT / 2 + 6) - 4;
+      ctx.strokeStyle = "#241c14";
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(ledgeLeft + 6, cy + 2);
+      ctx.lineTo(ledgeLeft + 6, postBottom);
+      ctx.moveTo(ledgeRight - 6, cy + 2);
+      ctx.lineTo(ledgeRight - 6, postBottom);
+      ctx.stroke();
+
+      // a thicker, higher-contrast ledge -- brighter top surface, dark
+      // underside -- so it actually reads clearly against the dark cave
+      // background instead of blending in as a thin sliver
+      ctx.fillStyle = "#5a4632";
+      ctx.fillRect(ledgeLeft, cy - 6, ledgeRight - ledgeLeft, 6);
       ctx.fillStyle = "#241c14";
-      ctx.fillRect(ledgeLeft, cy, ledgeRight - ledgeLeft, 3);
-      ctx.strokeStyle = "rgba(90,80,70,0.4)";
+      ctx.fillRect(ledgeLeft, cy, ledgeRight - ledgeLeft, 4);
+      ctx.strokeStyle = "rgba(140,120,90,0.5)";
       ctx.lineWidth = 1;
-      ctx.strokeRect(ledgeLeft, cy - 4, ledgeRight - ledgeLeft, 6);
+      ctx.strokeRect(ledgeLeft, cy - 6, ledgeRight - ledgeLeft, 6);
     }
     for (let i = 0; i < 4; i++) {
       const seed = node.x * 1.7 + i * 9.1;
@@ -21146,6 +21185,12 @@ function drawTunnelDigSpot(node, camX) {
 const TUNNEL_DIG_ANIM_DURATION = 1900; // slightly faster than the initial slow pass, still several real shovel-fulls
 const TUNNEL_DIG_SWINGS = 5;
 let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t }
+// a brief floating hint shown when trying to dig a spot that's gated on
+// something other than just having a shovel (currently only u1r, which
+// needs the stone) -- without this, trying to dig it just silently did
+// nothing, which read as broken rather than "you're missing something"
+const TUNNEL_BLOCKED_HINT_DURATION = 1800;
+let tunnelBlockedHint = { active: false, x: 0, heightAboveGround: 0, t: 0 };
 
 function drawDiggingFlourish(camX) {
   if (!activeDig) return;
@@ -21358,10 +21403,24 @@ function drawTunnelTownScene(camX) {
   drawTunnelWall(camX);
 
   drawDiggingFlourish(camX);
+  drawTunnelBlockedHint(camX);
 
   // speech bubble drawn dead last so it's never covered by the wall or
   // anything else in the scene
   drawElderSpeechBubble(camX);
+}
+
+// a short-lived floating callout when the player tries to dig something
+// that's gated on more than just the shovel -- fades in, holds, fades out
+function drawTunnelBlockedHint(camX) {
+  if (!tunnelBlockedHint.active) return;
+  const p = tunnelBlockedHint.t / TUNNEL_BLOCKED_HINT_DURATION;
+  const fade = p < 0.15 ? p / 0.15 : (p > 0.75 ? (1 - p) / 0.25 : 1);
+  const sx = tunnelBlockedHint.x - camX;
+  const sy = gy + cameraY - tunnelBlockedHint.heightAboveGround - 46;
+  ctx.globalAlpha = Math.max(0, fade);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["This spot feels too solid to dig...", "might need something sturdier to work it loose."]);
+  ctx.globalAlpha = 1;
 }
 
 function updateTunnelTownScene(deltaTime) {
@@ -21376,6 +21435,10 @@ function updateTunnelTownScene(deltaTime) {
   elderTrio.forEach(updateNPCIdle); // the same light idle bounce every other NPC has
 
   wallBreakPoofT += deltaTime * 1000;
+  if (tunnelBlockedHint.active) {
+    tunnelBlockedHint.t += deltaTime * 1000;
+    if (tunnelBlockedHint.t >= TUNNEL_BLOCKED_HINT_DURATION) tunnelBlockedHint.active = false;
+  }
 
   // mid-dig -- the actual wall-break/spot-dug state change only lands
   // once the flourish finishes, not the instant space is pressed
@@ -21420,10 +21483,22 @@ function updateTunnelTownScene(deltaTime) {
     // matches what's actually drawn/visible
     TUNNEL_NODES.forEach(node => {
       if (node.dug || !tunnelNodeParentDug(node)) return;
+      const nearSpot = isPlayerNear(node.x, node.heightAboveGround, 22, 25, 25);
       // the reconnect back down toward u1 also needs the stone in hand --
-      // that's what makes it a real find, not just another shovel-dig
-      if (node.needsStone && !(inventory.stone > 0)) return;
-      if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(node.x, node.heightAboveGround, 22, 25, 25)) {
+      // that's what makes it a real find, not just another shovel-dig.
+      // Trying to dig it without the stone used to just silently do
+      // nothing, which read as broken rather than "missing something" --
+      // now it surfaces an actual hint instead of failing silently.
+      if (node.needsStone && !(inventory.stone > 0)) {
+        if (heldItem === "shovel" && keys.spaceJustPressed && nearSpot) {
+          tunnelBlockedHint.active = true;
+          tunnelBlockedHint.x = node.x;
+          tunnelBlockedHint.heightAboveGround = node.heightAboveGround;
+          tunnelBlockedHint.t = 0;
+        }
+        return;
+      }
+      if (heldItem === "shovel" && keys.spaceJustPressed && nearSpot) {
         activeDig = { kind: "spot", id: node.id, x: node.x, heightAboveGround: node.heightAboveGround, t: 0 };
       }
     });
