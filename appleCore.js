@@ -20440,7 +20440,7 @@ function updateMoleholeScene(deltaTime) {
    mole hole's own open market space, since this is meant to read
    as older, smaller, and closer to collapse.
    ====================================================== */
-const TUNNELTOWN_WIDTH = 900; // smaller than the mole hole (1600) -- a tighter, older-feeling space
+const TUNNELTOWN_WIDTH = 1100; // widened to fit the real branching dig chain further in
 const tunnelTownExit = { x: 150 };
 
 /* ------------------------------------------------------
@@ -20453,7 +20453,7 @@ const elderTrio = [
   { dx: 0,   color: "#7a6a4a", capeColor: "#4a3e2a" },
   { dx: 20,  color: "#9a8a6a", capeColor: "#6a5c42" }
 ];
-const ELDER_X = 210;
+const ELDER_X = 260; // pushed further right (was 210) -- more approach distance from the entrance, and real breathing room before the wall
 let elderTalkedTo = false;
 let elderThanksQueued = false;
 
@@ -20542,11 +20542,78 @@ function drawElderSpeechBubble(camX) {
 }
 
 /* ------------------------------------------------------
+   DETAILED DIRT -- shared, richly-textured earth fill used for both
+   the still-solid wall and the "unrevealed beyond" area: a base tone,
+   layered blotchy color variation (so it's not a flat color), embedded
+   rocks of varied size/tone with a little highlight for volume, and
+   fine cracks. Screen-space rect (x0..x0+w, 0..h) -- seedBase should
+   vary by caller so different fills don't look identical.
+   ------------------------------------------------------ */
+function drawDetailedDirtFill(x0, w, h, seedBase) {
+  if (w <= 0) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, 0, w, h);
+  ctx.clip();
+
+  ctx.fillStyle = "#241c14";
+  ctx.fillRect(x0, 0, w, h);
+
+  // blotchy tonal variation -- breaks up the flat base color into
+  // patches of slightly warmer/cooler earth
+  const blotchCount = Math.max(6, Math.round(w / 34));
+  for (let i = 0; i < blotchCount; i++) {
+    const seed = seedBase + i * 13.7;
+    const bx = x0 + pseudoRandom(seed) * w;
+    const by = pseudoRandom(seed + 1) * h;
+    const r = 14 + pseudoRandom(seed + 2) * 22;
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "rgba(58,44,28,0.35)" : "rgba(18,13,8,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(bx, by, r, r * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // embedded rocks -- varied size/tone, with a small highlight so they
+  // read as rounded stones rather than flat dots
+  const rockCount = Math.max(4, Math.round(w / 46));
+  for (let i = 0; i < rockCount; i++) {
+    const seed = seedBase + 500 + i * 17.3;
+    const rx = x0 + pseudoRandom(seed) * w;
+    const ry = pseudoRandom(seed + 1) * h;
+    const rr = 3 + pseudoRandom(seed + 2) * 6;
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#6a6154" : "#453d32";
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, rr, rr * 0.8, pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    ctx.beginPath();
+    ctx.ellipse(rx - rr * 0.3, ry - rr * 0.3, rr * 0.35, rr * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // fine cracks/root-hairs threading through
+  ctx.strokeStyle = "rgba(10,7,4,0.45)";
+  ctx.lineWidth = 1;
+  const crackCount = Math.max(3, Math.round(w / 60));
+  for (let i = 0; i < crackCount; i++) {
+    const seed = seedBase + 900 + i * 11.1;
+    const cx = x0 + pseudoRandom(seed) * w;
+    const cy = pseudoRandom(seed + 1) * h;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + (pseudoRandom(seed + 2) - 0.5) * 30, cy + pseudoRandom(seed + 3) * 30);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/* ------------------------------------------------------
    THE BLOCKED WALL -- solid until dug (shovel + space, only once
    the elders have actually been talked to), then breaks open into
    the first branch of the dig-maze area beyond it.
    ------------------------------------------------------ */
-const TUNNELTOWN_WALL_X = 260;
+const TUNNELTOWN_WALL_X = 480; // pushed further right (was 260) -- real breathing room from the elders now (their interact radius no longer reaches the wall's dig radius)
 let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
 
@@ -20554,8 +20621,8 @@ function drawTunnelWall(camX) {
   const wx = TUNNELTOWN_WALL_X - camX;
   if (!tunnelWallBroken) {
     // solid packed-earth blockage, filling the passage floor to ceiling
-    ctx.fillStyle = "#241c14";
-    ctx.fillRect(wx - 4, 0, 40, gy);
+    // -- richly textured now, not a flat color
+    drawDetailedDirtFill(wx - 4, 40, gy, TUNNELTOWN_WALL_X * 3.1);
     ctx.strokeStyle = "rgba(90,80,70,0.3)";
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -20571,9 +20638,15 @@ function drawTunnelWall(camX) {
     ctx.ellipse(wx + 16, gy - 40, 16, 22, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // broken opening -- dark passage through, rubble at the edges
+    // broken opening -- a person-height passage near the ground, NOT a
+    // floor-to-ceiling slab (that read as a giant vertical shaft
+    // suddenly punched into the world) -- and it grows in over a short
+    // beat right as the wall breaks, rather than snapping to full
+    // height instantly
+    const openGrowP = Math.min(1, wallBreakPoofT / 300); // grows in over 300ms right as it breaks, then stays open
+    const openHeight = 100 * openGrowP;
     ctx.fillStyle = "#0a0603";
-    ctx.fillRect(wx - 2, 20, 36, gy - 20);
+    ctx.fillRect(wx - 2, gy - openHeight, 36, openHeight);
     ctx.fillStyle = "#241c14";
     for (let i = 0; i < 6; i++) {
       const seed = 5000 + i * 11.3;
@@ -20603,32 +20676,50 @@ function drawTunnelWall(camX) {
 }
 
 /* ------------------------------------------------------
-   BRANCH DIG SPOTS -- revealed once the wall breaks. Each is dug
-   independently (shovel + space, one press each). Some hide the
-   mechanical piece the cushion shaft needs, some don't -- the
-   "sometimes does, sometimes doesn't" gamble. dir:"side" are ground-
-   level, walk-up-and-dig spots (the tunnel keeps going sideways);
-   dir:"up" sit higher on the wall (heightAboveGround > 0) and need an
-   actual jump to reach, reading as digging UP into the earth rather
-   than just further along -- real vertical variety instead of every
-   dig being the same flat corridor move.
+   TUNNEL DIG GRAPH -- a real branching chain, not a flat row of
+   spots. Each node's soft dig-spot only appears once its OWN parent
+   has actually been dug (parent: "wall" means "as soon as the wall's
+   open") -- so you only ever see the frontier you've earned, never
+   the whole layout at once. dir:"side" extends the tunnel sideways at
+   the same height; dir:"up" is a vertical dig, sitting higher on the
+   wall and needing an actual jump to reach, so you're both digging
+   AND moving through the space to reach the next spot, not just
+   picking from a static row. One node holds the mechanical piece the
+   cushion shaft needs -- the rest are empty, dead-end gambles.
    ------------------------------------------------------ */
-const TUNNELTOWN_DIG_SPOTS = [
-  { x: 420, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
-  { x: 560, heightAboveGround: 85, dir: "up", hasItem: true, dug: false }, // single-jump reachable (~90 max elsewhere in the game)
-  { x: 700, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
-  { x: 830, heightAboveGround: 80, dir: "up", hasItem: false, dug: false }
+const TUNNEL_NODES = [
+  { id: "n1", parent: "wall", x: 620, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "n2a", parent: "n1", x: 740, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // single-jump reachable, dead ends here
+  { id: "n2b", parent: "n1", x: 820, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "n3b", parent: "n2b", x: 960, heightAboveGround: 0, dir: "side", hasItem: true, dug: false } // the cushion-shaft piece, three digs deep
 ];
+const TUNNEL_STUB_REACH = 220; // how far a dug node's own "frontier" extends -- has to comfortably cover its farthest child
 
-function drawTunnelDigSpot(spot, camX) {
-  const sx = spot.x - camX;
+function tunnelNodeParentDug(node) {
+  if (node.parent === "wall") return tunnelWallBroken;
+  const parent = TUNNEL_NODES.find(n => n.id === node.parent);
+  return parent ? parent.dug : false;
+}
+
+// how far into the room you can currently see -- grows only as far as
+// what's actually been dug, plus a little "next frontier" stub so the
+// immediate next soft spot(s) are visible, nothing further
+function tunnelRevealLimit() {
+  if (!tunnelWallBroken) return TUNNELTOWN_WALL_X;
+  let limit = TUNNELTOWN_WALL_X + 170; // comfortably past n1's own position, so its soft spot is visible the instant the wall breaks
+  TUNNEL_NODES.forEach(n => { if (n.dug) limit = Math.max(limit, n.x + TUNNEL_STUB_REACH); });
+  return limit;
+}
+
+function drawTunnelDigSpot(node, camX) {
+  const sx = node.x - camX;
   if (sx < -30 || sx > canvas.width + 30) return;
-  const cy = gy - spot.heightAboveGround;
+  const cy = gy - node.heightAboveGround;
 
-  if (spot.dir === "up") {
+  if (node.dir === "up") {
     // vertical soft patch -- taller than wide, sitting up on the wall
     // rather than at floor level, so it visually reads as "dig upward"
-    if (!spot.dug) {
+    if (!node.dug) {
       ctx.fillStyle = "rgba(120,95,60,0.4)";
       ctx.beginPath();
       ctx.ellipse(sx, cy - 12, 10, 22, 0, 0, Math.PI * 2);
@@ -20637,15 +20728,24 @@ function drawTunnelDigSpot(spot, camX) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     } else {
-      ctx.fillStyle = "#0f0a06";
-      ctx.beginPath();
-      ctx.ellipse(sx, cy - 14, 9, 24, 0, 0, Math.PI * 2);
-      ctx.fill();
+      // dug -- a real short vertical stub of open passage, not just a
+      // pit, so it's obvious you actually carved upward here
+      ctx.fillStyle = "#0a0603";
+      ctx.fillRect(sx - 9, cy - 42, 18, 42);
+      ctx.fillStyle = "#241c14";
+      for (let i = 0; i < 4; i++) {
+        const seed = node.x * 1.7 + i * 9.1;
+        const rx = sx + (pseudoRandom(seed) - 0.5) * 20;
+        const ry = cy - pseudoRandom(seed + 1) * 30;
+        ctx.beginPath();
+        ctx.ellipse(rx, ry, 3 + pseudoRandom(seed + 2) * 3, 2.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   } else {
     // undug soft patch -- same visual language as the wall's own
     // marked spot, so the player learns to recognize "diggable" dirt
-    if (!spot.dug) {
+    if (!node.dug) {
       ctx.fillStyle = "rgba(120,95,60,0.4)";
       ctx.beginPath();
       ctx.ellipse(sx, gy - 34, 15, 20, 0, 0, Math.PI * 2);
@@ -20654,12 +20754,20 @@ function drawTunnelDigSpot(spot, camX) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     } else {
-      // dug out -- a shallow dark pit, empty either way (the item, if
-      // any, has already flown off to the inventory by now)
-      ctx.fillStyle = "#0f0a06";
-      ctx.beginPath();
-      ctx.ellipse(sx, gy - 6, 16, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
+      // dug -- a real short stub of open corridor floor-to-ceiling
+      // near the ground, not just a shallow pit, so the path onward
+      // (and any further soft spot past it) reads as obviously open
+      ctx.fillStyle = "#0a0603";
+      ctx.fillRect(sx - 22, gy - 46, 44, 46);
+      ctx.fillStyle = "#241c14";
+      for (let i = 0; i < 5; i++) {
+        const seed = node.x * 2.3 + i * 8.7;
+        const rx = sx + (pseudoRandom(seed) - 0.5) * 44;
+        const ry = gy - pseudoRandom(seed + 1) * 30;
+        ctx.beginPath();
+        ctx.ellipse(rx, ry, 3 + pseudoRandom(seed + 2) * 3, 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
@@ -20670,7 +20778,8 @@ function drawTunnelDigSpot(spot, camX) {
    moment space is pressed. Shared by both the wall and every branch
    spot, since it's the same action either way.
    ------------------------------------------------------ */
-const TUNNEL_DIG_ANIM_DURATION = 650;
+const TUNNEL_DIG_ANIM_DURATION = 2400; // much slower/more deliberate -- several real shovel-fulls, not one quick flourish
+const TUNNEL_DIG_SWINGS = 5;
 let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t }
 
 function drawDiggingFlourish(camX) {
@@ -20678,23 +20787,38 @@ function drawDiggingFlourish(camX) {
   const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
   const sx = activeDig.x - camX;
   const sy = gy - activeDig.heightAboveGround;
-  const swings = 3;
-  const angle = Math.sin(p * Math.PI * swings) * 0.7 + 0.15;
 
+  // shovel swings back and forth across the whole (now much longer)
+  // duration -- reads as several real digging motions, not one flick
+  const angle = Math.sin(p * Math.PI * TUNNEL_DIG_SWINGS) * 0.7 + 0.15;
   drawShovelShape(ctx, sx, sy - 16, 13, angle);
 
-  // dirt kicks up right at each swing's peak, not just once at the end
-  const kick = Math.max(0, Math.sin(p * Math.PI * swings));
-  if (kick > 0.55) {
-    ctx.fillStyle = "#4a3018";
-    for (let i = 0; i < 5; i++) {
-      const seed = activeDig.t * 0.7 + i * 13.1;
-      const ang = pseudoRandom(seed) * Math.PI * 2;
-      const dist = 6 + pseudoRandom(seed + 1) * 10;
+  // each swing throws a real clump of dirt out in a visible arc (rises
+  // then falls, alternating which side it's tossed to), instead of a
+  // quick fading speck -- one throw per swing, timed to that swing's
+  // "dig out" moment rather than all happening at once
+  const swingDur = TUNNEL_DIG_ANIM_DURATION / TUNNEL_DIG_SWINGS;
+  for (let s = 0; s < TUNNEL_DIG_SWINGS; s++) {
+    const throwStart = s * swingDur + swingDur * 0.5;
+    const throwDuration = swingDur * 0.8;
+    const localT = activeDig.t - throwStart;
+    if (localT < 0 || localT > throwDuration) continue;
+    const lp = localT / throwDuration;
+    const throwDir = s % 2 === 0 ? 1 : -1;
+    for (let i = 0; i < 4; i++) {
+      const seed = s * 71.3 + i * 11.7;
+      const spread = pseudoRandom(seed) * 8 - 4;
+      const speed = 26 + pseudoRandom(seed + 1) * 18;
+      const arcHeight = 24 + pseudoRandom(seed + 2) * 12;
+      const clumpX = sx + throwDir * speed * lp + spread;
+      const clumpY = sy - 10 - Math.sin(lp * Math.PI) * arcHeight;
+      ctx.globalAlpha = 1 - lp * 0.25;
+      ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#4a3018" : "#3a2814";
       ctx.beginPath();
-      ctx.ellipse(sx + Math.cos(ang) * dist, sy - 6 + Math.sin(ang) * dist * 0.5, 2.4, 1.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(clumpX, clumpY, 3 + pseudoRandom(seed + 4) * 2, 2.4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -20705,8 +20829,11 @@ function drawTunnelTownScene(camX) {
   // then paint flat solid earth over whatever's left of the screen so
   // there's no glimpse of beams/floor/etc. leaking through from an
   // area that hasn't been dug into yet
-  const revealLimit = tunnelWallBroken ? TUNNELTOWN_WIDTH : TUNNELTOWN_WALL_X;
-  const revealScreenX = Math.max(0, revealLimit - camX);
+  const revealLimit = tunnelRevealLimit();
+  // rounded to a whole pixel -- an unrounded value here caused a
+  // faint sub-pixel shimmer/flicker right at the reveal edge as the
+  // camera shifted by fractions of a pixel frame to frame
+  const revealScreenX = Math.round(Math.max(0, revealLimit - camX));
 
   ctx.save();
   ctx.beginPath();
@@ -20738,7 +20865,7 @@ function drawTunnelTownScene(camX) {
   // a few old, leaning support beams, kept past the wall so they don't
   // clutter the small elder nook -- unlike the mole hole's tidy shop
   // set, these look like they're barely holding
-  const beams = [340, 550, 780];
+  const beams = [560, 780, 1000]; // repositioned for the wall's new spot (was 480, is now further right) and the wider dig-chain area beyond it
   beams.forEach((bx0, i) => {
     const bx = bx0 - camX;
     if (bx < -20 || bx > canvas.width + 20) return;
@@ -20758,11 +20885,11 @@ function drawTunnelTownScene(camX) {
     ctx.stroke();
   });
 
-  // branch dig spots, only meaningful (and only drawn) once the wall
-  // is actually open
-  if (tunnelWallBroken) {
-    TUNNELTOWN_DIG_SPOTS.forEach(spot => drawTunnelDigSpot(spot, camX));
-  }
+  // branch dig spots -- each one only drawn once its OWN parent has
+  // actually been dug, so you only ever see the frontier you've earned
+  TUNNEL_NODES.forEach(node => {
+    if (tunnelNodeParentDug(node)) drawTunnelDigSpot(node, camX);
+  });
 
   // ground
   ctx.fillStyle = "#181310";
@@ -20801,11 +20928,24 @@ function drawTunnelTownScene(camX) {
 
   ctx.restore(); // end of the reveal clip
 
-  // beyond the reveal limit, it's just solid, undifferentiated earth --
-  // literally can't see what hasn't been dug into yet
-  if (!tunnelWallBroken && revealScreenX < canvas.width) {
-    ctx.fillStyle = "#241c14";
-    ctx.fillRect(revealScreenX, 0, canvas.width - revealScreenX, canvas.height);
+  // beyond the reveal limit, it's just solid, richly-textured earth --
+  // literally can't see what hasn't been dug into yet, whether that's
+  // still the original wall or the current frontier of the dig chain
+  if (revealScreenX < canvas.width) {
+    drawDetailedDirtFill(revealScreenX, canvas.width - revealScreenX, canvas.height, revealLimit * 2.7 + 4000);
+  }
+
+  // soften the seam itself -- a hard clip edge read as a stark,
+  // flickering vertical line; this blends the last stretch of the
+  // revealed side into the dirt fill's own base tone so there's no
+  // sharp line at all, just a natural darkening
+  if (revealScreenX > 0 && revealScreenX < canvas.width) {
+    const blendW = 46;
+    const fade = ctx.createLinearGradient(revealScreenX - blendW, 0, revealScreenX, 0);
+    fade.addColorStop(0, "rgba(36,28,20,0)");
+    fade.addColorStop(1, "rgba(36,28,20,0.9)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(revealScreenX - blendW, 0, blendW, canvas.height);
   }
 
   // the elders, sitting right where the passage dead-ends -- drawn
@@ -20837,10 +20977,10 @@ function updateTunnelTownScene(deltaTime) {
         wallBreakPoofT = 0;
         elderThanksQueued = true;
       } else {
-        const spot = TUNNELTOWN_DIG_SPOTS[activeDig.index];
-        spot.dug = true;
-        if (spot.hasItem) {
-          startCollectAnimation({ x: spot.x, y: spot.heightAboveGround + 14, size: 8, rotation: 0 }, "cushionPart");
+        const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
+        node.dug = true;
+        if (node.hasItem) {
+          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, "cushionPart");
         }
       }
       activeDig = null;
@@ -20866,10 +21006,12 @@ function updateTunnelTownScene(deltaTime) {
       activeDig = { kind: "wall", x: TUNNELTOWN_WALL_X + 16, heightAboveGround: 0, t: 0 };
     }
   } else {
-    TUNNELTOWN_DIG_SPOTS.forEach((spot, i) => {
-      if (spot.dug) return;
-      if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(spot.x, spot.heightAboveGround, 22, 25, 25)) {
-        activeDig = { kind: "spot", index: i, x: spot.x, heightAboveGround: spot.heightAboveGround, t: 0 };
+    // only nodes whose own parent is already dug are reachable at all --
+    // matches what's actually drawn/visible
+    TUNNEL_NODES.forEach(node => {
+      if (node.dug || !tunnelNodeParentDug(node)) return;
+      if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(node.x, node.heightAboveGround, 22, 25, 25)) {
+        activeDig = { kind: "spot", id: node.id, x: node.x, heightAboveGround: node.heightAboveGround, t: 0 };
       }
     });
   }
