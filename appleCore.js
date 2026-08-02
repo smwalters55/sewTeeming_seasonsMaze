@@ -96,6 +96,12 @@ const orchardPaths = [
    CAMERA
    ====================================================== */
 let cameraX = 0;
+// vertical camera -- only meaningful in tunnel town's climbing shaft.
+// Every other scene keeps cameraY at 0 always, so the shared player
+// draw offset (gy + cameraY) is a no-op everywhere else -- this is
+// intentionally NOT a general-purpose vertical scroll for the whole
+// game, just tunnel town's own climb.
+let cameraY = 0;
 const camera = { topDown:false, locked:false };
 
 /* ======================================================
@@ -964,6 +970,8 @@ function updateSeasonTransition(deltaTime) {
       player.jumping = false;
       player.usedDoubleJump = false;
       cameraX = 0;
+      cameraY = 0; // only tunnel town ever moves this -- always reset on any scene change
+      tunnelSafeX = null; tunnelSafeY = null; // forget the last safe dig-collision spot too
 
       seasonTransition.phase = "hold";
     } else if (seasonTransition.phase === "hold") {
@@ -1758,12 +1766,13 @@ function handleInput(){
   // ratroom above -- placed at the room's own declared width
   if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
 
-  // tunnel town's own right boundary -- clamped to the blocked wall
-  // itself until it's actually been dug through, then opens up to the
-  // room's full declared width, same small-enclosed-room pattern as
-  // ratroom/molehole otherwise
+  // tunnel town's own right boundary -- clamped to whatever's actually
+  // been dug so far (the same frontier used to decide what's visible),
+  // NOT the room's full width the instant the wall breaks. Otherwise
+  // you could physically walk straight through undug earth into areas
+  // that haven't been carved (or even seen) yet.
   if (currentScene === "tunneltown") {
-    const rightBound = tunnelWallBroken ? TUNNELTOWN_WIDTH : TUNNELTOWN_WALL_X - 6;
+    const rightBound = tunnelWalkLimit();
     if (player.x > rightBound) player.x = rightBound;
   }
 
@@ -1996,7 +2005,52 @@ function applyPhysics(){
     }
   });
 
+  } else if (currentScene === "tunneltown") {
+
+  // dug "up" nodes leave a small permanent ledge behind -- same landing
+  // pattern as autumn's platforms/clouds' hop-clouds. This is what
+  // actually makes the vertical dig-chain climbable: dig upward, land
+  // on the little shelf that opens up, dig the next one from there.
+  TUNNEL_NODES.forEach(node => {
+    if (!node.dug || node.dir !== "up") return;
+    const platformTop = node.heightAboveGround;
+    const halfW = 28;
+    const playerBottom = player.y;
+
+    if (
+      player.x + player.width > node.x - halfW &&
+      player.x < node.x + halfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
   } // end currentScene checks
+
+  // 2D dig-collision -- checked last, after gravity/platform landing have
+  // settled the player's final spot for the frame. Snaps back to the last
+  // point that was actually revealed (the nook, the wall opening, or the
+  // tube/hole leading to any reachable node) if the player ended up
+  // somewhere that's still solid, undug dirt -- works in every direction,
+  // not just the single rightward limit above, which alone couldn't stop
+  // jumping past an un-dug spot overhead or off to the side.
+  if (currentScene === "tunneltown") {
+    const centerX = player.x + player.width / 2;
+    if (tunnelPositionRevealed(centerX, player.y)) {
+      tunnelSafeX = player.x;
+      tunnelSafeY = player.y;
+    } else if (tunnelSafeX !== null) {
+      player.x = tunnelSafeX;
+      player.y = tunnelSafeY;
+      player.vy = 0;
+    }
+  }
 }
 
 /* ======================================================
@@ -2526,7 +2580,7 @@ function drawCrown(camX) {
   const sinkAmount = fallProgress * (player.height + 20);
 
   const px = player.x - camX + player.width / 2;
-  const py = gy - player.height - player.y + 6 + sinkAmount;
+  const py = gy + cameraY - player.height - player.y + 6 + sinkAmount;
 
   if (crownState.worn) {
     drawCrownOnHead(camX, sinkAmount);
@@ -2575,7 +2629,7 @@ function drawBoomerangPrompt(camX) {
   if (boomerangPromptState.promptEverShown) return;
   if (!inventory.boomerang || inventory.boomerang <= 0) return;
   const px = player.x - camX + player.width / 2;
-  const py = gy - player.height - player.y + 6;
+  const py = gy + cameraY - player.height - player.y + 6;
   drawCarvedWoodPrompt(px, py - 46, boomerangPromptState.promptAnimT, BOOMERANG_PROMPT_LINES);
 }
 
@@ -20440,7 +20494,8 @@ function updateMoleholeScene(deltaTime) {
    mole hole's own open market space, since this is meant to read
    as older, smaller, and closer to collapse.
    ====================================================== */
-const TUNNELTOWN_WIDTH = 1100; // widened to fit the real branching dig chain further in
+const TUNNELTOWN_WIDTH = 1200; // widened again to fit the deeper reward path (s5 sits at x:1060)
+const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- reads as genuinely person-sized instead of an arbitrary number
 const tunnelTownExit = { x: 150 };
 
 /* ------------------------------------------------------
@@ -20495,7 +20550,10 @@ function advanceElderDialogue() {
 function drawElderTrio(camX) {
   elderTrio.forEach(elder => {
     const ex = ELDER_X + elder.dx - camX;
-    const bodyW = 18, bodyH = 24, bodyBottom = gy - 2, bodyTop = bodyBottom - bodyH;
+    // pinned to the tunnel-town ground line, which itself scrolls with
+    // cameraY as the player climbs (a no-op everywhere else, since
+    // cameraY is 0 in every other scene)
+    const bodyW = 18, bodyH = 24, bodyBottom = gy + cameraY - 2, bodyTop = bodyBottom - bodyH;
     // small hunched body -- rounder and shorter than the shopkeepers,
     // reads as older/stooped
     ctx.fillStyle = elder.color;
@@ -20538,7 +20596,7 @@ function drawElderSpeechBubble(camX) {
   const beat = elderDialogue.lines[elderDialogue.index];
   const isLast = elderDialogue.index === elderDialogue.lines.length - 1;
   const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
-  drawFittedSpeechBubble(ctx, ELDER_X - camX - 10, gy - 110, displayLines);
+  drawFittedSpeechBubble(ctx, ELDER_X - camX - 10, gy + cameraY - 110, displayLines);
 }
 
 /* ------------------------------------------------------
@@ -20616,13 +20674,14 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
 const TUNNELTOWN_WALL_X = 480; // pushed further right (was 260) -- real breathing room from the elders now (their interact radius no longer reaches the wall's dig radius)
 let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
+let tunnelSafeX = null, tunnelSafeY = null; // last known-good (revealed) spot -- lets the 2D dig-collision snap the player back out of solid dirt instead of leaving them stuck partway through it
 
 function drawTunnelWall(camX) {
   const wx = TUNNELTOWN_WALL_X - camX;
   if (!tunnelWallBroken) {
     // solid packed-earth blockage, filling the passage floor to ceiling
     // -- richly textured now, not a flat color
-    drawDetailedDirtFill(wx - 4, 40, gy, TUNNELTOWN_WALL_X * 3.1);
+    drawDetailedDirtFill(wx - 4, 40, gy + cameraY, TUNNELTOWN_WALL_X * 3.1);
     ctx.strokeStyle = "rgba(90,80,70,0.3)";
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -20632,11 +20691,9 @@ function drawTunnelWall(camX) {
       ctx.lineTo(wx + 36, wy + pseudoRandom(wy) * 6);
       ctx.stroke();
     }
-    // a marked "soft spot" -- slightly lighter patch showing where to dig
-    ctx.fillStyle = "rgba(120,95,60,0.4)";
-    ctx.beginPath();
-    ctx.ellipse(wx + 16, gy - 40, 16, 22, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // a marked "soft spot" -- same shared visual language as every other
+    // dig spot in the scene, so the player learns to recognize it at a glance
+    drawDigSoftSpot(wx + 16, gy + cameraY - 40, 16, 22, TUNNELTOWN_WALL_X * 2.3);
   } else {
     // broken opening -- a person-height passage near the ground, NOT a
     // floor-to-ceiling slab (that read as a giant vertical shaft
@@ -20644,14 +20701,14 @@ function drawTunnelWall(camX) {
     // beat right as the wall breaks, rather than snapping to full
     // height instantly
     const openGrowP = Math.min(1, wallBreakPoofT / 300); // grows in over 300ms right as it breaks, then stays open
-    const openHeight = 100 * openGrowP;
+    const openHeight = TUNNEL_PASSAGE_HEIGHT * openGrowP;
     ctx.fillStyle = "#0a0603";
-    ctx.fillRect(wx - 2, gy - openHeight, 36, openHeight);
+    ctx.fillRect(wx - 2, gy + cameraY - openHeight, 36, openHeight);
     ctx.fillStyle = "#241c14";
     for (let i = 0; i < 6; i++) {
       const seed = 5000 + i * 11.3;
       const rx = wx + (pseudoRandom(seed) - 0.5) * 50;
-      const ry = gy - pseudoRandom(seed + 1) * 20;
+      const ry = gy + cameraY - pseudoRandom(seed + 1) * 20;
       const r = 5 + pseudoRandom(seed + 2) * 6;
       ctx.beginPath();
       ctx.ellipse(rx, ry, r, r * 0.6, 0, 0, Math.PI * 2);
@@ -20667,7 +20724,7 @@ function drawTunnelWall(camX) {
         const dist = p * (20 + pseudoRandom(seed + 1) * 40);
         ctx.fillStyle = "#3a2e22";
         ctx.beginPath();
-        ctx.ellipse(wx + 16 + Math.cos(angle) * dist, gy - 30 + Math.sin(angle) * dist * 0.5, 3, 2.4, 0, 0, Math.PI * 2);
+        ctx.ellipse(wx + 16 + Math.cos(angle) * dist, gy + cameraY - 30 + Math.sin(angle) * dist * 0.5, 3, 2.4, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -20689,11 +20746,25 @@ function drawTunnelWall(camX) {
    ------------------------------------------------------ */
 const TUNNEL_NODES = [
   { id: "n1", parent: "wall", x: 620, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
-  { id: "n2a", parent: "n1", x: 740, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // single-jump reachable, dead ends here
-  { id: "n2b", parent: "n1", x: 820, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
-  { id: "n3b", parent: "n2b", x: 960, heightAboveGround: 0, dir: "side", hasItem: true, dug: false } // the cushion-shaft piece, three digs deep
+
+  // up-chain -- three stacked digs straight up off n1, the branch that
+  // really exercises the vertical camera. Dead-ends at the top, empty.
+  { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
+  { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
+  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false },
+
+  // side-chain -- continues along the ground, dips through a low sunken
+  // alcove (reads as "descending" without leaving ground level -- true
+  // below-ground pits would need a bigger change to the shared gravity/
+  // ground-collision code, so this is the stand-in for now), then
+  // splits into a true dead end and the path to the reward, buried deep
+  { id: "s1", parent: "n1", x: 760, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
+  { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: false, dug: false }, // true dead end
+  { id: "s3b", parent: "s2", x: 900, heightAboveGround: 60, dir: "up", hasItem: false, dug: false }, // small step up, continues the reward path
+  { id: "s4", parent: "s3b", x: 980, heightAboveGround: 60, dir: "side", hasItem: false, dug: false },
+  { id: "s5", parent: "s4", x: 1060, heightAboveGround: 60, dir: "side", hasItem: true, dug: false } // the cushion-shaft piece, deep in
 ];
-const TUNNEL_STUB_REACH = 220; // how far a dug node's own "frontier" extends -- has to comfortably cover its farthest child
 
 function tunnelNodeParentDug(node) {
   if (node.parent === "wall") return tunnelWallBroken;
@@ -20701,73 +20772,164 @@ function tunnelNodeParentDug(node) {
   return parent ? parent.dug : false;
 }
 
-// how far into the room you can currently see -- grows only as far as
-// what's actually been dug, plus a little "next frontier" stub so the
-// immediate next soft spot(s) are visible, nothing further
-function tunnelRevealLimit() {
-  if (!tunnelWallBroken) return TUNNELTOWN_WALL_X;
-  let limit = TUNNELTOWN_WALL_X + 170; // comfortably past n1's own position, so its soft spot is visible the instant the wall breaks
-  TUNNEL_NODES.forEach(n => { if (n.dug) limit = Math.max(limit, n.x + TUNNEL_STUB_REACH); });
+function tunnelNodeParentPos(node) {
+  if (node.parent === "wall") return { x: TUNNELTOWN_WALL_X + 16, h: 0 };
+  const parent = TUNNEL_NODES.find(n => n.id === node.parent);
+  return parent ? { x: parent.x, h: parent.heightAboveGround } : null;
+}
+
+// how far you can physically WALK -- right up to the edge of any
+// currently-reachable node (its own parent already dug), whether or
+// not that node itself has been dug yet, so you can always reach the
+// next spot to dig it. Deliberately tight (not a wide flood-lit
+// stretch) -- separate from the visual carve shapes below.
+function tunnelWalkLimit() {
+  if (!tunnelWallBroken) return TUNNELTOWN_WALL_X - 6;
+  let limit = TUNNELTOWN_WALL_X + 40;
+  TUNNEL_NODES.forEach(node => {
+    if (tunnelNodeParentDug(node)) limit = Math.max(limit, node.x + 30);
+  });
   return limit;
+}
+
+// true if the point (x, heightAboveGround) falls inside a single dug
+// "hole" ellipse centered at (cx, ch) -- a little more forgiving than
+// the render ellipse (see addTunnelHoleToPath below) so ordinary
+// walking/jumping through a real passage never feels clipped
+function tunnelHoleContains(cx, ch, x, h) {
+  const rx = 26, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 10;
+  const dx = (x - cx) / rx, dh = (h - ch) / ry;
+  return dx * dx + dh * dh <= 1;
+}
+
+// the real 2D dig-collision check -- true if this exact point is inside
+// the always-open nook, the broken wall's own opening, or the tube+hole
+// chain leading to (and including) any node whose parent has already
+// been dug. Mirrors exactly what drawTunnelTownScene's clip actually
+// reveals, so solid-looking dirt is always solid in every direction,
+// not just blocked by a single rightward x-limit.
+function tunnelPositionRevealed(x, h) {
+  if (x < TUNNELTOWN_WALL_X + 6) return true; // the always-open starting nook
+  if (!tunnelWallBroken) return false;
+  if (tunnelHoleContains(TUNNELTOWN_WALL_X + 16, 0, x, h)) return true;
+  for (const node of TUNNEL_NODES) {
+    if (!tunnelNodeParentDug(node)) continue; // frontier not reached yet
+    const parentPos = tunnelNodeParentPos(node);
+    if (parentPos) {
+      const dist = Math.abs(parentPos.x - node.x) + Math.abs(parentPos.h - node.heightAboveGround);
+      const steps = Math.max(1, Math.round(dist / 16));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const tx = parentPos.x + (node.x - parentPos.x) * t;
+        const th = parentPos.h + (node.heightAboveGround - parentPos.h) * t;
+        if (tunnelHoleContains(tx, th, x, h)) return true;
+      }
+    }
+    if (tunnelHoleContains(node.x, node.heightAboveGround, x, h)) return true;
+  }
+  return false;
+}
+
+// adds one small oval "opening" to the current path, in screen space --
+// person-sized, not a big room reveal
+function addTunnelHoleToPath(camX, x, h) {
+  const sx = x - camX, sy = gy + cameraY - h;
+  const rx = 24, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 6;
+  ctx.moveTo(sx + rx, sy);
+  ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
+}
+
+// a narrow tube of overlapping ovals connecting two dug points -- the
+// actual walkable corridor between them, not a flood-filled rectangle
+function addTunnelTubeToPath(camX, x1, h1, x2, h2) {
+  const dist = Math.abs(x1 - x2) + Math.abs(h1 - h2);
+  const steps = Math.max(1, Math.round(dist / 16));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    addTunnelHoleToPath(camX, x1 + (x2 - x1) * t, h1 + (h2 - h1) * t);
+  }
+}
+
+// shared "diggable patch of earth" marker -- a soft radial glow (rather
+// than one flat translucent tint), a darker rim so it reads as an
+// actual depression in the dirt, and a few thin root-hair cracks
+// radiating out so it doesn't look like a plain blob. Used for every
+// undug spot in the scene (the wall's own soft spot included) so the
+// player learns one consistent visual language for "diggable here".
+function drawDigSoftSpot(cx, cy, rx, ry, seed) {
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
+  grad.addColorStop(0, "rgba(150,120,75,0.55)");
+  grad.addColorStop(0.65, "rgba(120,95,60,0.4)");
+  grad.addColorStop(1, "rgba(80,62,40,0.12)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(55,42,24,0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(80,62,36,0.4)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const a = pseudoRandom(seed + i * 3.1) * Math.PI * 2;
+    const len = 0.45 + pseudoRandom(seed + i * 5.7) * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * rx * len, cy + Math.sin(a) * ry * len);
+    ctx.stroke();
+  }
 }
 
 function drawTunnelDigSpot(node, camX) {
   const sx = node.x - camX;
   if (sx < -30 || sx > canvas.width + 30) return;
-  const cy = gy - node.heightAboveGround;
+  const cy = gy + cameraY - node.heightAboveGround;
+  const isUp = node.dir === "up";
+  const isSunken = node.dir === "sunken";
+  // "up" spots sit higher, tighter and taller (an actual vertical dig);
+  // "sunken" spots are wider and squatter (reads as a low crawl-space)
+  const markY = isUp ? cy - 12 : gy + cameraY - (isSunken ? 26 : 34);
+  const markRX = isUp ? 10 : (isSunken ? 22 : 15);
+  const markRY = isUp ? 22 : (isSunken ? 14 : 20);
 
-  if (node.dir === "up") {
-    // vertical soft patch -- taller than wide, sitting up on the wall
-    // rather than at floor level, so it visually reads as "dig upward"
-    if (!node.dug) {
-      ctx.fillStyle = "rgba(120,95,60,0.4)";
-      ctx.beginPath();
-      ctx.ellipse(sx, cy - 12, 10, 22, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(160,130,85,0.3)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    } else {
-      // dug -- a real short vertical stub of open passage, not just a
-      // pit, so it's obvious you actually carved upward here
-      ctx.fillStyle = "#0a0603";
-      ctx.fillRect(sx - 9, cy - 42, 18, 42);
-      ctx.fillStyle = "#241c14";
-      for (let i = 0; i < 4; i++) {
-        const seed = node.x * 1.7 + i * 9.1;
-        const rx = sx + (pseudoRandom(seed) - 0.5) * 20;
-        const ry = cy - pseudoRandom(seed + 1) * 30;
-        ctx.beginPath();
-        ctx.ellipse(rx, ry, 3 + pseudoRandom(seed + 2) * 3, 2.4, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+  // a low rock lip overhanging any sunken spot -- hints at the lower
+  // ceiling without actually changing the (ground-level) collision
+  if (isSunken) {
+    ctx.fillStyle = "#1c1610";
+    ctx.beginPath();
+    ctx.moveTo(sx - 30, gy + cameraY - 46);
+    ctx.quadraticCurveTo(sx, gy + cameraY - 58, sx + 30, gy + cameraY - 46);
+    ctx.lineTo(sx + 30, gy + cameraY - 40);
+    ctx.quadraticCurveTo(sx, gy + cameraY - 50, sx - 30, gy + cameraY - 40);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  if (!node.dug) {
+    drawDigSoftSpot(sx, markY, markRX, markRY, node.x * 1.7 + (isUp ? 200 : 0));
   } else {
-    // undug soft patch -- same visual language as the wall's own
-    // marked spot, so the player learns to recognize "diggable" dirt
-    if (!node.dug) {
-      ctx.fillStyle = "rgba(120,95,60,0.4)";
-      ctx.beginPath();
-      ctx.ellipse(sx, gy - 34, 15, 20, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(160,130,85,0.3)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    } else {
-      // dug -- a real short stub of open corridor floor-to-ceiling
-      // near the ground, not just a shallow pit, so the path onward
-      // (and any further soft spot past it) reads as obviously open
-      ctx.fillStyle = "#0a0603";
-      ctx.fillRect(sx - 22, gy - 46, 44, 46);
+    // dug -- the oval clip carved into the dirt (see drawTunnelTownScene)
+    // is what actually reveals the little opening here; this just adds
+    // a few loose rocks/rubble inside it for texture, plus a small
+    // permanent ledge under "up" spots so there's actually something to
+    // land on once you've dug your way up to it
+    if (isUp) {
+      ctx.fillStyle = "#3a2e22";
+      ctx.fillRect(sx - 28, cy - 4, 56, 6);
       ctx.fillStyle = "#241c14";
-      for (let i = 0; i < 5; i++) {
-        const seed = node.x * 2.3 + i * 8.7;
-        const rx = sx + (pseudoRandom(seed) - 0.5) * 44;
-        const ry = gy - pseudoRandom(seed + 1) * 30;
-        ctx.beginPath();
-        ctx.ellipse(rx, ry, 3 + pseudoRandom(seed + 2) * 3, 2.2, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.fillRect(sx - 28, cy, 56, 3);
+      ctx.strokeStyle = "rgba(90,80,70,0.4)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx - 28, cy - 4, 56, 6);
+    }
+    for (let i = 0; i < 4; i++) {
+      const seed = node.x * 1.7 + i * 9.1;
+      const rx = sx + (pseudoRandom(seed) - 0.5) * (isUp ? 16 : 30);
+      const ry = (isUp ? cy - pseudoRandom(seed + 1) * 40 : gy + cameraY - pseudoRandom(seed + 1) * 20);
+      ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#4a3018" : "#241c14";
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, 2.6 + pseudoRandom(seed + 3) * 2.6, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
@@ -20778,7 +20940,7 @@ function drawTunnelDigSpot(node, camX) {
    moment space is pressed. Shared by both the wall and every branch
    spot, since it's the same action either way.
    ------------------------------------------------------ */
-const TUNNEL_DIG_ANIM_DURATION = 2400; // much slower/more deliberate -- several real shovel-fulls, not one quick flourish
+const TUNNEL_DIG_ANIM_DURATION = 1900; // slightly faster than the initial slow pass, still several real shovel-fulls
 const TUNNEL_DIG_SWINGS = 5;
 let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t }
 
@@ -20786,7 +20948,7 @@ function drawDiggingFlourish(camX) {
   if (!activeDig) return;
   const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
   const sx = activeDig.x - camX;
-  const sy = gy - activeDig.heightAboveGround;
+  const sy = gy + cameraY - activeDig.heightAboveGround;
 
   // shovel swings back and forth across the whole (now much longer)
   // duration -- reads as several real digging motions, not one flick
@@ -20829,24 +20991,39 @@ function drawTunnelTownScene(camX) {
   // then paint flat solid earth over whatever's left of the screen so
   // there's no glimpse of beams/floor/etc. leaking through from an
   // area that hasn't been dug into yet
-  const revealLimit = tunnelRevealLimit();
-  // rounded to a whole pixel -- an unrounded value here caused a
-  // faint sub-pixel shimmer/flicker right at the reveal edge as the
-  // camera shifted by fractions of a pixel frame to frame
-  const revealScreenX = Math.round(Math.max(0, revealLimit - camX));
+  // start from solid earth everywhere -- the real room only shows
+  // through the entry nook plus small oval "openings" carved along
+  // whatever's actually been dug, connected by narrow tunnel tubes.
+  // NOT a wide flood-lit region that jumps open all at once.
+  drawDetailedDirtFill(0, canvas.width, canvas.height, 9000);
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, revealScreenX, canvas.height);
+  const nookRightScreen = Math.round(TUNNELTOWN_WALL_X - camX);
+  ctx.rect(-20, 0, nookRightScreen + 20, canvas.height); // the starting nook, always open
+
+  if (tunnelWallBroken) {
+    addTunnelHoleToPath(camX, TUNNELTOWN_WALL_X + 16, 0);
+    TUNNEL_NODES.forEach(node => {
+      if (!tunnelNodeParentDug(node)) return; // only carve as far as what's actually reachable
+      const parentPos = tunnelNodeParentPos(node);
+      if (parentPos) addTunnelTubeToPath(camX, parentPos.x, parentPos.h, node.x, node.heightAboveGround);
+      addTunnelHoleToPath(camX, node.x, node.heightAboveGround);
+    });
+  }
+
   ctx.clip();
 
   // cooler, greyer earth tones than the mole hole's warm soil-orange --
-  // this place reads as older, damper, less lived-in
-  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  // this place reads as older, damper, less lived-in. Ground line
+  // (gy + cameraY) scrolls downward as the player climbs, so the sky
+  // fill has to stretch to cover the newly-revealed space above it.
+  const groundY = gy + cameraY;
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY);
   sky.addColorStop(0, "#2e2620");
   sky.addColorStop(1, "#161210");
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  ctx.fillRect(0, 0, canvas.width, groundY);
 
   // rougher wall texture -- less regular than the mole hole's neat
   // packed-earth bands, more like crumbling old digging
@@ -20874,14 +21051,14 @@ function drawTunnelTownScene(camX) {
     ctx.lineWidth = 7;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(bx, gy);
-    ctx.lineTo(bx + lean, gy - 90);
+    ctx.moveTo(bx, groundY);
+    ctx.lineTo(bx + lean, groundY - 90);
     ctx.stroke();
     ctx.strokeStyle = "#241c14";
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(bx - 22, gy - 70);
-    ctx.lineTo(bx + lean, gy - 90);
+    ctx.moveTo(bx - 22, groundY - 70);
+    ctx.lineTo(bx + lean, groundY - 90);
     ctx.stroke();
   });
 
@@ -20893,12 +21070,12 @@ function drawTunnelTownScene(camX) {
 
   // ground
   ctx.fillStyle = "#181310";
-  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
   ctx.strokeStyle = "rgba(90,80,70,0.35)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, gy);
-  ctx.lineTo(canvas.width, gy);
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(canvas.width, groundY);
   ctx.stroke();
 
   // dim pebble/rubble scatter along the floor
@@ -20908,45 +21085,25 @@ function drawTunnelTownScene(camX) {
     if (px < -10 || px > canvas.width + 10) continue;
     ctx.fillStyle = "rgba(90,80,70,0.45)";
     ctx.beginPath();
-    ctx.ellipse(px, gy + 4 + pseudoRandom(seed + 1) * 4, 2.2 + pseudoRandom(seed + 2) * 2, 1.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, groundY + 4 + pseudoRandom(seed + 1) * 4, 2.2 + pseudoRandom(seed + 2) * 2, 1.5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // exit -- climb back up to the mole hole
   const ex = tunnelTownExit.x - camX;
-  const beam = ctx.createLinearGradient(ex, 0, ex, gy);
+  const beam = ctx.createLinearGradient(ex, 0, ex, groundY);
   beam.addColorStop(0, "rgba(200,180,150,0.25)");
   beam.addColorStop(1, "rgba(200,180,150,0)");
   ctx.fillStyle = beam;
   ctx.beginPath();
   ctx.moveTo(ex - 24, 0);
   ctx.lineTo(ex + 24, 0);
-  ctx.lineTo(ex + 9, gy);
-  ctx.lineTo(ex - 9, gy);
+  ctx.lineTo(ex + 9, groundY);
+  ctx.lineTo(ex - 9, groundY);
   ctx.closePath();
   ctx.fill();
 
-  ctx.restore(); // end of the reveal clip
-
-  // beyond the reveal limit, it's just solid, richly-textured earth --
-  // literally can't see what hasn't been dug into yet, whether that's
-  // still the original wall or the current frontier of the dig chain
-  if (revealScreenX < canvas.width) {
-    drawDetailedDirtFill(revealScreenX, canvas.width - revealScreenX, canvas.height, revealLimit * 2.7 + 4000);
-  }
-
-  // soften the seam itself -- a hard clip edge read as a stark,
-  // flickering vertical line; this blends the last stretch of the
-  // revealed side into the dirt fill's own base tone so there's no
-  // sharp line at all, just a natural darkening
-  if (revealScreenX > 0 && revealScreenX < canvas.width) {
-    const blendW = 46;
-    const fade = ctx.createLinearGradient(revealScreenX - blendW, 0, revealScreenX, 0);
-    fade.addColorStop(0, "rgba(36,28,20,0)");
-    fade.addColorStop(1, "rgba(36,28,20,0.9)");
-    ctx.fillStyle = fade;
-    ctx.fillRect(revealScreenX - blendW, 0, blendW, canvas.height);
-  }
+  ctx.restore(); // end of the carve clip -- everything outside the nook/ovals/tubes stays solid dirt
 
   // the elders, sitting right where the passage dead-ends -- drawn
   // after the clip/fill above so they're never accidentally clipped
@@ -20965,6 +21122,14 @@ function drawTunnelTownScene(camX) {
 }
 
 function updateTunnelTownScene(deltaTime) {
+  // vertical camera -- follows the player upward once they've climbed
+  // past a comfortable on-screen height, so stacked jumps/platforms
+  // aren't capped by a single screen's ~250-unit ceiling. Mirrors the
+  // horizontal cameraX = Math.max(0, player.x - canvas.width*0.4)
+  // pattern used elsewhere, just on the vertical axis. Reset to 0 on
+  // any scene change (see the season-transition handler).
+  cameraY = Math.max(0, player.y - 150);
+
   wallBreakPoofT += deltaTime * 1000;
 
   // mid-dig -- the actual wall-break/spot-dug state change only lands
@@ -21178,7 +21343,13 @@ drawBoomerangThrow(camX); // the boomerang itself, while it's in the air
 
 /* PLAYER */
 const px = player.x - camX;
-const py = gy - player.height - player.y;
+// cameraY is ADDED here (not subtracted): as the player climbs past the
+// follow threshold in tunnel town, cameraY grows to offset player.y 1:1,
+// pinning the sprite's on-screen height instead of letting it keep
+// rising off the top of the canvas -- the world (ground line, walls,
+// etc.) scrolls away underneath instead. A no-op everywhere else, since
+// cameraY is always 0 outside tunnel town.
+const py = gy + cameraY - player.height - player.y;
 
 // while falling through a hole, the body actually MOVES downward — it
 // isn't frozen in place; only what crosses below ground level (gy) gets
@@ -21187,18 +21358,20 @@ const fallProgress = fallState.active ? Math.min(fallState.t / FALL_DURATION, 1)
 const sinkAmount = fallProgress * (player.height + 20); // how far down the body has moved
 const drawPy = py + sinkAmount;
 
-// shadow shrinks along with the body sinking in
+// shadow shrinks along with the body sinking in -- pinned to the
+// visual ground line, which itself scrolls with cameraY in tunnel
+// town's climbing shaft (a no-op everywhere else, since cameraY is 0)
 ctx.fillStyle = `rgba(60,40,20,${0.18 * (1 - fallProgress)})`;
 ctx.beginPath();
-ctx.ellipse(px + player.width/2, gy + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
+ctx.ellipse(px + player.width/2, gy + cameraY + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
 ctx.fill();
 // ground contact tint
 ctx.fillStyle = `rgba(90,70,40,${0.08 * (1 - fallProgress)})`;
 ctx.beginPath();
-ctx.ellipse(px + player.width/2, gy + 6, 22, 8, 0, 0, Math.PI*2);
+ctx.ellipse(px + player.width/2, gy + cameraY + 6, 22, 8, 0, 0, Math.PI*2);
 ctx.fill();
 
-if (drawPy < gy) { // still at least partly above ground — worth drawing
+if (drawPy < gy + cameraY) { // still at least partly above ground — worth drawing
   ctx.save();
   ctx.beginPath();
   // widened well past the sprite's own bounding box -- the clip only
