@@ -9956,39 +9956,65 @@ function drawForestGearVines(gx, gy2, outerR, seed, wraps = 4) {
   for (let i = 0; i < wraps; i++) {
     const wSeed = seed + i * 13.1;
     const startAngle = (i / wraps) * Math.PI * 2 + pseudoRandom(wSeed) * 0.7;
-    const startR = outerR * (0.75 + pseudoRandom(wSeed + 1) * 0.2);
-    const sx = gx + Math.cos(startAngle) * startR;
-    const sy = gy2 + Math.sin(startAngle) * startR;
-    const endAngle = startAngle + 1.5 + pseudoRandom(wSeed + 2) * 1.1;
-    const endR = outerR + 9 + pseudoRandom(wSeed + 3) * 10;
-    const ex = gx + Math.cos(endAngle) * endR;
-    const ey = gy2 + Math.sin(endAngle) * endR;
-    const midAngle = (startAngle + endAngle) / 2;
-    const midR = outerR * (0.5 + pseudoRandom(wSeed + 4) * 0.35);
-    const mx = gx + Math.cos(midAngle) * midR;
-    const my = gy2 + Math.sin(midAngle) * midR;
+    const sweepDir = pseudoRandom(wSeed + 6) < 0.5 ? 1 : -1;
+    const sweep = 1.6 + pseudoRandom(wSeed + 2) * 1.3; // how far around the rim this wrap actually travels
+    // hugs close to the gear's own curvature while wrapping (radius
+    // barely varies from outerR), then droops outward and sags
+    // downward for a trailing loose tail -- a single quadratic curve
+    // between two points read as a near-straight diagonal line no
+    // matter how the control point was nudged, since the endpoints
+    // themselves weren't following the gear's actual curvature.
+    // Sampling several points along the rim and smoothing through them
+    // is what actually reads as "wrapped around a curved surface."
+    const hugR = outerR * (0.9 + pseudoRandom(wSeed + 1) * 0.14);
+    const droopR = outerR + 10 + pseudoRandom(wSeed + 3) * 12;
+    const droopSag = 7 + pseudoRandom(wSeed + 7) * 9;
+
+    const segments = 6;
+    const pts = [];
+    for (let s = 0; s <= segments; s++) {
+      const t = s / segments;
+      const angle = startAngle + sweepDir * sweep * t;
+      const droopT = t < 0.65 ? 0 : (t - 0.65) / 0.35; // only the last third droops away from the rim
+      const r = hugR + (droopR - hugR) * droopT;
+      pts.push({
+        x: gx + Math.cos(angle) * r,
+        y: gy2 + Math.sin(angle) * r + droopSag * droopT * droopT,
+        angle
+      });
+    }
 
     ctx.strokeStyle = pseudoRandom(wSeed + 5) < 0.5 ? "#4a6a2e" : "#3f5a26";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(mx, my, ex, ey);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    // smooth through the sampled points: quadratic to each point's own
+    // midpoint-with-the-next, so the curve bends at every sample
+    // instead of just once
+    for (let s = 1; s < pts.length - 1; s++) {
+      const mx = (pts[s].x + pts[s + 1].x) / 2;
+      const my = (pts[s].y + pts[s + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[s].x, pts[s].y, mx, my);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.stroke();
 
-    // a couple of small leaves strung along each wrap
+    // a couple of small leaves strung along the wrap, oriented to the
+    // curve's own local direction at that point rather than a single
+    // fixed angle for the whole vine
     ctx.fillStyle = "#5d7a3a";
-    for (let l = 0; l < 2; l++) {
-      const lp = 0.35 + l * 0.35;
-      const lx = sx + (ex - sx) * lp + (mx - (sx + ex) / 2) * 0.6;
-      const ly = sy + (ey - sy) * lp + (my - (sy + ey) / 2) * 0.6;
+    [2, 4].forEach((idx, l) => {
+      const p = pts[idx];
+      const next = pts[idx + 1] || p;
+      const localAngle = Math.atan2(next.y - p.y, next.x - p.x);
       ctx.save();
-      ctx.translate(lx, ly);
-      ctx.rotate(midAngle + l * 0.8);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(localAngle + l * 0.8);
       ctx.beginPath();
       ctx.ellipse(0, 0, 4.2, 2.3, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    }
+    });
   }
   ctx.restore();
 }
@@ -10746,26 +10772,37 @@ function drawForestClockworkGears(camX) {
    instead of just dropping onto flat ground. A much longer, more
    deliberate arc instead of a quick hop across a small gap.
 
-   Position re-verified against the actual frame-by-frame physics
-   (canvas is only 400px tall and gy/ground is fixed at y=300, so
-   anything above screen-height 300 renders at py<=0 -- literally off
-   the top edge). The original placement (height 300, on the ascent)
-   sat right at that edge and read as half-clipped. Simulated the real
-   per-frame integration (x+=vx; y+=vy; vy-=gravity each frame,
-   LAUNCH_GRAVITY=0.3 ascending / FLOATY_FALL_GRAVITY=0.13 descending)
-   from the capstone's gTop=226, vx=3, vy=8: peak is ~336.6 around
-   frame 27 (well off-screen), then the DESCENDING half of the arc
-   comes back down through comfortably-on-screen heights further out
-   to the right. At frame 64 the sim lands at x=3069, y=246.4 -- solidly
-   below the 300 screen ceiling (py≈54, fully visible with room for the
-   glow ring), still well above any real jump/double-jump's reach
-   (nothing to even jump FROM out there in open air), and well short of
-   the flightLanding gear's own catch zone (x 3085-3195) so it can't be
-   swallowed by that check first. Gated on player.launched in the
-   pickup check too, as a hard backstop.
+   Position re-verified TWICE now against the actual frame-by-frame
+   physics. First pass (height 300, on the ascent) sat right at the
+   canvas's 300px screen-height ceiling and read as half-clipped.
+   Second pass (x=3069, height=246, descending side) fixed the
+   visibility but turned out to sit close enough to BOTH the landing
+   gear (gTop=110) and cluster D's D1 gear (gTop=70) that it looked
+   reachable by a plain double-jump or even the boomerang from either
+   side -- not actually exploitable (the pickup is hard-gated on
+   player.launched regardless of position, see below), but it killed
+   the "you can only get this by flying" read, which was the whole
+   point.
+
+   This third placement fixes THAT: simulated the full per-frame
+   integration (x+=vx; y+=vy; vy-=gravity each frame, LAUNCH_GRAVITY=0.3
+   ascending / FLOATY_FALL_GRAVITY=0.13 descending) from the capstone's
+   gTop=226, vx=3, vy=8, and picked a point on the descending side,
+   past the peak (~336.6 at frame 27) but still well above the
+   established double-jump max (140.6, see vinePumpkin's own comment
+   elsewhere) added to EITHER neighboring gear's gTop: D1 (70+140.6=
+   210.6) and the landing gear (110+140.6=250.6). At frame 55 the sim
+   lands at x=3042, y=284.76 -- comfortably on screen (py≈15), sitting
+   in the open gap between D1's right edge and the landing gear's left
+   edge (no platform directly underneath at all), and a clean ~34px
+   above even the landing gear's max double-jump reach. Boomerang range
+   is nowhere close either (its arc only rises ~90 above its throw
+   origin, so even thrown from the landing gear it tops out around
+   200). Gated on player.launched in the pickup check too, as a hard
+   backstop regardless.
    ====================================================== */
-const FOREST_FLIGHT_PIECE_X = 3069; // capstone launch's arc, descending side, ~frame 64
-const FOREST_FLIGHT_PIECE_HEIGHT = 246;
+const FOREST_FLIGHT_PIECE_X = 3042; // capstone launch's arc, descending side, past the peak, ~frame 55 -- open gap, out of double-jump/boomerang reach from either neighboring gear
+const FOREST_FLIGHT_PIECE_HEIGHT = 285;
 let forestFlightPieceCollected = false;
 
 function drawForestFlightPiece(camX) {
@@ -10787,19 +10824,35 @@ function drawForestFlightPiece(camX) {
 }
 
 /* ======================================================
-   GNAWED-STICK SECRET — the payoff for the mystery backward launch
+   GNAWED-BRANCH SECRET — the payoff for the mystery backward launch
    pad (the plain-looking middle gear in cluster A). No creature ever
    appears here, on purpose -- this is a lore seed for the beaver NPC
    reserved for later at the dam/bridge, and actually meeting it here
-   first would undercut that proper introduction. Instead, flying past
-   at speed physically brushes the leaf clump aside for a couple of
-   seconds, revealing a small stash of gnawed sticks and shavings
-   underneath before it settles back closed -- ties the reveal to the
-   player's own motion (that's WHY the flight triggers it) rather than
-   it just popping open on a timer or a walk-up trigger.
+   first would undercut that proper introduction.
+
+   Originally this was a leaf clump sitting on the GROUND, which was
+   the real reason it never read as happening at all: the backward
+   arc's actual flight path passes through here at ~180-200 above
+   ground (see the frame-by-frame sim in the code comments below), not
+   down at ground level -- the player was never anywhere near where
+   the effect was drawn. Moved it up into a small dedicated tree,
+   positioned right where the arc actually lingers near its peak, with
+   the reveal ON A BRANCH at that height instead: flying close past
+   the tree shakes its leaves apart for a couple of seconds, exposing
+   a raw gnawed patch on the branch underneath, before it settles back
+   leafy. Much more legible (you're brushing past foliage you're
+   already flying next to) and thematically better too -- a beaver's
+   evidence is gnaw marks on wood, not a pile of sticks in the dirt.
+
+   Position math: launch is from gear A2's gTop=91, vx=-3, vy=8,
+   LAUNCH_GRAVITY=0.3 ascending / FLOATY_FALL_GRAVITY=0.13 descending
+   (same per-frame integration as the forward flight piece). Simulated
+   frame by frame: height peaks at ~201.6 around frame 27-28 (x~2524),
+   and stays within ~180-201 across roughly x=2450-2560 -- a wide,
+   forgiving window to park a tree in.
    ====================================================== */
-const FOREST_GNAW_SECRET_X = 2584; // roughly where the mystery gear's backward arc passes low, near ground
-const FOREST_GNAW_SECRET_HEIGHT = 16;
+const FOREST_GNAW_SECRET_X = 2515; // trunk position, within the arc's near-peak window
+const FOREST_GNAW_SECRET_HEIGHT = 192; // branch height -- matches where the backward arc actually lingers, not ground level
 const FOREST_GNAW_REVEAL_MS = 2200;
 const FOREST_GNAW_RETRIGGER_COOLDOWN_MS = 3000; // re-openable on a later pass, not just once ever
 let forestGnawSecretRevealTime = -Infinity;
@@ -10817,56 +10870,77 @@ function drawForestGnawSecret(camX) {
     partAmount = p < 0.25 ? p / 0.25 : p > 0.75 ? (1 - p) / 0.25 : 1;
   }
 
-  // the stash underneath -- a few gnawed sticks and a curl of pale
-  // shavings, only actually visible once the leaves have parted enough
+  // the tree itself -- a plain static trunk running from the ground up
+  // past the branch, so the branch reads as actually attached to
+  // something rather than floating in midair
+  ctx.fillStyle = "#241a10";
+  ctx.fillRect(sx - 7, sy - 30, 14, gy - (sy - 30));
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(sx - 2, sy - 25);
+  ctx.lineTo(sx - 2, gy - 4);
+  ctx.stroke();
+
+  // the branch -- sticks out from the trunk toward the arc's actual
+  // path (leftward, since the backward launch approaches from the
+  // right), gently drooping
+  ctx.strokeStyle = "#2e2013";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx - 4, sy - 4);
+  ctx.quadraticCurveTo(sx - 26, sy + 2, sx - 44, sy + 10);
+  ctx.stroke();
+
+  // the gnawed patch underneath -- a bare, pale-wood scar with a
+  // couple of tooth-mark gouges, only actually visible once the
+  // leaves have parted enough
   if (partAmount > 0.15) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, (partAmount - 0.15) / 0.3);
-    ctx.fillStyle = "#6b4a2c";
-    for (let i = 0; i < 3; i++) {
-      const sSeed = 777 + i * 13;
-      const ang = (pseudoRandom(sSeed) - 0.5) * 1.2;
-      ctx.save();
-      ctx.translate(sx + (i - 1) * 5, sy + 4);
-      ctx.rotate(ang);
-      ctx.fillRect(-9, -1.5, 18, 3);
-      ctx.restore();
-    }
+    ctx.translate(sx - 30, sy + 6);
+    ctx.rotate(-0.15);
     ctx.fillStyle = "#d8b988";
     ctx.beginPath();
-    ctx.ellipse(sx, sy + 6, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 11, 5.5, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "#a9865a";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-7 + i * 6, -3.5);
+      ctx.lineTo(-7 + i * 6, 3.5);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
-  // the leaf clump covering it -- two halves that swing apart as
-  // partAmount rises and settle back closed as it falls. Swing/size
-  // bumped up from the original pass -- at flight speed, past the
-  // original small swing, it was reading as "nothing happened" rather
-  // than a deliberate reveal.
+  // the leaf cluster covering the branch -- two halves that shake
+  // apart as partAmount rises and settle back closed as it falls
   ctx.fillStyle = "#3a5228";
   [-1, 1].forEach(side => {
     ctx.save();
-    ctx.translate(sx + side * (4 + partAmount * 6), sy);
+    ctx.translate(sx - 30 + side * (5 + partAmount * 7), sy + 6);
     ctx.rotate(side * (0.3 + partAmount * 1.5));
     ctx.beginPath();
-    ctx.ellipse(side * 8, -2, 14, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * 9, -3, 15, 10, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   });
 
-  // a quick scatter burst right at the moment of the reveal -- same
-  // "something physically just happened here" cue as the lever's own
-  // dust burst, so the reveal reads even at flight speed when the
-  // player only glimpses this spot for a fraction of a second
-  if (elapsed >= 0 && elapsed < 400) {
-    const burstP = elapsed / 400;
+  // a scatter of shaken-loose leaf flecks drifting down and away --
+  // "something physically got brushed here", same cue idea as the
+  // lever's own dust burst, and reads clearly even when the player
+  // only glimpses this spot for a fraction of a second mid-flight
+  if (elapsed >= 0 && elapsed < 700) {
+    const burstP = elapsed / 700;
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2;
-      const d = burstP * 26;
+      const d = burstP * 30;
       ctx.fillStyle = `rgba(150,180,110,${(1 - burstP) * 0.7})`;
       ctx.beginPath();
-      ctx.arc(sx + Math.cos(a) * d, sy - 6 + Math.sin(a) * d * 0.6, 2 * (1 - burstP * 0.5), 0, Math.PI * 2);
+      ctx.ellipse((sx - 30) + Math.cos(a) * d, (sy + 6) + Math.sin(a) * d * 0.6 + burstP * 14, 3 * (1 - burstP * 0.5), 1.6 * (1 - burstP * 0.5), a, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -10875,26 +10949,24 @@ function drawForestGnawSecret(camX) {
   // muted greens/browns above read fine standing still, but this whole
   // scene is a dark, low-contrast palette and the player only glimpses
   // this spot for a fraction of a second mid-flight, so a same-toned
-  // burst was never going to win against that background. This is
-  // deliberately loud (gold/white, expanding ring + upward sparks that
-  // reach well above ground level, into the player's actual eyeline
-  // during the arc) rather than trying to be tasteful about it --
-  // visibility beats subtlety here.
+  // burst alone was never going to win against that background.
+  // Centered on the branch (the player's actual altitude here), not
+  // ground level.
   if (elapsed >= 0 && elapsed < 900) {
     const p = elapsed / 900;
     const ringR = 10 + p * 34;
     ctx.strokeStyle = `rgba(255,235,150,${Math.max(0, 1 - p) * 0.9})`;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(sx, sy - 6, ringR, 0, Math.PI * 2);
+    ctx.arc(sx - 30, sy + 6, ringR, 0, Math.PI * 2);
     ctx.stroke();
 
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      const reach = 10 + p * 46;
-      const sparkX = sx + Math.cos(a) * reach;
-      const sparkY = (sy - 6) - Math.abs(Math.sin(a)) * reach * 1.4 - p * 20; // biased upward, into flight altitude
-      ctx.fillStyle = `rgba(255,244,190,${Math.max(0, 1 - p) })`;
+      const reach = 10 + p * 42;
+      const sparkX = (sx - 30) + Math.cos(a) * reach;
+      const sparkY = (sy + 6) + Math.sin(a) * reach * 0.8;
+      ctx.fillStyle = `rgba(255,244,190,${Math.max(0, 1 - p)})`;
       ctx.beginPath();
       ctx.arc(sparkX, sparkY, 3 * (1 - p * 0.6), 0, Math.PI * 2);
       ctx.fill();
