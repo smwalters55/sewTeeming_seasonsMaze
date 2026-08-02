@@ -183,7 +183,8 @@ const ITEM_ICONS = {
   lamp: "🏮",
   bridgePiece: "🪵",
   feather: "🪶",
-  cushionPart: "⚙️"
+  cushionPart: "⚙️",
+  stone: "🪨"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -3796,6 +3797,31 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.beginPath();
     ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  } else if (itemType === "stone") {
+    // a sturdy little dig-worthy stone -- the key that lets you break
+    // through the connector back down toward the first up-dig
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    const r = size * 0.42;
+    ctx.fillStyle = "#8a8a86";
+    ctx.beginPath();
+    ctx.moveTo(-r, -r * 0.2);
+    ctx.lineTo(-r * 0.4, -r);
+    ctx.lineTo(r * 0.5, -r * 0.8);
+    ctx.lineTo(r, r * 0.1);
+    ctx.lineTo(r * 0.5, r);
+    ctx.lineTo(-r * 0.6, r * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.2, -r * 0.35, r * 0.35, r * 0.2, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.restore();
   } else if (itemType === "plumStick" || itemType === "pearStick" || itemType === "peachStick") {
     const treeType = itemType.replace("Stick", "");
@@ -20527,10 +20553,13 @@ const tunnelTownExit = { x: 150 };
 // each elder gets their own build (short/stout, tall/thin, average) and
 // one small signature accessory, so the trio actually reads as three
 // distinct old moles rather than one recolored shape three times
+// bob/bobSpeed give each one the same light idle bounce every other NPC
+// in the game already has (updateNPCIdle) -- staggered speeds so all
+// three don't bounce in perfect unison
 const elderTrio = [
-  { dx: -24, color: "#8a7a5a", capeColor: "#5a4e38", bodyW: 21, bodyH: 21, accessory: "scarf", accessoryColor: "#a23e3e" }, // short and round, a cozy old scarf
-  { dx: 2,   color: "#7a6a4a", capeColor: "#4a3e2a", bodyW: 15, bodyH: 28, accessory: "glasses" }, // tall and thin, neat little round glasses
-  { dx: 26,  color: "#9a8a6a", capeColor: "#6a5c42", bodyW: 19, bodyH: 24, accessory: "cap", accessoryColor: "#5a4636" } // average build, a flat cap over a balding head
+  { dx: -46, color: "#8a7a5a", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#a23e3e", bob: 0, bobSpeed: 0.032, tip: 0 }, // short and round, a cozy old scarf
+  { dx: 2,   color: "#7a6a4a", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0 }, // tall and thin, neat little round glasses
+  { dx: 50,  color: "#9a8a6a", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0 } // average build, a flat cap over a balding head
 ];
 const ELDER_X = 260; // pushed further right (was 210) -- more approach distance from the entrance, and real breathing room before the wall
 let elderTalkedTo = false;
@@ -20578,15 +20607,21 @@ function drawElderTrio(camX) {
     // cameraY as the player climbs (a no-op everywhere else, since
     // cameraY is 0 in every other scene)
     const bodyW = elder.bodyW, bodyH = elder.bodyH;
-    const bodyBottom = gy + cameraY - 2, bodyTop = bodyBottom - bodyH;
+    // the same light idle bounce every other NPC in the game has -- only
+    // ever lifts up off the ground line, never dips below it, so it reads
+    // as a gentle hop rather than sinking into the floor
+    const groundLine = gy + cameraY - 2;
+    const bounce = Math.max(0, Math.sin(elder.bob)) * 2.2;
+    const bodyBottom = groundLine - bounce, bodyTop = bodyBottom - bodyH;
     const headCX = ex, headCY = bodyTop + 6; // where eyes/beard/accessories anchor, regardless of body height
 
     // small hunched body -- rounder and shorter than the shopkeepers,
-    // reads as older/stooped. A soft shadow first, so three different
+    // reads as older/stooped. A soft shadow first, pinned to the actual
+    // ground line (not bouncing with the body), so three different
     // silhouettes still read as sitting on the same ground.
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.beginPath();
-    ctx.ellipse(ex, bodyBottom + 3, bodyW * 0.6, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(ex, groundLine + 3, bodyW * 0.6, 3, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // little stubby feet, peeking out from under the body -- drawn
@@ -20732,8 +20767,15 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
     const seed = seedBase + i * 13.7;
     const bx = x0 + pseudoRandom(seed) * w;
     const by = pseudoRandom(seed + 1) * h;
-    const r = 14 + pseudoRandom(seed + 2) * 22;
-    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "rgba(58,44,28,0.35)" : "rgba(18,13,8,0.4)";
+    const r = 12 + pseudoRandom(seed + 2) * 16; // smaller cap than before -- less likely to read as a full hole-sized shape
+    // both variants used to sit close to a real dig spot's own warm
+    // gold-brown palette (and the darker one was near-black, similar
+    // size/shape to a carved hole) -- easy to mistake either for a real
+    // opening that just isn't reacting to the shovel. Both shifted to
+    // cooler, more muted, less saturated tones than the dig-marker's
+    // warm gold gradient, so ambient texture reads as texture, not as
+    // "this looks diggable".
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "rgba(42,38,30,0.28)" : "rgba(34,26,18,0.32)";
     ctx.beginPath();
     ctx.ellipse(bx, by, r, r * 0.7, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -20867,21 +20909,34 @@ const TUNNEL_NODES = [
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
   { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false },
 
+  // the reconnect -- ONLY diggable once you've gone up a level (to u2)
+  // and moved horizontally across (u2h), i.e. approaching from the
+  // right/above. Also needs the stone (checked separately in
+  // updateTunnelTownScene, since that's a one-off requirement, not
+  // every node's). Positioned right on top of u1's own hole, so once
+  // it's dug the two openings physically merge into one -- from then
+  // on it's walkable from either side, even though it's still just a
+  // normal parent-chain node under the hood, no graph rework needed.
+  { id: "u2h", parent: "u2", x: 600, heightAboveGround: 160, dir: "side", hasItem: false, dug: false },
+  { id: "u1r", parent: "u2h", x: 655, heightAboveGround: 85, dir: "side", hasItem: false, dug: false, needsStone: true },
+
   // side-chain -- continues along the ground, dips through a low sunken
   // alcove (reads as "descending" without leaving ground level -- true
   // below-ground pits would need a bigger change to the shared gravity/
   // ground-collision code, so this is the stand-in for now), then
-  // splits into a true dead end and the path to the reward, buried deep
+  // splits into a real dead end (now the stone's home -- found partway
+  // in, well short of the final reward) and the path onward
   { id: "s1", parent: "n1", x: 760, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
   // same fix here -- a real two-jump detour up and away from s1, instead
   // of a dead-end spot sitting directly above it
   { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
   { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
-  { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: false, dug: false }, // true dead end
+  { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
   { id: "s3b", parent: "s2", x: 900, heightAboveGround: 60, dir: "up", hasItem: false, dug: false }, // small step up, continues the reward path
   { id: "s4", parent: "s3b", x: 980, heightAboveGround: 60, dir: "side", hasItem: false, dug: false },
-  { id: "s5", parent: "s4", x: 1060, heightAboveGround: 60, dir: "side", hasItem: true, dug: false } // the cushion-shaft piece, deep in
+  { id: "s5", parent: "s4", x: 1060, heightAboveGround: 60, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
+  { id: "s5r", parent: "s5", x: 1140, heightAboveGround: 60, dir: "side", hasItem: false, dug: false } // more passage continuing right past the reward, its own dead end
 ];
 
 function tunnelNodeParentDug(node) {
@@ -20989,8 +21044,19 @@ function drawDigSoftSpot(cx, cy, rx, ry, seed) {
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
+  // a slow, subtle pulsing rim -- this is what actually marks it as a
+  // real, interactive dig spot rather than just ambient dirt texture
+  // (the surrounding dark blotches can look similar at a glance otherwise)
+  const pulse = 0.35 + Math.sin(performance.now() * 0.0022 + seed) * 0.2;
+  ctx.strokeStyle = `rgba(230,200,130,${pulse})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx + 1.5, ry + 1.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.strokeStyle = "rgba(55,42,24,0.5)";
   ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.strokeStyle = "rgba(80,62,36,0.4)";
   ctx.lineWidth = 1;
@@ -21011,8 +21077,13 @@ function drawTunnelDigSpot(node, camX) {
   const isUp = node.dir === "up";
   const isSunken = node.dir === "sunken";
   // "up" spots sit higher, tighter and taller (an actual vertical dig);
-  // "sunken" spots are wider and squatter (reads as a low crawl-space)
-  const markY = isUp ? cy - 12 : gy + cameraY - (isSunken ? 26 : 34);
+  // "sunken" spots are wider and squatter (reads as a low crawl-space).
+  // Anchored to cy (the node's own actual height), not the raw ground
+  // line -- for a ground-level node these are identical (cy === gy +
+  // cameraY), but for an ELEVATED "side"/"sunken" node (like the raised
+  // reward path) the marker used to draw itself all the way down at
+  // ground level instead of up at the node's real position.
+  const markY = isUp ? cy - 12 : cy - (isSunken ? 26 : 34);
   const markRX = isUp ? 10 : (isSunken ? 22 : 15);
   const markRY = isUp ? 22 : (isSunken ? 14 : 20);
 
@@ -21302,6 +21373,8 @@ function updateTunnelTownScene(deltaTime) {
   // any scene change (see the season-transition handler).
   cameraY = Math.max(0, player.y - 150);
 
+  elderTrio.forEach(updateNPCIdle); // the same light idle bounce every other NPC has
+
   wallBreakPoofT += deltaTime * 1000;
 
   // mid-dig -- the actual wall-break/spot-dug state change only lands
@@ -21317,7 +21390,7 @@ function updateTunnelTownScene(deltaTime) {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
         if (node.hasItem) {
-          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, "cushionPart");
+          startCollectAnimation({ x: node.x, y: node.heightAboveGround + 14, size: 8, rotation: 0 }, node.itemType || "cushionPart");
         }
       }
       activeDig = null;
@@ -21347,6 +21420,9 @@ function updateTunnelTownScene(deltaTime) {
     // matches what's actually drawn/visible
     TUNNEL_NODES.forEach(node => {
       if (node.dug || !tunnelNodeParentDug(node)) return;
+      // the reconnect back down toward u1 also needs the stone in hand --
+      // that's what makes it a real find, not just another shovel-dig
+      if (node.needsStone && !(inventory.stone > 0)) return;
       if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(node.x, node.heightAboveGround, 22, 25, 25)) {
         activeDig = { kind: "spot", id: node.id, x: node.x, heightAboveGround: node.heightAboveGround, t: 0 };
       }
