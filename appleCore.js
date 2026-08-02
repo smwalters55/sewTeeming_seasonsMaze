@@ -20524,10 +20524,13 @@ const tunnelTownExit = { x: 150 };
    past them), not flagged down earlier in the mole hole. Talk to
    them, then dig the wall with the shovel to open the first branch.
    ------------------------------------------------------ */
+// each elder gets their own build (short/stout, tall/thin, average) and
+// one small signature accessory, so the trio actually reads as three
+// distinct old moles rather than one recolored shape three times
 const elderTrio = [
-  { dx: -20, color: "#8a7a5a", capeColor: "#5a4e38" },
-  { dx: 0,   color: "#7a6a4a", capeColor: "#4a3e2a" },
-  { dx: 20,  color: "#9a8a6a", capeColor: "#6a5c42" }
+  { dx: -24, color: "#8a7a5a", capeColor: "#5a4e38", bodyW: 21, bodyH: 21, accessory: "scarf", accessoryColor: "#a23e3e" }, // short and round, a cozy old scarf
+  { dx: 2,   color: "#7a6a4a", capeColor: "#4a3e2a", bodyW: 15, bodyH: 28, accessory: "glasses" }, // tall and thin, neat little round glasses
+  { dx: 26,  color: "#9a8a6a", capeColor: "#6a5c42", bodyW: 19, bodyH: 24, accessory: "cap", accessoryColor: "#5a4636" } // average build, a flat cap over a balding head
 ];
 const ELDER_X = 260; // pushed further right (was 210) -- more approach distance from the entrance, and real breathing room before the wall
 let elderTalkedTo = false;
@@ -20574,11 +20577,20 @@ function drawElderTrio(camX) {
     // pinned to the tunnel-town ground line, which itself scrolls with
     // cameraY as the player climbs (a no-op everywhere else, since
     // cameraY is 0 in every other scene)
-    const bodyW = 18, bodyH = 24, bodyBottom = gy + cameraY - 2, bodyTop = bodyBottom - bodyH;
+    const bodyW = elder.bodyW, bodyH = elder.bodyH;
+    const bodyBottom = gy + cameraY - 2, bodyTop = bodyBottom - bodyH;
+    const headCX = ex, headCY = bodyTop + 6; // where eyes/beard/accessories anchor, regardless of body height
+
     // small hunched body -- rounder and shorter than the shopkeepers,
-    // reads as older/stooped
+    // reads as older/stooped. A soft shadow first, so three different
+    // silhouettes still read as sitting on the same ground.
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(ex, bodyBottom + 3, bodyW * 0.55, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.fillStyle = elder.color;
-    roundRect(ctx, ex - bodyW / 2, bodyTop, bodyW, bodyH, 8);
+    roundRect(ctx, ex - bodyW / 2, bodyTop, bodyW, bodyH, Math.min(8, bodyW / 2));
     ctx.fill();
     // a little cape/shawl over the shoulders
     ctx.fillStyle = elder.capeColor;
@@ -20592,17 +20604,64 @@ function drawElderTrio(camX) {
     // dot eyes
     ctx.fillStyle = "#1c1208";
     ctx.beginPath();
-    ctx.arc(ex - 3.5, bodyTop + 10, 1.6, 0, Math.PI * 2);
-    ctx.arc(ex + 3.5, bodyTop + 10, 1.6, 0, Math.PI * 2);
+    ctx.arc(headCX - 3.5, headCY + 4, 1.6, 0, Math.PI * 2);
+    ctx.arc(headCX + 3.5, headCY + 4, 1.6, 0, Math.PI * 2);
     ctx.fill();
     // a wispy little beard, the clearest "elder" tell
     ctx.strokeStyle = "rgba(220,215,200,0.8)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(ex - 3, bodyTop + 14);
-    ctx.quadraticCurveTo(ex, bodyTop + 20, ex + 3, bodyTop + 14);
+    ctx.moveTo(headCX - 3, headCY + 8);
+    ctx.quadraticCurveTo(headCX, headCY + 14, headCX + 3, headCY + 8);
     ctx.stroke();
-    // a small cane, planted at their side
+
+    // one small signature accessory each, so the trio has real personality
+    if (elder.accessory === "glasses") {
+      // neat little round glasses, perched right at eye level
+      ctx.strokeStyle = "#2a2018";
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(headCX - 3.5, headCY + 4, 3, 0, Math.PI * 2);
+      ctx.arc(headCX + 3.5, headCY + 4, 3, 0, Math.PI * 2);
+      ctx.moveTo(headCX - 0.5, headCY + 4);
+      ctx.lineTo(headCX + 0.5, headCY + 4);
+      ctx.stroke();
+    } else if (elder.accessory === "scarf") {
+      // a cozy, slightly frayed old scarf looped around the neck
+      ctx.fillStyle = elder.accessoryColor;
+      ctx.beginPath();
+      ctx.ellipse(ex, bodyTop + 3, bodyW / 2 + 2, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(ex + 3, bodyTop + 5);
+      ctx.lineTo(ex + 6, bodyTop + 16);
+      ctx.lineTo(ex + 2, bodyTop + 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.2)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ex + 2, bodyTop + 12);
+      ctx.lineTo(ex + 6, bodyTop + 12);
+      ctx.stroke();
+    } else if (elder.accessory === "cap") {
+      // a flat cap over a balding head -- a little wispy tuft peeking out back
+      ctx.fillStyle = elder.accessoryColor;
+      ctx.beginPath();
+      ctx.ellipse(headCX, headCY - 5, bodyW / 2 + 1, 3.5, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(headCX - 1, headCY - 6, bodyW / 2 - 1, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(220,215,200,0.7)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(headCX + bodyW / 2 - 1, headCY - 3);
+      ctx.quadraticCurveTo(headCX + bodyW / 2 + 3, headCY, headCX + bodyW / 2 - 1, headCY + 3);
+      ctx.stroke();
+    }
+
+    // a small cane, planted at their side -- scaled to each one's own height
     ctx.strokeStyle = "#2e2014";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -20991,26 +21050,51 @@ function drawDiggingFlourish(camX) {
   // way it always reads as happening just in front of wherever the
   // player is actually standing, whichever way they're facing.
   const faceDir = player.facing || 1;
-  const sx = (player.x - camX) + player.width / 2 + faceDir * 22;
+  const sx = (player.x - camX) + player.width / 2 + faceDir * 30;
   const sy = gy + cameraY - activeDig.heightAboveGround;
 
-  // shovel swings back and forth across the whole (now much longer)
-  // duration -- reads as several real digging motions, not one flick
-  const angle = Math.sin(p * Math.PI * TUNNEL_DIG_SWINGS) * 0.7 + 0.15;
-  drawShovelShape(ctx, sx, sy - 16, 13, angle);
+  // a real three-part digging stroke each swing -- windup (raise back),
+  // plunge (drive the blade down and forward into the dirt), then lift
+  // and haul the loaded blade up and out -- instead of just rotating in
+  // place, which read as the shovel wiggling rather than actually
+  // digging anything
+  const swingDur = TUNNEL_DIG_ANIM_DURATION / TUNNEL_DIG_SWINGS;
+  const swingIndex = Math.min(TUNNEL_DIG_SWINGS - 1, Math.floor(activeDig.t / swingDur));
+  const swingLocalT = Math.min(1, (activeDig.t - swingIndex * swingDur) / swingDur);
+
+  let angle, bobY, bobX;
+  if (swingLocalT < 0.3) {
+    // windup -- raised back and up
+    const t = swingLocalT / 0.3;
+    angle = faceDir * (-0.9 + t * 0.15);
+    bobY = -7 * t;
+    bobX = -4 * t * faceDir;
+  } else if (swingLocalT < 0.55) {
+    // plunge -- drives down and forward into the ground
+    const t = (swingLocalT - 0.3) / 0.25;
+    angle = faceDir * (-0.75 + t * 1.6);
+    bobY = -7 + 11 * t;
+    bobX = -4 * faceDir + 8 * t * faceDir;
+  } else {
+    // lift -- hauls the loaded blade back up and out, toward the throw
+    const t = (swingLocalT - 0.55) / 0.45;
+    angle = faceDir * (0.85 - t * 0.65);
+    bobY = 4 - 9 * t;
+    bobX = 4 * faceDir - 2 * t * faceDir;
+  }
+  drawShovelShape(ctx, sx + bobX, sy - 16 + bobY, 13, angle);
 
   // each swing throws a real clump of dirt out in a visible arc (rises
-  // then falls, alternating which side it's tossed to), instead of a
-  // quick fading speck -- one throw per swing, timed to that swing's
-  // "dig out" moment rather than all happening at once
-  const swingDur = TUNNEL_DIG_ANIM_DURATION / TUNNEL_DIG_SWINGS;
+  // then falls, tossed forward in whichever direction the player's
+  // facing), timed to land right as the blade lifts out of the ground,
+  // instead of a quick fading speck happening all at once
   for (let s = 0; s < TUNNEL_DIG_SWINGS; s++) {
-    const throwStart = s * swingDur + swingDur * 0.5;
-    const throwDuration = swingDur * 0.8;
+    const throwStart = s * swingDur + swingDur * 0.58;
+    const throwDuration = swingDur * 0.75;
     const localT = activeDig.t - throwStart;
     if (localT < 0 || localT > throwDuration) continue;
     const lp = localT / throwDuration;
-    const throwDir = s % 2 === 0 ? 1 : -1;
+    const throwDir = faceDir; // tossed forward, the same way the shovel's actually digging
     for (let i = 0; i < 4; i++) {
       const seed = s * 71.3 + i * 11.7;
       const spread = pseudoRandom(seed) * 8 - 4;
