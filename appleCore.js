@@ -20984,7 +20984,14 @@ let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t
 function drawDiggingFlourish(camX) {
   if (!activeDig) return;
   const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
-  const sx = activeDig.x - camX;
+  // drawn relative to the player's own position and facing, not the
+  // fixed dig-spot coordinate -- anchored to the spot itself, the
+  // swing sat right behind the player's own sprite (which draws on top
+  // of it) unless you happened to be standing a little past it. This
+  // way it always reads as happening just in front of wherever the
+  // player is actually standing, whichever way they're facing.
+  const faceDir = player.facing || 1;
+  const sx = (player.x - camX) + player.width / 2 + faceDir * 22;
   const sy = gy + cameraY - activeDig.heightAboveGround;
 
   // shovel swings back and forth across the whole (now much longer)
