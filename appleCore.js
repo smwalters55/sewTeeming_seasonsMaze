@@ -101,7 +101,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "forest"; // TEMPORARY — starting in forest to test new gear/vine ideas, revert to "autumn" when done
+let currentScene = "molehole"; // TEMPORARY — debugging the mole hole atmosphere pass, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -132,7 +132,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 175, // TEMPORARY — spawns near the forest door, revert to 400 when done
+  x: 200, // TEMPORARY — spawns in the mole hole, near the first market alcove, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -625,8 +625,8 @@ const connections = [
       spring: { x: 200,  width: 56, height: 92, leadsTo: "autumn" }
     },
     acceptsItemType: "appleSlice",
-    filled: true, // TEMPORARY — pre-unlocked since starting directly in forest, revert to false when done
-    filledItemType: "appleSlice"
+    filled: false,
+    filledItemType: null
   },
   {
     id: "spring-forest",
@@ -635,8 +635,8 @@ const connections = [
       forest: { x: 200,  width: 56, height: 92, leadsTo: "spring" }
     },
     acceptsItemType: "appleSlice", // same item type -- the apple already splits into 3 pieces, so a second slice is already reachable without any new collection mechanic
-    filled: true, // TEMPORARY — pre-unlocked since starting directly in forest, revert to false when done
-    filledItemType: "appleSlice"
+    filled: false,
+    filledItemType: null
   },
   {
     // map-only entry — spring<->clouds travel is already handled by the
@@ -675,6 +675,19 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // map-only entry — forest<->molehole travel is handled by the
+    // ground hole (moleHoleEntrance) and its return spawn, same
+    // pattern as oak-ratroom, not a standard door pair.
+    id: "forest-molehole",
+    doors: {
+      forest: { leadsTo: "molehole" },
+      molehole: { leadsTo: "forest" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -689,10 +702,11 @@ const sceneMapInfo = {
   forest: { label: "Forest", x: 400, y: 110 }, // continues the main line past spring
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
-  ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 } // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
+  ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
+  molehole: { label: "Mole Hole", x: 400, y: 180, w: 70, h: 30 } // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node
 };
 
-const discoveredScenes = { autumn: true, spring: true, forest: true }; // TEMPORARY -- spring and forest added since starting there directly, revert to just { autumn: true } when done
+const discoveredScenes = { autumn: true };
 
 // a thin rotated div connecting two node centers — same visual language
 // (dashed border) as the existing .map-node CSS, no new stylesheet needed
@@ -777,12 +791,14 @@ function updateMapUI() {
 
     if (scene === "spring") {
       node.style.background = "rgba(180,222,150,0.35)"; // slight light green
+    } else if (scene === "forest") {
+      node.style.background = "rgba(58,90,58,0.4)"; // deep mossy green -- distinct from spring's light green, matches the clockwork grove's own palette
     }
 
     if (scene === currentScene) {
       node.style.borderStyle = "solid";
       node.style.borderColor = "#c9a25a";
-      if (scene !== "spring") {
+      if (scene !== "spring" && scene !== "forest") {
         node.style.background = "rgba(201,162,90,0.15)";
       }
     }
@@ -807,7 +823,8 @@ const sceneSpawns = {
   forest: { x: connections[1].doors.forest.x - 25 },
   clouds: { x: 420 }, // no door here — you arrive by launch; positioned right of the return hole (300-360)
   oak: { x: 380 }, // arrives via seesaw launch -- moved closer to the actual entrance door (oakReturnDoor at x:294), was landing 370 units away from it despite the door being the visual entry point
-  ratroom: { x: 310 } // arrives via the trap door, lands near the base of the stairs
+  ratroom: { x: 310 }, // arrives via the trap door, lands near the base of the stairs
+  molehole: { x: 150 } // arrives via the ground hole, lands a little in from the entrance
 };
 
 /* ======================================================
@@ -918,6 +935,8 @@ function updateSeasonTransition(deltaTime) {
         player.x = nookRug.x; // land next to the trap door, not the generic oak spawn
       } else if (currentScene === "autumn" && previousScene === "oak") {
         player.x = seesaw.x - 120; // land just left of the seesaw, clear of the plank itself
+      } else if (currentScene === "forest" && previousScene === "molehole") {
+        player.x = moleHoleEntrance.x; // climb back out right where you fell in, not the generic forest spawn
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -977,6 +996,10 @@ function drawSeasonTransition(ctx) {
     wash.addColorStop(0, "#4a2e18");   // dark brown center
     wash.addColorStop(0.55, "#2e1c0e"); // darker brown
     wash.addColorStop(1, "#100a06");   // near-black edge
+  } else if (target === "molehole") {
+    wash.addColorStop(0, "#6b4526");   // warm soil-orange center -- distinct from ratroom's cooler dark brown
+    wash.addColorStop(0.55, "#432c18"); // deeper earth
+    wash.addColorStop(1, "#1c1208");   // near-black edge
   } else {
     wash.addColorStop(0, "#f7f4ee");
     wash.addColorStop(1, "#f7f4ee");
@@ -1633,10 +1656,19 @@ function handleInput(){
         if (currentScene === "forest" && forestClockworkState !== "idle") {
           for (const g of FOREST_CLOCKWORK_GEARS) {
             const gTop = g.height + g.outerR;
+            // matches the same landingPad-widened bounds used for
+            // standing/landing in updateForestScene -- without this, a
+            // gear with landingPad/landingPadR set (see the capstone)
+            // could let you STAND near its edge but then refuse to
+            // trigger the launch from that same spot, which felt like
+            // "the jump just doesn't work" even though you were
+            // visibly on the gear.
+            const standL = g.x - g.outerR - (g.landingPad || 0);
+            const standR = g.x + g.outerR + (g.landingPadR ?? g.landingPad ?? 0);
             if (
               g.launchPad &&
-              player.x + player.width > g.x - g.outerR &&
-              player.x < g.x + g.outerR &&
+              player.x + player.width > standL &&
+              player.x < standR &&
               Math.abs(player.y - gTop) < 1
             ) {
               // this reuses the swing's FLOATY_FALL_GRAVITY descent
@@ -1646,9 +1678,23 @@ function handleInput(){
               // frame of vx. Cut down hard from the first pass (was
               // vx=9, vy=14 -- around 1000px of travel over ~2 seconds
               // of hangtime, way too much) to a real but contained
-              // boost instead.
-              player.vx = g.dir * 3;
-              player.vy = 8;
+              // boost instead. Individual gears can override this base
+              // speed with their own `launchVx` (see the capstone gear
+              // in FOREST_CLOCKWORK_GEARS) -- used to stretch that one
+              // flight's horizontal reach a bit further without
+              // touching every other launch pad's feel.
+              player.vx = g.dir * (g.launchVx ?? 3);
+              player.vy = g.launchVy ?? 8;
+              // gravity multiplier for THIS flight only -- default 1
+              // keeps every other launch pad exactly as floaty as
+              // before (that gentle drift is right for the big
+              // cross-screen swing-release arcs). B1's short hop into
+              // the capstone (see FOREST_CLOCKWORK_GEARS) overrides
+              // this steeper, paired with a bumped launchVy, so it
+              // reads as a real snappy arc/leap instead of a slow float
+              // -- "instead of arc we are like floating" was an actual
+              // feel problem, not just a landing-math one.
+              player.launchGravityMult = g.launchGravityMult ?? 1;
               player.launched = true;
               player.launchPeakHeight = player.y;
               player.jumping = true;
@@ -1685,6 +1731,10 @@ function handleInput(){
   // justified instead of stopping in the middle of nothing. Easy to
   // push further out later if more gets added to this room.
   if (currentScene === "ratroom" && player.x > 1400) player.x = 1400;
+
+  // molehole's own right boundary, same small-enclosed-room pattern as
+  // ratroom above -- placed at the room's own declared width
+  if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
 
   if (keys.ctrl && !camera.locked) {
     camera.topDown = !camera.topDown;
@@ -1723,7 +1773,12 @@ function applyPhysics(){
 
     const ascending = player.vy > 0;
     player.y += player.vy;
-    player.vy -= ascending ? LAUNCH_GRAVITY : FLOATY_FALL_GRAVITY;
+    // per-flight gravity multiplier (default 1, see the launch-trigger
+    // code in handleInput) -- lets one specific short hop feel snappier
+    // than the game's other, much longer swing-release-style arcs
+    // without changing their floaty feel at all
+    const gravMult = player.launchGravityMult ?? 1;
+    player.vy -= (ascending ? LAUNCH_GRAVITY : FLOATY_FALL_GRAVITY) * gravMult;
 
     if (player.y > player.launchPeakHeight) {
       player.launchPeakHeight = player.y;
@@ -6477,9 +6532,9 @@ function drawPothosVine(ctx, startX, startY, hangLength, waveAmp, leafColor, see
 // pothos so it ties the greenery together across the space
 // pothos -- hanging near the cushion pile, right side, several vines
 // trailing down with some pooling gently on the ground
-const pothosSpot = { x: 2825, hangY: 260 };
+const pothosSpot = { x: 2945, hangY: 260 };
 
-const lavenderSpot = { x: 2540 };
+const lavenderSpot = { x: 2660 };
 // Joshua tree, tucked into the ratroom's right side -- a real
 // personal touch rather than a generic desert plant, with its actual
 // distinctive silhouette: a thick, gnarled, irregularly-branching
@@ -6976,7 +7031,7 @@ function drawMonsteraLeaf(ctx, x, y, size, rotation, color, seed, holeColor) {
 
 // monstera -- shorter, fuller, drooping leaves at irregular angles,
 // near the nook but offset so it doesn't overlap the sitting area
-const monsteraSpot = { x: 1640, y: 0 };
+const monsteraSpot = { x: 1800, y: 0 };
 function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
   const points = [];
   const segments = 16;
@@ -7003,7 +7058,7 @@ function drawHeartVine(ctx, startX, startY, length, waveAmp, seed, emergeDir) {
 
 // string of hearts -- small hanging pot, higher up and right of the
 // circle painting, thin sparse wiry vines
-const heartsSpot = { x: 1853, hangY: 235 };
+const heartsSpot = { x: 2013, hangY: 235 };
 function drawStringOfHearts(camX) {
   const px = heartsSpot.x - camX, py = gy - heartsSpot.hangY;
   // small round hanging pot, distinct shape from the others -- shortened
@@ -9138,6 +9193,7 @@ function releaseSwing() {
   player.vx = vx;
   player.vy = vHeight;
   player.launched = true;
+  player.launchGravityMult = 1; // reset -- a previous gear launch (see FOREST_CLOCKWORK_GEARS) could otherwise leave a stale, non-default multiplier active for this completely unrelated swing-release flight
   player.launchPeakHeight = player.y;
   player.jumping = true;
 }
@@ -9502,15 +9558,20 @@ function drawForestScene(camX) {
 
   drawForestForegroundTrees(camX);
   drawForestEntranceFerns(camX);
+  drawForestFernField(camX);
+  drawForestGroundFlowers(camX);
   drawForestHintGear(camX);
   drawRaccoon(camX);
   drawForestIntroGears(camX);
   drawForestBrambleBehindLayer(camX); // cached -- covers both the transition tapers and the main wall's behind layer
+  drawForestBrambleBehindSnakeStrand(camX); // one crossing strand, live (not cached) so it can sit behind the snake specifically -- the rest of the front layer still draws after the snake, see drawForestBrambleFrontLayer below
   drawForestSnake(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
   drawForestClockworkLever(camX);
   drawForestClockworkGears(camX);
+  drawMoleHoleTree(camX);
+  drawMoleHoleEntrance(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
   // drawForestBrambleFront and drawForestBridgePlatform now called
@@ -9699,6 +9760,100 @@ function drawForestEntranceFerns(camX) {
   });
 }
 
+// a much bigger scattered field of ferns across the WHOLE forest floor
+// (not just the entrance handful) -- different sizes, frond counts, and
+// green hues per plant (see FERN_HUE_VARIANTS / drawFernPlant), stable
+// per world position via pseudoRandom so they don't shuffle every
+// frame. Runs from just past the entrance out past the clockwork
+// grove's far end. Deliberately thinned out (skipped) across the
+// densest stretch of the bramble wall itself, where thorns/strands
+// already provide plenty of ground clutter and more ferns there would
+// just be lost in the noise.
+const FOREST_FERN_FIELD_X1 = 480;
+const FOREST_FERN_FIELD_X2 = 3360;
+const FOREST_FERN_FIELD_SPACING = 95;
+
+function drawForestFernField(camX) {
+  const count = Math.floor((FOREST_FERN_FIELD_X2 - FOREST_FERN_FIELD_X1) / FOREST_FERN_FIELD_SPACING);
+  for (let i = 0; i < count; i++) {
+    const seed = (FOREST_FERN_FIELD_X1 + i * 137.3) * 1.7;
+    const jitter = (pseudoRandom(seed) - 0.5) * FOREST_FERN_FIELD_SPACING * 0.8;
+    const x = FOREST_FERN_FIELD_X1 + i * FOREST_FERN_FIELD_SPACING + jitter;
+
+    // thin way out across the densest part of the bramble wall -- skip
+    // most spots there rather than layering ferns under all those thorns
+    if (x > FOREST_BRAMBLE_X1 - 20 && x < FOREST_BRAMBLE_X2 + 20 && pseudoRandom(seed + 40) > 0.15) continue;
+
+    // keep clear of the lever itself -- its own vine (see
+    // drawForestClockworkLever) was getting visually swallowed by
+    // generic ferns overlapping right in front of it
+    if (Math.abs(x - FOREST_CLOCKWORK_LEVER_X) < 45) continue;
+
+    // otherwise a plant here about 65% of the time -- real ground cover
+    // is patchy, not wall-to-wall
+    if (pseudoRandom(seed + 1) > 0.65) continue;
+
+    const sx = x - camX;
+    if (sx < -60 || sx > canvas.width + 60) continue; // cheap offscreen skip
+
+    const scale = 0.55 + pseudoRandom(seed + 2) * 1.15;
+    const lean = (pseudoRandom(seed + 3) - 0.5) * 1.1;
+    const flip = pseudoRandom(seed + 4) < 0.4;
+    drawFernPlant(sx, gy, scale, seed, lean, flip);
+  }
+}
+
+// small clusters of the same bramble-flower blooms, but scattered loose
+// across the normal forest floor rather than tucked into the bramble
+// strands -- reuses FOREST_BRAMBLE_FLOWER_COLORS (declared further down)
+// so the color palette stays consistent between "on the wall" and "on
+// the ground" blooms. Sparser than the fern field and on short bare
+// stems instead of full plants, so it reads as ground flowers scattered
+// among the ferns rather than another fern-density layer.
+const FOREST_GROUND_FLOWER_X1 = FOREST_FERN_FIELD_X1;
+const FOREST_GROUND_FLOWER_X2 = FOREST_FERN_FIELD_X2;
+const FOREST_GROUND_FLOWER_SPACING = 210;
+
+function drawForestGroundFlowers(camX) {
+  const count = Math.floor((FOREST_GROUND_FLOWER_X2 - FOREST_GROUND_FLOWER_X1) / FOREST_GROUND_FLOWER_SPACING);
+  for (let i = 0; i < count; i++) {
+    const seed = (FOREST_GROUND_FLOWER_X1 + i * 211.7) * 2.3;
+    const jitter = (pseudoRandom(seed) - 0.5) * FOREST_GROUND_FLOWER_SPACING * 0.85;
+    const x = FOREST_GROUND_FLOWER_X1 + i * FOREST_GROUND_FLOWER_SPACING + jitter;
+
+    // the bramble wall already weaves its own flowers into the strands --
+    // thin way out here so this layer doesn't pile more on top of that
+    if (x > FOREST_BRAMBLE_X1 - 20 && x < FOREST_BRAMBLE_X2 + 20 && pseudoRandom(seed + 40) > 0.2) continue;
+
+    if (Math.abs(x - FOREST_CLOCKWORK_LEVER_X) < 40) continue;
+
+    if (pseudoRandom(seed + 1) > 0.55) continue; // patchy, not every slot
+
+    const sx = x - camX;
+    if (sx < -40 || sx > canvas.width + 40) continue;
+
+    const clusterCount = 1 + Math.floor(pseudoRandom(seed + 2) * 3);
+    for (let b = 0; b < clusterCount; b++) {
+      const bSeed = seed + 50 + b * 13.1;
+      const bx = sx + (pseudoRandom(bSeed) - 0.5) * 16;
+      const stemH = 5 + pseudoRandom(bSeed + 1) * 9;
+      const by = gy - stemH;
+      ctx.strokeStyle = "#3f5a26";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(bx, gy + 2);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      const hue = FOREST_BRAMBLE_FLOWER_COLORS[Math.floor(pseudoRandom(bSeed + 2) * FOREST_BRAMBLE_FLOWER_COLORS.length)];
+      const r = 2.6 + pseudoRandom(bSeed + 3) * 1.6;
+      ctx.fillStyle = hue.petal;
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = hue.center;
+      ctx.beginPath(); ctx.arc(bx, by, r * 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
 // one fern plant -- a fan of curved fronds around a base point, each
 // frond built from several segments that bend increasingly toward a
 // droop as they rise (so tips curl over, like a real frond) with small
@@ -9706,20 +9861,34 @@ function drawForestEntranceFerns(camX) {
 // `lean` biases the whole fan toward one overall direction and `flip`
 // mirrors it outright, so plants read as individually grown rather
 // than stamped copies of the same shape.
+// a handful of distinct green hues (not just one fixed pair), so a
+// whole field of ferns doesn't read as the same plant stamped over and
+// over -- some cooler/bluer, some warmer/olive, some deep and dark.
+const FERN_HUE_VARIANTS = [
+  { spine: "#3f5c26", leaf: "#4a6a2e" }, // original
+  { spine: "#335030", leaf: "#3f6b3f" }, // cooler, blue-green
+  { spine: "#4a5c1e", leaf: "#5c7a2a" }, // warmer, olive-yellow
+  { spine: "#2e4a30", leaf: "#3a5c3f" }, // deep, dark green
+  { spine: "#4f5c30", leaf: "#647a3a" }  // light, dusty olive
+];
+
 function drawFernPlant(baseX, baseY, s, seed, lean, flip) {
-  const frondCount = 5;
+  // 3-6 fronds instead of a fixed 5 -- some plants read sparser, some fuller
+  const frondCount = 3 + Math.floor(pseudoRandom(seed + 96) * 4);
   const dir = flip ? -1 : 1;
+  const hue = FERN_HUE_VARIANTS[Math.floor(pseudoRandom(seed + 95) * FERN_HUE_VARIANTS.length)];
   for (let i = 0; i < frondCount; i++) {
     const fSeed = seed + i * 11.7;
     const spread = frondCount === 1 ? 0 : (i - (frondCount - 1) / 2) / (frondCount - 1); // -0.5..0.5
     const angle = dir * (spread * 1.3 + lean) + (pseudoRandom(fSeed) - 0.5) * 0.15; // fan out around the plant's own lean direction
     const len = (32 + pseudoRandom(fSeed + 1) * 12) * s;
     const droop = 0.4 + pseudoRandom(fSeed + 2) * 0.3;
-    drawFernFrond(baseX, baseY, angle, len, droop, s, fSeed);
+    drawFernFrond(baseX, baseY, angle, len, droop, s, fSeed, hue);
   }
 }
 
-function drawFernFrond(baseX, baseY, angle, len, droop, s, seed) {
+function drawFernFrond(baseX, baseY, angle, len, droop, s, seed, hue) {
+  hue = hue || FERN_HUE_VARIANTS[0];
   const segments = 7;
   const pts = [{ x: baseX, y: baseY }];
   for (let k = 1; k <= segments; k++) {
@@ -9730,7 +9899,7 @@ function drawFernFrond(baseX, baseY, angle, len, droop, s, seed) {
   }
 
   // spine
-  ctx.strokeStyle = "#3f5c26";
+  ctx.strokeStyle = hue.spine;
   ctx.lineWidth = Math.max(1, 2.2 * s);
   ctx.lineCap = "round";
   ctx.beginPath();
@@ -9739,7 +9908,7 @@ function drawFernFrond(baseX, baseY, angle, len, droop, s, seed) {
   ctx.stroke();
 
   // paired leaflets along the spine, alternating sides, shrinking toward the tip
-  ctx.fillStyle = "#4a6a2e";
+  ctx.fillStyle = hue.leaf;
   for (let k = 1; k < pts.length - 1; k++) {
     const p = k / segments;
     const leafLen = 9 * (1 - p * 0.65) * s;
@@ -9898,7 +10067,25 @@ const FOREST_INTRO_GEARS = [
   { x: 1015, height: 60, outerR: 19, horizontal: true, overgrown: 0 }, // easier landing, a breather before the "higher gear situation" below -- also lying flat, bare this time for contrast with gear 1
   { x: 1105, height: 80, outerR: 16, overgrown: 3 }, // stepping stone leading up into the capstone jump -- heavily overgrown
   { x: 1175, height: 185, outerR: 12, piece: true, pieceCollected: false, overgrown: 1 }, // the capstone -- tallest, hardest jump in the whole row, second (hard) piece
-  { x: 1230, height: 30, outerR: 18, overgrown: 2 } // easy landing back down to close out the sequence before the bramble transition
+  { x: 1230, height: 30, outerR: 18, overgrown: 2 }, // easy landing back down to close out the sequence before the bramble transition
+
+  // a second, short breather row AFTER the bramble crossing, before the
+  // lever/moving-gear grove -- otherwise it's a hard cut from "just got
+  // off the snake" straight into "here's the lever," with nothing to
+  // actually hop across in between. These stay positionally fixed
+  // (real platforms, no lever/timer gating), but slowly spin in place
+  // -- a first taste of the clockwork motion ahead, without any of the
+  // actual timed-launch mechanics. Lighter growth than the wild bramble
+  // side, easing visually into the mechanical grove ahead. Spread
+  // across the full 2330 (bramble exit) - 2730 (lever, now pushed
+  // further right for real breathing room between the two set-pieces)
+  // gap -- five gears now instead of three, more to actually hop
+  // around on rather than just cross in two steps.
+  { x: 2360, height: 30, outerR: 20, overgrown: 1, slowSpin: 0.0004 },
+  { x: 2430, height: 55, outerR: 18, overgrown: 0, slowSpin: 0.00045 },
+  { x: 2500, height: 35, outerR: 22, overgrown: 1, slowSpin: 0.0005 },
+  { x: 2570, height: 60, outerR: 16, overgrown: 0, slowSpin: 0.00055 },
+  { x: 2640, height: 40, outerR: 20, overgrown: 0, slowSpin: 0.0006 } // last of the row, well clear of the lever
 ];
 
 // overgrown tier -> (vine wraps, moss patches). 0 keeps a gear reading
@@ -9922,22 +10109,34 @@ function drawForestIntroGears(camX) {
   FOREST_INTRO_GEARS.forEach((g, i) => {
     const gx = g.x - camX;
     const gy2 = gy - g.height;
+    const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? 2];
+    // most intro gears just get a fixed per-index angle (purely
+    // decorative, never animated) -- a handful (slowSpin set) instead
+    // rotate continuously and slowly, a visual preview of the real
+    // clockwork grove's motion even though these ones are always
+    // standable and never gated behind the lever
+    const rot = g.slowSpin ? performance.now() * g.slowSpin : 0.3 + i * 0.15;
     if (g.horizontal) {
       // lying flat, like a turntable rather than a standing wheel --
       // squash vertically around its own center so it reads as a disc
-      // seen edge-on instead of a face-on gear
+      // seen edge-on instead of a face-on gear. The vines/moss have to
+      // be drawn INSIDE this same squash, not after it -- they were
+      // previously drawn post-restore, so a horizontal gear's growth
+      // was rendered as if wrapping a normal upright circular gear,
+      // mismatched against the actual flattened disc underneath it.
       ctx.save();
       ctx.translate(gx, gy2);
       ctx.scale(1, FOREST_GEAR_FLAT_SQUASH);
       ctx.translate(-gx, -gy2);
-      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, 0.3 + i * 0.15, "#6b5030", "#2e2014", g.x * 3.7);
+      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, rot, "#6b5030", "#2e2014", g.x * 3.7);
+      drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
+      drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
       ctx.restore();
     } else {
-      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, 0.3 + i * 0.15, "#6b5030", "#2e2014", g.x * 3.7);
+      drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, 7, rot, "#6b5030", "#2e2014", g.x * 3.7);
+      drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
+      drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
     }
-    const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? 2];
-    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
-    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
@@ -10038,7 +10237,7 @@ const FOREST_HINT_GEAR_OUTER_R = 30; // back to original size
 const FOREST_HINT_GEAR_INNER_R = 24;
 const FOREST_HINT_GEAR_TEETH = 8;
 
-function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeColor, stableSeed) {
+function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeColor, stableSeed, toothWidthFactor) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(rot);
@@ -10046,7 +10245,7 @@ function drawForestGear(cx, cy, outerR, innerR, teeth, rot, fillColor, strokeCol
   const step = (Math.PI * 2) / teeth;
   for (let i = 0; i < teeth; i++) {
     const a0 = i * step;
-    const toothWidth = step * 0.42;
+    const toothWidth = step * (toothWidthFactor ?? 0.42);
     const a1 = a0 + toothWidth;
     const a2 = a0 + step * 0.5;
     ctx.lineTo(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
@@ -10164,8 +10363,17 @@ const forestSnake = {
   turnStartTime: 0, // performance.now() when the current turn began, drives the staggered per-segment easing
   bumpedCooldown: 0, // brief window after getting bumped off by an obstacle, before re-mounting is allowed
   jumpGraceUntil: 0, // timestamp until which obstacle collision is suppressed right after initiating a jump, so the physics has time to actually lift the player before the check re-applies
-  midJump: false // true while airborne from a mid-ride jump (not a full dismount) -- keeps x tracking the snake's movement so a jump can actually carry the player past an obstacle, not just straight up and back down
+  midJump: false, // true while airborne from a mid-ride jump (not a full dismount) -- keeps x tracking the snake's movement so a jump can actually carry the player past an obstacle, not just straight up and back down
+  mountTime: 0, // performance.now() when riding last became true -- drives a brief ease-in on player.y (see the riding position update below) instead of an instant teleport onto the body
+  mountFromY: 0 // player's own y at the moment of mounting -- the ease-in blends FROM this TOWARD the body's height, so catches near the edge of the (deliberately generous) catch windows don't pop the player a large distance in a single frame
 };
+
+// how long the snake's turn-around takes -- shared between the head
+// (drawn with no stagger) and the body segments (staggered off this by
+// FOREST_SNAKE_TURN_STAGGER per segment, see below). Slowed down from
+// the original 700/350 -- the turn read as too snappy/instant.
+const FOREST_SNAKE_TURN_DURATION = 1050;
+const FOREST_SNAKE_TURN_STAGGER = 525;
 
 // player position that kicks off the snake's very first departure from
 // dock B -- placed right at the raccoon (pulled back in from +40 past
@@ -10242,10 +10450,8 @@ function getForestSnakePoint(progress) {
   // later than the head's, proportional to how far back along the
   // body it sits, so the turn reads as a curl propagating tail-ward
   // rather than the whole body uniformly collapsing through a point
-  const HEAD_TURN_DURATION = 700;
-  const PER_SEGMENT_DELAY = 350;
-  const elapsed = performance.now() - forestSnake.turnStartTime - clampedProgress * PER_SEGMENT_DELAY;
-  const rawProgress = Math.max(0, Math.min(1, elapsed / HEAD_TURN_DURATION));
+  const elapsed = performance.now() - forestSnake.turnStartTime - clampedProgress * FOREST_SNAKE_TURN_STAGGER;
+  const rawProgress = Math.max(0, Math.min(1, elapsed / FOREST_SNAKE_TURN_DURATION));
   const eased = rawProgress < 0.5 ? 2 * rawProgress * rawProgress : 1 - Math.pow(-2 * rawProgress + 2, 2) / 2;
   const dir = forestSnake.prevDir + (forestSnake.targetDir - forestSnake.prevDir) * eased;
 
@@ -10302,6 +10508,15 @@ function drawForestBrambleStrands(camX, x1World, x2World, seedBase, colorA, colo
     }
     ctx.stroke();
 
+    // a thin pale highlight run back down the SAME still-open path --
+    // re-stroking at a fraction of the width, off-center toward one edge,
+    // gives the strand a rounded, lit-from-one-side read instead of a
+    // single flat uniform line, which was a big part of why the bramble
+    // felt pasted on rather than like real thin vines with actual body
+    ctx.strokeStyle = `rgba(210,225,165,${alpha * 0.3})`;
+    ctx.lineWidth = Math.max(1, ctx.lineWidth * 0.3);
+    ctx.stroke();
+
     // small curling tendril at the end of some strands, for real
     // organic texture rather than every strand ending in a smooth arc
     if (pseudoRandom(seed + 30) < 0.45) {
@@ -10333,59 +10548,140 @@ function drawForestBrambleThorns(camX, x1World, x2World, seedBase, count, height
   }
 }
 
+// a handful of distinct flower colors (not just one pink pair), so a
+// bramble wall full of them doesn't read as the same bloom copy-pasted
+const FOREST_BRAMBLE_FLOWER_COLORS = [
+  { petal: "#d98fae", center: "#f0d8c8" }, // pink (original)
+  { petal: "#e0a8c0", center: "#f0d8c8" }, // light pink (original)
+  { petal: "#eee8d8", center: "#e0c458" }, // white with yellow center
+  { petal: "#c9b8e0", center: "#f0d8c8" }, // lavender
+  { petal: "#e8c860", center: "#a9743a" }  // pale yellow with brown center
+];
+
 function drawForestBrambleFlowers(camX, seedBase, count, heightScale) {
-  const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
+  drawForestBrambleFlowersInRange(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, seedBase, count, heightScale);
+}
+
+function drawForestBrambleFlowersInRange(camX, x1World, x2World, seedBase, count, heightScale) {
+  const x1 = x1World - camX, x2 = x2World - camX;
   const w = x2 - x1;
   const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
   for (let i = 0; i < count; i++) {
     const seed = seedBase + i * 19.3;
     const fx = x1 + w * (0.08 + pseudoRandom(seed) * 0.85);
     const fy = baseY - (10 + pseudoRandom(seed + 1) * heightScale);
-    ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#d98fae" : "#e0a8c0";
+    const hue = FOREST_BRAMBLE_FLOWER_COLORS[Math.floor(pseudoRandom(seed + 4) * FOREST_BRAMBLE_FLOWER_COLORS.length)];
+    ctx.fillStyle = hue.petal;
     ctx.beginPath(); ctx.arc(fx, fy, 4.5 + pseudoRandom(seed + 3) * 2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#f0d8c8";
+    ctx.fillStyle = hue.center;
     ctx.beginPath(); ctx.arc(fx, fy, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// small clusters of berries tucked in among the strands -- a handful of
+// dark red/purple dots per cluster with a tiny highlight each, so they
+// read as actual berries rather than flat dots
+const FOREST_BRAMBLE_BERRY_COLORS = ["#5a1a2e", "#7a2438", "#3a2a5a"]; // deep red, red-wine, dark purple
+function drawForestBrambleBerries(camX, seedBase, clusterCount, heightScale) {
+  drawForestBrambleBerriesInRange(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, seedBase, clusterCount, heightScale);
+}
+
+function drawForestBrambleBerriesInRange(camX, x1World, x2World, seedBase, clusterCount, heightScale) {
+  const x1 = x1World - camX, x2 = x2World - camX;
+  const w = x2 - x1;
+  const baseY = gy + 15;
+  for (let c = 0; c < clusterCount; c++) {
+    const cSeed = seedBase + c * 27.7;
+    const cx = x1 + w * (0.06 + pseudoRandom(cSeed) * 0.88);
+    const cy = baseY - (8 + pseudoRandom(cSeed + 1) * heightScale);
+    const berryCount = 3 + Math.floor(pseudoRandom(cSeed + 2) * 3);
+    const color = FOREST_BRAMBLE_BERRY_COLORS[Math.floor(pseudoRandom(cSeed + 3) * FOREST_BRAMBLE_BERRY_COLORS.length)];
+    for (let b = 0; b < berryCount; b++) {
+      const bSeed = cSeed + b * 5.3;
+      const bx = cx + (pseudoRandom(bSeed) - 0.5) * 12;
+      const by = cy + (pseudoRandom(bSeed + 1) - 0.5) * 10;
+      const br = 2.2 + pseudoRandom(bSeed + 2) * 1.4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fill();
+      // tiny highlight, gives them a little shine/roundness
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.beginPath();
+      ctx.arc(bx - br * 0.3, by - br * 0.3, br * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
 function drawForestBrambleTransition(camX) {
   // looser vines building up to the main wall from dockA's side
-  drawForestBrambleStrands(camX, FOREST_BRAMBLE_TRANSITION_IN_X1, FOREST_BRAMBLE_X1, 900, "#2e3520", "#3f5527", 22, 2.8, 4, 0);
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_TRANSITION_IN_X1, FOREST_BRAMBLE_X1, 900, "#2e3520", "#3f5527", 22, 4, 4, 0);
+  drawForestBrambleFlowersInRange(camX, FOREST_BRAMBLE_TRANSITION_IN_X1, FOREST_BRAMBLE_X1, 970, 4, 20);
+  drawForestBrambleBerriesInRange(camX, FOREST_BRAMBLE_TRANSITION_IN_X1, FOREST_BRAMBLE_X1, 1010, 2, 20);
   // looser vines tapering off past the main wall toward dockB's side
-  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X2, FOREST_BRAMBLE_TRANSITION_OUT_X2, 950, "#2e3520", "#3f5527", 22, 2.8, 4, 0);
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X2, FOREST_BRAMBLE_TRANSITION_OUT_X2, 950, "#2e3520", "#3f5527", 22, 4, 4, 0);
+  drawForestBrambleFlowersInRange(camX, FOREST_BRAMBLE_X2, FOREST_BRAMBLE_TRANSITION_OUT_X2, 990, 4, 20);
+  drawForestBrambleBerriesInRange(camX, FOREST_BRAMBLE_X2, FOREST_BRAMBLE_TRANSITION_OUT_X2, 1030, 2, 20);
 }
 
 function drawForestBrambleBehind(camX) {
-  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 100, "#2e3520", "#3f5527", 30, 4.5, 10, 0);
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 100, "#2e3520", "#3f5527", 30, 6, 10, 0);
   drawForestBrambleThorns(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 200, 7, 30);
-  drawForestBrambleFlowers(camX, 300, 3, 24);
+  drawForestBrambleFlowers(camX, 300, 9, 24); // was 3 -- more blooms, more color variety now too
+  drawForestBrambleBerries(camX, 350, 6, 26); // new -- berry clusters mixed in with the flowers
 }
 
-function drawForestBrambleFront(camX) {
-  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 400, "#2e3520", "#3f5527", 55, 5.5, 10, 0);
-  drawForestBrambleThorns(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 500, 9, 55);
-  drawForestBrambleFlowers(camX, 600, 4, 48);
+// index of the one crossing strand (out of FOREST_BRAMBLE_CROSSING_COUNT)
+// that renders BEHIND the snake instead of in front of it -- see
+// drawForestBrambleCrossingStrand below. Picked once here so both the
+// "front" pass and the "behind snake" pass agree on which one to skip.
+const FOREST_BRAMBLE_CROSSING_COUNT = 4;
+const FOREST_BRAMBLE_BEHIND_SNAKE_INDEX = 1;
 
-  // deliberately-placed vertical crossing strands, evenly spaced
-  // across the full span and spanning through the snake's height
-  // range -- guarantees real coverage wherever the snake happens to
-  // be, rather than hoping randomized curves cross its exact path
+// one deliberately-placed vertical crossing strand, factored out so it
+// can be drawn on either side of the snake in z-order. `i` is its index
+// among FOREST_BRAMBLE_CROSSING_COUNT evenly-spaced strands spanning the
+// snake's height range -- guarantees real coverage wherever the snake
+// happens to be, rather than hoping randomized curves cross its path.
+function drawForestBrambleCrossingStrand(camX, i) {
   const x1 = FOREST_BRAMBLE_X1 - camX, x2 = FOREST_BRAMBLE_X2 - camX;
   const w = x2 - x1;
   const baseY = gy + 15; // each strand's own root sits 5-13px ABOVE this line (see yBase below) -- gy+2 wasn't enough to compensate for that built-in lift, the roots still landed above the ground-dot band instead of inside it
+  const seed = 800 + i * 23.1;
+  const cx = x1 + w * ((i + 0.5) / FOREST_BRAMBLE_CROSSING_COUNT) + (pseudoRandom(seed) - 0.5) * 20;
+  const topY = baseY - (60 + pseudoRandom(seed + 1) * 20);
+  const sway = (pseudoRandom(seed + 2) - 0.5) * 24;
   ctx.lineCap = "round";
-  const crossingCount = 4;
-  for (let i = 0; i < crossingCount; i++) {
-    const seed = 800 + i * 23.1;
-    const cx = x1 + w * ((i + 0.5) / crossingCount) + (pseudoRandom(seed) - 0.5) * 20;
-    const topY = baseY - (60 + pseudoRandom(seed + 1) * 20);
-    const sway = (pseudoRandom(seed + 2) - 0.5) * 24;
-    ctx.strokeStyle = pseudoRandom(seed + 3) < 0.5 ? "#2e3520" : "#3f5527";
-    ctx.lineWidth = 3.5 + pseudoRandom(seed + 4) * 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx, baseY + 4);
-    ctx.quadraticCurveTo(cx + sway, (baseY + topY) / 2, cx + sway * 0.4, topY);
-    ctx.stroke();
+  ctx.strokeStyle = pseudoRandom(seed + 3) < 0.5 ? "#2e3520" : "#3f5527";
+  ctx.lineWidth = 3.5 + pseudoRandom(seed + 4) * 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, baseY + 4);
+  ctx.quadraticCurveTo(cx + sway, (baseY + topY) / 2, cx + sway * 0.4, topY);
+  ctx.stroke();
+}
+
+// draws just the one crossing strand that sits BEHIND the snake --
+// called separately, before drawForestSnake, so the snake reads as
+// weaving through the bramble rather than sitting flatly on top of
+// all of it. The other three still draw after (see drawForestBrambleFront
+// below), so most of the wall stays in front like before -- only this
+// one strand actually tucks behind the snake's body.
+function drawForestBrambleBehindSnakeStrand(camX) {
+  drawForestBrambleCrossingStrand(camX, FOREST_BRAMBLE_BEHIND_SNAKE_INDEX);
+}
+
+function drawForestBrambleFront(camX) {
+  drawForestBrambleStrands(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 400, "#2e3520", "#3f5527", 55, 7, 10, 0);
+  drawForestBrambleThorns(camX, FOREST_BRAMBLE_X1, FOREST_BRAMBLE_X2, 500, 9, 55);
+  drawForestBrambleFlowers(camX, 600, 10, 48); // was 4 -- more blooms, more color variety now too
+  drawForestBrambleBerries(camX, 650, 7, 50); // new -- berry clusters mixed in with the flowers
+
+  // the remaining crossing strands -- all except the one drawn behind
+  // the snake separately (see drawForestBrambleBehindSnakeStrand above)
+  for (let i = 0; i < FOREST_BRAMBLE_CROSSING_COUNT; i++) {
+    if (i === FOREST_BRAMBLE_BEHIND_SNAKE_INDEX) continue;
+    drawForestBrambleCrossingStrand(camX, i);
   }
 }
 
@@ -10418,7 +10714,18 @@ let forestPlatformDropGraceUntil = 0;
 const FOREST_PLATFORM_DROP_GRACE_MS = 1500;
 
 function drawForestBridgePlatform(camX) {
-  if (forestBridgePieceCollected || inventory.bridgePiece) return; // already collected, nothing left to show
+  // was also checking `|| inventory.bridgePiece` here -- a leftover
+  // from before forestBridgePieceCollected existed, back when this was
+  // the only bridge piece in the whole scene. Now there are several
+  // independent ones (intro-row gears, clockwork gears, the boomerang
+  // knock-down, the flight-only piece), all sharing that same
+  // inventory count. Checking the SHARED count meant collecting any
+  // ONE of them anywhere else would make THIS platform's still-
+  // uncollected log vanish the moment that other pickup's collect
+  // animation landed (~2s later) -- which is exactly what looked like
+  // "the log disappears when the snake passes," since that landing
+  // just happened to coincide with being near the snake at the time.
+  if (forestBridgePieceCollected) return; // already collected, nothing left to show
   const px = FOREST_BRIDGE_PLATFORM_X - camX;
   const py = gy - FOREST_BRIDGE_PLATFORM_HEIGHT;
 
@@ -10575,44 +10882,245 @@ function drawForestBoomerangTarget(camX) {
    specifically to require a double jump, same idea as the intro row's
    capstone gear.
    ====================================================== */
-const FOREST_CLOCKWORK_LEVER_X = 2480; // pushed further out past the bramble's transition-out (ends 2330) for more breathing room after the crossing
+const FOREST_CLOCKWORK_LEVER_X = 2730; // pushed further out past the bramble's transition-out (ends 2330) for more breathing room after the crossing -- whole grove shifted +250 right of its previous 2480
 // launchPad marks the gears sitting right before a real gap -- ONLY
 // those fling on jump. Every other gear needs a plain, predictable
 // jump to hop between touching neighbors (different heights within
 // the same cluster) without getting launched by accident every time.
 const FOREST_CLOCKWORK_GEARS = [
   // cluster A -- three touching gears, real size/height variety
-  { x: 2560, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false, overgrown: 0 }, // no moss/vines, per "4 or so w none on them"
-  { x: 2610, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge, 2584=2584) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near x=2584)
-  { x: 2656, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true, overgrown: 0 }, // touches gear A2 (2636=2636) -- last of cluster A, launches across the gap into B -- bare
+  // entire grove (lever + every gear below + the flight piece + the
+  // mole hole entrance) shifted +250 right as one block, for real
+  // breathing room after the bramble crossing -- pure translation, all
+  // the relative gaps/physics between these pieces are unchanged, just
+  // moved. Absolute x's in the comments below are stale by 250; the
+  // relative distances/verified physics they describe still hold.
+  { x: 2810, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false, overgrown: 0 }, // no moss/vines, per "4 or so w none on them"
+  { x: 2860, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near the previous x=2584, now +250)
+  { x: 2906, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true, overgrown: 0 }, // touches gear A2 -- last of cluster A, launches across the gap into B -- bare
   // real single-jump gap (65px edge-to-edge) into cluster B
-  { x: 2763, height: 70, outerR: 22, dir: -1, rot: 0, overgrown: 0 }, // cluster B starts -- bare
-  { x: 2803, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true }, // touches gear B1 (2785=2785) -- last of cluster B, launches across the double-jump gap into the capstone
-  // real double-jump gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 2877, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece and the landing gear below. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear"
+  { x: 3013, height: 70, outerR: 22, dir: -1, rot: 0, overgrown: 0 }, // cluster B starts -- bare
+  { x: 3053, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true, launchVy: 9.8, launchGravityMult: 1.5 }, // touches gear B1 -- last of cluster B, launches across the gap into the capstone. launchVy/launchGravityMult bumped together (default vy=8 stays paired with default gravity elsewhere) -- the default FLOATY_FALL_GRAVITY made this short hop's descent read as slow drifting/floating rather than a real arc ("instead of arc we are like floating"). Steeper gravity + more initial vy keeps the same peak height and the same relative landing spot on the capstone (verified pre-shift: landed x~2869-2929 relative to a 2877 capstone, i.e. -8 to +52 from the capstone's own x -- still true now against the capstone's new x), just noticeably snappier -- peaks ~5 frames sooner, lands ~8 frames sooner overall.
+  // launchPad RESTORED on B1. Removing it (relying on a manual double
+  // jump instead) was the wrong fix -- simulated the real double-jump
+  // physics across a range of second-jump timings and the horizontal
+  // landing spot swings wildly depending on exactly when the second
+  // jump fires (anywhere from x~2866 to x~2983 depending on timing),
+  // so only a very narrow, close-to-frame-perfect timing window
+  // actually landed on the gear at all -- anything even a little late
+  // (which is a completely natural way to double-jump) sailed clean
+  // over it. The fling, by contrast, is DETERMINISTIC -- same fixed
+  // vx/vy every time, no timing skill involved. Simulated its full
+  // descending pass back through the capstone's landing height and it
+  // consistently crosses x~2905-2950, EVERY time. The earlier version
+  // of this fling failed to land because the capstone's landing zone
+  // didn't reach that far right -- fixed below with landingPadR
+  // instead of giving up on the fling entirely.
+  // real gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
+  { x: 3127, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, landingPad: 16, landingPadR: 62, catchFlight: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear". Back to the default launchVx (no more per-gear override) -- see the note below on why there's no longer a dedicated landing GEAR further out for THAT flight. landingPad (left side, 16) fixes the same "footprint narrower than the player" problem as before. landingPadR (right side, 62) is bigger and asymmetric on purpose -- B1's fling arrives from the left and its real, simulated descending pass through this gear's landing height lands somewhere in a fixed, deterministic window relative to this gear's own x (previously x~2905-2950 against a 2877 capstone, i.e. +28 to +73 -- same window now applies relative to this gear's new x). Right edge reaches gear.x+62, comfortably past it.
   // real gap (55px) descending into cluster D -- falling is easier than climbing, so this one's more forgiving despite the height drop
-  { x: 2972, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
-  { x: 3018, height: 50, outerR: 20, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1 (2998=2998), easy landing -- bare
-  // the capstone's flight sails clean over cluster D (launched flight
-  // ignores platform collision mid-arc) and comes down further out --
-  // this is that landing, a real terminal gear rather than the flight
-  // just dropping the player onto flat ground. Has its own catch logic
-  // in updateForestScene since raw physics is too precise to reliably
-  // land ON a specific gear on its own. No piece here -- the mid-air
-  // grab earlier in the arc is already the reward for this whole
-  // sequence, this is just a clean place to stick the landing.
-  { x: 3140, height: 80, outerR: 30, dir: -1, rot: 0, flightLanding: true },
-  // real gap (60px) into the big slow centerpiece gear -- a normal
-  // single jump off the landing gear, nothing launch-related required.
-  // Deliberately oversized and deliberately slow (see spinMult below)
-  // so it reads as heavier/older machinery, a different flavor of ride
-  // than the snappier smaller gears earlier in the sequence. Right
-  // after this, the grove's done and the mole hole picks up -- once
-  // that's built, this is the natural spot for a jump-off-it launch
-  // into the hole, but for now it's just a resting beat at the end.
-  { x: 3280, height: 70, outerR: 50, dir: 1, rot: 0, spinMult: 0.35, overgrown: 2 }
+  { x: 3222, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
+  { x: 3268, height: 50, outerR: 20, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1, easy landing -- bare
+  // GAVE UP ON A DEDICATED LANDING GEAR HERE. Several rounds of pushing
+  // it (and the capstone's own launch speed) further and further right
+  // still kept reading as "you can just jump from that gear and grab
+  // the log," because the real problem was never really about pixel
+  // distance -- an elevated gear platform right next to the piece was
+  // always going to look like a plausible jumping-off point, no matter
+  // how far away it got pushed, and a soft vine curtain in front of it
+  // didn't fully kill that read either (see the aborted flightLanding
+  // gear + drawForestLogCurtain -- both removed). Simplest real fix:
+  // there's no gear to land on anymore. The capstone's flight now just
+  // rides out its natural arc (unmodified physics, no launchVx
+  // override) until it crosses true ground on its own, same generic
+  // fallback every other launch already uses (see the `player.y <= 0`
+  // check in applyPhysics) -- no dedicated catch logic, nothing to
+  // retune ever again. That lands ~97 units past the capstone's own x
+  // (previously world x~3174 against a 2877 capstone), well clear of
+  // the piece both horizontally AND vertically (flat ground vs. the
+  // piece's own height), which kills the "looks jumpable from here"
+  // read at the source instead of chasing it.
+  //
+  // The big gear below is now pure scenery -- no flightLanding, no
+  // launchPad, nothing to land ON mid-flight (a genuinely launched
+  // player only ever interacts with true ground, never any gear's
+  // surface -- see the `!player.launched` guard on the generic gear
+  // snap in updateForestScene). Still walkable from the ground like any
+  // other gear if someone wanders over on foot, just not a flight
+  // target. Connects into the mole hole entrance just past it.
+  { x: 3550, height: 70, outerR: 50, dir: 1, rot: 0, spinMult: 0.35, overgrown: 2 }
 ];
 const FOREST_CLOCKWORK_SPIN_SPEED = 0.0014; // radians/ms, applied per gear's own `dir` -- nudged back up a bit from 0.0011, was reading as a touch too slow
+
+/* ======================================================
+   MOLE HOLE ENTRANCE — a hole in the ground just past the big
+   decorative gear (x:3550, outerR:50 -- right edge 3600), the spot
+   explicitly left open for this. Press space while standing on it:
+   plays a short sink-and-fade animation, then a normal scene
+   transition carries the player down into the mole hole below (new
+   scene, first real pass -- entrance + a bare tunnel shell for now,
+   no puzzles/decor yet).
+   ====================================================== */
+const moleHoleEntrance = { x: 3650, active: false, t: 0 }; // shifted +250 along with the rest of the grove -- stays 50px past the decorative gear's right edge (was 3400 against a 3300 gear)
+const MOLEHOLE_FALL_MS = 700;
+
+function updateMoleHoleEntrance(deltaTime) {
+  if (moleHoleEntrance.active) {
+    moleHoleEntrance.t += deltaTime * 1000;
+    if (moleHoleEntrance.t >= MOLEHOLE_FALL_MS) {
+      moleHoleEntrance.active = false;
+      startSeasonTransition("molehole");
+    }
+    return;
+  }
+  if (keys.spaceJustPressed && isPlayerNear(moleHoleEntrance.x, 0, 24, 15, 15)) {
+    moleHoleEntrance.active = true;
+    moleHoleEntrance.t = 0;
+  }
+}
+
+// MOLE HOLE TREE — the landmark surface tree the mole hole is dug
+// beneath (matches the reference image's cutaway: roots down, trunk up
+// into "Up Outside"). Same tapered-trunk + layered-leaf-cluster
+// technique as the regular foreground trees, just scaled up a lot and
+// given its own real root flare, since this one specifically needs to
+// read as "the roots go down into that hole right there," not just
+// another background tree. Drawn well before the hole/gears in the
+// draw order so it reads as standing behind/around them, not painted
+// on top.
+function drawMoleHoleTree(camX) {
+  const tx = moleHoleEntrance.x - camX;
+  const trunkH = 280, trunkW = 34;
+
+  ctx.save();
+  ctx.translate(tx, gy);
+
+  // grounding shadow, wide -- a tree this big needs a real footprint
+  ctx.fillStyle = "rgba(10,10,5,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(0, -1, 55, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // tapered trunk, gentle lean -- same organic curved-polygon language
+  // as the clockwork lever's post, just far larger
+  const bendX = 6;
+  ctx.fillStyle = "#241a10";
+  ctx.beginPath();
+  ctx.moveTo(-trunkW / 2, 2);
+  ctx.quadraticCurveTo(-trunkW / 3 + bendX * 0.4, -trunkH * 0.5, -trunkW / 4 + bendX, -trunkH);
+  ctx.lineTo(trunkW / 4 + bendX, -trunkH);
+  ctx.quadraticCurveTo(trunkW / 3 + bendX * 0.4, -trunkH * 0.5, trunkW / 2, 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // bark lines following the same lean
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 2;
+  [-10, -3, 5, 13].forEach(off => {
+    ctx.beginPath();
+    ctx.moveTo(off, -10);
+    ctx.quadraticCurveTo(off * 0.7 + bendX * 0.3, -trunkH * 0.5, off * 0.3 + bendX, -trunkH + 12);
+    ctx.stroke();
+  });
+
+  // real root flare at the base -- several thick roots splitting off
+  // and diving into the ground, explicitly the same roots that carry
+  // on down into the mole hole below. Asymmetric (more/bigger toward
+  // the entrance side) so it visually implies the hole is connected to
+  // this specific tree rather than just standing near it.
+  const rootSpecs = [
+    { dx: -48, spread: 18, len: 30 },
+    { dx: -22, spread: 10, len: 16 },
+    { dx: 22, spread: 10, len: 16 },
+    { dx: 46, spread: 20, len: 34 },
+    { dx: 68, spread: 22, len: 40 } // reaches toward the hole itself
+  ];
+  ctx.fillStyle = "#241a10";
+  rootSpecs.forEach(r => {
+    ctx.beginPath();
+    ctx.moveTo(r.dx - r.spread * 0.3, -4);
+    ctx.quadraticCurveTo(r.dx, -2, r.dx + r.spread * 0.2, r.len * 0.4);
+    ctx.quadraticCurveTo(r.dx + r.spread * 0.5, r.len * 0.8, r.dx + r.spread, r.len);
+    ctx.lineTo(r.dx + r.spread * 0.5, r.len * 0.9);
+    ctx.quadraticCurveTo(r.dx - r.spread * 0.1, r.len * 0.3, r.dx - r.spread * 0.3, -4);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // layered canopy -- dark silhouette base, then real leaf-cluster
+  // texture over it, then a lighter highlight cluster offset to one
+  // side, all scaled up from the regular foreground tree's technique
+  const cy0 = -trunkH;
+  const canopyShadow = "#1a2712", canopyBase = "#2c4019", canopyHi = "#3d5726";
+  const canopyBlobs = [[-58, -30, 62], [24, -55, 70], [62, -6, 55], [-18, -72, 56], [8, -10, 48]];
+  const seed = moleHoleEntrance.x * 2.3;
+  ctx.fillStyle = canopyShadow;
+  canopyBlobs.forEach(([dx, dy, r]) => {
+    ctx.beginPath();
+    ctx.arc(dx, cy0 + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  canopyBlobs.forEach(([dx, dy, r], ci) => {
+    drawForestTreeLeafCluster(dx, cy0 + dy, r * 0.9, canopyBase, seed + ci * 37, 26);
+  });
+  [[-30, -60, 34], [30, -30, 28]].forEach(([dx, dy, r], ci) => {
+    drawForestTreeLeafCluster(dx, cy0 + dy, r, canopyHi, seed + 500 + ci * 29, 16);
+  });
+
+  ctx.restore();
+}
+
+function drawMoleHoleEntrance(camX) {
+  const hx = moleHoleEntrance.x - camX, hy = gy;
+
+  // dark dirt hole, loose soil rim -- same "real hole in the ground"
+  // language as the autumn cloud-transition hole, just an earthy
+  // palette instead of a sky one
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(hx, hy - 2, 27, 10, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#1a1108";
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // loose dirt clumps scattered around the rim, irregular sizes so it
+  // reads as freshly-dug rather than a perfect drawn ring
+  for (let i = 0; i < 7; i++) {
+    const seed = moleHoleEntrance.x * 3.1 + i * 11.3;
+    const angle = (i / 7) * Math.PI * 2 + pseudoRandom(seed) * 0.5;
+    const dist = 24 + pseudoRandom(seed + 1) * 10;
+    const cx = hx + Math.cos(angle) * dist;
+    const cy = hy - 2 + Math.sin(angle) * dist * 0.36;
+    const r = 3 + pseudoRandom(seed + 2) * 3;
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#5a3e22" : "#3a2814";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.6, angle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // sink-and-fade animation, drawn on top of the player -- the player
+  // sprite itself keeps its normal position, this just visually sells
+  // "going down" for the brief moment before the scene transition
+  // fires. Same trick as the trapdoor sequence: a short in-place
+  // effect rather than any real physics.
+  if (moleHoleEntrance.active) {
+    const p = Math.min(1, moleHoleEntrance.t / MOLEHOLE_FALL_MS);
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(hx, hy - 2, 27, 10, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = p;
+    ctx.fillStyle = "#0a0704";
+    ctx.beginPath();
+    ctx.ellipse(hx, hy - 2 + p * 30, 30 - p * 10, 12 - p * 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 // per-gear speed variety -- explicit `spinMult` (like the big slow
 // gear above) wins; otherwise a stable-but-"random" variance keyed off
 // each gear's own x, so the grove doesn't read as one perfectly
@@ -10629,7 +11137,7 @@ function forestGearSpinMult(g) {
 // two pieces here a light beat of urgency (grab them before it winds
 // down) without it being punishing -- the lever just resets to idle and
 // can be pulled again as many times as needed.
-const FOREST_CLOCKWORK_ACTIVE_MS = 9000;
+const FOREST_CLOCKWORK_ACTIVE_MS = 11000; // bumped from 9000 -- 9s was reading as too tight a window to get across the grove and back before it wound down
 const FOREST_CLOCKWORK_WINDDOWN_MS = 2500;
 const FOREST_CLOCKWORK_LEVER_ANIM_MS = 950; // duration of the handle's own swing animation -- slowed down a good amount, was reading as an instant snap rather than a real pull
 let forestClockworkState = "idle"; // "idle" | "active" | "windingDown"
@@ -10652,21 +11160,119 @@ function drawForestClockworkLever(camX) {
   const baseY = gy;
   const active = forestClockworkState !== "idle";
 
-  // post
-  ctx.strokeStyle = "#4a3a28";
-  ctx.lineWidth = 6;
+  // post -- a real tapered, filled trunk shape (like the gnaw-secret
+  // tree) instead of a flat uniform-width stroked line, which was a
+  // big part of why it read as a "pasted" primitive rather than an
+  // actual carved post. Slightly wider at the base, narrower at top,
+  // with a soft grounding shadow so it looks planted rather than
+  // floating on the ground line.
+  // straight tapered polygon still read as a machined/pasted primitive
+  // -- real branches and worn posts lean and bow, they're never perfectly
+  // vertical. Curved both edges through a mid-height control point (a
+  // gentle lean to one side) instead of straight lines, so the silhouette
+  // itself looks grown rather than milled.
+  const postBaseW = 11, postMidW = 7.5, postTopW = 5, postTop = baseY - 46, postMid = baseY - 24, bendX = 3.4;
+  ctx.fillStyle = "rgba(10,10,5,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(lx + 1, baseY - 1, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#2b1f12";
+  ctx.beginPath();
+  ctx.moveTo(lx - postBaseW / 2, baseY);
+  ctx.quadraticCurveTo(lx - postMidW / 2 + bendX, postMid, lx - postTopW / 2 + bendX * 1.6, postTop);
+  ctx.lineTo(lx + postTopW / 2 + bendX * 1.6, postTop);
+  ctx.quadraticCurveTo(lx + postMidW / 2 + bendX, postMid, lx + postBaseW / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+  // a soft lit side (a natural post catches light unevenly, not flat all
+  // the way round) plus a couple of grain streaks following the same lean
+  ctx.fillStyle = "rgba(255,235,190,0.06)";
+  ctx.beginPath();
+  ctx.moveTo(lx - postBaseW / 2 + 1.5, baseY - 2);
+  ctx.quadraticCurveTo(lx - postMidW / 2 + bendX + 1.5, postMid, lx - postTopW / 2 + bendX * 1.6 + 1, postTop + 2);
+  ctx.lineTo(lx - postTopW / 2 + bendX * 1.6 + 2.4, postTop + 2);
+  ctx.quadraticCurveTo(lx - postMidW / 2 + bendX + 3, postMid, lx - postBaseW / 2 + 3.4, baseY - 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 1;
+  [-2, 1.7].forEach(dx => {
+    ctx.beginPath();
+    ctx.moveTo(lx + dx * 0.4, baseY - 4);
+    ctx.quadraticCurveTo(lx + dx * 0.6 + bendX * 0.6, postMid, lx + dx * 0.8 + bendX * 1.2, postTop + 4);
+    ctx.stroke();
+  });
+
+  // patina/tarnish on the post -- each patch built from a few
+  // overlapping smaller circles instead of one perfect circle, so it
+  // reads as an irregular stain rather than a flat dot glued on top
+  const leverTarnishSeed = FOREST_CLOCKWORK_LEVER_X * 2.9;
+  ctx.save();
+  for (let p = 0; p < 4; p++) {
+    const pSeed = leverTarnishSeed + p * 17.3;
+    const px = lx + (pseudoRandom(pSeed) - 0.5) * 7;
+    const py = baseY - 6 - pseudoRandom(pSeed + 1) * 36;
+    const pr = 2.6 + pseudoRandom(pSeed + 2) * 2.6;
+    const color = pseudoRandom(pSeed + 3) < 0.5 ? "rgba(110,145,110,0.65)" : "rgba(75,105,80,0.6)";
+    ctx.fillStyle = color;
+    for (let s = 0; s < 3; s++) {
+      const sSeed = pSeed + 30 + s * 3.1;
+      const sx = px + (pseudoRandom(sSeed) - 0.5) * pr * 1.3;
+      const sy = py + (pseudoRandom(sSeed + 1) - 0.5) * pr * 1.3;
+      const sr = pr * (0.55 + pseudoRandom(sSeed + 2) * 0.5);
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // a real vine, hugging the post rather than swinging wide of it --
+  // pulled the amplitude way in (was swinging +-10/15px off a ~9px-wide
+  // post, which read as its own separate green stick-figure body next to
+  // the post rather than something wrapped around it) and shortened it so
+  // it stops below the gear cap instead of competing with it. Still a
+  // clearly separate color/read from the fern field and other ground
+  // cover (see the exclusion zone in drawForestFernField), just scaled to
+  // actually look attached to a ~9-11px post instead of overpowering it.
+  ctx.strokeStyle = "#243516"; // dark outline pass first, wider
+  ctx.lineWidth = 3.6;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(lx, baseY);
-  ctx.lineTo(lx, baseY - 46);
+  ctx.moveTo(lx - 3, baseY);
+  ctx.quadraticCurveTo(lx + 4.5, baseY - 12, lx - 1, baseY - 22);
+  ctx.quadraticCurveTo(lx - 5.5, baseY - 29, lx + 1.5, baseY - 35);
   ctx.stroke();
+  ctx.strokeStyle = "#5c8a35"; // brighter, more saturated than the gear vines -- deliberately stands out against the darker post/background here
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(lx - 3, baseY);
+  ctx.quadraticCurveTo(lx + 4.5, baseY - 12, lx - 1, baseY - 22);
+  ctx.quadraticCurveTo(lx - 5.5, baseY - 29, lx + 1.5, baseY - 35);
+  ctx.stroke();
+  ctx.fillStyle = "#79a24a";
+  [[lx + 3, baseY - 9, 0.5], [lx - 4, baseY - 20, -0.5], [lx + 2.5, baseY - 32, 0.4]].forEach(([vx, vy, vr]) => {
+    ctx.save();
+    ctx.translate(vx, vy);
+    ctx.rotate(vr);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 4.6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3f5c26";
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
+    ctx.restore();
+  });
 
   // small gear-shaped cap, ties it visually to the grove it controls --
   // spins along with the handle's own animation progress so it feels
-  // driven by the pull rather than just decorative
+  // driven by the pull rather than just decorative. Nudged to follow the
+  // post's lean (see bendX above) so it sits ON TOP of the post instead
+  // of floating centered over a post that's now leaning out from under it
   const pullElapsed = performance.now() - forestClockworkLeverPullTime;
   const capSpin = active ? 0.8 + (pullElapsed >= 0 && pullElapsed < FOREST_CLOCKWORK_LEVER_ANIM_MS ? (1 - pullElapsed / FOREST_CLOCKWORK_LEVER_ANIM_MS) * 4 : 0) : 0;
-  drawForestGear(lx, baseY - 50, 10, 7.7, 6, capSpin, "#6b5030", "#2e2014", 1234);
+  const postLeanTop = bendX * 1.6;
+  drawForestGear(lx + postLeanTop + 1, baseY - 50, 10, 7.7, 6, capSpin, "#6b5030", "#2e2014", 1234);
 
   // handle -- animated swing rather than an instant snap between two
   // fixed angles. Freshly pulled: a punchy overshoot-then-settle swing
@@ -10695,19 +11301,68 @@ function drawForestClockworkLever(camX) {
     }
   }
 
+  // a straight rotated stroked line still read as a machined metal rod
+  // bolted onto the post at an angle -- a real hand lever is a carved
+  // branch, tapered and slightly bowed, not a uniform-width rod. Same
+  // curved-tapered-polygon approach as the post itself now, plus the
+  // knob rebuilt as an irregular worn-wood burl (overlapping blobs, same
+  // technique as the tarnish patches) instead of a perfect circle, so it
+  // reads as one continuous grown/carved piece rather than a rod with a
+  // ball stuck on the end.
   ctx.save();
   ctx.translate(lx, baseY - 30);
   ctx.rotate(handleAngle);
-  ctx.strokeStyle = "#8a6030";
-  ctx.lineWidth = 5;
+  const hBaseW = 6.2, hTipW = 3.6, hLen = 24, hBend = 2.4;
+  ctx.fillStyle = "#5c3f22";
+  ctx.beginPath();
+  ctx.moveTo(-hBaseW / 2, 0);
+  ctx.quadraticCurveTo(-hTipW / 2 + hBend, hLen * 0.6, -hTipW / 2 + hBend * 1.5, hLen);
+  ctx.lineTo(hTipW / 2 + hBend * 1.5, hLen);
+  ctx.quadraticCurveTo(hTipW / 2 + hBend, hLen * 0.6, hBaseW / 2, 0);
+  ctx.closePath();
+  ctx.fill();
+  // a lit edge along the curve, echoing the post's highlight
+  ctx.fillStyle = "rgba(255,235,190,0.08)";
+  ctx.beginPath();
+  ctx.moveTo(-hBaseW / 2 + 1, 1);
+  ctx.quadraticCurveTo(-hTipW / 2 + hBend + 1, hLen * 0.6, -hTipW / 2 + hBend * 1.5 + 0.8, hLen - 1);
+  ctx.lineTo(-hTipW / 2 + hBend * 1.5 + 2, hLen - 1);
+  ctx.quadraticCurveTo(-hTipW / 2 + hBend + 2.4, hLen * 0.6, -hBaseW / 2 + 2.8, 1);
+  ctx.closePath();
+  ctx.fill();
+  // worn leather grip-wrap bands, following the same bow as the handle
+  ctx.strokeStyle = "rgba(46,32,19,0.7)";
+  ctx.lineWidth = 3.4;
   ctx.lineCap = "round";
+  [7, 14].forEach(gy4 => {
+    const t = gy4 / hLen;
+    const bx = (-hTipW / 2 + hBend) * t + hBend * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(bx - 2.2, gy4);
+    ctx.lineTo(bx + 2.2, gy4);
+    ctx.stroke();
+  });
+  // worn brass knob -- irregular burl built from overlapping blobs
+  const knobX = hBend * 1.5, knobY = hLen + 1;
+  const knobSeed = FOREST_CLOCKWORK_LEVER_X * 4.1;
+  ctx.fillStyle = "#8a7248";
+  for (let k = 0; k < 3; k++) {
+    const kSeed = knobSeed + k * 11.7;
+    const kx = knobX + (pseudoRandom(kSeed) - 0.5) * 3.2;
+    const ky = knobY + (pseudoRandom(kSeed + 1) - 0.5) * 3.2;
+    const kr = 3.4 + pseudoRandom(kSeed + 2) * 1.8;
+    ctx.beginPath();
+    ctx.arc(kx, ky, kr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = "#4a3c26";
+  ctx.lineWidth = 1.1;
   ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, 26);
+  ctx.arc(knobX, knobY, 5, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#c9a878";
+  ctx.fillStyle = "rgba(255,240,210,0.3)";
   ctx.beginPath();
-  ctx.arc(0, 28, 5, 0, Math.PI * 2);
+  ctx.arc(knobX - 1.5, knobY - 1.5, 1.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
@@ -10734,6 +11389,71 @@ function drawForestClockworkLever(camX) {
   }
 }
 
+// a few loose vine strands hanging straight down over the FRONT face of
+// a gear, separate from drawForestGearVines (which wraps around the rim
+// edge). These drape down from an anchor near the top of the gear,
+// sagging slightly, with a couple of small leaves along the length --
+// reads as growth that's crept down over the mechanism's face, not just
+// around its outer edge. Stays in world space like the rim vines (drawn
+// after the gear, not rotated with it) since it's external growth, not
+// part of the mechanism.
+function drawGearHangingVines(gx, gy2, outerR, seed, count) {
+  if (count <= 0) return;
+  const qx = (t, p0, p1, p2) => (1 - t) * (1 - t) * p0 + 2 * (1 - t) * t * p1 + t * t * p2;
+  ctx.save();
+  ctx.lineCap = "round";
+  for (let i = 0; i < count; i++) {
+    const vSeed = seed + i * 9.7;
+    const anchorAngle = -Math.PI / 2 + (pseudoRandom(vSeed) - 0.5) * 1.6; // spread across the upper rim
+    const anchorR = outerR * (0.82 + pseudoRandom(vSeed + 1) * 0.12);
+    const ax = gx + Math.cos(anchorAngle) * anchorR;
+    const ay = gy2 + Math.sin(anchorAngle) * anchorR;
+    const length = outerR * (1.0 + pseudoRandom(vSeed + 2) * 0.7);
+    const sag = 5 + pseudoRandom(vSeed + 3) * 9;
+    const endX = ax + (pseudoRandom(vSeed + 4) - 0.5) * 8;
+    const endY = ay + length;
+    const midX = ax + sag;
+    const midY = ay + length * 0.55;
+
+    ctx.strokeStyle = pseudoRandom(vSeed + 5) < 0.5 ? "#4a6a2e" : "#3f5a26";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.quadraticCurveTo(midX, midY, endX, endY);
+    ctx.stroke();
+
+    ctx.fillStyle = "#5d7a3a";
+    [0.45, 0.8].forEach((t, li) => {
+      const lx = qx(t, ax, midX, endX);
+      const ly = qx(t, ay, midY, endY);
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate((li % 2 === 0 ? 1 : -1) * 0.7);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 4, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // a couple of the hanging vines get a little bramble-flower bloom
+    // near the tip -- not every strand, just enough to tie the gears'
+    // growth in with the same blooms scattered on the wall and the
+    // ground, without turning every gear into a flower bouquet
+    if (pseudoRandom(vSeed + 6) < 0.35) {
+      const hue = FOREST_BRAMBLE_FLOWER_COLORS[Math.floor(pseudoRandom(vSeed + 7) * FOREST_BRAMBLE_FLOWER_COLORS.length)];
+      ctx.fillStyle = hue.petal;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = hue.center;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function drawForestClockworkGears(camX) {
   FOREST_CLOCKWORK_GEARS.forEach(g => {
     const gx = g.x - camX;
@@ -10742,7 +11462,10 @@ function drawForestClockworkGears(camX) {
     // the normal 12-30px range, but on the big 50px centerpiece gear
     // that same 8 read as sparse/blocky compared to its size
     const teeth = Math.max(5, Math.round(8 * (g.outerR / 22)));
-    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, teeth, g.rot, "#6b5030", "#2e2014", g.x * 3.7);
+    // stable per-gear tooth thickness -- some chunkier, some thinner,
+    // instead of every gear using the exact same profile
+    const toothWidthFactor = 0.34 + pseudoRandom(g.x * 9.5) * 0.18;
+    drawForestGear(gx, gy2, g.outerR, g.outerR * 0.77, teeth, g.rot, "#6b5030", "#2e2014", g.x * 3.7, toothWidthFactor);
     // tarnish is on the metal itself, so it rotates WITH the gear face.
     // Moss and vines are external growth draped over the mechanism, so
     // they stay put in world space even while the gear underneath spins.
@@ -10757,6 +11480,9 @@ function drawForestClockworkGears(camX) {
     const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? Math.floor(pseudoRandom(g.x * 0.7) * FOREST_OVERGROWN_TIERS.length)];
     drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
     drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
+    // a few strands hanging down the front face too, not just wrapped
+    // around the rim -- 0-2 per gear, stable per-gear via pseudoRandom
+    drawGearHangingVines(gx, gy2, g.outerR, g.x * 8.2, Math.round(pseudoRandom(g.x * 8.9) * 2));
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
@@ -10767,52 +11493,97 @@ function drawForestClockworkGears(camX) {
    FLIGHT-ONLY BONUS PIECE — moved from the small first gap to the big
    showcase flight instead: launches off the CAPSTONE gear (tallest in
    the grove, and the one that reads best as a real launch), sails
-   through this piece mid-arc, then actually sticks a landing on a new
-   terminal gear further out (see `flightLanding` on FOREST_CLOCKWORK_GEARS)
-   instead of just dropping onto flat ground. A much longer, more
-   deliberate arc instead of a quick hop across a small gap.
+   through this piece mid-arc. Used to stick a landing on a dedicated
+   terminal gear further out; that gear is gone now (see the note below
+   and on FOREST_CLOCKWORK_GEARS) -- the flight just rides its natural
+   arc down to flat ground instead. A much longer, more deliberate arc
+   instead of a quick hop across a small gap.
 
-   Position re-verified TWICE now against the actual frame-by-frame
-   physics. First pass (height 300, on the ascent) sat right at the
-   canvas's 300px screen-height ceiling and read as half-clipped.
-   Second pass (x=3069, height=246, descending side) fixed the
-   visibility but turned out to sit close enough to BOTH the landing
-   gear (gTop=110) and cluster D's D1 gear (gTop=70) that it looked
-   reachable by a plain double-jump or even the boomerang from either
-   side -- not actually exploitable (the pickup is hard-gated on
-   player.launched regardless of position, see below), but it killed
-   the "you can only get this by flying" read, which was the whole
-   point.
+   Position re-verified multiple times against the (hand-transcribed)
+   frame-by-frame physics -- three rounds, all still reported wrong in
+   actual play. The first two misses (height 300 on the ascent; then
+   x=3069/height=246 on the descent) both got fixed on paper but never
+   actually ran. This time the exact per-frame integration was run for
+   real (node, not by hand) with the exact code constants: x+=vx;
+   y+=vy; vy-=gravity each frame, LAUNCH_GRAVITY=0.3 ascending /
+   FLOATY_FALL_GRAVITY=0.13 descending, from the capstone's gTop=226,
+   vx=3, vy=8 -- and that run exposed the actual bug behind "still
+   isn't in the arc": it was never about the ITEM's screen position,
+   it was that the PLAYER SPRITE itself is clipped off the top of the
+   canvas during the catch window. Screen top is y=0, top of the
+   player sprite is at `gy - player.height - player.y` (see the main
+   draw call), which goes negative -- i.e. the sprite starts getting
+   cut off above the canvas -- once player.y exceeds gy-height=246.
+   The previous placement (height 285, closest approach at frame 52)
+   had the PLAYER passing through y=255-330 during the whole catch
+   window -- mostly at or above that 246 line, so the player was
+   partly or fully invisible at exactly the moment they needed to see
+   themselves and the item to react. The item itself being drawn
+   on-screen never mattered; you can't time a catch you can't see
+   happening.
 
-   This third placement fixes THAT: simulated the full per-frame
-   integration (x+=vx; y+=vy; vy-=gravity each frame, LAUNCH_GRAVITY=0.3
-   ascending / FLOATY_FALL_GRAVITY=0.13 descending) from the capstone's
-   gTop=226, vx=3, vy=8, and picked a point on the descending side,
-   past the peak (~336.6 at frame 27) but still well above the
-   established double-jump max (140.6, see vinePumpkin's own comment
-   elsewhere) added to EITHER neighboring gear's gTop: D1 (70+140.6=
-   210.6) and the landing gear (110+140.6=250.6). At frame 55 the sim
-   lands at x=3042, y=284.76 -- comfortably on screen (py≈15), sitting
-   in the open gap between D1's right edge and the landing gear's left
-   edge (no platform directly underneath at all), and a clean ~34px
-   above even the landing gear's max double-jump reach. Boomerang range
-   is nowhere close either (its arc only rises ~90 above its throw
-   origin, so even thrown from the landing gear it tops out around
-   200). Gated on player.launched in the pickup check too, as a hard
-   backstop regardless.
+   New placement: further down the descending arc, past where
+   player.y drops back under 246 with real margin. At x=3090,
+   height=200, the full <40px catch window spans frames 66-75
+   (player x=3075-3102), and player.y stays between 178.9 and 236.5
+   throughout -- sprite-top margin never drops below ~9px, so the
+   player is fully visible for the entire approach, not just at one
+   instant. Also sits in the open gap between cluster D's D1 gear
+   (right edge 3038) and the landing gear (left edge 3110), clear of
+   both by real margins (35px and 3px respectively) so it doesn't
+   visually collide with either gear's artwork.
+
+   Checked this round whether that theoretical double-jump reach was
+   actually real, by simulating an actual double jump (real horizontal
+   move speed of 3px/frame, real jump gravity 0.65, holding left the
+   whole time) starting from the landing gear's left edge: it passes
+   within ~9px of (3090, 200) around frame 11. So it wasn't just
+   theoretically in range, a real double jump from that gear gets
+   almost exactly on top of it -- confirmed, not assumed.
+
+   Repositioning the ITEM further away doesn't fix this on its own: the
+   landing gear's jump envelope (that same simulation, run to
+   completion) sweeps horizontally from x=3110 down to x=2939, covering
+   essentially the entire stretch of the capstone's descent that's also
+   low enough to be on-screen. A dim-ghost render and a fully-invisible
+   render (both gated on player.launched) got tried and reverted per
+   feedback -- it should just always be visible like a normal
+   collectible, full stop. Then several rounds of moving the landing
+   gear right, and stretching the capstone's own launch speed to buy it
+   more room, and even a non-collidable vine curtain to block the
+   sightline -- all still read as "you can just jump from that gear and
+   grab it," round after round. Eventually the actual fix turned out to
+   be much simpler than any of that: there is no longer a landing gear
+   next to this piece at all (see FOREST_CLOCKWORK_GEARS) -- the
+   capstone's flight just rides its natural, untouched arc down to true
+   ground, and the nearest place to stand and jump from is far enough
+   away, both horizontally and vertically, that the "is that jumpable"
+   question doesn't come up anymore. player.launched still hard-gates
+   the actual pickup underneath regardless.
    ====================================================== */
-const FOREST_FLIGHT_PIECE_X = 3042; // capstone launch's arc, descending side, past the peak, ~frame 55 -- open gap, out of double-jump/boomerang reach from either neighboring gear
-const FOREST_FLIGHT_PIECE_HEIGHT = 285;
+const FOREST_FLIGHT_PIECE_X = 3340; // capstone launch's arc, well down the descent -- past the point where the PLAYER sprite itself clears the top-of-canvas clip line, not just the item. Shifted +250 along with the rest of the grove -- same 213-unit offset from the capstone's own x as before (was 3090 against a 2877 capstone)
+const FOREST_FLIGHT_PIECE_HEIGHT = 200;
 let forestFlightPieceCollected = false;
 
 function drawForestFlightPiece(camX) {
   if (forestFlightPieceCollected) return;
+
+  // Always visible whenever you're in the area (not gated on
+  // player.launched) -- an earlier pass tried hiding it entirely
+  // unless mid-flight, but that's not what was wanted: it should be
+  // visible the whole time you're around here, same as any other
+  // collectible. "Looks gettable from the right gear" went through a
+  // lot of attempts -- moving the landing gear repeatedly, stretching
+  // the capstone's own launch speed, even a vine curtain to block the
+  // sightline -- before landing on the actual fix: there's no longer a
+  // gear to jump FROM near this piece at all (see the note on the
+  // capstone gear and the removed terminal gear in
+  // FOREST_CLOCKWORK_GEARS). Pickup still hard-gates on player.launched
+  // below regardless of how close a jump gets.
   const px = FOREST_FLIGHT_PIECE_X - camX;
   const bob = Math.sin(performance.now() * 0.0025) * 4;
   const py = gy - FOREST_FLIGHT_PIECE_HEIGHT + bob;
 
-  // soft pulsing glow ring -- marks it as something floating/special
-  // rather than a piece sitting on a surface like the others
   const pulse = 0.3 + Math.sin(performance.now() * 0.004) * 0.2;
   ctx.strokeStyle = `rgba(255,244,200,${Math.max(0, pulse)})`;
   ctx.lineWidth = 2;
@@ -10847,11 +11618,13 @@ function drawForestFlightPiece(camX) {
    Position math: launch is from gear A2's gTop=91, vx=-3, vy=8,
    LAUNCH_GRAVITY=0.3 ascending / FLOATY_FALL_GRAVITY=0.13 descending
    (same per-frame integration as the forward flight piece). Simulated
-   frame by frame: height peaks at ~201.6 around frame 27-28 (x~2524),
-   and stays within ~180-201 across roughly x=2450-2560 -- a wide,
-   forgiving window to park a tree in.
+   frame by frame: height peaks at ~201.6 around frame 27-28 (x~2524
+   relative to a 2610 A1, i.e. -86 from A1's own x -- same offset from
+   A1's new 2860 now), and stays within ~180-201 across a similarly
+   wide window relative to A1 -- a wide, forgiving window to park a
+   tree in.
    ====================================================== */
-const FOREST_GNAW_SECRET_X = 2515; // trunk position, within the arc's near-peak window
+const FOREST_GNAW_SECRET_X = 2765; // trunk position, within the arc's near-peak window -- shifted +250 along with gear A1's backward launch (was 2515 against a 2610 A1, now relative to A1's new 2860)
 const FOREST_GNAW_SECRET_HEIGHT = 192; // branch height -- matches where the backward arc actually lingers, not ground level
 const FOREST_GNAW_REVEAL_MS = 2200;
 const FOREST_GNAW_RETRIGGER_COOLDOWN_MS = 3000; // re-openable on a later pass, not just once ever
@@ -10863,112 +11636,126 @@ function drawForestGnawSecret(camX) {
   const elapsed = performance.now() - forestGnawSecretRevealTime;
   const revealing = elapsed >= 0 && elapsed < FOREST_GNAW_REVEAL_MS;
 
-  // parting amount -- eases open quickly, holds open, eases shut
-  let partAmount = 0;
+  // jostle amount -- eases up quickly, holds, eases back to still
+  let jostle = 0;
   if (revealing) {
     const p = elapsed / FOREST_GNAW_REVEAL_MS;
-    partAmount = p < 0.25 ? p / 0.25 : p > 0.75 ? (1 - p) / 0.25 : 1;
+    jostle = p < 0.25 ? p / 0.25 : p > 0.75 ? (1 - p) / 0.25 : 1;
   }
 
-  // the tree itself -- a plain static trunk running from the ground up
-  // past the branch, so the branch reads as actually attached to
-  // something rather than floating in midair
+  // the trunk -- tapered (narrower at top than base) so it actually
+  // reads as a trunk holding up a canopy, not a straight column
+  const trunkBaseW = 15, trunkTopW = 9, trunkTop = sy - 6;
   ctx.fillStyle = "#241a10";
-  ctx.fillRect(sx - 7, sy - 30, 14, gy - (sy - 30));
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.moveTo(sx - 2, sy - 25);
-  ctx.lineTo(sx - 2, gy - 4);
+  ctx.moveTo(sx - trunkBaseW / 2, gy - 2);
+  ctx.lineTo(sx - trunkTopW / 2, trunkTop);
+  ctx.lineTo(sx + trunkTopW / 2, trunkTop);
+  ctx.lineTo(sx + trunkBaseW / 2, gy - 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx, trunkTop);
+  ctx.lineTo(sx, gy - 3);
   ctx.stroke();
 
-  // the branch -- sticks out from the trunk toward the arc's actual
-  // path (leftward, since the backward launch approaches from the
-  // right), gently drooping
-  ctx.strokeStyle = "#2e2013";
-  ctx.lineWidth = 6;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(sx - 4, sy - 4);
-  ctx.quadraticCurveTo(sx - 26, sy + 2, sx - 44, sy + 10);
-  ctx.stroke();
+  // the canopy -- a scatter of small individual pointed leaves rather
+  // than a few big round blobs, so it reads as actual foliage instead
+  // of a bright cartoon puff standing out against the scene's dark,
+  // muted palette. Muted tones matching the bramble/gear-vine leaves
+  // elsewhere (#4a6a2e/#3f5a26/#5d7a3a), not a brighter new palette.
+  // Every leaf sways on its own independent phase -- not the whole
+  // canopy rotating as one rigid piece -- so it reads as air moving
+  // through individual leaves, like the breeze coming off the arc
+  // itself, rather than the tree just wobbling. The flyby jostle adds
+  // extra amplitude/speed on top of each leaf's own idle sway for a
+  // couple of seconds when it's actually brushed. No reveal, no hidden
+  // object underneath, no "you found something" callout -- just a
+  // small tree that reacts to being flown past. (Used to have a branch
+  // sticking out with two leaf clumps that parted to show a gnawed
+  // patch plus a gold spark burst -- pulled per feedback that it read
+  // like a pickup was there when there wasn't one. Then a rounded
+  // multi-blob canopy -- pulled per feedback that it stood out too
+  // much against the rest of the scene.)
+  const idleSway = Math.sin(performance.now() * 0.0011) * 0.06;
+  const idleBob = Math.sin(performance.now() * 0.0016) * 1.5;
+  const canopyLeafColors = ["#33481f", "#2a3c1a", "#3d5726"];
+  const canopyLeafCount = 13;
 
-  // the gnawed patch underneath -- a bare, pale-wood scar with a
-  // couple of tooth-mark gouges, only actually visible once the
-  // leaves have parted enough
-  if (partAmount > 0.15) {
+  // a whole-canopy shake on top of each leaf's own sway -- a real flyby
+  // should read as "the whole thing just got hit by wind", not just
+  // individual leaves twitching a little more than usual
+  const shakeX = Math.sin(performance.now() * 0.045) * 4 * jostle;
+  const shakeRot = Math.sin(performance.now() * 0.03 + 1) * 0.05 * jostle;
+
+  ctx.save();
+  ctx.translate(sx + shakeX, trunkTop + idleBob);
+  ctx.rotate(shakeRot);
+
+  // soft dark undershadow -- gives the canopy some depth against the
+  // background instead of reading as a flat cutout pasted on top of it
+  ctx.fillStyle = "rgba(15,20,10,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(1, -12, 20, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < canopyLeafCount; i++) {
+    const lseed = 900 + i * 7.3;
+    const angle = pseudoRandom(lseed) * Math.PI * 2;
+    const r = 7 + pseudoRandom(lseed + 1) * 15;
+    const bx = Math.cos(angle) * r;
+    const by = -15 + Math.sin(angle) * r * 0.78; // canopy sits above the trunk top, slightly flattened
+    const leafLen = 6.5 + pseudoRandom(lseed + 2) * 4;
+    const leafW = 2.2 + pseudoRandom(lseed + 3) * 1.1;
+    const baseAngle = pseudoRandom(lseed + 4) * Math.PI * 2;
+    const phase = pseudoRandom(lseed + 5) * Math.PI * 2;
+    const rate = 0.0022 + pseudoRandom(lseed + 6) * 0.0018;
+    // jostle amplitude bumped up hard (was *0.4, now *1.1) -- the
+    // previous pass barely moved more than idle, easy to miss entirely
+    const leafSway = idleSway * 1.4 + Math.sin(performance.now() * rate + phase) * (0.18 + jostle * 1.1);
+
     ctx.save();
-    ctx.globalAlpha = Math.min(1, (partAmount - 0.15) / 0.3);
-    ctx.translate(sx - 30, sy + 6);
-    ctx.rotate(-0.15);
-    ctx.fillStyle = "#d8b988";
+    ctx.translate(bx, by);
+    ctx.rotate(baseAngle + leafSway);
+    ctx.fillStyle = canopyLeafColors[i % canopyLeafColors.length];
     ctx.beginPath();
-    ctx.ellipse(0, 0, 11, 5.5, 0, 0, Math.PI * 2);
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(leafLen * 0.35, -leafW, leafLen, 0);
+    ctx.quadraticCurveTo(leafLen * 0.35, leafW, 0, 0);
     ctx.fill();
-    ctx.strokeStyle = "#a9865a";
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.moveTo(-7 + i * 6, -3.5);
-      ctx.lineTo(-7 + i * 6, 3.5);
-      ctx.stroke();
-    }
     ctx.restore();
   }
 
-  // the leaf cluster covering the branch -- two halves that shake
-  // apart as partAmount rises and settle back closed as it falls
-  ctx.fillStyle = "#3a5228";
-  [-1, 1].forEach(side => {
-    ctx.save();
-    ctx.translate(sx - 30 + side * (5 + partAmount * 7), sy + 6);
-    ctx.rotate(side * (0.3 + partAmount * 1.5));
-    ctx.beginPath();
-    ctx.ellipse(side * 9, -3, 15, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  });
-
-  // a scatter of shaken-loose leaf flecks drifting down and away --
-  // "something physically got brushed here", same cue idea as the
-  // lever's own dust burst, and reads clearly even when the player
-  // only glimpses this spot for a fraction of a second mid-flight
-  if (elapsed >= 0 && elapsed < 700) {
-    const burstP = elapsed / 700;
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const d = burstP * 30;
-      ctx.fillStyle = `rgba(150,180,110,${(1 - burstP) * 0.7})`;
+  // the tiniest sparkle -- just 2 small glints among the leaves while
+  // actively jostled, not a burst or a ring (that read as "a pickup is
+  // here" before, which was the whole problem). Just enough glimmer to
+  // pull the eye toward the movement for a moment.
+  if (jostle > 0.05) {
+    [[-9, -18, 0.15], [10, -8, 0.55]].forEach(([gx2, gy3, phaseOff]) => {
+      const twinkle = Math.max(0, Math.sin(performance.now() * 0.02 + phaseOff * 10));
+      if (twinkle < 0.55) return;
+      ctx.fillStyle = `rgba(255,250,225,${(twinkle - 0.55) / 0.45 * jostle * 0.85})`;
       ctx.beginPath();
-      ctx.ellipse((sx - 30) + Math.cos(a) * d, (sy + 6) + Math.sin(a) * d * 0.6 + burstP * 14, 3 * (1 - burstP * 0.5), 1.6 * (1 - burstP * 0.5), a, 0, Math.PI * 2);
+      ctx.arc(gx2, gy3, 1.4, 0, Math.PI * 2);
       ctx.fill();
-    }
+    });
   }
 
-  // bright, high-contrast "something happened HERE" callout -- the
-  // muted greens/browns above read fine standing still, but this whole
-  // scene is a dark, low-contrast palette and the player only glimpses
-  // this spot for a fraction of a second mid-flight, so a same-toned
-  // burst alone was never going to win against that background.
-  // Centered on the branch (the player's actual altitude here), not
-  // ground level.
-  if (elapsed >= 0 && elapsed < 900) {
-    const p = elapsed / 900;
-    const ringR = 10 + p * 34;
-    ctx.strokeStyle = `rgba(255,235,150,${Math.max(0, 1 - p) * 0.9})`;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(sx - 30, sy + 6, ringR, 0, Math.PI * 2);
-    ctx.stroke();
+  ctx.restore();
 
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      const reach = 10 + p * 42;
-      const sparkX = (sx - 30) + Math.cos(a) * reach;
-      const sparkY = (sy + 6) + Math.sin(a) * reach * 0.8;
-      ctx.fillStyle = `rgba(255,244,190,${Math.max(0, 1 - p)})`;
+  // a handful of small leaf flecks drift loose while a flyby is
+  // actively brushing past -- more of them now, thrown a bit further,
+  // so the "something just got hit" moment is easier to catch
+  if (elapsed >= 0 && elapsed < 650) {
+    const p = elapsed / 650;
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.6;
+      const d = p * 24;
+      ctx.fillStyle = `rgba(150,180,110,${(1 - p) * 0.7})`;
       ctx.beginPath();
-      ctx.arc(sparkX, sparkY, 3 * (1 - p * 0.6), 0, Math.PI * 2);
+      ctx.ellipse(sx + Math.cos(a) * d, trunkTop + Math.sin(a) * d * 0.6 + p * 10, 2.5, 1.4, a, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -11022,8 +11809,8 @@ function drawGearMoss(gx, gy2, outerR, seed, patches = 3) {
 // the way every other piece of bramble in this scene is.
 function drawForestSnakeObstacleKnot(camX, obs, seedBase) {
   const x1 = obs.x - 11, x2 = obs.x + 11; // tight span -- the wall's own wiggle amplitude, packed into a fifth of the width, is what reads as "knotted" rather than "spread out"
-  drawForestBrambleStrands(camX, x1, x2, seedBase, "#2e3520", "#3f5527", obs.clearHeight - 4, 3.5, 7, 0);
-  drawForestBrambleStrands(camX, x1, x2, seedBase + 500, "#6b5236", "#5a4326", obs.clearHeight - 10, 3, 6, 0); // dried-back brown growth mixed through the green
+  drawForestBrambleStrands(camX, x1, x2, seedBase, "#2e3520", "#3f5527", obs.clearHeight - 4, 4.6, 7, 0);
+  drawForestBrambleStrands(camX, x1, x2, seedBase + 500, "#6b5236", "#5a4326", obs.clearHeight - 10, 4, 6, 0); // dried-back brown growth mixed through the green
   drawForestBrambleThorns(camX, x1, x2, seedBase + 900, 6, obs.clearHeight - 4);
 }
 
@@ -11036,7 +11823,7 @@ function drawForestSnakeObstacles(camX) {
   FOREST_SNAKE_OBSTACLES.forEach((obs, i) => {
     const seedBase = 1000 + i * 300;
     const crawlX1 = obs.x - 26, crawlX2 = obs.x + 26;
-    drawForestBrambleStrands(camX, crawlX1, crawlX2, seedBase + 700, "#2e3520", "#3f5527", 8, 2.8, 2, 0);
+    drawForestBrambleStrands(camX, crawlX1, crawlX2, seedBase + 700, "#2e3520", "#3f5527", 8, 4, 2, 0);
     drawForestBrambleThorns(camX, crawlX1, crawlX2, seedBase + 800, 2, 10);
   });
 }
@@ -11214,7 +12001,7 @@ function drawForestSnake(camX) {
   const headP = points[0];
   const headWobble = Math.sin(t * 0.006) * 0.12;
   const headElapsed = performance.now() - forestSnake.turnStartTime; // head has no stagger delay
-  const headRaw = Math.max(0, Math.min(1, headElapsed / 700));
+  const headRaw = Math.max(0, Math.min(1, headElapsed / FOREST_SNAKE_TURN_DURATION));
   const headEased = headRaw < 0.5 ? 2 * headRaw * headRaw : 1 - Math.pow(-2 * headRaw + 2, 2) / 2;
   const headDir = forestSnake.prevDir + (forestSnake.targetDir - forestSnake.prevDir) * headEased;
   const headAngle = Math.acos(Math.max(-1, Math.min(1, headDir))) + headWobble;
@@ -11467,8 +12254,13 @@ function updateForestScene(deltaTime) {
   }
 
   // bridge-piece platform -- standard platform landing, then a space
-  // press while standing on it collects the piece
-  if (!forestBridgePieceCollected && !inventory.bridgePiece) {
+  // press while standing on it collects the piece. Same fix as the
+  // draw function: this used to also gate on the SHARED
+  // `inventory.bridgePiece` count, which meant collecting any other
+  // bridge piece elsewhere in the scene would silently disable this
+  // platform's own landing collision too, not just its visibility --
+  // the player would fall straight through it.
+  if (!forestBridgePieceCollected) {
     const platTop = FOREST_BRIDGE_PLATFORM_HEIGHT;
     if (
       player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
@@ -11611,6 +12403,8 @@ function updateForestScene(deltaTime) {
           player.jumping = false;
           player.usedDoubleJump = false;
           player.vy = 0;
+          forestSnake.mountTime = performance.now(); // see the eased position update below -- this catch window is 40px tall, so a catch near either edge shouldn't pop the player that whole distance in one frame
+          forestSnake.mountFromY = player.y;
           break;
         }
       }
@@ -11645,6 +12439,8 @@ function updateForestScene(deltaTime) {
           player.jumping = false;
           player.usedDoubleJump = false;
           player.vy = 0;
+          forestSnake.mountTime = performance.now(); // this window is a full 80px tall, so this ease-in matters even more here than the precision catch above
+          forestSnake.mountFromY = player.y;
           break;
         }
       }
@@ -11663,7 +12459,40 @@ function updateForestScene(deltaTime) {
       // which travels along with the snake as a whole
       const riderP = getForestSnakePoint(forestSnake.riderBodyProgress);
       player.x = riderP.x - player.width / 2;
-      player.y = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y;
+      // a rider sitting at one fixed spot on the body used to be
+      // perfectly rigid -- FOREST_SNAKE_BODY's dy values are a fixed
+      // zigzag keyed to POSITION along the body, not time, so they never
+      // actually animate for someone riding at a constant progress.
+      // Small time-based sine bob layered on top so the player visibly
+      // moves with the snake instead of floating dead-still on top of
+      // a wavy-looking body. Phase offset by riderBodyProgress so a
+      // rider further back doesn't bob in exact lockstep with the head,
+      // and only while actually traveling (not docked) so it reads as
+      // motion, not an idle fidget.
+      const rideBob = forestSnake.state === "traveling"
+        ? Math.sin(performance.now() * 0.006 + forestSnake.riderBodyProgress * 6) * 3
+        : 0;
+      const targetY = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - riderP.y + rideBob;
+      // both mount catches above (the tight precision window AND the
+      // much more generous grace window) tolerate landing anywhere
+      // across a real span of heights, then this used to lock straight
+      // onto the body's exact height the very next frame regardless of
+      // how far off that catch actually was -- a catch near the edge of
+      // either window could pop the player a real distance (up to ~34px
+      // on the tight catch, ~60-80px on the grace one) in a single
+      // frame, which is exactly the "jolt" feeling. Ease from where they
+      // actually were at the moment of the catch (mountFromY) toward the
+      // body over a short window instead, so it reads as a quick settle
+      // rather than a teleport -- ongoing riding (well past the ease
+      // window) still tracks the body exactly, same as before.
+      const mountElapsed = performance.now() - forestSnake.mountTime;
+      const MOUNT_EASE_MS = 180;
+      if (mountElapsed >= 0 && mountElapsed < MOUNT_EASE_MS) {
+        const easeP = 1 - Math.pow(1 - mountElapsed / MOUNT_EASE_MS, 2);
+        player.y = forestSnake.mountFromY + (targetY - forestSnake.mountFromY) * easeP;
+      } else {
+        player.y = targetY;
+      }
 
       // hop off with the down key -- upJustPressed was also triggering
       // a normal jump in handleInput() (which runs before this scene
@@ -11724,20 +12553,54 @@ function updateForestScene(deltaTime) {
   let onSpinningGear = null;
   FOREST_CLOCKWORK_GEARS.forEach(g => {
     const gTop = g.height + g.outerR; // top surface, not the gear's center
+    // landingPad adds invisible standing/landing margin beyond the
+    // gear's visual radius, without changing how big it actually draws
+    // or touching gTop -- the capstone (outerR 14, the smallest gear in
+    // the whole grove, on top of being "the hardest single jump in the
+    // whole grove") was brutal to actually land ON and stay on: its
+    // real footprint was only 28px, narrower than the player's own
+    // 40px width, so even a good jump would land straddling the edge
+    // and immediately slide back off before a launch could be
+    // triggered. landingPad widens the landing/standing/launch-trigger
+    // collision only, leaving the visual gear size and the carefully
+    // tuned flight-arc math (which depends on gTop=226) untouched.
+    const standL = g.x - g.outerR - (g.landingPad || 0);
+    const standR = g.x + g.outerR + (g.landingPadR ?? g.landingPad ?? 0);
     if (
-      !player.launched && // mid-flight, this generic snap must never
-      // grab the player just because the arc's y happens to pass
-      // through some other gear's landing band -- flight has its own
-      // dedicated flightLanding catch below, which is deliberately
-      // more generous/forgiving than this plain landing check
-      player.x + player.width > g.x - g.outerR &&
-      player.x < g.x + g.outerR &&
+      (!player.launched || g.catchFlight) && // mid-flight, this generic
+      // snap must never grab the player just because the arc's y
+      // happens to pass through some other gear's landing band -- a
+      // genuinely launched flight only ever ends on true ground (see
+      // the `player.y <= 0` catch in applyPhysics). g.catchFlight is a
+      // deliberate, narrow exception: the capstone gear needs to catch
+      // the (also genuinely launched) fling arriving from B1, or there
+      // would be no way to ever stand on it in the first place. Safe to
+      // scope this to just the capstone because its OWN outgoing flight
+      // launches AWAY from itself and never re-crosses its own
+      // footprint while descending, so this can't accidentally catch
+      // that flight instead of landing it on true ground as intended.
+      player.x + player.width > standL &&
+      player.x < standR &&
       player.y <= gTop &&
-      player.y >= gTop - 16 &&
+      // widened from 16 to 32 -- within a touching/meshed cluster, the
+      // real height differences between adjacent gears run up to ~30px
+      // (see FOREST_CLOCKWORK_GEARS), and at 16 those were too tall to
+      // auto-catch: walking straight from a lower gear onto a touching
+      // taller one just fell through this check entirely (still above
+      // the old, narrower band) and free-fell in open air alongside the
+      // taller gear's silhouette instead of stepping up onto it, which
+      // read as "sliding through" the gear rather than climbing it. 32
+      // covers those real small-step cases (an actual stair-step, not a
+      // real jump-required gap) while still leaving the big intentional
+      // climbs (the 108px double-jump into the capstone, real gaps
+      // between clusters) requiring an actual jump, same as before.
+      player.y >= gTop - 32 &&
       player.vy <= 0
     ) {
       player.y = gTop;
       player.vy = 0;
+      player.vx = 0;
+      player.launched = false; // relevant when caught via g.catchFlight -- a normal (non-launched) landing was already false here anyway
       player.jumping = false;
       player.usedDoubleJump = false;
     }
@@ -11746,16 +12609,16 @@ function updateForestScene(deltaTime) {
     if (
       clockworkSpeedFactor > 0 &&
       Math.abs(player.y - gTop) < 1 &&
-      player.x + player.width > g.x - g.outerR &&
-      player.x < g.x + g.outerR
+      player.x + player.width > standL &&
+      player.x < standR
     ) {
       onSpinningGear = g;
     }
     if (
       g.piece && !g.pieceCollected &&
       Math.abs(player.y - gTop) < 2 &&
-      player.x + player.width > g.x - g.outerR &&
-      player.x < g.x + g.outerR &&
+      player.x + player.width > standL &&
+      player.x < standR &&
       keys.spaceJustPressed
     ) {
       g.pieceCollected = true;
@@ -11782,12 +12645,15 @@ function updateForestScene(deltaTime) {
   // actual space press while overlapping it, not just flying through.
   // Gated directly on player.launched too, not just position, so it's
   // genuinely unreachable by any other means. Radius stays generous
-  // (40) since timing a button press against a fast-moving arc is
-  // already the harder ask -- position shouldn't also be punishing.
+  // (50) since timing a button press against a fast-moving arc is
+  // already the harder ask -- position shouldn't also be punishing. Back
+  // on the capstone's default (unmodified) launch speed now that there's
+  // no landing gear to tune this against, the arc's closest approach to
+  // the piece is a comfortable ~5px, well inside this radius.
   if (!forestFlightPieceCollected && player.launched && keys.spaceJustPressed) {
     const dx = (player.x + player.width / 2) - FOREST_FLIGHT_PIECE_X;
     const dy = player.y - FOREST_FLIGHT_PIECE_HEIGHT;
-    if (Math.sqrt(dx * dx + dy * dy) < 40) {
+    if (Math.sqrt(dx * dx + dy * dy) < 50) {
       forestFlightPieceCollected = true;
       startCollectAnimation(
         { x: FOREST_FLIGHT_PIECE_X, y: gy - FOREST_FLIGHT_PIECE_HEIGHT, size: 10, rotation: 0 },
@@ -11796,32 +12662,13 @@ function updateForestScene(deltaTime) {
     }
   }
 
-  // flight landing catch -- lets a launched flight actually STICK a
-  // landing on the terminal gear (flightLanding: true) instead of
-  // sailing past it and dropping all the way to true ground. Raw
-  // physics landed the capstone's flight within ~7px of this gear's x
-  // by the numbers, but that's still too precise to rely on for a
-  // real landing feel, so this is deliberately generous on position --
-  // same idea as the earlier bramble platform -> snake grace catch,
-  // where design intent (land HERE) matters more than exact trajectory
-  // math.
-  const flightLandingGear = FOREST_CLOCKWORK_GEARS.find(g => g.flightLanding);
-  if (flightLandingGear && player.launched && player.vy <= 0) {
-    const gTop = flightLandingGear.height + flightLandingGear.outerR;
-    if (
-      player.x + player.width > flightLandingGear.x - flightLandingGear.outerR - 25 &&
-      player.x < flightLandingGear.x + flightLandingGear.outerR + 25 &&
-      player.y <= gTop + 60 &&
-      player.y >= gTop - 25
-    ) {
-      player.launched = false;
-      player.vx = 0;
-      player.vy = 0;
-      player.y = gTop;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
-  }
+  // there used to be a dedicated "flight landing" catch here, snapping
+  // the capstone's flight onto a specific terminal gear. Removed --
+  // that gear (and the constant retuning it needed every time it still
+  // looked jumpable from) is gone; the flight now just rides its
+  // natural arc down to true ground via the generic `player.y <= 0`
+  // catch in applyPhysics, same as any other launch. Nothing to catch
+  // here anymore.
 
   // NOTE: the gear-launch trigger itself lives in handleInput(), not
   // here -- by the time this function runs, handleInput() + applyPhysics()
@@ -11852,6 +12699,8 @@ function updateForestScene(deltaTime) {
     forestGearRideAngle *= 0.8;
     if (Math.abs(forestGearRideAngle) < 0.01) forestGearRideAngle = 0;
   }
+
+  updateMoleHoleEntrance(deltaTime);
 }
 
 // swing: rope + wooden seat, position derived from its current angle
@@ -13086,8 +13935,12 @@ function updateElephantSpot(deltaTime) {
 
   if (heldItem === "cloudPiece" && inventory.cloudPiece > 0) {
     // must actually be standing IN the oval now, not just generally nearby —
-    // small wiggle room (radiusX 20 vs the oval's own visual radius of 26)
-    if (pressedDownNear(elephantSpot.groundOvalX, 0, 20, 12, 12)) {
+    // small wiggle room (radiusX 20 vs the oval's own visual radius of 26).
+    // A single JUST-pressed space, not a held/continuous one -- otherwise
+    // holding space down placed and animated all remaining pieces within
+    // one frame-burst (every frame while held re-triggered this), instead
+    // of one placement per press with its own 3-second appear animation.
+    if (keys.spaceJustPressed && isPlayerNear(elephantSpot.groundOvalX, 0, 20, 12, 12)) {
       inventory.cloudPiece--;
       const morePiecesRemain = inventory.cloudPiece > 0;
       if (!morePiecesRemain) delete inventory.cloudPiece;
@@ -13347,8 +14200,8 @@ wallArtTeaNook.src = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAM
 const wallArtPieces = [
   { img: wallArtWaterBird, x: 518, y: 60, w: 95, h: 63, frame: "ornate" },
   { img: wallArtArch, x: 1102, y: 40, w: 100, h: 133, frame: "plain" }, // right side of the right bookshelf, more breathing room from it, made smaller per request
-  { img: wallArtCircles, x: 1685, y: 55, w: 72, h: 95, frame: "oval", darken: true }, // right side of the nook, moved with it, made smaller per request
-  { img: wallArtTeaNook, x: 2285, y: 120, w: 88, h: 56, frame: "thin", requiresLamp: true } // lower on the wall, midpoint between the previous two positions -- a personal piece, someone close to the developer's own art. thin frame since a heavy border overwhelms the delicate subject. gated behind the lamp, same as the rest of this cozy corner
+  { img: wallArtCircles, x: 1845, y: 55, w: 72, h: 95, frame: "oval", darken: true }, // right side of the nook, moved with it, made smaller per request
+  { img: wallArtTeaNook, x: 2405, y: 120, w: 88, h: 56, frame: "thin", requiresLamp: true } // lower on the wall, midpoint between the previous two positions -- a personal piece, someone close to the developer's own art. thin frame since a heavy border overwhelms the delicate subject. gated behind the lamp, same as the rest of this cozy corner
 ];
 
 function drawAntiqueFrame(x, y, w, h, style) {
@@ -13425,7 +14278,7 @@ let owlTalked = false;
 // the actual drawn stack height (matches drawBookPile's own accumulation
 // formula), so collision lines up with what's visually there.
 const bookPiles = [
-  { x: 2278, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
+  { x: 2398, seed: 41, count: 3, heightAboveGround: 22 }, // moved to the right of the rightmost (medium) shelf, with breathing room
   { x: 350, seed: 52, count: 4, heightAboveGround: 20 }, // fills the empty stretch right after the entrance door
   { x: 460, seed: 8, count: 3, heightAboveGround: 26 }, // second pile in the same gap, before the existing 571 one
   { x: 571, seed: 2, count: 4, heightAboveGround: 30 },
@@ -13550,15 +14403,15 @@ const BOOK_SPREAD_HEIGHT = 9; // max cluster height, now that the base sits exac
 // (like a future cushion pile) just get added here, reusing the same
 // trigger logic rather than each getting bespoke code.
 const sittingAreas = [
-  { id: "nook", x: 1573, heightAboveGround: 32, width: 100, unlocked: () => true },
-  { id: "cushionPile", x: 2680, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
+  { id: "nook", x: 1733, heightAboveGround: 32, width: 100, unlocked: () => true },
+  { id: "cushionPile", x: 2800, heightAboveGround: 20, width: 130, unlocked: () => oakLamp.collected }
 ];
 const nookSeat = sittingAreas[0]; // kept as an alias -- existing nook-specific collision code references this directly
 
 // rug — right side of the nook, ordinary-looking floor decoration for now.
 // Future home of a trap door reveal (rolls up on interact), kept purely
 // visual and unremarkable at this stage so it doesn't telegraph anything.
-const nookRug = { x: 1797, width: 100, height: 28 };
+const nookRug = { x: 1957, width: 100, height: 28 };
 
 // trap door sequence -- space while standing on the rug triggers a
 // multi-stage reveal: the rug rolls up, the trap door underneath opens,
@@ -13798,7 +14651,7 @@ const cushionPile = sittingAreas[1];
 // baby owl offering free tea from behind a low table. Same unlock
 // condition as the cushion pile it sits beside. Purely passive,
 // repeatable, no gate or one-time flag.
-const teaSpot = { x: 2425 };
+const teaSpot = { x: 2545 };
 let spoutTipWorld = { x: 0, y: 0 }; // set when the actual kettle spout is drawn; the pour stream reads this directly instead of recomputing the spout's position independently, which is what caused it to drift out of sync
 const babyOwl = {
   idleT: 0, idleNextAt: 3000 + Math.random() * 4000, idleShift: 0, idleShiftT: 0,
@@ -14838,8 +15691,8 @@ function updateOakLampTable() {
   }
 }
 
-const shortShelf = { x: 1480, width: 110, top: 170, bottom: gy - 2 }; // moved much closer to the door, into the gap between the tree/hive cluster and the monstera
-const mediumShelf = { x: 2166, width: 85, top: 110, bottom: gy - 2 };
+const shortShelf = { x: 2120, width: 110, top: 170, bottom: gy - 2 }; // moved past the nook entirely -- sits after the nook/rug, before the medium shelf, back where it used to be. Medium shelf and everything past it pushed further right to make real room for it here.
+const mediumShelf = { x: 2286, width: 85, top: 110, bottom: gy - 2 };
 function drawMediumShelf(camX) {
   const sx = mediumShelf.x - camX;
   drawMixedBookShelf(sx, mediumShelf.width, mediumShelf.top, mediumShelf.bottom, 5);
@@ -15004,7 +15857,7 @@ function drawOakScene(camX) {
   // tall bookshelves along the walls, reaching nearly to the top of the
   // screen — two genuinely different styles, not the same shelf mirrored
   const shelfStyles = [
-    { x: 90, frameColor: "#3a2818", innerColor: "#2a1c0e", boardColor: "#4a3018", rowCount: 6, colors: ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f"], sideways: false },
+    { x: 192, frameColor: "#3a2818", innerColor: "#2a1c0e", boardColor: "#4a3018", rowCount: 6, colors: ["#7a2f2f", "#3a5a3a", "#4a3a7a", "#b8862f"], sideways: false }, // moved halfway toward the entrance door (was 90, door at 294)
     { x: 979, frameColor: "#241a12", innerColor: "#160f0a", boardColor: "#2e2015", rowCount: 5, colors: ["#7a4a2f", "#5a3a5a", "#2f5a6a", "#9a5a3a", "#3a6a4a"], sideways: true }
   ];
   shelfStyles.forEach(style => {
@@ -15289,7 +16142,7 @@ function drawOakScene(camX) {
   // book-nook — a cozy sitting alcove cut into the tree wall, extending
   // out slightly, with a small window. Moved way right of the second
   // bookshelf, with a real seat you can jump onto after grabbing a book.
-  const nookX = 1573 - camX;
+  const nookX = 1733 - camX;
   const nookWidth = 130, nookTop = gy - 150, nookBottom = gy - 2;
 
   // the alcove itself — a genuine arch shape: straight sides up to the
@@ -18749,6 +19602,416 @@ function updateRatRoomScene(deltaTime) {
   });
 }
 
+/* ======================================================
+   MOLE HOLE — new scene, atmosphere pass. Reached by falling through
+   moleHoleEntrance in the forest (x:3650, just past the big decorative
+   gear). Reference: a mole/gnome community carved into tree roots --
+   warm lantern-lit market alcoves along the walls, hanging roots,
+   packed earth. Alcoves are decorative only for now (glimpsed shops,
+   not interactive) -- the actual traversal mechanic (a vertical shaft
+   of rotating cushion-lifts) is next, once this room has a real feel
+   to build it inside of. Climb back out the way you came.
+   ====================================================== */
+const MOLEHOLE_WIDTH = 700; // widened from the bare-shell pass so a couple of market alcoves fit comfortably
+const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches sceneSpawns.molehole's arrival point
+
+// market alcoves -- recessed archways carved into the back wall, each
+// with a warm lantern glow, a simple stall counter, and a few
+// wares-blobs on it. Not walk-in spaces, just glimpsed depth like the
+// reference image's market halls -- pure atmosphere for this pass.
+const MOLEHOLE_ALCOVES = [
+  { x: 330, w: 130, wareColors: ["#b8862f", "#7a2f2f", "#3f5766"], shopColor: "#8a6a3a" },
+  { x: 530, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
+];
+
+function drawMoleholeAlcove(alcove, camX) {
+  const ax = alcove.x - camX;
+  const w = alcove.w, h = 100;
+  const top = gy - h, archR = w / 2;
+
+  // recessed dark interior, arched top -- same "cut into the wall"
+  // language as oak's book-nook, just unlit/earthy instead of cozy-lit
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ax - archR, gy);
+  ctx.lineTo(ax - archR, top + archR);
+  ctx.arc(ax, top + archR, archR, Math.PI, 0, false);
+  ctx.lineTo(ax + archR, gy);
+  ctx.closePath();
+  ctx.fillStyle = "#100b05";
+  ctx.fill();
+
+  // warm lantern glow washing up from inside the alcove
+  const glow = ctx.createRadialGradient(ax, gy - 20, 4, ax, gy - 20, archR + 20);
+  glow.addColorStop(0, "rgba(255,190,110,0.35)");
+  glow.addColorStop(1, "rgba(255,190,110,0)");
+  ctx.fillStyle = glow;
+  ctx.fill();
+  ctx.restore();
+
+  // shopkeeper -- a small rounded figure standing behind the counter,
+  // same simplified blob-body language as the player/rat/etc elsewhere
+  // in the game, just smaller and with a pointed hood (a nod to the
+  // reference image's long-nosed, hooded mole folk). Drawn BEFORE the
+  // counter below so the plank overlaps their lower half like they're
+  // actually standing behind it, not floating in front.
+  const shopColor = alcove.shopColor || "#7a6a4a";
+  const bodyW = 20, bodyH = 26, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
+  ctx.fillStyle = shopColor;
+  roundRect(ctx, ax - bodyW / 2, bodyTop, bodyW, bodyH, 6);
+  ctx.fill();
+  // pointed hood
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 4);
+  ctx.lineTo(ax, bodyTop - 10);
+  ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 4);
+  ctx.closePath();
+  ctx.fill();
+  // two small dot eyes
+  ctx.fillStyle = "#1c1208";
+  ctx.beginPath();
+  ctx.arc(ax - 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
+  ctx.arc(ax + 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stall counter -- a simple plank, low, across the alcove's mouth
+  const counterTop = gy - 22;
+  ctx.fillStyle = "#3a2814";
+  ctx.fillRect(ax - archR + 8, counterTop, w - 16, 10);
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ax - archR + 8, counterTop, w - 16, 10);
+
+  // a few wares-blobs on the counter, hinting at goods without needing
+  // real item art -- just enough to read as "a shop," not empty
+  alcove.wareColors.forEach((color, i) => {
+    const wx = ax - archR + 22 + i * ((w - 40) / Math.max(1, alcove.wareColors.length - 1));
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(wx, counterTop - 4, 7, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // a small hanging lantern above the counter -- the light source
+  // implied by the glow gradient above
+  const lx = ax, ly = top + 26;
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(lx, top + 8);
+  ctx.lineTo(lx, ly - 6);
+  ctx.stroke();
+  ctx.fillStyle = "#e8a850";
+  ctx.beginPath();
+  ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a5a20";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// TOWN NOTICE board -- a small carved-plank detail, same visual
+// language as the game's other carved-wood prompts, purely decorative
+// here (no readable text yet, just marks -- matches the reference's
+// "Meeting Tomorrow After Lunch" notice board)
+const moleHoleNoticeBoard = { x: 430, y: 60 }; // shifted with the shop set (+70), stays between the two alcoves
+
+function drawMoleHoleNoticeBoard(camX) {
+  const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
+  const w = 46, h = 34;
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(nx - w / 2, ny - h / 2, w, h);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(nx - w / 2, ny - h / 2, w, h);
+  // small peg it hangs from
+  ctx.beginPath();
+  ctx.arc(nx, ny - h / 2 - 5, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#2e2014";
+  ctx.fill();
+  // a few illegible ink-mark lines, hinting at posted text
+  ctx.strokeStyle = "rgba(20,14,8,0.55)";
+  ctx.lineWidth = 1.5;
+  [-8, -1, 6].forEach((dy, i) => {
+    ctx.beginPath();
+    ctx.moveTo(nx - w / 2 + 6, ny + dy);
+    ctx.lineTo(nx + w / 2 - 6 - i * 6, ny + dy);
+    ctx.stroke();
+  });
+}
+
+// draws one tapered root "tube" through a wiggly 3-point centerline
+// (start/mid/tip), built from two mirrored multi-segment curves that
+// share the same lateral wiggle at each point -- keeps the tube
+// reading as one continuous tapered strand even while it bends more
+// than once, instead of a single straight lean
+function drawMoleholeRootTube(cx0, cy0, cx1, cy1, cx2, cy2, cx3, cy3, w0, w1, w2, w3, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx0 - w0, cy0);
+  ctx.quadraticCurveTo(cx1 - w1, cy1, (cx1 + cx2) / 2 - (w1 + w2) / 2, (cy1 + cy2) / 2);
+  ctx.quadraticCurveTo(cx2 - w2, cy2, cx3 - w3, cy3);
+  ctx.lineTo(cx3 + w3, cy3);
+  ctx.quadraticCurveTo(cx2 + w2, cy2, (cx1 + cx2) / 2 + (w1 + w2) / 2, (cy1 + cy2) / 2);
+  ctx.quadraticCurveTo(cx1 + w1, cy1, cx0 + w0, cy0);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// a single dangling root, drawn as a real tapered, WIGGLY, branching
+// filled shape (thick at the ceiling, narrowing to a fine tip, bending
+// more than once) rather than a single straight lean -- same organic
+// tapered-tube technique as the clockwork lever's post, extended
+// across a 3-point wiggly centerline. Always forks at least once, with
+// a real chance of a second fork off the main root AND a tiny
+// sub-fork off one of those, so a cluster of these reads as genuinely
+// tangled roots rather than parallel straight strands.
+function drawMoleholeRoot(rx, len, seed) {
+  const baseW = 5 + pseudoRandom(seed + 10) * 3;
+  // three independent lateral wiggles along the length, alternating
+  // direction more often than not, is what actually sells "wiggly"
+  // over a single smooth lean
+  const w1x = (pseudoRandom(seed + 11) - 0.5) * 20;
+  const w2x = w1x + (pseudoRandom(seed + 17) - 0.5) * 24;
+  const w3x = w2x + (pseudoRandom(seed + 18) - 0.5) * 16;
+  const y1 = len * (0.28 + pseudoRandom(seed + 19) * 0.1);
+  const y2 = len * (0.6 + pseudoRandom(seed + 20) * 0.1);
+
+  ctx.save();
+
+  const cx0 = rx, cx1 = rx + w1x, cx2 = rx + w2x, cx3 = rx + w3x;
+
+  drawMoleholeRootTube(cx0, 0, cx1, y1, cx2, y2, cx3, len, baseW / 2, baseW * 0.32, baseW * 0.16, 0.6, "#4a3018");
+
+  // thin pale highlight, same wiggly path, offset and much narrower --
+  // reads as the lit side of a round root instead of a flat strand
+  drawMoleholeRootTube(cx0 + 0.8, 0, cx1 + 0.8, y1, cx2 + 0.6, y2, cx3 + 0.5, len - 2, baseW * 0.16, baseW * 0.1, baseW * 0.06, 0.3, "rgba(200,175,130,0.2)");
+
+  // forks -- always at least one, real odds of a second, each its own
+  // smaller wiggly tapered tube branching off the main root at a
+  // different point/direction
+  const forkCount = 1 + (pseudoRandom(seed + 21) < 0.55 ? 1 : 0);
+  for (let f = 0; f < forkCount; f++) {
+    const fSeed = seed + 30 + f * 23.1;
+    const forkY = len * (0.3 + pseudoRandom(fSeed) * 0.35);
+    const forkDir = pseudoRandom(fSeed + 1) < 0.5 ? -1 : 1;
+    const forkLen = len * (0.3 + pseudoRandom(fSeed + 2) * 0.35);
+    const forkOriginX = rx + w1x * Math.min(1, forkY / y1 || 0) + (forkY > y1 ? (w2x - w1x) * ((forkY - y1) / Math.max(1, y2 - y1)) : 0);
+    const forkMidX = forkOriginX + forkDir * forkLen * 0.55;
+    const forkEndX = forkOriginX + forkDir * (10 + pseudoRandom(fSeed + 3) * 14);
+    const forkW = baseW * 0.32;
+    drawMoleholeRootTube(
+      forkOriginX, forkY,
+      forkMidX, forkY + forkLen * 0.5,
+      forkMidX + forkDir * 4, forkY + forkLen * 0.8,
+      forkEndX, forkY + forkLen,
+      forkW / 2, forkW * 0.4, forkW * 0.2, 0.4,
+      "#3a2814"
+    );
+
+    // small chance of a tiny sub-fork off THIS fork's tip -- real root
+    // clusters branch hierarchically, not just once off the main strand
+    if (pseudoRandom(fSeed + 4) < 0.4) {
+      const subDir = -forkDir;
+      const subLen = forkLen * 0.4;
+      const subEndX = forkEndX + subDir * (6 + pseudoRandom(fSeed + 5) * 8);
+      drawMoleholeRootTube(
+        forkEndX, forkY + forkLen,
+        forkEndX + subDir * subLen * 0.5, forkY + forkLen + subLen * 0.5,
+        forkEndX + subDir * subLen * 0.7, forkY + forkLen + subLen * 0.75,
+        subEndX, forkY + forkLen + subLen,
+        forkW * 0.35, forkW * 0.2, forkW * 0.1, 0.3,
+        "#3a2814"
+      );
+    }
+  }
+
+  ctx.restore();
+}
+
+// ambient floating spores/dust -- always drifting, not gated behind
+// holding anything (unlike ratroom's lamp-lit motes), so the room
+// never feels static. Warm-lit like the lanterns, gentle upward drift.
+const MOLEHOLE_SPORES = Array.from({ length: 16 }, (_, i) => ({
+  x: (i * 47.3) % MOLEHOLE_WIDTH,
+  yBase: 20 + (i * 31.7) % 120,
+  seed: i * 5.3,
+  speed: 0.4 + (i % 5) * 0.15
+}));
+
+function drawMoleholeSpores(camX) {
+  const t = performance.now() * 0.001;
+  MOLEHOLE_SPORES.forEach(s => {
+    const sx = s.x - camX + Math.sin(t * s.speed + s.seed) * 10;
+    if (sx < -10 || sx > canvas.width + 10) return;
+    const sy = s.yBase + Math.sin(t * s.speed * 0.6 + s.seed * 2) * 14;
+    const twinkle = 0.3 + Math.sin(t * 1.3 + s.seed * 3) * 0.25;
+    ctx.fillStyle = `rgba(255,205,140,${Math.max(0.08, twinkle)})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// a foreground root pillar -- a thick root running floor-to-ceiling,
+// drawn LAST (in front of everything else) at each end of the room, so
+// there's real foreground depth instead of the player always reading
+// as the closest thing in the frame
+function drawMoleholeRootPillar(x, camX) {
+  const px = x - camX;
+  const w = 16;
+  ctx.save();
+  ctx.fillStyle = "#1c1208";
+  ctx.beginPath();
+  ctx.moveTo(px - w / 2, 0);
+  ctx.quadraticCurveTo(px - w / 2 - 5, gy * 0.5, px - w / 2 + 3, gy);
+  ctx.lineTo(px + w / 2 + 3, gy);
+  ctx.quadraticCurveTo(px + w / 2 + 5, gy * 0.5, px + w / 2, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(px - 2, 10);
+  ctx.quadraticCurveTo(px - 4, gy * 0.5, px, gy - 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// a bare wooden support pole, standing where the cushion-lift shaft
+// will eventually go -- pure preview/landmark for now, nothing rides
+// on it yet, just enough presence that the room already hints at its
+// own future mechanic
+const MOLEHOLE_SHAFT_X = 650;
+
+function drawMoleholeShaftPreview(camX) {
+  const px = MOLEHOLE_SHAFT_X - camX;
+  ctx.strokeStyle = "#3a2814";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(px, 4);
+  ctx.lineTo(px, gy - 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#241708";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - 1.5, 4);
+  ctx.lineTo(px - 1.5, gy - 2);
+  ctx.stroke();
+}
+
+function drawMoleholeScene(camX) {
+  // warm earthy gradient, darker toward the bottom -- distinct from
+  // ratroom's cooler near-black so the two "underground" rooms don't
+  // read as the same space reused
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#3a2814");
+  sky.addColorStop(1, "#1c1208");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // packed-dirt walls -- soft irregular horizontal bands rather than a
+  // flat fill, so it reads as compacted earth, not a painted box
+  ctx.strokeStyle = "rgba(90,62,34,0.25)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const wy = 20 + i * 45;
+    ctx.beginPath();
+    ctx.moveTo(0, wy);
+    for (let x = 0; x <= canvas.width; x += 40) {
+      ctx.lineTo(x, wy + Math.sin((x + i * 80) * 0.02) * 4);
+    }
+    ctx.stroke();
+  }
+
+  // market alcoves, behind the roots/notice board so nothing floats in
+  // front of the wall they're carved into
+  MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
+  drawMoleHoleNoticeBoard(camX);
+  drawMoleholeShaftPreview(camX);
+
+  // hanging roots dangling from the ceiling, scattered across the room
+  for (let i = 0; i < 10; i++) {
+    const seed = i * 71.3;
+    const rx = (i * (MOLEHOLE_WIDTH / 10) + pseudoRandom(seed) * 40) - camX;
+    if (rx < -20 || rx > canvas.width + 20) continue;
+    const len = 26 + pseudoRandom(seed + 1) * 34;
+    drawMoleholeRoot(rx, len, seed);
+  }
+
+  // a handful of warm lantern points along the walls between the
+  // alcoves, so the room reads as lived-in and lit rather than just
+  // the two shop-glow pools
+  const wallLanterns = [130, 620];
+  wallLanterns.forEach(lx0 => {
+    const lx = lx0 - camX;
+    if (lx < -20 || lx > canvas.width + 20) return;
+    const ly = gy - 60;
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly - 14);
+    ctx.lineTo(lx, ly);
+    ctx.stroke();
+    const glow = ctx.createRadialGradient(lx, ly, 2, lx, ly, 30);
+    glow.addColorStop(0, "rgba(255,195,120,0.4)");
+    glow.addColorStop(1, "rgba(255,195,120,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e8a850";
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // ground
+  ctx.fillStyle = "#241708";
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  ctx.strokeStyle = "rgba(90,62,34,0.4)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, gy);
+  ctx.lineTo(canvas.width, gy);
+  ctx.stroke();
+
+  // faint pebble scatter along the floor for texture
+  for (let i = 0; i < 20; i++) {
+    const seed = i * 19.7 + 400;
+    const px = i * (MOLEHOLE_WIDTH / 20) + pseudoRandom(seed) * 30 - camX;
+    if (px < -10 || px > canvas.width + 10) continue;
+    ctx.fillStyle = "rgba(120,90,55,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(px, gy + 4 + pseudoRandom(seed + 1) * 4, 2.5 + pseudoRandom(seed + 2) * 2, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // exit -- a shaft of light from the hole above, marking the climb
+  // back out to forest
+  const ex = moleHoleExit.x - camX;
+  const beam = ctx.createLinearGradient(ex, 0, ex, gy);
+  beam.addColorStop(0, "rgba(255,225,160,0.35)");
+  beam.addColorStop(1, "rgba(255,225,160,0)");
+  ctx.fillStyle = beam;
+  ctx.beginPath();
+  ctx.moveTo(ex - 22, 0);
+  ctx.lineTo(ex + 22, 0);
+  ctx.lineTo(ex + 8, gy);
+  ctx.lineTo(ex - 8, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  drawMoleholeSpores(camX);
+}
+
+function updateMoleholeScene(deltaTime) {
+  if (keys.spaceJustPressed && isPlayerNear(moleHoleExit.x, 0, 24, 15, 15)) {
+    startSeasonTransition("forest");
+  }
+}
+
 function drawCloudsScene(camX) {
   // multi-stop sky — deeper blue up top, fading toward near-white
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -18883,6 +20146,8 @@ if (currentScene === "autumn") {
   drawOakScene(camX);
 } else if (currentScene === "ratroom") {
   drawRatRoomScene(camX);
+} else if (currentScene === "molehole") {
+  drawMoleholeScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -18982,6 +20247,12 @@ if (drawPy < gy) { // still at least partly above ground — worth drawing
 if (currentScene === "forest") {
   drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
   drawForestBridgePlatform(camX);
+} else if (currentScene === "molehole") {
+  // foreground root pillars, drawn AFTER the player sprite so they sit
+  // in front of it -- real depth instead of the player always being
+  // the closest thing on screen
+  drawMoleholeRootPillar(20, camX);
+  drawMoleholeRootPillar(MOLEHOLE_WIDTH - 20, camX);
 }
 
 
@@ -19401,6 +20672,7 @@ function updateFallState(deltaTime) {
       player.vx = 0;
       player.jumping = true;
       player.launched = true;       // reuses the same floaty-descent physics as a failed swing launch
+      player.launchGravityMult = 1; // reset, same reasoning as the swing-release site above
       player.launchPeakHeight = player.y;
       player.cloudLandingImmunity = 1500; // ms grace period before the goal-cloud hit check can fire again
       cameraX = Math.max(0, player.x - canvas.width * 0.4);
@@ -19630,6 +20902,8 @@ if (currentScene === "autumn") {
   updateOakScene(deltaTime);
 } else if (currentScene === "ratroom") {
   updateRatRoomScene(deltaTime);
+} else if (currentScene === "molehole") {
+  updateMoleholeScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
@@ -19668,10 +20942,13 @@ updateSeasonTransition(deltaTime);
   // actually ends, so the camera stops there even if the player keeps
   // walking on toward their own boundary further out
   if (currentScene === "ratroom" && cameraX > 625) cameraX = 625;
-  // oak's own left-side clamp -- caps how much empty space shows to
-  // the left of the entrance door once the shelf moved closer in,
-  // mirroring the ratroom's right-side pattern above
-  if (currentScene === "oak" && cameraX < 150) cameraX = 150;
+  // molehole's own right-side camera clamp, same small-room pattern
+  if (currentScene === "molehole" && cameraX > MOLEHOLE_WIDTH - canvas.width + 40) cameraX = Math.max(0, MOLEHOLE_WIDTH - canvas.width + 40);
+  // oak's left side has its own tall bookshelf (x:192) that should be
+  // visible/reachable from directly left of the entrance door (x:294) --
+  // clamped a little past the shelf's own left edge (~157) so there's a
+  // touch of breathing room, but not so much empty wall shows past it
+  if (currentScene === "oak" && cameraX < 130) cameraX = 130;
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
@@ -19685,8 +20962,6 @@ updateSeasonTransition(deltaTime);
 }
 
 
-addToInventory("boomerang"); // seeded starting item, per request -- boomerang is available from the start instead of needing to be found
-updateInventoryUI(); // syncs the display with the initial seeded inventory -- without this, seeded debug items (acorn/lamp/pumpkin) exist in data but never actually render in the UI until something else triggers a refresh
 update();
 
 });
