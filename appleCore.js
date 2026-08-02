@@ -2007,29 +2007,44 @@ function applyPhysics(){
 
   } else if (currentScene === "tunneltown") {
 
-  // dug "up" nodes leave a small permanent ledge behind -- same landing
-  // pattern as autumn's platforms/clouds' hop-clouds. This is what
-  // actually makes the vertical dig-chain climbable: dig upward, land
-  // on the little shelf that opens up, dig the next one from there.
-  TUNNEL_NODES.forEach(node => {
-    if (!node.dug || node.dir !== "up") return;
-    const platformTop = node.heightAboveGround;
-    const halfW = 28;
-    const playerBottom = player.y;
+  // any dug node above ground level leaves a permanent floor behind --
+  // same landing pattern as autumn's platforms/clouds' hop-clouds. This
+  // is what actually makes the dig-chain climbable/walkable: dig
+  // upward, land on the little shelf that opens up, dig the next one
+  // from there. When a raised "side" node continues at the SAME height
+  // as its own (already dug) parent, its platform bridges all the way
+  // back to the parent instead of being its own small island -- without
+  // this, a raised horizontal run (like the side-chain's reward path)
+  // had real dug-out, walkable-looking tunnel with literally no floor
+  // in it past the first stub, so you'd fall through before you could
+  // ever reach or dig the next spot. Holding down drops straight
+  // through, so climbing up doesn't mean getting stuck unable to come
+  // back down again.
+  if (!keys.down) {
+    TUNNEL_NODES.forEach(node => {
+      if (!node.dug || node.heightAboveGround <= 0) return;
+      const platformTop = node.heightAboveGround;
+      let left = node.x - 28, right = node.x + 28;
+      const parentPos = tunnelNodeParentPos(node);
+      if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
+        left = Math.min(left, parentPos.x);
+      }
+      const playerBottom = player.y;
 
-    if (
-      player.x + player.width > node.x - halfW &&
-      player.x < node.x + halfW &&
-      playerBottom <= platformTop &&
-      playerBottom >= platformTop - 14 &&
-      player.vy <= 0
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
-  });
+      if (
+        player.x + player.width > left &&
+        player.x < right &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 14 &&
+        player.vy <= 0
+      ) {
+        player.y = platformTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
+    });
+  }
 
   } // end currentScene checks
 
@@ -2049,6 +2064,12 @@ function applyPhysics(){
       player.x = tunnelSafeX;
       player.y = tunnelSafeY;
       player.vy = 0;
+      // also free up jumping -- without this, a snap-back mid-air (after
+      // the double jump was already used) left the player frozen: pinned
+      // to the same spot every single frame with no jump left to escape
+      // with, which is exactly the "stuck, no possible movement" report
+      player.jumping = false;
+      player.usedDoubleJump = false;
     }
   }
 }
@@ -20495,7 +20516,7 @@ function updateMoleholeScene(deltaTime) {
    as older, smaller, and closer to collapse.
    ====================================================== */
 const TUNNELTOWN_WIDTH = 1200; // widened again to fit the deeper reward path (s5 sits at x:1060)
-const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- reads as genuinely person-sized instead of an arbitrary number
+const TUNNEL_PASSAGE_HEIGHT = player.height + 34; // every dug opening (wall, side stub, up stub) shares this -- bumped up from +16, which read as a little too tight over the player's actual head height, especially since the oval reveal narrows toward its edges
 const tunnelTownExit = { x: 150 };
 
 /* ------------------------------------------------------
@@ -20750,6 +20771,7 @@ const TUNNEL_NODES = [
   // up-chain -- three stacked digs straight up off n1, the branch that
   // really exercises the vertical camera. Dead-ends at the top, empty.
   { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
+  { id: "u1s", parent: "u1", x: 610, heightAboveGround: 80, dir: "side", hasItem: false, dug: false }, // a little pocket off the first up-dig, its own dead end
   { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
   { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: false, dug: false },
 
@@ -20759,6 +20781,7 @@ const TUNNEL_NODES = [
   // ground-collision code, so this is the stand-in for now), then
   // splits into a true dead end and the path to the reward, buried deep
   { id: "s1", parent: "n1", x: 760, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "s1u", parent: "s1", x: 760, heightAboveGround: 70, dir: "up", hasItem: false, dug: false }, // a dead-end peek upward mid-chain
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   { id: "s3a", parent: "s2", x: 920, heightAboveGround: 0, dir: "side", hasItem: false, dug: false }, // true dead end
   { id: "s3b", parent: "s2", x: 900, heightAboveGround: 60, dir: "up", hasItem: false, dug: false }, // small step up, continues the reward path
@@ -20797,7 +20820,13 @@ function tunnelWalkLimit() {
 // the render ellipse (see addTunnelHoleToPath below) so ordinary
 // walking/jumping through a real passage never feels clipped
 function tunnelHoleContains(cx, ch, x, h) {
-  const rx = 26, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 10;
+  // generous margins -- wider than the render ellipse and wider than
+  // tunnelWalkLimit's own +30 allowance, so ordinary walking to the edge
+  // of a dug passage never falls into the gap between "the coarse x
+  // limit let you get here" and "the fine collision doesn't think
+  // you're actually inside the hole" (that gap was freezing the player
+  // in place, unable to move at all, once they walked right up against it)
+  const rx = 40, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 20;
   const dx = (x - cx) / rx, dh = (h - ch) / ry;
   return dx * dx + dh * dh <= 1;
 }
@@ -20911,16 +20940,24 @@ function drawTunnelDigSpot(node, camX) {
     // dug -- the oval clip carved into the dirt (see drawTunnelTownScene)
     // is what actually reveals the little opening here; this just adds
     // a few loose rocks/rubble inside it for texture, plus a small
-    // permanent ledge under "up" spots so there's actually something to
-    // land on once you've dug your way up to it
-    if (isUp) {
+    // permanent ledge under any raised spot so there's actually
+    // something to stand/land on -- matching the physics floor in
+    // applyPhysics, which bridges all the way back to an already-dug
+    // parent at the same height instead of leaving separate islands
+    if (node.heightAboveGround > 0) {
+      const parentPos = tunnelNodeParentPos(node);
+      let ledgeLeftWorld = node.x - 28;
+      if (parentPos && tunnelNodeParentDug(node) && Math.abs(parentPos.h - node.heightAboveGround) < 1) {
+        ledgeLeftWorld = Math.min(ledgeLeftWorld, parentPos.x);
+      }
+      const ledgeLeft = ledgeLeftWorld - camX, ledgeRight = sx + 28;
       ctx.fillStyle = "#3a2e22";
-      ctx.fillRect(sx - 28, cy - 4, 56, 6);
+      ctx.fillRect(ledgeLeft, cy - 4, ledgeRight - ledgeLeft, 6);
       ctx.fillStyle = "#241c14";
-      ctx.fillRect(sx - 28, cy, 56, 3);
+      ctx.fillRect(ledgeLeft, cy, ledgeRight - ledgeLeft, 3);
       ctx.strokeStyle = "rgba(90,80,70,0.4)";
       ctx.lineWidth = 1;
-      ctx.strokeRect(sx - 28, cy - 4, 56, 6);
+      ctx.strokeRect(ledgeLeft, cy - 4, ledgeRight - ledgeLeft, 6);
     }
     for (let i = 0; i < 4; i++) {
       const seed = node.x * 1.7 + i * 9.1;
