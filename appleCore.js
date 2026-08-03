@@ -2098,15 +2098,30 @@ function applyPhysics(){
       tunnelSafeX = player.x;
       tunnelSafeY = player.y;
     } else if (tunnelSafeX !== null) {
-      player.x = tunnelSafeX;
-      player.y = tunnelSafeY;
-      player.vy = 0;
-      // also free up jumping -- without this, a snap-back mid-air (after
-      // the double jump was already used) left the player frozen: pinned
-      // to the same spot every single frame with no jump left to escape
-      // with, which is exactly the "stuck, no possible movement" report
-      player.jumping = false;
-      player.usedDoubleJump = false;
+      // try a softer recovery first: pull X back onto the last safe line
+      // but leave Y (and vy) alone -- if THIS frame's height still reads
+      // as revealed once X is back in bounds, let the fall/climb keep
+      // going instead of a full freeze. This is what turns "drifted a
+      // little too far sideways mid-fall, off the edge of what a tube's
+      // straight-line reveal actually covers" into gently bumping back
+      // into the tunnel while still falling, rather than a hard stop --
+      // real jump/fall arcs curve away from the straight-line tube more
+      // than horizontal drift alone accounts for, and this recovers from
+      // that mismatch without needing the reveal geometry itself to
+      // somehow anticipate every possible real trajectory through it.
+      if (tunnelPositionRevealed(tunnelSafeX + player.width / 2, player.y)) {
+        player.x = tunnelSafeX;
+      } else {
+        player.x = tunnelSafeX;
+        player.y = tunnelSafeY;
+        player.vy = 0;
+        // also free up jumping -- without this, a snap-back mid-air (after
+        // the double jump was already used) left the player frozen: pinned
+        // to the same spot every single frame with no jump left to escape
+        // with, which is exactly the "stuck, no possible movement" report
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
     }
   }
 }
@@ -21591,13 +21606,13 @@ const TUNNEL_NODES = [
   // a bit further for a find) without crossing back toward the mound
   { id: "uTop", parent: "u3", x: 750, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "stone", dug: false }, // dx50/dh80 off u3, straight on up and clear
 
-  { id: "u2h", parent: "u2", x: 735, heightAboveGround: 175, dir: "side", hasItem: false, dug: false }, // shares u2's own shelf (dx-25/dh5) -- same shared-ledge idea as before
+  { id: "u2h", parent: "u2", x: 727, heightAboveGround: 254, dir: "up", hasItem: false, dug: false }, // dx-33/dh84 off u2 -- placed ON the actual arc of a held-left single jump from u2 (verified via real-engine sim: the interact radius overlaps the trajectory for ~10 consecutive frames, not just a theoretical height/x combo that the jump never actually passes through). dh84 also clears the ledge-merge tolerance (10)
   // the reconnect -- a shortcut back down, needing the stone (checked
   // separately in updateTunnelTownScene). Used to drop all the way back
   // to x590 near u1's own hole, which cut back through the mound's
   // danger zone during the fall. Now drops straight down closer to
   // u2h's own x, staying right of the mound throughout.
-  { id: "u1r", parent: "u2h", x: 700, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, needsStone: true },
+  { id: "u1r", parent: "u2h", x: 715, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, needsStone: true }, // almost directly below u2h (dx-12) now that u2h moved further out for its own jump -- keeps the hold-down drop nearly vertical so it stays inside the parent tube's reveal band instead of drifting sideways out of it during the fall
 
   // side-chain -- continues along the ground, dips through a low sunken
   // alcove (reads as "descending" without leaving ground level -- true
