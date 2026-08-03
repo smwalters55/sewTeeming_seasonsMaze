@@ -21565,44 +21565,39 @@ function drawTunnelWall(camX) {
 const TUNNEL_NODES = [
   { id: "n1", parent: "wall", x: 620, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
 
-  // up-chain -- three stacked digs straight up off n1, the branch that
+  // up-chain -- climbs straight up and right off n1, the branch that
   // really exercises the vertical camera. Dead-ends at the top, empty.
-  // Whole cluster rebuilt with real breathing room (was 9 nodes crammed
-  // into ~170x230 world units) -- every edge below is checked against
-  // actual jump physics (single/double jump arcs, not guessed), and every
-  // position is checked against the core mound polygon so nothing lands
-  // inside solid ground. Bounded on the left by the wall itself
-  // (TUNNELTOWN_WALL_X=480) -- nothing here goes past x~500, or it'd be
-  // sitting behind the entrance/elder nook instead of past the wall.
+  //
+  // Previously had a "left leg" (u1s1/u1s2) branching back left off u1,
+  // looping around to meet a uTop/uDeep pair. Cut entirely: u1 sits at
+  // x650, just 2 units clear of the core mound's own right edge (the
+  // mound spans roughly x561-648, h118-251 -- verified by sampling
+  // tunnelCoreMoundContains across a grid), so ANY leftward climb off u1
+  // immediately re-enters the mound's danger zone while still gaining
+  // height. tunnelPositionRevealed's mound check is absolute (overrides
+  // any tube), so the moment a jump arc clipped it mid-flight, the
+  // player got snapped back to the same safe spot every single frame --
+  // a total freeze, not just a visual glitch. This wasn't a spacing bug,
+  // it was a real softlock, confirmed by actually simulating the jump
+  // (handleInput+applyPhysics frame-by-frame) rather than estimating
+  // reachability from arc math alone. Every remaining node below stays
+  // at x>=700 or height<=100, comfortably outside the mound's bounds in
+  // BOTH axes -- no more looping back through it, in either direction.
   { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "u1s1", parent: "u1", x: 550, heightAboveGround: 190, dir: "up", hasItem: false, dug: false }, // dx-100/dh110 off u1 -- a real double-jump reach, not a short hop
-  { id: "u1s2", parent: "u1s1", x: 500, heightAboveGround: 280, dir: "up", hasItem: false, dug: false }, // top of the left leg -- dx-50/dh90 off u1s1
-  { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1 -- pushed well right instead of nearly overlapping u1s1's whole climb
-  { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // top of the right leg -- the "dig deep to find one" bridge piece, dx-60/dh130 off u2
+  { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
+  { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
+  // the reward that used to live at the end of the left leg (uTop) --
+  // relocated to a simple continuation past u3 instead, same idea (climb
+  // a bit further for a find) without crossing back toward the mound
+  { id: "uTop", parent: "u3", x: 750, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "stone", dug: false }, // dx50/dh80 off u3, straight on up and clear
 
-  // the two legs connect at the top -- dig across from u1s2 and it opens
-  // well clear of u3's own hole now (used to be only 56 units apart
-  // vertically at nearly the same x -- read as "right next to each
-  // other" no matter how the reward was handled). Real separation now,
-  // both in x and height, while still an easy single jump across.
-  { id: "uTop", parent: "u1s2", x: 540, heightAboveGround: 370, dir: "side", hasItem: true, itemType: "stone", dug: false }, // dx40/dh90 off u1s2, a plain single jump
-  // digging DOWN from the top crossing -- a real side/drop branch, well
-  // clear of u2h's own ledge now instead of sitting almost on top of it
-  { id: "uDeep", parent: "uTop", x: 500, heightAboveGround: 190, dir: "side", hasItem: true, itemType: "crystal", dug: false }, // dx-40, a straight drop down from uTop -- always reachable, no jump needed
-
-  // the reconnect -- ONLY diggable once you've gone up a level (to u2)
-  // and moved horizontally across (u2h), i.e. approaching from the
-  // right/above. Also needs the stone (checked separately in
-  // updateTunnelTownScene, since that's a one-off requirement, not
-  // every node's). Used to sit almost exactly on top of u1's own hole on
-  // the theory that the two openings would visually merge into one --
-  // they don't (each node still draws its own separate hole/rim on top
-  // of the shared ledge), so it read as two overlapping circles jammed
-  // together instead of one clean opening. Kept within the ledge-merge
-  // tolerance (same shared shelf, still a real shortcut) but moved far
-  // enough over that its own hole is visually distinct from u1's.
-  { id: "u2h", parent: "u2", x: 735, heightAboveGround: 175, dir: "side", hasItem: false, dug: false },
-  { id: "u1r", parent: "u2h", x: 590, heightAboveGround: 88, dir: "side", hasItem: false, dug: false, needsStone: true },
+  { id: "u2h", parent: "u2", x: 735, heightAboveGround: 175, dir: "side", hasItem: false, dug: false }, // shares u2's own shelf (dx-25/dh5) -- same shared-ledge idea as before
+  // the reconnect -- a shortcut back down, needing the stone (checked
+  // separately in updateTunnelTownScene). Used to drop all the way back
+  // to x590 near u1's own hole, which cut back through the mound's
+  // danger zone during the fall. Now drops straight down closer to
+  // u2h's own x, staying right of the mound throughout.
+  { id: "u1r", parent: "u2h", x: 700, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, needsStone: true },
 
   // side-chain -- continues along the ground, dips through a low sunken
   // alcove (reads as "descending" without leaving ground level -- true
@@ -21793,6 +21788,28 @@ function tunnelPositionRevealed(x, h) {
   if (x < TUNNELTOWN_WALL_X + 6) return true; // the always-open starting nook
   if (!tunnelWallBroken) return false;
   if (tunnelHoleContains(TUNNELTOWN_WALL_X + 16, 0, x, h)) return true;
+  // a merged ledge (see tunnelMergedLedgeSpan) can walk a good deal wider
+  // than the narrow parent-child tube that originally dug it -- ledges
+  // merge across up to TUNNEL_LEDGE_MERGE_X_TOLERANCE (100px), well past
+  // a tube's own rx (28px) reveal band. Without this, walking along a
+  // wide shelf eventually steps past the tube's reveal band while still
+  // standing on solid, already-dug floor, and the snap-back-to-safe-spot
+  // logic freezes the player in place every frame -- reads exactly like
+  // the core-mound softlock but has nothing to do with the mound.
+  // margin matches the physics ledge-landing check's own AABB tolerance --
+  // that check compares the player's full body rect (x .. x+width) against
+  // [left,right], but here we're given the player's CENTER (x = centerX),
+  // so the equivalent slack is only half the player's width, not the full
+  // width -- using the full width here would under-cover, not over-cover.
+  const tunnelLedgeRevealMargin = player.width / 2 + 2;
+  for (const node of TUNNEL_NODES) {
+    if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) continue;
+    const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
+    if (x >= left - tunnelLedgeRevealMargin && x <= right + tunnelLedgeRevealMargin &&
+        h >= platformTop - 6 && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
+      return true;
+    }
+  }
   for (const node of TUNNEL_NODES) {
     if (!tunnelNodeParentDug(node)) continue; // frontier not reached yet
     const parentPos = tunnelNodeParentPos(node);
