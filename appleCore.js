@@ -194,7 +194,7 @@ const ITEM_ICONS = {
   feather: "🪶",
   cushionPart: "⚙️",
   stone: "🪨",
-  aventurine: "🔶"
+  aragonite: "🟠"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -3456,11 +3456,11 @@ function drawFoliageOcclusion(ctx, x, y, size) {
   ctx.fill();
 }
 
-// aventurine: a tumbled, rounded stone (not faceted like the blue crystal
-// gem) in a deep burnt orange/red, with tiny glinting mica flecks
-// scattered through it -- that schiller sparkle is the actual defining
-// look of real aventurine, not just decoration
-function drawAventurineShape(ctx, x, y, size, rotation) {
+// aragonite: real aragonite's signature look isn't a faceted gem or a
+// tumbled pebble -- it's a "sputnik" cluster, spiky crystal needles
+// radiating outward from a center in a six-point star burst. Reddish-
+// brown/orange coloring (like the classic Moroccan aragonite stars).
+function drawAragoniteShape(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
@@ -3473,41 +3473,48 @@ function drawAventurineShape(ctx, x, y, size, rotation) {
   ctx.arc(0, 0, size * 1.6, 0, Math.PI * 2);
   ctx.fill();
 
-  // tumbled body -- an irregular rounded blob, not a sharp gem cut
-  ctx.fillStyle = "#a8431e";
-  ctx.beginPath();
-  ctx.moveTo(-size * 0.75, -size * 0.1);
-  ctx.quadraticCurveTo(-size * 0.6, -size * 0.85, size * 0.1, -size * 0.8);
-  ctx.quadraticCurveTo(size * 0.85, -size * 0.55, size * 0.7, size * 0.15);
-  ctx.quadraticCurveTo(size * 0.55, size * 0.85, -size * 0.15, size * 0.75);
-  ctx.quadraticCurveTo(-size * 0.8, size * 0.55, -size * 0.75, -size * 0.1);
-  ctx.closePath();
-  ctx.fill();
-
-  // deeper red-brown shading along the lower edge, for roundness
-  ctx.fillStyle = "rgba(90,30,10,0.4)";
-  ctx.beginPath();
-  ctx.ellipse(size * 0.1, size * 0.35, size * 0.55, size * 0.3, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // a soft highlight, tumbled-stone sheen rather than a hard gem facet
-  ctx.fillStyle = "rgba(255,200,150,0.35)";
-  ctx.beginPath();
-  ctx.ellipse(-size * 0.25, -size * 0.4, size * 0.3, size * 0.18, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // scattered mica/schiller flecks -- small warm-gold glints, the actual
-  // signature of aventurine, brighter and more numerous than the blue
-  // crystal's plain corner sparkles
-  const flecks = [
-    [-0.3, -0.3], [0.15, -0.45], [0.4, -0.05], [0.1, 0.3],
-    [-0.4, 0.15], [0.35, 0.4], [-0.05, -0.1]
-  ];
-  flecks.forEach(([fx, fy], i) => {
-    const tw = Math.sin(performance.now() * 0.006 + i * 1.7) * 0.5 + 0.5;
-    ctx.fillStyle = `rgba(255,215,120,${0.5 + tw * 0.5})`;
+  // six spiky crystal needles radiating from the center -- the actual
+  // star-cluster form, not a rounded/faceted body
+  const spikes = 6;
+  for (let i = 0; i < spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2;
+    const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
+    const tipX = Math.cos(a) * len, tipY = Math.sin(a) * len;
+    const perpA = a + Math.PI / 2;
+    const baseW = size * 0.11;
+    const baseX1 = Math.cos(perpA) * baseW, baseY1 = Math.sin(perpA) * baseW;
+    ctx.fillStyle = "#a8431e";
     ctx.beginPath();
-    ctx.arc(fx * size, fy * size, 0.9 + tw * 0.6, 0, Math.PI * 2);
+    ctx.moveTo(baseX1, baseY1);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(-baseX1, -baseY1);
+    ctx.closePath();
+    ctx.fill();
+    // lighter edge along one side of each needle, for a faceted look
+    ctx.fillStyle = "rgba(230,150,100,0.45)";
+    ctx.beginPath();
+    ctx.moveTo(baseX1 * 0.6, baseY1 * 0.6);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // dark core where all the needles converge
+  ctx.fillStyle = "#5a2410";
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  // sparkle accents at a couple of the needle tips
+  const tips = [0, 2, 4];
+  tips.forEach(i => {
+    const a = (i / spikes) * Math.PI * 2;
+    const tw = Math.sin(performance.now() * 0.006 + i * 1.7) * 0.5 + 0.5;
+    const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
+    ctx.fillStyle = `rgba(255,215,150,${0.5 + tw * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * len, Math.sin(a) * len, 1 + tw * 0.6, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -3930,8 +3937,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawTulipShape(ctx, x, y, size, rotation);
   } else if (itemType === "crystal") {
     drawCrystalShape(ctx, x, y, size, rotation);
-  } else if (itemType === "aventurine") {
-    drawAventurineShape(ctx, x, y, size, rotation);
+  } else if (itemType === "aragonite") {
+    drawAragoniteShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
     drawBucketShape(ctx, x, y, size, rotation);
   } else if (itemType === "honey") {
@@ -21223,11 +21230,14 @@ function drawElderTrio(camX) {
       // "wrapped at the neck" regardless of how tall the body is, since
       // it no longer scales down toward the belly on shorter builds.
       const neckY = headCY + 12;
-      // also narrower and less droopy than the last pass -- full body
-      // width read fine higher up, but that same width down at the belly
-      // was a big part of the diaper look. A snugger wrap now that it's
-      // actually at neck height.
-      const scarfHalfW = bodyW * 0.36;
+      // wide enough to actually clear the body's OWN silhouette on both
+      // sides (bodyW/2) -- at 0.36 the band sat entirely inside the
+      // front profile and never reached the body's edges at all, which
+      // is exactly why it read as a flat patch resting on the belly
+      // instead of something wrapped around the neck. Peeking past both
+      // edges is what actually sells "goes around," not just width on
+      // its own.
+      const scarfHalfW = bodyW * 0.58;
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
       ctx.moveTo(ex - scarfHalfW, neckY);
@@ -21240,11 +21250,20 @@ function drawElderTrio(camX) {
       ctx.fillStyle = elder.accessoryColor;
       roundRect(ctx, ex + scarfHalfW * 0.2, neckY - 1, 4, 6, 1.5);
       ctx.fill();
-      // one short hanging tail from the knot
+      // hanging tails on BOTH sides, not just one -- a single tail read
+      // as something dangling loose off to one side rather than a wrap;
+      // matching tails on each shoulder is what makes it look wrapped
+      // around and knotted, not just draped on top.
       ctx.beginPath();
       ctx.moveTo(ex + scarfHalfW * 0.2, neckY + 4);
       ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 12);
       ctx.lineTo(ex + scarfHalfW * 0.2 + 3, neckY + 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(ex - scarfHalfW * 0.75, neckY + 3);
+      ctx.lineTo(ex - scarfHalfW * 0.9, neckY + 11);
+      ctx.lineTo(ex - scarfHalfW * 0.75 - 3, neckY + 10);
       ctx.closePath();
       ctx.fill();
       // a shaded underside where the wrap droops, so it reads as cloth
@@ -21263,72 +21282,43 @@ function drawElderTrio(camX) {
       ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 1.5, ex + scarfHalfW * 0.15 - 2, neckY);
       ctx.stroke();
 
-      // the little bonnet -- classic silhouette: a simple rounded dome
-      // over just the crown of the head, open around the face, with two
-      // small puffs where the brim meets the ties (not a full ring of
-      // scallops circling the whole head -- that read as a big fluffy
-      // flower crown instead of a bonnet). Drawn last (on top of
-      // everything above) so it sits over the head rather than under
-      // the scarf's own draw order.
+      // the little bonnet -- NOT a hood or a wraparound cap. Just one
+      // simple oval shape, and only the TOP arc of it is drawn, sitting
+      // on the crown like a sun rising over a rounded hill. Everything
+      // below stays completely open -- no covering the face, no dipping
+      // down over the ears or sides. That's the whole design.
       if (elder.bonnet) {
-        // Jemima Puddle-Duck style -- a full, round, poofy hood that
-        // wraps down past where the ears would be on both sides (not
-        // just a flat dome over the crown), open only in a small wedge
-        // at the very bottom for the face. Gathered pleat lines from
-        // the crown, a darker trim along the face opening, and a bow
-        // tied at the chin.
         const bonnetColor = elder.bonnetColor || "#c98a9e";
-        const bonnetRX = bodyW * 0.62;
-        const bonnetRY = 17;
-        const domeCY = headCY - 1;
-        const openHalf = 0.95; // radians -- half-width of the face opening at the bottom
-        const start = Math.PI / 2 + openHalf;
-        const end = Math.PI / 2 - openHalf + Math.PI * 2;
+        const bonnetRX = bodyW * 0.5;
+        const bonnetRY = 13;
+        // the "horizon" -- where the oval's top arc meets the head,
+        // right at the crown, well above eye/face level
+        const horizonY = bodyTop + 3;
 
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.moveTo(headCX + Math.cos(start) * bonnetRX, domeCY + Math.sin(start) * bonnetRY);
-        ctx.ellipse(headCX, domeCY, bonnetRX, bonnetRY, 0, start, end);
+        ctx.moveTo(headCX - bonnetRX, horizonY);
+        // just the top half of the oval (angles π to 2π), like a sun
+        // cresting the hill -- nothing drawn below the horizon line
+        ctx.ellipse(headCX, horizonY, bonnetRX, bonnetRY, 0, Math.PI, Math.PI * 2);
         ctx.closePath();
         ctx.fill();
 
-        // gathered pleat lines, radiating down from the crown -- what
-        // sells the "poofy fabric" read instead of a smooth hard cap
-        ctx.strokeStyle = "rgba(0,0,0,0.16)";
-        ctx.lineWidth = 0.8;
-        [-0.55, -0.18, 0.18, 0.55].forEach(t => {
-          ctx.beginPath();
-          ctx.moveTo(headCX, domeCY - bonnetRY * 0.75);
-          ctx.lineTo(headCX + t * bonnetRX * 0.95, domeCY + bonnetRY * 0.55);
-          ctx.stroke();
-        });
-
-        // a darker trim line along the face-opening edge
-        ctx.strokeStyle = "rgba(0,0,0,0.28)";
-        ctx.lineWidth = 1.3;
+        // a simple darker trim along the horizon edge, so it reads as a
+        // brim rather than just fading into the head color
+        ctx.strokeStyle = "rgba(0,0,0,0.22)";
+        ctx.lineWidth = 1.1;
         ctx.beginPath();
-        ctx.ellipse(headCX, domeCY, bonnetRX, bonnetRY, 0, start, end);
+        ctx.moveTo(headCX - bonnetRX, horizonY);
+        ctx.lineTo(headCX + bonnetRX, horizonY);
         ctx.stroke();
 
-        // a single bow tied at the chin
-        ctx.fillStyle = bonnetColor;
+        // one soft highlight near the top, so it doesn't read as a flat
+        // solid-color cutout
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
-        ctx.ellipse(headCX - 3, headCY + 13, 2.6, 1.6, 0.55, 0, Math.PI * 2);
-        ctx.ellipse(headCX + 3, headCY + 13, 2.6, 1.6, -0.55, 0, Math.PI * 2);
+        ctx.ellipse(headCX - bonnetRX * 0.25, horizonY - bonnetRY * 0.55, bonnetRX * 0.3, bonnetRY * 0.35, -0.3, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "rgba(0,0,0,0.25)";
-        ctx.beginPath();
-        ctx.arc(headCX, headCY + 13, 1.1, 0, Math.PI * 2);
-        ctx.fill();
-        // short tails hanging below the bow
-        ctx.strokeStyle = bonnetColor;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(headCX - 1.5, headCY + 15);
-        ctx.lineTo(headCX - 3, headCY + 20);
-        ctx.moveTo(headCX + 1.5, headCY + 15);
-        ctx.lineTo(headCX + 3, headCY + 20);
-        ctx.stroke();
       }
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out
@@ -21577,42 +21567,42 @@ const TUNNEL_NODES = [
 
   // up-chain -- three stacked digs straight up off n1, the branch that
   // really exercises the vertical camera. Dead-ends at the top, empty.
+  // Whole cluster rebuilt with real breathing room (was 9 nodes crammed
+  // into ~170x230 world units) -- every edge below is checked against
+  // actual jump physics (single/double jump arcs, not guessed), and every
+  // position is checked against the core mound polygon so nothing lands
+  // inside solid ground. Bounded on the left by the wall itself
+  // (TUNNELTOWN_WALL_X=480) -- nothing here goes past x~500, or it'd be
+  // sitting behind the entrance/elder nook instead of past the wall.
   { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  // a real spaced-out side pocket off the first up-dig -- two actual
-  // jumps away (diagonal, both in x and height) instead of sitting
-  // right on top of u1's own marker, which read as two dig spots
-  // confusingly crammed right next to each other
-  { id: "u1s1", parent: "u1", x: 560, heightAboveGround: 155, dir: "up", hasItem: false, dug: false },
-  { id: "u1s2", parent: "u1s1", x: 520, heightAboveGround: 210, dir: "up", hasItem: false, dug: false }, // top of the left leg
-  { id: "u2", parent: "u1", x: 690, heightAboveGround: 160, dir: "up", hasItem: false, dug: false },
-  { id: "u3", parent: "u2", x: 650, heightAboveGround: 240, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // top of the right leg -- the "dig deep to find one" bridge piece
+  { id: "u1s1", parent: "u1", x: 550, heightAboveGround: 190, dir: "up", hasItem: false, dug: false }, // dx-100/dh110 off u1 -- a real double-jump reach, not a short hop
+  { id: "u1s2", parent: "u1s1", x: 500, heightAboveGround: 280, dir: "up", hasItem: false, dug: false }, // top of the left leg -- dx-50/dh90 off u1s1
+  { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1 -- pushed well right instead of nearly overlapping u1s1's whole climb
+  { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // top of the right leg -- the "dig deep to find one" bridge piece, dx-60/dh130 off u2
 
   // the two legs connect at the top -- dig across from u1s2 and it opens
-  // just above u3's own hole (not exactly on top of it anymore -- sitting
-  // at the identical spot made the two read as one featureless blob, no
-  // sense that you'd actually crossed from a horizontal passage into a
-  // separate vertical shaft). Now there's a real pocket of dirt between
-  // the two holes, with just enough overlap to still walk/drop straight
-  // from one into the other -- climb the left leg, cross the horizontal
-  // top tunnel here, drop down into the right leg's shaft, and come back
-  // down (u3 -> u2 -> u1) without having to backtrack the way you came.
-  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 310, dir: "side", hasItem: true, itemType: "stone", dug: false }, // pushed further from u3 (was 296, only 56 above it -- still read as "right next to each other") and given its own reward -- it was a pure connector before, which read as "opens into nothing." Height checked against real jump physics (u1s2->uTop, dx130) -- 310 is close to the actual max reachable, so it's not pushed further
-  // digging DOWN from the top crossing -- was previously just an invisible
-  // drop-through into u2/u3 with nothing marking it as an actual action,
-  // which read as a dead end. Now a real dig, with its own small find at
-  // the bottom, tucked into the safe gap next to the permanent dirt core.
-  { id: "uDeep", parent: "uTop", x: 600, heightAboveGround: 115, dir: "side", hasItem: true, itemType: "crystal", dug: false }, // pulled further down -- was only 15 above u2h's ledge, close enough to read as a second useless platform right on top of it
+  // well clear of u3's own hole now (used to be only 56 units apart
+  // vertically at nearly the same x -- read as "right next to each
+  // other" no matter how the reward was handled). Real separation now,
+  // both in x and height, while still an easy single jump across.
+  { id: "uTop", parent: "u1s2", x: 540, heightAboveGround: 370, dir: "side", hasItem: true, itemType: "stone", dug: false }, // dx40/dh90 off u1s2, a plain single jump
+  // digging DOWN from the top crossing -- a real side/drop branch, well
+  // clear of u2h's own ledge now instead of sitting almost on top of it
+  { id: "uDeep", parent: "uTop", x: 500, heightAboveGround: 190, dir: "side", hasItem: true, itemType: "crystal", dug: false }, // dx-40, a straight drop down from uTop -- always reachable, no jump needed
 
   // the reconnect -- ONLY diggable once you've gone up a level (to u2)
   // and moved horizontally across (u2h), i.e. approaching from the
   // right/above. Also needs the stone (checked separately in
   // updateTunnelTownScene, since that's a one-off requirement, not
-  // every node's). Positioned right on top of u1's own hole, so once
-  // it's dug the two openings physically merge into one -- from then
-  // on it's walkable from either side, even though it's still just a
-  // normal parent-chain node under the hood, no graph rework needed.
-  { id: "u2h", parent: "u2", x: 665, heightAboveGround: 165, dir: "side", hasItem: false, dug: false },
-  { id: "u1r", parent: "u2h", x: 655, heightAboveGround: 85, dir: "side", hasItem: false, dug: false, needsStone: true },
+  // every node's). Used to sit almost exactly on top of u1's own hole on
+  // the theory that the two openings would visually merge into one --
+  // they don't (each node still draws its own separate hole/rim on top
+  // of the shared ledge), so it read as two overlapping circles jammed
+  // together instead of one clean opening. Kept within the ledge-merge
+  // tolerance (same shared shelf, still a real shortcut) but moved far
+  // enough over that its own hole is visually distinct from u1's.
+  { id: "u2h", parent: "u2", x: 735, heightAboveGround: 175, dir: "side", hasItem: false, dug: false },
+  { id: "u1r", parent: "u2h", x: 590, heightAboveGround: 88, dir: "side", hasItem: false, dug: false, needsStone: true },
 
   // side-chain -- continues along the ground, dips through a low sunken
   // alcove (reads as "descending" without leaving ground level -- true
@@ -21664,10 +21654,11 @@ const TUNNEL_NODES = [
   { id: "s5r2", parent: "s5r", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   // the hidden pocket underneath s5trap -- only reachable by falling
   // through the trapdoor, landing back at true ground level right below
-  // where the corridor was. A little tumbled aventurine (mica-flecked,
-  // burnt orange/red) -- a real "ooh" find for something you can only
-  // get by falling for the trapdoor, not a common surface item.
-  { id: "s5trapNook", parent: "s5trap", x: 1070, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "aventurine", dug: false }
+  // where the corridor was. A little aragonite star-cluster (spiky
+  // needles radiating from a center, reddish-brown) -- a real "ooh" find
+  // for something you can only get by falling for the trapdoor, not a
+  // common surface item.
+  { id: "s5trapNook", parent: "s5trap", x: 1070, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "aragonite", dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
