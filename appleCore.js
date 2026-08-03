@@ -193,7 +193,8 @@ const ITEM_ICONS = {
   bridgePiece: "🪵",
   feather: "🪶",
   cushionPart: "⚙️",
-  stone: "🪨"
+  stone: "🪨",
+  aventurine: "🔶"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -2059,9 +2060,12 @@ function applyPhysics(){
   // back down again.
   if (!keys.down) {
     TUNNEL_NODES.forEach(node => {
-      if (!node.dug || node.heightAboveGround <= 0) return;
-      const platformTop = node.heightAboveGround;
-      const { left, right } = tunnelMergedLedgeSpan(node);
+      // a dug trapdoor never itself provides a landing platform -- that's
+      // the whole point of it (see tunnelMergedLedgeSpan's matching gap
+      // clip). Its neighbors' own spans still get checked normally, just
+      // clipped short of the gap.
+      if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) return;
+      const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
       const playerBottom = player.y;
 
       if (
@@ -3452,6 +3456,64 @@ function drawFoliageOcclusion(ctx, x, y, size) {
   ctx.fill();
 }
 
+// aventurine: a tumbled, rounded stone (not faceted like the blue crystal
+// gem) in a deep burnt orange/red, with tiny glinting mica flecks
+// scattered through it -- that schiller sparkle is the actual defining
+// look of real aventurine, not just decoration
+function drawAventurineShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const pulse = Math.sin(performance.now() * 0.004) * 0.5 + 0.5;
+
+  // soft warm glow behind it
+  ctx.fillStyle = `rgba(200,90,40,${0.2 + pulse * 0.2})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // tumbled body -- an irregular rounded blob, not a sharp gem cut
+  ctx.fillStyle = "#a8431e";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.75, -size * 0.1);
+  ctx.quadraticCurveTo(-size * 0.6, -size * 0.85, size * 0.1, -size * 0.8);
+  ctx.quadraticCurveTo(size * 0.85, -size * 0.55, size * 0.7, size * 0.15);
+  ctx.quadraticCurveTo(size * 0.55, size * 0.85, -size * 0.15, size * 0.75);
+  ctx.quadraticCurveTo(-size * 0.8, size * 0.55, -size * 0.75, -size * 0.1);
+  ctx.closePath();
+  ctx.fill();
+
+  // deeper red-brown shading along the lower edge, for roundness
+  ctx.fillStyle = "rgba(90,30,10,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(size * 0.1, size * 0.35, size * 0.55, size * 0.3, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a soft highlight, tumbled-stone sheen rather than a hard gem facet
+  ctx.fillStyle = "rgba(255,200,150,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(-size * 0.25, -size * 0.4, size * 0.3, size * 0.18, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // scattered mica/schiller flecks -- small warm-gold glints, the actual
+  // signature of aventurine, brighter and more numerous than the blue
+  // crystal's plain corner sparkles
+  const flecks = [
+    [-0.3, -0.3], [0.15, -0.45], [0.4, -0.05], [0.1, 0.3],
+    [-0.4, 0.15], [0.35, 0.4], [-0.05, -0.1]
+  ];
+  flecks.forEach(([fx, fy], i) => {
+    const tw = Math.sin(performance.now() * 0.006 + i * 1.7) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255,215,120,${0.5 + tw * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(fx * size, fy * size, 0.9 + tw * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
+
 // crystal: hand-drawn blue gem, not an emoji — guarantees the color, plus
 // a pulsing glow and a couple sparkle accents for the "sparkling" feel
 function drawCrystalShape(ctx, x, y, size, rotation) {
@@ -3868,6 +3930,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawTulipShape(ctx, x, y, size, rotation);
   } else if (itemType === "crystal") {
     drawCrystalShape(ctx, x, y, size, rotation);
+  } else if (itemType === "aventurine") {
+    drawAventurineShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
     drawBucketShape(ctx, x, y, size, rotation);
   } else if (itemType === "honey") {
@@ -21199,43 +21263,72 @@ function drawElderTrio(camX) {
       ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 1.5, ex + scarfHalfW * 0.15 - 2, neckY);
       ctx.stroke();
 
-      // the little bonnet -- a soft ruffled dome over the head, tied
-      // with a small bow under the chin. Drawn last (on top of
+      // the little bonnet -- classic silhouette: a simple rounded dome
+      // over just the crown of the head, open around the face, with two
+      // small puffs where the brim meets the ties (not a full ring of
+      // scallops circling the whole head -- that read as a big fluffy
+      // flower crown instead of a bonnet). Drawn last (on top of
       // everything above) so it sits over the head rather than under
       // the scarf's own draw order.
       if (elder.bonnet) {
+        // Jemima Puddle-Duck style -- a full, round, poofy hood that
+        // wraps down past where the ears would be on both sides (not
+        // just a flat dome over the crown), open only in a small wedge
+        // at the very bottom for the face. Gathered pleat lines from
+        // the crown, a darker trim along the face opening, and a bow
+        // tied at the chin.
         const bonnetColor = elder.bonnetColor || "#c98a9e";
-        const bonnetTopY = headCY - 8;
+        const bonnetRX = bodyW * 0.62;
+        const bonnetRY = 17;
+        const domeCY = headCY - 1;
+        const openHalf = 0.95; // radians -- half-width of the face opening at the bottom
+        const start = Math.PI / 2 + openHalf;
+        const end = Math.PI / 2 - openHalf + Math.PI * 2;
+
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.ellipse(headCX, bonnetTopY, bodyW / 2 + 2, 7.5, 0, Math.PI, Math.PI * 2);
+        ctx.moveTo(headCX + Math.cos(start) * bonnetRX, domeCY + Math.sin(start) * bonnetRY);
+        ctx.ellipse(headCX, domeCY, bonnetRX, bonnetRY, 0, start, end);
+        ctx.closePath();
         ctx.fill();
-        // a ruffled brim -- a little scalloped row of bumps along the
-        // front edge, rather than a flat cutoff, so it reads as soft
-        // gathered fabric instead of a hard helmet shape
+
+        // gathered pleat lines, radiating down from the crown -- what
+        // sells the "poofy fabric" read instead of a smooth hard cap
+        ctx.strokeStyle = "rgba(0,0,0,0.16)";
+        ctx.lineWidth = 0.8;
+        [-0.55, -0.18, 0.18, 0.55].forEach(t => {
+          ctx.beginPath();
+          ctx.moveTo(headCX, domeCY - bonnetRY * 0.75);
+          ctx.lineTo(headCX + t * bonnetRX * 0.95, domeCY + bonnetRY * 0.55);
+          ctx.stroke();
+        });
+
+        // a darker trim line along the face-opening edge
+        ctx.strokeStyle = "rgba(0,0,0,0.28)";
+        ctx.lineWidth = 1.3;
         ctx.beginPath();
-        for (let i = -3; i <= 3; i++) {
-          const bx = headCX + i * (bodyW / 7);
-          ctx.moveTo(bx + 2.2, bonnetTopY + 5.5);
-          ctx.arc(bx, bonnetTopY + 5.5, 2.2, 0, Math.PI * 2);
-        }
-        ctx.fill();
-        // ribbon ties, looping down to a small bow under the chin
-        ctx.strokeStyle = bonnetColor;
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(headCX - 5, bonnetTopY + 7);
-        ctx.quadraticCurveTo(headCX, headCY + 11, headCX + 5, bonnetTopY + 7);
+        ctx.ellipse(headCX, domeCY, bonnetRX, bonnetRY, 0, start, end);
         ctx.stroke();
+
+        // a single bow tied at the chin
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.ellipse(headCX - 2, headCY + 10, 2.2, 1.4, 0.6, 0, Math.PI * 2);
-        ctx.ellipse(headCX + 2, headCY + 10, 2.2, 1.4, -0.6, 0, Math.PI * 2);
+        ctx.ellipse(headCX - 3, headCY + 13, 2.6, 1.6, 0.55, 0, Math.PI * 2);
+        ctx.ellipse(headCX + 3, headCY + 13, 2.6, 1.6, -0.55, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "rgba(0,0,0,0.25)";
         ctx.beginPath();
-        ctx.arc(headCX, headCY + 10, 1, 0, Math.PI * 2);
+        ctx.arc(headCX, headCY + 13, 1.1, 0, Math.PI * 2);
         ctx.fill();
+        // short tails hanging below the bow
+        ctx.strokeStyle = bonnetColor;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(headCX - 1.5, headCY + 15);
+        ctx.lineTo(headCX - 3, headCY + 20);
+        ctx.moveTo(headCX + 1.5, headCY + 15);
+        ctx.lineTo(headCX + 3, headCY + 20);
+        ctx.stroke();
       }
     } else if (elder.accessory === "cap") {
       // a flat cap over a balding head -- a little wispy tuft peeking out
@@ -21294,7 +21387,21 @@ function drawElderSpeechBubble(camX) {
    fine cracks. Screen-space rect (x0..x0+w, 0..h) -- seedBase should
    vary by caller so different fills don't look identical.
    ------------------------------------------------------ */
-function drawDetailedDirtFill(x0, w, h, seedBase) {
+// camX is optional -- pass it when this fill represents a scrolling
+// area (a whole room's background) rather than a small fixed strip
+// (like the entry wall's own narrow dirt fill, which stays correct
+// without it since its x0 already tracks -camX and its width is a
+// small fixed strip, not the full viewport -- see drawTunnelWall).
+// Without camX, every feature was sampled purely in SCREEN space with
+// a fixed seed, so it never moved as the camera panned at all -- while
+// the actual carved tunnel walls/holes scrolled normally with world
+// position. That mismatch read as a distant, static parallax backdrop
+// behind a close, moving foreground -- backwards for a tunnel this
+// tight, where the dirt fill IS the nearby wall, not a far-off layer.
+// With camX, features are sampled from a fixed WORLD range instead and
+// converted to screen space the same way everything else in this scene
+// is (worldX - camX), so they scroll in lockstep with the real walls.
+function drawDetailedDirtFill(x0, w, h, seedBase, camX) {
   if (w <= 0) return;
   ctx.save();
   ctx.beginPath();
@@ -21304,12 +21411,19 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
   ctx.fillStyle = "#241c14";
   ctx.fillRect(x0, 0, w, h);
 
+  const scrolling = camX !== undefined;
+  // wide enough to cover tunnel town's actual dig extent (nodes run out
+  // to x~1220) with margin -- a fixed world span, NOT tied to viewport width
+  const worldW = 1500;
+  const worldX0 = -100;
+
   // blotchy tonal variation -- breaks up the flat base color into
   // patches of slightly warmer/cooler earth
-  const blotchCount = Math.max(6, Math.round(w / 34));
+  const blotchCount = Math.max(6, Math.round((scrolling ? worldW : w) / 34));
   for (let i = 0; i < blotchCount; i++) {
     const seed = seedBase + i * 13.7;
-    const bx = x0 + pseudoRandom(seed) * w;
+    const bx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
+    if (scrolling && (bx < x0 - 40 || bx > x0 + w + 40)) continue;
     const by = pseudoRandom(seed + 1) * h;
     const r = 12 + pseudoRandom(seed + 2) * 16; // smaller cap than before -- less likely to read as a full hole-sized shape
     // both variants used to sit close to a real dig spot's own warm
@@ -21327,10 +21441,11 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
 
   // embedded rocks -- varied size/tone, with a small highlight so they
   // read as rounded stones rather than flat dots
-  const rockCount = Math.max(4, Math.round(w / 46));
+  const rockCount = Math.max(4, Math.round((scrolling ? worldW : w) / 46));
   for (let i = 0; i < rockCount; i++) {
     const seed = seedBase + 500 + i * 17.3;
-    const rx = x0 + pseudoRandom(seed) * w;
+    const rx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
+    if (scrolling && (rx < x0 - 40 || rx > x0 + w + 40)) continue;
     const ry = pseudoRandom(seed + 1) * h;
     const rr = 3 + pseudoRandom(seed + 2) * 6;
     ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#6a6154" : "#453d32";
@@ -21346,10 +21461,11 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
   // fine cracks/root-hairs threading through
   ctx.strokeStyle = "rgba(10,7,4,0.45)";
   ctx.lineWidth = 1;
-  const crackCount = Math.max(3, Math.round(w / 60));
+  const crackCount = Math.max(3, Math.round((scrolling ? worldW : w) / 60));
   for (let i = 0; i < crackCount; i++) {
     const seed = seedBase + 900 + i * 11.1;
-    const cx = x0 + pseudoRandom(seed) * w;
+    const cx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
+    if (scrolling && (cx < x0 - 40 || cx > x0 + w + 40)) continue;
     const cy = pseudoRandom(seed + 1) * h;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -21360,12 +21476,13 @@ function drawDetailedDirtFill(x0, w, h, seedBase) {
   // a handful of actual gnarly old roots, distinct from the thin straight
   // cracks above -- curved, sometimes forked, real character rather than
   // pure geometric fill
-  const rootCount = Math.max(2, Math.round(w / 90));
+  const rootCount = Math.max(2, Math.round((scrolling ? worldW : w) / 90));
   for (let i = 0; i < rootCount; i++) {
     const seed = seedBase + 1300 + i * 29.3;
-    const rx = x0 + pseudoRandom(seed) * w;
-    const ry = pseudoRandom(seed + 1) * h;
-    drawRootStrand(rx, ry, 14 + pseudoRandom(seed + 2) * 16, seed);
+    const rrx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
+    if (scrolling && (rrx < x0 - 40 || rrx > x0 + w + 40)) continue;
+    const rry = pseudoRandom(seed + 1) * h;
+    drawRootStrand(rrx, rry, 14 + pseudoRandom(seed + 2) * 16, seed);
   }
 
   ctx.restore();
@@ -21479,7 +21596,7 @@ const TUNNEL_NODES = [
   // from one into the other -- climb the left leg, cross the horizontal
   // top tunnel here, drop down into the right leg's shaft, and come back
   // down (u3 -> u2 -> u1) without having to backtrack the way you came.
-  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 296, dir: "side", hasItem: false, dug: false },
+  { id: "uTop", parent: "u1s2", x: 650, heightAboveGround: 310, dir: "side", hasItem: true, itemType: "stone", dug: false }, // pushed further from u3 (was 296, only 56 above it -- still read as "right next to each other") and given its own reward -- it was a pure connector before, which read as "opens into nothing." Height checked against real jump physics (u1s2->uTop, dx130) -- 310 is close to the actual max reachable, so it's not pushed further
   // digging DOWN from the top crossing -- was previously just an invisible
   // drop-through into u2/u3 with nothing marking it as an actual action,
   // which read as a dead end. Now a real dig, with its own small find at
@@ -21518,6 +21635,13 @@ const TUNNEL_NODES = [
   { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
   { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
+  // a trapdoor spot -- looks like a normal dig along the same corridor,
+  // but dug open it turns out hollow underneath (see trapGap handling in
+  // tunnelMergedLedgeSpan/drawTunnelDigSpot) and drops you straight down
+  // into s5trapNook below instead of giving you a ledge to stand on.
+  // Rendered with a visibly cracked/broken look once dug, not a silent
+  // gotcha -- you can see it's different before you commit to it.
+  { id: "s5trap", parent: "s5", x: 1070, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, trapGap: true },
   { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }, // more passage continuing right past the reward, its own dead end
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
@@ -21534,8 +21658,16 @@ const TUNNEL_NODES = [
   { id: "s5u3", parent: "s5u2b", x: 1045, heightAboveGround: 405, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // real dead end reward, now at the top of the bent climb
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
-  // read as everything else this deep
-  { id: "s5r2", parent: "s5r", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
+  // read as everything else this deep. A plain dead end, same as s5r
+  // itself -- not every spur needs loot, some are just there for the
+  // exploration/breathing-room feel.
+  { id: "s5r2", parent: "s5r", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
+  // the hidden pocket underneath s5trap -- only reachable by falling
+  // through the trapdoor, landing back at true ground level right below
+  // where the corridor was. A little tumbled aventurine (mica-flecked,
+  // burnt orange/red) -- a real "ooh" find for something you can only
+  // get by falling for the trapdoor, not a common surface item.
+  { id: "s5trapNook", parent: "s5trap", x: 1070, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "aventurine", dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
@@ -21558,16 +21690,54 @@ function tunnelNodeParentPos(node) {
 // Used by both the physics floor and the ledge render so they always
 // agree on where the walkable span actually is.
 const TUNNEL_LEDGE_MERGE_TOLERANCE = 10;
+// height tolerance alone isn't enough to decide two nodes belong to the
+// same shelf -- several completely unrelated branches happen to land on
+// the same round heightAboveGround (e.g. u1 at 80 and s1u1 at 80, ~160
+// world units apart on opposite sides of the map). Without also checking
+// x-distance, those got merged into one "ledge" spanning the whole gap
+// between them -- a plank rendered floating across a stretch of solid,
+// never-dug dirt, which is exactly what reads as a hole/platform whose
+// placement "makes zero sense." Real same-shelf merges (u1/u1r, u2/u2h,
+// the sequential s5 corridor nodes, etc.) are all within ~80 units of
+// each other, so 100 comfortably covers intended merges while excluding
+// cross-branch coincidences.
+const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 100;
+// also returns a single unified `height` for the whole merged group (the
+// lowest of the bunch) -- each node used to draw/collide at its OWN
+// heightAboveGround even after their spans merged, so e.g. u1 (80) and
+// u1r (85) merged into one wide span but still drew two separate planks
+// 5px apart vertically, reading as "two platforms stacked right on top
+// of each other" instead of the single shelf the span-merge intended.
 function tunnelMergedLedgeSpan(node) {
-  let left = node.x - 24, right = node.x + 24;
+  let left = node.x - 24, right = node.x + 24, height = node.heightAboveGround;
   TUNNEL_NODES.forEach(other => {
-    if (other === node || !other.dug || other.heightAboveGround <= 0) return;
-    if (Math.abs(other.heightAboveGround - node.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE) {
+    if (other === node || !other.dug || other.heightAboveGround <= 0 || other.trapGap) return;
+    if (Math.abs(other.heightAboveGround - node.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE &&
+        Math.abs(other.x - node.x) <= TUNNEL_LEDGE_MERGE_X_TOLERANCE) {
       left = Math.min(left, other.x - 24);
       right = Math.max(right, other.x + 24);
+      height = Math.min(height, other.heightAboveGround);
     }
   });
-  return { left, right };
+  // a dug trapdoor punches a real gap in what would otherwise be one
+  // continuous shelf -- without this, this node's own span still bridges
+  // straight across it (each node computes its span independently), so
+  // the floor would silently re-appear under the "broken" plank instead
+  // of actually dropping the player through it. Clip to whichever gap is
+  // closest on either side of THIS node's own position.
+  // NOT gated on the trap already being inside the current left/right --
+  // a neighboring node one hop further down the chain (like s4, merged
+  // with s5 but not directly with the trap itself) can independently
+  // reach to within a few px of the gap without ever containing the
+  // trap's exact x, and this must still clip that overlap away. Math.min/
+  // max alone are safe here: they only ever pull left/right IN toward the
+  // gap, never push them back out past where they already were.
+  TUNNEL_NODES.forEach(other => {
+    if (!other.trapGap || !other.dug) return;
+    if (other.x > node.x) right = Math.min(right, other.x - 20);
+    if (other.x < node.x) left = Math.max(left, other.x + 20);
+  });
+  return { left, right, height };
 }
 
 // how far you can physically WALK -- right up to the edge of any
@@ -21585,8 +21755,9 @@ function tunnelWalkLimit(playerH) {
   // exists, underneath a tunnel that's really only open up in the air.
   // Only nodes reasonably close to the player's own current height now
   // count toward the limit -- matches the same margin the real 2D
-  // dig-collision uses, so this coarse backup stays consistent with it.
-  const ry = TUNNEL_PASSAGE_HEIGHT / 2 + 20;
+  // dig-collision uses (tunnelHoleContains), so this coarse backup
+  // stays consistent with it.
+  const ry = TUNNEL_PASSAGE_HEIGHT / 2 + 8;
   TUNNEL_NODES.forEach(node => {
     if (tunnelNodeParentDug(node) && Math.abs(node.heightAboveGround - (playerH || 0)) <= ry) {
       limit = Math.max(limit, node.x + 30);
@@ -21600,13 +21771,17 @@ function tunnelWalkLimit(playerH) {
 // the render ellipse (see addTunnelHoleToPath below) so ordinary
 // walking/jumping through a real passage never feels clipped
 function tunnelHoleContains(cx, ch, x, h) {
-  // generous margins -- wider than the render ellipse and wider than
-  // tunnelWalkLimit's own +30 allowance, so ordinary walking to the edge
-  // of a dug passage never falls into the gap between "the coarse x
-  // limit let you get here" and "the fine collision doesn't think
-  // you're actually inside the hole" (that gap was freezing the player
-  // in place, unable to move at all, once they walked right up against it)
-  const rx = 40, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 20;
+  // margins wider than the render ellipse (rx24, ry~50 -- see
+  // addTunnelHoleToPath) so ordinary walking to the edge of a dug
+  // passage never feels clipped or freezes at the coarse-vs-fine
+  // boundary gap. Used to be MUCH wider (rx40, ry+20) -- in a tightly
+  // packed cluster like the up-chain (9 nodes inside a ~150x300 box),
+  // that many overlapping oversized ellipses unioned into one big blob
+  // of walkable "revealed" space well beyond what any tube actually
+  // draws, letting the player stand in open air with no visible tunnel
+  // under them at all. Trimmed back to a smaller, still-comfortable
+  // buffer over the render size.
+  const rx = 28, ry = TUNNEL_PASSAGE_HEIGHT / 2 + 8;
   const dx = (x - cx) / rx, dh = (h - ch) / ry;
   return dx * dx + dh * dh <= 1;
 }
@@ -21813,23 +21988,58 @@ function drawTunnelDigSpot(node, camX) {
     // something to stand/land on -- matching the physics floor in
     // applyPhysics, which bridges all the way back to an already-dug
     // parent at the same height instead of leaving separate islands
-    if (node.heightAboveGround > 0) {
+    if (node.trapGap) {
+      // a broken-through plank, not a normal ledge -- two short jagged
+      // stubs with open dark air between them, so there's a visible tell
+      // that this spot won't hold you before you actually step on it
+      const stubW = 16;
+      const trapCy = gy + cameraY - node.heightAboveGround;
+      ctx.fillStyle = "#4a3a2a";
+      ctx.beginPath();
+      ctx.moveTo(sx - 30, trapCy - 5);
+      ctx.lineTo(sx - 30 + stubW, trapCy - 6);
+      ctx.lineTo(sx - 30 + stubW + 4, trapCy + 2);
+      ctx.lineTo(sx - 30, trapCy + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(sx + 30, trapCy - 5);
+      ctx.lineTo(sx + 30 - stubW, trapCy - 7);
+      ctx.lineTo(sx + 30 - stubW - 5, trapCy + 1);
+      ctx.lineTo(sx + 30, trapCy + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(140,120,90,0.35)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // the gap itself -- pure dark void, so it reads as a hole, not dirt
+      ctx.fillStyle = "#0c0a08";
+      ctx.beginPath();
+      ctx.ellipse(sx, trapCy + 4, 20, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (node.heightAboveGround > 0) {
       const mergedSpan = tunnelMergedLedgeSpan(node);
       const ledgeLeft = mergedSpan.left - camX, ledgeRight = mergedSpan.right - camX;
+      // the whole merged group draws at ONE shared height (the lowest
+      // node in the group), not each node's own -- otherwise a merged
+      // pair like u1/u1r (heights 5 apart) each drew their own ledge and
+      // it read as two planks stacked right on top of each other instead
+      // of the single shelf the span-merge was supposed to produce.
+      const ledgeCy = gy + cameraY - mergedSpan.height;
       // a couple of stubby support posts underneath, reaching down into
       // the dug pocket below the ledge -- without these, an elevated
       // ledge just floated in the dark with nothing visibly holding it
       // up. Only reaches as far as this node's own carved-out hole (not
       // all the way to true ground, which for a high climb would be way
       // outside the small revealed oval and get clipped away invisibly).
-      const postBottom = cy + (TUNNEL_PASSAGE_HEIGHT / 2 + 6) - 4;
+      const postBottom = ledgeCy + (TUNNEL_PASSAGE_HEIGHT / 2 + 6) - 4;
       ctx.strokeStyle = "#241c14";
       ctx.lineWidth = 4;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(ledgeLeft + 6, cy + 2);
+      ctx.moveTo(ledgeLeft + 6, ledgeCy + 2);
       ctx.lineTo(ledgeLeft + 6, postBottom);
-      ctx.moveTo(ledgeRight - 6, cy + 2);
+      ctx.moveTo(ledgeRight - 6, ledgeCy + 2);
       ctx.lineTo(ledgeRight - 6, postBottom);
       ctx.stroke();
 
@@ -21837,12 +22047,12 @@ function drawTunnelDigSpot(node, camX) {
       // underside -- so it actually reads clearly against the dark cave
       // background instead of blending in as a thin sliver
       ctx.fillStyle = "#5a4632";
-      ctx.fillRect(ledgeLeft, cy - 6, ledgeRight - ledgeLeft, 6);
+      ctx.fillRect(ledgeLeft, ledgeCy - 6, ledgeRight - ledgeLeft, 6);
       ctx.fillStyle = "#241c14";
-      ctx.fillRect(ledgeLeft, cy, ledgeRight - ledgeLeft, 4);
+      ctx.fillRect(ledgeLeft, ledgeCy, ledgeRight - ledgeLeft, 4);
       ctx.strokeStyle = "rgba(140,120,90,0.5)";
       ctx.lineWidth = 1;
-      ctx.strokeRect(ledgeLeft, cy - 6, ledgeRight - ledgeLeft, 6);
+      ctx.strokeRect(ledgeLeft, ledgeCy - 6, ledgeRight - ledgeLeft, 6);
     }
     for (let i = 0; i < 4; i++) {
       const seed = node.x * 1.7 + i * 9.1;
@@ -22097,7 +22307,7 @@ function drawTunnelTownScene(camX) {
   // through the entry nook plus small oval "openings" carved along
   // whatever's actually been dug, connected by narrow tunnel tubes.
   // NOT a wide flood-lit region that jumps open all at once.
-  drawDetailedDirtFill(0, canvas.width, canvas.height, 9000);
+  drawDetailedDirtFill(0, canvas.width, canvas.height, 9000, camX);
 
   ctx.save();
   ctx.beginPath();
