@@ -220,7 +220,13 @@ function getHeldItemWorldPos() {
   const bob = Math.sin(performance.now() * 0.005) * 4;
   return {
     x: player.x + player.width / 2,
-    y: gy - player.y - player.height - 14 + bob
+    // + cameraY matches the player sprite's own screen offset (see the
+    // player draw's `gy + cameraY - player.height - player.y`) -- without
+    // it, the held-item icon stays pinned to a ground-relative position
+    // while the player (and cameraY) scroll upward together in tunnel
+    // town's climb, so the higher you climb, the further the icon drifts
+    // above the visible player until it's off-screen entirely.
+    y: gy + cameraY - player.y - player.height - 14 + bob
   };
 }
 
@@ -2058,7 +2064,22 @@ function applyPhysics(){
   // ever reach or dig the next spot. Holding down drops straight
   // through, so climbing up doesn't mean getting stuck unable to come
   // back down again.
-  if (!keys.down) {
+  // a dug trapdoor's own gap should ALWAYS drop the player through the
+  // moment they walk over it -- no need to hold "down" first, so it
+  // reads as "the floor gave way" rather than a control the player has
+  // to know about. The neighboring shelves' spans are already clipped
+  // short of this same x-range (see tunnelMergedLedgeSpan's matching
+  // gap clip), but the landing check below is edge-tolerant on purpose
+  // (checks player.x+width against the left shelf's boundary and plain
+  // player.x against the right shelf's), which left a several-px sliver
+  // right over the gap where the player's own width still bridged both
+  // neighboring shelves at once -- walking across read as solid ground
+  // instead of a real hole. Checking the gap directly here closes that
+  // sliver so the fall is reliable every time, not a coin-flip.
+  const overTrapGap = TUNNEL_NODES.some(n => n.trapGap && n.dug &&
+    Math.abs((player.x + player.width / 2) - n.x) <= 20);
+
+  if (!keys.down && !overTrapGap) {
     TUNNEL_NODES.forEach(node => {
       // a dug trapdoor never itself provides a landing platform -- that's
       // the whole point of it (see tunnelMergedLedgeSpan's matching gap
@@ -3895,7 +3916,12 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawShovelShape(ctx, x, y, size, rotation);
   } else if (itemType === "cushionPart") {
     // a small dug-up gear -- the mechanical piece the cushion shaft
-    // needs to extend further, found buried in the tunnel town dig
+    // needs to extend further, found buried in the tunnel town dig.
+    // Reskinned to read more clearly as "salvaged machine part" rather
+    // than clean clip-art: a couple of teeth chipped/worn down unevenly,
+    // a real visible center bore (not just a filled dot), and a short
+    // broken connecting rod stub implying it snapped off something
+    // bigger -- rather than a lone gear that exists for no reason.
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
@@ -3904,24 +3930,49 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.beginPath();
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      const rr = i % 2 === 0 ? r : r * 0.65;
+      // teeth 2 and 5 worn down shorter than the rest -- an uneven,
+      // scavenged look instead of a pristine gear
+      const worn = i === 2 ? 0.8 : (i === 5 ? 0.72 : 1);
+      const rr = (i % 2 === 0 ? r : r * 0.65) * worn;
       ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
     }
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#3a3630";
+    ctx.strokeStyle = "#5c584e";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // a short snapped-off connecting rod, implying this used to be
+    // attached to something larger
+    ctx.strokeStyle = "#6b665a";
+    ctx.lineWidth = r * 0.3;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+    ctx.moveTo(r * 0.55, r * 0.55);
+    ctx.lineTo(r * 1.15, r * 1.15);
+    ctx.stroke();
+    // visible open center bore, not a filled hub -- reads as a real
+    // machined hole rather than a painted-on dot
+    ctx.fillStyle = "#241f1a";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "#4a453c";
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.restore();
   } else if (itemType === "stone") {
     // a sturdy little dig-worthy stone -- the key that lets you break
-    // through the connector back down toward the first up-dig
+    // through the connector back down toward the first up-dig. Kept
+    // deliberately dull/matte -- a translucent gloss highlight used to
+    // sit on it, which read as a cut gem rather than a plain rock ("the
+    // hard stone... kinda reads as shitty diamond"). Swapped for a flat
+    // darker facet plus a soft charcoal core shadow instead, so it still
+    // reads as faceted/dimensional without looking polished.
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
     const r = size * 0.42;
-    ctx.fillStyle = "#8a8a86";
+    ctx.fillStyle = "#7d7a72";
     ctx.beginPath();
     ctx.moveTo(-r, -r * 0.2);
     ctx.lineTo(-r * 0.4, -r);
@@ -3931,11 +3982,16 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.lineTo(-r * 0.6, r * 0.7);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    // one darker facet (not a highlight) -- gives it a cut-rock feel
+    // without the shine
+    ctx.fillStyle = "rgba(40,36,30,0.28)";
     ctx.beginPath();
-    ctx.ellipse(-r * 0.2, -r * 0.35, r * 0.35, r * 0.2, -0.4, 0, Math.PI * 2);
+    ctx.moveTo(r * 0.5, -r * 0.8);
+    ctx.lineTo(r, r * 0.1);
+    ctx.lineTo(r * 0.15, r * 0.05);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
@@ -21601,18 +21657,25 @@ const TUNNEL_NODES = [
   { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
   { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
   { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
+  // a leftward jog before the final climb -- without this, this whole
+  // chain reads as a near-mirror of the s5 up-branch (which already
+  // doglegs left via s5uTurn before continuing up), so the two climb
+  // shafts looked "really similar" side by side. Same-height side node
+  // off u3, well clear of the mound (mound only spans height 118-251;
+  // this sits at 300, above it, so the lower x is safe here even though
+  // it wouldn't be lower down)
+  { id: "u3Turn", parent: "u3", x: 610, heightAboveGround: 300, dir: "side", hasItem: false, dug: false },
   // the reward that used to live at the end of the left leg (uTop) --
-  // relocated to a simple continuation past u3 instead, same idea (climb
-  // a bit further for a find) without crossing back toward the mound
-  { id: "uTop", parent: "u3", x: 750, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "stone", dug: false }, // dx50/dh80 off u3, straight on up and clear
+  // now climbs off the jog instead of straight off u3, same relative
+  // jump (dx50/dh80) that already worked off u3 directly, just shifted
+  // to launch from the new turn spot
+  { id: "uTop", parent: "u3Turn", x: 660, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "stone", dug: false }, // dx50/dh80 off u3Turn, straight on up and clear
 
-  { id: "u2h", parent: "u2", x: 727, heightAboveGround: 254, dir: "up", hasItem: false, dug: false }, // dx-33/dh84 off u2 -- placed ON the actual arc of a held-left single jump from u2 (verified via real-engine sim: the interact radius overlaps the trajectory for ~10 consecutive frames, not just a theoretical height/x combo that the jump never actually passes through). dh84 also clears the ledge-merge tolerance (10)
-  // the reconnect -- a shortcut back down, needing the stone (checked
-  // separately in updateTunnelTownScene). Used to drop all the way back
-  // to x590 near u1's own hole, which cut back through the mound's
-  // danger zone during the fall. Now drops straight down closer to
-  // u2h's own x, staying right of the mound throughout.
-  { id: "u1r", parent: "u2h", x: 715, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, needsStone: true }, // almost directly below u2h (dx-12) now that u2h moved further out for its own jump -- keeps the hold-down drop nearly vertical so it stays inside the parent tube's reveal band instead of drifting sideways out of it during the fall
+  // u2h/u1r removed -- u2h was a jump-only side spot that never led
+  // anywhere once the shared-shelf/reconnect idea it was built for got
+  // dropped, and u1r (the "needs a stone" reconnect below it) went with
+  // it. Both read as pointless dead ends in actual play ("this hole
+  // seems useless, prob remove").
 
   // side-chain -- continues along the ground, dips through a low sunken
   // alcove (reads as "descending" without leaving ground level -- true
@@ -21685,9 +21748,9 @@ function tunnelNodeParentPos(node) {
 
 // any two dug nodes that land at nearly the same height read as one
 // physical shelf, whether or not they're actually parent/child -- e.g.
-// u1r sits right on top of u1's own opening by design (see comment at
-// its definition), so their little ledges should merge into a single
-// wide one rather than draw as two separate, uselessly-stacked planks.
+// s5/s5r sit at the same height by design, so their little ledges
+// should merge into a single wide one rather than draw as two
+// separate, uselessly-stacked planks.
 // Used by both the physics floor and the ledge render so they always
 // agree on where the walkable span actually is.
 const TUNNEL_LEDGE_MERGE_TOLERANCE = 10;
@@ -21698,17 +21761,16 @@ const TUNNEL_LEDGE_MERGE_TOLERANCE = 10;
 // x-distance, those got merged into one "ledge" spanning the whole gap
 // between them -- a plank rendered floating across a stretch of solid,
 // never-dug dirt, which is exactly what reads as a hole/platform whose
-// placement "makes zero sense." Real same-shelf merges (u1/u1r, u2/u2h,
-// the sequential s5 corridor nodes, etc.) are all within ~80 units of
-// each other, so 100 comfortably covers intended merges while excluding
-// cross-branch coincidences.
+// placement "makes zero sense." Real same-shelf merges (the sequential
+// s5 corridor nodes, etc.) are all within ~80 units of each other, so
+// 100 comfortably covers intended merges while excluding cross-branch
+// coincidences.
 const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 100;
 // also returns a single unified `height` for the whole merged group (the
 // lowest of the bunch) -- each node used to draw/collide at its OWN
-// heightAboveGround even after their spans merged, so e.g. u1 (80) and
-// u1r (85) merged into one wide span but still drew two separate planks
-// 5px apart vertically, reading as "two platforms stacked right on top
-// of each other" instead of the single shelf the span-merge intended.
+// heightAboveGround even after their spans merged, which could still
+// read as separate stacked planks a few px apart vertically instead of
+// the single shelf the span-merge intended.
 function tunnelMergedLedgeSpan(node) {
   let left = node.x - 24, right = node.x + 24, height = node.heightAboveGround;
   TUNNEL_NODES.forEach(other => {
@@ -21735,6 +21797,15 @@ function tunnelMergedLedgeSpan(node) {
   // gap, never push them back out past where they already were.
   TUNNEL_NODES.forEach(other => {
     if (!other.trapGap || !other.dug) return;
+    // height-gated the same way the merge above is -- a trapdoor only
+    // punches a gap in a shelf it's actually PART OF. Without this, a
+    // trapdoor was clipping any span that happened to pass near its x
+    // at ANY height, including elevated walkways far above/below it
+    // that have nothing to do with it -- e.g. s5trap (height 90)
+    // truncating the merged shelf between s5u2/s5uTurn up at height
+    // 250, carving an unintended gap in a walkway 160 units above it
+    // where no plank ever got drawn.
+    if (Math.abs(other.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return;
     if (other.x > node.x) right = Math.min(right, other.x - 20);
     if (other.x < node.x) left = Math.max(left, other.x + 20);
   });
@@ -22035,10 +22106,13 @@ function drawTunnelDigSpot(node, camX) {
       ctx.strokeStyle = "rgba(140,120,90,0.35)";
       ctx.lineWidth = 1;
       ctx.stroke();
-      // the gap itself -- pure dark void, so it reads as a hole, not dirt
+      // the gap itself -- pure dark void, so it reads as a hole, not dirt.
+      // A hand-torn ragged outline (same technique as every dig-spot
+      // marker) instead of a perfect ellipse -- a broken-through plank
+      // wouldn't punch a geometrically clean oval, and the perfect-oval
+      // version read as a sticker rather than an actual splintered gap.
       ctx.fillStyle = "#0c0a08";
-      ctx.beginPath();
-      ctx.ellipse(sx, trapCy + 4, 20, 9, 0, 0, Math.PI * 2);
+      pathFromPoints(irregularOvalPoints(sx, trapCy + 4, 20, 9, node.x * 3.7 + 4100, 0.3, 10));
       ctx.fill();
     } else if (node.heightAboveGround > 0) {
       const mergedSpan = tunnelMergedLedgeSpan(node);
@@ -22086,6 +22160,20 @@ function drawTunnelDigSpot(node, camX) {
       ctx.ellipse(rx, ry, 2.6 + pseudoRandom(seed + 3) * 2.6, 2, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // a small pile of loose dirt clumps actually resting on the floor of
+    // the hole -- distinct from the scattered rubble flecks above (those
+    // float anywhere in the opening), this reads as "the stuff that got
+    // dug out of here piled up at the bottom" instead of the hole just
+    // being an empty void the moment it opens
+    const floorY = gy + cameraY - node.heightAboveGround;
+    for (let i = 0; i < 3; i++) {
+      const seed = node.x * 2.3 + i * 13.7 + 5200;
+      const px = sx + (pseudoRandom(seed) - 0.5) * 30;
+      const pr = 4 + pseudoRandom(seed + 1) * 3;
+      ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#4a3018" : "#3a2814";
+      pathFromPoints(irregularOvalPoints(px, floorY - pr * 0.4, pr, pr * 0.55, seed + 3, 0.3, 7));
+      ctx.fill();
+    }
   }
 }
 
@@ -22099,9 +22187,9 @@ const TUNNEL_DIG_ANIM_DURATION = 1900; // slightly faster than the initial slow 
 const TUNNEL_DIG_SWINGS = 5;
 let activeDig = null; // { kind: "wall" | "spot", index, x, heightAboveGround, t }
 // a brief floating hint shown when trying to dig a spot that's gated on
-// something other than just having a shovel (currently only u1r, which
-// needs the stone) -- without this, trying to dig it just silently did
-// nothing, which read as broken rather than "you're missing something"
+// something other than just having a shovel (a needsStone spot) --
+// without this, trying to dig it just silently did nothing, which read
+// as broken rather than "you're missing something"
 const TUNNEL_BLOCKED_HINT_DURATION = 1800;
 let tunnelBlockedHint = { active: false, x: 0, heightAboveGround: 0, t: 0 };
 
@@ -22161,12 +22249,49 @@ function drawDiggingFlourish(camX) {
   // of every swing, so using it up the moment the spot opens actually
   // reads as earned rather than an invisible inventory check
   const digNode = activeDig.kind === "spot" ? TUNNEL_NODES.find(n => n.id === activeDig.id) : null;
+  // match drawTunnelDigSpot's own markY formula exactly, so the swing
+  // actually lands on the marker glyph instead of floating a fixed
+  // distance above the node's raw height -- that flat offset used to
+  // assume every spot sat as high as an "up" node, so "side"/"sunken"
+  // spots (whose markers sit noticeably lower, see markY above) had the
+  // whole animation swinging into empty air several px above the actual
+  // dig marker. The wall uses its own fixed 40 (see drawTunnelWall).
+  const swingHeightOffset = activeDig.kind === "wall"
+    ? 40
+    : (digNode ? (digNode.dir === "up" ? 12 : (digNode.dir === "sunken" ? 26 : 34)) : 34);
   if (digNode && digNode.needsStone) {
-    const jolt = swingLocalT > 0.3 && swingLocalT < 0.6 ? (0.6 - Math.abs(swingLocalT - 0.45) * 6) * 3 : 0;
-    drawCollectible(ctx, activeDig.x - camX, sy - 8 - jolt, 9, jolt * 0.3, "stone");
+    // made noticeably more obvious than the first pass ("i honestly
+    // barely noticed it") -- drawn bigger (9->15), and the plunge beat
+    // now punches with a real jolt (doubled) plus a brief white
+    // flash/spark burst instead of just a small vertical bump, so the
+    // stone visibly reacts to every hit rather than sitting there quietly
+    const stoneX = activeDig.x - camX;
+    const baseY = sy - (swingHeightOffset - 8);
+    const plunging = swingLocalT > 0.3 && swingLocalT < 0.6;
+    const jolt = plunging ? (0.6 - Math.abs(swingLocalT - 0.45) * 6) * 6 : 0;
+    const flash = plunging ? Math.max(0, 1 - Math.abs(swingLocalT - 0.45) * 10) : 0;
+    if (flash > 0) {
+      ctx.save();
+      ctx.globalAlpha = flash * 0.7;
+      ctx.fillStyle = "#fff8e0";
+      ctx.beginPath();
+      ctx.arc(stoneX, baseY - jolt, 14 + flash * 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + swingIndex;
+        ctx.strokeStyle = `rgba(255,240,200,${flash * 0.8})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(stoneX + Math.cos(a) * 10, baseY - jolt + Math.sin(a) * 10);
+        ctx.lineTo(stoneX + Math.cos(a) * (16 + flash * 6), baseY - jolt + Math.sin(a) * (16 + flash * 6));
+        ctx.stroke();
+      }
+    }
+    drawCollectible(ctx, stoneX, baseY - jolt, 15, jolt * 0.25, "stone");
   }
 
-  drawShovelShape(ctx, sx + bobX, sy - 16 + bobY, 13, angle);
+  drawShovelShape(ctx, sx + bobX, sy - swingHeightOffset + bobY, 13, angle);
 
   // each swing throws a real clump of dirt out in a visible arc (rises
   // then falls, tossed forward in whichever direction the player's
@@ -22185,7 +22310,7 @@ function drawDiggingFlourish(camX) {
       const speed = 26 + pseudoRandom(seed + 1) * 18;
       const arcHeight = 24 + pseudoRandom(seed + 2) * 12;
       const clumpX = sx + throwDir * speed * lp + spread;
-      const clumpY = sy - 10 - Math.sin(lp * Math.PI) * arcHeight;
+      const clumpY = sy - (swingHeightOffset - 6) - Math.sin(lp * Math.PI) * arcHeight;
       ctx.globalAlpha = 1 - lp * 0.25;
       ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#4a3018" : "#3a2814";
       ctx.beginPath();
