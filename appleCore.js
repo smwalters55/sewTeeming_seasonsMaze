@@ -116,7 +116,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "forest"; // TEMPORARY — debugging the forest pass, revert to "autumn" when done
+let currentScene = "molehole"; // TEMPORARY — debugging the mole hole pass, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -147,7 +147,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 175, // TEMPORARY — spawns at the forest scene's normal spring-door entry point, revert to 400 when done
+  x: 150, // TEMPORARY — spawns at the mole hole's normal entry landing spot (right where you fall in from the forest hole), revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -24151,13 +24151,15 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY — seeds a forest-start loadout so the forest pass can be
-// tested immediately without backtracking through autumn/spring/tunnel
-// town first. Revert (remove this block, and the door-filled lines
-// below) when done.
+// TEMPORARY — seeds a mole-hole-entrance loadout so this pass can be
+// tested immediately without backtracking through autumn/spring/
+// forest first. The willow (shovel) sits at forest x2500, well before
+// the mole hole entrance hole at x3650, so the shovel's plausibly
+// already in hand. Revert (remove this block, and the door-filled
+// lines below) when done.
 addToInventory("shovel");
 heldItem = "shovel";
-for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible tunnel-town/mole-hole haul by this point
+for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible forest haul by the time you reach the mole hole entrance
 for (let i = 0; i < 3; i++) addToInventory("acorn");
 addToInventory("appleSlice"); // apple splits into 3 -- 2 spent filling the autumn->spring and spring->forest doors, 1 left over
 connections[0].filled = true;
