@@ -2076,8 +2076,26 @@ function applyPhysics(){
   // neighboring shelves at once -- walking across read as solid ground
   // instead of a real hole. Checking the gap directly here closes that
   // sliver so the fall is reliable every time, not a coin-flip.
+  // X-only was wrong -- it suppressed ledge-landing at that x column on
+  // EVERY shelf at every height, not just the trapdoor's own shelf. Any
+  // totally unrelated platform that happened to pass through the same x
+  // (a long corridor running underneath/above the trap, elsewhere in the
+  // dig graph) fell through the moment the player crossed that column,
+  // even though they were nowhere near the actual gap.
+  // A tight height band around the trap's OWN height alone isn't right
+  // either (tried that first, verified wrong via a real frame-by-frame
+  // sim) -- once the player falls even a little past that band, the
+  // general ledge-catch loop re-engages and its own edge-tolerance
+  // (checks player.x+width, not just player.x) still reaches a few px
+  // into the gap from the shelf just past it, snapping them back onto a
+  // completely different, nearby shelf mid-fall instead of continuing
+  // down to the real drop target. Only an UPPER bound (no lower one) --
+  // suppress for the whole ride from the trap's own shelf down to true
+  // ground -- covers the entire real fall path through this one gap
+  // without opening the door back up to unrelated shelves elsewhere.
   const overTrapGap = TUNNEL_NODES.some(n => n.trapGap && n.dug &&
-    Math.abs((player.x + player.width / 2) - n.x) <= 20);
+    Math.abs((player.x + player.width / 2) - n.x) <= 20 &&
+    player.y <= n.heightAboveGround + 14);
 
   if (!keys.down && !overTrapGap) {
     TUNNEL_NODES.forEach(node => {
@@ -21368,35 +21386,36 @@ function drawElderTrio(camX) {
         const bonnetColor = elder.bonnetColor || "#c98a9e";
         const bonnetRX = bodyW * 0.5;
         const bonnetRY = 13;
-        // the "horizon" -- where the crown's top arc meets the head,
-        // right at the crown, well above eye/face level
+        // the "horizon" -- where the crown meets the head, well above
+        // eye/face level
         const horizonY = bodyTop + 3;
-
-        // crown -- the puffy gathered top (unchanged shape from before)
+        const jawY = headCY + 9;
+        // one single continuous outline for crown + both brims instead
+        // of a rounded dome with two separate flap shapes glued onto its
+        // sides -- the separate flaps were bulging outward and reading
+        // as detached "ear" appendages rather than part of the hat.
+        // Peaked top (not a rounded arc), then each side sweeps straight
+        // down to a THIN tapered brim tip near the jaw, then curves back
+        // up along the inner, face-hugging edge -- no gap, no outward
+        // bulge, and pointed rather than rounded at the crown.
+        const peakY = horizonY - bonnetRY * 1.15;
+        // the very top isn't a sharp point -- it's the tip of a tall,
+        // narrow vertical oval (tall/thin, not wide/flat), so it tapers
+        // to a small rounded cap instead of coming to a spike
+        const tipRX = bonnetRX * 0.09;
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.moveTo(headCX - bonnetRX, horizonY);
-        ctx.ellipse(headCX, horizonY, bonnetRX, bonnetRY, 0, Math.PI, Math.PI * 2);
+        ctx.moveTo(headCX - tipRX, peakY);
+        ctx.quadraticCurveTo(headCX, peakY - bonnetRY * 0.3, headCX + tipRX, peakY);
+        ctx.quadraticCurveTo(headCX + bonnetRX * 0.65, peakY + bonnetRY * 0.3, headCX + bonnetRX, horizonY);
+        ctx.quadraticCurveTo(headCX + bonnetRX * 0.7, jawY - 4, headCX + bonnetRX * 0.4, jawY);
+        ctx.quadraticCurveTo(headCX + bonnetRX * 0.22, horizonY + 5, headCX + bonnetRX * 0.12, horizonY);
+        ctx.quadraticCurveTo(headCX, horizonY + 3, headCX - bonnetRX * 0.12, horizonY);
+        ctx.quadraticCurveTo(headCX - bonnetRX * 0.22, horizonY + 5, headCX - bonnetRX * 0.4, jawY);
+        ctx.quadraticCurveTo(headCX - bonnetRX * 0.7, jawY - 4, headCX - bonnetRX, horizonY);
+        ctx.quadraticCurveTo(headCX - bonnetRX * 0.65, peakY + bonnetRY * 0.3, headCX - tipRX, peakY);
         ctx.closePath();
         ctx.fill();
-
-        // the brim -- a real poke-bonnet brim on each side, curving
-        // forward and down from the crown's edge toward jaw level
-        // instead of stopping dead at the horizon line. A crown with no
-        // brim is exactly what read as a flat dome/turban rather than an
-        // actual bonnet -- the curved brim framing the face on both
-        // sides is the defining shape (see reference photos).
-        const jawY = headCY + 9;
-        [-1, 1].forEach(side => {
-          const edgeX = headCX + side * bonnetRX;
-          ctx.fillStyle = bonnetColor;
-          ctx.beginPath();
-          ctx.moveTo(edgeX, horizonY);
-          ctx.quadraticCurveTo(edgeX + side * 3, horizonY + (jawY - horizonY) * 0.5, edgeX - side * 2, jawY);
-          ctx.quadraticCurveTo(edgeX - side * 6, jawY - 2, edgeX - side * 7, horizonY + 2);
-          ctx.closePath();
-          ctx.fill();
-        });
 
         // a simple darker trim along the crown's horizon edge, so it
         // reads as a brim seam rather than just fading into the head color
@@ -21407,11 +21426,11 @@ function drawElderTrio(camX) {
         ctx.lineTo(headCX + bonnetRX, horizonY);
         ctx.stroke();
 
-        // one soft highlight near the top, so it doesn't read as a flat
+        // one soft highlight near the peak, so it doesn't read as a flat
         // solid-color cutout
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
-        ctx.ellipse(headCX - bonnetRX * 0.25, horizonY - bonnetRY * 0.55, bonnetRX * 0.3, bonnetRY * 0.35, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(headCX - bonnetRX * 0.2, peakY + bonnetRY * 0.7, bonnetRX * 0.22, bonnetRY * 0.3, -0.3, 0, Math.PI * 2);
         ctx.fill();
 
         // a thin ribbon tie knotted under the chin -- the detail that
@@ -21674,6 +21693,30 @@ function drawTunnelWall(camX) {
   }
 }
 
+// re-draws the wall's dirt around the entrance hole ON TOP of the player
+// sprite -- called after the player's drawn, so the doorway's rim reads
+// as being in FRONT of the player passing through it, instead of the
+// sprite always floating on top of the hole graphic underneath it
+function drawTunnelEntranceOcclusion(camX) {
+  if (!tunnelWallBroken) return;
+  const wx = TUNNELTOWN_WALL_X - camX;
+  const holeCX = wx + 16, holeBottomY = gy + cameraY;
+  const openGrowP = Math.min(1, wallBreakPoofT / 300);
+  const holeRY = (TUNNEL_PASSAGE_HEIGHT * 0.55 * openGrowP) / 2, holeRX = 18;
+  // cheap early-out -- only bother when the player's close enough to the
+  // doorway to actually overlap it on screen
+  if (Math.abs((player.x - camX) - holeCX) > 70) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(holeCX - 70, holeBottomY - holeRY * 2 - 20, 140, holeRY * 2 + 40);
+  // cut the hole's own silhouette back out of that rect (evenodd) so the
+  // fill below only lands on the dirt AROUND the opening, never inside it
+  ctx.ellipse(holeCX, holeBottomY - holeRY, holeRX, holeRY, 0, 0, Math.PI * 2);
+  ctx.clip("evenodd");
+  drawDetailedDirtFill(wx - 4, 40, gy + cameraY, TUNNELTOWN_WALL_X * 3.1);
+  ctx.restore();
+}
+
 /* ------------------------------------------------------
    TUNNEL DIG GRAPH -- a real branching chain, not a flat row of
    spots. Each node's soft dig-spot only appears once its OWN parent
@@ -21830,15 +21873,39 @@ const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 100;
 // read as separate stacked planks a few px apart vertically instead of
 // the single shelf the span-merge intended.
 function tunnelMergedLedgeSpan(node) {
+  // flood-fill the WHOLE connected shelf, not just nodes directly within
+  // tolerance of this one node -- a straight corridor of 4+ dug nodes
+  // each ~60-90 units apart (well under the 100 x-tolerance) can still
+  // stretch further than 100 end-to-end, so the old direct-neighbors-only
+  // check gave different nodes in that same corridor DIFFERENT groups
+  // (and different merged heights) depending on which one you started
+  // from -- e.g. s1u1 merged with s3b alone (height 80), while s3b also
+  // separately merged with s4/s5 (height 90). Two overlapping spans a
+  // few px apart in height, rendered/landed-on as two stacked planks
+  // instead of the one continuous shelf they're actually meant to be.
+  // Flood-filling transitively (still gated by the same pairwise
+  // tolerances at each hop) means every node in one real corridor agrees
+  // on the exact same left/right/height, however long the chain --
+  // while unrelated nodes that just happen to share a height far apart
+  // (no hop-by-hop path within tolerance) still never merge.
+  const group = [node];
+  const inGroup = new Set([node]);
+  for (let i = 0; i < group.length; i++) {
+    const cur = group[i];
+    TUNNEL_NODES.forEach(other => {
+      if (inGroup.has(other) || !other.dug || other.heightAboveGround <= 0 || other.trapGap) return;
+      if (Math.abs(other.heightAboveGround - cur.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE &&
+          Math.abs(other.x - cur.x) <= TUNNEL_LEDGE_MERGE_X_TOLERANCE) {
+        inGroup.add(other);
+        group.push(other);
+      }
+    });
+  }
   let left = node.x - 24, right = node.x + 24, height = node.heightAboveGround;
-  TUNNEL_NODES.forEach(other => {
-    if (other === node || !other.dug || other.heightAboveGround <= 0 || other.trapGap) return;
-    if (Math.abs(other.heightAboveGround - node.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE &&
-        Math.abs(other.x - node.x) <= TUNNEL_LEDGE_MERGE_X_TOLERANCE) {
-      left = Math.min(left, other.x - 24);
-      right = Math.max(right, other.x + 24);
-      height = Math.min(height, other.heightAboveGround);
-    }
+  group.forEach(other => {
+    left = Math.min(left, other.x - 24);
+    right = Math.max(right, other.x + 24);
+    height = Math.min(height, other.heightAboveGround);
   });
   // a dug trapdoor punches a real gap in what would otherwise be one
   // continuous shelf -- without this, this node's own span still bridges
@@ -21863,7 +21930,10 @@ function tunnelMergedLedgeSpan(node) {
     // truncating the merged shelf between s5u2/s5uTurn up at height
     // 250, carving an unintended gap in a walkway 160 units above it
     // where no plank ever got drawn.
-    if (Math.abs(other.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return;
+    // gated against the GROUP's merged height now (not just this node's
+    // own), since the flood-fill above can pull `height` down to a
+    // different node's height than this one's own
+    if (Math.abs(other.heightAboveGround - height) > TUNNEL_LEDGE_MERGE_TOLERANCE) return;
     if (other.x > node.x) right = Math.min(right, other.x - 20);
     if (other.x < node.x) left = Math.max(left, other.x + 20);
   });
@@ -22123,6 +22193,14 @@ function drawTunnelDigSpot(node, camX) {
   const cy = gy + cameraY - node.heightAboveGround;
   const isUp = node.dir === "up";
   const isSunken = node.dir === "sunken";
+  // a trapdoor, and whatever it drops you into, both read as an opening
+  // IN THE FLOOR rather than a doorway on a wall -- the default "side"
+  // marker shape (taller than it is wide, same portal shape as every
+  // ordinary wall-side dig) read wrong for something you fall through
+  // rather than walk into ("should look more on the ground, like
+  // horiz thinner ovals")
+  const parentNode = TUNNEL_NODES.find(n => n.id === node.parent);
+  const isFloorOpening = !!node.trapGap || !!(parentNode && parentNode.trapGap);
   // "up" spots sit higher, tighter and taller (an actual vertical dig);
   // "sunken" spots are wider and squatter (reads as a low crawl-space).
   // Anchored to cy (the node's own actual height), not the raw ground
@@ -22130,13 +22208,13 @@ function drawTunnelDigSpot(node, camX) {
   // cameraY), but for an ELEVATED "side"/"sunken" node (like the raised
   // reward path) the marker used to draw itself all the way down at
   // ground level instead of up at the node's real position.
-  const markY = isUp ? cy - 12 : cy - (isSunken ? 26 : 34);
+  const markY = isUp ? cy - 12 : cy - (isSunken ? 26 : (isFloorOpening ? 20 : 34));
   // "up" markers shrunk down (was 10x22) -- at the up-chain's tighter
   // vertical spacing, the old size left almost no visible dirt between
   // consecutive markers, so several frontier holes in a row read as one
   // smeared-together patch instead of distinct spots
-  const markRX = isUp ? 8 : (isSunken ? 22 : 15);
-  const markRY = isUp ? 15 : (isSunken ? 14 : 20);
+  const markRX = isUp ? 8 : (isSunken ? 22 : (isFloorOpening ? 23 : 15));
+  const markRY = isUp ? 15 : (isSunken ? 14 : (isFloorOpening ? 10 : 20));
 
   // a low rock lip overhanging any sunken spot -- hints at the lower
   // ceiling without actually changing the (ground-level) collision
@@ -23051,6 +23129,10 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 
   ctx.restore(); // closes the sway rotation
   ctx.restore(); // closes the clip
+}
+
+if (currentScene === "tunneltown") {
+  drawTunnelEntranceOcclusion(camX);
 }
 
 if (currentScene === "forest") {
