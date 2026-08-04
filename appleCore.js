@@ -21385,55 +21385,57 @@ function drawElderTrio(camX) {
       if (elder.bonnet) {
         const bonnetColor = elder.bonnetColor || "#c98a9e";
         const bonnetRX = bodyW * 0.5;
-        const bonnetRY = 13;
-        // the "horizon" -- where the crown meets the head, well above
-        // eye/face level
-        const horizonY = bodyTop + 3;
+        // the elder has no separate head circle -- the whole body/head is
+        // one teardrop-shaped blob (see the body path above), and that
+        // blob is already quite wide well before eye level (eyes sit at
+        // headCY+4). Floating a free-sized oval above it (the last two
+        // passes) never lined up with the blob's ACTUAL width at any
+        // given height, which is what read as disconnected/floating no
+        // matter how it was resized. Fixing that properly: pick a real
+        // "brow" height on the blob, compute the blob's own half-width
+        // there from the same quadratic curve the body itself is drawn
+        // with, and make the bonnet's FLAT BASE exactly that wide, sitting
+        // right at that height -- a dome resting on the head, not a
+        // separate shape floating near it.
+        const browY = bodyTop + 4;
+        // half-width of the body's own teardrop curve at browY, from the
+        // same quadratic bezier used to draw the body outline above
+        // (P0=(0,bodyTop), CP=(bodyW/2,bodyTop), P1=(bodyW/2,bodyTop+bodyH*0.45))
+        const bt = Math.min(1, Math.sqrt((browY - bodyTop) / (bodyH * 0.45)));
+        const baseRX = (bodyW / 2) * (2 * bt - bt * bt);
+        const domeRY = baseRX * 0.95;
         const jawY = headCY + 9;
-        // the crown is JUST a rounded vertical oval sitting on the head --
-        // tall rather than wide, rounded all the way around the top
-        // instead of tapering to any kind of point (that read as a "baby
-        // nipple hat"). It stops at the horizon -- it does NOT extend
-        // down the sides to the jaw as a filled shape anymore (that solid
-        // wedge read as "triangles"). What continues down past the
-        // horizon are two thin diagonal STRINGS, not fabric.
-        // capped, not just scaled off bonnetRX -- the last pass scaled
-        // both dimensions up AND floated the center well above the
-        // horizon at the same time, which on an elder with anything but
-        // a tiny bodyW ballooned into a huge disconnected egg hovering
-        // over the head instead of a hat sitting on it. Kept deliberately
-        // small (a real hat, not a mascot head) and centered so the
-        // BOTTOM overlaps into the head/horizon line -- no floating gap.
-        const crownRX = Math.min(bonnetRX * 0.5, 10);
-        const crownRY = crownRX * 1.5;
-        const crownCY = horizonY - crownRY * 0.4;
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.ellipse(headCX, crownCY, crownRX, crownRY, 0, 0, Math.PI * 2);
+        // top-half arc only (left-middle, over the top, to right-middle),
+        // then closePath draws the flat base straight across for us
+        ctx.ellipse(headCX, browY, baseRX, domeRY, 0, Math.PI, Math.PI * 2);
+        ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = "rgba(0,0,0,0.22)";
         ctx.lineWidth = 1.1;
         ctx.stroke();
 
-        // one soft highlight near the top, so the oval doesn't read as a
+        // one soft highlight near the top, so the dome doesn't read as a
         // flat solid-color cutout
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
-        ctx.ellipse(headCX - crownRX * 0.3, crownCY - crownRY * 0.35, crownRX * 0.32, crownRY * 0.28, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(headCX - baseRX * 0.3, browY - domeRY * 0.5, baseRX * 0.32, domeRY * 0.3, -0.3, 0, Math.PI * 2);
         ctx.fill();
 
-        // two thin diagonal strings hanging from the base of the crown
-        // down toward the jaw -- plain cords, not a filled brim
+        // two thin diagonal strings, attached right at the dome's own
+        // base corners (not a separate floating point), running down
+        // toward the jaw -- plain cords, not a filled brim
         ctx.strokeStyle = bonnetColor;
         ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.beginPath();
-        ctx.moveTo(headCX + crownRX * 0.8, horizonY - 3);
-        ctx.quadraticCurveTo(headCX + bonnetRX * 0.55, (horizonY + jawY) / 2, headCX + bonnetRX * 0.3, jawY);
+        ctx.moveTo(headCX + baseRX, browY);
+        ctx.quadraticCurveTo(headCX + bonnetRX * 0.55, (browY + jawY) / 2, headCX + bonnetRX * 0.3, jawY);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(headCX - crownRX * 0.8, horizonY - 3);
-        ctx.quadraticCurveTo(headCX - bonnetRX * 0.55, (horizonY + jawY) / 2, headCX - bonnetRX * 0.3, jawY);
+        ctx.moveTo(headCX - baseRX, browY);
+        ctx.quadraticCurveTo(headCX - bonnetRX * 0.55, (browY + jawY) / 2, headCX - bonnetRX * 0.3, jawY);
         ctx.stroke();
 
         // a thin ribbon tie knotted under the chin -- the detail that
