@@ -21109,7 +21109,7 @@ function updateMoleholeScene(deltaTime) {
    as older, smaller, and closer to collapse.
    ====================================================== */
 const TUNNELTOWN_WIDTH = 1200; // widened again to fit the deeper reward path (s5 sits at x:1060)
-const TUNNEL_PASSAGE_HEIGHT = player.height + 34; // every dug opening (wall, side stub, up stub) shares this -- bumped up from +16, which read as a little too tight over the player's actual head height, especially since the oval reveal narrows toward its edges
+const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- was bumped up to +34 to fix a single narrow oval feeling tight at its own edges, but that same generous height, once the ledge-merge fix started stitching long straight corridors together, turned into one continuous tall band the FULL WIDTH of the whole merged shelf -- "why can i jump through this packed dirt so much... this is largely passing through it," not the odd few px of edge wiggle room this was meant to allow. Back down near the original size; a flat merged shelf doesn't need much more headroom than the player's own height to walk through, and individual dig-spot jumps still get real (if tighter) clearance
 const tunnelTownExit = { x: 150 };
 
 /* ------------------------------------------------------
@@ -21135,7 +21135,7 @@ const tunnelTownExit = { x: 150 };
 // distinct per elder, so they read as having more character than a
 // generic bounce alone.
 const elderTrio = [
-  { dx: -46, color: "#9c6b52", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#3f6e64", bonnet: true, bonnetColor: "#c98a9e", fem: true, bob: 0, bobSpeed: 0.032, tip: 0, gestureOffset: 0 }, // short and round, warm reddish-brown fur, a cozy old scarf AND a little bonnet -- reads more fem than the other two (no beard, rosy cheeks instead -- see the beard block below)
+  { dx: -46, color: "#9c6b52", capeColor: "#5a4e38", bodyW: 30, bodyH: 30, accessory: "scarf", accessoryColor: "#3f6e64", bonnet: false, bonnetColor: "#c98a9e", fem: true, bob: 0, bobSpeed: 0.032, tip: 0, gestureOffset: 0 }, // short and round, warm reddish-brown fur, a cozy old scarf -- bonnet dropped (kept the flag/color around, just off, rather than ripping the whole feature out) -- reads more fem than the other two (no beard, rosy cheeks instead -- see the beard block below)
   { dx: 2,   color: "#847d6e", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0, gestureOffset: 2200 }, // tall and thin, cooler grey fur, neat little round glasses
   { dx: 50,  color: "#c2a679", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0, gestureOffset: 4300 } // average build, lighter sandy-tan fur, a flat cap over a balding head
 ];
@@ -21332,49 +21332,56 @@ function drawElderTrio(camX) {
       // instead of something wrapped around the neck. Peeking past both
       // edges is what actually sells "goes around," not just width on
       // its own.
+      // vertical thickness roughly halved from the previous pass -- at
+      // the old height (13 units tall, tapering all the way down to a
+      // single point) a band already this WIDE (scarfHalfW) read as a
+      // big filled triangle/bib rather than a thin wrapped strip. Kept
+      // the width (that's what sells "wraps around the neck") but
+      // squashed every vertical offset down so the silhouette reads as
+      // a flat band, not a funnel.
       const scarfHalfW = bodyW * 0.58;
       ctx.fillStyle = elder.accessoryColor;
       ctx.beginPath();
       ctx.moveTo(ex - scarfHalfW, neckY);
-      ctx.quadraticCurveTo(ex, neckY - 3, ex + scarfHalfW, neckY);
-      ctx.quadraticCurveTo(ex + scarfHalfW * 0.85, neckY + 9, ex, neckY + 10);
-      ctx.quadraticCurveTo(ex - scarfHalfW * 0.85, neckY + 9, ex - scarfHalfW, neckY);
+      ctx.quadraticCurveTo(ex, neckY - 1.5, ex + scarfHalfW, neckY);
+      ctx.quadraticCurveTo(ex + scarfHalfW * 0.85, neckY + 4.5, ex, neckY + 5);
+      ctx.quadraticCurveTo(ex - scarfHalfW * 0.85, neckY + 4.5, ex - scarfHalfW, neckY);
       ctx.closePath();
       ctx.fill();
       // a small knot, off to one side rather than dead center
       ctx.fillStyle = elder.accessoryColor;
-      roundRect(ctx, ex + scarfHalfW * 0.2, neckY - 1, 4, 6, 1.5);
+      roundRect(ctx, ex + scarfHalfW * 0.2, neckY - 0.5, 4, 3, 1.3);
       ctx.fill();
       // hanging tails on BOTH sides, not just one -- a single tail read
       // as something dangling loose off to one side rather than a wrap;
       // matching tails on each shoulder is what makes it look wrapped
       // around and knotted, not just draped on top.
       ctx.beginPath();
-      ctx.moveTo(ex + scarfHalfW * 0.2, neckY + 4);
-      ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 12);
-      ctx.lineTo(ex + scarfHalfW * 0.2 + 3, neckY + 12);
+      ctx.moveTo(ex + scarfHalfW * 0.2, neckY + 2);
+      ctx.lineTo(ex + scarfHalfW * 0.55, neckY + 6);
+      ctx.lineTo(ex + scarfHalfW * 0.2 + 3, neckY + 6);
       ctx.closePath();
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(ex - scarfHalfW * 0.75, neckY + 3);
-      ctx.lineTo(ex - scarfHalfW * 0.9, neckY + 11);
-      ctx.lineTo(ex - scarfHalfW * 0.75 - 3, neckY + 10);
+      ctx.moveTo(ex - scarfHalfW * 0.75, neckY + 1.5);
+      ctx.lineTo(ex - scarfHalfW * 0.9, neckY + 5.5);
+      ctx.lineTo(ex - scarfHalfW * 0.75 - 3, neckY + 5);
       ctx.closePath();
       ctx.fill();
       // a shaded underside where the wrap droops, so it reads as cloth
       // draped over a curve rather than a flat cutout shape
       ctx.fillStyle = "rgba(0,0,0,0.18)";
       ctx.beginPath();
-      ctx.moveTo(ex - scarfHalfW * 0.7, neckY + 4);
-      ctx.quadraticCurveTo(ex, neckY + 10, ex + scarfHalfW * 0.7, neckY + 4);
-      ctx.quadraticCurveTo(ex, neckY + 7, ex - scarfHalfW * 0.7, neckY + 4);
+      ctx.moveTo(ex - scarfHalfW * 0.7, neckY + 2);
+      ctx.quadraticCurveTo(ex, neckY + 5, ex + scarfHalfW * 0.7, neckY + 2);
+      ctx.quadraticCurveTo(ex, neckY + 3.5, ex - scarfHalfW * 0.7, neckY + 2);
       ctx.fill();
       // a couple of stitch-line creases, so it reads as wrapped cloth
       ctx.strokeStyle = "rgba(0,0,0,0.2)";
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(ex - scarfHalfW + 3, neckY + 1);
-      ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 1.5, ex + scarfHalfW * 0.15 - 2, neckY);
+      ctx.moveTo(ex - scarfHalfW + 3, neckY + 0.5);
+      ctx.quadraticCurveTo(ex - scarfHalfW * 0.3, neckY - 0.8, ex + scarfHalfW * 0.15 - 2, neckY);
       ctx.stroke();
 
       // the little bonnet -- NOT a hood or a wraparound cap. Just one
@@ -21698,29 +21705,14 @@ function drawTunnelWall(camX) {
   }
 }
 
-// re-draws the wall's dirt around the entrance hole ON TOP of the player
-// sprite -- called after the player's drawn, so the doorway's rim reads
-// as being in FRONT of the player passing through it, instead of the
-// sprite always floating on top of the hole graphic underneath it
-function drawTunnelEntranceOcclusion(camX) {
-  if (!tunnelWallBroken) return;
-  const wx = TUNNELTOWN_WALL_X - camX;
-  const holeCX = wx + 16, holeBottomY = gy + cameraY;
-  const openGrowP = Math.min(1, wallBreakPoofT / 300);
-  const holeRY = (TUNNEL_PASSAGE_HEIGHT * 0.55 * openGrowP) / 2, holeRX = 18;
-  // cheap early-out -- only bother when the player's close enough to the
-  // doorway to actually overlap it on screen
-  if (Math.abs((player.x - camX) - holeCX) > 70) return;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(holeCX - 70, holeBottomY - holeRY * 2 - 20, 140, holeRY * 2 + 40);
-  // cut the hole's own silhouette back out of that rect (evenodd) so the
-  // fill below only lands on the dirt AROUND the opening, never inside it
-  ctx.ellipse(holeCX, holeBottomY - holeRY, holeRX, holeRY, 0, 0, Math.PI * 2);
-  ctx.clip("evenodd");
-  drawDetailedDirtFill(wx - 4, 40, gy + cameraY, TUNNELTOWN_WALL_X * 3.1);
-  ctx.restore();
-}
+// tried a partial-occlusion effect here (re-drawing the wall's dirt over
+// the player near the entrance hole, clipped to the hole's silhouette so
+// only the bit of the player inside it stayed visible) -- reverted. The
+// redrawn dirt patch never matched the background's own texture/lighting
+// at the clip rect's edges, so instead of reading as "player passing
+// behind the doorway rim" it read as a hard, out-of-place seam slicing
+// across the screen. Not worth chasing further right now -- back to the
+// player always drawing on top, like every other scene in the game.
 
 /* ------------------------------------------------------
    TUNNEL DIG GRAPH -- a real branching chain, not a flat row of
@@ -21799,45 +21791,47 @@ const TUNNEL_NODES = [
   { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
   { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
-  // a trapdoor spot -- looks like a normal dig along the same corridor,
-  // but dug open it turns out hollow underneath (see trapGap handling in
-  // tunnelMergedLedgeSpan/drawTunnelDigSpot) and drops you straight down
-  // into s5trapNook below instead of giving you a ledge to stand on.
-  // Rendered with a visibly cracked/broken look once dug, not a silent
-  // gotcha -- you can see it's different before you commit to it.
-  { id: "s5trap", parent: "s5", x: 1070, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, trapGap: true },
-  // the cushion-shaft piece -- moved here from s5 (one hop further along)
-  // so it doesn't sit right on top of s5trapNook's aragonite, just 40
-  // units away through the trapdoor right next door. Too close together,
-  // both reading as "reward" in the same glance ("the holes... both have
-  // rewards. they are too close").
-  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: true, dug: false },
+  // used to be a trapdoor here -- dug open, it dropped you through a deep
+  // shaft to a hidden nook below. Cut: once the whole corridor merged
+  // into one obviously-already-open shelf (see tunnelMergedLedgeSpan),
+  // a hole mid-shelf plunging down to ground level right underneath
+  // read as illogical rather than a fun surprise -- "a vertical hole
+  // drop down to an already open area, that then drops down further
+  // below that already open area... it just isn't logical." Also briefly
+  // tried as a normal ground-level side dig right next to s5r, but that
+  // just put the two rewards shoulder-to-shoulder again ("the two rewards
+  // are way too close to eachother"). The aragonite itself moved on --
+  // see s5u4/s5u5 below, well off past the top of the right-side climb.
+  // the cushion-shaft piece lives here -- a real dead end, no longer
+  // crowded now that the aragonite moved off the ground floor entirely.
+  { id: "s5r", parent: "s5", x: 1140, heightAboveGround: 90, dir: "side", hasItem: true, dug: false },
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
-  // gives the right half of the maze its own vertical movement too
-  { id: "s5u1", parent: "s5r", x: 1150, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
-  { id: "s5u2", parent: "s5u1", x: 1100, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
+  // gives the right half of the maze its own vertical movement too.
+  // Whole subtree shifted +30 along with s5r above, same relative jump
+  // distances throughout, just further from the crowded trap/reward spot.
+  { id: "s5u1", parent: "s5r", x: 1180, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
+  { id: "s5u2", parent: "s5u1", x: 1130, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
   // the climb used to just keep going straight up -- bent it left into an
   // actual horizontal turn partway up instead, then kept climbing from
   // there, and gave the bend its own little side branch so the extra
   // turn has a reward too, not just a direction change
-  { id: "s5uTurn", parent: "s5u2", x: 1040, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
-  { id: "s5uSide", parent: "s5uTurn", x: 965, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
-  { id: "s5u2b", parent: "s5uTurn", x: 1010, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
-  { id: "s5u3", parent: "s5u2b", x: 1045, heightAboveGround: 405, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // real dead end reward, now at the top of the bent climb
+  { id: "s5uTurn", parent: "s5u2", x: 1070, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
+  { id: "s5uSide", parent: "s5uTurn", x: 995, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
+  { id: "s5u2b", parent: "s5uTurn", x: 1040, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
+  { id: "s5u3", parent: "s5u2b", x: 1075, heightAboveGround: 405, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // its own reward, but not the dead end anymore -- see s5u4/s5u5
+  // one more diagonal jump up-and-left off the top of the climb, then a
+  // final jump straight up from there -- the aragonite's new home, far
+  // enough from s5r's cushion piece that they don't read as one crowded
+  // pair anymore. Real dead end now, up at the very top of the map.
+  { id: "s5u4", parent: "s5u3", x: 1020, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
+  { id: "s5u5", parent: "s5u4", x: 1035, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep. A plain dead end, same as s5r
   // itself -- not every spur needs loot, some are just there for the
   // exploration/breathing-room feel.
-  { id: "s5r2", parent: "s5r", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
-  // the hidden pocket underneath s5trap -- only reachable by falling
-  // through the trapdoor, landing back at true ground level right below
-  // where the corridor was. A little aragonite star-cluster (spiky
-  // needles radiating from a center, reddish-brown) -- a real "ooh" find
-  // for something you can only get by falling for the trapdoor, not a
-  // common surface item.
-  { id: "s5trapNook", parent: "s5trap", x: 1070, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "aragonite", dug: false }
+  { id: "s5r2", parent: "s5r", x: 1210, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
@@ -22034,19 +22028,22 @@ function tunnelPositionRevealed(x, h) {
   for (const node of TUNNEL_NODES) {
     if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) continue;
     const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
-    // no real lower bound below the ledge -- used to cut off just 6
-    // units under the platform, so walking off the true edge of a
-    // dead-end ledge (nothing dug further out at that height) dropped
-    // the player into a sliver of "unrevealed" space a few px below
-    // their own feet. With nothing to catch them AND no fallback below
-    // reading as safe, the recovery logic kept yanking them back up to
-    // the ledge, gravity kept pulling them back down past the same cutoff,
-    // forever -- a real repro of "stuck floating, glitchy little twitch,
-    // can't move." Falling out from under a dug ledge toward the ground
-    // below it should always read as safe (matches the trapdoor's own
-    // auto-fall-through design), all the way down to height 0.
+    // dropping the lower bound all the way to 0 fixed the true left-edge
+    // softlock (walking off the very END of a dead-end ledge with nothing
+    // dug further out), but doing it across the ENTIRE span was too much
+    // once ledges started merging transitively into much longer shelves
+    // (see tunnelMergedLedgeSpan) -- a single merged corridor 400+ units
+    // wide meant the WHOLE rectangle underneath it, ground to ceiling,
+    // read as "revealed" no matter where in that width you were, not
+    // just near its two actual edges. That's a giant walk-through-solid-
+    // dirt cavity, not a fix. A fall only ever happens at (roughly) the
+    // player's own x, right where they walked off -- so the extended
+    // lower bound only needs to cover a narrow band near the span's own
+    // left/right edges, not its whole interior width.
+    const nearSpanEdge = x <= left + tunnelLedgeRevealMargin || x >= right - tunnelLedgeRevealMargin;
+    const lowerBound = nearSpanEdge ? 0 : platformTop - 6;
     if (x >= left - tunnelLedgeRevealMargin && x <= right + tunnelLedgeRevealMargin &&
-        h >= 0 && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
+        h >= lowerBound && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
       return true;
     }
   }
@@ -23134,10 +23131,6 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 
   ctx.restore(); // closes the sway rotation
   ctx.restore(); // closes the clip
-}
-
-if (currentScene === "tunneltown") {
-  drawTunnelEntranceOcclusion(camX);
 }
 
 if (currentScene === "forest") {
