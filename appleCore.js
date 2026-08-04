@@ -20147,21 +20147,55 @@ function drawMoleShopAlcove(camX) {
   ctx.textAlign = "left";
 }
 
-// the secret piece's only tell -- a small mossy lump on top of the
-// first alcove's arch, colored close enough to the stone that it
-// doesn't jump out unless you're already looking right at it
+// the secret piece's only tell -- a stray log actually snagged in a
+// root hanging down from the ceiling, wood-brown so it blends with the
+// root itself rather than a green moss lump that had no root anywhere
+// near it and just floated above the alcove's arch
 function drawMoleHoleSecretPiece(camX) {
   if (moleHoleSecretPiece.collected) return;
   const sx = moleHoleSecretPiece.x - camX, sy = gy - moleHoleSecretPiece.heightAboveGround;
-  ctx.fillStyle = "#3a4a2e";
+  const seed = moleHoleSecretPiece.x * 3.7;
+
+  // a real root reaching all the way down from the ceiling to just past
+  // the log's height, so there's an actual root here for it to be
+  // tangled in instead of it sitting disconnected in open air
+  drawMoleholeRoot(sx + 6, sy - 4, seed);
+
+  // the log -- small stick, wedged at an angle like it snagged mid-fall
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(-0.25);
+  ctx.fillStyle = "#5a3a20";
   ctx.beginPath();
-  ctx.ellipse(sx, sy + 3, 16, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 13, 4.5, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#4a5c3a";
+  ctx.fillStyle = "#3a2414";
   ctx.beginPath();
-  ctx.ellipse(sx - 4, sy + 1, 5, 3, 0, 0, Math.PI * 2);
-  ctx.ellipse(sx + 5, sy + 2, 4, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(-11, 0, 2.2, 3.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(11, 0, 2.2, 3.6, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = "rgba(120,90,55,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-9, -1);
+  ctx.lineTo(9, 0.5);
+  ctx.moveTo(-8, 1.5);
+  ctx.lineTo(8, -1.5);
+  ctx.stroke();
+  ctx.restore();
+
+  // two thin tendrils wrapped directly around the log itself, so it
+  // reads as tangled-in rather than just resting near the root
+  ctx.strokeStyle = "#3a2814";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(sx - 10, sy - 6);
+  ctx.quadraticCurveTo(sx - 2, sy + 6, sx + 8, sy - 3);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sx + 10, sy - 7);
+  ctx.quadraticCurveTo(sx + 3, sy + 5, sx - 6, sy - 2);
+  ctx.stroke();
 }
 
 function drawMoleholeAlcove(alcove, camX) {
@@ -20662,6 +20696,22 @@ function drawMoleholePlatform(p, camX) {
 // own future mechanic
 const MOLEHOLE_SHAFT_X = 1200; // moved further right now that the room's much bigger -- real distance from the market set before you reach it
 
+// the lift shaft starts broken -- the gear that runs it is the "secret"
+// dead-end reward buried in the tunnel town dig (see the s5r node,
+// itemType defaults to "cushionPart"). Bring it back up here and place
+// it (hold it, walk up, press down) to fix the shaft for good.
+let moleholeShaftFixed = false;
+placementSlots.push({
+  id: "moleholeShaftSlot",
+  x: MOLEHOLE_SHAFT_X,
+  heightAboveGround: 8,
+  acceptsItemType: "cushionPart",
+  filled: false,
+  onFill: () => {
+    moleholeShaftFixed = true;
+  }
+});
+
 function drawMoleholeShaftPreview(camX) {
   const px = MOLEHOLE_SHAFT_X - camX;
   ctx.strokeStyle = "#3a2814";
@@ -20677,6 +20727,30 @@ function drawMoleholeShaftPreview(camX) {
   ctx.moveTo(px - 1.5, 4);
   ctx.lineTo(px - 1.5, gy - 2);
   ctx.stroke();
+
+  // a small hanging sign on the pole while the shaft's still broken --
+  // same wood-plank language as the shop's "WARES" sign, so it reads
+  // as a real, deliberate placard rather than a bug/missing texture
+  if (!moleholeShaftFixed) {
+    const sy = gy - 95;
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px, sy - 14);
+    ctx.lineTo(px, sy - 8);
+    ctx.stroke();
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(px - 24, sy - 8, 48, 16);
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px - 24, sy - 8, 48, 16);
+    ctx.fillStyle = "rgba(230,200,140,0.8)";
+    ctx.font = "8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("OUT OF", px, sy - 1);
+    ctx.fillText("ORDER", px, sy + 7);
+    ctx.textAlign = "left";
+  }
 }
 
 // jump-timed cushion-lift chain -- the first real pass at the shaft
@@ -20981,10 +21055,15 @@ function drawMoleholeScene(camX) {
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
   MOLEHOLE_PLATFORMS.forEach(p => drawMoleholePlatform(p, camX));
-  MOLEHOLE_CUSHIONS.forEach(c => {
-    drawMoleholeCushion(c, camX);
-    if (moleholeCushionDepth(c) < 0) drawMoleholeShaftPoleSegment(c, camX); // currently passing behind the pole
-  });
+  // the lift only actually runs once the gear's been placed back in it
+  // -- see moleholeShaftFixed/the "OUT OF ORDER" sign drawn as part of
+  // drawMoleholeShaftPreview above
+  if (moleholeShaftFixed) {
+    MOLEHOLE_CUSHIONS.forEach(c => {
+      drawMoleholeCushion(c, camX);
+      if (moleholeCushionDepth(c) < 0) drawMoleholeShaftPoleSegment(c, camX); // currently passing behind the pole
+    });
+  }
 
   // hanging roots dangling from the ceiling, scattered across the room
   // -- count scaled up to match the wider room, keeps the same density
@@ -21103,25 +21182,28 @@ function updateMoleholeScene(deltaTime) {
   // cushion-lift collision -- same generic landing pattern as the
   // dirt platforms above, but the standable x-range follows each
   // cushion's own side-to-side drift every frame, so landing means
-  // actually timing the jump onto a moving target
-  MOLEHOLE_CUSHIONS.forEach(c => {
-    const cx = moleholeCushionX(c);
-    const cHalfWidth = (c.radius * (c.wMult ?? 3.2)) / 2; // matches the actual drawn width, which now varies a lot per cushion
-    const platformTop = c.heightAboveGround;
-    const playerBottom = player.y;
-    if (
-      player.x + player.width > cx - cHalfWidth &&
-      player.x < cx + cHalfWidth &&
-      playerBottom <= platformTop &&
-      playerBottom >= platformTop - 14 &&
-      player.vy <= 0
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
-  });
+  // actually timing the jump onto a moving target. Gated behind the
+  // shaft actually being fixed -- see moleholeShaftFixed.
+  if (moleholeShaftFixed) {
+    MOLEHOLE_CUSHIONS.forEach(c => {
+      const cx = moleholeCushionX(c);
+      const cHalfWidth = (c.radius * (c.wMult ?? 3.2)) / 2; // matches the actual drawn width, which now varies a lot per cushion
+      const platformTop = c.heightAboveGround;
+      const playerBottom = player.y;
+      if (
+        player.x + player.width > cx - cHalfWidth &&
+        player.x < cx + cHalfWidth &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 14 &&
+        player.vy <= 0
+      ) {
+        player.y = platformTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
+    });
+  }
 
   // the secret arch piece -- standard platform landing (same pattern as
   // every other collectible platform), then a space press while
@@ -21216,11 +21298,11 @@ let elderThanksQueued = false;
 
 const elderGreetingLines = [
   ["Oh! A visitor -- haven't had one of those in some time.", "This old passage used to go further, you know."],
-  ["Collapsed years back. We've meant to clear it, but...", "well, digging isn't quite what it used to be, at our age."],
-  ["If you've got a shovel on you, and don't mind the work...", "we'd be ever so grateful."]
+  ["Collapsed years back. There's a gear buried in there somewhere too --", "fell right off the old lift shaft up in the mole hole. Been out of order ever since."],
+  ["If you've got a shovel on you, and don't mind the work...", "dig us out a path, and if you spot that gear, bring it back up and see if it still fits."]
 ];
 const elderThanksLines = [
-  ["Oh, wonderful! You're really going to try.", "Careful in there -- it's been untouched a long, long time."]
+  ["Oh, wonderful! You're really going to try.", "Mind the gear if you find it -- don't just pocket it, take it straight up to the shaft."]
 ];
 const elderDialogue = { active: false, index: 0, lines: elderGreetingLines };
 
@@ -21734,12 +21816,93 @@ let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
 let tunnelSafeX = null, tunnelSafeY = null; // last known-good (revealed) spot -- lets the 2D dig-collision snap the player back out of solid dirt instead of leaving them stuck partway through it
 
+// the wall's leading face (the one the elders sit next to) used to be a
+// perfectly flat rectangle -- only the DIRT INSIDE it was textured, so
+// the actual silhouette still read as a clean, straight-cut edge. This
+// draws a genuinely jagged boundary straddling that line: uneven bumps
+// and notches, a few chunky rocks with real fracture-plane edges
+// (same broken-polygon technique as the rocks inside the fill, not
+// smooth ovals), and root strands actually poking out into the open
+// room, so the wall itself reads as a rough, organic dig face.
+function drawTunnelWallScragglyEdge(faceX, topY, botY, seedBase) {
+  ctx.save();
+
+  const steps = 14;
+  const stepH = (botY - topY) / steps;
+  ctx.fillStyle = "#241c14";
+  ctx.beginPath();
+  ctx.moveTo(faceX, topY);
+  for (let i = 0; i <= steps; i++) {
+    const y = topY + i * stepH;
+    const seed = seedBase + 2000 + i * 19.7;
+    // mostly small bumps, with the occasional deeper notch/spike so the
+    // line reads as broken rather than a smooth wave
+    const spike = pseudoRandom(seed + 5) < 0.25 ? 1.9 : 1;
+    const off = (pseudoRandom(seed) - 0.35) * 12 * spike;
+    ctx.lineTo(faceX - off, y);
+  }
+  ctx.lineTo(faceX, botY);
+  ctx.closePath();
+  ctx.fill();
+
+  // chunky jagged rocks straddling the edge, part of each genuinely
+  // sticking out past the flat line
+  for (let i = 0; i < 5; i++) {
+    const seed = seedBase + 2400 + i * 31.1;
+    const ry = topY + pseudoRandom(seed) * (botY - topY);
+    const rr = 5 + pseudoRandom(seed + 1) * 6;
+    const rx = faceX - rr * (0.4 + pseudoRandom(seed + 2) * 0.6);
+    const rotation = pseudoRandom(seed + 3) * Math.PI;
+    const points = 6 + Math.floor(pseudoRandom(seed + 4) * 3);
+    ctx.fillStyle = pseudoRandom(seed + 6) < 0.5 ? "#6a6154" : "#453d32";
+    ctx.beginPath();
+    for (let p = 0; p < points; p++) {
+      const a = rotation + (p / points) * Math.PI * 2;
+      const rad = rr * (0.55 + pseudoRandom(seed + 10 + p * 3.1) * 0.75);
+      const px = rx + Math.cos(a) * rad;
+      const py = ry + Math.sin(a) * rad * 0.8;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx + Math.cos(rotation + 0.4) * rr * 0.9, ry + Math.sin(rotation + 0.4) * rr * 0.7);
+    ctx.lineTo(rx + Math.cos(rotation + 1.1) * rr * 0.6, ry + Math.sin(rotation + 1.1) * rr * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // a few roots actually poking out of the wall into the open room --
+  // biased toward pointing "out" (away from the wall interior) rather
+  // than any direction, so they read as emerging from the face
+  for (let i = 0; i < 4; i++) {
+    const seed = seedBase + 2800 + i * 17.9;
+    const ry = topY + pseudoRandom(seed) * (botY - topY);
+    const len = 10 + pseudoRandom(seed + 1) * 14;
+    const ang = Math.PI + (pseudoRandom(seed + 2) - 0.5) * 1.6;
+    const midX = faceX + Math.cos(ang) * len * 0.55 + (pseudoRandom(seed + 3) - 0.5) * len * 0.4;
+    const midY = ry + Math.sin(ang) * len * 0.55 + (pseudoRandom(seed + 4) - 0.5) * len * 0.4;
+    const endX = faceX + Math.cos(ang) * len, endY = ry + Math.sin(ang) * len;
+    ctx.strokeStyle = "rgba(120,95,60,0.55)";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(faceX, ry);
+    ctx.quadraticCurveTo(midX, midY, endX, endY);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawTunnelWall(camX) {
   const wx = TUNNELTOWN_WALL_X - camX;
   if (!tunnelWallBroken) {
     // solid packed-earth blockage, filling the passage floor to ceiling
     // -- richly textured now, not a flat color
     drawDetailedDirtFill(wx - 4, 40, gy + cameraY, TUNNELTOWN_WALL_X * 3.1);
+    drawTunnelWallScragglyEdge(wx - 4, 0, gy + cameraY, TUNNELTOWN_WALL_X * 3.1);
     ctx.strokeStyle = "rgba(90,80,70,0.3)";
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
@@ -21860,7 +22023,7 @@ const TUNNEL_NODES = [
   // now climbs off the jog instead of straight off u3, same relative
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
   // to launch from the new turn spot
-  { id: "uTop", parent: "u3Turn", x: 660, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "stone", dug: false }, // dx50/dh80 off u3Turn, straight on up and clear
+  { id: "uTop", parent: "u3Turn", x: 660, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // dx50/dh80 off u3Turn, straight on up and clear -- dropped its stone; this whole left branch (u3/uTop) already has u3's own bridgePiece, a second find right above it read as too rich for one branch
 
   // u2h/u1r removed -- u2h was a jump-only side spot that never led
   // anywhere once the shared-shelf/reconnect idea it was built for got
@@ -21878,7 +22041,7 @@ const TUNNEL_NODES = [
   // same fix here -- a real two-jump detour up and away from s1, instead
   // of a dead-end spot sitting directly above it
   { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // dead end -- another small found treasure instead of nothing
+  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end -- dropped its crystal per the overall reward trim; s3a and s5uSide still cover stone, s5u3 still covers crystal elsewhere
   { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   // s3a/s3b used to sit only 20-60 units apart -- close enough that
   // their two markers visually overlapped into what read as one
