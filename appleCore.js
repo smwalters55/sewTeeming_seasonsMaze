@@ -116,7 +116,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "tunneltown"; // TEMPORARY — debugging the elder trio/dig-wall/dig-spots pass, revert to "autumn" when done
+let currentScene = "forest"; // TEMPORARY — debugging the forest pass, revert to "autumn" when done
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -147,7 +147,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 60, // TEMPORARY — spawns right at the tunnel town entrance, near the elders, revert to 400 when done
+  x: 175, // TEMPORARY — spawns at the forest scene's normal spring-door entry point, revert to 400 when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -19986,7 +19986,10 @@ function drawMoleShopAlcove(camX) {
   // wink, a little waistcoat, and a cane. Replaces the original generic
   // body -- this is mockup "A" of three, picked for reading sly/cunning
   // (matches the trade-ee dialogue) without going full-caricature villain.
-  const bodyW = 18, bodyH = 46, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
+  // a little idle bob so the timber-trading mole doesn't read as a static
+  // prop -- same gentle sway treatment as the alcove shopkeepers
+  const shopBob = Math.sin(performance.now() * 0.0011 + MOLE_SHOP_X * 0.05) * 1.6;
+  const bodyW = 18, bodyH = 46, bodyBottom = gy - 6 + shopBob, bodyTop = bodyBottom - bodyH;
   const headCX = ax, headCY = bodyTop - 4;
 
   ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -20545,7 +20548,10 @@ function drawMoleholeAmbientMole(x, camX) {
 // a small patch of moss and a cluster of glowing yellow fungus --
 // purely decorative light/color accent, an alternative to the lantern
 // glow elsewhere in the room
-const MOLEHOLE_FUNGUS_X = 1300;
+// sits to the right of the tunnel town entrance hole (x1380) with real
+// margin -- used to sit at 1300, only ~80px left of the hole and reading
+// as crowded against its rim; moved past the hole entirely instead.
+const MOLEHOLE_FUNGUS_X = 1460;
 function drawMoleholeFungusCluster(camX) {
   const px = MOLEHOLE_FUNGUS_X - camX;
   if (px < -40 || px > canvas.width + 40) return;
@@ -20888,13 +20894,17 @@ function updateTunnelTownEntrance(deltaTime) {
 }
 
 function drawTunnelTownEntrance(camX) {
-  const hx = tunnelTownEntrance.x - camX, hy = gy;
+  const hx = tunnelTownEntrance.x - camX;
+  // sunk fully below the ground line -- previously centered at hy-2 with
+  // debris clumps reaching ~18px above that, so the rim visibly poked up
+  // into the wall backdrop above the floor strip ("half ground half
+  // wall"). Recentering below hy and capping clump height keeps the
+  // whole pit reading as dug straight down into the floor.
+  const hy = gy + 10;
 
-  // a genuinely bigger hole than the forest's entrance -- wider rim,
-  // rougher/more irregular dirt clumps, reads as older and cruder
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(hx, hy - 2, 40, 15, 0, 0, Math.PI * 2);
+  ctx.ellipse(hx, hy, 40, 14, 0, 0, Math.PI * 2);
   ctx.fillStyle = "#120c05";
   ctx.fill();
   ctx.strokeStyle = "#3a2814";
@@ -20906,7 +20916,8 @@ function drawTunnelTownEntrance(camX) {
     const angle = (i / 10) * Math.PI * 2 + pseudoRandom(seed) * 0.5;
     const dist = 36 + pseudoRandom(seed + 1) * 14;
     const cx = hx + Math.cos(angle) * dist;
-    const cy = hy - 2 + Math.sin(angle) * dist * 0.36;
+    // clamp the vertical spread so no clump climbs above the ground line
+    const cy = hy + Math.min(dist * 0.36, dist * 0.36 * Math.abs(Math.sin(angle))) * (Math.sin(angle) < 0 ? 0.35 : 1);
     const r = 3 + pseudoRandom(seed + 2) * 4;
     ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#4a3018" : "#2e2014";
     ctx.beginPath();
@@ -20916,13 +20927,14 @@ function drawTunnelTownEntrance(camX) {
   ctx.restore();
 
   // a small worn support beam leaning at the rim -- hints this dig is
-  // old/unfinished business rather than a fresh discovery
+  // old/unfinished business rather than a fresh discovery. Left poking
+  // up past the ground line is fine (it's a beam, not the hole itself).
   ctx.strokeStyle = "#2e2014";
   ctx.lineWidth = 4;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(hx - 48, hy - 2);
-  ctx.lineTo(hx - 34, hy - 34);
+  ctx.moveTo(hx - 48, hy);
+  ctx.lineTo(hx - 34, hy - 30);
   ctx.stroke();
 
   if (tunnelTownEntrance.active) {
@@ -20930,7 +20942,7 @@ function drawTunnelTownEntrance(camX) {
     ctx.save();
     ctx.globalAlpha = 1 - p * 0.7;
     ctx.beginPath();
-    ctx.ellipse(hx, hy - 2 - p * 10, 40 * (1 - p * 0.4), 15 * (1 - p * 0.4), 0, 0, Math.PI * 2);
+    ctx.ellipse(hx, hy - p * 8, 40 * (1 - p * 0.4), 14 * (1 - p * 0.4), 0, 0, Math.PI * 2);
     ctx.fillStyle = "#0a0603";
     ctx.fill();
     ctx.restore();
@@ -20994,7 +21006,10 @@ function drawMoleholeScene(camX) {
   // the real gap between alcove two and the shop; 990 lights the new
   // platform just past the shop's bigger footprint. Dropped the old
   // 1050 entry rather than cram a third light into that same stretch.
-  const wallLanterns = [130, 670, 990, 1400, 1550];
+  // 1400 pulled back to 1230 -- it used to sit only ~50px right of the
+  // 1350 platform's edge, reading as jammed against it; now it lights
+  // the open stretch between the 1100 and 1350 platforms instead.
+  const wallLanterns = [130, 670, 990, 1230, 1550];
   wallLanterns.forEach(lx0 => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
@@ -24010,11 +24025,19 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY — seeds the shovel so the elder-trio/dig-wall/dig-spots
-// pass can be tested immediately without backtracking to the willow
-// tree first. Revert (remove this block) when done.
+// TEMPORARY — seeds a forest-start loadout so the forest pass can be
+// tested immediately without backtracking through autumn/spring/tunnel
+// town first. Revert (remove this block, and the door-filled lines
+// below) when done.
 addToInventory("shovel");
 heldItem = "shovel";
+for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible tunnel-town/mole-hole haul by this point
+for (let i = 0; i < 3; i++) addToInventory("acorn");
+addToInventory("appleSlice"); // apple splits into 3 -- 2 spent filling the autumn->spring and spring->forest doors, 1 left over
+connections[0].filled = true;
+connections[0].filledItemType = "appleSlice";
+connections[1].filled = true;
+connections[1].filledItemType = "appleSlice";
 updateInventoryUI();
 
 update();
