@@ -20519,9 +20519,10 @@ function drawMoleholeRoot(rx, len, seed) {
   // perfectly static. Phased off the seed so a cluster of these don't
   // all sway in lockstep.
   const sway = Math.sin(performance.now() * 0.0006 + seed * 0.7) * 0.05;
-  // maxLevel 2 -> trunk, forks, and a bushy tier of fine terminal
-  // twigs off each fork, all genuinely connected/recursive
-  drawDendriticRootBranch(rx, 0, Math.PI / 2 + sway, len, baseW, seed, 0, 2);
+  // maxLevel 3 -> trunk, forks, sub-forks, and a bushy tier of fine
+  // terminal twigs off each of those -- bumped from 2 for a noticeably
+  // more dendritic, tree-like silhouette
+  drawDendriticRootBranch(rx, 0, Math.PI / 2 + sway, len, baseW, seed, 0, 3);
   ctx.restore();
 }
 
@@ -20609,25 +20610,56 @@ function drawMoleholeDirtPile(camX, worldX, groundY) {
 // dialogue, tucked into the open floor gaps between the market row and
 // the shaft so the room reads as more lived-in than just the two
 // shopkeepers. Smaller and darker than the alcove figures (further
-// back, unlit) with the same slow idle bob.
+// back, unlit) with the same slow idle bob. Previously just a flat
+// rounded-rect body plus two same-color ellipses stacked on top --
+// with no ears, snout shape, or eyes at all it read as an unidentifiable
+// dark blob rather than a mole. Rebuilt with the same silhouette
+// language as the real shopkeeper moles (hunched tapered body, rounded
+// head, small ears, elongated snout, faint eye highlights) just darker
+// and simpler, since it's meant to read at a glance from a distance.
 const MOLEHOLE_AMBIENT_MOLES = [390, 1250];
 function drawMoleholeAmbientMole(x, camX) {
   const px = x - camX;
   if (px < -30 || px > canvas.width + 30) return;
   const bob = Math.sin(performance.now() * 0.0009 + x * 0.07) * 1.3;
-  const bodyW = 14, bodyH = 18, bodyBottom = gy - 4 + bob, bodyTop = bodyBottom - bodyH;
+  const bodyColor = "#2a2016";
+  const bodyW = 15, bodyH = 15, bodyBottom = gy - 4 + bob;
+  const headCX = px, headCY = bodyBottom - bodyH - 5;
+
+  // ground shadow
   ctx.fillStyle = "rgba(0,0,0,0.3)";
   ctx.beginPath();
-  ctx.ellipse(px, gy + 2, bodyW * 0.7, 3, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, gy + 2, bodyW * 0.75, 3, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#2a2016";
-  roundRect(ctx, px - bodyW / 2, bodyTop, bodyW, bodyH, 5);
+
+  // hunched, tapered body -- rounder at the back, narrowing toward the
+  // head, instead of a flat rounded rectangle
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.ellipse(px, bodyBottom - bodyH * 0.42, bodyW / 2, bodyH * 0.58, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head, with a distinct elongated snout so the silhouette reads as
+  // an actual animal rather than a second blob stacked on the first
+  ctx.beginPath();
+  ctx.ellipse(headCX, headCY, 6.5, 6, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.ellipse(px, bodyTop - 3, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(headCX, headCY + 4, 3.2, 2.4, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // small round ears
   ctx.beginPath();
-  ctx.ellipse(px, bodyTop + 1, 3, 2.2, 0, 0, Math.PI * 2);
+  ctx.arc(headCX - 5, headCY - 6, 2.2, 0, Math.PI * 2);
+  ctx.arc(headCX + 5, headCY - 6, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // just enough eye highlight to read as a face even this deep in
+  // shadow -- the old version had no facial features at all
+  ctx.fillStyle = "rgba(200,190,170,0.4)";
+  ctx.beginPath();
+  ctx.arc(headCX - 3, headCY - 1, 0.9, 0, Math.PI * 2);
+  ctx.arc(headCX + 3, headCY - 1, 0.9, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -21173,7 +21205,7 @@ function drawMoleholeScene(camX) {
     const seed = i * 71.3;
     const rx = (i * (MOLEHOLE_WIDTH / 22) + pseudoRandom(seed) * 40) - camX;
     if (rx < -20 || rx > canvas.width + 20) continue;
-    const len = 26 + pseudoRandom(seed + 1) * 34;
+    const len = 44 + pseudoRandom(seed + 1) * 56; // longer overall (was 26-60) for a more established, reaching-further root system
     drawMoleholeRoot(rx, len, seed);
   }
 
@@ -22747,17 +22779,20 @@ let tunnelBlockedHint = { active: false, x: 0, heightAboveGround: 0, t: 0 };
 function drawDiggingFlourish(camX) {
   if (!activeDig) return;
   const p = Math.min(1, activeDig.t / TUNNEL_DIG_ANIM_DURATION);
-  // only follows the player (drawn just in front of them, offset by
-  // whichever way they're facing) while they're actually still facing
-  // the hole. If they turn around mid-dig, the animation stays put at
-  // the hole itself instead of dragging along behind their back, which
-  // read as wrong/confusing.
+  // used to anchor the whole flourish at "player position + a fixed 30px"
+  // whenever facing the hole, instead of the hole's own x -- isPlayerNear
+  // allows triggering a dig from up to 22px away, so any time the player
+  // stopped short of dead-center on the spot, that fixed offset put the
+  // shovel swing visibly to the side of the actual marked hole (worse
+  // still on needsStone spots, where the stone-impact flash/sparks use
+  // the real activeDig.x and the shovel didn't match it). Anchoring to
+  // the hole itself, same as the turned-away branch already did, keeps
+  // the swing landing on the real spot no matter where in that
+  // tolerance band the player happened to stop.
   const holeDir = Math.sign(activeDig.x - (player.x + player.width / 2)) || (player.facing || 1);
   const faceDir = player.facing || 1;
   const facingHole = faceDir === holeDir;
-  const sx = facingHole
-    ? (player.x - camX) + player.width / 2 + faceDir * 30
-    : activeDig.x - camX;
+  const sx = activeDig.x - camX;
   const sy = gy + cameraY - activeDig.heightAboveGround;
   // the swing/throw motion itself should always point INTO the hole --
   // when anchored at the player, that's their facing; when anchored at
