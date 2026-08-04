@@ -21390,48 +21390,44 @@ function drawElderTrio(camX) {
         // eye/face level
         const horizonY = bodyTop + 3;
         const jawY = headCY + 9;
-        // one single continuous outline for crown + both brims instead
-        // of a rounded dome with two separate flap shapes glued onto its
-        // sides -- the separate flaps were bulging outward and reading
-        // as detached "ear" appendages rather than part of the hat.
-        // Peaked top (not a rounded arc), then each side sweeps straight
-        // down to a THIN tapered brim tip near the jaw, then curves back
-        // up along the inner, face-hugging edge -- no gap, no outward
-        // bulge, and pointed rather than rounded at the crown.
-        const peakY = horizonY - bonnetRY * 1.15;
-        // the very top isn't a sharp point -- it's the tip of a tall,
-        // narrow vertical oval (tall/thin, not wide/flat), so it tapers
-        // to a small rounded cap instead of coming to a spike
-        const tipRX = bonnetRX * 0.09;
+        // the crown is JUST a rounded vertical oval sitting on the head --
+        // tall rather than wide, rounded all the way around the top
+        // instead of tapering to any kind of point (that read as a "baby
+        // nipple hat"). It stops at the horizon -- it does NOT extend
+        // down the sides to the jaw as a filled shape anymore (that solid
+        // wedge read as "triangles"). What continues down past the
+        // horizon are two thin diagonal STRINGS, not fabric.
+        const crownRX = bonnetRX * 0.62;
+        const crownCY = horizonY - bonnetRY * 0.85;
+        const crownRY = bonnetRY * 1.35;
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
-        ctx.moveTo(headCX - tipRX, peakY);
-        ctx.quadraticCurveTo(headCX, peakY - bonnetRY * 0.3, headCX + tipRX, peakY);
-        ctx.quadraticCurveTo(headCX + bonnetRX * 0.65, peakY + bonnetRY * 0.3, headCX + bonnetRX, horizonY);
-        ctx.quadraticCurveTo(headCX + bonnetRX * 0.7, jawY - 4, headCX + bonnetRX * 0.4, jawY);
-        ctx.quadraticCurveTo(headCX + bonnetRX * 0.22, horizonY + 5, headCX + bonnetRX * 0.12, horizonY);
-        ctx.quadraticCurveTo(headCX, horizonY + 3, headCX - bonnetRX * 0.12, horizonY);
-        ctx.quadraticCurveTo(headCX - bonnetRX * 0.22, horizonY + 5, headCX - bonnetRX * 0.4, jawY);
-        ctx.quadraticCurveTo(headCX - bonnetRX * 0.7, jawY - 4, headCX - bonnetRX, horizonY);
-        ctx.quadraticCurveTo(headCX - bonnetRX * 0.65, peakY + bonnetRY * 0.3, headCX - tipRX, peakY);
-        ctx.closePath();
+        ctx.ellipse(headCX, crownCY, crownRX, crownRY, 0, 0, Math.PI * 2);
         ctx.fill();
-
-        // a simple darker trim along the crown's horizon edge, so it
-        // reads as a brim seam rather than just fading into the head color
         ctx.strokeStyle = "rgba(0,0,0,0.22)";
         ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.moveTo(headCX - bonnetRX, horizonY);
-        ctx.lineTo(headCX + bonnetRX, horizonY);
         ctx.stroke();
 
-        // one soft highlight near the peak, so it doesn't read as a flat
-        // solid-color cutout
+        // one soft highlight near the top, so the oval doesn't read as a
+        // flat solid-color cutout
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
-        ctx.ellipse(headCX - bonnetRX * 0.2, peakY + bonnetRY * 0.7, bonnetRX * 0.22, bonnetRY * 0.3, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(headCX - crownRX * 0.3, crownCY - crownRY * 0.35, crownRX * 0.32, crownRY * 0.28, -0.3, 0, Math.PI * 2);
         ctx.fill();
+
+        // two thin diagonal strings hanging from the base of the crown
+        // down toward the jaw -- plain cords, not a filled brim
+        ctx.strokeStyle = bonnetColor;
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(headCX + crownRX * 0.8, horizonY - 3);
+        ctx.quadraticCurveTo(headCX + bonnetRX * 0.55, (horizonY + jawY) / 2, headCX + bonnetRX * 0.3, jawY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(headCX - crownRX * 0.8, horizonY - 3);
+        ctx.quadraticCurveTo(headCX - bonnetRX * 0.55, (horizonY + jawY) / 2, headCX - bonnetRX * 0.3, jawY);
+        ctx.stroke();
 
         // a thin ribbon tie knotted under the chin -- the detail that
         // actually sells "bonnet" over "hat", and what was missing
