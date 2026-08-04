@@ -20379,100 +20379,63 @@ function drawMoleholeRootTube(cx0, cy0, cx1, cy1, cx2, cy2, cx3, cy3, w0, w1, w2
   ctx.fill();
 }
 
-// a single dangling root, drawn as a real tapered, WIGGLY, branching
-// filled shape (thick at the ceiling, narrowing to a fine tip, bending
-// more than once) rather than a single straight lean -- same organic
-// tapered-tube technique as the clockwork lever's post, extended
-// across a 3-point wiggly centerline. Always forks at least once, with
-// a real chance of a second fork off the main root AND a tiny
-// sub-fork off one of those, so a cluster of these reads as genuinely
-// tangled roots rather than parallel straight strands.
+// a single dangling root -- built as a genuinely RECURSIVE dendritic
+// structure (branches that fork into branches that fork into their own
+// smaller twigs) instead of one main strand plus a couple of bolted-on
+// forks. Each level tapers thinner and darkens slightly, same organic
+// tapered-tube technique as before, so a cluster of these reads as a
+// real tree-like root system rather than parallel wiggly strands.
+function drawDendriticRootBranch(x0, y0, angle, len, width, seed, level, maxLevel) {
+  if (len < 4 || width < 0.5) return;
+
+  const dirX = Math.cos(angle), dirY = Math.sin(angle);
+  const perpX = -dirY, perpY = dirX;
+  // a gentle wiggle perpendicular to the branch's own direction, not
+  // just a straight lean
+  const wiggle = (pseudoRandom(seed + 1) - 0.5) * len * 0.3;
+  const midX = x0 + dirX * len * 0.5 + perpX * wiggle;
+  const midY = y0 + dirY * len * 0.5 + perpY * wiggle;
+  const endX = x0 + dirX * len, endY = y0 + dirY * len;
+  const color = level === 0 ? "#4a3018" : level === 1 ? "#3a2814" : "#2e2010";
+
+  drawMoleholeRootTube(x0, y0, midX, midY, midX, midY, endX, endY, width / 2, width * 0.55, width * 0.55, width * 0.15, color);
+
+  // thin pale highlight down the main trunk only -- reads as the lit
+  // side of a round root instead of a flat strand
+  if (level === 0) {
+    drawMoleholeRootTube(x0 + 0.8, y0, midX + 0.7, midY, midX + 0.7, midY, endX + 0.5, endY - 2, width * 0.16, width * 0.1, width * 0.1, 0.3, "rgba(200,175,130,0.2)");
+  }
+
+  if (level >= maxLevel) return;
+
+  // 1-3 children branching off along THIS branch's own length (not
+  // just from its tip), each a thinner/shorter continuation at a new
+  // angle -- recursing this way is what actually sells "dendritic"
+  // over a fixed one-or-two-forks pattern
+  const roll = pseudoRandom(seed + 5);
+  const childCount = roll < 0.12 ? 1 : (roll < 0.55 ? 2 : 3);
+  const spread = level === 0 ? 0.65 : 1.05;
+  for (let c = 0; c < childCount; c++) {
+    const cSeed = seed + 137 + c * 61.7 + level * 911.3;
+    const t = 0.3 + pseudoRandom(cSeed) * 0.6;
+    const bx = x0 + dirX * len * t, by = y0 + dirY * len * t;
+    // offset stays within the downward hemisphere (angle starts at
+    // straight-down = PI/2) so branches spread sideways/outward but
+    // never double back up toward the ceiling
+    const off = (pseudoRandom(cSeed + 1) - 0.5) * 2 * spread;
+    const childAngle = angle + off;
+    const childLen = len * (0.42 + pseudoRandom(cSeed + 2) * 0.26);
+    const childWidth = width * (0.38 + pseudoRandom(cSeed + 3) * 0.22);
+    drawDendriticRootBranch(bx, by, childAngle, childLen, childWidth, cSeed, level + 1, maxLevel);
+  }
+}
+
 function drawMoleholeRoot(rx, len, seed) {
   const baseW = 5 + pseudoRandom(seed + 10) * 3;
-  // three independent lateral wiggles along the length, alternating
-  // direction more often than not, is what actually sells "wiggly"
-  // over a single smooth lean
-  const w1x = (pseudoRandom(seed + 11) - 0.5) * 20;
-  const w2x = w1x + (pseudoRandom(seed + 17) - 0.5) * 24;
-  const w3x = w2x + (pseudoRandom(seed + 18) - 0.5) * 16;
-  const y1 = len * (0.28 + pseudoRandom(seed + 19) * 0.1);
-  const y2 = len * (0.6 + pseudoRandom(seed + 20) * 0.1);
-
   ctx.save();
-
-  const cx0 = rx, cx1 = rx + w1x, cx2 = rx + w2x, cx3 = rx + w3x;
-
-  drawMoleholeRootTube(cx0, 0, cx1, y1, cx2, y2, cx3, len, baseW / 2, baseW * 0.32, baseW * 0.16, 0.6, "#4a3018");
-
-  // thin pale highlight, same wiggly path, offset and much narrower --
-  // reads as the lit side of a round root instead of a flat strand
-  drawMoleholeRootTube(cx0 + 0.8, 0, cx1 + 0.8, y1, cx2 + 0.6, y2, cx3 + 0.5, len - 2, baseW * 0.16, baseW * 0.1, baseW * 0.06, 0.3, "rgba(200,175,130,0.2)");
-
-  // forks -- always at least one, real odds of a second, each its own
-  // smaller wiggly tapered tube branching off the main root at a
-  // different point/direction
-  const forkCount = 1 + (pseudoRandom(seed + 21) < 0.55 ? 1 : 0);
-  for (let f = 0; f < forkCount; f++) {
-    const fSeed = seed + 30 + f * 23.1;
-    const forkY = len * (0.3 + pseudoRandom(fSeed) * 0.35);
-    const forkDir = pseudoRandom(fSeed + 1) < 0.5 ? -1 : 1;
-    const forkLen = len * (0.3 + pseudoRandom(fSeed + 2) * 0.35);
-    const forkOriginX = rx + w1x * Math.min(1, forkY / y1 || 0) + (forkY > y1 ? (w2x - w1x) * ((forkY - y1) / Math.max(1, y2 - y1)) : 0);
-    const forkMidX = forkOriginX + forkDir * forkLen * 0.55;
-    const forkEndX = forkOriginX + forkDir * (10 + pseudoRandom(fSeed + 3) * 14);
-    const forkW = baseW * 0.32;
-    drawMoleholeRootTube(
-      forkOriginX, forkY,
-      forkMidX, forkY + forkLen * 0.5,
-      forkMidX + forkDir * 4, forkY + forkLen * 0.8,
-      forkEndX, forkY + forkLen,
-      forkW / 2, forkW * 0.4, forkW * 0.2, 0.4,
-      "#3a2814"
-    );
-
-    // small chance of a tiny sub-fork off THIS fork's tip -- real root
-    // clusters branch hierarchically, not just once off the main strand
-    if (pseudoRandom(fSeed + 4) < 0.4) {
-      const subDir = -forkDir;
-      const subLen = forkLen * 0.4;
-      const subEndX = forkEndX + subDir * (6 + pseudoRandom(fSeed + 5) * 8);
-      drawMoleholeRootTube(
-        forkEndX, forkY + forkLen,
-        forkEndX + subDir * subLen * 0.5, forkY + forkLen + subLen * 0.5,
-        forkEndX + subDir * subLen * 0.7, forkY + forkLen + subLen * 0.75,
-        subEndX, forkY + forkLen + subLen,
-        forkW * 0.35, forkW * 0.2, forkW * 0.1, 0.3,
-        "#3a2814"
-      );
-    }
-  }
-
-  // mini root hairs -- several tiny thin sprigs sprouting straight off
-  // the main root's length (distinct from the larger forks above),
-  // scattered at random points/depths so the root reads as genuinely
-  // fibrous/rootier instead of just one strand plus a couple of forks
-  const hairCount = 4 + Math.floor(pseudoRandom(seed + 40) * 4); // 4-7 hairs
-  for (let h = 0; h < hairCount; h++) {
-    const hSeed = seed + 60 + h * 13.7;
-    const hairT = 0.15 + pseudoRandom(hSeed) * 0.75; // where along the main root, avoid the very tip
-    const hairY = len * hairT;
-    // interpolate the main root's centerline x at this depth, same
-    // piecewise approach used for the forks' origin point
-    const hairOriginX = rx + w1x * Math.min(1, hairY / y1 || 0) + (hairY > y1 ? (w2x - w1x) * ((hairY - y1) / Math.max(1, y2 - y1)) : 0);
-    const hairDir = pseudoRandom(hSeed + 1) < 0.5 ? -1 : 1;
-    const hairLen = 4 + pseudoRandom(hSeed + 2) * 7; // short and fine
-    const hairBend = (pseudoRandom(hSeed + 3) - 0.5) * 3;
-    const hairW = baseW * (0.08 + pseudoRandom(hSeed + 4) * 0.06);
-    drawMoleholeRootTube(
-      hairOriginX, hairY,
-      hairOriginX + hairDir * hairLen * 0.5 + hairBend, hairY + hairLen * 0.5,
-      hairOriginX + hairDir * hairLen * 0.8 + hairBend, hairY + hairLen * 0.8,
-      hairOriginX + hairDir * hairLen, hairY + hairLen,
-      hairW, hairW * 0.6, hairW * 0.3, 0.2,
-      "#3a2814"
-    );
-  }
-
+  // maxLevel 2 -> trunk, forks, and a bushy tier of fine terminal
+  // twigs off each fork, all genuinely connected/recursive
+  drawDendriticRootBranch(rx, 0, Math.PI / 2, len, baseW, seed, 0, 2);
   ctx.restore();
 }
 
