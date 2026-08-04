@@ -3494,40 +3494,46 @@ function drawFoliageOcclusion(ctx, x, y, size) {
 
 // aragonite: real aragonite's signature look isn't a faceted gem or a
 // tumbled pebble -- it's a "sputnik" cluster, spiky crystal needles
-// radiating outward from a center in a six-point star burst. Reddish-
-// brown/orange coloring (like the classic Moroccan aragonite stars).
+// radiating outward from a center. Muted rust/tan mineral coloring (like
+// the classic Moroccan aragonite stars), NOT a bright glowing gem -- the
+// original pass leaned too saturated/magical (a pulsing orange aura, a
+// clean symmetric 6-point star) and read as an icon rather than an
+// actual rock, to the point it went unnoticed/unrecognized in play.
+// Denser, more irregular needle count and a duller palette instead.
 function drawAragoniteShape(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
 
-  const pulse = Math.sin(performance.now() * 0.004) * 0.5 + 0.5;
-
-  // soft warm glow behind it
-  ctx.fillStyle = `rgba(200,90,40,${0.2 + pulse * 0.2})`;
+  // a soft dust/shadow bed under it instead of a glow -- reads as
+  // resting on the ground, not radiating light
+  ctx.fillStyle = "rgba(40,25,15,0.35)";
   ctx.beginPath();
-  ctx.arc(0, 0, size * 1.6, 0, Math.PI * 2);
+  ctx.ellipse(0, size * 0.25, size * 1.1, size * 0.4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // six spiky crystal needles radiating from the center -- the actual
-  // star-cluster form, not a rounded/faceted body
-  const spikes = 6;
+  // real sputnik clusters read as a dense spray of needles in many
+  // directions, not a clean symmetric star -- more spikes at irregular
+  // lengths/widths gives it a rougher, actually-mineral look
+  const spikes = 11;
   for (let i = 0; i < spikes; i++) {
-    const a = (i / spikes) * Math.PI * 2;
-    const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
+    const seed = i * 17.3;
+    const a = (i / spikes) * Math.PI * 2 + (pseudoRandom(seed) - 0.5) * 0.35;
+    const len = size * (0.65 + pseudoRandom(seed + 1) * 0.4);
     const tipX = Math.cos(a) * len, tipY = Math.sin(a) * len;
     const perpA = a + Math.PI / 2;
-    const baseW = size * 0.11;
+    const baseW = size * (0.07 + pseudoRandom(seed + 2) * 0.05);
     const baseX1 = Math.cos(perpA) * baseW, baseY1 = Math.sin(perpA) * baseW;
-    ctx.fillStyle = "#a8431e";
+    ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#8a5a3c" : "#7a4e33";
     ctx.beginPath();
     ctx.moveTo(baseX1, baseY1);
     ctx.lineTo(tipX, tipY);
     ctx.lineTo(-baseX1, -baseY1);
     ctx.closePath();
     ctx.fill();
-    // lighter edge along one side of each needle, for a faceted look
-    ctx.fillStyle = "rgba(230,150,100,0.45)";
+    // a faint lighter edge along one side of each needle, for a matte
+    // faceted look -- not a glossy highlight
+    ctx.fillStyle = "rgba(180,140,110,0.3)";
     ctx.beginPath();
     ctx.moveTo(baseX1 * 0.6, baseY1 * 0.6);
     ctx.lineTo(tipX, tipY);
@@ -3537,9 +3543,9 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   }
 
   // dark core where all the needles converge
-  ctx.fillStyle = "#5a2410";
+  ctx.fillStyle = "#3e2818";
   ctx.beginPath();
-  ctx.arc(0, 0, size * 0.16, 0, Math.PI * 2);
+  ctx.arc(0, 0, size * 0.18, 0, Math.PI * 2);
   ctx.fill();
 
   // sparkle accents at a couple of the needle tips
@@ -21362,21 +21368,38 @@ function drawElderTrio(camX) {
         const bonnetColor = elder.bonnetColor || "#c98a9e";
         const bonnetRX = bodyW * 0.5;
         const bonnetRY = 13;
-        // the "horizon" -- where the oval's top arc meets the head,
+        // the "horizon" -- where the crown's top arc meets the head,
         // right at the crown, well above eye/face level
         const horizonY = bodyTop + 3;
 
+        // crown -- the puffy gathered top (unchanged shape from before)
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
         ctx.moveTo(headCX - bonnetRX, horizonY);
-        // just the top half of the oval (angles π to 2π), like a sun
-        // cresting the hill -- nothing drawn below the horizon line
         ctx.ellipse(headCX, horizonY, bonnetRX, bonnetRY, 0, Math.PI, Math.PI * 2);
         ctx.closePath();
         ctx.fill();
 
-        // a simple darker trim along the horizon edge, so it reads as a
-        // brim rather than just fading into the head color
+        // the brim -- a real poke-bonnet brim on each side, curving
+        // forward and down from the crown's edge toward jaw level
+        // instead of stopping dead at the horizon line. A crown with no
+        // brim is exactly what read as a flat dome/turban rather than an
+        // actual bonnet -- the curved brim framing the face on both
+        // sides is the defining shape (see reference photos).
+        const jawY = headCY + 9;
+        [-1, 1].forEach(side => {
+          const edgeX = headCX + side * bonnetRX;
+          ctx.fillStyle = bonnetColor;
+          ctx.beginPath();
+          ctx.moveTo(edgeX, horizonY);
+          ctx.quadraticCurveTo(edgeX + side * 3, horizonY + (jawY - horizonY) * 0.5, edgeX - side * 2, jawY);
+          ctx.quadraticCurveTo(edgeX - side * 6, jawY - 2, edgeX - side * 7, horizonY + 2);
+          ctx.closePath();
+          ctx.fill();
+        });
+
+        // a simple darker trim along the crown's horizon edge, so it
+        // reads as a brim seam rather than just fading into the head color
         ctx.strokeStyle = "rgba(0,0,0,0.22)";
         ctx.lineWidth = 1.1;
         ctx.beginPath();
@@ -21389,6 +21412,29 @@ function drawElderTrio(camX) {
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
         ctx.ellipse(headCX - bonnetRX * 0.25, horizonY - bonnetRY * 0.55, bonnetRX * 0.3, bonnetRY * 0.35, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // a thin ribbon tie knotted under the chin -- the detail that
+        // actually sells "bonnet" over "hat", and what was missing
+        // entirely before
+        const tieY = jawY + 2;
+        ctx.strokeStyle = bonnetColor;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(headCX - 5, jawY - 1);
+        ctx.quadraticCurveTo(headCX - 2, tieY + 1, headCX - 1, tieY + 5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(headCX + 5, jawY - 1);
+        ctx.quadraticCurveTo(headCX + 2, tieY + 1, headCX + 1, tieY + 5);
+        ctx.stroke();
+        ctx.fillStyle = bonnetColor;
+        ctx.beginPath();
+        ctx.ellipse(headCX - 2, tieY, 2.2, 1.4, 0.5, 0, Math.PI * 2);
+        ctx.ellipse(headCX + 2, tieY, 2.2, 1.4, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(headCX, tieY, 1, 0, Math.PI * 2);
         ctx.fill();
       }
     } else if (elder.accessory === "cap") {
@@ -21584,11 +21630,18 @@ function drawTunnelWall(camX) {
     // beat right as the wall breaks, rather than snapping to full
     // height instantly
     const openGrowP = Math.min(1, wallBreakPoofT / 300); // grows in over 300ms right as it breaks, then stays open
-    const openHeight = TUNNEL_PASSAGE_HEIGHT * 0.82 * openGrowP; // a touch shorter than the full passage height
+    // a real person-height doorway, deliberately SMALLER than the
+    // passage it opens into -- previous passes on this got the direction
+    // backwards twice (0.82 read as too big already; bumping it up to
+    // match the full passage made it worse, not better). The actual
+    // complaint was the doorway looming larger than the corridor beyond
+    // it, so this shrinks it well below passage height instead of
+    // matching or exceeding it.
+    const openHeight = TUNNEL_PASSAGE_HEIGHT * 0.55 * openGrowP;
     // an actual hole shape -- rounded oval opening, not a flat black slab,
     // so it reads the same visual language as every other dig spot/hole
     const holeCX = wx + 16, holeBottomY = gy + cameraY;
-    const holeRY = openHeight / 2, holeRX = 20;
+    const holeRY = openHeight / 2, holeRX = 18;
     ctx.fillStyle = "#0a0603";
     ctx.beginPath();
     ctx.ellipse(holeCX, holeBottomY - holeRY, holeRX, holeRY, 0, 0, Math.PI * 2);
@@ -21697,7 +21750,7 @@ const TUNNEL_NODES = [
   { id: "s3a", parent: "s2", x: 970, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
   { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
   { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
-  { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: true, dug: false }, // the cushion-shaft piece, deep in
+  { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   // a trapdoor spot -- looks like a normal dig along the same corridor,
   // but dug open it turns out hollow underneath (see trapGap handling in
   // tunnelMergedLedgeSpan/drawTunnelDigSpot) and drops you straight down
@@ -21705,7 +21758,12 @@ const TUNNEL_NODES = [
   // Rendered with a visibly cracked/broken look once dug, not a silent
   // gotcha -- you can see it's different before you commit to it.
   { id: "s5trap", parent: "s5", x: 1070, heightAboveGround: 90, dir: "side", hasItem: false, dug: false, trapGap: true },
-  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }, // more passage continuing right past the reward, its own dead end
+  // the cushion-shaft piece -- moved here from s5 (one hop further along)
+  // so it doesn't sit right on top of s5trapNook's aragonite, just 40
+  // units away through the trapdoor right next door. Too close together,
+  // both reading as "reward" in the same glance ("the holes... both have
+  // rewards. they are too close").
+  { id: "s5r", parent: "s5", x: 1110, heightAboveGround: 90, dir: "side", hasItem: true, dug: false },
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
   // gives the right half of the maze its own vertical movement too
@@ -21887,12 +21945,33 @@ function tunnelPositionRevealed(x, h) {
   // [left,right], but here we're given the player's CENTER (x = centerX),
   // so the equivalent slack is only half the player's width, not the full
   // width -- using the full width here would under-cover, not over-cover.
-  const tunnelLedgeRevealMargin = player.width / 2 + 2;
+  // +2 used to be razor-exact against the player's own per-frame move
+  // step (3px): walking off the very end of a shelf could land the
+  // recovery check's rejected x and its retried x on the SAME losing
+  // side of this boundary every single frame (real repro: center x=603
+  // vs a left-margin edge at 604, forever), which reads as the player
+  // getting stuck floating/glitching in place, unable to walk any
+  // further even though nothing should be blocking them. A few extra px
+  // of buffer (covering more than one full move-step) means a frame
+  // that fails the check is never immediately followed by a retry that
+  // fails at the exact same spot.
+  const tunnelLedgeRevealMargin = player.width / 2 + 8;
   for (const node of TUNNEL_NODES) {
     if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) continue;
     const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
+    // no real lower bound below the ledge -- used to cut off just 6
+    // units under the platform, so walking off the true edge of a
+    // dead-end ledge (nothing dug further out at that height) dropped
+    // the player into a sliver of "unrevealed" space a few px below
+    // their own feet. With nothing to catch them AND no fallback below
+    // reading as safe, the recovery logic kept yanking them back up to
+    // the ledge, gravity kept pulling them back down past the same cutoff,
+    // forever -- a real repro of "stuck floating, glitchy little twitch,
+    // can't move." Falling out from under a dug ledge toward the ground
+    // below it should always read as safe (matches the trapdoor's own
+    // auto-fall-through design), all the way down to height 0.
     if (x >= left - tunnelLedgeRevealMargin && x <= right + tunnelLedgeRevealMargin &&
-        h >= platformTop - 6 && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
+        h >= 0 && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
       return true;
     }
   }
