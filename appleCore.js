@@ -19882,10 +19882,13 @@ const MOLEHOLE_ALCOVES = [
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
-// stone arch -- not marked at all beyond a small mossy lump that blends
-// into the stone, since the whole point is that nobody would think to
-// double-jump up onto what reads as pure background scenery
-const moleHoleSecretPiece = { x: MOLEHOLE_ALCOVES[0].x, heightAboveGround: 108, collected: false };
+// stone arch -- not marked at all beyond a stray log tangled in a real
+// hanging root, since the whole point is that nobody would think to
+// double-jump up onto what reads as pure background scenery. Pushed a
+// bit further in past the first alcove (was sitting right at its own
+// arch, x300) and raised well past single-jump range (~90 max) into
+// genuine double-jump-only territory (double-jump max ~140.6).
+const moleHoleSecretPiece = { x: 350, heightAboveGround: 130, collected: false, fadeT: 0 };
 
 /* ------------------------------------------------------
    MOLE HOLE SHOPKEEPER -- a real, interactive third alcove, bigger and
@@ -20108,12 +20111,49 @@ function drawMoleShopAlcove(camX) {
   ctx.strokeStyle = "#1c1208";
   ctx.lineWidth = 1;
   ctx.strokeRect(ax - archR + 10, counterTop, w - 20, 12);
-  ["#c98a3a", "#7a2f2f", "#3f5766", "#5c8a35", "#b09040"].forEach((color, i) => {
-    const wx = ax - archR + 26 + i * ((w - 52) / 4);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.ellipse(wx, counterTop - 5, 7, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // real variety now -- different shapes (jars, crates, wrapped goods,
+  // a small coin stack) at uneven spacing instead of five identical
+  // evenly-spaced ellipses, so the counter reads as an actual
+  // assortment of wares rather than a repeated stamp
+  const shopWaresSpan = w - 52;
+  [
+    { color: "#c98a3a", shape: "ellipse" },
+    { color: "#7a2f2f", shape: "box" },
+    { color: "#3f5766", shape: "triangle" },
+    { color: "#5c8a35", shape: "ellipse" },
+    { color: "#b09040", shape: "stack" }
+  ].forEach((item, i) => {
+    const seed = MOLE_SHOP_X * 5.3 + i * 41.7;
+    const t = (i + 0.5) / 5 + (pseudoRandom(seed) - 0.5) * 0.16;
+    const wx = ax - archR + 26 + t * shopWaresSpan;
+    const wy = counterTop - 5 + (pseudoRandom(seed + 1) - 0.5) * 2;
+    ctx.fillStyle = item.color;
+    if (item.shape === "box") {
+      const bw = 10 + pseudoRandom(seed + 2) * 4, bh = 8 + pseudoRandom(seed + 3) * 3;
+      ctx.fillRect(wx - bw / 2, wy - bh / 2, bw, bh);
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(wx - bw / 2, wy - bh / 2, bw, bh);
+    } else if (item.shape === "triangle") {
+      const s = 8 + pseudoRandom(seed + 2) * 3;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy - s * 0.7);
+      ctx.lineTo(wx - s * 0.7, wy + s * 0.4);
+      ctx.lineTo(wx + s * 0.7, wy + s * 0.4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (item.shape === "stack") {
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.ellipse(wx + (k - 1) * 3, wy - k * 2, 4, 2.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      const rx = 6 + pseudoRandom(seed + 2) * 3, ry = 4 + pseudoRandom(seed + 3) * 2;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
   // two lanterns instead of one
@@ -20151,10 +20191,17 @@ function drawMoleShopAlcove(camX) {
 // root hanging down from the ceiling, wood-brown so it blends with the
 // root itself rather than a green moss lump that had no root anywhere
 // near it and just floated above the alcove's arch
+const MOLEHOLE_SECRET_PIECE_FADE_MS = 700; // used to just vanish the instant it was collected -- now the whole root+log fades out gracefully instead
+
 function drawMoleHoleSecretPiece(camX) {
-  if (moleHoleSecretPiece.collected) return;
+  if (moleHoleSecretPiece.collected && moleHoleSecretPiece.fadeT >= MOLEHOLE_SECRET_PIECE_FADE_MS) return;
   const sx = moleHoleSecretPiece.x - camX, sy = gy - moleHoleSecretPiece.heightAboveGround;
   const seed = moleHoleSecretPiece.x * 3.7;
+
+  ctx.save();
+  if (moleHoleSecretPiece.collected) {
+    ctx.globalAlpha = Math.max(0, 1 - moleHoleSecretPiece.fadeT / MOLEHOLE_SECRET_PIECE_FADE_MS);
+  }
 
   // a real root reaching all the way down from the ceiling to just past
   // the log's height, so there's an actual root here for it to be
@@ -20196,6 +20243,8 @@ function drawMoleHoleSecretPiece(camX) {
   ctx.moveTo(sx + 10, sy - 7);
   ctx.quadraticCurveTo(sx + 3, sy + 5, sx - 6, sy - 2);
   ctx.stroke();
+
+  ctx.restore();
 }
 
 function drawMoleholeAlcove(alcove, camX) {
@@ -20280,18 +20329,38 @@ function drawMoleholeAlcove(alcove, camX) {
     ctx.arc(ax + 4, bodyTop - 8, 1.6, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // pointed hood
+    // pointed hood -- previously anchored low enough (bodyTop+4 down to
+    // the eyes at bodyTop+12) that the counter, drawn afterward right on
+    // top, actually covered the eyes and most of the head entirely --
+    // all that ever showed was the bare hood tip, which is exactly why
+    // this read as a vague mint shape instead of a figure. Shifted the
+    // whole head cluster up with real clearance from the counter, and
+    // added a cloak-flare at the shoulders so what's visible above the
+    // counter reads as draped fabric, not a flat rectangle.
+    const hoodBaseY = bodyTop - 8;
     ctx.beginPath();
-    ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 4);
-    ctx.lineTo(ax, bodyTop - 10);
-    ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 4);
+    ctx.moveTo(ax - bodyW / 2 + 1, hoodBaseY);
+    ctx.lineTo(ax, hoodBaseY - 14);
+    ctx.lineTo(ax + bodyW / 2 - 1, hoodBaseY);
     ctx.closePath();
     ctx.fill();
-    // two small dot eyes
+    // cloak-flare -- fabric draping out over the shoulders just under
+    // the hood, wider than the hood's own base
+    ctx.beginPath();
+    ctx.moveTo(ax - bodyW / 2 - 3, hoodBaseY + 11);
+    ctx.quadraticCurveTo(ax - bodyW / 2 + 2, hoodBaseY + 2, ax - bodyW / 2 + 1, hoodBaseY);
+    ctx.lineTo(ax + bodyW / 2 - 1, hoodBaseY);
+    ctx.quadraticCurveTo(ax + bodyW / 2 - 2, hoodBaseY + 2, ax + bodyW / 2 + 3, hoodBaseY + 11);
+    ctx.lineTo(ax + bodyW / 2 - 2, hoodBaseY + 15);
+    ctx.lineTo(ax - bodyW / 2 + 2, hoodBaseY + 15);
+    ctx.closePath();
+    ctx.fill();
+    // two small dot eyes, now genuinely inside the hood's shadow and
+    // clear of the counter with real margin
     ctx.fillStyle = "#1c1208";
     ctx.beginPath();
-    ctx.arc(ax - 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
-    ctx.arc(ax + 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
+    ctx.arc(ax - 4, hoodBaseY + 4, 1.8, 0, Math.PI * 2);
+    ctx.arc(ax + 4, hoodBaseY + 4, 1.8, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -20302,6 +20371,17 @@ function drawMoleholeAlcove(alcove, camX) {
   ctx.strokeStyle = "#1c1208";
   ctx.lineWidth = 1;
   ctx.strokeRect(ax - archR + 8, counterTop, w - 16, 10);
+
+  // small paws resting on the counter edge -- grounds the hooded
+  // figure as actually standing there, drawn after the counter so
+  // they read as resting on top of it rather than tucked behind
+  if (!alcove.hasMole) {
+    ctx.fillStyle = shopColor;
+    ctx.beginPath();
+    ctx.ellipse(ax - 8, counterTop, 3.2, 2.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(ax + 8, counterTop, 3.2, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // a few wares-blobs on the counter, hinting at goods without needing
   // real item art -- just enough to read as "a shop," not empty
@@ -20433,9 +20513,15 @@ function drawDendriticRootBranch(x0, y0, angle, len, width, seed, level, maxLeve
 function drawMoleholeRoot(rx, len, seed) {
   const baseW = 5 + pseudoRandom(seed + 10) * 3;
   ctx.save();
+  // gentle sway in the "wind" -- a slow, small oscillation on the
+  // trunk's own starting angle, which the whole recursive structure
+  // inherits, so the entire root rocks together rather than sitting
+  // perfectly static. Phased off the seed so a cluster of these don't
+  // all sway in lockstep.
+  const sway = Math.sin(performance.now() * 0.0006 + seed * 0.7) * 0.05;
   // maxLevel 2 -> trunk, forks, and a bushy tier of fine terminal
   // twigs off each fork, all genuinely connected/recursive
-  drawDendriticRootBranch(rx, 0, Math.PI / 2, len, baseW, seed, 0, 2);
+  drawDendriticRootBranch(rx, 0, Math.PI / 2 + sway, len, baseW, seed, 0, 2);
   ctx.restore();
 }
 
@@ -20490,13 +20576,16 @@ function drawMoleholeRootPillar(x, camX) {
 }
 
 // a small pile of dug-up dirt with a discarded shovel stuck in it --
-// purely decorative, ties the room back to the idea that moles
-// actually dug this space out. Sits near the entrance-side root pillar.
-const MOLEHOLE_DIRT_PILE_X = 70;
-function drawMoleholeDirtPile(camX) {
-  const px = MOLEHOLE_DIRT_PILE_X - camX;
+// purely decorative -- moved out of the mole hole (where a random pile
+// of dirt with a shovel stuck in it, sitting next to a tidy market row,
+// read as out of place) and into tunnel town instead, where an actual
+// dig is happening and it belongs. Takes an explicit x/groundY now so
+// it can be reused in either scene's own coordinate space.
+const TUNNELTOWN_DIRT_PILE_X = 90;
+function drawMoleholeDirtPile(camX, worldX, groundY) {
+  const px = worldX - camX;
   if (px < -40 || px > canvas.width + 40) return;
-  const py = gy;
+  const py = groundY;
   ctx.fillStyle = "rgba(0,0,0,0.25)";
   ctx.beginPath();
   ctx.ellipse(px, py + 2, 24, 5, 0, 0, Math.PI * 2);
@@ -20597,7 +20686,11 @@ function drawMoleholeFungusCluster(camX) {
 // shop's new, bigger footprint, keeping their own gap to each other
 // about the same. 1350/1480 untouched.
 const MOLEHOLE_PLATFORMS = [
-  { x: 175, heightAboveGround: 55, width: 65 },
+  // moved off the bare entrance (was x175) to sit just above the
+  // bulletin board (x435) instead -- gives the board a reason to be
+  // looked at and puts the platform somewhere more interesting than
+  // empty floor right by the spawn point
+  { x: 435, heightAboveGround: 105, width: 65 },
   { x: 670, heightAboveGround: 60, width: 60 },
   { x: 985, heightAboveGround: 55, width: 65 },
   { x: 1100, heightAboveGround: 115, width: 55 },
@@ -20713,6 +20806,52 @@ function drawMoleholeShaftPreview(camX) {
     ctx.fillText("OUT OF", px, sy - 1);
     ctx.fillText("ORDER", px, sy + 7);
     ctx.textAlign = "left";
+  }
+
+  // the actual socket the gear gets fitted into -- previously there was
+  // no visible fixture at all here (just an ambient background mole
+  // happening to sit nearby, easy to mistake for the target). A small
+  // riveted metal plate with a gear-notched hole reads as "mechanical"
+  // and "this specific shape goes here" -- empty and dark while broken,
+  // filled with the actual gear once fixed.
+  const sockY = gy - 20;
+  ctx.fillStyle = "#33302c";
+  roundRect(ctx, px - 13, sockY - 11, 26, 22, 3);
+  ctx.fill();
+  ctx.strokeStyle = "#17140f";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px - 13, sockY - 11, 26, 22);
+  ctx.fillStyle = "#4a453c";
+  [[-9, -7], [9, -7], [-9, 7], [9, 7]].forEach(([dx, dy]) => {
+    ctx.beginPath();
+    ctx.arc(px + dx, sockY + dy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // gear-notched cavity -- same silhouette whether it's an empty socket
+  // or a fitted gear, just recolored/filled once moleholeShaftFixed
+  const teeth = 8, rOuter = 8, rInner = rOuter * 0.68;
+  ctx.beginPath();
+  for (let t = 0; t < teeth; t++) {
+    const a1 = (t / teeth) * Math.PI * 2;
+    const a2 = a1 + (Math.PI * 2 / teeth) * 0.5;
+    ctx.lineTo(px + Math.cos(a1) * rOuter, sockY + Math.sin(a1) * rOuter);
+    ctx.lineTo(px + Math.cos(a2) * rInner, sockY + Math.sin(a2) * rInner);
+  }
+  ctx.closePath();
+  ctx.fillStyle = moleholeShaftFixed ? "#c9a03a" : "#0c0a08";
+  ctx.fill();
+  if (moleholeShaftFixed) {
+    ctx.fillStyle = "#3a2c10";
+    ctx.beginPath();
+    ctx.arc(px, sockY, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px, sockY, rOuter * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -21113,7 +21252,6 @@ function drawMoleholeScene(camX) {
 
   drawTunnelTownEntrance(camX);
   drawMoleholeSpores(camX);
-  drawMoleholeDirtPile(camX);
   MOLEHOLE_AMBIENT_MOLES.forEach(x => drawMoleholeAmbientMole(x, camX));
   drawMoleholeFungusCluster(camX);
 
@@ -21123,6 +21261,13 @@ function drawMoleholeScene(camX) {
 }
 
 function updateMoleholeScene(deltaTime) {
+  // secret piece fade-out -- used to just vanish the instant it was
+  // collected; now ticks up over MOLEHOLE_SECRET_PIECE_FADE_MS so
+  // drawMoleHoleSecretPiece can fade the whole root+log out gracefully
+  if (moleHoleSecretPiece.collected && moleHoleSecretPiece.fadeT < MOLEHOLE_SECRET_PIECE_FADE_MS) {
+    moleHoleSecretPiece.fadeT += deltaTime * 1000;
+  }
+
   // dirt platform collision -- same generic landing pattern used for
   // the ratroom shelves and forest gears elsewhere in the game
   MOLEHOLE_PLATFORMS.forEach(p => {
@@ -23022,6 +23167,11 @@ function drawTunnelTownScene(camX) {
   ctx.fill();
 
   ctx.restore(); // end of the carve clip -- everything outside the nook/ovals/tubes stays solid dirt
+
+  // the dirt-pile-with-shovel prop -- moved here from the mole hole,
+  // where it read as out of place next to the tidy market row. An
+  // actual dig in progress is exactly where a discarded shovel belongs.
+  drawMoleholeDirtPile(camX, TUNNELTOWN_DIRT_PILE_X, groundY);
 
   // the elders, sitting right where the passage dead-ends -- drawn
   // after the clip/fill above so they're never accidentally clipped
