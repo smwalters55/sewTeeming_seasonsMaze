@@ -1815,9 +1815,26 @@ function handleInput(){
   // NOT the room's full width the instant the wall breaks. Otherwise
   // you could physically walk straight through undug earth into areas
   // that haven't been carved (or even seen) yet.
+  //
+  // tunnelWalkLimit used to match nodes by height alone (no x-check --
+  // unlike tunnelMergedLedgeSpan, which learned that lesson earlier),
+  // so mid-fall off a real dead end (e.g. s5r2), the instant the
+  // player's falling height drifted far enough from that dead end's own
+  // height, the "nearest qualifying node" could suddenly become some
+  // completely unrelated frontier spot back near the start (like s1u1)
+  // that only coincidentally shared a similar height -- clamping the
+  // player there, reading as a hard teleport backward mid-fall. Real
+  // repro: falling past s5r2 at ~y46 snapped straight to x840 (s1u1's
+  // neighborhood), 400+ units left of the drop. Fixed at the source
+  // (tunnelWalkLimit now also requires x-proximity to the player), plus
+  // a belt-and-suspenders guard here: never let this coarse backstop
+  // override a spot the fine-grained 2D dig-collision already agrees is
+  // genuinely revealed.
   if (currentScene === "tunneltown") {
-    const rightBound = tunnelWalkLimit(player.y);
-    if (player.x > rightBound) player.x = rightBound;
+    const rightBound = tunnelWalkLimit(player.y, player.x);
+    if (player.x > rightBound && !tunnelPositionRevealed(player.x + player.width / 2, player.y)) {
+      player.x = rightBound;
+    }
   }
 
   if (keys.ctrl && !camera.locked) {
@@ -21616,22 +21633,46 @@ function drawDetailedDirtFill(x0, w, h, seedBase, camX) {
     ctx.fill();
   }
 
-  // embedded rocks -- varied size/tone, with a small highlight so they
-  // read as rounded stones rather than flat dots
+  // embedded rocks -- real jagged, irregular chunks instead of clean
+  // ellipses ("all the rocks not be just circles and ovals in the dirt
+  // that is hard and not dug"). Each one's a rough polygon with an
+  // uneven number of unevenly-spaced points, so they read as broken
+  // stone/rubble embedded in the wall rather than smooth pebbles.
   const rockCount = Math.max(4, Math.round((scrolling ? worldW : w) / 46));
   for (let i = 0; i < rockCount; i++) {
     const seed = seedBase + 500 + i * 17.3;
     const rx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
     if (scrolling && (rx < x0 - 40 || rx > x0 + w + 40)) continue;
     const ry = pseudoRandom(seed + 1) * h;
-    const rr = 3 + pseudoRandom(seed + 2) * 6;
+    const rr = 4 + pseudoRandom(seed + 2) * 7;
+    const rotation = pseudoRandom(seed + 4) * Math.PI;
+    const points = 6 + Math.floor(pseudoRandom(seed + 5) * 3); // 6-8 point jagged silhouette
     ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#6a6154" : "#453d32";
     ctx.beginPath();
-    ctx.ellipse(rx, ry, rr, rr * 0.8, pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2);
+    for (let p = 0; p < points; p++) {
+      const a = rotation + (p / points) * Math.PI * 2;
+      // uneven radius per point -- real fracture-plane irregularity,
+      // not a smooth silhouette with a bit of rotation
+      const rad = rr * (0.55 + pseudoRandom(seed + 10 + p * 3.1) * 0.75);
+      const px = rx + Math.cos(a) * rad;
+      const py = ry + Math.sin(a) * rad * 0.8;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    // a hard-edged shadow facet on one side instead of a soft round
+    // highlight -- reads as a broken flat plane catching light, not a
+    // polished rounded stone
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.beginPath();
-    ctx.ellipse(rx - rr * 0.3, ry - rr * 0.3, rr * 0.35, rr * 0.25, 0, 0, Math.PI * 2);
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx + Math.cos(rotation + 0.4) * rr * 0.9, ry + Math.sin(rotation + 0.4) * rr * 0.7);
+    ctx.lineTo(rx + Math.cos(rotation + 1.1) * rr * 0.6, ry + Math.sin(rotation + 1.1) * rr * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath();
+    ctx.ellipse(rx - rr * 0.3, ry - rr * 0.3, rr * 0.3, rr * 0.2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -21652,8 +21693,11 @@ function drawDetailedDirtFill(x0, w, h, seedBase, camX) {
 
   // a handful of actual gnarly old roots, distinct from the thin straight
   // cracks above -- curved, sometimes forked, real character rather than
-  // pure geometric fill
-  const rootCount = Math.max(2, Math.round((scrolling ? worldW : w) / 90));
+  // pure geometric fill. Density bumped up (was /90) -- per "messy,
+  // rumbly, roots coming out" this hard-dirt fill needs to read as a
+  // rough, root-tangled wall, not a mostly-flat surface with the
+  // occasional stray strand.
+  const rootCount = Math.max(3, Math.round((scrolling ? worldW : w) / 60));
   for (let i = 0; i < rootCount; i++) {
     const seed = seedBase + 1300 + i * 29.3;
     const rrx = scrolling ? (worldX0 + pseudoRandom(seed) * worldW) - camX : x0 + pseudoRandom(seed) * w;
@@ -21983,9 +22027,30 @@ function tunnelMergedLedgeSpan(node) {
 // not that node itself has been dug yet, so you can always reach the
 // next spot to dig it. Deliberately tight (not a wide flood-lit
 // stretch) -- separate from the visual carve shapes below.
-function tunnelWalkLimit(playerH) {
+//
+// Real repro (falling off the dead end at s5r2, x1210): height-only
+// matching let a totally unrelated frontier node clear across the map
+// (s1u1, x810, just a coincidentally similar height) win the Math.max
+// the instant the fall drifted a few px past s5r2's own tight margin --
+// snapping the player 400+ units backward mid-fall, since this coarse
+// boundary has no idea those two nodes have nothing to do with each
+// other. Now also requires the node to be within a generous x range of
+// the player's OWN current position (not just of each other, the way
+// tunnelMergedLedgeSpan's tolerance works) -- big enough to cover any
+// real jump/fall drift, nowhere near big enough to reach clear across
+// the map to a different branch entirely.
+function tunnelWalkLimit(playerH, playerX) {
   if (!tunnelWallBroken) return TUNNELTOWN_WALL_X - 6;
-  let limit = TUNNELTOWN_WALL_X + 40;
+  // base fallback is the player's OWN current x (a no-op limit), not a
+  // fixed constant near the entrance -- near a dead end's own edge
+  // (e.g. mid-fall off s5r2), it's normal for NOTHING to qualify within
+  // xRange once the player's height has drifted past every nearby
+  // node's own height band. Falling back to a fixed low constant then
+  // yanked the player call the way back to the tunnel entrance, which
+  // is a far worse teleport than just... not clamping anything that
+  // frame. Combined with the caller's own tunnelPositionRevealed guard,
+  // this keeps the clamp a pure backstop instead of an active hazard.
+  let limit = playerX != null ? playerX : TUNNELTOWN_WALL_X + 40;
   // was pure x, with no regard for height at all -- meaning a node dug
   // way up in the air (like the far end of the raised reward path) pushed
   // this boundary out just as far at GROUND level too, letting you just
@@ -21996,7 +22061,9 @@ function tunnelWalkLimit(playerH) {
   // dig-collision uses (tunnelHoleContains), so this coarse backup
   // stays consistent with it.
   const ry = TUNNEL_PASSAGE_HEIGHT / 2 + 8;
+  const xRange = 260;
   TUNNEL_NODES.forEach(node => {
+    if (playerX != null && Math.abs(node.x - playerX) > xRange) return;
     if (tunnelNodeParentDug(node) && Math.abs(node.heightAboveGround - (playerH || 0)) <= ry) {
       limit = Math.max(limit, node.x + 30);
     }
