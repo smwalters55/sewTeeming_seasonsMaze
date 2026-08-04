@@ -9925,10 +9925,10 @@ function drawForestScene(camX) {
   drawMoleHoleEntrance(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
-  // drawForestBrambleFront and drawForestBridgePlatform now called
-  // after the player sprite in the main draw() function -- the
-  // bridge platform/item specifically needs to be drawn after the
-  // bramble front layer so it's never obscured by it
+  // drawForestBrambleFront is called after the player sprite in the
+  // main draw() function (drawForestBridgePlatform used to be called
+  // alongside it, but that perch/piece is cut -- see the removal note
+  // near FOREST_PLATFORM_DROP_GRACE_MS)
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
 }
@@ -11036,82 +11036,21 @@ function drawForestBrambleFront(camX) {
   }
 }
 
-// bridge-piece perch -- sits directly above the second knot, within
-// reach of the SAME jump that clears it, so successfully clearing
-// knot 2 is what grabs the piece -- not a separate hop-off-and-walk
-// errand. Was a low platform near ground level requiring a dismount;
-// moved up so it's caught naturally mid-arc while clearing the knot.
-const FOREST_BRIDGE_PLATFORM_X = 1720; // aligned with the second obstacle, shifted another +80 (was 1640)
-const FOREST_BRIDGE_PLATFORM_HEIGHT = 80; // was 22 (ground-level) -- now well above the knot's clearHeight (48), inside single-jump range
-
-// inventory.bridgePiece only actually updates once the collect
-// animation reaches the basket (~2s later), but the platform's own
-// gating used the live inventory count directly -- so during that
-// window `!inventory.bridgePiece` was still true, letting a repeated
-// space press while still standing there re-trigger the whole
-// collect animation over and over. This flags it the INSTANT
-// collection starts, independent of when inventory actually updates.
-let forestBridgePieceCollected = false;
-
-// brief grace window after collecting the bridge piece, during which
-// the remount check runs even though the player isn't actively
-// jumping. The platform disappears the instant you collect (its own
-// draw returns early), so the very next frame you're just standing in
-// mid-air with nothing under you -- if the remount check only ever
-// runs while player.jumping is true (see the main remount block
-// below), a passive fall like this can never reconnect with the
-// snake even if it's right there, since you never actually jumped.
+// bridge-piece perch above the second knot -- cut entirely. With 10
+// bridge pieces scattered across the game (2 forest gear pairs, this
+// perch, the boomerang knock-down, the flight-only catch, the tunnel
+// town dig, the mole hole secret, and the mole hole acorn-barter), the
+// forest alone accounted for 6 of them -- trimming this one (a plain
+// static perch, not tied to its own mechanic the way the boomerang
+// knock-down is) instead of either intro-gear piece, since those two
+// are a deliberate paired "easy piece, then hard piece" tutorial beat.
+// forestPlatformDropGraceUntil/FOREST_PLATFORM_DROP_GRACE_MS stay
+// declared (still referenced by the snake-remount check further down)
+// but nothing sets forestPlatformDropGraceUntil above 0 anymore, so
+// that remount branch simply never fires -- harmless dead code, not
+// worth untangling from the shared remount logic around it.
 let forestPlatformDropGraceUntil = 0;
 const FOREST_PLATFORM_DROP_GRACE_MS = 1500;
-
-function drawForestBridgePlatform(camX) {
-  // was also checking `|| inventory.bridgePiece` here -- a leftover
-  // from before forestBridgePieceCollected existed, back when this was
-  // the only bridge piece in the whole scene. Now there are several
-  // independent ones (intro-row gears, clockwork gears, the boomerang
-  // knock-down, the flight-only piece), all sharing that same
-  // inventory count. Checking the SHARED count meant collecting any
-  // ONE of them anywhere else would make THIS platform's still-
-  // uncollected log vanish the moment that other pickup's collect
-  // animation landed (~2s later) -- which is exactly what looked like
-  // "the log disappears when the snake passes," since that landing
-  // just happened to coincide with being near the snake at the time.
-  if (forestBridgePieceCollected) return; // already collected, nothing left to show
-  const px = FOREST_BRIDGE_PLATFORM_X - camX;
-  const py = gy - FOREST_BRIDGE_PLATFORM_HEIGHT;
-
-  // woven nest/perch -- built from the same kind of strands as the
-  // bramble itself, flattened into a standable shape, so it reads as
-  // part of the same tangle rather than a manufactured plank pasted
-  // on top of it
-  ctx.lineCap = "round";
-  for (let i = 0; i < 6; i++) {
-    const seed = 900 + i * 7.3;
-    const yOff = pseudoRandom(seed) * 3 - 1.5;
-    ctx.strokeStyle = pseudoRandom(seed + 1) < 0.5 ? "#3f5527" : "#2e3520";
-    ctx.lineWidth = 4 + pseudoRandom(seed + 2) * 2;
-    ctx.beginPath();
-    ctx.moveTo(px - 26, py + 4 + yOff - i * 0.6);
-    ctx.quadraticCurveTo(px, py - 3 + yOff + Math.sin(i) * 3, px + 26, py + 4 + yOff - i * 0.6);
-    ctx.stroke();
-  }
-  // a couple of thorns and leaves along the perch edge for continuity with the bramble
-  ctx.fillStyle = "#2e3520";
-  ctx.beginPath();
-  ctx.moveTo(px - 20, py); ctx.lineTo(px - 13, py - 7); ctx.lineTo(px - 18, py + 3);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle = "#5d7a3a";
-  ctx.save();
-  ctx.translate(px + 20, py - 2);
-  ctx.rotate(0.5);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // the bridge piece itself -- an actual log shape, not a brown oval
-  drawBridgePieceShape(ctx, px, py - 8, 10, 0.15);
-}
 
 // branch + leaf clump drawn AFTER the gear so it partially occludes
 // it -- reads as the gear sitting tucked into the tree's branches
@@ -12604,65 +12543,9 @@ function updateForestScene(deltaTime) {
     }
   }
 
-  // bridge-piece platform -- standard platform landing, then a space
-  // press while standing on it collects the piece. Same fix as the
-  // draw function: this used to also gate on the SHARED
-  // `inventory.bridgePiece` count, which meant collecting any other
-  // bridge piece elsewhere in the scene would silently disable this
-  // platform's own landing collision too, not just its visibility --
-  // the player would fall straight through it.
-  if (!forestBridgePieceCollected) {
-    const platTop = FOREST_BRIDGE_PLATFORM_HEIGHT;
-    if (
-      player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
-      player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
-      player.y <= platTop &&
-      player.y >= platTop - 20 &&
-      player.vy <= 0
-    ) {
-      player.y = platTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      // landing here is usually mid-jump off the snake (midJump still
-      // true) -- without clearing it, standing still on this platform
-      // kept force-tracking player.x to the snake's own moving
-      // position every frame (see the `if (forestSnake.midJump)` block
-      // below), silently dragging the player off the platform and
-      // leaving them in a position that no longer lined up with the
-      // snake body when they then fell. Clearing it here means once
-      // you land, you actually stay put until you choose to fall.
-      forestSnake.midJump = false;
-    }
-    if (
-      Math.abs(player.y - platTop) < 2 &&
-      player.x + player.width > FOREST_BRIDGE_PLATFORM_X - 22 &&
-      player.x < FOREST_BRIDGE_PLATFORM_X + 22 &&
-      keys.spaceJustPressed
-    ) {
-      forestBridgePieceCollected = true; // set immediately -- inventory.bridgePiece itself doesn't update until the animation lands, ~2s later
-      // addToInventory happens automatically once the collect animation
-      // reaches the basket (see updateFlyingItems) -- calling it here
-      // too would double-count it
-      startCollectAnimation(
-        { x: FOREST_BRIDGE_PLATFORM_X, y: gy - platTop, size: 10, rotation: 0 },
-        "bridgePiece"
-      );
-
-      // the platform disappears the instant it's collected (its own
-      // draw call returns early once inventory.bridgePiece is set), so
-      // without this the player just drops through empty air on the
-      // very next frame. A single check at this exact instant wasn't
-      // enough -- the snake is constantly moving, so it often wasn't
-      // under this x the exact frame you pressed space even if it had
-      // just been there (or was about to be). Instead, open a real
-      // grace window: for the next 1.5s, the remount check below runs
-      // even without an active jump, so if the snake passes under you
-      // at any point during the fall, you reconnect with it instead of
-      // needing to already be mid-jump the instant you collected.
-      forestPlatformDropGraceUntil = performance.now() + FOREST_PLATFORM_DROP_GRACE_MS;
-    }
-  }
+  // bridge-piece perch/platform here -- removed along with the piece
+  // itself (see the removal note further up, near where its constants
+  // used to live).
 
   forestSnake.t += deltaTime * 1000;
 
@@ -19971,13 +19854,14 @@ const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches s
 // wares-blobs on it. Not walk-in spaces, just glimpsed depth like the
 // reference image's market halls -- pure atmosphere for this pass.
 const MOLEHOLE_ALCOVES = [
-  { x: 330, w: 130, wareColors: ["#b8862f", "#7a2f2f", "#3f5766"], shopColor: "#8a6a3a" },
-  // pulled right, from 530 -- at 530 (w110, edges 475-585) this was
-  // actually overlapping the shop arch's own left edge (565) by 20px.
-  // 500 clears real, if still modest, gaps on both sides: 50px back to
-  // alcove one, 10px up to the shop -- checked against MOLE_SHOP_X's
-  // archR (95) rather than eyeballed
-  { x: 500, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
+  { x: 300, w: 130, wareColors: ["#b8862f", "#7a2f2f", "#3f5766"], shopColor: "#8a6a3a", hasMole: true },
+  // whole row spread out for real breathing room -- the old spacing
+  // (330/500/660) left only a 50px gap here and a cramped 10px gap up
+  // to the shop arch, reading as one crowded cluster in a wide room
+  // that had plenty of space to spare. Now: 140px to alcove one, 110px
+  // on to the shop -- checked against each arch's own half-width
+  // (archR) rather than eyeballed
+  { x: 560, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -19993,7 +19877,7 @@ const moleHoleSecretPiece = { x: MOLEHOLE_ALCOVES[0].x, heightAboveGround: 108, 
    way to get a piece than digging for one (tunnel town) or finding one
    tucked away (the secret arch piece above).
    ------------------------------------------------------ */
-const MOLE_SHOP_X = 660;
+const MOLE_SHOP_X = 820; // pushed right along with the rest of the row, opening a real 110px gap from alcove two's own right edge (was 10px)
 let moleShopTraded = false;
 const moleShopDialogue = { active: false, index: 0, lines: [] };
 const moleShopGreetingLines = [
@@ -20290,25 +20174,72 @@ function drawMoleholeAlcove(alcove, camX) {
   // in the game, just smaller and with a pointed hood (a nod to the
   // reference image's long-nosed, hooded mole folk). Drawn BEFORE the
   // counter below so the plank overlaps their lower half like they're
-  // actually standing behind it, not floating in front.
+  // actually standing behind it, not floating in front. Purely passive/
+  // ambient (no dialogue, no interaction) -- a slow idle bob so it
+  // doesn't read as a static prop, phase offset per alcove x so the two
+  // don't sync up.
   const shopColor = alcove.shopColor || "#7a6a4a";
-  const bodyW = 20, bodyH = 26, bodyBottom = gy - 6, bodyTop = bodyBottom - bodyH;
+  const bob = Math.sin(performance.now() * 0.0011 + alcove.x * 0.05) * 1.6;
+  const bodyW = 20, bodyH = 26, bodyBottom = gy - 6 + bob, bodyTop = bodyBottom - bodyH;
   ctx.fillStyle = shopColor;
   roundRect(ctx, ax - bodyW / 2, bodyTop, bodyW, bodyH, 6);
   ctx.fill();
-  // pointed hood
-  ctx.beginPath();
-  ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 4);
-  ctx.lineTo(ax, bodyTop - 10);
-  ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 4);
-  ctx.closePath();
-  ctx.fill();
-  // two small dot eyes
-  ctx.fillStyle = "#1c1208";
-  ctx.beginPath();
-  ctx.arc(ax - 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
-  ctx.arc(ax + 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
-  ctx.fill();
+
+  if (alcove.hasMole) {
+    // a clearer, unambiguously mole-shaped figure -- rounded snout,
+    // tiny ears, whiskers -- instead of the plain pointed hood, so at
+    // least one of the two background stalls reads as an actual little
+    // mole and not just an abstract silhouette
+    ctx.fillStyle = shopColor;
+    ctx.beginPath();
+    ctx.ellipse(ax, bodyTop - 6, 9, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // snout
+    ctx.beginPath();
+    ctx.ellipse(ax, bodyTop - 1, 4.5, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#2e2014";
+    ctx.beginPath();
+    ctx.arc(ax, bodyTop, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    // small round ears
+    ctx.fillStyle = shopColor;
+    ctx.beginPath();
+    ctx.arc(ax - 7, bodyTop - 12, 3.2, 0, Math.PI * 2);
+    ctx.arc(ax + 7, bodyTop - 12, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    // whiskers
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 0.8;
+    [-1, 1].forEach(side => {
+      for (let i = 0; i < 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(ax + side * 3, bodyTop - 1 + i * 2);
+        ctx.lineTo(ax + side * 10, bodyTop - 3 + i * 3);
+        ctx.stroke();
+      }
+    });
+    // two small dot eyes
+    ctx.fillStyle = "#1c1208";
+    ctx.beginPath();
+    ctx.arc(ax - 4, bodyTop - 8, 1.6, 0, Math.PI * 2);
+    ctx.arc(ax + 4, bodyTop - 8, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // pointed hood
+    ctx.beginPath();
+    ctx.moveTo(ax - bodyW / 2 + 1, bodyTop + 4);
+    ctx.lineTo(ax, bodyTop - 10);
+    ctx.lineTo(ax + bodyW / 2 - 1, bodyTop + 4);
+    ctx.closePath();
+    ctx.fill();
+    // two small dot eyes
+    ctx.fillStyle = "#1c1208";
+    ctx.beginPath();
+    ctx.arc(ax - 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
+    ctx.arc(ax + 4, bodyTop + 12, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // stall counter -- a simple plank, low, across the alcove's mouth
   const counterTop = gy - 22;
@@ -20350,7 +20281,7 @@ function drawMoleholeAlcove(alcove, camX) {
 // language as the game's other carved-wood prompts, purely decorative
 // here (no readable text yet, just marks -- matches the reference's
 // "Meeting Tomorrow After Lunch" notice board)
-const moleHoleNoticeBoard = { x: 420, y: 60 }; // re-centered in the (now wider, 50px) gap between the two alcoves after alcove two moved
+const moleHoleNoticeBoard = { x: 435, y: 60 }; // re-centered in the wider (140px) gap between the two alcoves after the whole row spread out
 
 function drawMoleHoleNoticeBoard(camX) {
   const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
@@ -20541,17 +20472,115 @@ function drawMoleholeRootPillar(x, camX) {
   ctx.restore();
 }
 
+// a small pile of dug-up dirt with a discarded shovel stuck in it --
+// purely decorative, ties the room back to the idea that moles
+// actually dug this space out. Sits near the entrance-side root pillar.
+const MOLEHOLE_DIRT_PILE_X = 70;
+function drawMoleholeDirtPile(camX) {
+  const px = MOLEHOLE_DIRT_PILE_X - camX;
+  if (px < -40 || px > canvas.width + 40) return;
+  const py = gy;
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(px, py + 2, 24, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a few loosely stacked dirt clods, biggest at the base
+  const clods = [
+    { dx: -10, dy: 0, r: 9 }, { dx: 6, dy: 1, r: 8 }, { dx: -2, dy: -6, r: 7 },
+    { dx: 12, dy: -2, r: 5.5 }, { dx: -14, dy: -3, r: 5 }
+  ];
+  clods.forEach((c, i) => {
+    ctx.fillStyle = i % 2 === 0 ? "#4a3018" : "#3a2414";
+    ctx.beginPath();
+    ctx.ellipse(px + c.dx, py - c.r * 0.6 + c.dy, c.r, c.r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // the shovel, planted blade-down in the pile's peak, leaning slightly
+  drawShovelShape(ctx, px - 2, py - 15, 12, 0.15);
+}
+
+// ambient background moles -- purely passive, no interaction, no
+// dialogue, tucked into the open floor gaps between the market row and
+// the shaft so the room reads as more lived-in than just the two
+// shopkeepers. Smaller and darker than the alcove figures (further
+// back, unlit) with the same slow idle bob.
+const MOLEHOLE_AMBIENT_MOLES = [390, 1250];
+function drawMoleholeAmbientMole(x, camX) {
+  const px = x - camX;
+  if (px < -30 || px > canvas.width + 30) return;
+  const bob = Math.sin(performance.now() * 0.0009 + x * 0.07) * 1.3;
+  const bodyW = 14, bodyH = 18, bodyBottom = gy - 4 + bob, bodyTop = bodyBottom - bodyH;
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(px, gy + 2, bodyW * 0.7, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#2a2016";
+  roundRect(ctx, px - bodyW / 2, bodyTop, bodyW, bodyH, 5);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(px, bodyTop - 3, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(px, bodyTop + 1, 3, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// a small patch of moss and a cluster of glowing yellow fungus --
+// purely decorative light/color accent, an alternative to the lantern
+// glow elsewhere in the room
+const MOLEHOLE_FUNGUS_X = 1300;
+function drawMoleholeFungusCluster(camX) {
+  const px = MOLEHOLE_FUNGUS_X - camX;
+  if (px < -40 || px > canvas.width + 40) return;
+  const py = gy;
+  // moss patch on the ground
+  ctx.fillStyle = "rgba(74,90,58,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(px, py - 1, 26, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const glow = ctx.createRadialGradient(px, py - 8, 2, px, py - 8, 26);
+  glow.addColorStop(0, "rgba(220,200,90,0.3)");
+  glow.addColorStop(1, "rgba(220,200,90,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(px, py - 8, 26, 0, Math.PI * 2);
+  ctx.fill();
+  // three small glowing mushrooms, staggered heights
+  const mushrooms = [{ dx: -14, h: 9 }, { dx: 2, h: 13 }, { dx: 15, h: 7 }];
+  mushrooms.forEach(m => {
+    const mx = px + m.dx, stemTop = py - m.h;
+    ctx.strokeStyle = "#c9b46a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mx, py);
+    ctx.lineTo(mx, stemTop);
+    ctx.stroke();
+    ctx.fillStyle = "#e8d878";
+    ctx.beginPath();
+    ctx.ellipse(mx, stemTop, m.h * 0.5, m.h * 0.32, 0, Math.PI, 0);
+    ctx.fill();
+  });
+}
+
 // dirt/earthen jump platforms scattered around the room -- simple
 // packed-earth slabs, reachable via ordinary single/double jumps
 // (spacing kept within the ~90-unit single-jump / ~245-unit
 // double-jump reach used elsewhere in the game), giving the player
 // something to hop around on besides the market floor while exploring
+// repositioned around the market row's new, wider spacing -- 250 used
+// to sit right under alcove one's own arch, and 700/800/950 all
+// crowded the shop once IT moved further right too. 250 pulled back
+// clear of alcove one; 700 now sits solo in the real gap between
+// alcove two and the shop (with real margin on both sides, so its old
+// double-jump companion at 800 got cut rather than crammed in
+// somewhere tight); 950 and 1080 nudged right just enough to clear the
+// shop's new, bigger footprint, keeping their own gap to each other
+// about the same. 1350/1480 untouched.
 const MOLEHOLE_PLATFORMS = [
-  { x: 250, heightAboveGround: 55, width: 65 },
-  { x: 700, heightAboveGround: 60, width: 60 },
-  { x: 800, heightAboveGround: 130, width: 55 }, // double-jump up from the 700 slab
-  { x: 950, heightAboveGround: 55, width: 65 },
-  { x: 1080, heightAboveGround: 115, width: 55 },
+  { x: 175, heightAboveGround: 55, width: 65 },
+  { x: 670, heightAboveGround: 60, width: 60 },
+  { x: 985, heightAboveGround: 55, width: 65 },
+  { x: 1100, heightAboveGround: 115, width: 55 },
   { x: 1350, heightAboveGround: 65, width: 65 },
   { x: 1480, heightAboveGround: 120, width: 55 }
 ];
@@ -20823,7 +20852,7 @@ function drawMoleholeCushion(c, camX) {
    hole to read as "further, older digging" rather than a fresh
    surface entrance.
    ====================================================== */
-const tunnelTownEntrance = { x: 1500, active: false, t: 0 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it
+const tunnelTownEntrance = { x: 1380, active: false, t: 0 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it. Pulled back from 1500 -- that sat close enough to the room's right-edge root pillar that the hole's own debris/beam butted right up against it, reading as "half ground, half wall" instead of a plain ground-level pit. Now clear of both the pillar (1580) and platform 1480's left edge.
 const TUNNELTOWN_FALL_MS = 1300; // longer than a normal hole -- this one goes a lot deeper
 
 function updateTunnelTownEntrance(deltaTime) {
@@ -20941,7 +20970,14 @@ function drawMoleholeScene(camX) {
   // a handful of warm lantern points along the walls between the
   // alcoves, so the room reads as lived-in and lit rather than just
   // the two shop-glow pools
-  const wallLanterns = [130, 620, 900, 1050, 1400, 1550]; // spread across the wider room -- clustered a bit tighter near the shaft (900/1050) so that area doesn't read as darker/emptier than the market end
+  // repositioned along with the market row -- 620 used to sit in the
+  // old, narrow alcove-to-shop gap and 900 used to sit just past the
+  // old shop's edge; both now land inside/on top of the row's new,
+  // wider arches instead of lighting the gaps between them. 670 lights
+  // the real gap between alcove two and the shop; 990 lights the new
+  // platform just past the shop's bigger footprint. Dropped the old
+  // 1050 entry rather than cram a third light into that same stretch.
+  const wallLanterns = [130, 670, 990, 1400, 1550];
   wallLanterns.forEach(lx0 => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
@@ -21003,6 +21039,9 @@ function drawMoleholeScene(camX) {
 
   drawTunnelTownEntrance(camX);
   drawMoleholeSpores(camX);
+  drawMoleholeDirtPile(camX);
+  MOLEHOLE_AMBIENT_MOLES.forEach(x => drawMoleholeAmbientMole(x, camX));
+  drawMoleholeFungusCluster(camX);
 
   // drawn dead last, same as the elders' bubble in tunnel town, so it's
   // never covered by anything else in the scene
@@ -22419,24 +22458,55 @@ function drawDiggingFlourish(camX) {
     ? 40
     : (digNode ? (digNode.dir === "up" ? 12 : (digNode.dir === "sunken" ? 26 : 34)) : 34);
   if (digNode && digNode.needsStone) {
-    // made noticeably more obvious than the first pass ("i honestly
-    // barely noticed it") -- drawn bigger (9->15), and the plunge beat
-    // now punches with a real jolt (doubled) plus a brief white
-    // flash/spark burst instead of just a small vertical bump, so the
-    // stone visibly reacts to every hit rather than sitting there quietly
+    // pushed further still, per "a lil more theatrical" -- on top of the
+    // existing jolt/flash: a fast expanding shockwave ring, a handful of
+    // jagged stone-crack lines radiating out from the impact (not just
+    // straight spark lines), and a heavier debris burst, all timed to
+    // the same plunge beat so the stone reads as really taking a hit
+    // rather than just glowing
     const stoneX = activeDig.x - camX;
     const baseY = sy - (swingHeightOffset - 8);
     const plunging = swingLocalT > 0.3 && swingLocalT < 0.6;
-    const jolt = plunging ? (0.6 - Math.abs(swingLocalT - 0.45) * 6) * 6 : 0;
+    const jolt = plunging ? (0.6 - Math.abs(swingLocalT - 0.45) * 6) * 8 : 0;
     const flash = plunging ? Math.max(0, 1 - Math.abs(swingLocalT - 0.45) * 10) : 0;
     if (flash > 0) {
       ctx.save();
-      ctx.globalAlpha = flash * 0.7;
+      ctx.globalAlpha = flash * 0.75;
       ctx.fillStyle = "#fff8e0";
       ctx.beginPath();
-      ctx.arc(stoneX, baseY - jolt, 14 + flash * 8, 0, Math.PI * 2);
+      ctx.arc(stoneX, baseY - jolt, 16 + flash * 10, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+
+      // expanding shockwave ring -- starts tight at the impact and
+      // rushes outward as the flash fades, instead of everything
+      // happening at one fixed radius
+      const ringT = 1 - flash; // 0 right at peak impact, 1 as it fades out
+      ctx.save();
+      ctx.globalAlpha = flash * 0.6;
+      ctx.strokeStyle = "#fff8e0";
+      ctx.lineWidth = 2 - ringT * 1.5;
+      ctx.beginPath();
+      ctx.arc(stoneX, baseY - jolt, 10 + ringT * 22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // jagged crack lines -- real broken angles instead of straight
+      // spokes, reading as the stone actually fracturing under the hit
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + swingIndex * 1.7;
+        const midA = a + (pseudoRandom(swingIndex * 31 + i) - 0.5) * 0.6;
+        const len1 = 7 + flash * 5, len2 = 13 + flash * 10;
+        const midX = stoneX + Math.cos(midA) * len1, midY = baseY - jolt + Math.sin(midA) * len1;
+        const tipX = stoneX + Math.cos(a) * len2, tipY = baseY - jolt + Math.sin(a) * len2;
+        ctx.strokeStyle = `rgba(60,50,40,${flash * 0.85})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(stoneX, baseY - jolt);
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+      }
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + swingIndex;
         ctx.strokeStyle = `rgba(255,240,200,${flash * 0.8})`;
@@ -22446,8 +22516,24 @@ function drawDiggingFlourish(camX) {
         ctx.lineTo(stoneX + Math.cos(a) * (16 + flash * 6), baseY - jolt + Math.sin(a) * (16 + flash * 6));
         ctx.stroke();
       }
+      // a heavier scatter of dirt/stone debris chips, flung outward and
+      // already fading -- separate from the shovel's own regular dirt
+      // clump throw further below, so a stone hit visibly kicks up more
+      if (flash > 0.15) {
+        for (let i = 0; i < 6; i++) {
+          const seed = swingIndex * 53.1 + i * 9.7;
+          const a = pseudoRandom(seed) * Math.PI * 2;
+          const dist = 10 + pseudoRandom(seed + 1) * 16;
+          const chipX = stoneX + Math.cos(a) * dist;
+          const chipY = baseY - jolt + Math.sin(a) * dist * 0.6 - 4;
+          ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#8a7358" : "#5c4a38";
+          ctx.beginPath();
+          ctx.ellipse(chipX, chipY, 1.6 + pseudoRandom(seed + 3) * 1.4, 1.2, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
-    drawCollectible(ctx, stoneX, baseY - jolt, 15, jolt * 0.25, "stone");
+    drawCollectible(ctx, stoneX, baseY - jolt, 15, jolt * 0.2, "stone");
   }
 
   drawShovelShape(ctx, sx + bobX, sy - swingHeightOffset + bobY, 13, angle);
@@ -23135,7 +23221,6 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 
 if (currentScene === "forest") {
   drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
-  drawForestBridgePlatform(camX);
 } else if (currentScene === "molehole") {
   // foreground root pillars, drawn AFTER the player sprite so they sit
   // in front of it -- real depth instead of the player always being
