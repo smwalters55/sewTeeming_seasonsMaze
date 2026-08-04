@@ -21397,9 +21397,16 @@ function drawElderTrio(camX) {
         // down the sides to the jaw as a filled shape anymore (that solid
         // wedge read as "triangles"). What continues down past the
         // horizon are two thin diagonal STRINGS, not fabric.
-        const crownRX = bonnetRX * 0.62;
-        const crownCY = horizonY - bonnetRY * 0.85;
-        const crownRY = bonnetRY * 1.35;
+        // capped, not just scaled off bonnetRX -- the last pass scaled
+        // both dimensions up AND floated the center well above the
+        // horizon at the same time, which on an elder with anything but
+        // a tiny bodyW ballooned into a huge disconnected egg hovering
+        // over the head instead of a hat sitting on it. Kept deliberately
+        // small (a real hat, not a mascot head) and centered so the
+        // BOTTOM overlaps into the head/horizon line -- no floating gap.
+        const crownRX = Math.min(bonnetRX * 0.5, 10);
+        const crownRY = crownRX * 1.5;
+        const crownCY = horizonY - crownRY * 0.4;
         ctx.fillStyle = bonnetColor;
         ctx.beginPath();
         ctx.ellipse(headCX, crownCY, crownRX, crownRY, 0, 0, Math.PI * 2);
