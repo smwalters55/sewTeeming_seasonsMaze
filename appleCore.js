@@ -1015,6 +1015,7 @@ function updateSeasonTransition(deltaTime) {
       cameraX = 0;
       cameraY = 0; // only tunnel town ever moves this -- always reset on any scene change
       tunnelSafeX = null; tunnelSafeY = null; // forget the last safe dig-collision spot too
+      fallJustEndedIntoTransition = false; // scene's swapped now -- the sink-hold has done its job
 
       seasonTransition.phase = "hold";
     } else if (seasonTransition.phase === "hold") {
@@ -1880,6 +1881,21 @@ function handleInput(){
    PHYSICS
    ====================================================== */
 function applyPhysics(){
+  // once a scene transition has actually started, freeze physics
+  // entirely -- nothing here was gated on this before, so generic
+  // gravity kept right on running (using whatever vy happened to be
+  // left over) through the fadeOut/hold/fadeIn window. Most of the time
+  // that's invisible (a grounded walk-through-doorway transition has
+  // vy=0 already), but anything that hands off to a transition mid-air
+  // -- the seesaw's autumn->oak arc landing high in the canopy, for
+  // instance -- would keep falling under gravity for the rest of
+  // fadeOut, visibly dropping back down to ground before the white
+  // fade finished covering the screen. Reads exactly like the player
+  // "reappearing" for a split second right as the scene is supposed to
+  // be hidden. Freezing here holds them wherever the handoff left them
+  // until the new scene's own spawn logic repositions them.
+  if (seasonTransition.phase !== "idle") return;
+
   // while on the swing, position is fully driven by updateSwing() —
   // no normal gravity/ground physics applies at all
   if (swing.mounted) return;
@@ -2736,7 +2752,7 @@ function updateCrown(deltaTime) {
 function drawCrown(camX) {
   if (crownLeaves.length === 0) return;
 
-  const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : 0;
+  const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : (fallJustEndedIntoTransition ? 1 : 0);
   const sinkAmount = fallProgress * (player.height + 20);
 
   const px = player.x - camX + player.width / 2;
@@ -3614,15 +3630,39 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   ctx.arc(0, 0, size * 0.18, 0, Math.PI * 2);
   ctx.fill();
 
-  // sparkle accents at a couple of the needle tips
-  const tips = [0, 2, 4];
+  // once the geode breaker's shined it, a real (but still tasteful --
+  // this stays a matte mineral, not a glowing emoji-gem) polish pass: a
+  // faint halo behind the cluster and one bright specular streak raked
+  // across it, on top of everything else already drawn
+  if (aragoniteShined) {
+    const shineGlow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
+    shineGlow.addColorStop(0, "rgba(255,240,210,0.22)");
+    shineGlow.addColorStop(1, "rgba(255,240,210,0)");
+    ctx.fillStyle = shineGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 1.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    const streakSweep = Math.sin(performance.now() * 0.0015) * size * 0.5;
+    ctx.strokeStyle = "rgba(255,250,235,0.55)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.7 + streakSweep, -size * 0.55);
+    ctx.lineTo(size * 0.7 + streakSweep, size * 0.55);
+    ctx.stroke();
+  }
+
+  // sparkle accents at a couple of the needle tips -- more of them, and
+  // a touch brighter, once it's been shined
+  const tips = aragoniteShined ? [0, 1, 2, 3, 4, 5] : [0, 2, 4];
   tips.forEach(i => {
     const a = (i / spikes) * Math.PI * 2;
     const tw = Math.sin(performance.now() * 0.006 + i * 1.7) * 0.5 + 0.5;
     const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
-    ctx.fillStyle = `rgba(255,215,150,${0.5 + tw * 0.5})`;
+    const baseAlpha = aragoniteShined ? 0.7 : 0.5;
+    ctx.fillStyle = `rgba(255,225,170,${baseAlpha + tw * 0.5})`;
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * len, Math.sin(a) * len, 1 + tw * 0.6, 0, Math.PI * 2);
+    ctx.arc(Math.cos(a) * len, Math.sin(a) * len, (aragoniteShined ? 1.3 : 1) + tw * 0.6, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -9698,6 +9738,14 @@ const tulip = {
 // standing there the whole time) but takes noticeably longer, since
 // the elders' dialogue already establishes this one goes "a lot deeper"
 const fallState = { active: false, t: 0, mode: "hole" };
+// set the instant a "tunnelHole" fall hands off into the season
+// transition, cleared once that transition actually swaps the scene --
+// keeps the player drawn fully sunk/clipped through the whole fadeOut
+// instead of the sink resetting to 0 (fully visible again) the same
+// frame fallState.active goes false, which is what used to make the
+// player visibly "pop" back into view for a frame or two before the
+// white fade was opaque enough to hide it
+let fallJustEndedIntoTransition = false;
 const FALL_DURATION = 700; // ms
 const TUNNEL_FALL_DURATION = 1300; // ms -- the deeper tunnel-town hole only
 function fallDurationForMode(mode) {
@@ -19950,6 +19998,61 @@ const moleShopNoAcornLines = [["Ehh, no acorn, no timber. That's just business, 
 const moleShopThanksLines = [["Pleasure doing business, as always.", "Don't go telling everyone where you found me now, eh?"]];
 const moleShopAlreadyTradedLines = [["That's the last of it -- cleaned me right out.", "Come back another time, friend. I'll have more... probably."]];
 
+/* ------------------------------------------------------
+   GEODE BREAKER -- a fourth alcove, past the shopkeeper. A stockier,
+   scruffier mole than the dapper trickster: leather apron, goggles
+   pushed up on his forehead, a stone hammer and chisel, a pile of dull
+   uncracked rock on one side of his counter and the sparkly cracked-open
+   halves on the other -- the before/after tells the whole story without
+   needing a line of dialogue for it. Doesn't trade anything away -- he
+   just shines up whatever special stone you're actually holding, a
+   purely cosmetic, permanent upgrade rather than a consume-and-vanish
+   trade like the shopkeeper's.
+   ------------------------------------------------------ */
+const GEODE_BREAKER_X = 1030; // sits in the real gap between the shopkeeper (ends ~915) and the cushion-lift shaft (starts ~1160) -- the two platforms already floating in that stretch (985/1100) are elevated background pieces, don't block a ground-level archway underneath them
+let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
+const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
+const geodeBreakerGreetingLines = [
+  ["Mind the pile -- most of this is just plain rock. Everything ELSE, though, that's mine to crack open.", "Bring me something worth the swing and I'll see what's hiding inside."]
+];
+const geodeBreakerShineLines = [
+  ["Ohhh, now THAT'S a find. Real aragonite -- needle cluster and all. Don't see many folks carrying one of these.", "Hold still... there. Polished her right up. That's a keeper, that one."]
+];
+const geodeBreakerAlreadyShinedLines = [
+  ["That's the one I shined for you, right? Still catching the light nice.", "Good stone. Hang onto that -- not many folks find one like it."]
+];
+const geodeBreakerNoStoneLines = [
+  ["Come back when you're carrying something worth cracking open.", "Everything down here's got a shine hiding somewhere, given the right hands."]
+];
+
+function startGeodeBreakerDialogue() {
+  geodeBreakerDialogue.active = true;
+  geodeBreakerDialogue.index = 0;
+  if (heldItem === "aragonite" && !aragoniteShined) {
+    aragoniteShined = true;
+    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerShineLines);
+  } else if (heldItem === "aragonite" && aragoniteShined) {
+    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerAlreadyShinedLines);
+  } else {
+    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerNoStoneLines);
+  }
+}
+
+function advanceGeodeBreakerDialogue() {
+  geodeBreakerDialogue.index++;
+  if (geodeBreakerDialogue.index >= geodeBreakerDialogue.lines.length) {
+    geodeBreakerDialogue.active = false;
+  }
+}
+
+function drawGeodeBreakerSpeechBubble(camX) {
+  if (!geodeBreakerDialogue.active) return;
+  const beat = geodeBreakerDialogue.lines[geodeBreakerDialogue.index];
+  const isLast = geodeBreakerDialogue.index === geodeBreakerDialogue.lines.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  drawFittedSpeechBubble(ctx, GEODE_BREAKER_X - camX - 10, gy - 150, displayLines);
+}
+
 function startMoleShopDialogue() {
   moleShopDialogue.active = true;
   moleShopDialogue.index = 0;
@@ -20230,6 +20333,307 @@ function drawMoleShopAlcove(camX) {
   ctx.font = "9px monospace";
   ctx.textAlign = "center";
   ctx.fillText("WARES", ax, top + 5);
+  ctx.textAlign = "left";
+}
+
+// the geode breaker -- fourth alcove, same big double-wide arch
+// treatment as the shopkeeper, but its own distinct build: stockier,
+// wider, apron instead of a waistcoat, goggles instead of a top hat, and
+// a counter telling a before/after story (dull rock pile -> cracked
+// glinting halves) instead of a wares assortment.
+function drawGeodeBreakerAlcove(camX) {
+  const ax = GEODE_BREAKER_X - camX;
+  const w = 190, h = 120, archR = w / 2;
+  const top = gy - h;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ax - archR, gy);
+  ctx.lineTo(ax - archR, top + archR);
+  ctx.arc(ax, top + archR, archR, Math.PI, 0, false);
+  ctx.lineTo(ax + archR, gy);
+  ctx.closePath();
+  ctx.fillStyle = "#140d06";
+  ctx.fill();
+
+  // cooler, mineral-tinted glow instead of the shopkeeper's warm amber --
+  // reads as a rock-hound's stall, not another lantern-lit market stand
+  const glow = ctx.createRadialGradient(ax, gy - 24, 4, ax, gy - 24, archR + 34);
+  glow.addColorStop(0, "rgba(200,215,255,0.32)");
+  glow.addColorStop(1, "rgba(200,215,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = "#6a4a28";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(ax - archR - 3, gy);
+  ctx.lineTo(ax - archR - 3, top + archR);
+  ctx.arc(ax, top + archR, archR + 3, Math.PI, 0, false);
+  ctx.lineTo(ax + archR + 3, gy);
+  ctx.stroke();
+
+  // the mole -- stockier and wider than the shopkeeper (bodyW/bodyH ratio
+  // flipped, not just a palette swap), a working build instead of a
+  // dapper one. Same gentle idle bob every other alcove figure gets.
+  const breakerBob = Math.sin(performance.now() * 0.0011 + GEODE_BREAKER_X * 0.05) * 1.6;
+  const bodyW = 30, bodyH = 34, bodyBottom = gy - 6 + breakerBob, bodyTop = bodyBottom - bodyH;
+  const headCX = ax, headCY = bodyTop - 5;
+
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(ax, bodyBottom + 3, bodyW * 0.75, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stubby legs/feet
+  ctx.fillStyle = "#1c1712";
+  ctx.beginPath();
+  ctx.ellipse(ax - 9, bodyBottom, 6, 3, 0, 0, Math.PI * 2);
+  ctx.ellipse(ax + 9, bodyBottom, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the hammer, propped against the counter edge, drawn before the body
+  // so the near arm rests naturally over its handle
+  const hammerX = ax + bodyW * 0.85, hammerBaseY = bodyBottom;
+  ctx.strokeStyle = "#5a3e22";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(hammerX, hammerBaseY);
+  ctx.lineTo(hammerX - 4, hammerBaseY - bodyH * 0.85);
+  ctx.stroke();
+  ctx.fillStyle = "#4a4a52";
+  ctx.save();
+  ctx.translate(hammerX - 4, hammerBaseY - bodyH * 0.85);
+  ctx.rotate(-0.25);
+  ctx.fillRect(-8, -5, 16, 10);
+  ctx.strokeStyle = "#26262c";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-8, -5, 16, 10);
+  ctx.restore();
+
+  // stocky, rounder body -- wider than tall relative to the shopkeeper's
+  // tapered frame, a real "built for swinging a hammer" silhouette
+  ctx.fillStyle = "#6a5f52";
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.5, bodyTop + bodyH * 0.25);
+  ctx.quadraticCurveTo(ax - bodyW * 0.55, bodyTop, ax, bodyTop - 3);
+  ctx.quadraticCurveTo(ax + bodyW * 0.55, bodyTop, ax + bodyW * 0.5, bodyTop + bodyH * 0.25);
+  ctx.quadraticCurveTo(ax + bodyW * 0.5, bodyBottom - 4, ax + bodyW * 0.32, bodyBottom);
+  ctx.lineTo(ax - bodyW * 0.32, bodyBottom);
+  ctx.quadraticCurveTo(ax - bodyW * 0.5, bodyBottom - 4, ax - bodyW * 0.5, bodyTop + bodyH * 0.25);
+  ctx.closePath();
+  ctx.fill();
+
+  // thick arms
+  ctx.beginPath();
+  ctx.ellipse(ax - bodyW * 0.55, bodyTop + bodyH * 0.55, 5, 9, 0.1, 0, Math.PI * 2);
+  ctx.ellipse(ax + bodyW * 0.55, bodyTop + bodyH * 0.5, 5, 9, -0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // leather apron -- his defining wear, same read-at-a-glance role the
+  // shopkeeper's waistcoat plays, but a working-tool garment instead of
+  // a dapper one. A darker cross-strap over the shoulder sells "apron"
+  // over "vest" at a glance.
+  ctx.fillStyle = "#7a5432";
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.42, bodyTop + bodyH * 0.3);
+  ctx.lineTo(ax, bodyTop + bodyH * 0.36);
+  ctx.lineTo(ax + bodyW * 0.42, bodyTop + bodyH * 0.3);
+  ctx.lineTo(ax + bodyW * 0.36, bodyBottom - 3);
+  ctx.lineTo(ax - bodyW * 0.36, bodyBottom - 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.3, bodyTop + bodyH * 0.32);
+  ctx.lineTo(ax - bodyW * 0.12, headCY + 9);
+  ctx.moveTo(ax, bodyTop + bodyH * 0.4);
+  ctx.lineTo(ax, bodyBottom - 5);
+  ctx.stroke();
+  // apron pocket, holding the chisel
+  ctx.fillStyle = "#5a3a1e";
+  ctx.fillRect(ax - bodyW * 0.22, bodyBottom - 12, 10, 9);
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.17, bodyBottom - 12);
+  ctx.lineTo(ax - bodyW * 0.17, bodyBottom - 22);
+  ctx.stroke();
+  ctx.fillStyle = "#c9c9cf";
+  ctx.beginPath();
+  ctx.moveTo(ax - bodyW * 0.17 - 2, bodyBottom - 22);
+  ctx.lineTo(ax - bodyW * 0.17 + 2, bodyBottom - 22);
+  ctx.lineTo(ax - bodyW * 0.17, bodyBottom - 27);
+  ctx.closePath();
+  ctx.fill();
+
+  // head + broad snout
+  ctx.fillStyle = "#6a5f52";
+  ctx.beginPath();
+  ctx.arc(headCX, headCY, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(headCX - 3.5, headCY + 5);
+  ctx.lineTo(headCX + 3.5, headCY + 5);
+  ctx.lineTo(headCX + 2, headCY + 12);
+  ctx.lineTo(headCX - 2, headCY + 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#1c1208";
+  ctx.beginPath();
+  ctx.arc(headCX, headCY + 11, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // squint -- both eyes narrowed, focused rather than sly. Not a wink --
+  // this guy's concentrating on the rock, not working an angle.
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(headCX - 5.5, headCY - 1);
+  ctx.lineTo(headCX - 2, headCY - 0.5);
+  ctx.moveTo(headCX + 2, headCY - 0.5);
+  ctx.lineTo(headCX + 5.5, headCY - 1);
+  ctx.stroke();
+
+  // whiskers, a bit thicker/coarser than the shopkeeper's
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(headCX - 7.5, headCY + 8);
+  ctx.lineTo(headCX - 12, headCY + 6);
+  ctx.moveTo(headCX + 7.5, headCY + 8);
+  ctx.lineTo(headCX + 12, headCY + 6);
+  ctx.stroke();
+
+  // goggles, pushed up onto his forehead rather than worn over the eyes
+  // -- reads as "tool of the trade, currently at rest" rather than
+  // making his actual expression unreadable
+  const goggleY = headCY - 8;
+  ctx.strokeStyle = "#3a3a40";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(headCX, goggleY, 7, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  [-4.5, 4.5].forEach(dx => {
+    ctx.fillStyle = "#9ac4d8";
+    ctx.beginPath();
+    ctx.ellipse(headCX + dx, goggleY, 3.4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3a3a40";
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  });
+  ctx.strokeStyle = "#3a3a40";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(headCX - 8, goggleY);
+  ctx.lineTo(headCX - 12, goggleY - 1);
+  ctx.moveTo(headCX + 8, goggleY);
+  ctx.lineTo(headCX + 12, goggleY - 1);
+  ctx.stroke();
+
+  // counter -- the before/after story: a pile of dull, plain rock on the
+  // left, the cracked-open sparkly halves on the right, and one geode
+  // paused mid-crack dead center, as if he stopped swinging right as the
+  // player walked up
+  const counterTop = gy - 24;
+  ctx.fillStyle = "#3a2814";
+  ctx.fillRect(ax - archR + 10, counterTop, w - 20, 12);
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ax - archR + 10, counterTop, w - 20, 12);
+
+  // dull rock pile, left side -- plain rounded stones, no sparkle at all
+  [-70, -58, -48].forEach((dx, i) => {
+    const seed = GEODE_BREAKER_X * 3.1 + i * 22.7;
+    const r = 6 + pseudoRandom(seed) * 3;
+    ctx.fillStyle = i % 2 === 0 ? "#6a6258" : "#5a5248";
+    ctx.beginPath();
+    ctx.ellipse(ax + dx, counterTop - r * 0.6, r, r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // cracked-open glinting halves, right side -- same matte-mineral
+  // needle-cluster treatment as the real aragonite pickup, just smaller
+  // and static (no tip-sparkle animation needed for background decor)
+  [48, 64].forEach((dx, i) => {
+    const seed = GEODE_BREAKER_X * 4.7 + i * 31.3;
+    ctx.save();
+    ctx.translate(ax + dx, counterTop - 5);
+    // dull outer shell, cracked open
+    ctx.fillStyle = "#4a4038";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, Math.PI * 0.15, Math.PI * 0.95);
+    ctx.fill();
+    // bright interior needle cluster peeking out of the crack
+    for (let k = 0; k < 5; k++) {
+      const a = Math.PI * 0.2 + (k / 5) * Math.PI * 0.6 + (pseudoRandom(seed + k) - 0.5) * 0.2;
+      const len = 3 + pseudoRandom(seed + k + 1) * 2.5;
+      ctx.strokeStyle = "rgba(200,220,255,0.75)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * len, -Math.abs(Math.sin(a)) * len);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+
+  // the one mid-crack, dead center -- a starburst of thin glint lines
+  // radiating out, like he just stopped swinging
+  const crackX = ax, crackY = counterTop - 6;
+  ctx.fillStyle = "#5a5248";
+  ctx.beginPath();
+  ctx.ellipse(crackX, crackY, 8, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#26221c";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(crackX - 6, crackY - 2);
+  ctx.lineTo(crackX + 6, crackY + 1);
+  ctx.stroke();
+  const crackTwinkle = Math.sin(performance.now() * 0.005) * 0.5 + 0.5;
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    const len = 10 + (k % 2 === 0 ? crackTwinkle * 3 : 0);
+    ctx.strokeStyle = `rgba(220,235,255,${0.35 + crackTwinkle * 0.35})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(crackX, crackY);
+    ctx.lineTo(crackX + Math.cos(a) * len, crackY + Math.sin(a) * len);
+    ctx.stroke();
+  }
+
+  // two lanterns, cooler-toned to match the mineral glow
+  [-archR + 24, archR - 24].forEach(dx => {
+    const lx = ax + dx, ly = top + 24;
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(lx, top + 6);
+    ctx.lineTo(lx, ly - 6);
+    ctx.stroke();
+    ctx.fillStyle = "#bcd4e8";
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#6a8298";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // hanging sign
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(ax - 26, top - 6, 52, 16);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax - 26, top - 6, 52, 16);
+  ctx.fillStyle = "rgba(200,220,255,0.7)";
+  ctx.font = "9px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("GEODES", ax, top + 5);
   ctx.textAlign = "left";
 }
 
@@ -21453,6 +21857,7 @@ function drawMoleholeScene(camX) {
   // front of the wall they're carved into
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
   drawMoleShopAlcove(camX);
+  drawGeodeBreakerAlcove(camX);
   drawMoleHoleSecretPiece(camX);
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
@@ -21558,6 +21963,7 @@ function drawMoleholeScene(camX) {
   // drawn dead last, same as the elders' bubble in tunnel town, so it's
   // never covered by anything else in the scene
   drawMoleShopSpeechBubble(camX);
+  drawGeodeBreakerSpeechBubble(camX);
   drawMoleHoleBoardSpeechBubble(camX);
 }
 
@@ -21651,7 +22057,7 @@ function updateMoleholeScene(deltaTime) {
     if (keys.spaceJustPressed) advanceMoleHoleBoardDialogue();
     return;
   }
-  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) && keys.spaceJustPressed) {
     startMoleHoleBoardDialogue();
     return;
   }
@@ -21662,8 +22068,18 @@ function updateMoleholeScene(deltaTime) {
     if (keys.spaceJustPressed) advanceMoleShopDialogue();
     return;
   }
-  if (isPlayerNear(MOLE_SHOP_X, 0, 45, 25, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(MOLE_SHOP_X, 0, 32, 25, 20) && keys.spaceJustPressed) {
     startMoleShopDialogue();
+    return;
+  }
+
+  // geode breaker -- same priority pattern as the shopkeeper
+  if (geodeBreakerDialogue.active) {
+    if (keys.spaceJustPressed) advanceGeodeBreakerDialogue();
+    return;
+  }
+  if (isPlayerNear(GEODE_BREAKER_X, 0, 32, 25, 20) && keys.spaceJustPressed) {
+    startGeodeBreakerDialogue();
     return;
   }
 
@@ -21684,7 +22100,7 @@ function updateMoleholeScene(deltaTime) {
    mole hole's own open market space, since this is meant to read
    as older, smaller, and closer to collapse.
    ====================================================== */
-const TUNNELTOWN_WIDTH = 1200; // widened again to fit the deeper reward path (s5 sits at x:1060)
+const TUNNELTOWN_WIDTH = 1350; // widened by the same +150 as the whole dig graph/elders shift, so the camera clamp still matches the real content
 const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- was bumped up to +34 to fix a single narrow oval feeling tight at its own edges, but that same generous height, once the ledge-merge fix started stitching long straight corridors together, turned into one continuous tall band the FULL WIDTH of the whole merged shelf -- "why can i jump through this packed dirt so much... this is largely passing through it," not the odd few px of edge wiggle room this was meant to allow. Back down near the original size; a flat merged shelf doesn't need much more headroom than the player's own height to walk through, and individual dig-spot jumps still get real (if tighter) clearance
 const tunnelTownExit = { x: 150 };
 
@@ -21751,7 +22167,7 @@ const elderTrio = [
   { dx: 2,   color: "#847d6e", capeColor: "#4a3e2a", bodyW: 22, bodyH: 40, accessory: "glasses", bob: 1.4, bobSpeed: 0.038, tip: 0, gestureOffset: 2200 }, // tall and thin, cooler grey fur, neat little round glasses
   { dx: 50,  color: "#c2a679", capeColor: "#6a5c42", bodyW: 28, bodyH: 34, accessory: "cap", accessoryColor: "#5a4636", bob: 2.7, bobSpeed: 0.026, tip: 0, gestureOffset: 4300 } // average build, lighter sandy-tan fur, a flat cap over a balding head
 ];
-const ELDER_X = 260; // pushed further right (was 210) -- more approach distance from the entrance, and real breathing room before the wall
+const ELDER_X = 410; // pushed further right again (was 260) -- spawn sits at x150, and the old 260 meant you basically landed on the elders the instant you arrived. This gives real approach room before you're in their interact radius.
 let elderTalkedTo = false;
 let elderThanksQueued = false;
 
@@ -21763,6 +22179,14 @@ const elderGreetingLines = [
 const elderThanksLines = [
   ["Oh, wonderful! You're really going to try.", "Mind the gear if you find it -- don't just pocket it, take it straight up to the shaft."]
 ];
+// a real "already told you" short-circuit -- without this, every single
+// re-approach-and-space replayed the FULL three-beat greeting from
+// scratch, forever, with no gate at all. Reads as the dialogue "won't
+// stop showing" any time you're passing back through this stretch of
+// corridor to reach a dig spot further in.
+const elderAlreadyTalkedLines = [
+  ["Good luck out there. Mind that gear if you spot it."]
+];
 const elderDialogue = { active: false, index: 0, lines: elderGreetingLines };
 
 function startElderDialogue() {
@@ -21772,6 +22196,12 @@ function startElderDialogue() {
     elderDialogue.lines = elderThanksLines.slice();
     elderThanksQueued = false;
     elderTalkedTo = true;
+    return;
+  }
+  if (elderTalkedTo) {
+    elderDialogue.active = true;
+    elderDialogue.index = 0;
+    elderDialogue.lines = elderAlreadyTalkedLines.slice();
     return;
   }
   elderDialogue.active = true;
@@ -22339,7 +22769,7 @@ function drawDetailedDirtFill(x0, w, h, seedBase, camX) {
    the elders have actually been talked to), then breaks open into
    the first branch of the dig-maze area beyond it.
    ------------------------------------------------------ */
-const TUNNELTOWN_WALL_X = 480; // pushed further right (was 260) -- real breathing room from the elders now (their interact radius no longer reaches the wall's dig radius)
+const TUNNELTOWN_WALL_X = 630; // shifted along with ELDER_X (+150) -- keeps the same relative gap from the elders to the wall
 let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
 let tunnelSafeX = null, tunnelSafeY = null; // last known-good (revealed) spot -- lets the 2D dig-collision snap the player back out of solid dirt instead of leaving them stuck partway through it
@@ -22516,7 +22946,7 @@ function drawTunnelWall(camX) {
    cushion shaft needs -- the rest are empty, dead-end gambles.
    ------------------------------------------------------ */
 const TUNNEL_NODES = [
-  { id: "n1", parent: "wall", x: 620, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "n1", parent: "wall", x: 770, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
 
   // up-chain -- climbs straight up and right off n1, the branch that
   // really exercises the vertical camera. Dead-ends at the top, empty.
@@ -22536,9 +22966,9 @@ const TUNNEL_NODES = [
   // reachability from arc math alone. Every remaining node below stays
   // at x>=700 or height<=100, comfortably outside the mound's bounds in
   // BOTH axes -- no more looping back through it, in either direction.
-  { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond, moved here from s5u3 -- s5u3 sat right next to s5u5's aragonite with barely any climb between them ("two rewards where i'm standing"); this is the leftmost "up" dig in the whole graph, the very first hole up off the left-hand chain, so it's found on its own instead of stacked against another reward
-  { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
-  { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
+  { id: "u1", parent: "n1", x: 800, heightAboveGround: 80, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond, moved here from s5u3 -- s5u3 sat right next to s5u5's aragonite with barely any climb between them ("two rewards where i'm standing"); this is the leftmost "up" dig in the whole graph, the very first hole up off the left-hand chain, so it's found on its own instead of stacked against another reward
+  { id: "u2", parent: "u1", x: 910, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
+  { id: "u3", parent: "u2", x: 850, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
   // a leftward jog before the final climb -- without this, this whole
   // chain reads as a near-mirror of the s5 up-branch (which already
   // doglegs left via s5uTurn before continuing up), so the two climb
@@ -22546,18 +22976,18 @@ const TUNNEL_NODES = [
   // off u3, well clear of the mound (mound only spans height 118-251;
   // this sits at 300, above it, so the lower x is safe here even though
   // it wouldn't be lower down)
-  { id: "u3Turn", parent: "u3", x: 610, heightAboveGround: 300, dir: "side", hasItem: false, dug: false },
+  { id: "u3Turn", parent: "u3", x: 760, heightAboveGround: 300, dir: "side", hasItem: false, dug: false },
   // the reward that used to live at the end of the left leg (uTop) --
   // now climbs off the jog instead of straight off u3, same relative
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
   // to launch from the new turn spot
-  { id: "uTop", parent: "u3Turn", x: 660, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // dx50/dh80 off u3Turn, straight on up and clear -- dropped its stone; this whole left branch (u3/uTop) already has u3's own bridgePiece, a second find right above it read as too rich for one branch
+  { id: "uTop", parent: "u3Turn", x: 810, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // dx50/dh80 off u3Turn, straight on up and clear -- dropped its stone; this whole left branch (u3/uTop) already has u3's own bridgePiece, a second find right above it read as too rich for one branch
   // the second dig-down trapdoor -- mirrors s5u5Drop on the right side of
   // the map, same reasoning: a real high dead end (the only other way
   // down is the whole climb back through u3Turn/u3/u2/u1), so it's a
   // genuine shortcut payoff rather than a pointless drop next to ground
   // that's already open, which is what got the old s5r/s5 trapdoors cut.
-  { id: "uTopDrop", parent: "uTop", x: 680, heightAboveGround: 380, dir: "up", hasItem: false, dug: false, trapGap: true },
+  { id: "uTopDrop", parent: "uTop", x: 830, heightAboveGround: 380, dir: "up", hasItem: false, dug: false, trapGap: true },
 
   // u2h/u1r removed -- u2h was a jump-only side spot that never led
   // anywhere once the shared-shelf/reconnect idea it was built for got
@@ -22571,21 +23001,21 @@ const TUNNEL_NODES = [
   // ground-collision code, so this is the stand-in for now), then
   // splits into a real dead end (now the stone's home -- found partway
   // in, well short of the final reward) and the path onward
-  { id: "s1", parent: "n1", x: 760, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
+  { id: "s1", parent: "n1", x: 910, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
   // same fix here -- a real two-jump detour up and away from s1, instead
   // of a dead-end spot sitting directly above it
-  { id: "s1u1", parent: "s1", x: 810, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "s1u2", parent: "s1u1", x: 860, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end -- dropped its crystal per the overall reward trim; s3a and s5uSide still cover stone, s5u3 still covers crystal elsewhere
-  { id: "s2", parent: "s1", x: 840, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
+  { id: "s1u1", parent: "s1", x: 960, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
+  { id: "s1u2", parent: "s1u1", x: 1010, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end -- dropped its crystal per the overall reward trim; s3a and s5uSide still cover stone, s5u3 still covers crystal elsewhere
+  { id: "s2", parent: "s1", x: 990, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   // s3a/s3b used to sit only 20-60 units apart -- close enough that
   // their two markers visually overlapped into what read as one
   // confusing double-hole. Spaced them further apart: the stone's dead
   // end continues straight along the ground well to the right, while
   // the path onward breaks off up and away instead of nearly on top of it.
-  { id: "s3a", parent: "s2", x: 970, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
-  { id: "s3b", parent: "s2", x: 870, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
-  { id: "s4", parent: "s3b", x: 950, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
-  { id: "s5", parent: "s4", x: 1030, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
+  { id: "s3a", parent: "s2", x: 1120, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
+  { id: "s3b", parent: "s2", x: 1020, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
+  { id: "s4", parent: "s3b", x: 1100, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
+  { id: "s5", parent: "s4", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   // used to be a trapdoor here -- dug open, it dropped you through a deep
   // shaft to a hidden nook below. Cut: once the whole corridor merged
   // into one obviously-already-open shelf (see tunnelMergedLedgeSpan),
@@ -22599,40 +23029,44 @@ const TUNNEL_NODES = [
   // see s5u4/s5u5 below, well off past the top of the right-side climb.
   // the cushion-shaft piece lives here -- a real dead end, no longer
   // crowded now that the aragonite moved off the ground floor entirely.
-  { id: "s5r", parent: "s5", x: 1140, heightAboveGround: 90, dir: "side", hasItem: true, dug: false },
+  // needsStone brought back -- this is the harder-rock spot, gated on
+  // the stone dug up earlier at s3a. Real reason to detour for it before
+  // this one cracks open, instead of the mechanic sitting unused in code
+  // with nothing actually gating on it.
+  { id: "s5r", parent: "s5", x: 1290, heightAboveGround: 90, dir: "side", hasItem: true, needsStone: true, dug: false },
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
   // gives the right half of the maze its own vertical movement too.
   // Whole subtree shifted +30 along with s5r above, same relative jump
   // distances throughout, just further from the crowded trap/reward spot.
-  { id: "s5u1", parent: "s5r", x: 1180, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
-  { id: "s5u2", parent: "s5u1", x: 1130, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
+  { id: "s5u1", parent: "s5r", x: 1330, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
+  { id: "s5u2", parent: "s5u1", x: 1280, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
   // the climb used to just keep going straight up -- bent it left into an
   // actual horizontal turn partway up instead, then kept climbing from
   // there, and gave the bend its own little side branch so the extra
   // turn has a reward too, not just a direction change
-  { id: "s5uTurn", parent: "s5u2", x: 1070, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
-  { id: "s5uSide", parent: "s5uTurn", x: 995, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
-  { id: "s5u2b", parent: "s5uTurn", x: 1040, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
-  { id: "s5u3", parent: "s5u2b", x: 1075, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
+  { id: "s5uTurn", parent: "s5u2", x: 1220, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
+  { id: "s5uSide", parent: "s5uTurn", x: 1145, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
+  { id: "s5u2b", parent: "s5uTurn", x: 1190, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
+  { id: "s5u3", parent: "s5u2b", x: 1225, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
   // one more diagonal jump up-and-left off the top of the climb, then a
   // final jump straight up from there -- the aragonite's new home, far
   // enough from s5r's cushion piece that they don't read as one crowded
   // pair anymore. Real dead end now, up at the very top of the map.
-  { id: "s5u4", parent: "s5u3", x: 1020, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
-  { id: "s5u5", parent: "s5u4", x: 1035, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
+  { id: "s5u4", parent: "s5u3", x: 1170, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
+  { id: "s5u5", parent: "s5u4", x: 1185, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
   // a real vertical "dig down" hole, the one requested back -- a trapdoor
   // shortcut off the summit dead end. Doesn't duplicate an easy nearby
   // path (the only other way down from here is the whole climb back
   // through s5u4/s5u3/s5u2b/etc), so it reads as a genuine payoff for
   // reaching the top rather than an illogical drop next to open ground.
-  { id: "s5u5Drop", parent: "s5u5", x: 1055, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
+  { id: "s5u5Drop", parent: "s5u5", x: 1205, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep. A plain dead end, same as s5r
   // itself -- not every spur needs loot, some are just there for the
   // exploration/breathing-room feel.
-  { id: "s5r2", parent: "s5r", x: 1210, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
+  { id: "s5r2", parent: "s5r", x: 1360, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
@@ -23487,12 +23921,12 @@ const TUNNEL_CORE_MOUND_SEED = 41000;
 // to fill as much of the safely-open middle as it can without eating
 // into any node's own dig space
 const TUNNEL_CORE_MOUND_BASE_PTS = [
-  { x: 615, y: 120 }, // bottom point
-  { x: 562, y: 172 },
-  { x: 558, y: 232 }, // top-left
-  { x: 608, y: 252 },
-  { x: 622, y: 225 }, // top-right
-  { x: 648, y: 178 }
+  { x: 765, y: 120 }, // bottom point -- shifted +150 along with the whole dig graph/elders move
+  { x: 712, y: 172 },
+  { x: 708, y: 232 }, // top-left
+  { x: 758, y: 252 },
+  { x: 772, y: 225 }, // top-right
+  { x: 798, y: 178 }
 ];
 
 // the same jitter every time (seeded purely by index, not time), so the
@@ -23793,7 +24227,7 @@ function updateTunnelTownScene(deltaTime) {
     return; // mid-conversation -- don't also process digging/exit this frame
   }
 
-  if (isPlayerNear(ELDER_X, 0, 55, 25, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(ELDER_X, 0, 35, 25, 20) && keys.spaceJustPressed) {
     startElderDialogue();
     return;
   }
@@ -24030,7 +24464,7 @@ const py = gy + cameraY - player.height - player.y;
 // while falling through a hole, the body actually MOVES downward — it
 // isn't frozen in place; only what crosses below ground level (gy) gets
 // clipped away, so it reads as sinking into the hole rather than a static cutoff
-const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : 0;
+const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : (fallJustEndedIntoTransition ? 1 : 0);
 const sinkAmount = fallProgress * (player.height + 20); // how far down the body has moved
 const drawPy = py + sinkAmount;
 
@@ -24526,6 +24960,7 @@ function updateFallState(deltaTime) {
       // hands off to it once the sink animation has actually finished
       // playing, instead of the two running as two entirely separate,
       // uncoordinated systems
+      fallJustEndedIntoTransition = true;
       startSeasonTransition("tunneltown");
     } else if (fallState.mode === "cloudHole") {
       // switch scenes and arrive mid-air — floating down out of the clouds,
