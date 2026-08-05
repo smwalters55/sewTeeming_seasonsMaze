@@ -1915,6 +1915,23 @@ function applyPhysics(){
   // until the new scene's own spawn logic repositions them.
   if (seasonTransition.phase !== "idle") return;
 
+  // frozen for the whole ~1.9s dig/wall-break animation -- without this,
+  // normal gravity and (in tunnel town specifically) the 2D dig-collision
+  // escape hatch kept running underneath the animation the entire time.
+  // A dig started from anywhere other than dead-solid ground (e.g.
+  // jump-triggered, digging a still-undug "up" node while airborne, the
+  // frontier tube being the only thing keeping that exact spot
+  // "revealed") could drift out of that fragile revealed pocket mid-
+  // animation, and since the escape hatch's own hard-teleport threshold
+  // (90 frames / ~1.5s) is SHORTER than the dig animation itself (1900ms),
+  // it could fire and yank the player back to the tunnel entrance before
+  // the dig even finished playing out -- reads exactly like "the hole
+  // opened and it immediately moved me back to the start." Freezing
+  // physics entirely for the duration (same pattern as every other
+  // scripted/"busy" state below) means starting a dig always plays out
+  // safely wherever it was triggered, full stop.
+  if (activeDig) return;
+
   // while riding the mine cart, position is fully driven by
   // updateMineCartRide() -- its own simple deltaTime-based jump physics
   if (mineCart.active) return;
