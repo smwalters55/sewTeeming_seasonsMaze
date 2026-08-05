@@ -1886,6 +1886,31 @@ function handleInput(){
     if (player.x > rightBound && !tunnelPositionRevealed(player.x + player.width / 2, player.y)) {
       player.x = rightBound;
     }
+    // a real, independent limit for plain grounded walking specifically --
+    // tunnelWalkLimit's own fallback deliberately seeds itself from the
+    // player's CURRENT x (so a genuine mid-fall/mid-jump overshoot never
+    // gets yanked backward), which makes the check just above a no-op
+    // once the player is simply walking forward on the ground past the
+    // dug frontier: rightBound can never end up less than the x it was
+    // just computed from. This never used to matter in practice because
+    // landing anywhere past the frontier immediately tripped the harsher
+    // 2D dig-collision escape hatch in applyPhysics, which doesn't share
+    // this same-frame self-reference problem -- but that escape hatch no
+    // longer punishes simply resting on true ground level (see its own
+    // comment), so this gap needs its own real backstop now. Seeded from
+    // a fixed base instead of the player's own position, and restricted
+    // to actual ground-level (height 0) nodes only -- an elevated dead
+    // end above ground level shouldn't extend how far you can walk on
+    // the floor underneath it.
+    if (player.y <= 0 && player.vy === 0 && !player.jumping) {
+      let groundLimit = TUNNELTOWN_WALL_X + 40;
+      TUNNEL_NODES.forEach(node => {
+        if (node.heightAboveGround <= 0 && tunnelNodeParentDug(node)) {
+          groundLimit = Math.max(groundLimit, node.x + 30);
+        }
+      });
+      if (player.x > groundLimit) player.x = groundLimit;
+    }
   }
 
   if (keys.ctrl && !camera.locked) {
@@ -2237,7 +2262,25 @@ function applyPhysics(){
   // jumping past an un-dug spot overhead or off to the side.
   if (currentScene === "tunneltown") {
     const centerX = player.x + player.width / 2;
-    if (tunnelPositionRevealed(centerX, player.y)) {
+    // true ground level (y<=0, the room's own base floor) is always a
+    // safe place to stand, dig-revealed or not -- this whole mechanic
+    // exists to catch the player ending up genuinely INSIDE solid dirt
+    // (a jump/fall overshooting a tube's reveal band mid-air), not to
+    // punish them for simply landing on the floor. Without this, walking
+    // off the true edge of any dead-end ledge (nothing dug at ground
+    // level below/past it, e.g. past s5r2) let the player fall cleanly
+    // all the way down to y0 -- itself correct, matches the documented
+    // "let a fall off a ledge continue" behavior -- but the INSTANT they
+    // came to rest there, ground level at that x was never itself
+    // tube-revealed either, so the hard-snap immediately launched them
+    // right back up to the ledge height, over and over, for a full 1.5s
+    // before the 90-frame hard escape finally gave up and warped them to
+    // the entrance. Reads as "it shoots me back to the start" every
+    // single time that spot is reached, not just once. Same fix also
+    // makes the dug trapdoors (uTopDrop, s5u5Drop) land safely -- their
+    // whole point is dropping you down to ground level as a shortcut,
+    // and ground level past their own x was never tube-revealed either.
+    if (player.y <= 0 || tunnelPositionRevealed(centerX, player.y)) {
       // if a hard-snap earlier pinned the player to this exact spot,
       // trivially re-passing the top-level check right back at that same
       // spot is NOT genuine progress -- see tunnelRecoveryAnchor's own
@@ -26107,6 +26150,24 @@ connections[0].filledItemType = "appleSlice";
 connections[1].filled = true;
 connections[1].filledItemType = "appleSlice";
 updateInventoryUI();
+
+// TEMPORARY -- drops straight into tunnel town, right in front of the
+// dig entrance itself (the wall spot at TUNNELTOWN_WALL_X+16), with the
+// elders already talked to so the wall's immediately diggable (shovel's
+// already held, per the loadout above). Skips the walk in from the
+// molehole's own tunnel-town entrance hole. Revert (remove this block)
+// when done.
+currentScene = "tunneltown";
+player.x = TUNNELTOWN_WALL_X - 4; // a few px short of the dig spot -- close enough to be in digging range (isPlayerNear's own 26px tolerance) without starting stacked right on top of it
+player.y = 0;
+player.vy = 0;
+player.jumping = false;
+player.usedDoubleJump = false;
+cameraX = 0;
+cameraY = 0;
+tunnelSafeX = null;
+tunnelSafeY = null;
+elderTalkedTo = true;
 
 update();
 
