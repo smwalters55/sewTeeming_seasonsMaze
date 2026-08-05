@@ -20085,7 +20085,12 @@ const GEODE_BREAKER_LEDGE_HALF_WIDTH = 101; // archR (95) + 6, matches the ledge
    a real, committed swing-release to reach and remount.
    ------------------------------------------------------ */
 const moleholeRoots = [
-  { x: 1130, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 },
+  // grab point (anchorHeight-length) sits at 80 -- a real double jump
+  // from the ground only peaks around ~89, so anything much higher than
+  // that was flatly unreachable no matter how well-timed the jump was.
+  // Verified via an actual frame-by-frame double-jump simulation, not
+  // estimated from arc math.
+  { x: 1130, anchorHeight: 210, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 },
   { x: 1350, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 },
   { x: 1570, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 }
 ];
@@ -21748,6 +21753,13 @@ const MOLEHOLE_SHAFT_X = 2100; // now sits past the geode breaker's relocated al
 // itemType defaults to "cushionPart"). Bring it back up here and place
 // it (hold it, walk up, press down) to fix the shaft for good.
 let moleholeShaftFixed = false;
+// drives a real activation flourish (see drawMoleholeShaftActivation) --
+// the socket itself sits low, right where the player is standing to
+// place the gear, so a subtle effect there was basically invisible
+// behind their own body ("cus player is in front of it, you cant really
+// tell whats happening"). -1 = inactive, else counts up in ms.
+let moleholeShaftActivateT = -1;
+const MOLEHOLE_SHAFT_ACTIVATE_DURATION = 1100;
 placementSlots.push({
   id: "moleholeShaftSlot",
   x: MOLEHOLE_SHAFT_X,
@@ -21756,8 +21768,58 @@ placementSlots.push({
   filled: false,
   onFill: () => {
     moleholeShaftFixed = true;
+    moleholeShaftActivateT = 0;
   }
 });
+
+// a real, hard-to-miss flourish when the gear gets fitted -- the socket
+// itself sits low, right where the player is standing to place it, so
+// the old silent flip-to-fixed was basically invisible behind their own
+// body. This deliberately reaches WELL above player height (a tall
+// light column + an outward ring burst + upward sparks) so it reads
+// clearly no matter what's standing in front of the socket.
+function drawMoleholeShaftActivation(camX) {
+  if (moleholeShaftActivateT < 0) return;
+  const px = MOLEHOLE_SHAFT_X - camX;
+  const p = moleholeShaftActivateT / MOLEHOLE_SHAFT_ACTIVATE_DURATION;
+  const baseY = gy - 20;
+
+  // tall column of light shooting up the pole -- the part that actually
+  // clears a standing player
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - p) * 0.8;
+  const beamH = 40 + p * 220;
+  const beam = ctx.createLinearGradient(px, baseY, px, baseY - beamH);
+  beam.addColorStop(0, "rgba(255,215,120,0.9)");
+  beam.addColorStop(1, "rgba(255,215,120,0)");
+  ctx.fillStyle = beam;
+  ctx.fillRect(px - 10, baseY - beamH, 20, beamH);
+  ctx.restore();
+
+  // an expanding ring at the socket itself
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - p);
+  ctx.strokeStyle = "#ffd97a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(px, baseY, 14 + p * 60, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // sparks flung upward past head height, so at least some of the
+  // flourish is guaranteed visible above whatever's standing in front
+  for (let i = 0; i < 10; i++) {
+    const seed = i * 17.3;
+    const a = (i / 10) * Math.PI * 2;
+    const dist = p * (30 + pseudoRandom(seed) * 90);
+    const sx = px + Math.cos(a) * dist * 0.5;
+    const sy = baseY - dist - 20;
+    ctx.fillStyle = `rgba(255,225,150,${Math.max(0, 1 - p) })`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 function drawMoleholeShaftPreview(camX) {
   const px = MOLEHOLE_SHAFT_X - camX;
@@ -21798,26 +21860,47 @@ function drawMoleholeShaftPreview(camX) {
     ctx.fillText("ORDER", px, sy + 7);
     ctx.textAlign = "left";
   } else {
-    // once fixed, a small sign up near the top cushion instead --
-    // "press space to board" needed a real prompt, since nothing about
-    // the pole itself hints a cart waits at the top
-    const sy = gy - 225;
-    ctx.strokeStyle = "#2e2014";
-    ctx.lineWidth = 1.5;
+    // once fixed, a bigger, brighter, glowing sign up near the top
+    // cushion -- the plain small placard read as barely-there ("i
+    // barely noticed it was there"), and offset off the pole's own x so
+    // a swinging cushion never passes in front of it (the top cushion's
+    // swingAmp reaches ~18px either side of the pole -- 38px clears it
+    // with real margin)
+    const sx = px + 38, sy = gy - 225;
+    const pulse = 0.75 + Math.sin(performance.now() * 0.004) * 0.25;
+    ctx.strokeStyle = "#3a2814";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(px, sy - 14);
-    ctx.lineTo(px, sy - 8);
+    ctx.moveTo(px, sy - 4);
+    ctx.lineTo(sx, sy - 4);
     ctx.stroke();
-    ctx.fillStyle = "#4a3018";
-    ctx.fillRect(px - 26, sy - 8, 52, 16);
+
+    // warm glow behind the sign so it reads from across the room, not
+    // just up close
+    const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, 46);
+    glow.addColorStop(0, `rgba(255,205,110,${0.45 * pulse})`);
+    glow.addColorStop(1, "rgba(255,205,110,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 46, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.strokeStyle = "#2e2014";
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(px - 26, sy - 8, 52, 16);
-    ctx.fillStyle = "rgba(230,200,140,0.8)";
-    ctx.font = "8px monospace";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 20);
+    ctx.lineTo(sx, sy - 12);
+    ctx.stroke();
+    ctx.fillStyle = "#c9a03a";
+    ctx.fillRect(sx - 36, sy - 12, 72, 24);
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - 36, sy - 12, 72, 24);
+    ctx.fillStyle = "#241708";
+    ctx.font = "bold 11px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("TO CART", px, sy - 1);
-    ctx.fillText("[SPACE]", px, sy + 7);
+    ctx.fillText("TO CART", sx, sy - 1);
+    ctx.fillText("[SPACE]", sx, sy + 10);
     ctx.textAlign = "left";
   }
 
@@ -22253,6 +22336,11 @@ function drawMineCartRide(camX) {
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, gy);
 
+  // solid ground below the track -- missing entirely before, which left
+  // the canvas's own blank background showing through underneath
+  ctx.fillStyle = "#150e08";
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+
   // scrolling rail ties along the floor -- the track itself
   const railY = gy - 4;
   ctx.strokeStyle = "#3a2814";
@@ -22313,6 +22401,11 @@ function drawMineCartRide(camX) {
 
   // the player itself is drawn by the shared player-draw block in
   // draw(), using player.x/player.y kept in sync by updateMineCartRide
+  // -- but the tub's own FRONT rim is drawn separately, after the
+  // player (see drawMineCartFrontRim), so the rider actually reads as
+  // sitting down INSIDE the cart, legs tucked behind the near wall,
+  // rather than floating on top of a flat shape ("i want to look like
+  // we jumped in it, partial occlusion")
 
   // progress bar -- how far into the ride, and gold banked so far
   const barW = 200, barX = canvas.width / 2 - barW / 2, barY = 14;
@@ -22327,6 +22420,33 @@ function drawMineCartRide(camX) {
   ctx.textAlign = "center";
   ctx.fillText(`gold: ${mineCart.gold}`, canvas.width / 2, barY + 26);
   ctx.textAlign = "left";
+}
+
+// the tub's near-side wall, drawn AFTER the player so it overlaps their
+// lower body -- reads as actually sitting down inside the cart instead
+// of floating on top of a flat shape
+function drawMineCartFrontRim() {
+  if (!mineCart.active) return;
+  const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
+  ctx.fillStyle = "#54545c";
+  ctx.beginPath();
+  ctx.moveTo(cx - 22, cartY);
+  ctx.lineTo(cx - 24, cartY - 10);
+  ctx.lineTo(cx + 24, cartY - 10);
+  ctx.lineTo(cx + 22, cartY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#26262c";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // a couple of rivets along the rim for the same riveted-metal language
+  // as the rest of the tub
+  ctx.fillStyle = "#6a6a72";
+  [-14, 0, 14].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(cx + dx, cartY - 5, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawMoleholeScene(camX) {
@@ -22379,7 +22499,12 @@ function drawMoleholeScene(camX) {
   // -- count scaled up to match the wider room, keeps the same density
   for (let i = 0; i < 22; i++) {
     const seed = i * 71.3;
-    const rx = (i * (MOLEHOLE_WIDTH / 22) + pseudoRandom(seed) * 40) - camX;
+    const worldX = i * (MOLEHOLE_WIDTH / 22) + pseudoRandom(seed) * 40;
+    // skip anything landing right on the shaft's own sign/pole -- one of
+    // these was drifting straight across the "TO CART [SPACE]" text,
+    // making it unreadable
+    if (Math.abs(worldX - MOLEHOLE_SHAFT_X) < 60) continue;
+    const rx = worldX - camX;
     if (rx < -20 || rx > canvas.width + 20) continue;
     const len = 44 + pseudoRandom(seed + 1) * 56; // longer overall (was 26-60) for a more established, reaching-further root system
     drawMoleholeRoot(rx, len, seed);
@@ -22468,6 +22593,11 @@ function drawMoleholeScene(camX) {
 }
 
 function updateMoleholeScene(deltaTime) {
+  if (moleholeShaftActivateT >= 0) {
+    moleholeShaftActivateT += deltaTime * 1000;
+    if (moleholeShaftActivateT > MOLEHOLE_SHAFT_ACTIVATE_DURATION) moleholeShaftActivateT = -1;
+  }
+
   // the mine cart ride runs its own entirely separate update loop --
   // once boarded, none of the room's normal collision/interaction logic
   // below applies at all (there's no room to interact with, just the
@@ -25104,6 +25234,10 @@ if (currentScene === "forest") {
 
 drawCrown(camX);
 drawBoomerangPrompt(camX);
+if (currentScene === "molehole") {
+  drawMoleholeShaftActivation(camX);
+  drawMineCartFrontRim();
+}
 
 // held item — floats above the head while selected, so it's clear it's
 // "in play". Hidden during an active dig -- the digging flourish
@@ -25835,6 +25969,7 @@ heldItem = "shovel";
 for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible forest haul by the time you reach the mole hole entrance
 for (let i = 0; i < 3; i++) addToInventory("acorn");
 addToInventory("appleSlice"); // apple splits into 3 -- 2 spent filling the autumn->spring and spring->forest doors, 1 left over
+addToInventory("cushionPart"); // the shaft gear -- skips the tunnel-town s5r dig for testing the cart directly. Hold it, walk to the shaft, press down to fit it.
 connections[0].filled = true;
 connections[0].filledItemType = "appleSlice";
 connections[1].filled = true;
