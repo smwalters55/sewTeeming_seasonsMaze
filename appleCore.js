@@ -19957,7 +19957,13 @@ function startMoleShopDialogue() {
     moleShopDialogue.lines = moleShopAlreadyTradedLines.slice();
     return;
   }
-  if (inventory.acorn > 0) {
+  if (heldItem === "acorn") {
+    // gated on actually HOLDING the acorn, not just having one buried in
+    // inventory -- checking inventory.acorn > 0 alone let the trade fire
+    // (and silently spend an acorn) no matter what was currently held,
+    // e.g. walking up with the shovel equipped still instantly handed
+    // over timber. Matches every other interaction's own pattern (digging
+    // requires heldItem === "shovel", not just having one in inventory).
     // the trade completes right away, same moment the offer is made --
     // simpler and more reliable than trying to time it to a later line
     inventory.acorn -= 1;
@@ -22530,7 +22536,7 @@ const TUNNEL_NODES = [
   // reachability from arc math alone. Every remaining node below stays
   // at x>=700 or height<=100, comfortably outside the mound's bounds in
   // BOTH axes -- no more looping back through it, in either direction.
-  { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
+  { id: "u1", parent: "n1", x: 650, heightAboveGround: 80, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond, moved here from s5u3 -- s5u3 sat right next to s5u5's aragonite with barely any climb between them ("two rewards where i'm standing"); this is the leftmost "up" dig in the whole graph, the very first hole up off the left-hand chain, so it's found on its own instead of stacked against another reward
   { id: "u2", parent: "u1", x: 760, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
   { id: "u3", parent: "u2", x: 700, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
   // a leftward jog before the final climb -- without this, this whole
@@ -22546,6 +22552,12 @@ const TUNNEL_NODES = [
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
   // to launch from the new turn spot
   { id: "uTop", parent: "u3Turn", x: 660, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // dx50/dh80 off u3Turn, straight on up and clear -- dropped its stone; this whole left branch (u3/uTop) already has u3's own bridgePiece, a second find right above it read as too rich for one branch
+  // the second dig-down trapdoor -- mirrors s5u5Drop on the right side of
+  // the map, same reasoning: a real high dead end (the only other way
+  // down is the whole climb back through u3Turn/u3/u2/u1), so it's a
+  // genuine shortcut payoff rather than a pointless drop next to ground
+  // that's already open, which is what got the old s5r/s5 trapdoors cut.
+  { id: "uTopDrop", parent: "uTop", x: 680, heightAboveGround: 380, dir: "up", hasItem: false, dug: false, trapGap: true },
 
   // u2h/u1r removed -- u2h was a jump-only side spot that never led
   // anywhere once the shared-shelf/reconnect idea it was built for got
@@ -22602,13 +22614,19 @@ const TUNNEL_NODES = [
   { id: "s5uTurn", parent: "s5u2", x: 1070, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
   { id: "s5uSide", parent: "s5uTurn", x: 995, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
   { id: "s5u2b", parent: "s5uTurn", x: 1040, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
-  { id: "s5u3", parent: "s5u2b", x: 1075, heightAboveGround: 405, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // its own reward, but not the dead end anymore -- see s5u4/s5u5
+  { id: "s5u3", parent: "s5u2b", x: 1075, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
   // one more diagonal jump up-and-left off the top of the climb, then a
   // final jump straight up from there -- the aragonite's new home, far
   // enough from s5r's cushion piece that they don't read as one crowded
   // pair anymore. Real dead end now, up at the very top of the map.
   { id: "s5u4", parent: "s5u3", x: 1020, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
   { id: "s5u5", parent: "s5u4", x: 1035, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
+  // a real vertical "dig down" hole, the one requested back -- a trapdoor
+  // shortcut off the summit dead end. Doesn't duplicate an easy nearby
+  // path (the only other way down from here is the whole climb back
+  // through s5u4/s5u3/s5u2b/etc), so it reads as a genuine payoff for
+  // reaching the top rather than an illogical drop next to open ground.
+  { id: "s5u5Drop", parent: "s5u5", x: 1055, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep. A plain dead end, same as s5r
@@ -22846,8 +22864,19 @@ function tunnelPositionRevealed(x, h) {
     // player's own x, right where they walked off -- so the extended
     // lower bound only needs to cover a narrow band near the span's own
     // left/right edges, not its whole interior width.
+    // ALSO gated on the player still actively falling (vy < 0) -- without
+    // this, the same relaxed-to-0 band stayed "revealed" forever, even
+    // once the player had already landed and come to rest down at true
+    // ground level (vy settles to 0 the instant the universal y<=0 floor
+    // catch fires, elsewhere in applyPhysics, earlier in the same frame).
+    // That let you stand indefinitely on ordinary undug dirt near the
+    // edge of ANY elevated dug ledge, anywhere on the map -- reported as
+    // landing on "hardened dirt" that clearly hadn't been dug. Falling
+    // PAST the edge still needs the wide-open band (vy stays < 0 the
+    // whole way down), so the original dead-end softlock this was built
+    // to fix is untouched -- only resting there afterward is now blocked.
     const nearSpanEdge = x <= left + tunnelLedgeRevealMargin || x >= right - tunnelLedgeRevealMargin;
-    const lowerBound = nearSpanEdge ? 0 : platformTop - 6;
+    const lowerBound = (nearSpanEdge && player.vy < 0) ? 0 : platformTop - 6;
     if (x >= left - tunnelLedgeRevealMargin && x <= right + tunnelLedgeRevealMargin &&
         h >= lowerBound && h <= platformTop + TUNNEL_PASSAGE_HEIGHT / 2 + 8) {
       return true;
