@@ -2221,9 +2221,40 @@ function applyPhysics(){
   if (currentScene === "tunneltown") {
     const centerX = player.x + player.width / 2;
     if (tunnelPositionRevealed(centerX, player.y)) {
-      tunnelSafeX = player.x;
-      tunnelSafeY = player.y;
-      tunnelStuckFrames = 0;
+      // if a hard-snap earlier pinned the player to this exact spot,
+      // trivially re-passing the top-level check right back at that same
+      // spot is NOT genuine progress -- see tunnelRecoveryAnchor's own
+      // comment. Only clear the stuck counter once the player has
+      // actually moved meaningfully away from that anchor under their
+      // own power. A position that never needed a hard-snap in the first
+      // place (tunnelRecoveryAnchor stays null the whole time) always
+      // takes the normal, immediate reset below -- ordinary standing on
+      // solid ground is completely unaffected.
+      const stillOnFragileAnchor = tunnelRecoveryAnchor &&
+        Math.abs(player.x - tunnelRecoveryAnchor.x) <= 6 &&
+        Math.abs(player.y - tunnelRecoveryAnchor.y) <= 6;
+      if (stillOnFragileAnchor) {
+        tunnelSafeX = player.x;
+        tunnelSafeY = player.y;
+        tunnelStuckFrames++;
+        if (tunnelStuckFrames > 90) {
+          player.x = TUNNELTOWN_WALL_X - 20;
+          player.y = 0;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+          tunnelSafeX = player.x;
+          tunnelSafeY = player.y;
+          tunnelStuckFrames = 0;
+          tunnelRecoveryAnchor = null;
+          return;
+        }
+      } else {
+        tunnelSafeX = player.x;
+        tunnelSafeY = player.y;
+        tunnelStuckFrames = 0;
+        tunnelRecoveryAnchor = null;
+      }
     } else if (tunnelSafeX !== null) {
       // try a softer recovery first: pull X back onto the last safe line
       // but leave Y (and vy) alone -- if THIS frame's height still reads
@@ -2271,6 +2302,7 @@ function applyPhysics(){
         tunnelSafeX = player.x;
         tunnelSafeY = player.y;
         tunnelStuckFrames = 0;
+        tunnelRecoveryAnchor = null;
         return;
       }
       if (tunnelPositionRevealed(tunnelSafeX + player.width / 2, player.y)) {
@@ -2285,6 +2317,13 @@ function applyPhysics(){
         // with, which is exactly the "stuck, no possible movement" report
         player.jumping = false;
         player.usedDoubleJump = false;
+        // record exactly where this hard-snap landed -- see
+        // tunnelRecoveryAnchor's own comment. If the very next frame's
+        // top-level check trivially re-validates this identical spot
+        // (a fragile, floor-less "revealed" pocket rather than real solid
+        // ground), that's not genuine progress and must keep counting
+        // toward the 90-frame hard escape instead of resetting it.
+        tunnelRecoveryAnchor = { x: tunnelSafeX, y: tunnelSafeY };
       }
     }
   }
@@ -23467,6 +23506,21 @@ let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
 let tunnelSafeX = null, tunnelSafeY = null; // last known-good (revealed) spot -- lets the 2D dig-collision snap the player back out of solid dirt instead of leaving them stuck partway through it
 let tunnelStuckFrames = 0; // counts consecutive unrevealed frames -- a real escape hatch if the hard-snap recovery below ever can't resolve on its own (see applyPhysics)
+// set the moment the hard-snap recovery branch below fires -- records the
+// exact spot it pinned the player back to. Some "revealed" points are
+// only marginally so (the fuzzy edge of a frontier tube reaching toward
+// an undug node, say, with no actual floor under them) -- gravity pulls
+// the player straight back out of one every few frames, the hard-snap
+// pins them right back to the identical spot, and THAT spot trivially
+// re-passes the top-level "fully revealed" check the very next frame,
+// resetting tunnelStuckFrames to 0 before it ever nears the 90-frame
+// threshold. A real, stable platform never sets this at all (the
+// top-level check just keeps passing on its own, frame after frame,
+// without ever touching the recovery branch below) -- this only ever
+// activates for a position that already needed a hard-snap once, so
+// ordinary idle-standing on solid ground is untouched. Cleared again the
+// moment the player genuinely moves off of it under their own power.
+let tunnelRecoveryAnchor = null;
 
 // the wall's leading face (the one the elders sit next to) used to be a
 // perfectly flat rectangle -- only the DIRT INSIDE it was textured, so
