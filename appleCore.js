@@ -2236,34 +2236,46 @@ function applyPhysics(){
       // than horizontal drift alone accounts for, and this recovers from
       // that mismatch without needing the reveal geometry itself to
       // somehow anticipate every possible real trajectory through it.
-      if (tunnelPositionRevealed(tunnelSafeX + player.width / 2, player.y)) {
-        player.x = tunnelSafeX;
-        tunnelStuckFrames = 0; // genuinely recovering, not stuck
-      } else {
-        tunnelStuckFrames++;
+      // NOTE: tunnelStuckFrames increments in BOTH branches below, soft
+      // recovery included -- it used to reset to 0 the instant the soft
+      // recovery test passed, on the theory that a successful soft
+      // recovery meant "genuinely recovering, not stuck." In practice the
+      // outer top-level check (the one that actually clears the counter)
+      // was still failing every one of these frames -- that's the only
+      // reason we're in this branch at all -- so a spot where soft
+      // recovery happens to pass on some frames and fail on others (a
+      // frame-to-frame wiggle right along a reveal boundary) kept
+      // stomping the counter back to 0 before it ever reached the
+      // 90-frame threshold below, defeating the hard escape hatch
+      // entirely. Reported as "can move horiz a little but can't get
+      // out" -- literally this wiggle, forever, with the escape hatch
+      // that was supposed to catch it never actually firing. Only the
+      // real top-level success (above) should ever clear this counter;
+      // anything landing in this else-branch, soft recovery or not, is
+      // still stuck and must count toward the hard escape.
+      tunnelStuckFrames++;
+      if (tunnelStuckFrames > 90) {
         // real escape hatch -- some rare local geometry can leave a spot
         // that reads as unrevealed with NO nearby recovery that actually
         // resolves, so this hard-snap just keeps re-firing every single
-        // frame, forever. Reported as "locked into this spot... can move
-        // a little horizontally, but otherwise locked in" -- the tiny
-        // wiggle is tunnelSafeX drifting a pixel or two on frames where
-        // the top check happens to pass, while Y/vy keep getting stomped
-        // back every frame it doesn't. Rather than keep chasing every
-        // individual geometry edge case, this guarantees no position can
-        // ever trap the player forever: stuck here for more than ~1.5s
-        // (90 frames) and they're returned to the one spot that's always,
+        // frame, forever. Rather than keep chasing every individual
+        // geometry edge case, this guarantees no position can ever trap
+        // the player forever: stuck here for more than ~1.5s (90 frames)
+        // and they're returned to the one spot that's always,
         // unconditionally revealed -- the entrance nook.
-        if (tunnelStuckFrames > 90) {
-          player.x = TUNNELTOWN_WALL_X - 20;
-          player.y = 0;
-          player.vy = 0;
-          player.jumping = false;
-          player.usedDoubleJump = false;
-          tunnelSafeX = player.x;
-          tunnelSafeY = player.y;
-          tunnelStuckFrames = 0;
-          return;
-        }
+        player.x = TUNNELTOWN_WALL_X - 20;
+        player.y = 0;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        tunnelSafeX = player.x;
+        tunnelSafeY = player.y;
+        tunnelStuckFrames = 0;
+        return;
+      }
+      if (tunnelPositionRevealed(tunnelSafeX + player.width / 2, player.y)) {
+        player.x = tunnelSafeX;
+      } else {
         player.x = tunnelSafeX;
         player.y = tunnelSafeY;
         player.vy = 0;
@@ -21691,7 +21703,10 @@ const MOLEHOLE_PLATFORMS = [
   // nothing between here and the geode breaker's ledge on purpose --
   // that whole stretch is the root-swing gap, no jump-chain shortcut
   { x: 2000, heightAboveGround: 65, width: 65 },
-  { x: 2130, heightAboveGround: 120, width: 55 }
+  // pushed further right (was 2130, only 30px from the shaft's own x) --
+  // that close, it crowded right into the "OUT OF ORDER"/"TO CART" sign
+  // sitting on the pole at a similar height ("this is a little crowded")
+  { x: 2260, heightAboveGround: 120, width: 55 }
 ];
 
 function drawMoleholePlatform(p, camX) {
@@ -21841,23 +21856,30 @@ function drawMoleholeShaftPreview(camX) {
   // same wood-plank language as the shop's "WARES" sign, so it reads
   // as a real, deliberate placard rather than a bug/missing texture
   if (!moleholeShaftFixed) {
-    const sy = gy - 95;
+    // offset off the pole's own x (was centered right ON it, reading as
+    // crowded/behind it) -- same "hang it off to the side" treatment as
+    // the fixed-state "TO CART" sign
+    const sx = px + 30, sy = gy - 95;
     ctx.strokeStyle = "#2e2014";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(px, sy - 14);
-    ctx.lineTo(px, sy - 8);
+    ctx.moveTo(px, sy - 4);
+    ctx.lineTo(sx, sy - 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 14);
+    ctx.lineTo(sx, sy - 8);
     ctx.stroke();
     ctx.fillStyle = "#4a3018";
-    ctx.fillRect(px - 24, sy - 8, 48, 16);
+    ctx.fillRect(sx - 24, sy - 8, 48, 16);
     ctx.strokeStyle = "#2e2014";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(px - 24, sy - 8, 48, 16);
+    ctx.strokeRect(sx - 24, sy - 8, 48, 16);
     ctx.fillStyle = "rgba(230,200,140,0.8)";
     ctx.font = "8px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("OUT OF", px, sy - 1);
-    ctx.fillText("ORDER", px, sy + 7);
+    ctx.fillText("OUT OF", sx, sy - 1);
+    ctx.fillText("ORDER", sx, sy + 7);
     ctx.textAlign = "left";
   } else {
     // once fixed, a bigger, brighter, glowing sign up near the top
@@ -23771,7 +23793,26 @@ function tunnelNodeParentPos(node) {
 // separate, uselessly-stacked planks.
 // Used by both the physics floor and the ledge render so they always
 // agree on where the walkable span actually is.
-const TUNNEL_LEDGE_MERGE_TOLERANCE = 10;
+// Was 10. Every INTENDED merge in TUNNEL_NODES sits at the exact same
+// heightAboveGround (diff 0) -- s3b/s4/s5 all h90, s5u2/s5uTurn/s5uSide
+// all h250, u3/u3Turn both h300, etc. 10 was loose enough to also merge
+// totally unrelated branches that just happen to land 10 units apart:
+// s1u1 (a dead-end climb spur off s1, h80) sits only 10 below the main
+// s3b/s4/s5 corridor (h90) and within the 100px x-tolerance of s3b
+// (dx60) -- verified via a scripted grid probe that once BOTH sides are
+// dug, tunnelMergedLedgeSpan(s5) returns one 268-unit-wide span
+// (x936-1204) at the LOWER merged height (80, since the merge height is
+// the min of the group), dragging the entire real height-90 corridor's
+// landing platform down to 80. Standing at your own actual height-90
+// ledge no longer registers as "on the platform" (playerBottom=90 fails
+// the <=platformTop check against platformTop=80) -- you fall straight
+// through solid-looking dirt, and the phantom span reaches left all the
+// way to s1u1's own dead end, well past anything actually dug over
+// there. Real repro of "packed dirt to my left falls through once I dig
+// the hole above me." 4 keeps every same-height intended merge (diff 0)
+// working while no longer bridging two branches that only coincidentally
+// land close but not equal.
+const TUNNEL_LEDGE_MERGE_TOLERANCE = 4;
 // height tolerance alone isn't enough to decide two nodes belong to the
 // same shelf -- several completely unrelated branches happen to land on
 // the same round heightAboveGround (e.g. u1 at 80 and s1u1 at 80, ~160
