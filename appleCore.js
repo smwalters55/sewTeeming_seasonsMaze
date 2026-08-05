@@ -20156,17 +20156,14 @@ function drawMoleholeRootSwing(camX) {
 
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
-const geodeBreakerGreetingLines = [
-  ["Mind the pile -- most of this is just plain rock. Everything ELSE, though, that's mine to crack open.", "Bring me something worth the swing and I'll see what's hiding inside."]
-];
 const geodeBreakerShineLines = [
-  ["Ohhh, now THAT'S a find. Real aragonite -- needle cluster and all. Don't see many folks carrying one of these.", "Hold still... there. Polished her right up. That's a keeper, that one."]
+  ["Ohhh, now THAT'S a find. Real aragonite -- needle cluster and all. Mind the pile, most of this is just plain rock, but that's mine to crack open.", "Hold still... there. Polished her right up. That's a keeper, that one."]
 ];
 const geodeBreakerAlreadyShinedLines = [
   ["That's the one I shined for you, right? Still catching the light nice.", "Good stone. Hang onto that -- not many folks find one like it."]
 ];
 const geodeBreakerNoStoneLines = [
-  ["Come back when you're carrying something worth cracking open.", "Everything down here's got a shine hiding somewhere, given the right hands."]
+  ["Mind the pile -- most of this is just plain rock. Bring me something worth the swing and I'll see what's hiding inside.", "Everything down here's got a shine, given the right hands."]
 ];
 
 function startGeodeBreakerDialogue() {
@@ -20174,11 +20171,11 @@ function startGeodeBreakerDialogue() {
   geodeBreakerDialogue.index = 0;
   if (heldItem === "aragonite" && !aragoniteShined) {
     aragoniteShined = true;
-    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerShineLines);
+    geodeBreakerDialogue.lines = geodeBreakerShineLines;
   } else if (heldItem === "aragonite" && aragoniteShined) {
-    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerAlreadyShinedLines);
+    geodeBreakerDialogue.lines = geodeBreakerAlreadyShinedLines;
   } else {
-    geodeBreakerDialogue.lines = geodeBreakerGreetingLines.concat(geodeBreakerNoStoneLines);
+    geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
   }
 }
 
@@ -22186,7 +22183,7 @@ function updateMoleholeScene(deltaTime) {
       player.x + player.width > GEODE_BREAKER_X - GEODE_BREAKER_LEDGE_HALF_WIDTH &&
       player.x < GEODE_BREAKER_X + GEODE_BREAKER_LEDGE_HALF_WIDTH &&
       playerBottom <= platformTop &&
-      playerBottom >= platformTop - 14 &&
+      playerBottom >= platformTop - 40 &&
       player.vy <= 0
     ) {
       player.y = platformTop;
