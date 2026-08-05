@@ -1721,7 +1721,16 @@ function updateNPCIdle(npc) {
 function handleInput(){
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active) {
+  // also frozen during a tunnel-town dig -- without this, holding the
+  // movement key (very natural right after walking up to trigger the
+  // dig) kept sliding the player sideways for the whole ~1.9s animation
+  // even though vertical physics was already frozen (see applyPhysics'
+  // own activeDig guard), so by the time the dig completed they could be
+  // 300+ units away from the spot they'd just dug -- character visibly
+  // digging in one place while continuing to walk away from it, and far
+  // enough that the newly-dug platform's own landing/snap logic no
+  // longer has any position left to catch them at.
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2249,6 +2258,48 @@ function applyPhysics(){
         player.usedDoubleJump = false;
       }
     });
+
+    // a temporary scaffold floor reaching from an already-dug node out to
+    // an UNDUG same-height "side" child that hasn't been dug yet --
+    // without this, a node like s5r (a plain "side" child of s5, meant to
+    // just be walked to and dug, not jumped to) sitting far enough from
+    // its own parent's edge meant simply walking off that edge dropped
+    // the player under gravity well before they ever got both close
+    // enough horizontally AND high enough to fall within the dig-
+    // trigger's own +-25 window at the same time -- verified via a
+    // scripted walk simulation: by the time x was close enough to s5r to
+    // register as "near" it, the player had already fallen ~40 units
+    // below the trigger's own vertical tolerance. A real, if narrow,
+    // reachability gap -- the spot was simply never diggable by walking
+    // to it, contradicting its own "side" (walk-to, not jump-to) design.
+    // This only spans parent-edge to child-x (not the child's own full
+    // merged width, since it isn't dug yet) and only for "side" children
+    // at essentially the same height as their parent -- "up" children
+    // still require a real jump, unaffected by this.
+    if (!keys.down) {
+      TUNNEL_NODES.forEach(node => {
+        if (node.dug || node.dir !== "side" || node.heightAboveGround <= 0) return;
+        const parent = TUNNEL_NODES.find(n => n.id === node.parent);
+        if (!parent || !parent.dug) return;
+        if (Math.abs(parent.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return;
+        const { right: parentRight, left: parentLeft, height: platformTop } = tunnelMergedLedgeSpan(parent);
+        const left = Math.min(parentLeft, node.x - 24);
+        const right = Math.max(parentRight, node.x + 24);
+        const playerBottom = player.y;
+        if (
+          player.x + player.width > left &&
+          player.x < right &&
+          playerBottom <= platformTop &&
+          playerBottom >= platformTop - 14 &&
+          player.vy <= 0
+        ) {
+          player.y = platformTop;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+        }
+      });
+    }
   }
 
   } // end currentScene checks
@@ -25051,6 +25102,35 @@ function updateTunnelTownScene(deltaTime) {
       } else {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
+        // step the player up onto their own newly-dug platform, if this
+        // was an elevated ("up"/"side") spot and they're sitting
+        // somewhere below it -- without this, digging one of these was
+        // possible from anywhere within the dig-trigger's own generous
+        // +-25 vertical tolerance (isPlayerNear, used to decide whether
+        // space-near-the-spot counts at all), but the SEPARATE general
+        // ledge-landing check only ever catches a player within -14 of
+        // the platform's own top. Trigger from, say, 17-20 units below
+        // (well within the dig range, verified via a scripted approach-
+        // and-dig simulation) and the dig itself succeeds -- the hole
+        // visibly opens, the item pops out -- but the player keeps
+        // falling right through the brand new platform because they'd
+        // already sunk past the landing check's narrower catch zone
+        // before it finished. They'd end up back on the ground below,
+        // looking up at a shelf they'd JUST dug, unable to reach it --
+        // reads exactly like standing in "packed dirt that can't be
+        // dug" once landed, since the real platform is now out of
+        // reach above them. This snap guarantees the two tolerances
+        // always agree: however you triggered the dig, you land on
+        // what you dug.
+        if (node.heightAboveGround > 0 &&
+            Math.abs((player.x + player.width / 2) - node.x) <= 30 &&
+            player.y <= node.heightAboveGround) {
+          const { height: platformTop } = tunnelMergedLedgeSpan(node);
+          player.y = platformTop;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+        }
         if (node.hasItem) {
           // was never converted into actual screen space (just the raw
           // heightAboveGround + 14, treated as if that WERE a screen y) --
