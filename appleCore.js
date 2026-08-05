@@ -425,7 +425,7 @@ const ITEM_CANVAS_RENDER = {
 // it has no entry in ITEM_CANVAS_RENDER, so it fell into the plain-text
 // `else` branch below, which unconditionally appended the count and
 // showed "x1" even though boomerang was already listed here.
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane"];
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel"];
 
 function updateInventoryUI() {
   const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
@@ -742,7 +742,7 @@ const sceneMapInfo = {
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
   ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
   molehole: { label: "Mole Hole", x: 400, y: 180, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node
-  tunneltown: { label: "Tunnel Town", x: 460, y: 250, w: 70, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself
+  tunneltown: { label: "Tunnel Town", x: 460, y: 250, w: 82, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width
 };
 
 const discoveredScenes = { autumn: true };
@@ -826,7 +826,27 @@ function updateMapUI() {
     node.style.top = info.y + "px";
     node.textContent = info.label;
     if (info.w) node.style.width = info.w + "px";
-    if (info.h) { node.style.height = info.h + "px"; node.style.fontSize = "0.75em"; }
+    if (info.h) {
+      // the base .map-node CSS vertically centers with a fixed
+      // line-height:60px, sized for its default 60px-tall box and a
+      // single line of text. These smaller side-room nodes override
+      // height down to 30px but were still inheriting that 60px
+      // line-height unchanged -- harmless for a short one-line label
+      // like "Mole Hole", but "Tunnel Town" is just wide enough to wrap
+      // onto two lines, and two lines at a 60px line-height rendered
+      // more than double the box's own 30px height, spilling text out
+      // past the border instead of staying contained. Flexbox centering
+      // handles both the wrapped and unwrapped cases correctly regardless
+      // of how many lines the label actually needs, so it replaces the
+      // line-height trick entirely rather than trying to guess a single
+      // number that works for every label.
+      node.style.height = info.h + "px";
+      node.style.fontSize = "0.75em";
+      node.style.lineHeight = "1.15";
+      node.style.display = "flex";
+      node.style.alignItems = "center";
+      node.style.justifyContent = "center";
+    }
 
     if (scene === "spring") {
       node.style.background = "rgba(180,222,150,0.35)"; // slight light green
@@ -20635,88 +20655,101 @@ function drawMoleholeRootPillar(x, camX) {
 // it can be reused in either scene's own coordinate space.
 const TUNNELTOWN_DIRT_PILE_X = 90;
 // a beat-up shovel that's clearly been left planted in this pile for a
-// long while -- deliberately NOT drawn with drawShovelShape (the same
-// clean, pale-bladed silhouette used for the actual pickup-able/held
-// shovel), since sharing that exact look made this purely-decorative
-// prop read as "grab me" instead of "old junk somebody abandoned here".
-// Shorter, more crooked handle with a snapped-off stub where the grip
-// used to be, a wood shaft gone dark and split, and a pitted, rust-caked
-// blade (warm orange-brown rust tones + darker corrosion speckles)
-// instead of clean grey steel -- plus the tip is bent, not straight.
+// long while -- deliberately NOT drawn with drawShovelShape's exact
+// palette (clean grey blade + gold handle, the pickup-able/held shovel's
+// own colors), so it doesn't read as "grab me". Two earlier passes at
+// this (a squat lopsided blade fully buried near the base, then a
+// snapped-off "stub" instead of a handle) both made it read as an
+// unrecognizable stick rather than a shovel at all once actually seen
+// in-game at real size, not zoomed in on a debug screenshot -- so this
+// keeps the SAME overall silhouette/proportions as the clean pickup
+// shovel (worn but still an unmistakable D-handle, a real full-sized
+// tapered spade blade sitting mostly ABOVE the pile line rather than
+// buried in it) and only re-skins the palette + adds wear details
+// (crack, rust speckles, slight tip bend) on top of that already-legible
+// shape, instead of redesigning the shape itself.
 function drawOldPlantedShovel(ctx, x, y, size, rotation) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
 
-  // worn wooden shaft -- lifted noticeably lighter than the last pass,
-  // which used a near-black brown that all but vanished against the
-  // scene's own near-black ambient dirt; a real light/dark pairing
-  // (lit face + shadowed crack) is what actually reads as "a stick"
-  // in this dark a scene, not just a darker fill color
+  // handle shaft -- worn brown instead of the pickup shovel's warm gold,
+  // but the same length/angle so it still reads as "handle" at a glance
   ctx.strokeStyle = "#7a5a34";
   ctx.lineWidth = size * 0.22;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(-size * 0.66, -size * 0.78);
-  ctx.lineTo(size * 0.18, size * 0.28);
+  ctx.moveTo(-size * 0.75, -size * 0.85);
+  ctx.lineTo(size * 0.2, size * 0.3);
   ctx.stroke();
-  // thin lit edge along one side of the shaft, catching what little
-  // light reaches down here -- without this the handle is a flat
-  // silhouette and reads as a root or crack in the dirt, not a tool
+  // lit edge down one side, so the shaft reads as a round stick catching
+  // light rather than a flat dark silhouette that blends into the dirt
   ctx.strokeStyle = "#a3814e";
-  ctx.lineWidth = size * 0.06;
+  ctx.lineWidth = size * 0.07;
   ctx.beginPath();
-  ctx.moveTo(-size * 0.62, -size * 0.72);
-  ctx.lineTo(size * 0.14, size * 0.24);
+  ctx.moveTo(-size * 0.72, -size * 0.8);
+  ctx.lineTo(size * 0.16, size * 0.26);
   ctx.stroke();
-  // the split/crack, kept as the dark detail instead of carrying the
-  // whole shaft's contrast
+  // a crack running partway down it, the one "old" detail on the shaft
+  // itself -- kept subtle so it doesn't fight the shaft's own legibility
   ctx.strokeStyle = "#2e2013";
   ctx.lineWidth = size * 0.05;
   ctx.beginPath();
-  ctx.moveTo(-size * 0.5, -size * 0.5);
-  ctx.lineTo(-size * 0.38, -size * 0.32);
+  ctx.moveTo(-size * 0.55, -size * 0.55);
+  ctx.lineTo(-size * 0.42, -size * 0.35);
   ctx.stroke();
 
-  // snapped-off grip stub -- no full D-handle left, just a jagged nub,
-  // reinforcing that this thing has been sitting here a very long time
+  // D-handle grip -- worn/duller than the pickup shovel's, but still a
+  // real closed loop, not a jagged unreadable nub. This is the single
+  // biggest legibility fix over the last two passes: a recognizable
+  // grip shape at the top is what actually tells the eye "this is a
+  // tool with a handle," not just a bare stick poking out of the dirt.
   ctx.strokeStyle = "#5a4426";
   ctx.lineWidth = size * 0.16;
-  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(-size * 0.66, -size * 0.78);
-  ctx.lineTo(-size * 0.78, -size * 0.92);
+  ctx.arc(-size * 0.85, -size * 0.95, size * 0.22, 0.3, Math.PI * 1.5);
   ctx.stroke();
 
-  // pitted, rust-caked blade -- lightened and given a warm rim
-  // highlight along its top edge so the actual spade silhouette
-  // separates from the dirt clods behind it (previously flat rust-brown
-  // fill on rust-brown dirt was nearly the same value, so the whole
-  // prop read as one shapeless clump instead of a recognizable tool)
+  // foot-ridge -- same small detail the clean shovel has, sold as
+  // "recognizably a shovel" rather than a generic stick+blade
+  ctx.strokeStyle = "#4a4038";
+  ctx.lineWidth = size * 0.13;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(size * 0.04, size * 0.2);
+  ctx.lineTo(size * 0.24, size * 0.12);
+  ctx.stroke();
+
+  // tapered spade blade -- full size, sitting mostly above the pile's
+  // own peak (the draw call below keeps the origin high enough that
+  // this whole shape clears the clods) instead of buried where it
+  // blended into the dirt and vanished. Warm rust fill instead of clean
+  // grey steel, with a bright rim highlight so the silhouette still
+  // separates clearly from the dirt clods drawn just before it.
   ctx.fillStyle = "#a3703f";
   ctx.strokeStyle = "#5a3a1e";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(size * 0.02, size * 0.18);
-  ctx.lineTo(size * 0.56, size * 0.3);
-  ctx.quadraticCurveTo(size * 0.7, size * 0.56, size * 0.4, size * 0.94);
-  ctx.quadraticCurveTo(size * 0.3, size * 1.08, size * 0.24, size * 0.92);
-  ctx.quadraticCurveTo(size * 0.14, size * 0.64, size * 0.02, size * 0.18);
+  ctx.moveTo(size * 0.05, size * 0.2);
+  ctx.lineTo(size * 0.62, size * 0.32);
+  ctx.quadraticCurveTo(size * 0.76, size * 0.58, size * 0.46, size * 0.96);
+  ctx.quadraticCurveTo(size * 0.36, size * 1.06, size * 0.28, size * 0.96);
+  ctx.quadraticCurveTo(size * 0.16, size * 0.66, size * 0.05, size * 0.2);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  // warm highlight rim tracing the blade's top/leading edge, like a
-  // sliver of light catching the raised lip of the metal
-  ctx.strokeStyle = "rgba(214,170,120,0.75)";
-  ctx.lineWidth = 1.2;
+  // warm highlight rim tracing the blade's leading edge, like a sliver
+  // of light catching the raised lip of the metal
+  ctx.strokeStyle = "rgba(224,182,128,0.85)";
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.moveTo(size * 0.05, size * 0.22);
-  ctx.lineTo(size * 0.52, size * 0.33);
+  ctx.moveTo(size * 0.08, size * 0.24);
+  ctx.lineTo(size * 0.58, size * 0.35);
   ctx.stroke();
   // rust/corrosion speckles across the face of the blade
   const rustSpots = [
-    [0.22, 0.42, 1.3], [0.4, 0.5, 1.6], [0.3, 0.68, 1.1],
-    [0.46, 0.78, 1.4], [0.18, 0.6, 0.9], [0.36, 0.34, 1.0]
+    [0.24, 0.42, 1.4], [0.42, 0.5, 1.7], [0.32, 0.68, 1.2],
+    [0.48, 0.8, 1.5], [0.2, 0.6, 1.0], [0.38, 0.34, 1.1]
   ];
   ctx.fillStyle = "#3f2a16";
   rustSpots.forEach(([fx, fy, r]) => {
@@ -23014,6 +23047,40 @@ function drawTunnelDigSpot(node, camX) {
     // something to stand/land on -- matching the physics floor in
     // applyPhysics, which bridges all the way back to an already-dug
     // parent at the same height instead of leaving separate islands
+    if (!node.trapGap) {
+      // every dug opening used to just reveal the same flat shared cave
+      // interior dead-on -- especially obvious on a frontier spot with
+      // nothing dug past it yet, where the hole opened onto literally
+      // nothing: no depth, no sense it led anywhere, just a flat dark
+      // cutout. This pushes each opening's back wall in a little,
+      // recessed and darkened toward whichever side continues on (away
+      // from the parent you dug in from, or straight back for the first
+      // wall opening), with a couple of faint converging side-wall
+      // strokes -- reads as a short little tunnel alcove receding into
+      // shadow, not a hole that just stops existing the instant it opens
+      const recessDir = (!parentNode || node.parent === "wall") ? 1 : (Math.sign(node.x - parentNode.x) || 1);
+      const backCx = sx + recessDir * markRX * 0.4;
+      const backCy = markY + markRY * 0.08;
+      const backGrad = ctx.createRadialGradient(backCx, backCy, 1, backCx, backCy, Math.max(markRX, markRY) * 0.95);
+      backGrad.addColorStop(0, "rgba(4,3,2,0.92)");
+      backGrad.addColorStop(1, "rgba(4,3,2,0)");
+      ctx.fillStyle = backGrad;
+      ctx.beginPath();
+      ctx.ellipse(backCx, backCy, markRX * 0.78, markRY * 0.72, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx - markRX * 0.75, markY - markRY * 0.5);
+      ctx.lineTo(backCx - markRX * 0.25, backCy - markRY * 0.35);
+      ctx.moveTo(sx - markRX * 0.75, markY + markRY * 0.5);
+      ctx.lineTo(backCx - markRX * 0.25, backCy + markRY * 0.35);
+      ctx.moveTo(sx + markRX * 0.75, markY - markRY * 0.5);
+      ctx.lineTo(backCx + markRX * 0.25, backCy - markRY * 0.35);
+      ctx.moveTo(sx + markRX * 0.75, markY + markRY * 0.5);
+      ctx.lineTo(backCx + markRX * 0.25, backCy + markRY * 0.35);
+      ctx.stroke();
+    }
     if (node.trapGap) {
       // a broken-through plank, not a normal ledge -- two short jagged
       // stubs with open dark air between them, so there's a visible tell
