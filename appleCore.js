@@ -1721,7 +1721,7 @@ function updateNPCIdle(npc) {
 function handleInput(){
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted)) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -1908,6 +1908,10 @@ function applyPhysics(){
   // be hidden. Freezing here holds them wherever the handoff left them
   // until the new scene's own spawn logic repositions them.
   if (seasonTransition.phase !== "idle") return;
+
+  // while riding the mine cart, position is fully driven by
+  // updateMineCartRide() -- its own simple deltaTime-based jump physics
+  if (mineCart.active) return;
 
   // while on the swing, position is fully driven by updateSwing() —
   // no normal gravity/ground physics applies at all
@@ -20001,14 +20005,18 @@ const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches s
 // wares-blobs on it. Not walk-in spaces, just glimpsed depth like the
 // reference image's market halls -- pure atmosphere for this pass.
 const MOLEHOLE_ALCOVES = [
-  { x: 300, w: 130, wareColors: ["#b8862f", "#7a2f2f", "#3f5766"], shopColor: "#8a6a3a", hasMole: true },
+  // each ware now pairs a color with a shape (matches the variety the
+  // main shop counter already got -- jars/crates/wrapped goods/coin
+  // stacks -- instead of these two background stalls staying flat
+  // single-color ellipses)
+  { x: 300, w: 130, wares: [{ color: "#b8862f", shape: "box" }, { color: "#7a2f2f", shape: "stack" }, { color: "#3f5766", shape: "triangle" }], shopColor: "#8a6a3a", hasMole: true },
   // whole row spread out for real breathing room -- the old spacing
   // (330/500/660) left only a 50px gap here and a cramped 10px gap up
   // to the shop arch, reading as one crowded cluster in a wide room
   // that had plenty of space to spare. Now: 140px to alcove one, 110px
   // on to the shop -- checked against each arch's own half-width
   // (archR) rather than eyeballed
-  { x: 560, w: 110, wareColors: ["#5c8a35", "#8a5040", "#c9a860"], shopColor: "#5a7a5a" }
+  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "box" }, { color: "#c9a860", shape: "ellipse" }], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -21075,14 +21083,55 @@ function drawMoleholeAlcove(alcove, camX) {
     ctx.fill();
   }
 
-  // a few wares-blobs on the counter, hinting at goods without needing
-  // real item art -- just enough to read as "a shop," not empty
-  alcove.wareColors.forEach((color, i) => {
-    const wx = ax - archR + 22 + i * ((w - 40) / Math.max(1, alcove.wareColors.length - 1));
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.ellipse(wx, counterTop - 4, 7, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // a few wares on the counter, hinting at goods without needing real
+  // item art -- real shape variety (jars, crates, sacks, coin stacks)
+  // instead of a repeated single-color blob, matching the treatment
+  // the main shop's counter already got
+  alcove.wares.forEach((item, i) => {
+    const wx = ax - archR + 22 + i * ((w - 40) / Math.max(1, alcove.wares.length - 1));
+    const seed = alcove.x * 5.3 + i * 41.7;
+    const wy = counterTop - 4 + (pseudoRandom(seed + 1) - 0.5) * 2;
+    ctx.fillStyle = item.color;
+    if (item.shape === "box") {
+      const bw = 9 + pseudoRandom(seed + 2) * 3, bh = 7 + pseudoRandom(seed + 3) * 3;
+      ctx.fillRect(wx - bw / 2, wy - bh / 2, bw, bh);
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(wx - bw / 2, wy - bh / 2, bw, bh);
+    } else if (item.shape === "triangle") {
+      const s = 7 + pseudoRandom(seed + 2) * 2;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy - s * 0.7);
+      ctx.lineTo(wx - s * 0.7, wy + s * 0.4);
+      ctx.lineTo(wx + s * 0.7, wy + s * 0.4);
+      ctx.closePath();
+      ctx.fill();
+    } else if (item.shape === "stack") {
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.ellipse(wx + (k - 1) * 3, wy - k * 2, 4, 2.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (item.shape === "sack") {
+      // a round-bottomed cloth sack -- wider base, cinched neck
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + 2, 6, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(wx, wy - 3, 3.5, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(wx - 3, wy - 4);
+      ctx.lineTo(wx + 3, wy - 4);
+      ctx.stroke();
+    } else {
+      const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
   // a small hanging lantern above the counter -- the light source
@@ -21735,6 +21784,28 @@ function drawMoleholeShaftPreview(camX) {
     ctx.fillText("OUT OF", px, sy - 1);
     ctx.fillText("ORDER", px, sy + 7);
     ctx.textAlign = "left";
+  } else {
+    // once fixed, a small sign up near the top cushion instead --
+    // "press space to board" needed a real prompt, since nothing about
+    // the pole itself hints a cart waits at the top
+    const sy = gy - 225;
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px, sy - 14);
+    ctx.lineTo(px, sy - 8);
+    ctx.stroke();
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(px - 26, sy - 8, 52, 16);
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px - 26, sy - 8, 52, 16);
+    ctx.fillStyle = "rgba(230,200,140,0.8)";
+    ctx.font = "8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("TO CART", px, sy - 1);
+    ctx.fillText("[SPACE]", px, sy + 7);
+    ctx.textAlign = "left";
   }
 
   // the actual socket the gear gets fitted into -- previously there was
@@ -22076,7 +22147,178 @@ function drawTunnelTownEntrance(camX) {
   }
 }
 
+/* ------------------------------------------------------
+   MINE CART -- boarded from the top of the cushion-lift shaft (once
+   climbed, height210), a repeatable ride deeper into the mine. Auto-
+   scrolls at a fixed speed; the only control is jump timing, grabbing
+   suspended gold along the way. A real interactive ride rather than a
+   one-shot animated cutscene, per "i am wanting the gold... but i like
+   the idea of this being more interactive than just an animated move
+   thing." Ends back at the shaft, ready to ride again.
+   ------------------------------------------------------ */
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0 };
+const MINE_CART_TRACK_LENGTH = 2200;
+const MINE_CART_SPEED = 240; // world units/sec of auto-scroll
+const MINE_CART_GRAVITY = 900; // px/sec^2
+const MINE_CART_JUMP_VY = 360; // px/sec, positive = up (matches player.vy convention)
+const MINE_CART_SCREEN_X = 220; // fixed on-screen anchor for the cart/player
+// gold suspended at fixed points along the ride -- t = distance into the
+// track, h = height above the cart floor. Spaced and staggered so no two
+// require the exact same jump timing back to back.
+const MINE_CART_GOLD = [
+  { t: 260, h: 70 }, { t: 420, h: 130 },
+  { t: 640, h: 90 }, { t: 820, h: 150 },
+  { t: 1080, h: 70 }, { t: 1080, h: 150 },
+  { t: 1340, h: 110 },
+  { t: 1560, h: 60 }, { t: 1560, h: 160 },
+  { t: 1820, h: 100 },
+  { t: 2020, h: 140 }
+];
+let mineCartGoldCollected = new Set(); // reset each ride -- fully repeatable
+
+function startMineCartRide() {
+  mineCart.active = true;
+  mineCart.t = 0;
+  mineCart.localY = 0;
+  mineCart.vy = 0;
+  mineCart.gold = 0;
+  mineCartGoldCollected = new Set();
+}
+
+function updateMineCartRide(deltaTime) {
+  if (!mineCart.active) return;
+  const dt = deltaTime;
+
+  if ((keys.spaceJustPressed || keys.upJustPressed) && mineCart.localY <= 0.5) {
+    mineCart.vy = MINE_CART_JUMP_VY;
+  }
+  mineCart.vy -= MINE_CART_GRAVITY * dt;
+  mineCart.localY += mineCart.vy * dt;
+  if (mineCart.localY <= 0) {
+    mineCart.localY = 0;
+    mineCart.vy = 0;
+  }
+
+  mineCart.t += MINE_CART_SPEED * dt;
+
+  // keep the shared player object in sync so the normal draw() player
+  // block renders the rider in the right spot -- reuses player.y's
+  // existing "height above ground" meaning directly (the cart floor IS
+  // ground level here), so no separate custom player-draw is needed
+  player.x = cameraX + MINE_CART_SCREEN_X;
+  player.y = mineCart.localY;
+  player.vy = mineCart.vy;
+  player.jumping = mineCart.localY > 0;
+
+  MINE_CART_GOLD.forEach((g, i) => {
+    if (mineCartGoldCollected.has(i)) return;
+    if (Math.abs(mineCart.t - g.t) < 26 && Math.abs(mineCart.localY - g.h) < 32) {
+      mineCartGoldCollected.add(i);
+      mineCart.gold++;
+      addToInventory("goldPile");
+    }
+  });
+
+  if (mineCart.t >= MINE_CART_TRACK_LENGTH) {
+    // ride's over -- deposit back at the shaft, ready to climb up and
+    // go again. Repeatable by design, not a one-shot reward.
+    mineCart.active = false;
+    player.x = MOLEHOLE_SHAFT_X;
+    player.y = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+  }
+}
+
+function drawMineCartRide(camX) {
+  // dedicated deep-mine backdrop -- cooler and darker than the market
+  // room, so the ride reads as genuinely going somewhere new
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#241a10");
+  sky.addColorStop(1, "#0d0906");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // scrolling rail ties along the floor -- the track itself
+  const railY = gy - 4;
+  ctx.strokeStyle = "#3a2814";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, railY);
+  ctx.lineTo(canvas.width, railY);
+  ctx.stroke();
+  for (let wx = -((mineCart.t) % 40); wx < canvas.width; wx += 40) {
+    ctx.fillStyle = "#241708";
+    ctx.fillRect(wx, railY - 2, 22, 6);
+  }
+
+  // support beams scrolling past in the background, cheap depth cue
+  for (let i = 0; i < 30; i++) {
+    const bx = i * 90 - (mineCart.t % 90);
+    if (bx < -20 || bx > canvas.width + 20) continue;
+    ctx.strokeStyle = "rgba(58,40,20,0.5)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(bx, gy - 200);
+    ctx.lineTo(bx, gy);
+    ctx.stroke();
+  }
+
+  // gold, drawn relative to the cart's own scroll position
+  MINE_CART_GOLD.forEach((g, i) => {
+    if (mineCartGoldCollected.has(i)) return;
+    const gx = MINE_CART_SCREEN_X + (g.t - mineCart.t);
+    if (gx < -20 || gx > canvas.width + 20) return;
+    drawGoldPileShape(ctx, gx, gy - g.h, 11, 0);
+  });
+
+  // the cart itself -- simple riveted metal tub on two wheels, fixed on
+  // screen while the world scrolls past it
+  const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
+  ctx.fillStyle = "#4a4a52";
+  ctx.beginPath();
+  ctx.moveTo(cx - 26, cartY - 22);
+  ctx.lineTo(cx + 26, cartY - 22);
+  ctx.lineTo(cx + 22, cartY);
+  ctx.lineTo(cx - 22, cartY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#26262c";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  [-14, 14].forEach(dx => {
+    ctx.fillStyle = "#26262c";
+    ctx.beginPath();
+    ctx.arc(cx + dx, cartY + 4, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6a6a72";
+    ctx.beginPath();
+    ctx.arc(cx + dx, cartY + 4, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // the player itself is drawn by the shared player-draw block in
+  // draw(), using player.x/player.y kept in sync by updateMineCartRide
+
+  // progress bar -- how far into the ride, and gold banked so far
+  const barW = 200, barX = canvas.width / 2 - barW / 2, barY = 14;
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  roundRect(ctx, barX, barY, barW, 8, 4);
+  ctx.fill();
+  ctx.fillStyle = "#c9a03a";
+  roundRect(ctx, barX, barY, barW * Math.min(1, mineCart.t / MINE_CART_TRACK_LENGTH), 8, 4);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.font = "11px ui-monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(`gold: ${mineCart.gold}`, canvas.width / 2, barY + 26);
+  ctx.textAlign = "left";
+}
+
 function drawMoleholeScene(camX) {
+  if (mineCart.active) { drawMineCartRide(camX); return; }
+
   // warm earthy gradient, darker toward the bottom -- distinct from
   // ratroom's cooler near-black so the two "underground" rooms don't
   // read as the same space reused
@@ -22213,6 +22455,23 @@ function drawMoleholeScene(camX) {
 }
 
 function updateMoleholeScene(deltaTime) {
+  // the mine cart ride runs its own entirely separate update loop --
+  // once boarded, none of the room's normal collision/interaction logic
+  // below applies at all (there's no room to interact with, just the
+  // ride itself)
+  if (mineCart.active) {
+    updateMineCartRide(deltaTime);
+    return;
+  }
+
+  // board the cart from the top of the climbed shaft, once it's fixed --
+  // same "climb up, then press down to descend" language as stepping
+  // onto any lift
+  if (moleholeShaftFixed && keys.spaceJustPressed && isPlayerNear(MOLEHOLE_SHAFT_X, 210, 30, 25, 20)) {
+    startMineCartRide();
+    return;
+  }
+
   // secret piece fade-out -- used to just vanish the instant it was
   // collected; now ticks up over MOLEHOLE_SECRET_PIECE_FADE_MS so
   // drawMoleHoleSecretPiece can fade the whole root+log out gracefully
