@@ -1287,6 +1287,17 @@ function pseudoRandom(n) {
   return x - Math.floor(x);
 }
 
+// generic hex-color shader (+amt lightens, -amt darkens each channel) --
+// shared utility so any draw function can get a highlight/shadow variant
+// of a base color without hand-picking a second hex value
+function shadeColor(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+  const g = Math.max(0, Math.min(255, ((n >> 8) & 0xff) + amt));
+  const b = Math.max(0, Math.min(255, (n & 0xff) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
 function startCollectAnimation(piece, itemType, extra, revealMs) {
   const hasReveal = revealMs > 0;
   flyingItems.push({
@@ -2705,7 +2716,7 @@ function updateCrown(deltaTime) {
 function drawCrown(camX) {
   if (crownLeaves.length === 0) return;
 
-  const fallProgress = fallState.active ? Math.min(fallState.t / FALL_DURATION, 1) : 0;
+  const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : 0;
   const sinkAmount = fallProgress * (player.height + 20);
 
   const px = player.x - camX + player.width / 2;
@@ -9660,9 +9671,18 @@ const tulip = {
 // falling-through-a-hole sequence: body sinks downward and is clipped
 // away at ground level. mode determines what happens on completion —
 // "hole" = respawn in the same scene (spring's own holes), "cloudHole" =
-// switch to spring and arrive mid-air, floating down (the clouds' return route)
+// switch to spring and arrive mid-air, floating down (the clouds' return route),
+// "tunnelHole" = the mole hole's own second, deeper hole down into tunnel
+// town -- reuses this exact sink/clip visual (previously only the hole
+// prop itself did a tiny shrink/fade, with the player sprite just
+// standing there the whole time) but takes noticeably longer, since
+// the elders' dialogue already establishes this one goes "a lot deeper"
 const fallState = { active: false, t: 0, mode: "hole" };
 const FALL_DURATION = 700; // ms
+const TUNNEL_FALL_DURATION = 1300; // ms -- the deeper tunnel-town hole only
+function fallDurationForMode(mode) {
+  return mode === "tunnelHole" ? TUNNEL_FALL_DURATION : FALL_DURATION;
+}
 
 function drawSpringScene(camX) {
   // --- SKY: 5-stop soft pastel gradient ---
@@ -20412,10 +20432,41 @@ function drawMoleholeAlcove(alcove, camX) {
 }
 
 // TOWN NOTICE board -- a small carved-plank detail, same visual
-// language as the game's other carved-wood prompts, purely decorative
-// here (no readable text yet, just marks -- matches the reference's
-// "Meeting Tomorrow After Lunch" notice board)
+// language as the game's other carved-wood prompts. Now a real readable
+// notice (press near it, same pattern as the elders/shopkeeper dialogue)
+// instead of just illegible ink-mark lines -- content echoes the
+// reference art directly: the meeting notice, the still-broken lift,
+// and the town's own quiet Down Underground vs. Up Outside debate,
+// which the elders' own "the world belongs down here" line and the new
+// sign up at the tunnel town exit both play off of
 const moleHoleNoticeBoard = { x: 435, y: 60 }; // re-centered in the wider (140px) gap between the two alcoves after the whole row spread out
+const moleHoleNoticeLines = [
+  ["TOWN NOTICE", "Meeting Tuesdays, after lunch -- usual burrow."],
+  ["Lift's still out of order.", "If you find the gear, bring it up to the shaft."],
+  ["Some say it's past time we opened a way Up Outside again.", "Others say the world belongs down here just fine."]
+];
+const moleHoleBoardDialogue = { active: false, index: 0 };
+
+function startMoleHoleBoardDialogue() {
+  moleHoleBoardDialogue.active = true;
+  moleHoleBoardDialogue.index = 0;
+}
+
+function advanceMoleHoleBoardDialogue() {
+  moleHoleBoardDialogue.index++;
+  if (moleHoleBoardDialogue.index >= moleHoleNoticeLines.length) {
+    moleHoleBoardDialogue.active = false;
+  }
+}
+
+function drawMoleHoleBoardSpeechBubble(camX) {
+  if (!moleHoleBoardDialogue.active) return;
+  const beat = moleHoleNoticeLines[moleHoleBoardDialogue.index];
+  const isLast = moleHoleBoardDialogue.index === moleHoleNoticeLines.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  const bx = moleHoleNoticeBoard.x - camX - 10, by = gy - moleHoleNoticeBoard.y - 60;
+  drawFittedSpeechBubble(ctx, bx, by, displayLines);
+}
 
 function drawMoleHoleNoticeBoard(camX) {
   const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
@@ -20583,18 +20634,116 @@ function drawMoleholeRootPillar(x, camX) {
 // dig is happening and it belongs. Takes an explicit x/groundY now so
 // it can be reused in either scene's own coordinate space.
 const TUNNELTOWN_DIRT_PILE_X = 90;
+// a beat-up shovel that's clearly been left planted in this pile for a
+// long while -- deliberately NOT drawn with drawShovelShape (the same
+// clean, pale-bladed silhouette used for the actual pickup-able/held
+// shovel), since sharing that exact look made this purely-decorative
+// prop read as "grab me" instead of "old junk somebody abandoned here".
+// Shorter, more crooked handle with a snapped-off stub where the grip
+// used to be, a wood shaft gone dark and split, and a pitted, rust-caked
+// blade (warm orange-brown rust tones + darker corrosion speckles)
+// instead of clean grey steel -- plus the tip is bent, not straight.
+function drawOldPlantedShovel(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  // worn wooden shaft -- lifted noticeably lighter than the last pass,
+  // which used a near-black brown that all but vanished against the
+  // scene's own near-black ambient dirt; a real light/dark pairing
+  // (lit face + shadowed crack) is what actually reads as "a stick"
+  // in this dark a scene, not just a darker fill color
+  ctx.strokeStyle = "#7a5a34";
+  ctx.lineWidth = size * 0.22;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.66, -size * 0.78);
+  ctx.lineTo(size * 0.18, size * 0.28);
+  ctx.stroke();
+  // thin lit edge along one side of the shaft, catching what little
+  // light reaches down here -- without this the handle is a flat
+  // silhouette and reads as a root or crack in the dirt, not a tool
+  ctx.strokeStyle = "#a3814e";
+  ctx.lineWidth = size * 0.06;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.62, -size * 0.72);
+  ctx.lineTo(size * 0.14, size * 0.24);
+  ctx.stroke();
+  // the split/crack, kept as the dark detail instead of carrying the
+  // whole shaft's contrast
+  ctx.strokeStyle = "#2e2013";
+  ctx.lineWidth = size * 0.05;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.5, -size * 0.5);
+  ctx.lineTo(-size * 0.38, -size * 0.32);
+  ctx.stroke();
+
+  // snapped-off grip stub -- no full D-handle left, just a jagged nub,
+  // reinforcing that this thing has been sitting here a very long time
+  ctx.strokeStyle = "#5a4426";
+  ctx.lineWidth = size * 0.16;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.66, -size * 0.78);
+  ctx.lineTo(-size * 0.78, -size * 0.92);
+  ctx.stroke();
+
+  // pitted, rust-caked blade -- lightened and given a warm rim
+  // highlight along its top edge so the actual spade silhouette
+  // separates from the dirt clods behind it (previously flat rust-brown
+  // fill on rust-brown dirt was nearly the same value, so the whole
+  // prop read as one shapeless clump instead of a recognizable tool)
+  ctx.fillStyle = "#a3703f";
+  ctx.strokeStyle = "#5a3a1e";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.02, size * 0.18);
+  ctx.lineTo(size * 0.56, size * 0.3);
+  ctx.quadraticCurveTo(size * 0.7, size * 0.56, size * 0.4, size * 0.94);
+  ctx.quadraticCurveTo(size * 0.3, size * 1.08, size * 0.24, size * 0.92);
+  ctx.quadraticCurveTo(size * 0.14, size * 0.64, size * 0.02, size * 0.18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // warm highlight rim tracing the blade's top/leading edge, like a
+  // sliver of light catching the raised lip of the metal
+  ctx.strokeStyle = "rgba(214,170,120,0.75)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.05, size * 0.22);
+  ctx.lineTo(size * 0.52, size * 0.33);
+  ctx.stroke();
+  // rust/corrosion speckles across the face of the blade
+  const rustSpots = [
+    [0.22, 0.42, 1.3], [0.4, 0.5, 1.6], [0.3, 0.68, 1.1],
+    [0.46, 0.78, 1.4], [0.18, 0.6, 0.9], [0.36, 0.34, 1.0]
+  ];
+  ctx.fillStyle = "#3f2a16";
+  rustSpots.forEach(([fx, fy, r]) => {
+    ctx.beginPath();
+    ctx.ellipse(size * fx, size * fy, r, r * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
+
 function drawMoleholeDirtPile(camX, worldX, groundY) {
   const px = worldX - camX;
   if (px < -40 || px > canvas.width + 40) return;
   const py = groundY;
   ctx.fillStyle = "rgba(0,0,0,0.25)";
   ctx.beginPath();
-  ctx.ellipse(px, py + 2, 24, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py + 2, 28, 5, 0, 0, Math.PI * 2);
   ctx.fill();
-  // a few loosely stacked dirt clods, biggest at the base
+  // a fuller, lumpier pile of dirt clods, biggest at the base -- more of
+  // them than before, with a couple extra low ones spread wider so it
+  // reads as an actual heap that's been dug up and left, not a tidy
+  // little mound
   const clods = [
     { dx: -10, dy: 0, r: 9 }, { dx: 6, dy: 1, r: 8 }, { dx: -2, dy: -6, r: 7 },
-    { dx: 12, dy: -2, r: 5.5 }, { dx: -14, dy: -3, r: 5 }
+    { dx: 12, dy: -2, r: 5.5 }, { dx: -14, dy: -3, r: 5 },
+    { dx: -18, dy: 2, r: 6 }, { dx: 17, dy: 3, r: 5.5 }, { dx: 2, dy: -10, r: 4.5 }
   ];
   clods.forEach((c, i) => {
     ctx.fillStyle = i % 2 === 0 ? "#4a3018" : "#3a2414";
@@ -20602,8 +20751,27 @@ function drawMoleholeDirtPile(camX, worldX, groundY) {
     ctx.ellipse(px + c.dx, py - c.r * 0.6 + c.dy, c.r, c.r * 0.75, 0, 0, Math.PI * 2);
     ctx.fill();
   });
-  // the shovel, planted blade-down in the pile's peak, leaning slightly
-  drawShovelShape(ctx, px - 2, py - 15, 12, 0.15);
+  // loose scattered gravel/pebbles around the base of the pile, sitting
+  // right on the ground -- small angular chips instead of more round
+  // clods, so the pile reads as coarse dug-up dirt and stone, not just
+  // soft soil
+  const gravel = [
+    [-22, 1, 2.2], [-16, 2, 1.6], [-4, 3, 2], [8, 2, 1.8], [19, 1, 2.4],
+    [24, 3, 1.5], [-26, 3, 1.4], [14, 4, 1.6]
+  ];
+  gravel.forEach(([gx, gy, r], i) => {
+    ctx.fillStyle = i % 3 === 0 ? "#6a5a48" : (i % 3 === 1 ? "#584838" : "#7a6a56");
+    ctx.beginPath();
+    ctx.moveTo(px + gx - r, py + gy);
+    ctx.lineTo(px + gx, py + gy - r * 0.8);
+    ctx.lineTo(px + gx + r, py + gy);
+    ctx.lineTo(px + gx + r * 0.3, py + gy + r * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  });
+  // the old shovel, planted blade-down in the pile's peak, leaning a
+  // little more steeply than a freshly-set one would
+  drawOldPlantedShovel(ctx, px - 2, py - 15, 12, 0.24);
 }
 
 // ambient background moles -- purely passive, no interaction, no
@@ -20617,14 +20785,53 @@ function drawMoleholeDirtPile(camX, worldX, groundY) {
 // language as the real shopkeeper moles (hunched tapered body, rounded
 // head, small ears, elongated snout, faint eye highlights) just darker
 // and simpler, since it's meant to read at a glance from a distance.
-const MOLEHOLE_AMBIENT_MOLES = [390, 1250];
-function drawMoleholeAmbientMole(x, camX) {
+// a handful more than before, and now actually wandering rather than
+// standing dead still -- "meandering" moles were requested specifically
+// to make the room feel more lived-in. Kept deliberately background-tier
+// so it doesn't compete for attention with the shopkeepers/elders: small,
+// slow, muted color, no interaction prompt of any kind, and each one's
+// wander range is a short, contained patrol near its home spot rather
+// than roaming the whole room -- so the room reads as "occupied" without
+// characters constantly crossing the whole floor or clustering together.
+// Homes picked to sit clear of the alcoves (235-365, 505-615), the
+// bulletin board (~410-460), the shaft (1200) and the tunnel town
+// entrance pit (1380) -- the two big open floor gaps (before the shaft,
+// and out past the shop) get most of the new ones.
+const MOLEHOLE_AMBIENT_MOLES = [
+  { home: 390, range: 26, x: 390, dir: 1, speed: 0.012, pauseT: 0, seed: 1 },
+  { home: 700, range: 45, x: 700, dir: -1, speed: 0.01, pauseT: 800, seed: 2 },
+  { home: 900, range: 50, x: 900, dir: 1, speed: 0.014, pauseT: 1600, seed: 3 },
+  { home: 1050, range: 40, x: 1050, dir: -1, speed: 0.011, pauseT: 400, seed: 4 },
+  { home: 1250, range: 35, x: 1250, dir: 1, speed: 0.013, pauseT: 1200, seed: 5 }
+];
+
+function updateMoleholeAmbientMoles(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  MOLEHOLE_AMBIENT_MOLES.forEach(m => {
+    if (m.pauseT > 0) {
+      m.pauseT -= dtMs;
+      return;
+    }
+    m.x += m.dir * m.speed * dtMs;
+    const offset = m.x - m.home;
+    if (offset > m.range || offset < -m.range) {
+      m.x = m.home + Math.max(-m.range, Math.min(m.range, offset));
+      m.dir *= -1;
+      // pause a moment at each end of the patrol before turning back,
+      // instead of pacing back and forth with no beat to it
+      m.pauseT = 500 + pseudoRandom(m.seed * 91.3 + m.x) * 1200;
+    }
+  });
+}
+
+function drawMoleholeAmbientMole(mole, camX) {
+  const x = mole.x;
   const px = x - camX;
   if (px < -30 || px > canvas.width + 30) return;
   const bob = Math.sin(performance.now() * 0.0009 + x * 0.07) * 1.3;
   const bodyColor = "#2a2016";
   const bodyW = 15, bodyH = 15, bodyBottom = gy - 4 + bob;
-  const headCX = px, headCY = bodyBottom - bodyH - 5;
+  const headCX = px + mole.dir * 1.5, headCY = bodyBottom - bodyH - 5;
 
   // ground shadow
   ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -21083,21 +21290,23 @@ function drawMoleholeCushion(c, camX) {
    hole to read as "further, older digging" rather than a fresh
    surface entrance.
    ====================================================== */
-const tunnelTownEntrance = { x: 1380, active: false, t: 0 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it. Pulled back from 1500 -- that sat close enough to the room's right-edge root pillar that the hole's own debris/beam butted right up against it, reading as "half ground, half wall" instead of a plain ground-level pit. Now clear of both the pillar (1580) and platform 1480's left edge.
-const TUNNELTOWN_FALL_MS = 1300; // longer than a normal hole -- this one goes a lot deeper
+const tunnelTownEntrance = { x: 1380 }; // near the back of the room, past the shaft -- reads as "further in" before you reach it. Pulled back from 1500 -- that sat close enough to the room's right-edge root pillar that the hole's own debris/beam butted right up against it, reading as "half ground, half wall" instead of a plain ground-level pit. Now clear of both the pillar (1580) and platform 1480's left edge.
+const TUNNELTOWN_FALL_MS = TUNNEL_FALL_DURATION; // longer than a normal hole -- this one goes a lot deeper
 
 function updateTunnelTownEntrance(deltaTime) {
-  if (tunnelTownEntrance.active) {
-    tunnelTownEntrance.t += deltaTime * 1000;
-    if (tunnelTownEntrance.t >= TUNNELTOWN_FALL_MS) {
-      tunnelTownEntrance.active = false;
-      startSeasonTransition("tunneltown");
-    }
-    return;
-  }
+  // now piggybacks on the shared fallState sink animation (mode
+  // "tunnelHole") instead of running its own separate active/t timer --
+  // that old standalone timer never actually moved or hid the player
+  // sprite, so falling in read as nothing but the hole graphic doing a
+  // faint shrink/fade while the player just stood there. updateFallState
+  // (called globally every frame) now owns completion/the scene handoff;
+  // this just needs to trigger it and otherwise get out of the way
+  // while a fall -- of any kind -- is already in progress
+  if (fallState.active) return;
   if (keys.spaceJustPressed && isPlayerNear(tunnelTownEntrance.x, 0, 28, 15, 15)) {
-    tunnelTownEntrance.active = true;
-    tunnelTownEntrance.t = 0;
+    fallState.active = true;
+    fallState.t = 0;
+    fallState.mode = "tunnelHole";
   }
 }
 
@@ -21145,14 +21354,34 @@ function drawTunnelTownEntrance(camX) {
   ctx.lineTo(hx - 34, hy - 30);
   ctx.stroke();
 
-  if (tunnelTownEntrance.active) {
-    const p = Math.min(1, tunnelTownEntrance.t / TUNNELTOWN_FALL_MS);
+  if (fallState.active && fallState.mode === "tunnelHole") {
+    const p = Math.min(1, fallState.t / TUNNELTOWN_FALL_MS);
     ctx.save();
     ctx.globalAlpha = 1 - p * 0.7;
     ctx.beginPath();
     ctx.ellipse(hx, hy - p * 8, 40 * (1 - p * 0.4), 14 * (1 - p * 0.4), 0, 0, Math.PI * 2);
     ctx.fillStyle = "#0a0603";
     ctx.fill();
+    ctx.restore();
+
+    // a scatter of dirt kicked up around the rim while the player actually
+    // sinks through it -- previously the only motion here at all was this
+    // ellipse's own faint shrink; now that the shared fall-sink visual
+    // (see the player draw block) does the real work of showing them drop
+    // in, this just adds a beat of debris shaken loose by the fall itself
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - p * 1.3);
+    for (let i = 0; i < 7; i++) {
+      const seed = i * 31.7;
+      const a = (i / 7) * Math.PI * 2 + pseudoRandom(seed) * 0.6;
+      const dist = (14 + pseudoRandom(seed + 1) * 22) * p;
+      const cx = hx + Math.cos(a) * dist;
+      const cy = hy - p * 6 + Math.sin(a) * dist * 0.4 - p * 10;
+      ctx.fillStyle = pseudoRandom(seed + 2) < 0.5 ? "#4a3018" : "#2e2014";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 1.8 + pseudoRandom(seed + 3) * 1.6, 1.4, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
@@ -21284,12 +21513,13 @@ function drawMoleholeScene(camX) {
 
   drawTunnelTownEntrance(camX);
   drawMoleholeSpores(camX);
-  MOLEHOLE_AMBIENT_MOLES.forEach(x => drawMoleholeAmbientMole(x, camX));
+  MOLEHOLE_AMBIENT_MOLES.forEach(m => drawMoleholeAmbientMole(m, camX));
   drawMoleholeFungusCluster(camX);
 
   // drawn dead last, same as the elders' bubble in tunnel town, so it's
   // never covered by anything else in the scene
   drawMoleShopSpeechBubble(camX);
+  drawMoleHoleBoardSpeechBubble(camX);
 }
 
 function updateMoleholeScene(deltaTime) {
@@ -21299,6 +21529,8 @@ function updateMoleholeScene(deltaTime) {
   if (moleHoleSecretPiece.collected && moleHoleSecretPiece.fadeT < MOLEHOLE_SECRET_PIECE_FADE_MS) {
     moleHoleSecretPiece.fadeT += deltaTime * 1000;
   }
+
+  updateMoleholeAmbientMoles(deltaTime);
 
   // dirt platform collision -- same generic landing pattern used for
   // the ratroom shelves and forest gears elsewhere in the game
@@ -21373,6 +21605,18 @@ function updateMoleholeScene(deltaTime) {
     }
   }
 
+  // the notice board -- same dialogue-priority pattern as the
+  // shopkeeper/elders below, checked first since it's the first thing
+  // near the entrance
+  if (moleHoleBoardDialogue.active) {
+    if (keys.spaceJustPressed) advanceMoleHoleBoardDialogue();
+    return;
+  }
+  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 30, 20, 20) && keys.spaceJustPressed) {
+    startMoleHoleBoardDialogue();
+    return;
+  }
+
   // shopkeeper dialogue takes priority over anything else this frame,
   // same pattern as the tunnel town elders
   if (moleShopDialogue.active) {
@@ -21404,6 +21648,42 @@ function updateMoleholeScene(deltaTime) {
 const TUNNELTOWN_WIDTH = 1200; // widened again to fit the deeper reward path (s5 sits at x:1060)
 const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- was bumped up to +34 to fix a single narrow oval feeling tight at its own edges, but that same generous height, once the ledge-merge fix started stitching long straight corridors together, turned into one continuous tall band the FULL WIDTH of the whole merged shelf -- "why can i jump through this packed dirt so much... this is largely passing through it," not the odd few px of edge wiggle room this was meant to allow. Back down near the original size; a flat merged shelf doesn't need much more headroom than the player's own height to walk through, and individual dig-spot jumps still get real (if tighter) clearance
 const tunnelTownExit = { x: 150 };
+
+// a small hand-lettered sign at the climb back up, echoing the
+// reference art's own "UP OUTSIDE" signage at its surface exit -- gives
+// the exit an actual reason beyond a lit beam, and ties back to both the
+// elders' "the world belongs down here" line and the notice board's own
+// mention of the debate over opening a way back up
+function drawTunnelTownExitSign(ex, groundY) {
+  const sx = ex + 20, sy = groundY - 55;
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - 15);
+  ctx.lineTo(sx, sy - 9);
+  ctx.stroke();
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx - 22, sy - 9, 44, 20);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx - 22, sy - 9, 44, 20);
+  // a small carved arrow, pointing the way
+  ctx.strokeStyle = "rgba(230,200,140,0.85)";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(sx - 15, sy - 1);
+  ctx.lineTo(sx - 15, sy - 6);
+  ctx.moveTo(sx - 17.5, sy - 3.5);
+  ctx.lineTo(sx - 15, sy - 6.5);
+  ctx.lineTo(sx - 12.5, sy - 3.5);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(230,200,140,0.85)";
+  ctx.font = "7px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("UP", sx + 6, sy - 1);
+  ctx.fillText("OUTSIDE", sx + 6, sy + 7);
+  ctx.textAlign = "left";
+}
 
 /* ------------------------------------------------------
    ELDER TRIO -- found at the literal dead end (the wall just
@@ -21558,6 +21838,25 @@ function drawElderTrio(camX) {
     ctx.quadraticCurveTo(ex, bodyTop + capeH * 0.5, ex - bodyW / 2 + 1, bodyTop + capeH);
     ctx.closePath();
     ctx.fill();
+    // a long, drooping mole snout -- the reference art's elders (and the
+    // shopkeeper moles, at a smaller scale) all have real elongated
+    // noses hanging down past the eyeline; the trio previously had none
+    // at all, just dot eyes on a plain round head, which read as generic
+    // rather than distinctly mole-like or properly aged. Tapered and
+    // slightly downturned, a shade darker than the body for depth, with
+    // a small dark nostril right at the drooping tip.
+    ctx.fillStyle = shadeColor(elder.color, -18);
+    ctx.beginPath();
+    ctx.moveTo(headCX - 2.6, headCY + 1);
+    ctx.quadraticCurveTo(headCX - 3.2, headCY + 7, headCX - 1, headCY + 11.5);
+    ctx.quadraticCurveTo(headCX, headCY + 13.5, headCX + 1, headCY + 11.5);
+    ctx.quadraticCurveTo(headCX + 3.2, headCY + 7, headCX + 2.6, headCY + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#241a10";
+    ctx.beginPath();
+    ctx.ellipse(headCX, headCY + 11, 1.1, 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
     // dot eyes
     ctx.fillStyle = "#1c1208";
     ctx.beginPath();
@@ -21580,6 +21879,56 @@ function drawElderTrio(camX) {
       ctx.arc(headCX + 5.5, headCY + 6.5, 2, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // real signs of age -- these three read as "elders" mostly by being
+    // short and hunched, but nothing on the face itself actually said
+    // "old" before this. A couple of thin forehead creases, grey brow
+    // tufts, and a set of whiskers (the one mole-specific aging tell,
+    // rather than borrowing a human one wholesale) fix that without
+    // needing to touch each elder's own accessory/beard logic below
+    ctx.strokeStyle = "rgba(40,30,20,0.35)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(headCX - 4.5, headCY - 3.5);
+    ctx.quadraticCurveTo(headCX, headCY - 5, headCX + 4.5, headCY - 3.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(headCX - 3.5, headCY - 1.5);
+    ctx.quadraticCurveTo(headCX, headCY - 2.7, headCX + 3.5, headCY - 1.5);
+    ctx.stroke();
+    // a couple of tiny crow's-feet creases out past each eye
+    ctx.beginPath();
+    ctx.moveTo(headCX - 5.5, headCY + 3);
+    ctx.lineTo(headCX - 7, headCY + 2);
+    ctx.moveTo(headCX - 5.5, headCY + 4.5);
+    ctx.lineTo(headCX - 7, headCY + 4.2);
+    ctx.moveTo(headCX + 5.5, headCY + 3);
+    ctx.lineTo(headCX + 7, headCY + 2);
+    ctx.moveTo(headCX + 5.5, headCY + 4.5);
+    ctx.lineTo(headCX + 7, headCY + 4.2);
+    ctx.stroke();
+    // grey/white brow tufts, sitting right above the dot eyes
+    ctx.strokeStyle = "rgba(215,210,198,0.85)";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(headCX - 5, headCY + 1.2);
+    ctx.quadraticCurveTo(headCX - 3.5, headCY - 0.3, headCX - 2, headCY + 0.6);
+    ctx.moveTo(headCX + 5, headCY + 1.2);
+    ctx.quadraticCurveTo(headCX + 3.5, headCY - 0.3, headCX + 2, headCY + 0.6);
+    ctx.stroke();
+    // grey whiskers -- three thin lines fanning back from each cheek,
+    // the one aging tell that actually reads as "mole" rather than
+    // "generic old person" grafted onto the species
+    ctx.strokeStyle = "rgba(220,215,205,0.6)";
+    ctx.lineWidth = 0.7;
+    [-1, 1].forEach(side => {
+      [-2.5, 0, 2.5].forEach(spread => {
+        ctx.beginPath();
+        ctx.moveTo(headCX + side * 5.5, headCY + 6 + spread * 0.6);
+        ctx.lineTo(headCX + side * (9 + Math.abs(spread)), headCY + 5.5 + spread);
+        ctx.stroke();
+      });
+    });
 
     // one small signature accessory each, so the trio has real personality
     if (elder.accessory === "glasses") {
@@ -22924,12 +23273,41 @@ function drawDiggingFlourish(camX) {
     drawCollectible(ctx, stoneX, baseY - jolt, 15, jolt * 0.2, "stone");
   }
 
+  // a soft burst of ground dust right as the blade drives in, on EVERY
+  // swing (not just needsStone hits) -- before this the plunge landed
+  // silently and the only dirt you ever saw was the clump thrown a beat
+  // later, so the actual moment of impact read as weightless
+  if (swingLocalT >= 0.28 && swingLocalT <= 0.62) {
+    const dt = (swingLocalT - 0.28) / 0.34; // 0 at plunge start, 1 as the blade's lifting back out
+    const puffAlpha = Math.sin(Math.min(1, Math.max(0, dt)) * Math.PI);
+    if (puffAlpha > 0.03) {
+      const puffY = sy - (swingHeightOffset - 10);
+      ctx.save();
+      ctx.globalAlpha = puffAlpha * 0.5;
+      for (let i = 0; i < 4; i++) {
+        const seed = swingIndex * 19.7 + i * 6.3;
+        const a = Math.PI * 0.15 + (i / 4) * Math.PI * 0.7 - Math.PI * 0.42;
+        const dist = 3 + dt * (7 + pseudoRandom(seed) * 6);
+        const puffX = sx + Math.cos(a) * dist * animDir;
+        const py = puffY - Math.abs(Math.sin(a)) * dist * 0.5 - dt * 2;
+        ctx.fillStyle = pseudoRandom(seed + 1) < 0.5 ? "#6b4f33" : "#59402a";
+        ctx.beginPath();
+        ctx.ellipse(puffX, py, 2.4 + dt * 2.6 + pseudoRandom(seed + 2) * 1.4, 1.8 + dt * 1.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
   drawShovelShape(ctx, sx + bobX, sy - swingHeightOffset + bobY, 13, angle);
 
   // each swing throws a real clump of dirt out in a visible arc (rises
   // then falls, tossed forward in whichever direction the player's
   // facing), timed to land right as the blade lifts out of the ground,
-  // instead of a quick fading speck happening all at once
+  // instead of a quick fading speck happening all at once. A denser mix
+  // now -- a few heavier clods plus a scattering of finer flecks trailing
+  // behind them, instead of four same-sized blobs, so a swing reads as a
+  // real shovelful of dirt going somewhere rather than a token toss
   for (let s = 0; s < TUNNEL_DIG_SWINGS; s++) {
     const throwStart = s * swingDur + swingDur * 0.58;
     const throwDuration = swingDur * 0.75;
@@ -22937,17 +23315,33 @@ function drawDiggingFlourish(camX) {
     if (localT < 0 || localT > throwDuration) continue;
     const lp = localT / throwDuration;
     const throwDir = animDir; // tossed forward, the same way the shovel's actually digging
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const seed = s * 71.3 + i * 11.7;
-      const spread = pseudoRandom(seed) * 8 - 4;
-      const speed = 26 + pseudoRandom(seed + 1) * 18;
-      const arcHeight = 24 + pseudoRandom(seed + 2) * 12;
+      const spread = pseudoRandom(seed) * 10 - 5;
+      const speed = 24 + pseudoRandom(seed + 1) * 22;
+      const arcHeight = 22 + pseudoRandom(seed + 2) * 16;
       const clumpX = sx + throwDir * speed * lp + spread;
       const clumpY = sy - (swingHeightOffset - 6) - Math.sin(lp * Math.PI) * arcHeight;
       ctx.globalAlpha = 1 - lp * 0.25;
       ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#4a3018" : "#3a2814";
       ctx.beginPath();
-      ctx.ellipse(clumpX, clumpY, 3 + pseudoRandom(seed + 4) * 2, 2.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(clumpX, clumpY, 3 + pseudoRandom(seed + 4) * 2.4, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // finer trailing flecks -- smaller, thrown a touch further and
+    // faster, fading out quicker than the main clods so the spray has
+    // real depth instead of every piece landing together
+    for (let i = 0; i < 5; i++) {
+      const seed = s * 137.9 + i * 23.1 + 400;
+      const spread = pseudoRandom(seed) * 14 - 7;
+      const speed = 34 + pseudoRandom(seed + 1) * 28;
+      const arcHeight = 16 + pseudoRandom(seed + 2) * 14;
+      const fleckX = sx + throwDir * speed * lp + spread;
+      const fleckY = sy - (swingHeightOffset - 4) - Math.sin(lp * Math.PI) * arcHeight;
+      ctx.globalAlpha = Math.max(0, 0.85 - lp * 0.9);
+      ctx.fillStyle = pseudoRandom(seed + 3) < 0.5 ? "#5c4527" : "#3a2814";
+      ctx.beginPath();
+      ctx.ellipse(fleckX, fleckY, 1 + pseudoRandom(seed + 4) * 1, 0.9, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -23200,6 +23594,8 @@ function drawTunnelTownScene(camX) {
   ctx.lineTo(ex - 9, groundY);
   ctx.closePath();
   ctx.fill();
+
+  drawTunnelTownExitSign(ex, groundY);
 
   ctx.restore(); // end of the carve clip -- everything outside the nook/ovals/tubes stays solid dirt
 
@@ -23538,7 +23934,7 @@ const py = gy + cameraY - player.height - player.y;
 // while falling through a hole, the body actually MOVES downward — it
 // isn't frozen in place; only what crosses below ground level (gy) gets
 // clipped away, so it reads as sinking into the hole rather than a static cutoff
-const fallProgress = fallState.active ? Math.min(fallState.t / FALL_DURATION, 1) : 0;
+const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : 0;
 const sinkAmount = fallProgress * (player.height + 20); // how far down the body has moved
 const drawPy = py + sinkAmount;
 
@@ -24023,11 +24419,19 @@ function updateFallState(deltaTime) {
 
   fallState.t += deltaTime * 1000;
 
-  if (fallState.t >= FALL_DURATION) {
+  if (fallState.t >= fallDurationForMode(fallState.mode)) {
     fallState.active = false;
     fallState.t = 0;
 
-    if (fallState.mode === "cloudHole") {
+    if (fallState.mode === "tunnelHole") {
+      // the mole hole's own deeper hole down into tunnel town -- unlike
+      // the other modes, this doesn't relocate the player itself (the
+      // existing fade transition handles that scene swap); it just
+      // hands off to it once the sink animation has actually finished
+      // playing, instead of the two running as two entirely separate,
+      // uncoordinated systems
+      startSeasonTransition("tunneltown");
+    } else if (fallState.mode === "cloudHole") {
       // switch scenes and arrive mid-air — floating down out of the clouds,
       // not teleported straight to the ground
       currentScene = "spring";
