@@ -1721,7 +1721,7 @@ function updateNPCIdle(npc) {
 function handleInput(){
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoot.mounted) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -1737,6 +1737,11 @@ function handleInput(){
         isPlayerNear(swing.pivotX, swing.pivotHeightAboveGround - SWING_ROPE_LENGTH, 30, 20, 55);
       const nearVine = currentScene === "spring" && peanutVine.grown && !peanutVine.mounted &&
         isPlayerNear(peanutVine.x, 0, 30, 10, 10);
+      // grab point assumes the root hangs straight down (ignores its own
+      // idle sway for the mount check) -- same simplification the real
+      // spring vines use
+      const nearMoleholeRoot = currentScene === "molehole" && !moleholeRoot.mounted &&
+        isPlayerNear(moleholeRoot.x, moleholeRoot.anchorHeight - moleholeRoot.length, 30, 15, 15);
 
       if (nearSwing) {
         // jumping onto the swing takes priority over a normal jump here
@@ -1749,6 +1754,11 @@ function handleInput(){
         // same priority pattern as the swing — mounting takes precedence over a normal jump
         peanutVine.mounted = true;
         peanutVine.playerClimbHeight = 0;
+      } else if (nearMoleholeRoot) {
+        moleholeRoot.mounted = true;
+        moleholeRoot.angle = 0;
+        moleholeRoot.angularVel = 0;
+        moleholeRoot.pumpCooldown = 0;
       } else if (!player.jumping) {
         // first jump -- but if you're currently standing on an actively
         // spinning forest clockwork gear, this becomes a real launch
@@ -2200,6 +2210,7 @@ function applyPhysics(){
     if (tunnelPositionRevealed(centerX, player.y)) {
       tunnelSafeX = player.x;
       tunnelSafeY = player.y;
+      tunnelStuckFrames = 0;
     } else if (tunnelSafeX !== null) {
       // try a softer recovery first: pull X back onto the last safe line
       // but leave Y (and vy) alone -- if THIS frame's height still reads
@@ -2214,7 +2225,32 @@ function applyPhysics(){
       // somehow anticipate every possible real trajectory through it.
       if (tunnelPositionRevealed(tunnelSafeX + player.width / 2, player.y)) {
         player.x = tunnelSafeX;
+        tunnelStuckFrames = 0; // genuinely recovering, not stuck
       } else {
+        tunnelStuckFrames++;
+        // real escape hatch -- some rare local geometry can leave a spot
+        // that reads as unrevealed with NO nearby recovery that actually
+        // resolves, so this hard-snap just keeps re-firing every single
+        // frame, forever. Reported as "locked into this spot... can move
+        // a little horizontally, but otherwise locked in" -- the tiny
+        // wiggle is tunnelSafeX drifting a pixel or two on frames where
+        // the top check happens to pass, while Y/vy keep getting stomped
+        // back every frame it doesn't. Rather than keep chasing every
+        // individual geometry edge case, this guarantees no position can
+        // ever trap the player forever: stuck here for more than ~1.5s
+        // (90 frames) and they're returned to the one spot that's always,
+        // unconditionally revealed -- the entrance nook.
+        if (tunnelStuckFrames > 90) {
+          player.x = TUNNELTOWN_WALL_X - 20;
+          player.y = 0;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+          tunnelSafeX = player.x;
+          tunnelSafeY = player.y;
+          tunnelStuckFrames = 0;
+          return;
+        }
         player.x = tunnelSafeX;
         player.y = tunnelSafeY;
         player.vy = 0;
@@ -19951,7 +19987,7 @@ function updateRatRoomScene(deltaTime) {
    of rotating cushion-lifts) is next, once this room has a real feel
    to build it inside of. Climb back out the way you came.
    ====================================================== */
-const MOLEHOLE_WIDTH = 1600; // widened again -- this room is bigger than ratroom (~1400), real room for the market set AND the shaft AND whatever comes after it
+const MOLEHOLE_WIDTH = 2000; // widened again -- the market row needed real breathing room between stalls (shop/geode-breaker arches were only ~20px apart edge-to-edge, a real spacing bug, not a style choice), so everything past alcove two got pushed further out
 const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches sceneSpawns.molehole's arrival point
 
 // market alcoves -- recessed archways carved into the back wall, each
@@ -19985,7 +20021,7 @@ const moleHoleSecretPiece = { x: 350, heightAboveGround: 130, collected: false, 
    way to get a piece than digging for one (tunnel town) or finding one
    tucked away (the secret arch piece above).
    ------------------------------------------------------ */
-const MOLE_SHOP_X = 820; // pushed right along with the rest of the row, opening a real 110px gap from alcove two's own right edge (was 10px)
+const MOLE_SHOP_X = 850; // nudged right a touch further, keeping the ~140px gap from alcove two's own right edge consistent with the rest of the row's new spacing
 let moleShopTraded = false;
 const moleShopDialogue = { active: false, index: 0, lines: [] };
 const moleShopGreetingLines = [
@@ -20009,7 +20045,115 @@ const moleShopAlreadyTradedLines = [["That's the last of it -- cleaned me right 
    purely cosmetic, permanent upgrade rather than a consume-and-vanish
    trade like the shopkeeper's.
    ------------------------------------------------------ */
-const GEODE_BREAKER_X = 1030; // sits in the real gap between the shopkeeper (ends ~915) and the cushion-lift shaft (starts ~1160) -- the two platforms already floating in that stretch (985/1100) are elevated background pieces, don't block a ground-level archway underneath them
+const GEODE_BREAKER_X = 1180; // pushed right (was 1030) -- at the old spacing this arch and the shopkeeper's were only ~20px apart edge-to-edge, a real cramped-market bug ("give a lot more breathing room"), not intentional. Now a full ~140px gap from the shop, matching the gap every other stall in the row gets.
+// cut higher into the dirt wall now, reachable only by swinging the
+// nearby root -- "bc its dirt so higher in wall cut alcove makes total
+// whimsical sense." Not ground-level anymore.
+const GEODE_BREAKER_HEIGHT = 150;
+const GEODE_BREAKER_LEDGE_HALF_WIDTH = 101; // archR (95) + 6, matches the ledge drawn in drawGeodeBreakerAlcove
+
+/* ------------------------------------------------------
+   MOLE HOLE ROOT SWING -- one real swingable root (out of the many
+   purely decorative ones already hanging around the room), reusing the
+   exact same pendulum math as spring's vines. The geode breaker's alcove
+   is cut higher into the dirt wall specifically so this has somewhere
+   worth swinging TO -- ties the new traversal mechanic to a real
+   destination instead of just being a toy.
+   ------------------------------------------------------ */
+const moleholeRoot = { x: 1000, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 };
+const MOLEHOLE_ROOT_GRAVITY = 0.01; // same tuning as VINE_GRAVITY
+const MOLEHOLE_ROOT_SWING_INPUT = 0.025;
+const MOLEHOLE_ROOT_PUMP_COOLDOWN = 120;
+
+function updateMoleholeRootSwing(deltaTime) {
+  if (!moleholeRoot.mounted) {
+    // idle sway, same treatment as every un-mounted spring vine
+    moleholeRoot.angle = Math.sin(performance.now() * 0.0012 + moleholeRoot.x * 0.01) * 0.12;
+    moleholeRoot.angularVel = 0;
+    return;
+  }
+
+  if (moleholeRoot.pumpCooldown > 0) moleholeRoot.pumpCooldown -= deltaTime * 1000;
+
+  if (keys.upJustPressed) {
+    // pure momentum release, identical pattern to the vines -- a weak
+    // swing falls short (lands back on the ground or the nearby
+    // platform), a real committed swing reaches the geode breaker's
+    // ledge
+    const tangentSpeed = moleholeRoot.angularVel * moleholeRoot.length;
+    const releaseVx = Math.cos(moleholeRoot.angle) * tangentSpeed;
+    const releaseVy = Math.sin(moleholeRoot.angle) * tangentSpeed + 2;
+    moleholeRoot.mounted = false;
+    player.vineFlyingSource = null; // nothing in the (empty-in-molehole) vines array to exclude
+    player.vx = releaseVx;
+    player.vy = releaseVy;
+    player.vineFlying = true;
+    player.jumping = true;
+    return;
+  }
+
+  if (moleholeRoot.pumpCooldown <= 0) {
+    if (keys.leftJustPressed) {
+      moleholeRoot.angularVel -= MOLEHOLE_ROOT_SWING_INPUT;
+      moleholeRoot.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
+    } else if (keys.rightJustPressed) {
+      moleholeRoot.angularVel += MOLEHOLE_ROOT_SWING_INPUT;
+      moleholeRoot.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
+    }
+  }
+  moleholeRoot.angularVel += -Math.sin(moleholeRoot.angle) * MOLEHOLE_ROOT_GRAVITY;
+  moleholeRoot.angularVel *= 0.995;
+  moleholeRoot.angle += moleholeRoot.angularVel;
+  moleholeRoot.angle = Math.max(-1.1, Math.min(1.1, moleholeRoot.angle));
+
+  const rx = moleholeRoot.x + Math.sin(moleholeRoot.angle) * moleholeRoot.length;
+  const rh = moleholeRoot.anchorHeight - Math.cos(moleholeRoot.angle) * moleholeRoot.length;
+  player.x = rx - player.width / 2;
+  player.y = rh;
+
+  if (keys.down) {
+    // safe dismount -- step off, let normal gravity take over
+    moleholeRoot.mounted = false;
+    player.vx = 0;
+    player.vy = 0;
+  }
+}
+
+function drawMoleholeRootSwing(camX) {
+  const anchorX = moleholeRoot.x - camX;
+  const anchorY = gy - moleholeRoot.anchorHeight;
+  const rx = moleholeRoot.x + Math.sin(moleholeRoot.angle) * moleholeRoot.length;
+  const rh = moleholeRoot.anchorHeight - Math.cos(moleholeRoot.angle) * moleholeRoot.length;
+  const endX = rx - camX, endY = gy - rh;
+
+  if (anchorX < -40 && endX < -40) return;
+  if (anchorX > canvas.width + 40 && endX > canvas.width + 40) return;
+
+  // gnarled root, not a clean rope -- a couple of small side-tendril
+  // stubs along its length sell "root" over "vine"
+  ctx.strokeStyle = "#5a4228";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(anchorX, anchorY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+  [0.35, 0.65].forEach((t, i) => {
+    const tx = anchorX + (endX - anchorX) * t, ty = anchorY + (endY - anchorY) * t;
+    ctx.strokeStyle = "#4a3420";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx + (i ? 7 : -7), ty + 5);
+    ctx.stroke();
+  });
+
+  // knotted grab-end
+  ctx.fillStyle = "#4a3420";
+  ctx.beginPath();
+  ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
 const geodeBreakerGreetingLines = [
@@ -20344,21 +20488,53 @@ function drawMoleShopAlcove(camX) {
 function drawGeodeBreakerAlcove(camX) {
   const ax = GEODE_BREAKER_X - camX;
   const w = 190, h = 120, archR = w / 2;
-  const top = gy - h;
+  // cut higher into the wall now, not at ground level -- real dirt wall,
+  // a raised alcove cut into it reads perfectly natural, and it's what
+  // actually gives the root-swing a destination worth swinging to
+  const floorY = gy - GEODE_BREAKER_HEIGHT;
+  const top = floorY - h;
+
+  // the ledge itself, jutting out from the wall below the arch -- packed
+  // dirt/root tangle, standable, with a rough rocky lip. This is what the
+  // root-swing release actually needs to land on.
+  ctx.fillStyle = "#3a2814";
+  ctx.beginPath();
+  ctx.moveTo(ax - archR - 6, floorY);
+  ctx.lineTo(ax + archR + 6, floorY);
+  ctx.lineTo(ax + archR - 2, floorY + 10);
+  ctx.lineTo(ax - archR + 2, floorY + 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#1c1208";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(ax - archR - 6, floorY);
+  ctx.lineTo(ax + archR + 6, floorY);
+  ctx.stroke();
+  // a couple of root tendrils trailing down from the ledge's underside,
+  // tying it visually to the swing root it's reached by
+  [-archR * 0.5, archR * 0.4].forEach((dx, i) => {
+    ctx.strokeStyle = "#5a4228";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ax + dx, floorY + 10);
+    ctx.quadraticCurveTo(ax + dx + (i ? 4 : -4), floorY + 24, ax + dx + (i ? 8 : -8), floorY + 34);
+    ctx.stroke();
+  });
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(ax - archR, gy);
+  ctx.moveTo(ax - archR, floorY);
   ctx.lineTo(ax - archR, top + archR);
   ctx.arc(ax, top + archR, archR, Math.PI, 0, false);
-  ctx.lineTo(ax + archR, gy);
+  ctx.lineTo(ax + archR, floorY);
   ctx.closePath();
   ctx.fillStyle = "#140d06";
   ctx.fill();
 
   // cooler, mineral-tinted glow instead of the shopkeeper's warm amber --
   // reads as a rock-hound's stall, not another lantern-lit market stand
-  const glow = ctx.createRadialGradient(ax, gy - 24, 4, ax, gy - 24, archR + 34);
+  const glow = ctx.createRadialGradient(ax, floorY - 24, 4, ax, floorY - 24, archR + 34);
   glow.addColorStop(0, "rgba(200,215,255,0.32)");
   glow.addColorStop(1, "rgba(200,215,255,0)");
   ctx.fillStyle = glow;
@@ -20368,17 +20544,17 @@ function drawGeodeBreakerAlcove(camX) {
   ctx.strokeStyle = "#6a4a28";
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(ax - archR - 3, gy);
+  ctx.moveTo(ax - archR - 3, floorY);
   ctx.lineTo(ax - archR - 3, top + archR);
   ctx.arc(ax, top + archR, archR + 3, Math.PI, 0, false);
-  ctx.lineTo(ax + archR + 3, gy);
+  ctx.lineTo(ax + archR + 3, floorY);
   ctx.stroke();
 
   // the mole -- stockier and wider than the shopkeeper (bodyW/bodyH ratio
   // flipped, not just a palette swap), a working build instead of a
   // dapper one. Same gentle idle bob every other alcove figure gets.
   const breakerBob = Math.sin(performance.now() * 0.0011 + GEODE_BREAKER_X * 0.05) * 1.6;
-  const bodyW = 30, bodyH = 34, bodyBottom = gy - 6 + breakerBob, bodyTop = bodyBottom - bodyH;
+  const bodyW = 30, bodyH = 34, bodyBottom = floorY - 6 + breakerBob, bodyTop = bodyBottom - bodyH;
   const headCX = ax, headCY = bodyTop - 5;
 
   ctx.fillStyle = "rgba(0,0,0,0.3)";
@@ -20538,7 +20714,7 @@ function drawGeodeBreakerAlcove(camX) {
   // left, the cracked-open sparkly halves on the right, and one geode
   // paused mid-crack dead center, as if he stopped swinging right as the
   // player walked up
-  const counterTop = gy - 24;
+  const counterTop = floorY - 24;
   ctx.fillStyle = "#3a2814";
   ctx.fillRect(ax - archR + 10, counterTop, w - 20, 12);
   ctx.strokeStyle = "#1c1208";
@@ -21374,10 +21550,14 @@ const MOLEHOLE_PLATFORMS = [
   // empty floor right by the spawn point
   { x: 435, heightAboveGround: 105, width: 65 },
   { x: 670, heightAboveGround: 60, width: 60 },
-  { x: 985, heightAboveGround: 55, width: 65 },
-  { x: 1100, heightAboveGround: 115, width: 55 },
-  { x: 1350, heightAboveGround: 65, width: 65 },
-  { x: 1480, heightAboveGround: 120, width: 55 }
+  // repositioned along with the market row's wider spacing (was
+  // 985/1100, sitting almost on top of the cramped old shop/geode-
+  // breaker gap) -- now centered in the real gaps the new spacing
+  // actually opened up
+  { x: 1015, heightAboveGround: 55, width: 65 },
+  { x: 1357, heightAboveGround: 115, width: 55 },
+  { x: 1650, heightAboveGround: 65, width: 65 },
+  { x: 1780, heightAboveGround: 120, width: 55 }
 ];
 
 function drawMoleholePlatform(p, camX) {
@@ -21432,7 +21612,7 @@ function drawMoleholePlatform(p, camX) {
 // will eventually go -- pure preview/landmark for now, nothing rides
 // on it yet, just enough presence that the room already hints at its
 // own future mechanic
-const MOLEHOLE_SHAFT_X = 1200; // moved further right now that the room's much bigger -- real distance from the market set before you reach it
+const MOLEHOLE_SHAFT_X = 1500; // pushed further right along with the geode breaker's move, keeping the same generous gap from its arch
 
 // the lift shaft starts broken -- the gear that runs it is the "secret"
 // dead-end reward buried in the tunnel town dig (see the s5r node,
@@ -21858,6 +22038,7 @@ function drawMoleholeScene(camX) {
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
   drawMoleShopAlcove(camX);
   drawGeodeBreakerAlcove(camX);
+  drawMoleholeRootSwing(camX);
   drawMoleHoleSecretPiece(camX);
   drawMoleHoleNoticeBoard(camX);
   drawMoleholeShaftPreview(camX);
@@ -21885,17 +22066,14 @@ function drawMoleholeScene(camX) {
   // a handful of warm lantern points along the walls between the
   // alcoves, so the room reads as lived-in and lit rather than just
   // the two shop-glow pools
-  // repositioned along with the market row -- 620 used to sit in the
-  // old, narrow alcove-to-shop gap and 900 used to sit just past the
-  // old shop's edge; both now land inside/on top of the row's new,
-  // wider arches instead of lighting the gaps between them. 670 lights
-  // the real gap between alcove two and the shop; 990 lights the new
-  // platform just past the shop's bigger footprint. Dropped the old
-  // 1050 entry rather than cram a third light into that same stretch.
-  // 1400 pulled back to 1230 -- it used to sit only ~50px right of the
-  // 1350 platform's edge, reading as jammed against it; now it lights
-  // the open stretch between the 1100 and 1350 platforms instead.
-  const wallLanterns = [130, 670, 990, 1230, 1550];
+  // repositioned again along with the market row's real breathing-room
+  // fix (shop/geode-breaker arches used to sit only ~20px apart edge to
+  // edge -- a genuine spacing bug). 670 still lights the gap between
+  // alcove two and the shop; 1015/1357 sit on the two repositioned
+  // platforms in the new, much wider shop<->geode-breaker and
+  // geode-breaker<->shaft gaps; 1650/1850 light the room's extended
+  // tail past the shaft.
+  const wallLanterns = [130, 670, 1015, 1357, 1650, 1850];
   wallLanterns.forEach(lx0 => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
@@ -21976,6 +22154,7 @@ function updateMoleholeScene(deltaTime) {
   }
 
   updateMoleholeAmbientMoles(deltaTime);
+  updateMoleholeRootSwing(deltaTime);
 
   // dirt platform collision -- same generic landing pattern used for
   // the ratroom shelves and forest gears elsewhere in the game
@@ -21993,8 +22172,30 @@ function updateMoleholeScene(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      player.vineFlying = false; // a released root-swing flight lands here like anything else, not phase through it
     }
   });
+
+  // the geode breaker's own raised ledge -- same landing pattern as the
+  // dirt platforms above, standable so a root-swing release actually has
+  // somewhere real to land
+  {
+    const platformTop = GEODE_BREAKER_HEIGHT;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > GEODE_BREAKER_X - GEODE_BREAKER_LEDGE_HALF_WIDTH &&
+      player.x < GEODE_BREAKER_X + GEODE_BREAKER_LEDGE_HALF_WIDTH &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.vineFlying = false; // this is the actual intended landing spot for a released swing
+    }
+  }
 
   // cushion-lift collision -- same generic landing pattern as the
   // dirt platforms above, but the standable x-range follows each
@@ -22018,6 +22219,7 @@ function updateMoleholeScene(deltaTime) {
         player.vy = 0;
         player.jumping = false;
         player.usedDoubleJump = false;
+        player.vineFlying = false;
       }
     });
   }
@@ -22078,7 +22280,7 @@ function updateMoleholeScene(deltaTime) {
     if (keys.spaceJustPressed) advanceGeodeBreakerDialogue();
     return;
   }
-  if (isPlayerNear(GEODE_BREAKER_X, 0, 32, 25, 20) && keys.spaceJustPressed) {
+  if (isPlayerNear(GEODE_BREAKER_X, GEODE_BREAKER_HEIGHT, 32, 25, 20) && keys.spaceJustPressed) {
     startGeodeBreakerDialogue();
     return;
   }
@@ -22773,6 +22975,7 @@ const TUNNELTOWN_WALL_X = 630; // shifted along with ELDER_X (+150) -- keeps the
 let tunnelWallBroken = false;
 let wallBreakPoofT = 9999; // ms since the wall broke -- drives a brief dirt-burst
 let tunnelSafeX = null, tunnelSafeY = null; // last known-good (revealed) spot -- lets the 2D dig-collision snap the player back out of solid dirt instead of leaving them stuck partway through it
+let tunnelStuckFrames = 0; // counts consecutive unrevealed frames -- a real escape hatch if the hard-snap recovery below ever can't resolve on its own (see applyPhysics)
 
 // the wall's leading face (the one the elders sit next to) used to be a
 // perfectly flat rectangle -- only the DIRT INSIDE it was textured, so
@@ -22966,9 +23169,9 @@ const TUNNEL_NODES = [
   // reachability from arc math alone. Every remaining node below stays
   // at x>=700 or height<=100, comfortably outside the mound's bounds in
   // BOTH axes -- no more looping back through it, in either direction.
-  { id: "u1", parent: "n1", x: 800, heightAboveGround: 80, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond, moved here from s5u3 -- s5u3 sat right next to s5u5's aragonite with barely any climb between them ("two rewards where i'm standing"); this is the leftmost "up" dig in the whole graph, the very first hole up off the left-hand chain, so it's found on its own instead of stacked against another reward
+  { id: "u1", parent: "n1", x: 800, heightAboveGround: 80, dir: "up", hasItem: false, dug: false }, // dropped its crystal -- moved to the top of this same chain, see uTop
   { id: "u2", parent: "u1", x: 910, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
-  { id: "u3", parent: "u2", x: 850, heightAboveGround: 300, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false }, // dx-60/dh130 off u2 -- x never drops below 700, still clear of the mound's x561-648 span
+  { id: "u3", parent: "u2", x: 850, heightAboveGround: 300, dir: "up", hasItem: false, dug: false }, // dropped its bridgePiece -- moved one level up to u3Turn, right below the new top reward
   // a leftward jog before the final climb -- without this, this whole
   // chain reads as a near-mirror of the s5 up-branch (which already
   // doglegs left via s5uTurn before continuing up), so the two climb
@@ -22976,18 +23179,26 @@ const TUNNEL_NODES = [
   // off u3, well clear of the mound (mound only spans height 118-251;
   // this sits at 300, above it, so the lower x is safe here even though
   // it wouldn't be lower down)
-  { id: "u3Turn", parent: "u3", x: 760, heightAboveGround: 300, dir: "side", hasItem: false, dug: false },
+  { id: "u3Turn", parent: "u3", x: 760, heightAboveGround: 300, dir: "side", hasItem: true, itemType: "bridgePiece", dug: false }, // the bridgePiece's new home -- one level down from uTop, per "move the other reward up here like one level down"
   // the reward that used to live at the end of the left leg (uTop) --
   // now climbs off the jog instead of straight off u3, same relative
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
   // to launch from the new turn spot
-  { id: "uTop", parent: "u3Turn", x: 810, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // dx50/dh80 off u3Turn, straight on up and clear -- dropped its stone; this whole left branch (u3/uTop) already has u3's own bridgePiece, a second find right above it read as too rich for one branch
+  { id: "uTop", parent: "u3Turn", x: 810, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond's new home -- moved to the very top of this chain, per "move the blue diamond to the top up here"
   // the second dig-down trapdoor -- mirrors s5u5Drop on the right side of
   // the map, same reasoning: a real high dead end (the only other way
   // down is the whole climb back through u3Turn/u3/u2/u1), so it's a
   // genuine shortcut payoff rather than a pointless drop next to ground
   // that's already open, which is what got the old s5r/s5 trapdoors cut.
-  { id: "uTopDrop", parent: "uTop", x: 830, heightAboveGround: 380, dir: "up", hasItem: false, dug: false, trapGap: true },
+  // pushed further out from uTop (was only 20px away) -- that close, the
+  // trapdoor's own gap-clipping (tunnelMergedLedgeSpan) ate right into
+  // uTop's OWN standable footprint the instant this got dug, collapsing
+  // it down to almost nothing. Real repro: "i fall through a platform
+  // that doesn't make sense" -- you'd be standing on uTop just fine,
+  // dig the trapdoor next to it out of curiosity, and the ground under
+  // your own feet would vanish. 80px clears uTop's natural ~24px half
+  // width with real room to spare.
+  { id: "uTopDrop", parent: "uTop", x: 890, heightAboveGround: 380, dir: "up", hasItem: false, dug: false, trapGap: true },
 
   // u2h/u1r removed -- u2h was a jump-only side spot that never led
   // anywhere once the shared-shelf/reconnect idea it was built for got
@@ -23060,7 +23271,10 @@ const TUNNEL_NODES = [
   // path (the only other way down from here is the whole climb back
   // through s5u4/s5u3/s5u2b/etc), so it reads as a genuine payoff for
   // reaching the top rather than an illogical drop next to open ground.
-  { id: "s5u5Drop", parent: "s5u5", x: 1205, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
+  // pushed to +80 from s5u5 (was +20, same too-close bug as uTopDrop --
+  // see its comment) so digging this one doesn't collapse s5u5's own
+  // standable footprint out from under the aragonite.
+  { id: "s5u5Drop", parent: "s5u5", x: 1265, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep. A plain dead end, same as s5r
