@@ -1762,6 +1762,12 @@ function handleInput(){
         nearMoleholeRoot.angle = 0;
         nearMoleholeRoot.angularVel = 0;
         nearMoleholeRoot.pumpCooldown = 0;
+        // the SAME keypress that just mounted this root is still
+        // upJustPressed when updateMoleholeRootSwing runs later this
+        // same frame -- without this, it reads as an immediate release
+        // request and instantly kicks the player back off with near-zero
+        // swing built up, reading as if the grab silently failed
+        nearMoleholeRoot.justMounted = true;
       } else if (!player.jumping) {
         // first jump -- but if you're currently standing on an actively
         // spinning forest clockwork gear, this becomes a real launch
@@ -20112,6 +20118,13 @@ function updateMoleholeRootSwing(deltaTime) {
 
   if (!mounted) return;
   const r = mounted;
+
+  // this same frame's mount already consumed this keypress -- skip the
+  // release check once so it doesn't also read as a release request
+  if (r.justMounted) {
+    r.justMounted = false;
+    return;
+  }
 
   if (r.pumpCooldown > 0) r.pumpCooldown -= deltaTime * 1000;
 
