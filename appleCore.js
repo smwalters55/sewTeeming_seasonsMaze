@@ -2278,13 +2278,9 @@ function applyPhysics(){
     // still require a real jump, unaffected by this.
     if (!keys.down) {
       TUNNEL_NODES.forEach(node => {
-        if (node.dug || node.dir !== "side" || node.heightAboveGround <= 0) return;
-        const parent = TUNNEL_NODES.find(n => n.id === node.parent);
-        if (!parent || !parent.dug) return;
-        if (Math.abs(parent.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return;
-        const { right: parentRight, left: parentLeft, height: platformTop } = tunnelMergedLedgeSpan(parent);
-        const left = Math.min(parentLeft, node.x - 24);
-        const right = Math.max(parentRight, node.x + 24);
+        const span = tunnelSideScaffoldSpan(node);
+        if (!span) return;
+        const { left, right, height: platformTop } = span;
         const playerBottom = player.y;
         if (
           player.x + player.width > left &&
@@ -24083,6 +24079,28 @@ function tunnelMergedLedgeSpan(node) {
   return { left, right, height };
 }
 
+// a bare, unplanked dirt lip -- NOT a real dug ledge -- bridging an
+// already-dug node out to an UNDUG same-height "side" child, purely so
+// that child can actually be walked to and dug (see the matching
+// physics use in applyPhysics for the full reachability story). Pulled
+// out into its own function so the physics collision and the render in
+// drawTunnelDigSpot share one single source of truth for exactly where
+// this temporary lip sits -- otherwise the visible dirt and the actual
+// floor can drift apart, which is exactly what happened before: the
+// floor existed here but nothing was ever drawn for it, so standing on
+// it read as floating in mid-air ("standing on thin air"). Returns null
+// when the node doesn't qualify for a scaffold at all.
+function tunnelSideScaffoldSpan(node) {
+  if (node.dug || node.dir !== "side" || node.heightAboveGround <= 0) return null;
+  const parent = TUNNEL_NODES.find(n => n.id === node.parent);
+  if (!parent || !parent.dug) return null;
+  if (Math.abs(parent.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return null;
+  const { right: parentRight, left: parentLeft, height: platformTop } = tunnelMergedLedgeSpan(parent);
+  const left = Math.min(parentLeft, node.x - 24);
+  const right = Math.max(parentRight, node.x + 24);
+  return { left, right, height: platformTop };
+}
+
 // how far you can physically WALK -- right up to the edge of any
 // currently-reachable node (its own parent already dug), whether or
 // not that node itself has been dug yet, so you can always reach the
@@ -24410,6 +24428,29 @@ function drawTunnelDigSpot(node, camX) {
   }
 
   if (!node.dug) {
+    // a rough, unplanked dirt lip -- NOT a finished ledge (no support
+    // posts, no bright top surface, just packed-down dirt) -- drawn
+    // wherever the physics scaffold in applyPhysics actually lets you
+    // stand before this spot's been dug. Without this, that scaffold
+    // was invisible: real collision floor with nothing drawn for it,
+    // which read as standing on thin air. Shares tunnelSideScaffoldSpan
+    // with the physics check so the drawn dirt and the actual floor
+    // can never drift apart.
+    const scaffold = tunnelSideScaffoldSpan(node);
+    if (scaffold) {
+      const scaffoldLeft = scaffold.left - camX, scaffoldRight = scaffold.right - camX;
+      const scaffoldCy = gy + cameraY - scaffold.height;
+      ctx.fillStyle = "#241c14";
+      ctx.fillRect(scaffoldLeft, scaffoldCy - 3, scaffoldRight - scaffoldLeft, 5);
+      ctx.strokeStyle = "rgba(90,80,70,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(scaffoldLeft, scaffoldCy - 3);
+      for (let x = scaffoldLeft; x <= scaffoldRight; x += 12) {
+        ctx.lineTo(x, scaffoldCy - 3 + pseudoRandom(x * 1.3 + node.x) * 2);
+      }
+      ctx.stroke();
+    }
     drawDigSoftSpot(sx, markY, markRX, markRY, node.x * 1.7 + (isUp ? 200 : 0));
   } else {
     // dug -- the oval clip carved into the dirt (see drawTunnelTownScene)
