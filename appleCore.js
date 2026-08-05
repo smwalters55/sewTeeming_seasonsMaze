@@ -1721,7 +1721,7 @@ function updateNPCIdle(npc) {
 function handleInput(){
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoot.mounted) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted)) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -1739,9 +1739,12 @@ function handleInput(){
         isPlayerNear(peanutVine.x, 0, 30, 10, 10);
       // grab point assumes the root hangs straight down (ignores its own
       // idle sway for the mount check) -- same simplification the real
-      // spring vines use
-      const nearMoleholeRoot = currentScene === "molehole" && !moleholeRoot.mounted &&
-        isPlayerNear(moleholeRoot.x, moleholeRoot.anchorHeight - moleholeRoot.length, 30, 15, 15);
+      // spring vines use. Widened tolerance (was 30/15/15) -- the tight
+      // window made a real double-jump timed grab nearly impossible to
+      // land by hand, even though it tested fine frame-perfect in the
+      // harness.
+      const nearMoleholeRoot = currentScene === "molehole" &&
+        moleholeRoots.find(r => !r.mounted && isPlayerNear(r.x, r.anchorHeight - r.length, 55, 35, 35));
 
       if (nearSwing) {
         // jumping onto the swing takes priority over a normal jump here
@@ -1755,10 +1758,10 @@ function handleInput(){
         peanutVine.mounted = true;
         peanutVine.playerClimbHeight = 0;
       } else if (nearMoleholeRoot) {
-        moleholeRoot.mounted = true;
-        moleholeRoot.angle = 0;
-        moleholeRoot.angularVel = 0;
-        moleholeRoot.pumpCooldown = 0;
+        nearMoleholeRoot.mounted = true;
+        nearMoleholeRoot.angle = 0;
+        nearMoleholeRoot.angularVel = 0;
+        nearMoleholeRoot.pumpCooldown = 0;
       } else if (!player.jumping) {
         // first jump -- but if you're currently standing on an actively
         // spinning forest clockwork gear, this becomes a real launch
@@ -2340,6 +2343,9 @@ function drawFittedSpeechBubble(ctx, x, y, sentences) {
   const widths = sentences.map(s => ctx.measureText(s).width);
   const bubbleWidth = Math.max(...widths) + 24; // padding on both sides
   const bubbleHeight = Math.max(30, sentences.length * lineHeight + 14);
+  // keep the whole bubble on-screen -- long lines were running clean off
+  // the right edge before this clamp existed
+  x = Math.max(4, Math.min(x, canvas.width - bubbleWidth - 4));
 
   ctx.fillStyle = "rgba(255,255,248,0.95)";
   roundRect(ctx, x, y, bubbleWidth, bubbleHeight, 9);
@@ -19987,7 +19993,7 @@ function updateRatRoomScene(deltaTime) {
    of rotating cushion-lifts) is next, once this room has a real feel
    to build it inside of. Climb back out the way you came.
    ====================================================== */
-const MOLEHOLE_WIDTH = 2000; // widened again -- the market row needed real breathing room between stalls (shop/geode-breaker arches were only ~20px apart edge-to-edge, a real spacing bug, not a style choice), so everything past alcove two got pushed further out
+const MOLEHOLE_WIDTH = 2400; // widened again -- the geode breaker's alcove moved well past jump range of the market platforms so the root-swing chain is genuinely required to reach it, not just decorative
 const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches sceneSpawns.molehole's arrival point
 
 // market alcoves -- recessed archways carved into the back wall, each
@@ -20045,7 +20051,7 @@ const moleShopAlreadyTradedLines = [["That's the last of it -- cleaned me right 
    purely cosmetic, permanent upgrade rather than a consume-and-vanish
    trade like the shopkeeper's.
    ------------------------------------------------------ */
-const GEODE_BREAKER_X = 1180; // pushed right (was 1030) -- at the old spacing this arch and the shopkeeper's were only ~20px apart edge-to-edge, a real cramped-market bug ("give a lot more breathing room"), not intentional. Now a full ~140px gap from the shop, matching the gap every other stall in the row gets.
+const GEODE_BREAKER_X = 1780; // pushed well past the market platforms (last one sits at x1015) -- no jump chain reaches this far, so the root-swing chain across the gap is the only way in, not an optional shortcut
 // cut higher into the dirt wall now, reachable only by swinging the
 // nearby root -- "bc its dirt so higher in wall cut alcove makes total
 // whimsical sense." Not ground-level anymore.
@@ -20053,37 +20059,98 @@ const GEODE_BREAKER_HEIGHT = 150;
 const GEODE_BREAKER_LEDGE_HALF_WIDTH = 101; // archR (95) + 6, matches the ledge drawn in drawGeodeBreakerAlcove
 
 /* ------------------------------------------------------
-   MOLE HOLE ROOT SWING -- one real swingable root (out of the many
-   purely decorative ones already hanging around the room), reusing the
-   exact same pendulum math as spring's vines. The geode breaker's alcove
-   is cut higher into the dirt wall specifically so this has somewhere
-   worth swinging TO -- ties the new traversal mechanic to a real
-   destination instead of just being a toy.
+   MOLE HOLE ROOT SWING -- a chain of three swingable roots (out of the
+   many purely decorative ones already hanging around the room),
+   reusing the exact same pendulum math as spring's vines. Strung
+   across the real gap between the market platforms and the geode
+   breaker's alcove, cut higher into the dirt wall specifically so this
+   has somewhere worth swinging TO -- ties the new traversal mechanic
+   to a real destination instead of just being a toy. The first root's
+   idle grab point sits low enough to reach with an ordinary jump from
+   the last market platform (x1015); each next root is close enough for
+   a real, committed swing-release to reach and remount.
    ------------------------------------------------------ */
-const moleholeRoot = { x: 1000, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 };
+const moleholeRoots = [
+  { x: 1130, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 },
+  { x: 1350, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 },
+  { x: 1570, anchorHeight: 260, length: 130, angle: 0, angularVel: 0, mounted: false, pumpCooldown: 0 }
+];
 const MOLEHOLE_ROOT_GRAVITY = 0.01; // same tuning as VINE_GRAVITY
 const MOLEHOLE_ROOT_SWING_INPUT = 0.025;
+// a pure ballistic release can't sustain height chain-to-chain (a pendulum
+// clamped at +-1.1rad only ever gains ~70 units above its own low point,
+// nowhere near enough to cross to a same-height root 200+ units away) --
+// so a genuinely COMMITTED swing (angle past this threshold at release)
+// instead hops the player directly onto whichever root or ledge is next
+// in the swing direction and within range. A weak swing skips this and
+// falls back to the old raw-physics release, which just drops you short.
+const MOLEHOLE_ROOT_HOP_MIN_ANGLE = 0.75;
+const MOLEHOLE_ROOT_HOP_RANGE = 260;
 const MOLEHOLE_ROOT_PUMP_COOLDOWN = 120;
 
-function updateMoleholeRootSwing(deltaTime) {
-  if (!moleholeRoot.mounted) {
-    // idle sway, same treatment as every un-mounted spring vine
-    moleholeRoot.angle = Math.sin(performance.now() * 0.0012 + moleholeRoot.x * 0.01) * 0.12;
-    moleholeRoot.angularVel = 0;
-    return;
-  }
+function moleholeRootGrabHeight(r) {
+  return r.anchorHeight - r.length;
+}
 
-  if (moleholeRoot.pumpCooldown > 0) moleholeRoot.pumpCooldown -= deltaTime * 1000;
+function updateMoleholeRootSwing(deltaTime) {
+  const mounted = moleholeRoots.find(r => r.mounted);
+
+  moleholeRoots.forEach(r => {
+    if (r === mounted) return;
+    // idle sway, same treatment as every un-mounted spring vine
+    r.angle = Math.sin(performance.now() * 0.0012 + r.x * 0.01) * 0.12;
+    r.angularVel = 0;
+  });
+
+  if (!mounted) return;
+  const r = mounted;
+
+  if (r.pumpCooldown > 0) r.pumpCooldown -= deltaTime * 1000;
 
   if (keys.upJustPressed) {
-    // pure momentum release, identical pattern to the vines -- a weak
-    // swing falls short (lands back on the ground or the nearby
-    // platform), a real committed swing reaches the geode breaker's
-    // ledge
-    const tangentSpeed = moleholeRoot.angularVel * moleholeRoot.length;
-    const releaseVx = Math.cos(moleholeRoot.angle) * tangentSpeed;
-    const releaseVy = Math.sin(moleholeRoot.angle) * tangentSpeed + 2;
-    moleholeRoot.mounted = false;
+    // a real committed swing (angle past the hop threshold) reaches
+    // whatever's next in the swing direction -- another root, or, off
+    // the last one, the geode breaker's ledge. A weak swing just falls
+    // short instead, via the old raw-momentum release below.
+    if (Math.abs(r.angle) >= MOLEHOLE_ROOT_HOP_MIN_ANGLE) {
+      const releaseX = r.x + Math.sin(r.angle) * r.length;
+      const dir = Math.sign(Math.sin(r.angle)) || 1;
+      const nextRoot = moleholeRoots
+        .filter(other => other !== r && !other.mounted && Math.sign(other.x - r.x) === dir && Math.abs(other.x - releaseX) <= MOLEHOLE_ROOT_HOP_RANGE)
+        .sort((a, b) => Math.abs(a.x - releaseX) - Math.abs(b.x - releaseX))[0];
+      if (nextRoot) {
+        r.mounted = false;
+        nextRoot.mounted = true;
+        nextRoot.angle = 0;
+        nextRoot.angularVel = 0;
+        nextRoot.pumpCooldown = 0;
+        player.x = nextRoot.x - player.width / 2;
+        player.y = nextRoot.anchorHeight - nextRoot.length;
+        player.vx = 0;
+        player.vy = 0;
+        player.vineFlying = false;
+        player.jumping = false;
+        return;
+      }
+      if (dir > 0 && Math.abs(GEODE_BREAKER_X - releaseX) <= MOLEHOLE_ROOT_HOP_RANGE) {
+        r.mounted = false;
+        player.x = GEODE_BREAKER_X - player.width / 2;
+        player.y = GEODE_BREAKER_HEIGHT;
+        player.vx = 0;
+        player.vy = 0;
+        player.vineFlying = false;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        return;
+      }
+    }
+
+    // pure momentum release -- a weak swing that didn't clear the hop
+    // threshold (or has nothing left in range) just drops you nearby
+    const tangentSpeed = r.angularVel * r.length;
+    const releaseVx = Math.cos(r.angle) * tangentSpeed;
+    const releaseVy = Math.sin(r.angle) * tangentSpeed + 2;
+    r.mounted = false;
     player.vineFlyingSource = null; // nothing in the (empty-in-molehole) vines array to exclude
     player.vx = releaseVx;
     player.vy = releaseVy;
@@ -20092,78 +20159,80 @@ function updateMoleholeRootSwing(deltaTime) {
     return;
   }
 
-  if (moleholeRoot.pumpCooldown <= 0) {
+  if (r.pumpCooldown <= 0) {
     if (keys.leftJustPressed) {
-      moleholeRoot.angularVel -= MOLEHOLE_ROOT_SWING_INPUT;
-      moleholeRoot.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
+      r.angularVel -= MOLEHOLE_ROOT_SWING_INPUT;
+      r.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
     } else if (keys.rightJustPressed) {
-      moleholeRoot.angularVel += MOLEHOLE_ROOT_SWING_INPUT;
-      moleholeRoot.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
+      r.angularVel += MOLEHOLE_ROOT_SWING_INPUT;
+      r.pumpCooldown = MOLEHOLE_ROOT_PUMP_COOLDOWN;
     }
   }
-  moleholeRoot.angularVel += -Math.sin(moleholeRoot.angle) * MOLEHOLE_ROOT_GRAVITY;
-  moleholeRoot.angularVel *= 0.995;
-  moleholeRoot.angle += moleholeRoot.angularVel;
-  moleholeRoot.angle = Math.max(-1.1, Math.min(1.1, moleholeRoot.angle));
+  r.angularVel += -Math.sin(r.angle) * MOLEHOLE_ROOT_GRAVITY;
+  r.angularVel *= 0.995;
+  r.angle += r.angularVel;
+  r.angle = Math.max(-1.1, Math.min(1.1, r.angle));
 
-  const rx = moleholeRoot.x + Math.sin(moleholeRoot.angle) * moleholeRoot.length;
-  const rh = moleholeRoot.anchorHeight - Math.cos(moleholeRoot.angle) * moleholeRoot.length;
+  const rx = r.x + Math.sin(r.angle) * r.length;
+  const rh = r.anchorHeight - Math.cos(r.angle) * r.length;
   player.x = rx - player.width / 2;
   player.y = rh;
 
   if (keys.down) {
     // safe dismount -- step off, let normal gravity take over
-    moleholeRoot.mounted = false;
+    r.mounted = false;
     player.vx = 0;
     player.vy = 0;
   }
 }
 
 function drawMoleholeRootSwing(camX) {
-  const anchorX = moleholeRoot.x - camX;
-  const anchorY = gy - moleholeRoot.anchorHeight;
-  const rx = moleholeRoot.x + Math.sin(moleholeRoot.angle) * moleholeRoot.length;
-  const rh = moleholeRoot.anchorHeight - Math.cos(moleholeRoot.angle) * moleholeRoot.length;
-  const endX = rx - camX, endY = gy - rh;
+  moleholeRoots.forEach(r => {
+    const anchorX = r.x - camX;
+    const anchorY = gy - r.anchorHeight;
+    const rx = r.x + Math.sin(r.angle) * r.length;
+    const rh = r.anchorHeight - Math.cos(r.angle) * r.length;
+    const endX = rx - camX, endY = gy - rh;
 
-  if (anchorX < -40 && endX < -40) return;
-  if (anchorX > canvas.width + 40 && endX > canvas.width + 40) return;
+    if (anchorX < -40 && endX < -40) return;
+    if (anchorX > canvas.width + 40 && endX > canvas.width + 40) return;
 
-  // gnarled root, not a clean rope -- a couple of small side-tendril
-  // stubs along its length sell "root" over "vine"
-  ctx.strokeStyle = "#5a4228";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(anchorX, anchorY);
-  ctx.lineTo(endX, endY);
-  ctx.stroke();
-  [0.35, 0.65].forEach((t, i) => {
-    const tx = anchorX + (endX - anchorX) * t, ty = anchorY + (endY - anchorY) * t;
-    ctx.strokeStyle = "#4a3420";
-    ctx.lineWidth = 2;
+    // gnarled root, not a clean rope -- a couple of small side-tendril
+    // stubs along its length sell "root" over "vine"
+    ctx.strokeStyle = "#5a4228";
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.lineTo(tx + (i ? 7 : -7), ty + 5);
+    ctx.moveTo(anchorX, anchorY);
+    ctx.lineTo(endX, endY);
     ctx.stroke();
-  });
+    [0.35, 0.65].forEach((t, i) => {
+      const tx = anchorX + (endX - anchorX) * t, ty = anchorY + (endY - anchorY) * t;
+      ctx.strokeStyle = "#4a3420";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx + (i ? 7 : -7), ty + 5);
+      ctx.stroke();
+    });
 
-  // knotted grab-end
-  ctx.fillStyle = "#4a3420";
-  ctx.beginPath();
-  ctx.arc(endX, endY, 5, 0, Math.PI * 2);
-  ctx.fill();
+    // knotted grab-end
+    ctx.fillStyle = "#4a3420";
+    ctx.beginPath();
+    ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
 const geodeBreakerShineLines = [
-  ["Ohhh, now THAT'S a find. Real aragonite -- needle cluster and all. Mind the pile, most of this is just plain rock, but that's mine to crack open.", "Hold still... there. Polished her right up. That's a keeper, that one."]
+  ["Ohhh, real aragonite! Don't see one of those every day.", "There... polished bright as starlight."]
 ];
 const geodeBreakerAlreadyShinedLines = [
-  ["That's the one I shined for you, right? Still catching the light nice.", "Good stone. Hang onto that -- not many folks find one like it."]
+  ["Ah, my little shine-work! Still glowing lovely.", "Keep that one close -- it's rare."]
 ];
 const geodeBreakerNoStoneLines = [
-  ["Mind the pile -- most of this is just plain rock. Bring me something worth the swing and I'll see what's hiding inside.", "Everything down here's got a shine, given the right hands."]
+  ["Mind the pile -- mostly plain rock.", "Bring me something worth cracking open."]
 ];
 
 function startGeodeBreakerDialogue() {
@@ -21552,9 +21621,10 @@ const MOLEHOLE_PLATFORMS = [
   // breaker gap) -- now centered in the real gaps the new spacing
   // actually opened up
   { x: 1015, heightAboveGround: 55, width: 65 },
-  { x: 1357, heightAboveGround: 115, width: 55 },
-  { x: 1650, heightAboveGround: 65, width: 65 },
-  { x: 1780, heightAboveGround: 120, width: 55 }
+  // nothing between here and the geode breaker's ledge on purpose --
+  // that whole stretch is the root-swing gap, no jump-chain shortcut
+  { x: 2000, heightAboveGround: 65, width: 65 },
+  { x: 2130, heightAboveGround: 120, width: 55 }
 ];
 
 function drawMoleholePlatform(p, camX) {
@@ -21609,7 +21679,7 @@ function drawMoleholePlatform(p, camX) {
 // will eventually go -- pure preview/landmark for now, nothing rides
 // on it yet, just enough presence that the room already hints at its
 // own future mechanic
-const MOLEHOLE_SHAFT_X = 1500; // pushed further right along with the geode breaker's move, keeping the same generous gap from its arch
+const MOLEHOLE_SHAFT_X = 2100; // now sits past the geode breaker's relocated alcove, with the two new approach platforms (2000/2130) leading up to it
 
 // the lift shaft starts broken -- the gear that runs it is the "secret"
 // dead-end reward buried in the tunnel town dig (see the s5r node,
@@ -22070,7 +22140,7 @@ function drawMoleholeScene(camX) {
   // platforms in the new, much wider shop<->geode-breaker and
   // geode-breaker<->shaft gaps; 1650/1850 light the room's extended
   // tail past the shaft.
-  const wallLanterns = [130, 670, 1015, 1357, 1650, 1850];
+  const wallLanterns = [130, 670, 1015, 1400, 1780, 2000, 2250];
   wallLanterns.forEach(lx0 => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
