@@ -1916,6 +1916,18 @@ function handleInput(){
       TUNNEL_NODES.forEach(node => {
         if (node.heightAboveGround <= 0 && tunnelNodeParentDug(node)) {
           groundLimit = Math.max(groundLimit, node.x + 30);
+        } else if (node.dug && node.heightAboveGround > 0) {
+          // the true ground directly beneath a dug ELEVATED ledge is
+          // fair game too -- walking off that ledge's own edge (nothing
+          // dug yet past it) legitimately falls all the way down here
+          // now (see the matching applyPhysics fix that lets an active
+          // fall keep going instead of freezing mid-air), and simply
+          // landing shouldn't get yanked sideways back toward the
+          // frontier the instant it happens. +90 covers a normal
+          // walk-off fall's natural horizontal drift from this kind of
+          // height, not an unbounded invitation to keep walking right.
+          const span = tunnelMergedLedgeSpan(node);
+          groundLimit = Math.max(groundLimit, span.right + 90);
         }
       });
       if (player.x > groundLimit) player.x = groundLimit;
@@ -2259,43 +2271,6 @@ function applyPhysics(){
       }
     });
 
-    // a temporary scaffold floor reaching from an already-dug node out to
-    // an UNDUG same-height "side" child that hasn't been dug yet --
-    // without this, a node like s5r (a plain "side" child of s5, meant to
-    // just be walked to and dug, not jumped to) sitting far enough from
-    // its own parent's edge meant simply walking off that edge dropped
-    // the player under gravity well before they ever got both close
-    // enough horizontally AND high enough to fall within the dig-
-    // trigger's own +-25 window at the same time -- verified via a
-    // scripted walk simulation: by the time x was close enough to s5r to
-    // register as "near" it, the player had already fallen ~40 units
-    // below the trigger's own vertical tolerance. A real, if narrow,
-    // reachability gap -- the spot was simply never diggable by walking
-    // to it, contradicting its own "side" (walk-to, not jump-to) design.
-    // This only spans parent-edge to child-x (not the child's own full
-    // merged width, since it isn't dug yet) and only for "side" children
-    // at essentially the same height as their parent -- "up" children
-    // still require a real jump, unaffected by this.
-    if (!keys.down) {
-      TUNNEL_NODES.forEach(node => {
-        const span = tunnelSideScaffoldSpan(node);
-        if (!span) return;
-        const { left, right, height: platformTop } = span;
-        const playerBottom = player.y;
-        if (
-          player.x + player.width > left &&
-          player.x < right &&
-          playerBottom <= platformTop &&
-          playerBottom >= platformTop - 14 &&
-          player.vy <= 0
-        ) {
-          player.y = platformTop;
-          player.vy = 0;
-          player.jumping = false;
-          player.usedDoubleJump = false;
-        }
-      });
-    }
   }
 
   } // end currentScene checks
@@ -2327,7 +2302,21 @@ function applyPhysics(){
     // makes the dug trapdoors (uTopDrop, s5u5Drop) land safely -- their
     // whole point is dropping you down to ground level as a shortcut,
     // and ground level past their own x was never tube-revealed either.
-    if (player.y <= 0 || tunnelPositionRevealed(centerX, player.y)) {
+    // an actively falling player (vy<0, still above true ground) heading
+    // toward y<=0 is ALSO always fine, dig-revealed or not, for exactly
+    // the same reason as the y<=0 case right above -- they're already on
+    // their way to landing safely on true ground, not stuck inside solid
+    // dirt. Without this, walking/jumping off any elevated ledge whose
+    // landing spot hasn't been dug yet (e.g. off the end of s5's shelf,
+    // reaching for the still-undug s5r) got caught mid-fall the instant
+    // the straight-line reveal tube's narrow band was left behind --
+    // frozen hanging in open air at whatever spot last read as revealed,
+    // walking-on-nothing ("standing on thin air" / "packed dirt that
+    // can't be dug"), instead of just continuing to fall. A real fall in
+    // progress should always be allowed to finish landing on the ground
+    // below, exactly like walking off a true dead-end ledge already does.
+    const activelyFalling = player.vy < 0 && player.y > 0;
+    if (player.y <= 0 || activelyFalling || tunnelPositionRevealed(centerX, player.y)) {
       // if a hard-snap earlier pinned the player to this exact spot,
       // trivially re-passing the top-level check right back at that same
       // spot is NOT genuine progress -- see tunnelRecoveryAnchor's own
@@ -24079,28 +24068,6 @@ function tunnelMergedLedgeSpan(node) {
   return { left, right, height };
 }
 
-// a bare, unplanked dirt lip -- NOT a real dug ledge -- bridging an
-// already-dug node out to an UNDUG same-height "side" child, purely so
-// that child can actually be walked to and dug (see the matching
-// physics use in applyPhysics for the full reachability story). Pulled
-// out into its own function so the physics collision and the render in
-// drawTunnelDigSpot share one single source of truth for exactly where
-// this temporary lip sits -- otherwise the visible dirt and the actual
-// floor can drift apart, which is exactly what happened before: the
-// floor existed here but nothing was ever drawn for it, so standing on
-// it read as floating in mid-air ("standing on thin air"). Returns null
-// when the node doesn't qualify for a scaffold at all.
-function tunnelSideScaffoldSpan(node) {
-  if (node.dug || node.dir !== "side" || node.heightAboveGround <= 0) return null;
-  const parent = TUNNEL_NODES.find(n => n.id === node.parent);
-  if (!parent || !parent.dug) return null;
-  if (Math.abs(parent.heightAboveGround - node.heightAboveGround) > TUNNEL_LEDGE_MERGE_TOLERANCE) return null;
-  const { right: parentRight, left: parentLeft, height: platformTop } = tunnelMergedLedgeSpan(parent);
-  const left = Math.min(parentLeft, node.x - 24);
-  const right = Math.max(parentRight, node.x + 24);
-  return { left, right, height: platformTop };
-}
-
 // how far you can physically WALK -- right up to the edge of any
 // currently-reachable node (its own parent already dug), whether or
 // not that node itself has been dug yet, so you can always reach the
@@ -24428,29 +24395,6 @@ function drawTunnelDigSpot(node, camX) {
   }
 
   if (!node.dug) {
-    // a rough, unplanked dirt lip -- NOT a finished ledge (no support
-    // posts, no bright top surface, just packed-down dirt) -- drawn
-    // wherever the physics scaffold in applyPhysics actually lets you
-    // stand before this spot's been dug. Without this, that scaffold
-    // was invisible: real collision floor with nothing drawn for it,
-    // which read as standing on thin air. Shares tunnelSideScaffoldSpan
-    // with the physics check so the drawn dirt and the actual floor
-    // can never drift apart.
-    const scaffold = tunnelSideScaffoldSpan(node);
-    if (scaffold) {
-      const scaffoldLeft = scaffold.left - camX, scaffoldRight = scaffold.right - camX;
-      const scaffoldCy = gy + cameraY - scaffold.height;
-      ctx.fillStyle = "#241c14";
-      ctx.fillRect(scaffoldLeft, scaffoldCy - 3, scaffoldRight - scaffoldLeft, 5);
-      ctx.strokeStyle = "rgba(90,80,70,0.4)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(scaffoldLeft, scaffoldCy - 3);
-      for (let x = scaffoldLeft; x <= scaffoldRight; x += 12) {
-        ctx.lineTo(x, scaffoldCy - 3 + pseudoRandom(x * 1.3 + node.x) * 2);
-      }
-      ctx.stroke();
-    }
     drawDigSoftSpot(sx, markY, markRX, markRY, node.x * 1.7 + (isUp ? 200 : 0));
   } else {
     // dug -- the oval clip carved into the dirt (see drawTunnelTownScene)
