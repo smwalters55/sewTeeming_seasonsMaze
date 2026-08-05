@@ -23821,10 +23821,30 @@ const TUNNEL_LEDGE_MERGE_TOLERANCE = 4;
 // between them -- a plank rendered floating across a stretch of solid,
 // never-dug dirt, which is exactly what reads as a hole/platform whose
 // placement "makes zero sense." Real same-shelf merges (the sequential
-// s5 corridor nodes, etc.) are all within ~80 units of each other, so
-// 100 comfortably covers intended merges while excluding cross-branch
-// coincidences.
-const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 100;
+// s5 corridor nodes, etc.) were assumed to all be within ~80 units of
+// each other, so 100 seemed to comfortably cover intended merges while
+// excluding cross-branch coincidences.
+// Was 100 -- but s5 (x1180) and its own "side" (plain-walk, not a jump)
+// child s5r (x1290) actually sit 110 apart, just past that assumed ~80
+// margin (looks like the later "shift s5r's whole subtree +30 for
+// spacing" pass pushed it past 100 without anyone noticing the merge
+// broke). Since s5-s5r sit exactly TUNNEL_LEDGE_MERGE_TOLERANCE apart in
+// height too (both h90, diff 0) they SHOULD merge into one continuous
+// shelf, but missing the x-tolerance by 10 units meant they never did --
+// tunnelPositionRevealed's own frontier-tube check still marked the gap
+// as "revealed" (so no snap-back fired while falling through it), but
+// the separate ledge-LANDING collision in applyPhysics has no floor
+// there at all, so simply walking right off s5's own ledge dropped the
+// player through thin air onto bare, undug ground with no forward path
+// (s3a dead-ends well short of there) -- a real, repeatable trap,
+// confirmed via a scripted walk simulation: holding right from s5 falls
+// straight through to y0 at x~1270, gets caught by the escape hatch,
+// teleports back to the entrance, and repeats forever on continued
+// right-held input. 130 covers this actual max intended gap (110) with
+// the same kind of small buffer 100 was meant to give the smaller ones,
+// while every unrelated same-height-but-different-branch pair on the
+// map still sits 160+ apart, well clear of it.
+const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 130;
 // also returns a single unified `height` for the whole merged group (the
 // lowest of the bunch) -- each node used to draw/collide at its OWN
 // heightAboveGround even after their spans merged, which could still
