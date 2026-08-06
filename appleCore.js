@@ -2103,6 +2103,13 @@ function applyPhysics(){
   // slower during the giant pile's scripted collapse fall, so both
   // moments read as clearly intentional and dramatic rather than
   // happening too fast to actually see
+  // captured BEFORE this frame's vertical move -- lets the tunnel-town
+  // ledge-landing check below tell "was above the platform last frame,
+  // now at/below it" apart from a fixed pixel tolerance, which a big
+  // enough single-frame fall (a long drop from high up the dig chain,
+  // vy well past the old 14px catch window) could skip clean through in
+  // one step. See that check's own comment for the real repro.
+  const prevPlayerY = player.y;
   player.y += player.vy;
   player.vy -= giantPileCollapse.phase === "falling" ? 0.12 : (snakeState.hissing > 0 ? 0.22 : 0.8);
 
@@ -2256,12 +2263,24 @@ function applyPhysics(){
       if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) return;
       const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
       const playerBottom = player.y;
+      // the plain 14px tolerance below is enough for an ordinary jump's
+      // fall speed, but a long drop from higher up the dig chain (the
+      // s5u* climb reaches height 550) can be moving fast enough to
+      // cross the whole 14px window in a single frame -- landing above
+      // it one frame and already below it the next, never once inside
+      // the band. That read as "falling straight through solid-looking
+      // dug ground" (real repro: drop fast onto s4/s5's own dug ledge
+      // from height+80 -- lands cleanly at normal jump speeds, clips
+      // straight through at a bigger fall's speed). The swept check
+      // (was at/above the platform last frame, at/below it now) catches
+      // any fall speed, not just ones the fixed window happens to cover.
+      const crossedThisFrame = prevPlayerY >= platformTop && playerBottom <= platformTop;
 
       if (
         player.x + player.width > left &&
         player.x < right &&
         playerBottom <= platformTop &&
-        playerBottom >= platformTop - 14 &&
+        (playerBottom >= platformTop - 14 || crossedThisFrame) &&
         player.vy <= 0
       ) {
         player.y = platformTop;
@@ -23885,28 +23904,35 @@ const TUNNEL_NODES = [
   // the stone dug up earlier at s3a. Real reason to detour for it before
   // this one cracks open, instead of the mechanic sitting unused in code
   // with nothing actually gating on it.
-  { id: "s5r", parent: "s5", x: 1290, heightAboveGround: 90, dir: "side", hasItem: true, needsStone: true, dug: false },
+  // x pulled back in from 1290 to 1260 (dx 80 from s5, not 110) --
+  // confirmed via a real physics simulation that a plain walk-off-the-
+  // ledge fall reaches a same-height "side" spot up to about dx 85 away,
+  // and fails past dx 90: at the old 110 this spot was genuinely outside
+  // jump/fall range from s5, full stop -- not a landing-tolerance quirk,
+  // not a stuck-frame bug, just too far to ever reach on foot. Whole
+  // subtree pulled back the same -30 so every relative jump distance
+  // past this point (already verified reachable at the old spacing)
+  // stays exactly as it was.
+  { id: "s5r", parent: "s5", x: 1260, heightAboveGround: 90, dir: "side", hasItem: true, needsStone: true, dug: false },
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
   // gives the right half of the maze its own vertical movement too.
-  // Whole subtree shifted +30 along with s5r above, same relative jump
-  // distances throughout, just further from the crowded trap/reward spot.
-  { id: "s5u1", parent: "s5r", x: 1330, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
-  { id: "s5u2", parent: "s5u1", x: 1280, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
+  { id: "s5u1", parent: "s5r", x: 1300, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
+  { id: "s5u2", parent: "s5u1", x: 1250, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
   // the climb used to just keep going straight up -- bent it left into an
   // actual horizontal turn partway up instead, then kept climbing from
   // there, and gave the bend its own little side branch so the extra
   // turn has a reward too, not just a direction change
-  { id: "s5uTurn", parent: "s5u2", x: 1220, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
-  { id: "s5uSide", parent: "s5uTurn", x: 1145, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
-  { id: "s5u2b", parent: "s5uTurn", x: 1190, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
-  { id: "s5u3", parent: "s5u2b", x: 1225, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
+  { id: "s5uTurn", parent: "s5u2", x: 1190, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
+  { id: "s5uSide", parent: "s5uTurn", x: 1115, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
+  { id: "s5u2b", parent: "s5uTurn", x: 1160, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
+  { id: "s5u3", parent: "s5u2b", x: 1195, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
   // one more diagonal jump up-and-left off the top of the climb, then a
   // final jump straight up from there -- the aragonite's new home, far
   // enough from s5r's cushion piece that they don't read as one crowded
   // pair anymore. Real dead end now, up at the very top of the map.
-  { id: "s5u4", parent: "s5u3", x: 1170, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
-  { id: "s5u5", parent: "s5u4", x: 1185, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
+  { id: "s5u4", parent: "s5u3", x: 1140, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
+  { id: "s5u5", parent: "s5u4", x: 1155, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
   // a real vertical "dig down" hole, the one requested back -- a trapdoor
   // shortcut off the summit dead end. Doesn't duplicate an easy nearby
   // path (the only other way down from here is the whole climb back
@@ -23915,13 +23941,13 @@ const TUNNEL_NODES = [
   // pushed to +80 from s5u5 (was +20, same too-close bug as uTopDrop --
   // see its comment) so digging this one doesn't collapse s5u5's own
   // standable footprint out from under the aragonite.
-  { id: "s5u5Drop", parent: "s5u5", x: 1265, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
+  { id: "s5u5Drop", parent: "s5u5", x: 1235, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
   // read as everything else this deep. A plain dead end, same as s5r
   // itself -- not every spur needs loot, some are just there for the
   // exploration/breathing-room feel.
-  { id: "s5r2", parent: "s5r", x: 1360, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
+  { id: "s5r2", parent: "s5r", x: 1330, heightAboveGround: 90, dir: "side", hasItem: false, dug: false }
 ];
 
 function tunnelNodeParentDug(node) {
@@ -23974,24 +24000,13 @@ const TUNNEL_LEDGE_MERGE_TOLERANCE = 4;
 // s5 corridor nodes, etc.) were assumed to all be within ~80 units of
 // each other, so 100 seemed to comfortably cover intended merges while
 // excluding cross-branch coincidences.
-// Was 100 -- but s5 (x1180) and its own "side" (plain-walk, not a jump)
-// child s5r (x1290) actually sit 110 apart, just past that assumed ~80
-// margin (looks like the later "shift s5r's whole subtree +30 for
-// spacing" pass pushed it past 100 without anyone noticing the merge
-// broke). Since s5-s5r sit exactly TUNNEL_LEDGE_MERGE_TOLERANCE apart in
-// height too (both h90, diff 0) they SHOULD merge into one continuous
-// shelf, but missing the x-tolerance by 10 units meant they never did --
-// tunnelPositionRevealed's own frontier-tube check still marked the gap
-// as "revealed" (so no snap-back fired while falling through it), but
-// the separate ledge-LANDING collision in applyPhysics has no floor
-// there at all, so simply walking right off s5's own ledge dropped the
-// player through thin air onto bare, undug ground with no forward path
-// (s3a dead-ends well short of there) -- a real, repeatable trap,
-// confirmed via a scripted walk simulation: holding right from s5 falls
-// straight through to y0 at x~1270, gets caught by the escape hatch,
-// teleports back to the entrance, and repeats forever on continued
-// right-held input. 130 covers this actual max intended gap (110) with
-// the same kind of small buffer 100 was meant to give the smaller ones,
+// Was 100 -- s5 (x1180) and its own "side" (plain-walk, not a jump)
+// child s5r used to sit at x1290 (110 apart), which a real physics
+// simulation later confirmed was actually just too far to reach by
+// walking/falling at all -- fixed at the source by pulling s5r's whole
+// subtree back in to a real dx of 80 (see s5r's own comment), not by
+// widening this tolerance further. 130 stays as a small buffer over the
+// intended ~80-ish same-shelf spacing used throughout this corridor,
 // while every unrelated same-height-but-different-branch pair on the
 // map still sits 160+ apart, well clear of it.
 const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 130;
