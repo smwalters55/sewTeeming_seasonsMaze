@@ -11850,7 +11850,7 @@ function drawForestBoomerangTarget(camX) {
    specifically to require a double jump, same idea as the intro row's
    capstone gear.
    ====================================================== */
-const FOREST_CLOCKWORK_LEVER_X = 2730; // pushed further out past the bramble's transition-out (ends 2330) for more breathing room after the crossing -- whole grove shifted +250 right of its previous 2480
+const FOREST_CLOCKWORK_LEVER_X = 2775; // +45 more past the breather row's own last gear (now ends at x2705, only 25px clear) -- per direct feedback ("give the lever...a lot more breathing room on its left, and some on its right"), was only 25px clear on the left before this. The gear block below shifted its own +55 (see FOREST_CLOCKWORK_GEARS), a bigger move than the lever's +45, so the lever-to-first-gear gap grows too (was a flat 80, now 90) -- "some" more room on the right, less than the left's much bigger increase.
 // launchPad marks the gears sitting right before a real gap -- ONLY
 // those fling on jump. Every other gear needs a plain, predictable
 // jump to hop between touching neighbors (different heights within
@@ -11863,12 +11863,12 @@ const FOREST_CLOCKWORK_GEARS = [
   // the relative gaps/physics between these pieces are unchanged, just
   // moved. Absolute x's in the comments below are stale by 250; the
   // relative distances/verified physics they describe still hold.
-  { x: 2810, height: 40, outerR: 24, dir: 1, rot: 0, piece: true, pieceCollected: false, overgrown: 0 }, // no moss/vines, per "4 or so w none on them"
-  { x: 2860, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near the previous x=2584, now +250)
-  { x: 2906, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true, overgrown: 0 }, // touches gear A2 -- last of cluster A, launches across the gap into B -- bare
-  // real single-jump gap (65px edge-to-edge) into cluster B
-  { x: 3013, height: 70, outerR: 22, dir: -1, rot: 0, overgrown: 0 }, // cluster B starts -- bare
-  { x: 3053, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true, launchVy: 9.8, launchGravityMult: 1.5 }, // touches gear B1 -- last of cluster B, launches across the gap into the capstone. launchVy/launchGravityMult bumped together (default vy=8 stays paired with default gravity elsewhere) -- the default FLOATY_FALL_GRAVITY made this short hop's descent read as slow drifting/floating rather than a real arc ("instead of arc we are like floating"). Steeper gravity + more initial vy keeps the same peak height and the same relative landing spot on the capstone (verified pre-shift: landed x~2869-2929 relative to a 2877 capstone, i.e. -8 to +52 from the capstone's own x -- still true now against the capstone's new x), just noticeably snappier -- peaks ~5 frames sooner, lands ~8 frames sooner overall.
+  { x: 2865, height: 56, outerR: 19, dir: 1, rot: 0, piece: true, pieceCollected: false, overgrown: 0 }, // no moss/vines, per "4 or so w none on them" -- height/outerR both nudged (was 40/24) so this cluster doesn't read as three near-identical gears; only a few px of gap now opens up against A2 (was an exact touch) instead of a perfect edge-to-edge seam, negligible at this size
+  { x: 2915, height: 65, outerR: 26, dir: -1, rot: 0, launchPad: true }, // touches gear A1 (edge-to-edge) -- the MYSTERY launch pad: a perfectly plain-looking mid-cluster gear that secretly also launches (dir is already -1, so this one flings backward over ground you've already crossed -- see the gnaw pile easter egg near the previous x=2584, now +305). Left untouched (x/height/outerR) beyond the block shift -- its own backward-fling physics depends on exactly this height/position.
+  { x: 2961, height: 45, outerR: 20, dir: 1, rot: 0, launchPad: true, overgrown: 0 }, // touches gear A2 -- last of cluster A, launches across the gap into B -- bare. Also left untouched beyond the block shift, same reason as A2.
+  // real single-jump gap (was 65px edge-to-edge, now ~63 after B0's own resize below) into cluster B
+  { x: 3068, height: 48, outerR: 24, dir: -1, rot: 0, overgrown: 0 }, // cluster B starts -- bare. Height/outerR nudged (was 70/22) for real contrast against B1's tall/narrow 100/18 right next to it -- per direct feedback, this whole grove read as too equidistant/uniform in both height and width
+  { x: 3108, height: 100, outerR: 18, dir: 1, rot: 0, launchPad: true, launchVy: 9.8, launchGravityMult: 1.5 }, // touches gear B1 -- last of cluster B, launches across the gap into the capstone. launchVy/launchGravityMult bumped together (default vy=8 stays paired with default gravity elsewhere) -- the default FLOATY_FALL_GRAVITY made this short hop's descent read as slow drifting/floating rather than a real arc ("instead of arc we are like floating"). Steeper gravity + more initial vy keeps the same peak height and the same relative landing spot on the capstone (verified pre-shift: landed x~2869-2929 relative to a 2877 capstone, i.e. -8 to +52 from the capstone's own x -- still true now against the capstone's new x), just noticeably snappier -- peaks ~5 frames sooner, lands ~8 frames sooner overall. Left untouched (x/height/outerR) beyond the block shift -- this is the exact simulated fling this whole comment describes.
   // launchPad RESTORED on B1. Removing it (relying on a manual double
   // jump instead) was the wrong fix -- simulated the real double-jump
   // physics across a range of second-jump timings and the horizontal
@@ -11885,10 +11885,10 @@ const FOREST_CLOCKWORK_GEARS = [
   // didn't reach that far right -- fixed below with landingPadR
   // instead of giving up on the fling entirely.
   // real gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 3127, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, landingPad: 16, landingPadR: 62, catchFlight: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear". Back to the default launchVx (no more per-gear override) -- see the note below on why there's no longer a dedicated landing GEAR further out for THAT flight. landingPad (left side, 16) fixes the same "footprint narrower than the player" problem as before. landingPadR (right side, 62) is bigger and asymmetric on purpose -- B1's fling arrives from the left and its real, simulated descending pass through this gear's landing height lands somewhere in a fixed, deterministic window relative to this gear's own x (previously x~2905-2950 against a 2877 capstone, i.e. +28 to +73 -- same window now applies relative to this gear's new x). Right edge reaches gear.x+62, comfortably past it.
-  // real gap (55px) descending into cluster D -- falling is easier than climbing, so this one's more forgiving despite the height drop
-  { x: 3222, height: 70, outerR: 26, dir: 1, rot: 0 }, // cluster D starts
-  { x: 3268, height: 50, outerR: 20, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1, easy landing -- bare
+  { x: 3182, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, landingPad: 16, landingPadR: 62, catchFlight: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear". Back to the default launchVx (no more per-gear override) -- see the note below on why there's no longer a dedicated landing GEAR further out for THAT flight. landingPad (left side, 16) fixes the same "footprint narrower than the player" problem as before. landingPadR (right side, 62) is bigger and asymmetric on purpose -- B1's fling arrives from the left and its real, simulated descending pass through this gear's landing height lands somewhere in a fixed, deterministic window relative to this gear's own x (previously x~2905-2950 against a 2877 capstone, i.e. +28 to +73 -- same window now applies relative to this gear's new x). Right edge reaches gear.x+62, comfortably past it. Left untouched (x/height/outerR) beyond the block shift, same reason as B1 -- everything above depends on its exact position/height.
+  // gap descending into cluster D widened a touch (was 55px, now ~63 after D0's own resize below) -- falling is easier than climbing, so this one's more forgiving despite the height drop
+  { x: 3277, height: 92, outerR: 18, dir: 1, rot: 0 }, // cluster D starts. Height/outerR nudged (was 70/26) -- tall and narrow now instead of matching cluster A's own low/wide gears, real contrast against D1 right next to it
+  { x: 3323, height: 30, outerR: 25, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1 (near enough -- a few px gap now, same tolerance as A1/A2 above), easy landing -- bare. Height/outerR nudged (was 50/20), low and wide against D0's tall/narrow, per the same "not equidistant, height and width wise" feedback
   // GAVE UP ON A DEDICATED LANDING GEAR HERE. Several rounds of pushing
   // it (and the capstone's own launch speed) further and further right
   // still kept reading as "you can just jump from that gear and grab
@@ -11916,20 +11916,20 @@ const FOREST_CLOCKWORK_GEARS = [
   // snap in updateForestScene). Still walkable from the ground like any
   // other gear if someone wanders over on foot, just not a flight
   // target. Connects into the mole hole entrance just past it.
-  { x: 3550, height: 70, outerR: 50, dir: 1, rot: 0, spinMult: 0.35, overgrown: 2 }
+  { x: 3605, height: 70, outerR: 50, dir: 1, rot: 0, spinMult: 0.35, overgrown: 2 } // pure scenery, connects into the mole hole entrance just past it -- shifted with the rest of the block, otherwise untouched
 ];
 const FOREST_CLOCKWORK_SPIN_SPEED = 0.0014; // radians/ms, applied per gear's own `dir` -- nudged back up a bit from 0.0011, was reading as a touch too slow
 
 /* ======================================================
    MOLE HOLE ENTRANCE — a hole in the ground just past the big
-   decorative gear (x:3550, outerR:50 -- right edge 3600), the spot
+   decorative gear (x:3605, outerR:50 -- right edge 3655), the spot
    explicitly left open for this. Press space while standing on it:
    plays a short sink-and-fade animation, then a normal scene
    transition carries the player down into the mole hole below (new
    scene, first real pass -- entrance + a bare tunnel shell for now,
    no puzzles/decor yet).
    ====================================================== */
-const moleHoleEntrance = { x: 3650, active: false, t: 0 }; // shifted +250 along with the rest of the grove -- stays 50px past the decorative gear's right edge (was 3400 against a 3300 gear)
+const moleHoleEntrance = { x: 3705, active: false, t: 0 }; // shifted +55 along with the rest of the grove (was 3650) -- stays 50px past the decorative gear's right edge (gear now at x3605+outerR50=3655, +50=3705)
 const MOLEHOLE_FALL_MS = 700;
 
 function updateMoleHoleEntrance(deltaTime) {
@@ -12529,7 +12529,7 @@ function drawForestClockworkGears(camX) {
    question doesn't come up anymore. player.launched still hard-gates
    the actual pickup underneath regardless.
    ====================================================== */
-const FOREST_FLIGHT_PIECE_X = 3340; // capstone launch's arc, well down the descent -- past the point where the PLAYER sprite itself clears the top-of-canvas clip line, not just the item. Shifted +250 along with the rest of the grove -- same 213-unit offset from the capstone's own x as before (was 3090 against a 2877 capstone)
+const FOREST_FLIGHT_PIECE_X = 3395; // capstone launch's arc, well down the descent -- past the point where the PLAYER sprite itself clears the top-of-canvas clip line, not just the item. Shifted +55 along with the rest of the grove (was 3340) -- same 213-unit offset from the capstone's own x as before (capstone now at 3182)
 const FOREST_FLIGHT_PIECE_HEIGHT = 200;
 let forestFlightPieceCollected = false;
 
@@ -12592,7 +12592,7 @@ function drawForestFlightPiece(camX) {
    wide window relative to A1 -- a wide, forgiving window to park a
    tree in.
    ====================================================== */
-const FOREST_GNAW_SECRET_X = 2765; // trunk position, within the arc's near-peak window -- shifted +250 along with gear A1's backward launch (was 2515 against a 2610 A1, now relative to A1's new 2860)
+const FOREST_GNAW_SECRET_X = 2820; // trunk position, within the arc's near-peak window -- shifted +55 along with the backward-launching gear A2 (was 2765 against a 2860 A2, now relative to A2's new 2915)
 const FOREST_GNAW_SECRET_HEIGHT = 192; // branch height -- matches where the backward arc actually lingers, not ground level
 const FOREST_GNAW_REVEAL_MS = 2200;
 const FOREST_GNAW_RETRIGGER_COOLDOWN_MS = 3000; // re-openable on a later pass, not just once ever
@@ -20570,14 +20570,18 @@ const MOLEHOLE_ALCOVES = [
   // main shop counter already got -- jars/crates/wrapped goods/coin
   // stacks -- instead of these two background stalls staying flat
   // single-color ellipses)
-  { x: 300, w: 130, wares: [{ color: "#b8862f", shape: "box" }, { color: "#7a2f2f", shape: "stack" }, { color: "#3f5766", shape: "triangle" }], shopColor: "#8a6a3a", hasMole: true },
+  // shapes reworked away from the plain box/triangle pair -- per direct
+  // feedback ("not just squares or oval or triangles... unique shapes
+  // for all"), a jar and a rolled scroll instead
+  { x: 300, w: 130, wares: [{ color: "#b8862f", shape: "jar" }, { color: "#7a2f2f", shape: "stack" }, { color: "#3f5766", shape: "scroll" }], shopColor: "#8a6a3a", hasMole: true },
   // whole row spread out for real breathing room -- the old spacing
   // (330/500/660) left only a 50px gap here and a cramped 10px gap up
   // to the shop arch, reading as one crowded cluster in a wide room
   // that had plenty of space to spare. Now: 140px to alcove one, 110px
   // on to the shop -- checked against each arch's own half-width
   // (archR) rather than eyeballed
-  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "box" }, { color: "#c9a860", shape: "ellipse" }], shopColor: "#5a7a5a" }
+  // box/ellipse swapped for a bell and a faceted gem, same reasoning
+  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -20986,6 +20990,36 @@ function drawMoleShopSpeechBubble(camX) {
   drawFittedSpeechBubble(ctx, MOLE_SHOP_X - camX - 10, gy - 150, displayLines);
 }
 
+// shared swaying-lantern draw, used by every hanging lantern in the
+// molehole (the two market alcoves, the shop, the geode breaker, and
+// the plain wall lights along the hallway) -- previously each of these
+// was its own straight, perfectly rigid chain at a fixed length, which
+// read as static AND, across a whole row of them, uniform ("i dont
+// want anything...to be equidistant, equal height etc from each
+// other... make the lights hanging and slightly swaying left and
+// right, and at different heights"). Chain length is passed in per
+// call (each site varies it by its own seed) so a row of these hangs
+// at real, uneven heights; the sway itself is slow and small, same
+// gentle-swing feel as the mine cart ride's own header lanterns.
+function drawSwingingLantern(x, chainTopY, chainLen, seed, globeColor, rimColor) {
+  const swingAngle = Math.sin(performance.now() * 0.0009 + seed * 3.1) * 0.11;
+  const bx = x + Math.sin(swingAngle) * chainLen;
+  const by = chainTopY + Math.cos(swingAngle) * chainLen;
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, chainTopY);
+  ctx.lineTo(bx, by - 6);
+  ctx.stroke();
+  ctx.fillStyle = globeColor;
+  ctx.beginPath();
+  ctx.ellipse(bx, by, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rimColor;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
 // bigger and more done-up than the two background stalls -- a proper
 // double-wide arch, two lanterns instead of one, a richer counter
 // spread, and an actual standable, talkable figure instead of
@@ -21221,22 +21255,12 @@ function drawMoleShopAlcove(camX) {
     }
   });
 
-  // two lanterns instead of one
-  [-archR + 24, archR - 24].forEach(dx => {
-    const lx = ax + dx, ly = top + 24;
-    ctx.strokeStyle = "#2e2014";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(lx, top + 6);
-    ctx.lineTo(lx, ly - 6);
-    ctx.stroke();
-    ctx.fillStyle = "#e8a850";
-    ctx.beginPath();
-    ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#8a5a20";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  // two lanterns instead of one -- hung at two different chain lengths
+  // (was both a fixed 18) so they don't read as a stamped mirror pair
+  [-archR + 24, archR - 24].forEach((dx, i) => {
+    const lx = ax + dx;
+    const chainLen = 15 + pseudoRandom(MOLE_SHOP_X * 3.1 + i * 11) * 13;
+    drawSwingingLantern(lx, top + 6, chainLen, MOLE_SHOP_X * 0.7 + i * 19, "#e8a850", "#8a5a20");
   });
 
   // small hanging sign, so it's clearly a real stall worth walking up to
@@ -21589,22 +21613,12 @@ function drawGeodeBreakerAlcove(camX) {
     ctx.stroke();
   }
 
-  // two lanterns, cooler-toned to match the mineral glow
-  [-archR + 24, archR - 24].forEach(dx => {
-    const lx = ax + dx, ly = top + 24;
-    ctx.strokeStyle = "#2e2014";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(lx, top + 6);
-    ctx.lineTo(lx, ly - 6);
-    ctx.stroke();
-    ctx.fillStyle = "#bcd4e8";
-    ctx.beginPath();
-    ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#6a8298";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  // two lanterns, cooler-toned to match the mineral glow -- different
+  // chain lengths per side, same as the shop's own pair
+  [-archR + 24, archR - 24].forEach((dx, i) => {
+    const lx = ax + dx;
+    const chainLen = 15 + pseudoRandom(GEODE_BREAKER_X * 3.1 + i * 11) * 13;
+    drawSwingingLantern(lx, top + 6, chainLen, GEODE_BREAKER_X * 0.7 + i * 19, "#bcd4e8", "#6a8298");
   });
 
   // hanging sign -- renamed from "GEODES" (too narrow a name for what's
@@ -21863,6 +21877,72 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.moveTo(wx - 3, wy - 4);
       ctx.lineTo(wx + 3, wy - 4);
       ctx.stroke();
+    } else if (item.shape === "jar") {
+      // a squat lidded jar -- straight-sided body, a slightly wider lid
+      // rim on top
+      const jw = 6 + pseudoRandom(seed + 2) * 1.5, jh = 8 + pseudoRandom(seed + 3) * 2;
+      ctx.fillRect(wx - jw / 2, wy - jh / 2 + 2, jw, jh);
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(wx - jw / 2, wy - jh / 2 + 2, jw, jh);
+      ctx.beginPath();
+      ctx.ellipse(wx, wy - jh / 2 + 2, jw / 2 + 1, 1.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (item.shape === "scroll") {
+      // a rolled scroll/parchment lying on its side -- a cylinder body
+      // with a rolled-paper circle showing at each end
+      const len = 12 + pseudoRandom(seed + 2) * 3, r = 2.6;
+      ctx.fillRect(wx - len / 2, wy - r, len, r * 2);
+      ctx.beginPath();
+      ctx.ellipse(wx - len / 2, wy, r, r, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(wx + len / 2, wy, r, r, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(wx - len / 2, wy, r, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(wx + len / 2, wy, r, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (item.shape === "bell") {
+      // a little bell -- a rounded dome, flared bottom rim, small knob
+      const s = 6 + pseudoRandom(seed + 2) * 1.5;
+      ctx.beginPath();
+      ctx.arc(wx, wy, s * 0.7, Math.PI, 0);
+      ctx.lineTo(wx + s * 0.9, wy + s * 0.35);
+      ctx.quadraticCurveTo(wx, wy + s * 0.55, wx - s * 0.9, wy + s * 0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(wx, wy - s * 0.75, s * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (item.shape === "gem") {
+      // a faceted cut gem -- distinct from the plain flat triangle
+      // elsewhere, with real facet lines catching the light
+      const s = 6 + pseudoRandom(seed + 2) * 2;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy - s);
+      ctx.lineTo(wx + s * 0.75, wy - s * 0.15);
+      ctx.lineTo(wx + s * 0.4, wy + s * 0.75);
+      ctx.lineTo(wx - s * 0.4, wy + s * 0.75);
+      ctx.lineTo(wx - s * 0.75, wy - s * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy - s);
+      ctx.lineTo(wx, wy + s * 0.75);
+      ctx.moveTo(wx - s * 0.75, wy - s * 0.15);
+      ctx.lineTo(wx + s * 0.75, wy - s * 0.15);
+      ctx.stroke();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
       ctx.beginPath();
@@ -21872,21 +21952,12 @@ function drawMoleholeAlcove(alcove, camX) {
   });
 
   // a small hanging lantern above the counter -- the light source
-  // implied by the glow gradient above
-  const lx = ax, ly = top + 26;
-  ctx.strokeStyle = "#2e2014";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(lx, top + 8);
-  ctx.lineTo(lx, ly - 6);
-  ctx.stroke();
-  ctx.fillStyle = "#e8a850";
-  ctx.beginPath();
-  ctx.ellipse(lx, ly, 5, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#8a5a20";
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // implied by the glow gradient above. Chain length keyed off this
+  // particular alcove's own x, so the two background alcoves don't hang
+  // their one lantern at the exact same height as each other
+  const lx = ax;
+  const chainLen = 16 + pseudoRandom(alcove.x * 2.3) * 12;
+  drawSwingingLantern(lx, top + 8, chainLen, alcove.x * 0.7, "#e8a850", "#8a5a20");
 }
 
 // TOWN NOTICE board -- a small carved-plank detail, same visual
@@ -23060,6 +23131,14 @@ const MINE_CART_BUMPS = (() => {
   }
   return bumps;
 })();
+// two small rats scurrying along fixed short patches of ground, purely
+// decorative ambiance ("oooo maybe like 2 or so rats small scurrying").
+// centerT/range define the stretch of track they pace back and forth
+// across; period/offset keep the two out of sync with each other.
+const MINE_CART_RATS = [
+  { centerT: 560, range: 45, period: 2600, offset: 0 },
+  { centerT: 1480, range: 60, period: 3100, offset: 900 }
+];
 // collected gold does NOT reset between rides -- once pulled, a piece is
 // gone for good, same as every other one-time collectible in the game
 // (tunnel-town finds don't respawn either). Ride stays repeatable for the
@@ -23431,14 +23510,22 @@ function drawMineCartRide(camX) {
   // between the two poles ("more wooden poles in the background, maybe
   // a few sloppy hanging lights... some ropes swooping messily across a
   // wooden shaft or two")
+  // spacing AND height both jittered per-pole now -- a flat 90px grid
+  // with only two possible top heights read as too uniform/mechanical
+  // for an old, ramshackle mine shaft ("i dont want anything in
+  // background of mine to be equidistant, equal height etc from each
+  // other... make it look like old mine shaft"). Jitter is seeded per
+  // index so it's stable frame to frame, not re-randomized every draw.
   const beamSpacing = 90;
   const beamCount = Math.ceil(MINE_CART_TRACK_LENGTH / beamSpacing) + 2;
   let prevBeamX = null;
   for (let i = 0; i < beamCount; i++) {
-    const realBx = i * beamSpacing - mineCart.t;
+    const xJitter = (pseudoRandom(i * 13.1 + 700) - 0.5) * 30;
+    const realBx = i * beamSpacing - mineCart.t + xJitter;
     if (realBx < -40 || realBx > canvas.width + 40) { prevBeamX = null; continue; }
     const headerBeam = i % 3 === 0;
-    const poleTopY = headerBeam ? gy - 210 : gy - 200;
+    const heightJitter = (pseudoRandom(i * 9.3 + 400) - 0.5) * 34;
+    const poleTopY = (headerBeam ? gy - 210 : gy - 200) + heightJitter;
 
     ctx.strokeStyle = "rgba(58,40,20,0.5)";
     ctx.lineWidth = 5;
@@ -23509,6 +23596,100 @@ function drawMineCartRide(camX) {
     }
     prevBeamX = realBx;
   }
+
+  // a handful of collapsed/fallen support beams lying in the dirt --
+  // an old, worked-out shaft ought to show a little decay, not just
+  // rows of still-standing timber ("make it look like old mine shaft.
+  // some wood parts that fell down sort of")
+  const MINE_CART_FALLEN_BEAMS = [420, 1240, 1960];
+  MINE_CART_FALLEN_BEAMS.forEach((worldT, i) => {
+    const fx = MINE_CART_SCREEN_X + (worldT - mineCart.t);
+    if (fx < -40 || fx > canvas.width + 40) return;
+    const seed = i * 19.3 + 800;
+    const tilt = -0.25 + pseudoRandom(seed) * 0.5;
+    const len = 34 + pseudoRandom(seed + 1) * 14;
+    ctx.save();
+    ctx.translate(fx, gy + 18);
+    ctx.rotate(tilt);
+    ctx.strokeStyle = "rgba(58,40,20,0.6)";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-len / 2, 0);
+    ctx.lineTo(len / 2, 0);
+    ctx.stroke();
+    // a couple of splintered cracks across it, so it reads as broken
+    // rather than just a plank someone set down
+    ctx.strokeStyle = "rgba(30,20,10,0.6)";
+    ctx.lineWidth = 1;
+    [-0.15, 0.2].forEach(t => {
+      const cx = len * t;
+      ctx.beginPath();
+      ctx.moveTo(cx, -3);
+      ctx.lineTo(cx + 2, 3);
+      ctx.stroke();
+    });
+    ctx.restore();
+    // a small rubble pile at one end, like it broke off the wall/ceiling
+    ctx.fillStyle = "#2c2016";
+    pathFromPoints(irregularOvalPoints(fx + Math.cos(tilt) * len * 0.55, gy + 19, 7, 4, seed + 5, 0.35, 6));
+    ctx.fill();
+  });
+
+  // two small rats scurrying back and forth along a short stretch of
+  // ground -- purely decorative, no collision ("oooo maybe like 2 or
+  // so rats small scurrying")
+  MINE_CART_RATS.forEach((rat, i) => {
+    const cycle = rat.range * 2;
+    const phase = ((performance.now() + rat.offset) % rat.period) / rat.period;
+    // triangle-wave back-and-forth between -range and +range, so it
+    // reads as scurrying a set patch of ground rather than drifting
+    const tri = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0
+    const localX = -rat.range + tri * cycle;
+    const facing = phase < 0.5 ? 1 : -1;
+    const worldT = rat.centerT + localX;
+    const rx = MINE_CART_SCREEN_X + (worldT - mineCart.t);
+    if (rx < -20 || rx > canvas.width + 20) return;
+    const ry = gy + 18;
+    const scurry = Math.sin(performance.now() * 0.03 + i * 5) * 1.4; // quick little leg-scamper bob
+    ctx.save();
+    ctx.translate(rx, ry + Math.abs(scurry) * 0.4);
+    ctx.scale(facing, 1);
+    // sized up and lightened a bit from the first pass -- at the
+    // original size/tone this all but disappeared against the track's
+    // own similarly dark, cluttered palette right at that ground line
+    ctx.fillStyle = "#5c5248";
+    ctx.beginPath();
+    ctx.ellipse(0, -4, 9.5, 4.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // pointed nose
+    ctx.beginPath();
+    ctx.moveTo(8, -4);
+    ctx.lineTo(13.5, -2.9);
+    ctx.lineTo(8, -1.7);
+    ctx.closePath();
+    ctx.fill();
+    // small dark eye, gives it a bit of life at this size
+    ctx.fillStyle = "#0c0a08";
+    ctx.beginPath();
+    ctx.arc(5.5, -4.6, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    // ear
+    ctx.fillStyle = "#5c5248";
+    ctx.beginPath();
+    ctx.ellipse(2.5, -8, 2.1, 2.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // thin tail, given a little wag using the same scamper phase
+    ctx.strokeStyle = "#5c5248";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-8, -3.3);
+    ctx.quadraticCurveTo(-16, -3.3 + scurry, -20, -0.7 - scurry);
+    ctx.stroke();
+    ctx.restore();
+  });
 
   // gold, drawn relative to the cart's own scroll position -- the
   // higher/harder pieces get the fancier render so they read as worth
@@ -23834,26 +24015,35 @@ function drawMoleholeScene(camX) {
   // geode-breaker<->shaft gaps; 1650/1850 light the room's extended
   // tail past the shaft.
   const wallLanterns = [130, 670, 1015, 1400, 1780, 2000, 2250];
-  wallLanterns.forEach(lx0 => {
+  // varied hang height + a gentle sway per lantern now -- these used to
+  // hang from a flat, identical gy-60 across all seven, dead still
+  // ("i dont want anything...to be equidistant, equal height etc from
+  // each other... make the lights hanging and slightly swaying")
+  wallLanterns.forEach((lx0, i) => {
     const lx = lx0 - camX;
     if (lx < -20 || lx > canvas.width + 20) return;
-    const ly = gy - 60;
+    const seed = i * 7.9 + 300;
+    const chainTopY = gy - 90;
+    const chainLen = 14 + pseudoRandom(seed) * 22;
+    const swingAngle = Math.sin(performance.now() * 0.0009 + seed * 3.1) * 0.1;
+    const bx = lx + Math.sin(swingAngle) * chainLen;
+    const by = chainTopY + Math.cos(swingAngle) * chainLen;
     ctx.strokeStyle = "#2e2014";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(lx, ly - 14);
-    ctx.lineTo(lx, ly);
+    ctx.moveTo(lx, chainTopY);
+    ctx.lineTo(bx, by);
     ctx.stroke();
-    const glow = ctx.createRadialGradient(lx, ly, 2, lx, ly, 30);
+    const glow = ctx.createRadialGradient(bx, by, 2, bx, by, 30);
     glow.addColorStop(0, "rgba(255,195,120,0.4)");
     glow.addColorStop(1, "rgba(255,195,120,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(lx, ly, 30, 0, Math.PI * 2);
+    ctx.arc(bx, by, 30, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#e8a850";
     ctx.beginPath();
-    ctx.ellipse(lx, ly, 4, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(bx, by, 4, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -26353,28 +26543,14 @@ function drawTunnelTownScene(camX) {
     ctx.stroke();
   }
 
-  // a few old, leaning support beams, kept past the wall so they don't
-  // clutter the small elder nook -- unlike the mole hole's tidy shop
-  // set, these look like they're barely holding
-  const beams = [560, 780, 1000]; // repositioned for the wall's new spot (was 480, is now further right) and the wider dig-chain area beyond it
-  beams.forEach((bx0, i) => {
-    const bx = bx0 - camX;
-    if (bx < -20 || bx > canvas.width + 20) return;
-    const lean = (i % 2 === 0 ? 1 : -1) * 6;
-    ctx.strokeStyle = "#3a2e22";
-    ctx.lineWidth = 7;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(bx, groundY);
-    ctx.lineTo(bx + lean, groundY - 90);
-    ctx.stroke();
-    ctx.strokeStyle = "#241c14";
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(bx - 22, groundY - 70);
-    ctx.lineTo(bx + lean, groundY - 90);
-    ctx.stroke();
-  });
+  // the old leaning support-beam props (three of them, at x560/780/1000)
+  // were removed per direct feedback -- they were just a bare leaning
+  // pole plus a short diagonal brace, not actually holding up anything
+  // overhead, which read as "kind of out of place" rather than a real
+  // structural prop ("this tunneltown shaft also kinda out of
+  // place...not holding anything up, lets remove"). No replacement --
+  // removing was the preferred fix over building them out into real
+  // (much taller) roof supports.
 
   // branch dig spots -- each one only drawn once its OWN parent has
   // actually been dug, so you only ever see the frontier you've earned.
@@ -27673,37 +27849,27 @@ connections[1].filled = true;
 connections[1].filledItemType = "appleSlice";
 updateInventoryUI();
 
-// TEMPORARY -- drops straight into tunnel town, pre-dug most of the way
-// up the right-side climb, standing right at s5u2 -- 2-3 real dig steps
-// short of the new s5uHole/s5uNook vertical drop (s5uTurn, then
-// s5uSide, then just space to dig s5uHole itself -- no more holding
-// down and digging blind mid-fall, see s5uHole's own comment) so the
-// mechanic is immediately testable without redigging the whole chain
-// from the wall. ("put me inside tunnel maybe 2 or 3 dig steps away from
-// this vertical hole so i can test that briefly"). Revert (remove this
-// block, and the door-filled lines above) when done.
-currentScene = "tunneltown";
-tunnelWallBroken = true;
-['n1', 's1', 's2', 's3b', 's4', 's5', 's5r', 's5u1', 's5u2'].forEach(id => {
-  const n = TUNNEL_NODES.find(n => n.id === id);
-  if (n) {
-    n.dug = true;
-    // pre-digging via this direct flag skips the normal dig-completion
-    // logic entirely, which is where a real dig's hasItem grant actually
-    // happens (see the activeDig-finishes branch in updateTunnelTownScene)
-    // -- so a hasItem node in this pre-dug chain (s5r, the gear) never
-    // handed anything out, even though it now reads as already-open with
-    // nothing left to dig there. Real repro: "i dug all this and no gear"
-    // -- s5r WAS in this list, so it looked identical to every other
-    // already-open shelf, no dark undug marker ever appeared, and the
-    // gear it should have handed over on a real dig just never granted.
-    // Mirror that grant here so pre-digging this chain has the same net
-    // effect as actually digging through it by hand would have.
-    if (n.hasItem) addToInventory(n.itemType || "cushionPart");
-  }
-});
-player.x = 1250; // s5u2's own x
-player.y = 250; // s5u2's own height
+// TEMPORARY -- drops straight into the mole hole, standing right under
+// the geode breaker's "STONES AND MINERALS" stand, already holding one
+// of every tunnel-town find (stone, bridgePiece, aragonite, geode,
+// cushionPart/gear) as if the whole dig chain had just been cleared by
+// hand -- so the geode-breaker dialogue/shine/crack visuals and the
+// new lantern sway can all be checked out immediately without
+// redigging tunnel town first ("place me with all inventory from
+// tunneltown now in mole hole under the stones and minerals shop").
+// aragoniteShined/geodeCracked deliberately left false -- talking to
+// the geode breaker in-game is what triggers those, so this spawn
+// still lets that interaction (and its visuals) be tested live rather
+// than skipping straight to the already-polished end state. Revert
+// (remove this block, and the door-filled lines above) when done.
+currentScene = "molehole";
+addToInventory("stone");
+addToInventory("bridgePiece");
+addToInventory("aragonite");
+addToInventory("geode");
+addToInventory("cushionPart");
+player.x = GEODE_BREAKER_X - 25;
+player.y = 0;
 player.vy = 0;
 player.jumping = false;
 player.usedDoubleJump = false;
@@ -27712,6 +27878,7 @@ cameraY = 0;
 tunnelSafeX = null;
 tunnelSafeY = null;
 elderTalkedTo = true;
+updateInventoryUI();
 
 update();
 
