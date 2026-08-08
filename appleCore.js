@@ -2152,7 +2152,18 @@ function applyPhysics(){
   // one step. See that check's own comment for the real repro.
   const prevPlayerY = player.y;
   player.y += player.vy;
-  player.vy -= giantPileCollapse.phase === "falling" ? 0.12 : (snakeState.hissing > 0 ? 0.22 : 0.8);
+  // falling through one of tunnel town's own dug-out holes (a trapdoor
+  // or the s5uHole-style vertical drop) used to just use the same plain
+  // 0.8 gravity as any ordinary jump -- reading as "a fall after a
+  // jump" rather than anything deliberate, even though these are
+  // supposed to be a real "going down deeper" beat ("i want it to be
+  // more 'a moment'"). Slowed specifically for that state (see
+  // tunnelFallingThroughGap above), same dramatic-fall pattern already
+  // used for the giant pile collapse and the snake knockback -- doesn't
+  // touch normal jumping/landing anywhere else in tunnel town at all.
+  player.vy -= giantPileCollapse.phase === "falling" ? 0.12 :
+    (snakeState.hissing > 0 ? 0.22 :
+    ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 : 0.8));
 
   // ground collision
   if (player.y <= 0) {
@@ -2318,6 +2329,21 @@ function applyPhysics(){
   const overTrapGap = !!tunnelFallingThroughTrap && player.vy < 0 &&
     Math.abs((player.x + player.width / 2) - tunnelFallingThroughTrap.x) <= 20;
   if (!overTrapGap) tunnelFallingThroughTrap = null;
+
+  // same stateful pattern as tunnelFallingThroughTrap above, just widened
+  // to catch shelfGap holes too (s5uHole) -- gravity-slowdown purposes
+  // only, no effect on landing/suppression logic at all
+  if (!tunnelFallingThroughGap) {
+    const enteringGap = TUNNEL_NODES.find(n => (n.trapGap || n.shelfGap) && n.dug &&
+      Math.abs((player.x + player.width / 2) - n.x) <= 20 &&
+      player.y <= n.heightAboveGround + 14 &&
+      player.y >= n.heightAboveGround - 20 &&
+      player.vy <= 0);
+    if (enteringGap) tunnelFallingThroughGap = enteringGap;
+  }
+  const overFallingGap = !!tunnelFallingThroughGap && player.vy < 0 &&
+    Math.abs((player.x + player.width / 2) - tunnelFallingThroughGap.x) <= 20;
+  if (!overFallingGap) tunnelFallingThroughGap = null;
 
   if (!keys.down && !overTrapGap) {
     TUNNEL_NODES.forEach(node => {
@@ -22720,7 +22746,7 @@ function drawTunnelTownEntrance(camX) {
    the idea of this being more interactive than just an animated move
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
-const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0 };
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0 };
 const MINE_CART_TRACK_LENGTH = 2200;
 const MINE_CART_SPEED = 210; // world units/sec of auto-scroll -- nudged down from 240, a touch less frantic
 const MINE_CART_GRAVITY = 900; // px/sec^2
@@ -22765,6 +22791,25 @@ const MINE_CART_GOLD = [
 // identical to the easy ground-level piles ("make the higher gold pieces
 // look slightly more extravagant... you wanna try to aim for those")
 const MINE_CART_FANCY_GOLD_HEIGHT = 95;
+// small track imperfections -- a plain uniform rail read as generic
+// scenery rather than an actual track ("make the track just look more
+// like a track than generic shapes... mini bumps/holes that jostle the
+// cart slightly sometimes"). Seeded once, spread fairly evenly down the
+// run with jitter so they don't look hand-placed, each with its own
+// jostle strength -- deliberately much gentler than a real jump (see the
+// crossing-check in updateMineCartRide) so it reads as the cart rattling
+// over rough rail, not as a hidden extra jump pad.
+const MINE_CART_BUMPS = (() => {
+  const bumps = [];
+  const count = 13;
+  for (let i = 0; i < count; i++) {
+    const seed = i * 37.7 + 500;
+    const t = 90 + (i / count) * (MINE_CART_TRACK_LENGTH - 180) + (pseudoRandom(seed) - 0.5) * 70;
+    const strength = 0.5 + pseudoRandom(seed + 3) * 0.7;
+    bumps.push({ t, strength });
+  }
+  return bumps;
+})();
 // collected gold does NOT reset between rides -- once pulled, a piece is
 // gone for good, same as every other one-time collectible in the game
 // (tunnel-town finds don't respawn either). Ride stays repeatable for the
@@ -22778,6 +22823,8 @@ function startMineCartRide() {
   mineCart.active = true;
   mineCart.ending = false;
   mineCart.endT = 0;
+  mineCart.endPhase = null;
+  mineCart.tipAngle = 0;
   mineCart.t = 0;
   mineCart.localY = 0;
   mineCart.vy = 0;
@@ -22788,38 +22835,58 @@ function startMineCartRide() {
   // already been permanently pulled out on an earlier trip.
 }
 
-const MINE_CART_END_DURATION = 1600; // ms -- how long the little arrival flourish holds before handing control back
+// tip-and-sink ending durations -- replaces the old freeze+banner flow
+// entirely per "make the ending better, like it tips you out into hole
+// at the end of the track that drops you slowly back into molehole" and
+// the follow-up "Cinematic dip, no stats" answer: the cart pitches
+// forward into a dark hole at the end of the track, then sinks slowly
+// into darkness with dust kicking up -- no text/stats overlay at all.
+const MINE_CART_TIP_DURATION = 700; // ms -- the nose-down pitch into the hole
+const MINE_CART_SINK_DURATION = 2000; // ms -- the slow drop into darkness
+
+function mineCartEase(p) {
+  // smoothstep -- gentle ease in/out rather than a linear tip/sink, reads
+  // as weighty rather than mechanical
+  return p * p * (3 - 2 * p);
+}
 
 function updateMineCartRide(deltaTime) {
   if (!mineCart.active) return;
   const dt = deltaTime;
 
-  // the ride used to just silently snap you back to the shaft the
-  // instant t crossed the finish line -- no acknowledgement at all that
-  // the run was over. Now it freezes in place for a beat with a little
-  // arrival flourish (see the ending-banner draw in drawMineCartRide)
-  // before actually handing control back ("make the mine cart ending
-  // thing more fun somehow").
   if (mineCart.ending) {
     mineCart.endT += dt * 1000;
-    // a couple of small victory hops while the banner's up, purely
-    // cosmetic -- keeps the rider from just standing there like a statue
-    mineCart.vy -= MINE_CART_GRAVITY * dt;
-    mineCart.localY += mineCart.vy * dt;
-    if (mineCart.localY <= 0) { mineCart.localY = 0; mineCart.vy = 0; }
+    if (mineCart.endPhase === "tip") {
+      const p = Math.min(1, mineCart.endT / MINE_CART_TIP_DURATION);
+      const e = mineCartEase(p);
+      mineCart.tipAngle = e * 0.6; // cart's nose pitches down into the hole
+      mineCart.localY = -e * 8; // a small dip as it noses in, before the real sink
+      player.jumping = false;
+      if (p >= 1) {
+        mineCart.endPhase = "sink";
+        mineCart.endT = 0;
+      }
+    } else if (mineCart.endPhase === "sink") {
+      const p = Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION);
+      const e = mineCartEase(p);
+      mineCart.localY = -8 - e * 150; // sinks well below the floor line, into darkness
+      mineCart.tipAngle = 0.6 + e * 0.22; // keeps rotating a little further as it goes under
+      if (p >= 1) {
+        mineCart.active = false;
+        mineCart.ending = false;
+        mineCart.endPhase = null;
+        mineCart.tipAngle = 0;
+        player.x = MOLEHOLE_SHAFT_X;
+        player.y = 0;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        return;
+      }
+    }
     player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2;
     player.y = mineCart.localY;
-    player.vy = mineCart.vy;
-    player.jumping = mineCart.localY > 0;
-    if (mineCart.endT >= MINE_CART_END_DURATION) {
-      mineCart.active = false;
-      mineCart.ending = false;
-      player.x = MOLEHOLE_SHAFT_X;
-      player.y = 0;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
+    player.vy = 0;
     return;
   }
 
@@ -22840,7 +22907,21 @@ function updateMineCartRide(deltaTime) {
     mineCart.usedDoubleJump = false;
   }
 
+  const prevT = mineCart.t;
   mineCart.t += MINE_CART_SPEED * dt;
+
+  // crossing a bump while grounded gives a small, subtle upward nudge --
+  // much gentler than a real jump (see each bump's own strength, capped
+  // well under a real jump's MINE_CART_JUMP_VY), just enough to read as
+  // rattling over rough rail. Ignored entirely if already airborne from
+  // an actual jump, so it never stacks with real jump timing.
+  if (mineCart.localY <= 0.5) {
+    MINE_CART_BUMPS.forEach(b => {
+      if (prevT < b.t && mineCart.t >= b.t) {
+        mineCart.vy = MINE_CART_JUMP_VY * 0.16 * b.strength;
+      }
+    });
+  }
 
   // keep the shared player object in sync so the normal draw() player
   // block renders the rider in the right spot -- reuses player.y's
@@ -22867,14 +22948,16 @@ function updateMineCartRide(deltaTime) {
   });
 
   if (mineCart.t >= MINE_CART_TRACK_LENGTH) {
-    // ride's over -- kick off the little arrival flourish (banner + a
-    // small victory hop) instead of snapping straight back to the shaft.
-    // The actual deposit-back-at-the-shaft happens once the ending timer
-    // above runs out.
+    // ride's over -- kick off the tip-and-sink ending instead of
+    // snapping straight back to the shaft. See the mineCart.ending
+    // branch above for the tip/sink phases; control hands back once the
+    // sink phase finishes.
     mineCart.t = MINE_CART_TRACK_LENGTH;
     mineCart.ending = true;
     mineCart.endT = 0;
-    mineCart.vy = MINE_CART_JUMP_VY * 0.55; // a small victory hop, not a full jump
+    mineCart.endPhase = "tip";
+    mineCart.tipAngle = 0;
+    mineCart.vy = 0;
     mineCart.localY = 0;
     mineCart.usedDoubleJump = false;
   }
@@ -22894,18 +22977,52 @@ function drawMineCartRide(camX) {
   ctx.fillStyle = "#150e08";
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
 
-  // scrolling rail ties along the floor -- the track itself
+  // the track itself -- used to be one flat line plus repeating tie
+  // rectangles, which read as generic scenery rather than an actual
+  // track ("make the track just look more like a track than generic
+  // shapes"). Real two-rail gauge now: a wooden tie under each rail
+  // pair, with the two metal rails drawn on top and a subtle highlight
+  // catching the light along their top edge.
   const railY = gy - 4;
-  ctx.strokeStyle = "#3a2814";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0, railY);
-  ctx.lineTo(canvas.width, railY);
-  ctx.stroke();
+  const railGap = 16; // the two rails sit this far apart, ties span both
   for (let wx = -((mineCart.t) % 40); wx < canvas.width; wx += 40) {
     ctx.fillStyle = "#241708";
-    ctx.fillRect(wx, railY - 2, 22, 6);
+    ctx.fillRect(wx, railY - 2, 26, 6);
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(wx, railY - 2, 26, 6);
   }
+  [railY - railGap / 2, railY + railGap / 2].forEach(ry => {
+    ctx.strokeStyle = "#4a4a52";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, ry);
+    ctx.lineTo(canvas.width, ry);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(200,200,210,0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, ry - 1.5);
+    ctx.lineTo(canvas.width, ry - 1.5);
+    ctx.stroke();
+  });
+
+  // track imperfections -- a small rough rock/patch sitting right on the
+  // rail at each bump's own world position, the visible tell for the
+  // subtle jostle the cart gets crossing it (see MINE_CART_BUMPS in
+  // updateMineCartRide)
+  MINE_CART_BUMPS.forEach((b, i) => {
+    const bx = MINE_CART_SCREEN_X + (b.t - mineCart.t);
+    if (bx < -14 || bx > canvas.width + 14) return;
+    const seed = i * 53.1 + 900;
+    const r = 3.5 + b.strength * 2.5;
+    ctx.fillStyle = "#5c5248";
+    pathFromPoints(irregularOvalPoints(bx, railY - railGap / 2 - r * 0.4, r, r * 0.7, seed, 0.4, 6));
+    ctx.fill();
+    ctx.fillStyle = "#5c5248";
+    pathFromPoints(irregularOvalPoints(bx, railY + railGap / 2 - r * 0.4, r * 0.8, r * 0.6, seed + 7, 0.4, 6));
+    ctx.fill();
+  });
 
   // stalactites hanging from the ceiling, each with an occasional drip --
   // real cave-ceiling texture instead of just flat rock overhead, plus a
@@ -23136,17 +23253,26 @@ function drawMineCartRide(camX) {
   // hand-built look (uneven top edge, worn plank lines, rust streaks)
   // instead of a smooth uniform tub, per "old school rickettee cart".
   const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
-  const backTopY = cartY - 40;
+  // the whole tub is drawn relative to (cx, cartY) inside a rotate
+  // transform now, not fixed absolute coordinates -- the ending's tip
+  // phase pitches mineCart.tipAngle forward as the cart noses into the
+  // hole at the end of the track (see updateMineCartRide). At tipAngle 0
+  // (every normal ride frame) this is a no-op and draws pixel-identical
+  // to the old fixed version.
+  const backTopY = -40; // local, relative to the tip-rotation origin below
+  ctx.save();
+  ctx.translate(cx, cartY);
+  ctx.rotate(mineCart.tipAngle || 0);
   ctx.fillStyle = "#4a3826";
   ctx.beginPath();
-  ctx.moveTo(cx - 27, backTopY + 3);
-  ctx.lineTo(cx - 18, backTopY);
-  ctx.lineTo(cx - 6, backTopY + 2);
-  ctx.lineTo(cx + 7, backTopY - 1);
-  ctx.lineTo(cx + 19, backTopY + 2);
-  ctx.lineTo(cx + 27, backTopY);
-  ctx.lineTo(cx + 22, cartY);
-  ctx.lineTo(cx - 22, cartY);
+  ctx.moveTo(-27, backTopY + 3);
+  ctx.lineTo(-18, backTopY);
+  ctx.lineTo(-6, backTopY + 2);
+  ctx.lineTo(7, backTopY - 1);
+  ctx.lineTo(19, backTopY + 2);
+  ctx.lineTo(27, backTopY);
+  ctx.lineTo(22, 0);
+  ctx.lineTo(-22, 0);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#2a1f14";
@@ -23158,16 +23284,16 @@ function drawMineCartRide(camX) {
   ctx.lineWidth = 1;
   [-14, -2, 10, 20].forEach(dx => {
     ctx.beginPath();
-    ctx.moveTo(cx + dx * 1.15, backTopY + 4);
-    ctx.lineTo(cx + dx, cartY - 1);
+    ctx.moveTo(dx * 1.15, backTopY + 4);
+    ctx.lineTo(dx, -1);
     ctx.stroke();
   });
   // a couple of rust/dirt streaks for a well-used, beat-up feel
   ctx.strokeStyle = "rgba(90,60,30,0.35)";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(cx - 8, backTopY + 6);
-  ctx.lineTo(cx - 10, cartY - 6);
+  ctx.moveTo(-8, backTopY + 6);
+  ctx.lineTo(-10, -6);
   ctx.stroke();
   // a rough iron band frame riveted around the top edge -- the one
   // metal element left, giving it "old wood cart reinforced with scrap
@@ -23175,17 +23301,17 @@ function drawMineCartRide(camX) {
   ctx.strokeStyle = "#5a5a60";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(cx - 27, backTopY + 3);
-  ctx.lineTo(cx - 18, backTopY);
-  ctx.lineTo(cx - 6, backTopY + 2);
-  ctx.lineTo(cx + 7, backTopY - 1);
-  ctx.lineTo(cx + 19, backTopY + 2);
-  ctx.lineTo(cx + 27, backTopY);
+  ctx.moveTo(-27, backTopY + 3);
+  ctx.lineTo(-18, backTopY);
+  ctx.lineTo(-6, backTopY + 2);
+  ctx.lineTo(7, backTopY - 1);
+  ctx.lineTo(19, backTopY + 2);
+  ctx.lineTo(27, backTopY);
   ctx.stroke();
   ctx.fillStyle = "#6a6a72";
   [-18, -6, 7, 19].forEach(dx => {
     ctx.beginPath();
-    ctx.arc(cx + dx, backTopY + 1, 1.6, 0, Math.PI * 2);
+    ctx.arc(dx, backTopY + 1, 1.6, 0, Math.PI * 2);
     ctx.fill();
   });
   // two slightly mismatched iron wheels -- one a touch smaller/off-axis,
@@ -23193,13 +23319,14 @@ function drawMineCartRide(camX) {
   [{ dx: -14, r: 6 }, { dx: 14, r: 5.3 }].forEach(w => {
     ctx.fillStyle = "#26262c";
     ctx.beginPath();
-    ctx.arc(cx + w.dx, cartY + 4, w.r, 0, Math.PI * 2);
+    ctx.arc(w.dx, 4, w.r, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#6a6a72";
     ctx.beginPath();
-    ctx.arc(cx + w.dx, cartY + 4, w.r * 0.32, 0, Math.PI * 2);
+    ctx.arc(w.dx, 4, w.r * 0.32, 0, Math.PI * 2);
     ctx.fill();
   });
+  ctx.restore();
 
   // the player itself is drawn by the shared player-draw block in
   // draw(), using player.x/player.y kept in sync by updateMineCartRide
@@ -23209,84 +23336,85 @@ function drawMineCartRide(camX) {
   // rather than floating on top of a flat shape ("i want to look like
   // we jumped in it, partial occlusion")
 
-  // progress bar -- how far into the ride, and gold banked so far
-  const barW = 200, barX = canvas.width / 2 - barW / 2, barY = 14;
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
-  roundRect(ctx, barX, barY, barW, 8, 4);
-  ctx.fill();
-  ctx.fillStyle = "#c9a03a";
-  roundRect(ctx, barX, barY, barW * Math.min(1, mineCart.t / MINE_CART_TRACK_LENGTH), 8, 4);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.font = "11px ui-monospace";
-  ctx.textAlign = "center";
-  ctx.fillText(`gold: ${mineCart.gold}`, canvas.width / 2, barY + 26);
-  ctx.textAlign = "left";
-
-  drawMineCartEndBanner();
-}
-
-// the little arrival flourish once the ride's finish line is hit --
-// used to just silently teleport back to the shaft with zero
-// acknowledgement the run was even over ("make the mine cart ending
-// thing more fun somehow"). A quick burst of sparkles, a banner with
-// this trip's haul, and -- once every last piece down this stretch has
-// actually been found -- a real "cleared it out" callout instead of the
-// same generic line every time.
-function drawMineCartEndBanner() {
-  if (!mineCart.ending) return;
-  const p = Math.min(1, mineCart.endT / MINE_CART_END_DURATION);
-  const cx = canvas.width / 2, cy = gy * 0.42;
-
-  // burst of gold sparkles radiating out from the cart, fading over the
-  // banner's lifetime
-  const burst = 14;
-  for (let i = 0; i < burst; i++) {
-    const a = (i / burst) * Math.PI * 2 + i * 0.3;
-    const dist = 20 + p * 90;
-    ctx.fillStyle = `rgba(255,225,150,${(1 - p) * 0.8})`;
-    ctx.beginPath();
-    ctx.arc(MINE_CART_SCREEN_X + Math.cos(a) * dist, gy - 20 + Math.sin(a) * dist * 0.6, 2, 0, Math.PI * 2);
+  // progress bar -- how far into the ride, and gold banked so far. Hidden
+  // once the ending kicks in -- the cinematic tip-and-sink close is
+  // meant to read as pure atmosphere, no stats/UI over top of it
+  // ("Cinematic dip, no stats").
+  if (!mineCart.ending) {
+    const barW = 200, barX = canvas.width / 2 - barW / 2, barY = 14;
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    roundRect(ctx, barX, barY, barW, 8, 4);
     ctx.fill();
+    ctx.fillStyle = "#c9a03a";
+    roundRect(ctx, barX, barY, barW * Math.min(1, mineCart.t / MINE_CART_TRACK_LENGTH), 8, 4);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "11px ui-monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`gold: ${mineCart.gold}`, canvas.width / 2, barY + 26);
+    ctx.textAlign = "left";
   }
 
-  // banner fades in fast, holds, then fades out right at the end
-  const fadeIn = Math.min(1, p / 0.15);
-  const fadeOut = p > 0.8 ? Math.max(0, 1 - (p - 0.8) / 0.2) : 1;
-  const alpha = fadeIn * fadeOut;
-  if (alpha <= 0) return;
+  drawMineCartEndingEffects();
+}
 
-  const totalGoldLeft = MINE_CART_GOLD.length - mineCartGoldCollected.size;
-  const clearedItAll = totalGoldLeft === 0;
+// the ride's ending -- used to just silently teleport back to the shaft
+// with zero acknowledgement the run was even over, then briefly became a
+// freeze + "Ride complete!" stats banner. Per direct feedback ("make the
+// ending better, like it tips you out into hole at the end of the track
+// that drops you slowly back into molehole", answered "Cinematic dip, no
+// stats" when asked) this is now a pure atmosphere beat instead: the
+// cart's own tip is drawn back in drawMineCartRide (the rotated tub), and
+// this draws the dark hole it's tipping into, growing under the front of
+// the cart, plus a scatter of dust kicking up around its rim -- no text,
+// no stats, ever.
+function drawMineCartEndingEffects() {
+  if (!mineCart.ending) return;
+  const cx = MINE_CART_SCREEN_X + 10, holeY = gy - 2;
+  const tipP = mineCart.endPhase === "tip" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_TIP_DURATION)) : 1;
+  const sinkP = mineCart.endPhase === "sink" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION)) : 0;
 
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = "rgba(20,14,8,0.75)";
-  roundRect(ctx, cx - 130, cy - 34, 260, 68, 10);
+  // the hole itself -- opens under the cart's nose during the tip, then
+  // keeps widening a little further through the sink as the cart goes
+  // under
+  const holeRX = 26 + tipP * 60 + sinkP * 30;
+  const holeRY = 7 + tipP * 12 + sinkP * 8;
+  const holeGrad = ctx.createRadialGradient(cx, holeY, 2, cx, holeY, holeRX);
+  holeGrad.addColorStop(0, "rgba(0,0,0,0.95)");
+  holeGrad.addColorStop(0.7, "rgba(5,3,2,0.85)");
+  holeGrad.addColorStop(1, "rgba(5,3,2,0)");
+  ctx.fillStyle = holeGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, holeY, holeRX, holeRY, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#c9a03a";
-  ctx.lineWidth = 2;
-  roundRect(ctx, cx - 130, cy - 34, 260, 68, 10);
-  ctx.stroke();
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ffe9b0";
-  ctx.font = "bold 15px ui-monospace";
-  ctx.fillText("Ride complete!", cx, cy - 10);
-  ctx.font = "12px ui-monospace";
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.fillText(
-    mineCart.gold > 0 ? `+${mineCart.gold} gold this trip` : "No gold grabbed this trip",
-    cx, cy + 10
-  );
-  ctx.fillStyle = "rgba(255,255,255,0.65)";
-  ctx.font = "10px ui-monospace";
-  ctx.fillText(
-    clearedItAll ? "Every last piece down this stretch is yours." : `${totalGoldLeft} piece${totalGoldLeft === 1 ? "" : "s"} still glinting further in.`,
-    cx, cy + 26
-  );
-  ctx.restore();
-  ctx.textAlign = "left";
+  // dust kicking up around the rim, loosely time-cycled rather than a
+  // persistent particle array -- cheap and plenty for a one-shot beat
+  const dustCount = 12;
+  for (let i = 0; i < dustCount; i++) {
+    const seed = i * 19.3;
+    const cycle = (mineCart.endT + i * 83) % 650;
+    const life = cycle / 650;
+    const ang = pseudoRandom(seed) * Math.PI * 2;
+    const dist = 6 + pseudoRandom(seed + 1) * holeRX * 0.85;
+    const dx = cx + Math.cos(ang) * dist;
+    const dy = holeY - life * 22 - pseudoRandom(seed + 2) * 5;
+    ctx.fillStyle = `rgba(130,108,78,${(1 - life) * 0.55})`;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 1.3 + pseudoRandom(seed + 3) * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// darkening vignette for the sink phase -- drawn separately, AFTER the
+// player sprite (see the call site near drawMineCartFrontRim), so the
+// player visibly sinks INTO the darkness rather than the darkness
+// painting over on top of them
+function drawMineCartEndingVignette() {
+  if (!mineCart.active || !mineCart.ending || mineCart.endPhase !== "sink") return;
+  const sinkP = mineCartEase(Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION));
+  ctx.fillStyle = `rgba(0,0,0,${sinkP * 0.94})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 // the tub's near-side wall, drawn AFTER the player so it overlaps their
@@ -23295,21 +23423,27 @@ function drawMineCartEndBanner() {
 function drawMineCartFrontRim() {
   if (!mineCart.active) return;
   const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
+  // same rotate-around-(cx,cartY) treatment as the back wall in
+  // drawMineCartRide, so the near wall tips right along with the rest of
+  // the tub instead of staying flat while everything else pitches
+  ctx.save();
+  ctx.translate(cx, cartY);
+  ctx.rotate(mineCart.tipAngle || 0);
   // deepened from 10px to 32px, matching the back wall's own new depth
   // (see drawMineCartRide) -- at the old 10px this only ever covered the
   // rider's ankles, so they read as floating on top of the cart rather
   // than sitting down inside it. Same worn-plank/iron-band language as
   // the back wall, just the near-side board.
-  const rimTopY = cartY - 32;
+  const rimTopY = -32;
   ctx.fillStyle = "#42311f";
   ctx.beginPath();
-  ctx.moveTo(cx - 24, cartY);
-  ctx.lineTo(cx - 25, rimTopY + 3);
-  ctx.lineTo(cx - 12, rimTopY);
-  ctx.lineTo(cx + 2, rimTopY + 2);
-  ctx.lineTo(cx + 14, rimTopY - 1);
-  ctx.lineTo(cx + 25, rimTopY + 2);
-  ctx.lineTo(cx + 24, cartY);
+  ctx.moveTo(-24, 0);
+  ctx.lineTo(-25, rimTopY + 3);
+  ctx.lineTo(-12, rimTopY);
+  ctx.lineTo(2, rimTopY + 2);
+  ctx.lineTo(14, rimTopY - 1);
+  ctx.lineTo(25, rimTopY + 2);
+  ctx.lineTo(24, 0);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#241a10";
@@ -23319,8 +23453,8 @@ function drawMineCartFrontRim() {
   ctx.lineWidth = 1;
   [-16, -3, 9, 19].forEach(dx => {
     ctx.beginPath();
-    ctx.moveTo(cx + dx, rimTopY + 4);
-    ctx.lineTo(cx + dx * 0.9, cartY - 1);
+    ctx.moveTo(dx, rimTopY + 4);
+    ctx.lineTo(dx * 0.9, -1);
     ctx.stroke();
   });
   // the iron band + rivets along the rim, same look as the back wall's
@@ -23328,18 +23462,19 @@ function drawMineCartFrontRim() {
   ctx.strokeStyle = "#5a5a60";
   ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(cx - 25, rimTopY + 3);
-  ctx.lineTo(cx - 12, rimTopY);
-  ctx.lineTo(cx + 2, rimTopY + 2);
-  ctx.lineTo(cx + 14, rimTopY - 1);
-  ctx.lineTo(cx + 25, rimTopY + 2);
+  ctx.moveTo(-25, rimTopY + 3);
+  ctx.lineTo(-12, rimTopY);
+  ctx.lineTo(2, rimTopY + 2);
+  ctx.lineTo(14, rimTopY - 1);
+  ctx.lineTo(25, rimTopY + 2);
   ctx.stroke();
   ctx.fillStyle = "#6a6a72";
   [-12, 2, 14].forEach(dx => {
     ctx.beginPath();
-    ctx.arc(cx + dx, rimTopY + 1, 1.6, 0, Math.PI * 2);
+    ctx.arc(dx, rimTopY + 1, 1.6, 0, Math.PI * 2);
     ctx.fill();
   });
+  ctx.restore();
 }
 
 function drawMoleholeScene(camX) {
@@ -24461,6 +24596,15 @@ let tunnelRecoveryAnchor = null;
 // stateful rather than a plain per-frame position check. Cleared the moment
 // the player isn't actively falling anymore (lands, or starts moving upward).
 let tunnelFallingThroughTrap = null;
+// superset of the above (trapGap OR shelfGap) -- purely a "does this
+// frame's fall deserve the slower, more dramatic gravity" flag (see the
+// gravity line in applyPhysics, "make the fall down the holes within
+// tunnel town slower... more 'a moment'"). Deliberately decoupled from
+// tunnelFallingThroughTrap itself, which still only ever covers trapGap
+// nodes and still drives the real ground-skip landing suppression --
+// this one changes nothing about WHERE the player lands, only how fast
+// gravity feels while they're falling through either kind of gap.
+let tunnelFallingThroughGap = null;
 
 // the wall's leading face (the one the elders sit next to) used to be a
 // perfectly flat rectangle -- only the DIRT INSIDE it was textured, so
