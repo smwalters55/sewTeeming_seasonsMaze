@@ -23370,33 +23370,61 @@ function drawMineCartRide(camX) {
   // rail at each bump's own world position, the visible tell for the
   // subtle jostle the cart gets crossing it (see MINE_CART_BUMPS in
   // updateMineCartRide)
+  // brightened and enlarged a fair bit from the first pass -- a
+  // mid-brown-grey blob right against the rails' own similar grey tone
+  // read as basically invisible ("i didnt notice...the mini bumps at
+  // all"). Warmer, lighter fill + a real dark outline now, plus a
+  // small highlight fleck so it reads as an actual rock rather than a
+  // shadow smudge.
   MINE_CART_BUMPS.forEach((b, i) => {
     const bx = MINE_CART_SCREEN_X + (b.t - mineCart.t);
-    if (bx < -14 || bx > canvas.width + 14) return;
+    if (bx < -18 || bx > canvas.width + 18) return;
     const seed = i * 53.1 + 900;
-    const r = 3.5 + b.strength * 2.5;
-    ctx.fillStyle = "#5c5248";
-    pathFromPoints(irregularOvalPoints(bx, railY - railGap / 2 - r * 0.4, r, r * 0.7, seed, 0.4, 6));
-    ctx.fill();
-    ctx.fillStyle = "#5c5248";
-    pathFromPoints(irregularOvalPoints(bx, railY + railGap / 2 - r * 0.4, r * 0.8, r * 0.6, seed + 7, 0.4, 6));
-    ctx.fill();
+    const r = 5 + b.strength * 3.5;
+    [railY - railGap / 2 - r * 0.4, railY + railGap / 2 - r * 0.4].forEach((ry2, side) => {
+      const rr = side === 0 ? r : r * 0.8;
+      ctx.fillStyle = "#9a8060";
+      pathFromPoints(irregularOvalPoints(bx, ry2, rr, rr * 0.7, seed + side * 7, 0.4, 6));
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20,14,8,0.7)";
+      ctx.lineWidth = 1;
+      pathFromPoints(irregularOvalPoints(bx, ry2, rr, rr * 0.7, seed + side * 7, 0.4, 6));
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,235,200,0.5)";
+      ctx.beginPath();
+      ctx.arc(bx - rr * 0.3, ry2 - rr * 0.25, rr * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    });
   });
 
   // stalactites hanging from the ceiling, each with an occasional drip --
   // real cave-ceiling texture instead of just flat rock overhead, plus a
   // small bit of continuous motion up top that isn't tied to the beams
   // or lanterns ("stalactites dripping down a little").
+  // lightened well past the first pass -- a near-black shape against
+  // the backdrop's own near-black upper gradient was effectively
+  // invisible ("i didnt notice the stalactites at all"). A lighter
+  // stone fill plus a lit-edge highlight down one side now gives them
+  // real silhouette against the ceiling, plus a soft AO shadow patch
+  // on the rock behind each one so they read as hanging off the
+  // ceiling rather than floating cutouts.
   const stalCount = 16;
   for (let i = 0; i < stalCount; i++) {
     const seed = i * 61.3;
     const worldT = (i / stalCount) * (MINE_CART_TRACK_LENGTH + 300) - 150;
     const sx2 = MINE_CART_SCREEN_X + (worldT - mineCart.t);
     if (sx2 < -20 || sx2 > canvas.width + 20) continue;
-    const len = 14 + pseudoRandom(seed + 1) * 22;
-    const topW = 5 + pseudoRandom(seed + 2) * 4;
+    const len = 18 + pseudoRandom(seed + 1) * 28;
+    const topW = 6 + pseudoRandom(seed + 2) * 5;
     const tipY = 0 + len;
-    ctx.fillStyle = "#211a12";
+    const shadow = ctx.createRadialGradient(sx2, 0, 2, sx2, 0, topW * 2.2);
+    shadow.addColorStop(0, "rgba(0,0,0,0.35)");
+    shadow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = shadow;
+    ctx.beginPath();
+    ctx.arc(sx2, 0, topW * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#4e4032";
     ctx.beginPath();
     ctx.moveTo(sx2 - topW, 0);
     ctx.lineTo(sx2 + topW, 0);
@@ -23404,6 +23432,16 @@ function drawMineCartRide(camX) {
     ctx.lineTo(sx2 - topW * 0.1, tipY);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = "rgba(10,7,4,0.5)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // a lit edge down the left side, catching the lantern glow from below
+    ctx.strokeStyle = "rgba(220,200,160,0.35)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(sx2 - topW * 0.7, topW * 0.4);
+    ctx.lineTo(sx2 - topW * 0.05, tipY * 0.85);
+    ctx.stroke();
     // an occasional drip -- a single droplet falling from the tip, on a
     // loop, fading out partway down rather than falling forever
     const dripCycle = 2600 + pseudoRandom(seed + 3) * 2200;
