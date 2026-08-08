@@ -20652,6 +20652,13 @@ function drawMoleholeRootSwing(camX) {
 }
 
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
+// same permanent-cosmetic treatment now extended to the crystal -- he
+// used to just turn it down entirely ("too fine for my hammer, take it
+// to someone who'd appreciate it properly"), but per "change the blue
+// diamond to be something for the stones and minerals mole to do
+// something with" he now genuinely wants a look at it too, same
+// shine-it-up beat as the aragonite, just its own reaction lines.
+let crystalShined = false;
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
 const geodeBreakerShineLines = [
   ["Ohhh, real aragonite! Don't see one of those every day.", "There... polished bright as starlight."]
@@ -20659,18 +20666,20 @@ const geodeBreakerShineLines = [
 const geodeBreakerAlreadyShinedLines = [
   ["Ah, my little shine-work! Still glowing lovely.", "Keep that one close -- it's rare."]
 ];
+const geodeBreakerCrystalShineLines = [
+  ["Ho -- now THAT'S a find. Held right, even a crystal takes a shine.", "There. Catch the light with it, go on."]
+];
+const geodeBreakerCrystalAlreadyShinedLines = [
+  ["That crystal's still catching the light beautifully.", "Rarer than the aragonite, if you ask me."]
+];
 // nothing held at all -- his own generic "mind the pile" line works fine
 // standalone here, no need to react to an empty hand
 const geodeBreakerNoStoneLines = [
   ["Mind the pile -- mostly plain rock.", "Bring me something worth shining up."]
 ];
-// reactions for the OTHER two things worth showing him, even though
-// neither is actually his trade -- a crystal is too fine to touch, a
-// gear is somebody else's business entirely. Keeps him from giving the
-// same generic "mind the pile" line to literally anything you're holding.
-const geodeBreakerCrystalLines = [
-  ["Ho -- that's no rock, that's a crystal.", "Too fine for my hammer. Take that to someone who'd appreciate it properly."]
-];
+// a gear is somebody else's business entirely -- keeps him from giving
+// the same generic "mind the pile" line to literally anything you're
+// holding
 // down THERE (the shaft), not up HERE (his own alcove) -- he's talking
 // about somewhere else entirely, so the direction words need to point
 // away from himself, not toward himself
@@ -20678,11 +20687,10 @@ const geodeBreakerGearLines = [
   ["That's a gear, not a mineral to shine!", "Belongs down there in that old shaft nearby, not up here with me."]
 ];
 // holding literally anything else (a shovel, an apple, a stick, etc) --
-// a quick "huh, what's this" beat, then the actual ask, naming the
-// aragonite specifically rather than just "something worth cracking
-// open" so it's clear what he's after
+// a quick "huh, what's this" beat, then the actual ask, naming both
+// minerals he's actually after now
 const geodeBreakerOtherItemLines = [
-  ["Huh. What's this now?", "Ah, that's not of use here. Bring me the aragonite you dig up down below -- that's the only thing worth cracking open."]
+  ["Huh. What's this now?", "Ah, that's not of use here. Bring me the aragonite or a real crystal you dig up down below -- those are the only things worth shining up."]
 ];
 
 function startGeodeBreakerDialogue() {
@@ -20693,8 +20701,11 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerShineLines;
   } else if (heldItem === "aragonite" && aragoniteShined) {
     geodeBreakerDialogue.lines = geodeBreakerAlreadyShinedLines;
-  } else if (heldItem === "crystal") {
-    geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
+  } else if (heldItem === "crystal" && !crystalShined) {
+    crystalShined = true;
+    geodeBreakerDialogue.lines = geodeBreakerCrystalShineLines;
+  } else if (heldItem === "crystal" && crystalShined) {
+    geodeBreakerDialogue.lines = geodeBreakerCrystalAlreadyShinedLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
   } else if (heldItem === null) {
