@@ -21217,14 +21217,23 @@ function drawGeodeBreakerAlcove(camX) {
   ctx.lineWidth = 1;
   ctx.strokeRect(ax - archR + 10, counterTop, w - 20, 12);
 
-  // dull rock pile, left side -- plain rounded stones, no sparkle at all
-  [-70, -58, -48].forEach((dx, i) => {
+  // dull rock pile, left side -- used to be three identical rounded
+  // ellipses just alternating between two near-identical grays, which
+  // read as a single blobby smear rather than distinct rocks ("make the
+  // wares more interesting unique shapes"). Same hand-torn irregular
+  // outline technique already used for every dig-spot marker, plus a
+  // real palette spread instead of two shades of the same gray, so each
+  // one reads as its own found rock.
+  const dullRockPalette = ["#6a6258", "#5a5248", "#7a6248", "#5c564e", "#68584a"];
+  [-70, -58, -46].forEach((dx, i) => {
     const seed = GEODE_BREAKER_X * 3.1 + i * 22.7;
     const r = 6 + pseudoRandom(seed) * 3;
-    ctx.fillStyle = i % 2 === 0 ? "#6a6258" : "#5a5248";
-    ctx.beginPath();
-    ctx.ellipse(ax + dx, counterTop - r * 0.6, r, r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fillStyle = dullRockPalette[Math.floor(pseudoRandom(seed + 5) * dullRockPalette.length)];
+    pathFromPoints(irregularOvalPoints(ax + dx, counterTop - r * 0.6, r, r * 0.75, seed + 10, 0.35, 7));
     ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
   });
 
   // cracked-open glinting halves, right side -- same matte-mineral
@@ -22421,13 +22430,20 @@ function moleholeCushionDepth(c) {
 // cushion, sized to roughly its own height -- gives the illusion the
 // cushion is dipping behind the pole as it swings through, rather than
 // always floating in front of it
-function drawMoleholeShaftPoleSegment(c, camX) {
+// extraTop/extraBottom stretch the redrawn segment past the cushion's own
+// short height -- needed when this is redrawn a SECOND time specifically
+// to occlude the player riding it (see the draw() call site), since the
+// segment used to only ever cover the cushion's own thin slice, leaving
+// the rider's head and legs still poking out in front of the "behind"
+// pole above/below that slice ("cushion shaft goes like half way into
+// rather than full in front of player when cushion goes behind it").
+function drawMoleholeShaftPoleSegment(c, camX, extraTop = 0, extraBottom = 0) {
   const px = MOLEHOLE_SHAFT_X - camX;
   const bob = Math.sin(performance.now() * 0.0016 + c.phase * 1.7) * 2;
   const cy = gy - c.heightAboveGround + bob;
   const h = c.radius * (c.hMult ?? 0.85);
-  const segTop = cy - h * 1.1;
-  const segBottom = cy + h * 1.1;
+  const segTop = cy - h * 1.1 - extraTop;
+  const segBottom = cy + h * 1.1 + extraBottom;
   ctx.strokeStyle = "#3a2814";
   ctx.lineWidth = 6;
   ctx.lineCap = "round";
@@ -23220,8 +23236,10 @@ function drawMoleholeScene(camX) {
     const worldX = i * (MOLEHOLE_WIDTH / 22) + pseudoRandom(seed) * 40;
     // skip anything landing right on the shaft's own sign/pole -- one of
     // these was drifting straight across the "TO CART [SPACE]" text,
-    // making it unreadable
+    // making it unreadable. Same fix for the geode breaker's own hanging
+    // sign -- one landed right across "STONES AND MINERALS" too.
     if (Math.abs(worldX - MOLEHOLE_SHAFT_X) < 60) continue;
+    if (Math.abs(worldX - GEODE_BREAKER_X) < 60) continue;
     const rx = worldX - camX;
     if (rx < -20 || rx > canvas.width + 20) continue;
     const len = 44 + pseudoRandom(seed + 1) * 56; // longer overall (was 26-60) for a more established, reaching-further root system
@@ -25133,8 +25151,13 @@ function drawTunnelDigSpot(node, camX) {
   // vertical spacing, the old size left almost no visible dirt between
   // consecutive markers, so several frontier holes in a row read as one
   // smeared-together patch instead of distinct spots
-  const markRX = isUp ? 8 : (isSunken ? 22 : (isFloorOpening ? 23 : 15));
-  const markRY = isUp ? 15 : (isSunken ? 14 : (isFloorOpening ? 10 : 20));
+  // s5uHole's own shelfGap marker wants to read as a wider, flatter hole
+  // than a trapdoor's own gap ("make the vertical down hole a wider, more
+  // flatter oval") -- scoped to shelfGap specifically so it doesn't
+  // change the look of the existing trapdoors (uTopDrop/s5u5Drop).
+  const isWideFloorOpening = !!node.shelfGap;
+  const markRX = isUp ? 8 : (isSunken ? 22 : (isWideFloorOpening ? 34 : (isFloorOpening ? 23 : 15)));
+  const markRY = isUp ? 15 : (isSunken ? 14 : (isWideFloorOpening ? 7 : (isFloorOpening ? 10 : 20)));
 
   // a low rock lip overhanging any sunken spot -- hints at the lower
   // ceiling without actually changing the (ground-level) collision
@@ -25196,22 +25219,27 @@ function drawTunnelDigSpot(node, camX) {
     if (node.trapGap || node.shelfGap) {
       // a broken-through plank, not a normal ledge -- two short jagged
       // stubs with open dark air between them, so there's a visible tell
-      // that this spot won't hold you before you actually step on it
+      // that this spot won't hold you before you actually step on it.
+      // shelfGap (s5uHole) draws noticeably wider/flatter than a
+      // trapdoor's own gap -- see isWideFloorOpening above.
+      const plankHalf = isWideFloorOpening ? 44 : 30;
+      const voidRX = isWideFloorOpening ? 34 : 20;
+      const voidRY = isWideFloorOpening ? 6 : 9;
       const stubW = 16;
       const trapCy = gy + cameraY - node.heightAboveGround;
       ctx.fillStyle = "#4a3a2a";
       ctx.beginPath();
-      ctx.moveTo(sx - 30, trapCy - 5);
-      ctx.lineTo(sx - 30 + stubW, trapCy - 6);
-      ctx.lineTo(sx - 30 + stubW + 4, trapCy + 2);
-      ctx.lineTo(sx - 30, trapCy + 3);
+      ctx.moveTo(sx - plankHalf, trapCy - 5);
+      ctx.lineTo(sx - plankHalf + stubW, trapCy - 6);
+      ctx.lineTo(sx - plankHalf + stubW + 4, trapCy + 2);
+      ctx.lineTo(sx - plankHalf, trapCy + 3);
       ctx.closePath();
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(sx + 30, trapCy - 5);
-      ctx.lineTo(sx + 30 - stubW, trapCy - 7);
-      ctx.lineTo(sx + 30 - stubW - 5, trapCy + 1);
-      ctx.lineTo(sx + 30, trapCy + 3);
+      ctx.moveTo(sx + plankHalf, trapCy - 5);
+      ctx.lineTo(sx + plankHalf - stubW, trapCy - 7);
+      ctx.lineTo(sx + plankHalf - stubW - 5, trapCy + 1);
+      ctx.lineTo(sx + plankHalf, trapCy + 3);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(140,120,90,0.35)";
@@ -25223,7 +25251,7 @@ function drawTunnelDigSpot(node, camX) {
       // wouldn't punch a geometrically clean oval, and the perfect-oval
       // version read as a sticker rather than an actual splintered gap.
       ctx.fillStyle = "#0c0a08";
-      pathFromPoints(irregularOvalPoints(sx, trapCy + 4, 20, 9, node.x * 3.7 + 4100, 0.3, 10));
+      pathFromPoints(irregularOvalPoints(sx, trapCy + 4, voidRX, voidRY, node.x * 3.7 + 4100, 0.3, 10));
       ctx.fill();
     } else if (node.heightAboveGround > 0) {
       const mergedSpan = tunnelMergedLedgeSpan(node);
@@ -26260,7 +26288,9 @@ if (currentScene === "molehole") {
   // same pole segment again here, after the player sprite, for whichever
   // cushion the player is actually riding.
   if (moleholeShaftFixed && moleholeRidingCushion && moleholeCushionDepth(moleholeRidingCushion) < 0) {
-    drawMoleholeShaftPoleSegment(moleholeRidingCushion, camX);
+    // stretched to cover the RIDER's full sprite (head to feet), not just
+    // the cushion's own thin slice -- see this function's own comment
+    drawMoleholeShaftPoleSegment(moleholeRidingCushion, camX, player.height + 4, 6);
   }
 }
 
