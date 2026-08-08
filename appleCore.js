@@ -2345,7 +2345,24 @@ function applyPhysics(){
       // place (tunnelRecoveryAnchor stays null the whole time) always
       // takes the normal, immediate reset below -- ordinary standing on
       // solid ground is completely unaffected.
+      // an anchor sitting ON true ground (y<=0) is never "fragile" -- it's
+      // real, always-safe floor, not a marginal floor-less pocket. Real
+      // repro: rest on true ground past the dug frontier (a perfectly
+      // legitimate spot per the y<=0 exemption above), then just try to
+      // jump toward the solid, undug dirt overhead/ahead. Every attempt
+      // gets immediately bonked back down to that same ground spot --
+      // correct, that dirt isn't dug -- but treating "bonked back to
+      // solid ground" as a fragile re-trapped anchor meant repeated jump
+      // attempts kept re-triggering this exact branch without ever
+      // resetting, racking up the stuck counter until it hit the
+      // 90-frame hard escape and warped the player back to the entrance
+      // -- for nothing worse than trying to jump into a wall while
+      // standing safely on the ground. Excluding ground-level anchors
+      // here means bumping into solid dirt now just bumps: you drop
+      // back to the ground you were already standing on and can try
+      // again, with no penalty and no escalating teleport.
       const stillOnFragileAnchor = tunnelRecoveryAnchor &&
+        tunnelRecoveryAnchor.y > 0 &&
         Math.abs(player.x - tunnelRecoveryAnchor.x) <= 6 &&
         Math.abs(player.y - tunnelRecoveryAnchor.y) <= 6;
       if (stillOnFragileAnchor) {
@@ -23829,7 +23846,7 @@ const TUNNEL_NODES = [
   // reachability from arc math alone. Every remaining node below stays
   // at x>=700 or height<=100, comfortably outside the mound's bounds in
   // BOTH axes -- no more looping back through it, in either direction.
-  { id: "u1", parent: "n1", x: 800, heightAboveGround: 80, dir: "up", hasItem: false, dug: false }, // dropped its crystal -- moved to the top of this same chain, see uTop
+  { id: "u1", parent: "n1", x: 800, heightAboveGround: 80, dir: "up", hasItem: false, dug: false }, // dropped its crystal long ago -- see s1u2 for where it lives now
   { id: "u2", parent: "u1", x: 910, heightAboveGround: 170, dir: "up", hasItem: false, dug: false }, // dx110/dh90 off u1, climbing right -- x stays right of the mound the whole time
   { id: "u3", parent: "u2", x: 850, heightAboveGround: 300, dir: "up", hasItem: false, dug: false }, // dropped its bridgePiece -- moved one level up to u3Turn, right below the new top reward
   // a leftward jog before the final climb -- without this, this whole
@@ -23844,7 +23861,7 @@ const TUNNEL_NODES = [
   // now climbs off the jog instead of straight off u3, same relative
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
   // to launch from the new turn spot
-  { id: "uTop", parent: "u3Turn", x: 810, heightAboveGround: 380, dir: "up", hasItem: true, itemType: "crystal", dug: false }, // the blue diamond's new home -- moved to the very top of this chain, per "move the blue diamond to the top up here"
+  { id: "uTop", parent: "u3Turn", x: 810, heightAboveGround: 380, dir: "up", hasItem: false, dug: false }, // the blue diamond moved on from here -- sat right after the bridgePiece (u3Turn) find, felt redundant that close to another reward; see s1u2 for its new home
   // the second dig-down trapdoor -- mirrors s5u5Drop on the right side of
   // the map, same reasoning: a real high dead end (the only other way
   // down is the whole climb back through u3Turn/u3/u2/u1), so it's a
@@ -23876,7 +23893,13 @@ const TUNNEL_NODES = [
   // same fix here -- a real two-jump detour up and away from s1, instead
   // of a dead-end spot sitting directly above it
   { id: "s1u1", parent: "s1", x: 960, heightAboveGround: 80, dir: "up", hasItem: false, dug: false },
-  { id: "s1u2", parent: "s1u1", x: 1010, heightAboveGround: 150, dir: "up", hasItem: false, dug: false }, // dead end -- dropped its crystal per the overall reward trim; s3a and s5uSide still cover stone, s5u3 still covers crystal elsewhere
+  // the blue diamond's new home -- this dead end used to hold it (see the
+  // old comment below), then lost it in an earlier reward trim, then sat
+  // empty. Moved back per "somewhere that feels more wanted/lacking a
+  // reward" -- a real dead end just 2 climbs up from the ground branch,
+  // away from uTop where it used to sit right after the bridgePiece find
+  // one level below it and read as redundant.
+  { id: "s1u2", parent: "s1u1", x: 1010, heightAboveGround: 150, dir: "up", hasItem: true, itemType: "crystal", dug: false },
   { id: "s2", parent: "s1", x: 990, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   // s3a/s3b used to sit only 20-60 units apart -- close enough that
   // their two markers visually overlapped into what read as one
