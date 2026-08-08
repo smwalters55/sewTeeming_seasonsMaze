@@ -1485,8 +1485,15 @@ function updateFlyingItems(deltaTime, camX) {
       }
 
     } else if (f.mode === "place") {
+      // the gear settling into the cushion shaft's slot reads better a
+      // touch slower than the shared apple-slice-into-door timing (that
+      // one's snappy on purpose, matching two much smaller/quicker
+      // placements) -- a dedicated multiplier here instead of changing
+      // PLACE_DURATIONS itself, which every other "place" animation
+      // (both door slots) also shares.
+      const placeSpeedMult = f.itemType === "cushionPart" ? 1.6 : 1;
       if (f.phase === "fromPlayer") {
-        const dur = PLACE_DURATIONS.fromPlayer;
+        const dur = PLACE_DURATIONS.fromPlayer * placeSpeedMult;
         const p = easeOutCubic(Math.min(f.t / dur, 1));
 
         const centerWorldX = camX + canvas.width / 2;
@@ -1504,13 +1511,13 @@ function updateFlyingItems(deltaTime, camX) {
         }
 
       } else if (f.phase === "hold") {
-        if (f.t >= PLACE_DURATIONS.hold) {
+        if (f.t >= PLACE_DURATIONS.hold * placeSpeedMult) {
           f.phase = "toTarget";
           f.t = 0;
         }
 
       } else if (f.phase === "toTarget") {
-        const dur = PLACE_DURATIONS.toTarget;
+        const dur = PLACE_DURATIONS.toTarget * placeSpeedMult;
         const p = easeOutCubic(Math.min(f.t / dur, 1));
 
         f.x = f.holdX + (f.targetX - f.holdX) * p;
@@ -2314,11 +2321,13 @@ function applyPhysics(){
 
   if (!keys.down && !overTrapGap) {
     TUNNEL_NODES.forEach(node => {
-      // a dug trapdoor never itself provides a landing platform -- that's
-      // the whole point of it (see tunnelMergedLedgeSpan's matching gap
-      // clip). Its neighbors' own spans still get checked normally, just
-      // clipped short of the gap.
-      if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) return;
+      // a dug trapdoor (or shelfGap hole -- see s5uHole) never itself
+      // provides a landing platform -- that's the whole point of it (see
+      // tunnelMergedLedgeSpan's matching gap clip). Its neighbors' own
+      // spans still get checked normally, just clipped short of the gap.
+      // A node hollowed out by its own dug shelfGap child (s5uSide, once
+      // s5uHole is dug) is excluded the same way -- see tunnelNodeHollowedOut.
+      if (!node.dug || node.heightAboveGround <= 0 || node.trapGap || node.shelfGap || tunnelNodeHollowedOut(node)) return;
       const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
       const playerBottom = player.y;
       // the plain 14px tolerance below is enough for an ordinary jump's
@@ -2591,9 +2600,32 @@ function drawSpeechBubble(ctx, x, y, sentences) {
 function drawFittedSpeechBubble(ctx, x, y, sentences) {
   const lineHeight = 13;
   ctx.font = "10px ui-monospace";
-  const widths = sentences.map(s => ctx.measureText(s).width);
+  // a real word-wrap now, not just a right-edge position clamp -- the old
+  // version sized the WHOLE bubble to each sentence's own raw, unwrapped
+  // text width, so one long sentence (a full clause or two, not a short
+  // line) just made a giant box that ran straight off the canvas edge no
+  // matter how far left the position clamp below pushed it. Capping the
+  // wrap width keeps every bubble a consistent, narrow, readable size
+  // regardless of how long any one line of dialogue happens to be.
+  const maxTextWidth = 240;
+  const wrappedLines = [];
+  sentences.forEach(sentence => {
+    const words = sentence.split(" ");
+    let line = "";
+    words.forEach(word => {
+      const candidate = line ? line + " " + word : word;
+      if (line && ctx.measureText(candidate).width > maxTextWidth) {
+        wrappedLines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
+    });
+    if (line) wrappedLines.push(line);
+  });
+  const widths = wrappedLines.map(s => ctx.measureText(s).width);
   const bubbleWidth = Math.max(...widths) + 24; // padding on both sides
-  const bubbleHeight = Math.max(30, sentences.length * lineHeight + 14);
+  const bubbleHeight = Math.max(30, wrappedLines.length * lineHeight + 14);
   // keep the whole bubble on-screen -- long lines were running clean off
   // the right edge before this clamp existed
   x = Math.max(4, Math.min(x, canvas.width - bubbleWidth - 4));
@@ -2605,7 +2637,7 @@ function drawFittedSpeechBubble(ctx, x, y, sentences) {
   ctx.stroke();
 
   ctx.fillStyle = "#2b2b2b";
-  sentences.forEach((line, i) => {
+  wrappedLines.forEach((line, i) => {
     ctx.fillText(line, x + 12, y + 15 + i * lineHeight);
   });
 }
@@ -21264,16 +21296,20 @@ function drawGeodeBreakerAlcove(camX) {
     ctx.stroke();
   });
 
-  // hanging sign
+  // hanging sign -- renamed from "GEODES" (too narrow a name for what's
+  // actually sold/cracked open here) to "STONES AND MINERALS". Wider box
+  // + a smaller two-line layout instead of trying to cram the longer
+  // name onto one line at the old size.
   ctx.fillStyle = "#4a3018";
-  ctx.fillRect(ax - 26, top - 6, 52, 16);
+  ctx.fillRect(ax - 38, top - 8, 76, 22);
   ctx.strokeStyle = "#2e2014";
   ctx.lineWidth = 1.5;
-  ctx.strokeRect(ax - 26, top - 6, 52, 16);
+  ctx.strokeRect(ax - 38, top - 8, 76, 22);
   ctx.fillStyle = "rgba(200,220,255,0.7)";
-  ctx.font = "9px monospace";
+  ctx.font = "7px monospace";
   ctx.textAlign = "center";
-  ctx.fillText("GEODES", ax, top + 5);
+  ctx.fillText("STONES AND", ax, top + 2);
+  ctx.fillText("MINERALS", ax, top + 11);
   ctx.textAlign = "left";
 }
 
@@ -23604,14 +23640,51 @@ const elderThanksLines = [
 const elderAlreadyTalkedLines = [
   ["Good luck out there. Mind that gear if you spot it."]
 ];
+// found it, but haven't fitted it back into the shaft yet -- checked
+// live against inventory each time you talk to them (not a one-shot
+// flag), so pressing space again right after picking the gear up
+// immediately reflects it instead of repeating the old "keep an eye out"
+// line one more time.
+const elderHasGearLines = [
+  ["That's it! That's the gear.", "Head back up top and fit it into the old lift shaft -- should still take it, rusty as it is."]
+];
+// the gear's in and the shaft's running -- stop mentioning the gear or
+// the shaft at all past this point, it's done. A little thanks instead,
+// plus a nudge that there's more to find down here without spelling out
+// exactly what.
+const elderShaftFixedLines = [
+  ["Would you believe it -- that old lift's actually turning again.", "Thank you for that, truly."],
+  ["There might be a few more things worth finding down here, if you're still looking."]
+];
 const elderDialogue = { active: false, index: 0, lines: elderGreetingLines };
 
 function startElderDialogue() {
+  // gear's home and the shaft's fixed -- this permanently supersedes
+  // every other branch below (including the wall-just-broken "thanks"
+  // beat) since there's nothing left to ask for or remind about once
+  // this is true.
+  if (moleholeShaftFixed) {
+    elderDialogue.active = true;
+    elderDialogue.index = 0;
+    elderDialogue.lines = elderShaftFixedLines.slice();
+    elderTalkedTo = true;
+    return;
+  }
   if (elderThanksQueued) {
     elderDialogue.active = true;
     elderDialogue.index = 0;
     elderDialogue.lines = elderThanksLines.slice();
     elderThanksQueued = false;
+    elderTalkedTo = true;
+    return;
+  }
+  // checked fresh (inventory.cushionPart > 0) every time, not cached --
+  // talking to them again right after picking the gear up should
+  // immediately reflect it, not wait for some separate flag to catch up
+  if (inventory.cushionPart > 0) {
+    elderDialogue.active = true;
+    elderDialogue.index = 0;
+    elderDialogue.lines = elderHasGearLines.slice();
     elderTalkedTo = true;
     return;
   }
@@ -24522,21 +24595,50 @@ const TUNNEL_NODES = [
   // short (70px -- comfortably inside a single jump's own ~90px peak, so
   // climbing back out never needs the double jump), and it lands in a
   // real enclosed pocket well short of true ground, not open corridor.
-  // SAME x as s5uSide on purpose, not off to the side -- straight down,
-  // not a walk-off-the-edge fall. Tried it as a horizontal step-off first
-  // (nook offset to the side, fall there on your own momentum) and it
-  // was genuinely unreliable: verified via a real frame-by-frame sim that
-  // by the time you've fallen far enough to be within the dig-trigger's
-  // height band, continuous horizontal drift has already carried you
-  // well past any fixed x you'd place the nook at (a plain tap overshoots
-  // one way, a longer hold overshoots further). Same x removes the
-  // horizontal-timing problem entirely: stand on s5uSide, hold DOWN (the
-  // same "drop straight through a ledge" escape hatch already used
-  // elsewhere in tunnel town -- see the `!keys.down` check on the
-  // general ledge-catch loop) to fall straight down with zero horizontal
-  // drift, dig the nook open on the way through, land on its floor, jump
-  // straight back up and out.
-  { id: "s5uNook", parent: "s5uSide", x: 1115, heightAboveGround: 180, dir: "sunken", hasItem: true, itemType: "aragonite", dug: false },
+  //
+  // Second revision -- the ORIGINAL version of this had the player stand
+  // on s5uSide and hold DOWN (the same "drop straight through a ledge"
+  // escape hatch used elsewhere in tunnel town) to fall through blind,
+  // then dig s5uNook itself mid-fall to open it on the way through. Real
+  // complaint: "when you press down... you fall down as expected and
+  // cant dig this rando vertical hole halfway and also doesnt make
+  // sense" -- there was no visible marker at all (the nook's own marker
+  // only ever drew down at ITS height, 70px below the platform you're
+  // actually standing on), so the whole interaction was invisible and
+  // relied on digging while airborne and already moving, mid-fall.
+  //
+  // Now split into two nodes: s5uHole is a real, visible dig spot drawn
+  // AT s5uSide's own height/position -- a flattened oval hole right on
+  // the platform surface (the same broken-plank/dark-void look a
+  // trapdoor uses -- see the `shelfGap` flag below and drawTunnelDigSpot's
+  // isFloorOpening check), dug the same ordinary way as anything else:
+  // stand on it, press space, wait for the flourish. Once dug, it punches
+  // a real gap in s5uSide's own merged span (same mechanism a trapdoor's
+  // gap-clip uses, just without pulling in trapGap's OWN "suppress every
+  // landing all the way down to true ground" behavior via overTrapGap --
+  // that's for a shortcut straight to ground level, not for dropping onto
+  // a real ledge one short hop below). With no floor left under them,
+  // gravity alone carries the player straight down and the ORDINARY
+  // ledge-landing loop catches them on s5uNook's own floor below --
+  // nothing special needed for that part at all, it's just standing on
+  // any other elevated dug node.
+  // the reward lives HERE now, not on the pocket floor below -- granted
+  // the instant this hole's own dig completes (same beat as "it digs down
+  // into it"), not on some SEPARATE dig you'd have to land and trigger
+  // while airborne. See the activeDig-finishes branch in
+  // updateTunnelTownScene: digging s5uHole also auto-reveals s5uNook's
+  // own floor in the same moment, so by the time gravity actually carries
+  // the player down into the pocket (one frame later, no input needed),
+  // there's already solid ground waiting for them -- press space once,
+  // standing still, and the whole thing (hole opens + reward pops +
+  // dropped into a real floor below) just happens.
+  { id: "s5uHole", parent: "s5uSide", x: 1115, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "aragonite", dug: false, shelfGap: true },
+  // the actual pocket floor -- no reward and no separate dig of its own
+  // anymore, auto-dug alongside s5uHole (see above). Parented to
+  // s5uHole purely so it stays off the map/frontier logic entirely until
+  // that's handled specially, rather than ever being dug through the
+  // normal frontier-approach-and-space flow.
+  { id: "s5uNook", parent: "s5uHole", x: 1115, heightAboveGround: 180, dir: "sunken", hasItem: false, dug: false },
   { id: "s5u2b", parent: "s5uTurn", x: 1160, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
   { id: "s5u3", parent: "s5u2b", x: 1195, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
   // the aragonite moved on from here down to the new s5uNook (see there)
@@ -24629,6 +24731,25 @@ const TUNNEL_LEDGE_MERGE_X_TOLERANCE = 130;
 // heightAboveGround even after their spans merged, which could still
 // read as separate stacked planks a few px apart vertically instead of
 // the single shelf the span-merge intended.
+// a shelfGap hole (see s5uHole) sits deliberately at the EXACT same x/
+// height as the small standalone spur it's carved out of (s5uSide), not
+// offset to one side of it -- unlike a trapdoor sitting at the edge of
+// its own small merge group (uTopDrop, s5u5Drop), the normal single-
+// sided left/right clip in tunnelMergedLedgeSpan can't represent "the
+// gap is centered on and exactly as wide as this whole spur": clipping
+// both directions in from a dead-center gap just inverts left/right
+// into a nonsense negative-width span (verified: broke landing across
+// the ENTIRE merged s5uSide/s5uTurn/s5u2 shelf, not just the small area
+// over the hole). Simplest correct fix: once a node's own footprint has
+// literally been replaced by a dug shelfGap child sitting right on top
+// of it, drop that node out of every merge/landing check entirely,
+// rather than trying to carve a partial gap out of it.
+function tunnelNodeHollowedOut(node) {
+  return TUNNEL_NODES.some(other => other.shelfGap && other.dug && other.parent === node.id &&
+    Math.abs(other.x - node.x) <= 24 &&
+    Math.abs(other.heightAboveGround - node.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE);
+}
+
 function tunnelMergedLedgeSpan(node) {
   // flood-fill the WHOLE connected shelf, not just nodes directly within
   // tolerance of this one node -- a straight corridor of 4+ dug nodes
@@ -24650,7 +24771,7 @@ function tunnelMergedLedgeSpan(node) {
   for (let i = 0; i < group.length; i++) {
     const cur = group[i];
     TUNNEL_NODES.forEach(other => {
-      if (inGroup.has(other) || !other.dug || other.heightAboveGround <= 0 || other.trapGap) return;
+      if (inGroup.has(other) || !other.dug || other.heightAboveGround <= 0 || other.trapGap || other.shelfGap || tunnelNodeHollowedOut(other)) return;
       if (Math.abs(other.heightAboveGround - cur.heightAboveGround) <= TUNNEL_LEDGE_MERGE_TOLERANCE &&
           Math.abs(other.x - cur.x) <= TUNNEL_LEDGE_MERGE_X_TOLERANCE) {
         inGroup.add(other);
@@ -24678,7 +24799,11 @@ function tunnelMergedLedgeSpan(node) {
   // max alone are safe here: they only ever pull left/right IN toward the
   // gap, never push them back out past where they already were.
   TUNNEL_NODES.forEach(other => {
-    if (!other.trapGap || !other.dug) return;
+    // shelfGap behaves exactly like trapGap for this clip -- a dug hole
+    // punches a real gap in whatever shelf it's part of, whether or not
+    // it also drops you all the way to true ground (trapGap) or just
+    // onto a real ledge one short hop below (shelfGap, see s5uHole).
+    if (!(other.trapGap || other.shelfGap) || !other.dug) return;
     // height-gated the same way the merge above is -- a trapdoor only
     // punches a gap in a shelf it's actually PART OF. Without this, a
     // trapdoor was clipping any span that happened to pass near its x
@@ -24807,7 +24932,7 @@ function tunnelPositionRevealed(x, h) {
   // fails at the exact same spot.
   const tunnelLedgeRevealMargin = player.width / 2 + 8;
   for (const node of TUNNEL_NODES) {
-    if (!node.dug || node.heightAboveGround <= 0 || node.trapGap) continue;
+    if (!node.dug || node.heightAboveGround <= 0 || node.trapGap || node.shelfGap || tunnelNodeHollowedOut(node)) continue;
     const { left, right, height: platformTop } = tunnelMergedLedgeSpan(node);
     // dropping the lower bound all the way to 0 fixed the true left-edge
     // softlock (walking off the very END of a dead-end ledge with nothing
@@ -24994,7 +25119,8 @@ function drawTunnelDigSpot(node, camX) {
   // rather than walk into ("should look more on the ground, like
   // horiz thinner ovals")
   const parentNode = TUNNEL_NODES.find(n => n.id === node.parent);
-  const isFloorOpening = !!node.trapGap || !!(parentNode && parentNode.trapGap);
+  const isFloorOpening = !!node.trapGap || !!node.shelfGap ||
+    !!(parentNode && (parentNode.trapGap || parentNode.shelfGap));
   // "up" spots sit higher, tighter and taller (an actual vertical dig);
   // "sunken" spots are wider and squatter (reads as a low crawl-space).
   // Anchored to cy (the node's own actual height), not the raw ground
@@ -25033,7 +25159,7 @@ function drawTunnelDigSpot(node, camX) {
     // something to stand/land on -- matching the physics floor in
     // applyPhysics, which bridges all the way back to an already-dug
     // parent at the same height instead of leaving separate islands
-    if (!node.trapGap) {
+    if (!node.trapGap && !node.shelfGap) {
       // every dug opening used to just reveal the same flat shared cave
       // interior dead-on -- especially obvious on a frontier spot with
       // nothing dug past it yet, where the hole opened onto literally
@@ -25067,7 +25193,7 @@ function drawTunnelDigSpot(node, camX) {
       ctx.lineTo(backCx + markRX * 0.25, backCy + markRY * 0.35);
       ctx.stroke();
     }
-    if (node.trapGap) {
+    if (node.trapGap || node.shelfGap) {
       // a broken-through plank, not a normal ledge -- two short jagged
       // stubs with open dark air between them, so there's a visible tell
       // that this spot won't hold you before you actually step on it
@@ -25716,6 +25842,18 @@ function updateTunnelTownScene(deltaTime) {
       } else {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
+        // s5uHole is special -- digging it should both open the hole AND
+        // have the pocket below it already have a floor waiting, so
+        // gravity carrying the player down (next frame, no input needed)
+        // lands them somewhere real instead of an undug airborne gap.
+        // See s5uHole/s5uNook's own comments for why this couldn't just
+        // be "dig the nook floor separately while falling through" --
+        // that's the exact mid-air-digging problem this whole redesign
+        // was meant to get rid of.
+        if (node.id === "s5uHole") {
+          const nook = TUNNEL_NODES.find(n => n.id === "s5uNook");
+          if (nook) nook.dug = true;
+        }
         // step the player up onto their own newly-dug platform, if this
         // was an elevated ("up"/"side") spot and they're sitting
         // somewhere below it -- without this, digging one of these was
@@ -26872,12 +27010,13 @@ updateInventoryUI();
 
 // TEMPORARY -- drops straight into tunnel town, pre-dug most of the way
 // up the right-side climb, standing right at s5u2 -- 2-3 real dig steps
-// short of the new s5uNook vertical drop (s5uTurn, then s5uSide, then
-// hold DOWN + space to open the nook itself) so the new mechanic is
-// immediately testable without redigging the whole chain from the wall.
-// ("put me inside tunnel maybe 2 or 3 dig steps away from this vertical
-// hole so i can test that briefly"). Revert (remove this block, and the
-// door-filled lines above) when done.
+// short of the new s5uHole/s5uNook vertical drop (s5uTurn, then
+// s5uSide, then just space to dig s5uHole itself -- no more holding
+// down and digging blind mid-fall, see s5uHole's own comment) so the
+// mechanic is immediately testable without redigging the whole chain
+// from the wall. ("put me inside tunnel maybe 2 or 3 dig steps away from
+// this vertical hole so i can test that briefly"). Revert (remove this
+// block, and the door-filled lines above) when done.
 currentScene = "tunneltown";
 tunnelWallBroken = true;
 ['n1', 's1', 's2', 's3b', 's4', 's5', 's5r', 's5u1', 's5u2'].forEach(id => {
