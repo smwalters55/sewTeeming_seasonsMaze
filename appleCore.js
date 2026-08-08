@@ -20636,7 +20636,7 @@ const geodeBreakerAlreadyShinedLines = [
 // nothing held at all -- his own generic "mind the pile" line works fine
 // standalone here, no need to react to an empty hand
 const geodeBreakerNoStoneLines = [
-  ["Mind the pile -- mostly plain rock.", "Bring me something worth cracking open."]
+  ["Mind the pile -- mostly plain rock.", "Bring me something worth shining up."]
 ];
 // reactions for the OTHER two things worth showing him, even though
 // neither is actually his trade -- a crystal is too fine to touch, a
@@ -20649,7 +20649,7 @@ const geodeBreakerCrystalLines = [
 // about somewhere else entirely, so the direction words need to point
 // away from himself, not toward himself
 const geodeBreakerGearLines = [
-  ["That's a gear, not a geode.", "Belongs down there in that old shaft nearby, not up here with me."]
+  ["That's a gear, not a mineral to shine!", "Belongs down there in that old shaft nearby, not up here with me."]
 ];
 // holding literally anything else (a shovel, an apple, a stick, etc) --
 // a quick "huh, what's this" beat, then the actual ask, naming the
@@ -22881,6 +22881,126 @@ function drawMineCartRide(camX) {
     ctx.fillRect(wx, railY - 2, 22, 6);
   }
 
+  // stalactites hanging from the ceiling, each with an occasional drip --
+  // real cave-ceiling texture instead of just flat rock overhead, plus a
+  // small bit of continuous motion up top that isn't tied to the beams
+  // or lanterns ("stalactites dripping down a little").
+  const stalCount = 16;
+  for (let i = 0; i < stalCount; i++) {
+    const seed = i * 61.3;
+    const worldT = (i / stalCount) * (MINE_CART_TRACK_LENGTH + 300) - 150;
+    const sx2 = MINE_CART_SCREEN_X + (worldT - mineCart.t);
+    if (sx2 < -20 || sx2 > canvas.width + 20) continue;
+    const len = 14 + pseudoRandom(seed + 1) * 22;
+    const topW = 5 + pseudoRandom(seed + 2) * 4;
+    const tipY = 0 + len;
+    ctx.fillStyle = "#211a12";
+    ctx.beginPath();
+    ctx.moveTo(sx2 - topW, 0);
+    ctx.lineTo(sx2 + topW, 0);
+    ctx.lineTo(sx2 + topW * 0.15, tipY);
+    ctx.lineTo(sx2 - topW * 0.1, tipY);
+    ctx.closePath();
+    ctx.fill();
+    // an occasional drip -- a single droplet falling from the tip, on a
+    // loop, fading out partway down rather than falling forever
+    const dripCycle = 2600 + pseudoRandom(seed + 3) * 2200;
+    const dripPhase = pseudoRandom(seed + 4) * dripCycle;
+    const dp = ((performance.now() + dripPhase) % dripCycle) / dripCycle;
+    if (dp < 0.55) {
+      const fall = dp / 0.55;
+      ctx.fillStyle = `rgba(180,210,230,${(1 - fall) * 0.5})`;
+      ctx.beginPath();
+      ctx.ellipse(sx2 + topW * 0.02, tipY + fall * 26, 1.1, 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // wall mineral glints -- small embedded twinkle points scattered along
+  // the whole ride, brighter and denser near the gold-heavy stretches so
+  // those sections read as richer without needing a glow on every single
+  // pile ("more vibes to the cart gold area"). Position is derived from
+  // world t (not screen x), same scrolling convention as the gold/beams
+  // above, so each glint stays fixed to one spot in the tunnel rather
+  // than drifting independently of it.
+  const glintCount = 46;
+  for (let i = 0; i < glintCount; i++) {
+    const seed = i * 53.7;
+    const worldT = (i / glintCount) * (MINE_CART_TRACK_LENGTH + 200) - 100;
+    const gx = MINE_CART_SCREEN_X + (worldT - mineCart.t);
+    if (gx < -10 || gx > canvas.width + 10) continue;
+    const gy2 = gy - 40 - pseudoRandom(seed + 1) * 150;
+    // closer to a gold piece's own t = brighter/bigger -- a quiet way to
+    // make the gold-heavy stretches themselves feel more charged, not
+    // just the piles sitting in them
+    const nearestGoldDist = Math.min(...MINE_CART_GOLD.map(g => Math.abs(g.t - worldT)));
+    const richness = Math.max(0, 1 - nearestGoldDist / 180);
+    const twinkle = 0.4 + Math.sin(performance.now() * 0.003 + seed) * 0.3 + richness * 0.3;
+    ctx.fillStyle = `rgba(${210 + richness * 40},${225 - richness * 20},255,${Math.max(0, Math.min(1, twinkle)) * 0.55})`;
+    ctx.beginPath();
+    ctx.arc(gx, gy2, 0.8 + richness * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // the odd bit of dirt/rock actually falling from the ceiling as the
+  // cart rushes past -- a real mine settling, not just a static painted
+  // backdrop. Each of a small fixed set of "slots" loops continuously
+  // (time-based, no persistent particle array needed): falls from the
+  // beam line down past the cart, then respawns at the top.
+  const chipSlots = 7;
+  for (let i = 0; i < chipSlots; i++) {
+    const seed = i * 91.3;
+    const cycleMs = 2200 + pseudoRandom(seed) * 1400;
+    const phase = pseudoRandom(seed + 1) * cycleMs;
+    const cx2 = (pseudoRandom(seed + 2) * canvas.width);
+    const p = ((performance.now() + phase) % cycleMs) / cycleMs;
+    const chipY = gy - 210 + p * 220;
+    const chipAlpha = p < 0.85 ? 0.6 : (1 - (p - 0.85) / 0.15) * 0.6; // fades out right before it "lands"
+    ctx.fillStyle = `rgba(60,45,28,${chipAlpha})`;
+    ctx.beginPath();
+    ctx.ellipse(cx2 + Math.sin(p * 9 + seed) * 4, chipY, 1.6, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // small glowing cave bugs, drifting in loose little wandering loops
+  // near the beam line -- makes the tunnel feel inhabited rather than
+  // just decorated. Purely ambient, no interaction.
+  const bugCount = 3;
+  for (let i = 0; i < bugCount; i++) {
+    const seed = i * 137.1;
+    const baseWorldT = pseudoRandom(seed) * MINE_CART_TRACK_LENGTH;
+    const bx = MINE_CART_SCREEN_X + (baseWorldT - mineCart.t) + Math.sin(performance.now() * 0.0013 + seed) * 22;
+    if (bx < -10 || bx > canvas.width + 10) continue;
+    const by = gy - 60 - pseudoRandom(seed + 1) * 90 + Math.cos(performance.now() * 0.0017 + seed * 1.3) * 10;
+    const glow = 0.5 + Math.sin(performance.now() * 0.006 + seed) * 0.4;
+    ctx.fillStyle = `rgba(200,255,180,${0.25 + glow * 0.35})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.6 + glow * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // a distant bat, occasionally flapping across the far background --
+  // rare enough to read as a surprise glimpse, not a repeating loop you
+  // consciously notice every ride
+  {
+    const batCycle = 9000;
+    const batPhase = performance.now() % batCycle;
+    if (batPhase < 1800) {
+      const bp = batPhase / 1800;
+      const bx = canvas.width * 1.1 - bp * canvas.width * 1.2;
+      const by = gy - 230 + Math.sin(bp * Math.PI * 6) * 8;
+      const flap = Math.sin(performance.now() * 0.02) * 0.5 + 0.5;
+      ctx.fillStyle = "rgba(10,8,6,0.5)";
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(bx - 6, by - 3 - flap * 3, bx - 10, by);
+      ctx.quadraticCurveTo(bx - 6, by + 1, bx, by);
+      ctx.quadraticCurveTo(bx + 6, by - 3 - flap * 3, bx + 10, by);
+      ctx.quadraticCurveTo(bx + 6, by + 1, bx, by);
+      ctx.fill();
+    }
+  }
+
   // support beams scrolling past in the background, cheap depth cue --
   // plain bare poles read a little empty over a long ride, so every
   // third one now gets a full header crossbeam, and every other gap gets
@@ -22915,29 +23035,42 @@ function drawMineCartRide(camX) {
       ctx.stroke();
 
       // an old rusty cage lantern hanging off the header on a short
-      // chain, with a small flickering flame inside
+      // chain, with a small flickering flame inside -- swings gently on
+      // its chain like a real hung lantern would, rather than sitting
+      // dead still ("some of the lights are hanging and swinging,
+      // gently too?"). Pivots around the header attachment point; the
+      // cage/flame draw is rotated with it (save/translate/rotate)
+      // rather than hand-recomputing every corner.
       const flick = 0.6 + pseudoRandom(i * 3.1 + Math.floor(performance.now() / 140)) * 0.4;
-      const lx = realBx, ly = poleTopY + 30;
+      const pivotX = realBx, pivotY = poleTopY + 8;
+      const chainLen = 22;
+      const swingAngle = Math.sin(performance.now() * 0.0011 + i * 1.7) * 0.14;
+      const lx = pivotX + Math.sin(swingAngle) * chainLen;
+      const ly = pivotY + Math.cos(swingAngle) * chainLen;
       ctx.strokeStyle = "rgba(40,30,20,0.6)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(realBx, poleTopY + 8);
-      ctx.lineTo(lx, ly - 8);
+      ctx.moveTo(pivotX, pivotY);
+      ctx.lineTo(lx, ly);
       ctx.stroke();
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(swingAngle);
       ctx.strokeStyle = "#3a3630";
       ctx.lineWidth = 1.2;
-      ctx.strokeRect(lx - 5, ly - 8, 10, 12);
+      ctx.strokeRect(-5, 0, 10, 12);
       ctx.beginPath();
-      ctx.moveTo(lx - 5, ly - 2); ctx.lineTo(lx + 5, ly - 2);
+      ctx.moveTo(-5, 6); ctx.lineTo(5, 6);
       ctx.stroke();
       ctx.fillStyle = `rgba(255,${140 + flick * 60},60,${0.5 + flick * 0.4})`;
       ctx.beginPath();
-      ctx.arc(lx, ly - 2, 3 + flick * 1.5, 0, Math.PI * 2);
+      ctx.arc(0, 6, 3 + flick * 1.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = `rgba(255,220,150,${0.3 + flick * 0.3})`;
       ctx.beginPath();
-      ctx.arc(lx, ly - 2, 9 + flick * 3, 0, Math.PI * 2);
+      ctx.arc(0, 6, 9 + flick * 3, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     } else if (prevBeamX !== null && i % 2 === 1) {
       // a length of rope strung messily between this pole and the last
       // one, sagging in the middle -- purely decorative, sits well above
@@ -25762,8 +25895,17 @@ function drawTunnelTownScene(camX) {
   });
 
   // branch dig spots -- each one only drawn once its OWN parent has
-  // actually been dug, so you only ever see the frontier you've earned
+  // actually been dug, so you only ever see the frontier you've earned.
+  // s5uNook skipped here on purpose: it's a real landing floor (physics
+  // still catches the player on it), but it auto-dugs the instant s5uHole
+  // does, right underneath it -- drawing its own separate ledge/marker
+  // there read as a second, redundant little platform stacked directly
+  // under the hole ("remove the mini platform right under the new
+  // vertical hole"). No marker, no rubble -- just a plain cave floor to
+  // land on, with the reward now visible sitting there instead (see the
+  // rewardHeight special-case in updateTunnelTownScene's dig-complete block).
   TUNNEL_NODES.forEach(node => {
+    if (node.id === "s5uNook") return;
     if (tunnelNodeParentDug(node)) drawTunnelDigSpot(node, camX);
   });
 
@@ -25918,7 +26060,16 @@ function updateTunnelTownScene(deltaTime) {
           // instead of at the dig spot, which is exactly why it was never
           // visible sitting in the dirt before flying off. Needs the same
           // gy + cameraY - height conversion every other tunnel-town draw uses.
-          const revealY = gy + cameraY - node.heightAboveGround - 14;
+          // s5uHole's own reward reveals down at s5uNook's height instead of
+          // its own -- the hole opens up top but the player is about to fall
+          // straight through it, so revealing the aragonite up at the hole
+          // means it's already mid-flight to the basket before they ever see
+          // it. Revealing it down in the pocket instead means it's still
+          // sitting there, visible, for the ~70px drop on the way down.
+          const rewardHeight = node.id === "s5uHole"
+            ? (TUNNEL_NODES.find(n => n.id === "s5uNook")?.heightAboveGround ?? node.heightAboveGround)
+            : node.heightAboveGround;
+          const revealY = gy + cameraY - rewardHeight - 14;
           // a beat longer than the default reveal -- these are found buried
           // in dirt, easy to miss entirely if it flies off immediately
           startCollectAnimation({ x: node.x, y: revealY, size: 8, rotation: 0 }, node.itemType || "cushionPart", null, 900);
