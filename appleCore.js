@@ -416,7 +416,41 @@ const ITEM_CANVAS_RENDER = {
   feather: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawFeatherShape(iconCtx, 10, 10, 8, 0.3);
+  },
+  // tunnel-town finds had no canvas icon at all -- they silently fell
+  // back to the plain ITEM_ICONS emoji in the inventory strip, which
+  // depending on the system's emoji font support can render as a boxy
+  // placeholder glyph (part of what read as "looks like an apple slice,
+  // is that right?"). Reusing the same hand-drawn shapes already built
+  // for their world/collect-animation render, via the drawCollectible
+  // dispatcher, so the inventory icon actually matches what was picked up.
+  crystal: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 7, 0, "crystal");
+  },
+  cushionPart: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 8, 0, "cushionPart");
+  },
+  stone: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 7, 0, "stone");
+  },
+  aragonite: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 7, 0, "aragonite");
+  },
+  bridgePiece: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 8, 0, "bridgePiece");
   }
+  // NOTE: "gnawedStick" is itemType-checked in drawCollectible but is never
+  // actually granted anywhere in the game (no addToInventory/hasItem call
+  // uses it) -- it's unreachable dead code, and drawCollectible's own
+  // gnawedStick branch calls a drawGnawedStickShape() that doesn't exist
+  // in the file at all, so exercising it would throw. Left alone since
+  // it's not part of anything the player can trigger; flagging here in
+  // case this item gets wired up for real later.
 };
 
 // items that never show a "x<count>" label in the inventory strip --
@@ -3866,9 +3900,12 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   ctx.fill();
 
   // once the geode breaker's shined it, a real (but still tasteful --
-  // this stays a matte mineral, not a glowing emoji-gem) polish pass: a
-  // faint halo behind the cluster and one bright specular streak raked
-  // across it, on top of everything else already drawn
+  // this stays a matte mineral, not a glowing emoji-gem) polish pass: just
+  // a faint halo behind the cluster. (Used to also draw a straight
+  // specular streak raked across the whole cluster -- at the actual
+  // inventory-icon size that read as a stray "horizontal line" slapped
+  // over the item rather than a shine effect, so it's been dropped;
+  // the brighter/denser sparkle tips below already sell "polished".)
   if (aragoniteShined) {
     const shineGlow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
     shineGlow.addColorStop(0, "rgba(255,240,210,0.22)");
@@ -3877,14 +3914,6 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
     ctx.beginPath();
     ctx.arc(0, 0, size * 1.3, 0, Math.PI * 2);
     ctx.fill();
-
-    const streakSweep = Math.sin(performance.now() * 0.0015) * size * 0.5;
-    ctx.strokeStyle = "rgba(255,250,235,0.55)";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.7 + streakSweep, -size * 0.55);
-    ctx.lineTo(size * 0.7 + streakSweep, size * 0.55);
-    ctx.stroke();
   }
 
   // sparkle accents at a couple of the needle tips -- more of them, and
@@ -4264,44 +4293,55 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
   } else if (itemType === "cushionPart") {
     // a small dug-up gear -- the mechanical piece the cushion shaft
     // needs to extend further, found buried in the tunnel town dig.
-    // Reskinned to read more clearly as "salvaged machine part" rather
-    // than clean clip-art: a couple of teeth chipped/worn down unevenly,
-    // a real visible center bore (not just a filled dot), and a short
-    // broken connecting rod stub implying it snapped off something
-    // bigger -- rather than a lone gear that exists for no reason.
+    // Redrawn bigger and rounder with even teeth and real cross-spokes
+    // between the rim and the center bore, so it reads unmistakably as
+    // "a gear" at a glance instead of a lopsided blob with a stray line
+    // stuck to it (the old worn-teeth + snapped-connecting-rod look was
+    // too subtle/ambiguous -- "not intuitive at all that I found a gear").
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
-    const r = size * 0.4;
-    ctx.fillStyle = "#8a8478";
+    const r = size * 0.56; // bigger than before (was 0.4)
+    const rimR = r * 0.72; // solid rim the blocky teeth sit on
+    const innerR = r * 0.62; // ring the spokes' outer end sits on
+    const boreR = r * 0.28;
+    const teeth = 8;
+    // solid rim disc first...
+    ctx.fillStyle = "#948f80";
     ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      // teeth 2 and 5 worn down shorter than the rest -- an uneven,
-      // scavenged look instead of a pristine gear
-      const worn = i === 2 ? 0.8 : (i === 5 ? 0.72 : 1);
-      const rr = (i % 2 === 0 ? r : r * 0.65) * worn;
-      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
+    ctx.arc(0, 0, rimR, 0, Math.PI * 2);
     ctx.fill();
+    // ...then blocky rectangular teeth stuck onto the rim -- reads as an
+    // actual mechanical cog instead of a pointed star/flower
+    for (let i = 0; i < teeth; i++) {
+      const a = (i / teeth) * Math.PI * 2;
+      ctx.save();
+      ctx.rotate(a);
+      ctx.fillRect(rimR - r * 0.08, -r * 0.17, r - rimR + r * 0.08, r * 0.34);
+      ctx.restore();
+    }
     ctx.strokeStyle = "#5c584e";
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-    // a short snapped-off connecting rod, implying this used to be
-    // attached to something larger
-    ctx.strokeStyle = "#6b665a";
-    ctx.lineWidth = r * 0.3;
-    ctx.lineCap = "round";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(r * 0.55, r * 0.55);
-    ctx.lineTo(r * 1.15, r * 1.15);
+    ctx.arc(0, 0, rimR, 0, Math.PI * 2);
     ctx.stroke();
+    // cross-spokes connecting the inner ring to the center bore -- the
+    // classic "gear" silhouette cue, instead of a solid disc
+    ctx.strokeStyle = "#403a30";
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 8;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * boreR * 1.1, Math.sin(a) * boreR * 1.1);
+      ctx.lineTo(Math.cos(a) * innerR * 0.95, Math.sin(a) * innerR * 0.95);
+      ctx.stroke();
+    }
     // visible open center bore, not a filled hub -- reads as a real
     // machined hole rather than a painted-on dot
     ctx.fillStyle = "#241f1a";
     ctx.beginPath();
-    ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2);
+    ctx.arc(0, 0, boreR, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#4a453c";
     ctx.lineWidth = 1;
@@ -20443,6 +20483,16 @@ const geodeBreakerAlreadyShinedLines = [
 const geodeBreakerNoStoneLines = [
   ["Mind the pile -- mostly plain rock.", "Bring me something worth cracking open."]
 ];
+// reactions for the OTHER two things worth showing him, even though
+// neither is actually his trade -- a crystal is too fine to touch, a
+// gear is somebody else's business entirely. Keeps him from giving the
+// same generic "mind the pile" line to literally anything you're holding.
+const geodeBreakerCrystalLines = [
+  ["Ho -- that's no rock, that's a crystal.", "Too fine for my hammer. Take that to someone who'd appreciate it properly."]
+];
+const geodeBreakerGearLines = [
+  ["That's a gear, not a geode.", "Belongs up at that old shaft, not down here with me."]
+];
 
 function startGeodeBreakerDialogue() {
   geodeBreakerDialogue.active = true;
@@ -20452,6 +20502,10 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerShineLines;
   } else if (heldItem === "aragonite" && aragoniteShined) {
     geodeBreakerDialogue.lines = geodeBreakerAlreadyShinedLines;
+  } else if (heldItem === "crystal") {
+    geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
+  } else if (heldItem === "cushionPart") {
+    geodeBreakerDialogue.lines = geodeBreakerGearLines;
   } else {
     geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
   }
@@ -22445,11 +22499,17 @@ function drawTunnelTownEntrance(camX) {
    the idea of this being more interactive than just an animated move
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
-const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0 };
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false };
 const MINE_CART_TRACK_LENGTH = 2200;
-const MINE_CART_SPEED = 240; // world units/sec of auto-scroll
+const MINE_CART_SPEED = 210; // world units/sec of auto-scroll -- nudged down from 240, a touch less frantic
 const MINE_CART_GRAVITY = 900; // px/sec^2
 const MINE_CART_JUMP_VY = 360; // px/sec, positive = up (matches player.vy convention)
+// a real second jump, same relative feel as the player's own double jump
+// (9 off a first jump of 12 -- 0.75x) -- the ride only ever supported one
+// jump, and the same key/timing muscle memory as everywhere else in the
+// game not carrying over here read as a missing feature ("double jump not
+// enabled in cart?").
+const MINE_CART_DOUBLE_JUMP_VY = MINE_CART_JUMP_VY * 0.75;
 const MINE_CART_SCREEN_X = 220; // fixed on-screen anchor for the cart/player
 // gold suspended at fixed points along the ride -- t = distance into the
 // track, h = height above the cart floor. Spaced and staggered so no two
@@ -22471,6 +22531,7 @@ function startMineCartRide() {
   mineCart.localY = 0;
   mineCart.vy = 0;
   mineCart.gold = 0;
+  mineCart.usedDoubleJump = false;
   mineCartGoldCollected = new Set();
 }
 
@@ -22478,14 +22539,21 @@ function updateMineCartRide(deltaTime) {
   if (!mineCart.active) return;
   const dt = deltaTime;
 
-  if ((keys.spaceJustPressed || keys.upJustPressed) && mineCart.localY <= 0.5) {
-    mineCart.vy = MINE_CART_JUMP_VY;
+  if (keys.spaceJustPressed || keys.upJustPressed) {
+    if (mineCart.localY <= 0.5) {
+      mineCart.vy = MINE_CART_JUMP_VY;
+      mineCart.usedDoubleJump = false;
+    } else if (!mineCart.usedDoubleJump) {
+      mineCart.vy = MINE_CART_DOUBLE_JUMP_VY;
+      mineCart.usedDoubleJump = true;
+    }
   }
   mineCart.vy -= MINE_CART_GRAVITY * dt;
   mineCart.localY += mineCart.vy * dt;
   if (mineCart.localY <= 0) {
     mineCart.localY = 0;
     mineCart.vy = 0;
+    mineCart.usedDoubleJump = false;
   }
 
   mineCart.t += MINE_CART_SPEED * dt;
@@ -22567,28 +22635,77 @@ function drawMineCartRide(camX) {
     drawGoldPileShape(ctx, gx, gy - g.h, 11, 0);
   });
 
-  // the cart itself -- simple riveted metal tub on two wheels, fixed on
-  // screen while the world scrolls past it
+  // the cart itself -- an old, rickety wood-plank tub in a riveted metal
+  // frame, on two slightly mismatched wheels, fixed on screen while the
+  // world scrolls past it. Was a clean flat metal tub only 22px tall --
+  // against a 54-tall rider that read as barely a bucket, and the rider
+  // stuck up out of it more than they sat in it ("half out of it").
+  // Deepened well past half the rider's height and given a battered,
+  // hand-built look (uneven top edge, worn plank lines, rust streaks)
+  // instead of a smooth uniform tub, per "old school rickettee cart".
   const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
-  ctx.fillStyle = "#4a4a52";
+  const backTopY = cartY - 40;
+  ctx.fillStyle = "#4a3826";
   ctx.beginPath();
-  ctx.moveTo(cx - 26, cartY - 22);
-  ctx.lineTo(cx + 26, cartY - 22);
+  ctx.moveTo(cx - 27, backTopY + 3);
+  ctx.lineTo(cx - 18, backTopY);
+  ctx.lineTo(cx - 6, backTopY + 2);
+  ctx.lineTo(cx + 7, backTopY - 1);
+  ctx.lineTo(cx + 19, backTopY + 2);
+  ctx.lineTo(cx + 27, backTopY);
   ctx.lineTo(cx + 22, cartY);
   ctx.lineTo(cx - 22, cartY);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#26262c";
+  ctx.strokeStyle = "#2a1f14";
   ctx.lineWidth = 2;
   ctx.stroke();
-  [-14, 14].forEach(dx => {
+  // worn vertical plank seams -- reads as individual boards, not one
+  // molded piece
+  ctx.strokeStyle = "rgba(30,20,12,0.5)";
+  ctx.lineWidth = 1;
+  [-14, -2, 10, 20].forEach(dx => {
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * 1.15, backTopY + 4);
+    ctx.lineTo(cx + dx, cartY - 1);
+    ctx.stroke();
+  });
+  // a couple of rust/dirt streaks for a well-used, beat-up feel
+  ctx.strokeStyle = "rgba(90,60,30,0.35)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 8, backTopY + 6);
+  ctx.lineTo(cx - 10, cartY - 6);
+  ctx.stroke();
+  // a rough iron band frame riveted around the top edge -- the one
+  // metal element left, giving it "old wood cart reinforced with scrap
+  // iron" instead of either a clean metal tub or plain unbanded wood
+  ctx.strokeStyle = "#5a5a60";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 27, backTopY + 3);
+  ctx.lineTo(cx - 18, backTopY);
+  ctx.lineTo(cx - 6, backTopY + 2);
+  ctx.lineTo(cx + 7, backTopY - 1);
+  ctx.lineTo(cx + 19, backTopY + 2);
+  ctx.lineTo(cx + 27, backTopY);
+  ctx.stroke();
+  ctx.fillStyle = "#6a6a72";
+  [-18, -6, 7, 19].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(cx + dx, backTopY + 1, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // two slightly mismatched iron wheels -- one a touch smaller/off-axis,
+  // a cheap but effective "held together with spare parts" tell
+  [{ dx: -14, r: 6 }, { dx: 14, r: 5.3 }].forEach(w => {
     ctx.fillStyle = "#26262c";
     ctx.beginPath();
-    ctx.arc(cx + dx, cartY + 4, 6, 0, Math.PI * 2);
+    ctx.arc(cx + w.dx, cartY + 4, w.r, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#6a6a72";
     ctx.beginPath();
-    ctx.arc(cx + dx, cartY + 4, 2, 0, Math.PI * 2);
+    ctx.arc(cx + w.dx, cartY + 4, w.r * 0.32, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -22621,23 +22738,49 @@ function drawMineCartRide(camX) {
 function drawMineCartFrontRim() {
   if (!mineCart.active) return;
   const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
-  ctx.fillStyle = "#54545c";
+  // deepened from 10px to 32px, matching the back wall's own new depth
+  // (see drawMineCartRide) -- at the old 10px this only ever covered the
+  // rider's ankles, so they read as floating on top of the cart rather
+  // than sitting down inside it. Same worn-plank/iron-band language as
+  // the back wall, just the near-side board.
+  const rimTopY = cartY - 32;
+  ctx.fillStyle = "#42311f";
   ctx.beginPath();
-  ctx.moveTo(cx - 22, cartY);
-  ctx.lineTo(cx - 24, cartY - 10);
-  ctx.lineTo(cx + 24, cartY - 10);
-  ctx.lineTo(cx + 22, cartY);
+  ctx.moveTo(cx - 24, cartY);
+  ctx.lineTo(cx - 25, rimTopY + 3);
+  ctx.lineTo(cx - 12, rimTopY);
+  ctx.lineTo(cx + 2, rimTopY + 2);
+  ctx.lineTo(cx + 14, rimTopY - 1);
+  ctx.lineTo(cx + 25, rimTopY + 2);
+  ctx.lineTo(cx + 24, cartY);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#26262c";
+  ctx.strokeStyle = "#241a10";
   ctx.lineWidth = 2;
   ctx.stroke();
-  // a couple of rivets along the rim for the same riveted-metal language
-  // as the rest of the tub
-  ctx.fillStyle = "#6a6a72";
-  [-14, 0, 14].forEach(dx => {
+  ctx.strokeStyle = "rgba(20,14,8,0.45)";
+  ctx.lineWidth = 1;
+  [-16, -3, 9, 19].forEach(dx => {
     ctx.beginPath();
-    ctx.arc(cx + dx, cartY - 5, 1.6, 0, Math.PI * 2);
+    ctx.moveTo(cx + dx, rimTopY + 4);
+    ctx.lineTo(cx + dx * 0.9, cartY - 1);
+    ctx.stroke();
+  });
+  // the iron band + rivets along the rim, same look as the back wall's
+  // frame
+  ctx.strokeStyle = "#5a5a60";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 25, rimTopY + 3);
+  ctx.lineTo(cx - 12, rimTopY);
+  ctx.lineTo(cx + 2, rimTopY + 2);
+  ctx.lineTo(cx + 14, rimTopY - 1);
+  ctx.lineTo(cx + 25, rimTopY + 2);
+  ctx.stroke();
+  ctx.fillStyle = "#6a6a72";
+  [-12, 2, 14].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(cx + dx, rimTopY + 1, 1.6, 0, Math.PI * 2);
     ctx.fill();
   });
 }
@@ -22964,7 +23107,17 @@ function updateMoleholeScene(deltaTime) {
    mole hole's own open market space, since this is meant to read
    as older, smaller, and closer to collapse.
    ====================================================== */
-const TUNNELTOWN_WIDTH = 1350; // widened by the same +150 as the whole dig graph/elders shift, so the camera clamp still matches the real content
+// the camera's own max-scroll clamp (cameraX capped at WIDTH - canvas.width
+// + 40, so the visible right edge maxes out at WIDTH+40) has to reach at
+// least as far right as the player can actually stand. The ground-level
+// walk limit now reaches node.x+30 for ground nodes and, once the whole
+// s5r/s5r2 corridor is dug, as far as that corridor's own merged ledge
+// right edge (1354) + 90 = 1444 -- real repro: dig all the way out to
+// s5r2, walk right to rest on the ground below it, and you're standing
+// 44px past where the camera's own scroll ever stops, i.e. off the right
+// edge of the visible screen entirely. 1420 keeps WIDTH+40 (1460) safely
+// past that 1444 reach with room to spare.
+const TUNNELTOWN_WIDTH = 1420;
 const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- was bumped up to +34 to fix a single narrow oval feeling tight at its own edges, but that same generous height, once the ledge-merge fix started stitching long straight corridors together, turned into one continuous tall band the FULL WIDTH of the whole merged shelf -- "why can i jump through this packed dirt so much... this is largely passing through it," not the odd few px of edge wiggle room this was meant to allow. Back down near the original size; a flat merged shelf doesn't need much more headroom than the player's own height to walk through, and individual dig-spot jumps still get real (if tighter) clearance
 const tunnelTownExit = { x: 150 };
 
