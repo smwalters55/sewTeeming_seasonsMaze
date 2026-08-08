@@ -21225,6 +21225,11 @@ function drawGeodeBreakerAlcove(camX) {
   // real palette spread instead of two shades of the same gray, so each
   // one reads as its own found rock.
   const dullRockPalette = ["#6a6258", "#5a5248", "#7a6248", "#5c564e", "#68584a"];
+  // the left two rocks (i 0/1) get a scatter of tiny mica flecks -- thin
+  // bright glints catching the light unevenly across the surface, unlike
+  // the smooth matte dullness of a plain rock. Reads as "still worth a
+  // second look" texture on the "before" pile without turning them into
+  // the actual cracked-open reward pieces on the right.
   [-70, -58, -46].forEach((dx, i) => {
     const seed = GEODE_BREAKER_X * 3.1 + i * 22.7;
     const r = 6 + pseudoRandom(seed) * 3;
@@ -21234,26 +21239,47 @@ function drawGeodeBreakerAlcove(camX) {
     ctx.strokeStyle = "rgba(0,0,0,0.2)";
     ctx.lineWidth = 0.8;
     ctx.stroke();
+    if (i < 2) {
+      const flecks = 3 + Math.floor(pseudoRandom(seed + 20) * 2);
+      for (let k = 0; k < flecks; k++) {
+        const fa = pseudoRandom(seed + 30 + k) * Math.PI * 2;
+        const fd = pseudoRandom(seed + 40 + k) * r * 0.7;
+        const fx = ax + dx + Math.cos(fa) * fd;
+        const fy = counterTop - r * 0.6 + Math.sin(fa) * fd * 0.75;
+        ctx.strokeStyle = `rgba(230,225,190,${0.35 + pseudoRandom(seed + 50 + k) * 0.35})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(fx - 1.2, fy - 0.6);
+        ctx.lineTo(fx + 1.2, fy + 0.6);
+        ctx.stroke();
+      }
+    }
   });
 
   // cracked-open glinting halves, right side -- same matte-mineral
   // needle-cluster treatment as the real aragonite pickup, just smaller
   // and static (no tip-sparkle animation needed for background decor)
-  [48, 64].forEach((dx, i) => {
+  // two different minerals now, not the same blue crystal twice -- the
+  // second one (dx 64) reads as amethyst-purple instead of the first's
+  // cool blue-white, same needle-cluster construction just recolored and
+  // slightly denser/shorter (amethyst clusters read chunkier than the
+  // long icy quartz needles)
+  [{ dx: 48, glint: "rgba(200,220,255,0.75)" }, { dx: 64, glint: "rgba(190,140,230,0.8)" }].forEach((cfg, i) => {
     const seed = GEODE_BREAKER_X * 4.7 + i * 31.3;
     ctx.save();
-    ctx.translate(ax + dx, counterTop - 5);
+    ctx.translate(ax + cfg.dx, counterTop - 5);
     // dull outer shell, cracked open
     ctx.fillStyle = "#4a4038";
     ctx.beginPath();
     ctx.arc(0, 0, 7, Math.PI * 0.15, Math.PI * 0.95);
     ctx.fill();
     // bright interior needle cluster peeking out of the crack
-    for (let k = 0; k < 5; k++) {
-      const a = Math.PI * 0.2 + (k / 5) * Math.PI * 0.6 + (pseudoRandom(seed + k) - 0.5) * 0.2;
-      const len = 3 + pseudoRandom(seed + k + 1) * 2.5;
-      ctx.strokeStyle = "rgba(200,220,255,0.75)";
-      ctx.lineWidth = 0.8;
+    const needleCount = i === 1 ? 7 : 5;
+    for (let k = 0; k < needleCount; k++) {
+      const a = Math.PI * 0.2 + (k / needleCount) * Math.PI * 0.6 + (pseudoRandom(seed + k) - 0.5) * 0.2;
+      const len = (i === 1 ? 2.2 : 3) + pseudoRandom(seed + k + 1) * (i === 1 ? 1.8 : 2.5);
+      ctx.strokeStyle = cfg.glint;
+      ctx.lineWidth = i === 1 ? 1.1 : 0.8;
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(Math.cos(a) * len, -Math.abs(Math.sin(a)) * len);
