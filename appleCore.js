@@ -26882,7 +26882,21 @@ currentScene = "tunneltown";
 tunnelWallBroken = true;
 ['n1', 's1', 's2', 's3b', 's4', 's5', 's5r', 's5u1', 's5u2'].forEach(id => {
   const n = TUNNEL_NODES.find(n => n.id === id);
-  if (n) n.dug = true;
+  if (n) {
+    n.dug = true;
+    // pre-digging via this direct flag skips the normal dig-completion
+    // logic entirely, which is where a real dig's hasItem grant actually
+    // happens (see the activeDig-finishes branch in updateTunnelTownScene)
+    // -- so a hasItem node in this pre-dug chain (s5r, the gear) never
+    // handed anything out, even though it now reads as already-open with
+    // nothing left to dig there. Real repro: "i dug all this and no gear"
+    // -- s5r WAS in this list, so it looked identical to every other
+    // already-open shelf, no dark undug marker ever appeared, and the
+    // gear it should have handed over on a real dig just never granted.
+    // Mirror that grant here so pre-digging this chain has the same net
+    // effect as actually digging through it by hand would have.
+    if (n.hasItem) addToInventory(n.itemType || "cushionPart");
+  }
 });
 player.x = 1250; // s5u2's own x
 player.y = 250; // s5u2's own height
