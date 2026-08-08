@@ -11110,10 +11110,10 @@ const FOREST_INTRO_GEARS = [
   // frame-by-frame physics simulation used elsewhere in this file
   // (vy0=12/gravity=0.8 for the climbs, a plain walk-off-the-edge fall
   // for the one net-downhill gap at the end) before locking these in.
-  { x: 2360, height: 22, outerR: 24, overgrown: 1, slowSpin: 0.0004 },
+  { x: 2360, height: 22, outerR: 24, overgrown: 1, slowSpin: 0.0004, dir: -1 }, // spins opposite of the rest of the row, per direct feedback
   { x: 2465, height: 75, outerR: 14, overgrown: 0, slowSpin: 0.00045 }, // dx105 climb up -- the real stretch of the row
   { x: 2550, height: 32, outerR: 26, overgrown: 1, slowSpin: 0.0005 }, // dx85 back down -- widest gear in the row, generous landing
-  { x: 2645, height: 90, outerR: 13, overgrown: 0, slowSpin: 0.00055 }, // dx95 climb, tallest/narrowest of the five
+  { x: 2645, height: 90, outerR: 13, overgrown: 0, slowSpin: 0.00055, dir: -1 }, // dx95 climb, tallest/narrowest of the five -- also spins opposite
   { x: 2705, height: 45, outerR: 20, overgrown: 0, slowSpin: 0.0006 } // dx60 easy drop back down, still 25px clear of the lever
 ];
 
@@ -11144,7 +11144,7 @@ function drawForestIntroGears(camX) {
     // rotate continuously and slowly, a visual preview of the real
     // clockwork grove's motion even though these ones are always
     // standable and never gated behind the lever
-    const rot = g.slowSpin ? performance.now() * g.slowSpin : 0.3 + i * 0.15;
+    const rot = g.slowSpin ? performance.now() * g.slowSpin * (g.dir ?? 1) : 0.3 + i * 0.15;
     if (g.horizontal) {
       // lying flat, like a turntable rather than a standing wheel --
       // squash vertically around its own center so it reads as a disc
@@ -13633,11 +13633,13 @@ function updateForestScene(deltaTime) {
     // rad/ms constant used directly for rot in drawForestIntroGears)
     // instead of FOREST_CLOCKWORK_SPIN_SPEED*clockworkSpeedFactor --
     // these five aren't lever-gated, so there's no speed factor to
-    // multiply against. All five spin the same direction (every
-    // slowSpin value is positive), so dir is just +1 here.
-    const angularDelta = onSpinningIntroGear.slowSpin * deltaTime * 1000;
+    // multiply against. Two of the five now spin backwards (see their
+    // `dir: -1` in FOREST_INTRO_GEARS), so the carry/lean direction has
+    // to respect that per-gear dir too, not just assume +1 for all of them.
+    const introDir = onSpinningIntroGear.dir ?? 1;
+    const angularDelta = onSpinningIntroGear.slowSpin * introDir * deltaTime * 1000;
     player.x += onSpinningIntroGear.outerR * angularDelta;
-    const targetLean = 0.3;
+    const targetLean = 0.3 * introDir;
     forestGearRideAngle += (targetLean - forestGearRideAngle) * 0.15;
   } else if (forestGearRideAngle !== 0) {
     // eases back to upright once you've stepped off, rather than
@@ -20573,7 +20575,7 @@ const MOLEHOLE_ALCOVES = [
   // shapes reworked away from the plain box/triangle pair -- per direct
   // feedback ("not just squares or oval or triangles... unique shapes
   // for all"), a jar and a rolled scroll instead
-  { x: 300, w: 130, wares: [{ color: "#b8862f", shape: "jar" }, { color: "#7a2f2f", shape: "stack" }, { color: "#3f5766", shape: "scroll" }], shopColor: "#8a6a3a", hasMole: true },
+  { x: 300, w: 130, wares: [{ color: "#b8862f", shape: "jar" }, { color: "#7a2f2f", shape: "stack" }, { color: "#3f5766", shape: "scroll" }, { color: "#6b4a2a", shape: "basket" }], shopColor: "#8a6a3a", hasMole: true },
   // whole row spread out for real breathing room -- the old spacing
   // (330/500/660) left only a 50px gap here and a cramped 10px gap up
   // to the shop arch, reading as one crowded cluster in a wide room
@@ -20581,7 +20583,7 @@ const MOLEHOLE_ALCOVES = [
   // on to the shop -- checked against each arch's own half-width
   // (archR) rather than eyeballed
   // box/ellipse swapped for a bell and a faceted gem, same reasoning
-  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }], shopColor: "#5a7a5a" }
+  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }, { color: "#7a4a8a", shape: "flask" }], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -21943,6 +21945,47 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.moveTo(wx - s * 0.75, wy - s * 0.15);
       ctx.lineTo(wx + s * 0.75, wy - s * 0.15);
       ctx.stroke();
+    } else if (item.shape === "basket") {
+      // a small woven basket -- trapezoidal body (wider at the rim),
+      // a couple of horizontal weave lines, and an arced carry-handle
+      const bw = 11 + pseudoRandom(seed + 2) * 2, bh = 7 + pseudoRandom(seed + 3) * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(wx - bw / 2, wy + bh / 2);
+      ctx.lineTo(wx - bw / 2 + 1.5, wy - bh / 2);
+      ctx.lineTo(wx + bw / 2 - 1.5, wy - bh / 2);
+      ctx.lineTo(wx + bw / 2, wy + bh / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      for (let k = 1; k < 3; k++) {
+        const ly = wy - bh / 2 + (bh * k) / 3;
+        ctx.beginPath();
+        ctx.moveTo(wx - bw / 2 + 1, ly);
+        ctx.lineTo(wx + bw / 2 - 1, ly);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(wx, wy - bh / 2 - 1, bw * 0.32, Math.PI, 0);
+      ctx.stroke();
+    } else if (item.shape === "flask") {
+      // a bulbous glass flask -- round belly, narrow neck, small cork
+      const s = 6 + pseudoRandom(seed + 2) * 1.8;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + s * 0.25, s * 0.72, s * 0.62, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(wx - s * 0.16, wy - s * 0.75, s * 0.32, s * 0.65);
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + s * 0.25, s * 0.72, s * 0.62, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeRect(wx - s * 0.16, wy - s * 0.75, s * 0.32, s * 0.65);
+      ctx.fillStyle = "#c9a86a";
+      ctx.beginPath();
+      ctx.ellipse(wx, wy - s * 0.78, s * 0.22, s * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
       ctx.beginPath();
@@ -23238,11 +23281,16 @@ function updateMineCartRide(deltaTime) {
     const sinkE = mineCart.endPhase === "sink" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION)) : 0;
     const slideX = tipE * MINE_CART_HOLE_OFFSET_X + sinkE * 10;
     player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2 + slideX;
+    // a small hop arc during the slide-out (rises then settles back to
+    // 0 by the time the tip finishes) -- without it the player just
+    // slid sideways in a flat line, which read as sliding ALONG the
+    // ground rather than actually being tipped/flung out of the cart
+    const tipHop = mineCart.endPhase === "tip" ? Math.sin(tipE * Math.PI) * 10 : 0;
     // +2 matches the cart's own floor (cartY = gy - 2, see drawMineCartRide)
     // -- without it the rider's feet sit exactly at gy, 2px BELOW the tub's
     // actual floor line, poking out under the front rim's bottom edge
     // ("player is v slightly sticking out bottom of cart")
-    player.y = mineCart.localY + 2;
+    player.y = mineCart.localY + 2 + tipHop;
     player.vy = 0;
     return;
   }
@@ -27113,7 +27161,15 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // just summing them is fine.
   ctx.save();
   const swayAngle = playerWoozyT > 0 ? Math.sin(performance.now() * 0.009) * 0.28 * (playerWoozyT / WOOZY_MS) : 0;
-  const totalTilt = swayAngle + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0);
+  // a little lean during the mine cart's tip/sink ending, scaled down
+  // from the cart's own tipAngle -- the player used to stay perfectly
+  // upright right next to a dramatically tipped tub, which read as two
+  // unrelated objects placed near each other rather than one cohesive
+  // "tipped out of the cart" moment ("looks kinda sloppy thrown
+  // together"). Capped well under the tub's own angle so it still
+  // reads as the character tumbling, not just rotating like a box.
+  const mineCartTipLean = (typeof mineCart !== "undefined" && mineCart.ending) ? mineCart.tipAngle * 0.4 : 0;
+  const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0);
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -27160,21 +27216,42 @@ if (currentScene === "forest") {
 drawCrown(camX);
 drawBoomerangPrompt(camX);
 if (currentScene === "molehole") {
-  drawMoleholeShaftActivation(camX);
-  drawMineCartFrontRim();
-  // the cushion-behind-pole occlusion (see the MOLEHOLE_CUSHIONS draw
-  // loop above) only ever redrew the pole over the CUSHION -- the player
-  // riding it still drew on top of everything, so the moment the
-  // cushion swung behind the pole, the rider visibly floated in front of
-  // it instead of also passing behind ("when player is on a moving
-  // cushion... going behind the pole when cushion does?"). Redraw the
-  // same pole segment again here, after the player sprite, for whichever
-  // cushion the player is actually riding.
-  if (moleholeShaftFixed && moleholeRidingCushion && moleholeCushionDepth(moleholeRidingCushion) < 0) {
-    // stretched to cover the RIDER's full sprite (head to feet), not just
-    // the cushion's own thin slice -- see this function's own comment
-    drawMoleholeShaftPoleSegment(moleholeRidingCushion, camX, player.height + 4, 6);
+  // both the shaft's own activation pole AND the cushion-behind-pole
+  // redraw below are drawn at a fixed WORLD x (MOLEHOLE_SHAFT_X) against
+  // camX -- normal camera-follow doesn't run while riding the cart
+  // (mineCart.active has its own separate scroll via mineCart.t, see
+  // drawMineCartRide), so camX just sits frozen wherever it was the
+  // instant the ride started. That left this pole drawn at a
+  // near-constant screen position for the entire ride, reading as some
+  // unrelated shaft that "travels with you the whole time" rather than
+  // scrolling past like everything else. Simplest fix: this is the
+  // shaft you just boarded FROM -- there's nothing for it to occlude
+  // while actually riding, so just don't draw it during the ride at all.
+  if (!mineCart.active) {
+    drawMoleholeShaftActivation(camX);
+    // the cushion-behind-pole occlusion (see the MOLEHOLE_CUSHIONS draw
+    // loop above) only ever redrew the pole over the CUSHION -- the player
+    // riding it still drew on top of everything, so the moment the
+    // cushion swung behind the pole, the rider visibly floated in front of
+    // it instead of also passing behind ("when player is on a moving
+    // cushion... going behind the pole when cushion does?"). Redraw the
+    // same pole segment again here, after the player sprite, for whichever
+    // cushion the player is actually riding.
+    if (moleholeShaftFixed && moleholeRidingCushion && moleholeCushionDepth(moleholeRidingCushion) < 0) {
+      // stretched to cover the RIDER's full sprite (head to feet), not just
+      // the cushion's own thin slice -- see this function's own comment
+      drawMoleholeShaftPoleSegment(moleholeRidingCushion, camX, player.height + 4, 6);
+    }
   }
+  drawMineCartFrontRim();
+  // was defined but never actually wired in anywhere -- the sink
+  // phase's own darkening never played, which is a real chunk of why
+  // the ending read as unfinished/sloppy ("emptying player from cart...
+  // looks kinda sloppy thrown together"). Called here, after the player
+  // sprite has already drawn (see this function's own comment), so the
+  // player visibly sinks INTO the darkening vignette rather than the
+  // darkness just painting over on top of them.
+  drawMineCartEndingVignette();
 }
 
 // held item — floats above the head while selected, so it's clear it's
