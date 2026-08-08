@@ -4264,6 +4264,50 @@ function drawGoldPileShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// same base pile, but for the mine cart's harder-to-reach high gold --
+// a bit bigger, a small red gem set on top, and a rotating ring of
+// sparkles, so the ones worth a real double-jump read as visibly more
+// valuable rather than looking identical to the easy ground-level piles
+// ("make the higher gold pieces look slightly more extravagant... you
+// wanna try to aim for those")
+function drawExtravagantGoldPileShape(ctx, x, y, size, rotation) {
+  drawGoldPileShape(ctx, x, y, size * 1.25, rotation);
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // a little red gem perched on top of the stack -- the "this one's
+  // special" tell at a glance
+  ctx.save();
+  ctx.translate(0, -size * 0.55);
+  ctx.rotate(Math.PI / 4);
+  const gemS = size * 0.4;
+  ctx.fillStyle = "#c23b3b";
+  ctx.fillRect(-gemS / 2, -gemS / 2, gemS, gemS);
+  ctx.strokeStyle = "#7a1f1f";
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(-gemS / 2, -gemS / 2, gemS, gemS);
+  ctx.restore();
+  ctx.fillStyle = "rgba(255,220,220,0.8)";
+  ctx.beginPath();
+  ctx.arc(-size * 0.08, -size * 0.62, 1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a slow ring of orbiting sparkles -- reads as "actively glinting",
+  // more eye-catching from a distance than the plain pile's static glow
+  const spin = performance.now() * 0.002;
+  for (let i = 0; i < 5; i++) {
+    const a = spin + (i / 5) * Math.PI * 2;
+    const tw = Math.sin(performance.now() * 0.006 + i * 2) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255,235,170,${0.4 + tw * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * size * 1.7, Math.sin(a) * size * 1.1, 1.1 + tw * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
@@ -20275,7 +20319,7 @@ const moleShopTradeLines = [
 ];
 const moleShopNoAcornLines = [["Ehh, no acorn, no timber. That's just business, friend.", "Come back when you're carrying something worth my while."]];
 const moleShopThanksLines = [["Pleasure doing business, as always.", "Don't go telling everyone where you found me now, eh?"]];
-const moleShopAlreadyTradedLines = [["That's the last of it -- cleaned me right out.", "Come back another time, friend. I'll have more... probably."]];
+const moleShopAlreadyTradedLines = [["Ahh, I'm all out of timber today.", "Maybe another time, friend."]];
 
 /* ------------------------------------------------------
    GEODE BREAKER -- a fourth alcove, past the shopkeeper. A stockier,
@@ -20480,6 +20524,8 @@ const geodeBreakerShineLines = [
 const geodeBreakerAlreadyShinedLines = [
   ["Ah, my little shine-work! Still glowing lovely.", "Keep that one close -- it's rare."]
 ];
+// nothing held at all -- his own generic "mind the pile" line works fine
+// standalone here, no need to react to an empty hand
 const geodeBreakerNoStoneLines = [
   ["Mind the pile -- mostly plain rock.", "Bring me something worth cracking open."]
 ];
@@ -20490,8 +20536,18 @@ const geodeBreakerNoStoneLines = [
 const geodeBreakerCrystalLines = [
   ["Ho -- that's no rock, that's a crystal.", "Too fine for my hammer. Take that to someone who'd appreciate it properly."]
 ];
+// down THERE (the shaft), not up HERE (his own alcove) -- he's talking
+// about somewhere else entirely, so the direction words need to point
+// away from himself, not toward himself
 const geodeBreakerGearLines = [
-  ["That's a gear, not a geode.", "Belongs up at that old shaft, not down here with me."]
+  ["That's a gear, not a geode.", "Belongs down there in that old shaft nearby, not up here with me."]
+];
+// holding literally anything else (a shovel, an apple, a stick, etc) --
+// a quick "huh, what's this" beat, then the actual ask, naming the
+// aragonite specifically rather than just "something worth cracking
+// open" so it's clear what he's after
+const geodeBreakerOtherItemLines = [
+  ["Huh. What's this now?", "Ah, that's not of use here. Bring me the aragonite you dig up down below -- that's the only thing worth cracking open."]
 ];
 
 function startGeodeBreakerDialogue() {
@@ -20506,8 +20562,10 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
-  } else {
+  } else if (heldItem === null) {
     geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
+  } else {
+    geodeBreakerDialogue.lines = geodeBreakerOtherItemLines;
   }
 }
 
@@ -22499,7 +22557,7 @@ function drawTunnelTownEntrance(camX) {
    the idea of this being more interactive than just an animated move
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
-const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false };
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0 };
 const MINE_CART_TRACK_LENGTH = 2200;
 const MINE_CART_SPEED = 210; // world units/sec of auto-scroll -- nudged down from 240, a touch less frantic
 const MINE_CART_GRAVITY = 900; // px/sec^2
@@ -22511,33 +22569,96 @@ const MINE_CART_JUMP_VY = 360; // px/sec, positive = up (matches player.vy conve
 // enabled in cart?").
 const MINE_CART_DOUBLE_JUMP_VY = MINE_CART_JUMP_VY * 0.75;
 const MINE_CART_SCREEN_X = 220; // fixed on-screen anchor for the cart/player
-// gold suspended at fixed points along the ride -- t = distance into the
-// track, h = height above the cart floor. Spaced and staggered so no two
-// require the exact same jump timing back to back.
+// the real reachable ceiling: a single jump alone only peaks at
+// vy^2/(2*gravity) = 360^2/1800 = 72; even a perfectly-timed double jump
+// (triggered right at the first jump's apex) only adds 270^2/1800 = 40.5
+// more, for a hard ceiling around 112. Several of the old heights (130,
+// 150, 150, 160, 140) sat ABOVE that ceiling -- genuinely uncatchable no
+// matter how well timed, not just "harder", confirmed by simulating the
+// actual jump arc rather than eyeballing it ("some of the double gold
+// piece chunks don't seem to be gettable?" -- correct, they weren't).
+// Retuned so the hardest pieces sit just under the real ceiling (~105-108)
+// instead of past it, so skilled double-jump timing can always reach
+// every piece. Also un-stacked the two pairs that used to share the exact
+// same t (1080 and 1560) -- even with reachable heights, needing to be at
+// two different heights at the same instant was never possible; staggered
+// by ~90 t-units (~0.43s at MINE_CART_SPEED) so there's real time to land
+// the first jump and line up the second at a different height.
 const MINE_CART_GOLD = [
-  { t: 260, h: 70 }, { t: 420, h: 130 },
-  { t: 640, h: 90 }, { t: 820, h: 150 },
-  { t: 1080, h: 70 }, { t: 1080, h: 150 },
-  { t: 1340, h: 110 },
-  { t: 1560, h: 60 }, { t: 1560, h: 160 },
-  { t: 1820, h: 100 },
-  { t: 2020, h: 140 }
+  { t: 260, h: 65 },
+  { t: 420, h: 100 },
+  { t: 640, h: 70 },
+  { t: 820, h: 105 },
+  { t: 1080, h: 65 },
+  { t: 1170, h: 108 },
+  { t: 1340, h: 95 },
+  { t: 1560, h: 60 },
+  { t: 1650, h: 105 },
+  { t: 1820, h: 85 },
+  { t: 2020, h: 100 }
 ];
-let mineCartGoldCollected = new Set(); // reset each ride -- fully repeatable
+// a piece up this high only comes down to a well-timed double jump --
+// worth flagging as the "reach for it" prize rather than looking
+// identical to the easy ground-level piles ("make the higher gold pieces
+// look slightly more extravagant... you wanna try to aim for those")
+const MINE_CART_FANCY_GOLD_HEIGHT = 95;
+// collected gold does NOT reset between rides -- once pulled, a piece is
+// gone for good, same as every other one-time collectible in the game
+// (tunnel-town finds don't respawn either). Ride stays repeatable for the
+// jump-timing fun of it, but it's a real one-time vein to clear out, not
+// an infinite farm. ("once you are done in a mine cart round, the gold
+// you grabbed already is removed, and if you go up again its just the
+// remaining ones" -- yes, agreed, this is the better version of it.)
+let mineCartGoldCollected = new Set();
 
 function startMineCartRide() {
   mineCart.active = true;
+  mineCart.ending = false;
+  mineCart.endT = 0;
   mineCart.t = 0;
   mineCart.localY = 0;
   mineCart.vy = 0;
   mineCart.gold = 0;
   mineCart.usedDoubleJump = false;
-  mineCartGoldCollected = new Set();
+  // NOTE: mineCartGoldCollected is deliberately NOT reset here -- see its
+  // declaration above. A fresh ride only ever offers whatever gold hasn't
+  // already been permanently pulled out on an earlier trip.
 }
+
+const MINE_CART_END_DURATION = 1600; // ms -- how long the little arrival flourish holds before handing control back
 
 function updateMineCartRide(deltaTime) {
   if (!mineCart.active) return;
   const dt = deltaTime;
+
+  // the ride used to just silently snap you back to the shaft the
+  // instant t crossed the finish line -- no acknowledgement at all that
+  // the run was over. Now it freezes in place for a beat with a little
+  // arrival flourish (see the ending-banner draw in drawMineCartRide)
+  // before actually handing control back ("make the mine cart ending
+  // thing more fun somehow").
+  if (mineCart.ending) {
+    mineCart.endT += dt * 1000;
+    // a couple of small victory hops while the banner's up, purely
+    // cosmetic -- keeps the rider from just standing there like a statue
+    mineCart.vy -= MINE_CART_GRAVITY * dt;
+    mineCart.localY += mineCart.vy * dt;
+    if (mineCart.localY <= 0) { mineCart.localY = 0; mineCart.vy = 0; }
+    player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2;
+    player.y = mineCart.localY;
+    player.vy = mineCart.vy;
+    player.jumping = mineCart.localY > 0;
+    if (mineCart.endT >= MINE_CART_END_DURATION) {
+      mineCart.active = false;
+      mineCart.ending = false;
+      player.x = MOLEHOLE_SHAFT_X;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    return;
+  }
 
   if (keys.spaceJustPressed || keys.upJustPressed) {
     if (mineCart.localY <= 0.5) {
@@ -22562,7 +22683,13 @@ function updateMineCartRide(deltaTime) {
   // block renders the rider in the right spot -- reuses player.y's
   // existing "height above ground" meaning directly (the cart floor IS
   // ground level here), so no separate custom player-draw is needed
-  player.x = cameraX + MINE_CART_SCREEN_X;
+  // player.x is the rider's LEFT edge everywhere else in the game, but
+  // MINE_CART_SCREEN_X marks the cart's own horizontal CENTER (cx in
+  // drawMineCartRide/drawMineCartFrontRim) -- aligning x directly put the
+  // rider's left edge at the tub's center, shifting their whole body
+  // half a player-width (20px) to the right of the tub, so they visibly
+  // hung off the right side instead of sitting centered in it.
+  player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2;
   player.y = mineCart.localY;
   player.vy = mineCart.vy;
   player.jumping = mineCart.localY > 0;
@@ -22577,14 +22704,16 @@ function updateMineCartRide(deltaTime) {
   });
 
   if (mineCart.t >= MINE_CART_TRACK_LENGTH) {
-    // ride's over -- deposit back at the shaft, ready to climb up and
-    // go again. Repeatable by design, not a one-shot reward.
-    mineCart.active = false;
-    player.x = MOLEHOLE_SHAFT_X;
-    player.y = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
+    // ride's over -- kick off the little arrival flourish (banner + a
+    // small victory hop) instead of snapping straight back to the shaft.
+    // The actual deposit-back-at-the-shaft happens once the ending timer
+    // above runs out.
+    mineCart.t = MINE_CART_TRACK_LENGTH;
+    mineCart.ending = true;
+    mineCart.endT = 0;
+    mineCart.vy = MINE_CART_JUMP_VY * 0.55; // a small victory hop, not a full jump
+    mineCart.localY = 0;
+    mineCart.usedDoubleJump = false;
   }
 }
 
@@ -22615,24 +22744,91 @@ function drawMineCartRide(camX) {
     ctx.fillRect(wx, railY - 2, 22, 6);
   }
 
-  // support beams scrolling past in the background, cheap depth cue
-  for (let i = 0; i < 30; i++) {
-    const bx = i * 90 - (mineCart.t % 90);
-    if (bx < -20 || bx > canvas.width + 20) continue;
+  // support beams scrolling past in the background, cheap depth cue --
+  // plain bare poles read a little empty over a long ride, so every
+  // third one now gets a full header crossbeam, and every other gap gets
+  // either an old hanging lantern or a sagging length of rope strung
+  // between the two poles ("more wooden poles in the background, maybe
+  // a few sloppy hanging lights... some ropes swooping messily across a
+  // wooden shaft or two")
+  const beamSpacing = 90;
+  const beamCount = Math.ceil(MINE_CART_TRACK_LENGTH / beamSpacing) + 2;
+  let prevBeamX = null;
+  for (let i = 0; i < beamCount; i++) {
+    const realBx = i * beamSpacing - mineCart.t;
+    if (realBx < -40 || realBx > canvas.width + 40) { prevBeamX = null; continue; }
+    const headerBeam = i % 3 === 0;
+    const poleTopY = headerBeam ? gy - 210 : gy - 200;
+
     ctx.strokeStyle = "rgba(58,40,20,0.5)";
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(bx, gy - 200);
-    ctx.lineTo(bx, gy);
+    ctx.moveTo(realBx, poleTopY);
+    ctx.lineTo(realBx, gy);
     ctx.stroke();
+
+    // a full crossbeam header on every third pole -- reads as a real
+    // timber support frame instead of a row of lone sticks
+    if (headerBeam) {
+      ctx.strokeStyle = "rgba(58,40,20,0.55)";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(realBx - beamSpacing * 0.55, poleTopY + 6);
+      ctx.lineTo(realBx + beamSpacing * 0.55, poleTopY + 6);
+      ctx.stroke();
+
+      // an old rusty cage lantern hanging off the header on a short
+      // chain, with a small flickering flame inside
+      const flick = 0.6 + pseudoRandom(i * 3.1 + Math.floor(performance.now() / 140)) * 0.4;
+      const lx = realBx, ly = poleTopY + 30;
+      ctx.strokeStyle = "rgba(40,30,20,0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(realBx, poleTopY + 8);
+      ctx.lineTo(lx, ly - 8);
+      ctx.stroke();
+      ctx.strokeStyle = "#3a3630";
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(lx - 5, ly - 8, 10, 12);
+      ctx.beginPath();
+      ctx.moveTo(lx - 5, ly - 2); ctx.lineTo(lx + 5, ly - 2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,${140 + flick * 60},60,${0.5 + flick * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(lx, ly - 2, 3 + flick * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,220,150,${0.3 + flick * 0.3})`;
+      ctx.beginPath();
+      ctx.arc(lx, ly - 2, 9 + flick * 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prevBeamX !== null && i % 2 === 1) {
+      // a length of rope strung messily between this pole and the last
+      // one, sagging in the middle -- purely decorative, sits well above
+      // the cart/gold lane
+      const sagSeed = pseudoRandom(i * 7.7);
+      const sagY = poleTopY + 14 + sagSeed * 10;
+      ctx.strokeStyle = "rgba(70,55,35,0.45)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(prevBeamX, poleTopY + 4);
+      ctx.quadraticCurveTo((prevBeamX + realBx) / 2, sagY + 22, realBx, poleTopY + 6);
+      ctx.stroke();
+    }
+    prevBeamX = realBx;
   }
 
-  // gold, drawn relative to the cart's own scroll position
+  // gold, drawn relative to the cart's own scroll position -- the
+  // higher/harder pieces get the fancier render so they read as worth
+  // reaching for, not just identical piles at a different height
   MINE_CART_GOLD.forEach((g, i) => {
     if (mineCartGoldCollected.has(i)) return;
     const gx = MINE_CART_SCREEN_X + (g.t - mineCart.t);
     if (gx < -20 || gx > canvas.width + 20) return;
-    drawGoldPileShape(ctx, gx, gy - g.h, 11, 0);
+    if (g.h >= MINE_CART_FANCY_GOLD_HEIGHT) {
+      drawExtravagantGoldPileShape(ctx, gx, gy - g.h, 11, 0);
+    } else {
+      drawGoldPileShape(ctx, gx, gy - g.h, 11, 0);
+    }
   });
 
   // the cart itself -- an old, rickety wood-plank tub in a riveted metal
@@ -22729,6 +22925,71 @@ function drawMineCartRide(camX) {
   ctx.font = "11px ui-monospace";
   ctx.textAlign = "center";
   ctx.fillText(`gold: ${mineCart.gold}`, canvas.width / 2, barY + 26);
+  ctx.textAlign = "left";
+
+  drawMineCartEndBanner();
+}
+
+// the little arrival flourish once the ride's finish line is hit --
+// used to just silently teleport back to the shaft with zero
+// acknowledgement the run was even over ("make the mine cart ending
+// thing more fun somehow"). A quick burst of sparkles, a banner with
+// this trip's haul, and -- once every last piece down this stretch has
+// actually been found -- a real "cleared it out" callout instead of the
+// same generic line every time.
+function drawMineCartEndBanner() {
+  if (!mineCart.ending) return;
+  const p = Math.min(1, mineCart.endT / MINE_CART_END_DURATION);
+  const cx = canvas.width / 2, cy = gy * 0.42;
+
+  // burst of gold sparkles radiating out from the cart, fading over the
+  // banner's lifetime
+  const burst = 14;
+  for (let i = 0; i < burst; i++) {
+    const a = (i / burst) * Math.PI * 2 + i * 0.3;
+    const dist = 20 + p * 90;
+    ctx.fillStyle = `rgba(255,225,150,${(1 - p) * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(MINE_CART_SCREEN_X + Math.cos(a) * dist, gy - 20 + Math.sin(a) * dist * 0.6, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // banner fades in fast, holds, then fades out right at the end
+  const fadeIn = Math.min(1, p / 0.15);
+  const fadeOut = p > 0.8 ? Math.max(0, 1 - (p - 0.8) / 0.2) : 1;
+  const alpha = fadeIn * fadeOut;
+  if (alpha <= 0) return;
+
+  const totalGoldLeft = MINE_CART_GOLD.length - mineCartGoldCollected.size;
+  const clearedItAll = totalGoldLeft === 0;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "rgba(20,14,8,0.75)";
+  roundRect(ctx, cx - 130, cy - 34, 260, 68, 10);
+  ctx.fill();
+  ctx.strokeStyle = "#c9a03a";
+  ctx.lineWidth = 2;
+  roundRect(ctx, cx - 130, cy - 34, 260, 68, 10);
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffe9b0";
+  ctx.font = "bold 15px ui-monospace";
+  ctx.fillText("Ride complete!", cx, cy - 10);
+  ctx.font = "12px ui-monospace";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.fillText(
+    mineCart.gold > 0 ? `+${mineCart.gold} gold this trip` : "No gold grabbed this trip",
+    cx, cy + 10
+  );
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.font = "10px ui-monospace";
+  ctx.fillText(
+    clearedItAll ? "Every last piece down this stretch is yours." : `${totalGoldLeft} piece${totalGoldLeft === 1 ? "" : "s"} still glinting further in.`,
+    cx, cy + 26
+  );
+  ctx.restore();
   ctx.textAlign = "left";
 }
 
@@ -23061,8 +23322,21 @@ function updateMoleholeScene(deltaTime) {
   // shopkeeper/elders below, checked first since it's the first thing
   // near the entrance
   if (moleHoleBoardDialogue.active) {
-    if (keys.spaceJustPressed) advanceMoleHoleBoardDialogue();
-    return;
+    // walking off mid-conversation used to leave the speech bubble
+    // hanging there forever, still anchored at the board's world
+    // position while the player wandered off to a totally different
+    // alcove ("this word bubble shouldn't follow player around like
+    // that" -- it wasn't literally following, it just never closed on
+    // its own, so it kept scrolling past with the rest of the room).
+    // A generous leash -- well past the tight trigger radius, so
+    // shifting around to read it doesn't accidentally cancel it -- auto-
+    // closes it once you've actually walked away.
+    if (!isPlayerNear(moleHoleNoticeBoard.x, 0, 150, 90, 90)) {
+      moleHoleBoardDialogue.active = false;
+    } else {
+      if (keys.spaceJustPressed) advanceMoleHoleBoardDialogue();
+      return;
+    }
   }
   if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) && keys.spaceJustPressed) {
     startMoleHoleBoardDialogue();
@@ -23070,20 +23344,30 @@ function updateMoleholeScene(deltaTime) {
   }
 
   // shopkeeper dialogue takes priority over anything else this frame,
-  // same pattern as the tunnel town elders
+  // same pattern as the tunnel town elders -- same walk-away auto-close
+  // as the notice board above
   if (moleShopDialogue.active) {
-    if (keys.spaceJustPressed) advanceMoleShopDialogue();
-    return;
+    if (!isPlayerNear(MOLE_SHOP_X, 0, 150, 90, 90)) {
+      moleShopDialogue.active = false;
+    } else {
+      if (keys.spaceJustPressed) advanceMoleShopDialogue();
+      return;
+    }
   }
   if (isPlayerNear(MOLE_SHOP_X, 0, 32, 25, 20) && keys.spaceJustPressed) {
     startMoleShopDialogue();
     return;
   }
 
-  // geode breaker -- same priority pattern as the shopkeeper
+  // geode breaker -- same priority pattern as the shopkeeper, same
+  // walk-away auto-close
   if (geodeBreakerDialogue.active) {
-    if (keys.spaceJustPressed) advanceGeodeBreakerDialogue();
-    return;
+    if (!isPlayerNear(GEODE_BREAKER_X, GEODE_BREAKER_HEIGHT, 150, 90, 90)) {
+      geodeBreakerDialogue.active = false;
+    } else {
+      if (keys.spaceJustPressed) advanceGeodeBreakerDialogue();
+      return;
+    }
   }
   if (isPlayerNear(GEODE_BREAKER_X, GEODE_BREAKER_HEIGHT, 32, 25, 20) && keys.spaceJustPressed) {
     startGeodeBreakerDialogue();
@@ -23109,15 +23393,19 @@ function updateMoleholeScene(deltaTime) {
    ====================================================== */
 // the camera's own max-scroll clamp (cameraX capped at WIDTH - canvas.width
 // + 40, so the visible right edge maxes out at WIDTH+40) has to reach at
-// least as far right as the player can actually stand. The ground-level
-// walk limit now reaches node.x+30 for ground nodes and, once the whole
-// s5r/s5r2 corridor is dug, as far as that corridor's own merged ledge
-// right edge (1354) + 90 = 1444 -- real repro: dig all the way out to
-// s5r2, walk right to rest on the ground below it, and you're standing
-// 44px past where the camera's own scroll ever stops, i.e. off the right
-// edge of the visible screen entirely. 1420 keeps WIDTH+40 (1460) safely
-// past that 1444 reach with room to spare.
-const TUNNELTOWN_WIDTH = 1420;
+// least as far right as the player's own RIGHT EDGE can actually stand --
+// not just player.x. The ground-level walk limit reaches as far as the
+// s5r/s5r2 corridor's own merged ledge right edge (1354) + 90 = 1444 once
+// fully dug, but that's the player's left edge (player.x); add the
+// player's own width (40) and their right edge actually reaches 1484.
+// The previous 1420 only budgeted for the 1444 figure and forgot the
+// +40 width, so WIDTH+40 capped out at 1460 -- 24px short of where the
+// player's sprite genuinely extends to, which is exactly the "player can
+// be off screen on the right" repro (dig all the way to s5r2, walk right
+// to rest on the ground below it, and the last ~half of the player's own
+// body sits past the camera's max scroll edge). 1480 keeps WIDTH+40
+// (1520) safely past the real 1484 reach, width included, with margin.
+const TUNNELTOWN_WIDTH = 1480;
 const TUNNEL_PASSAGE_HEIGHT = player.height + 16; // every dug opening (wall, side stub, up stub) shares this -- was bumped up to +34 to fix a single narrow oval feeling tight at its own edges, but that same generous height, once the ledge-merge fix started stitching long straight corridors together, turned into one continuous tall band the FULL WIDTH of the whole merged shelf -- "why can i jump through this packed dirt so much... this is largely passing through it," not the odd few px of edge wiggle room this was meant to allow. Back down near the original size; a flat merged shelf doesn't need much more headroom than the player's own height to walk through, and individual dig-spot jumps still get real (if tighter) clearance
 const tunnelTownExit = { x: 150 };
 
@@ -24100,15 +24388,46 @@ const TUNNEL_NODES = [
   // there, and gave the bend its own little side branch so the extra
   // turn has a reward too, not just a direction change
   { id: "s5uTurn", parent: "s5u2", x: 1190, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // the leftward bend -- exact same height as s5u2 so their ledges merge into one continuous walkway instead of stacking two nearly-identical planks
-  { id: "s5uSide", parent: "s5uTurn", x: 1115, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "stone", dug: false }, // small branch off the bend, its own dead end
+  // used to hold a second "stone" -- but only s3a's stone is ever actually
+  // spent (at s5r's needsStone gate), so this second copy just sat in
+  // inventory doing nothing, a real dupe ("i think you find two down
+  // there, when you should only find one"). Emptied out; the aragonite
+  // moved here instead, one level down through s5uNook below -- see there.
+  { id: "s5uSide", parent: "s5uTurn", x: 1115, heightAboveGround: 250, dir: "side", hasItem: false, dug: false }, // small branch off the bend -- now just a landing for the nook dig below
+  // the vertical "dig down into a nook" idea, brought back from where it
+  // got cut off the s5/s5r corridor (see s5u5Drop's own comment for that
+  // history) -- but placed somewhere that dodges the original problem.
+  // That version got cut because it dropped through an already-merged,
+  // already-open shelf down to ground level right underneath -- "a
+  // vertical hole drop down to an already open area, that then drops
+  // down further below that already open area... it just isn't logical."
+  // This one doesn't: it's a genuine dead-end spur (s5uSide), the drop is
+  // short (70px -- comfortably inside a single jump's own ~90px peak, so
+  // climbing back out never needs the double jump), and it lands in a
+  // real enclosed pocket well short of true ground, not open corridor.
+  // SAME x as s5uSide on purpose, not off to the side -- straight down,
+  // not a walk-off-the-edge fall. Tried it as a horizontal step-off first
+  // (nook offset to the side, fall there on your own momentum) and it
+  // was genuinely unreliable: verified via a real frame-by-frame sim that
+  // by the time you've fallen far enough to be within the dig-trigger's
+  // height band, continuous horizontal drift has already carried you
+  // well past any fixed x you'd place the nook at (a plain tap overshoots
+  // one way, a longer hold overshoots further). Same x removes the
+  // horizontal-timing problem entirely: stand on s5uSide, hold DOWN (the
+  // same "drop straight through a ledge" escape hatch already used
+  // elsewhere in tunnel town -- see the `!keys.down` check on the
+  // general ledge-catch loop) to fall straight down with zero horizontal
+  // drift, dig the nook open on the way through, land on its floor, jump
+  // straight back up and out.
+  { id: "s5uNook", parent: "s5uSide", x: 1115, heightAboveGround: 180, dir: "sunken", hasItem: true, itemType: "aragonite", dug: false },
   { id: "s5u2b", parent: "s5uTurn", x: 1160, heightAboveGround: 330, dir: "up", hasItem: false, dug: false }, // climb continues from the bend
   { id: "s5u3", parent: "s5u2b", x: 1195, heightAboveGround: 405, dir: "up", hasItem: false, dug: false }, // dead end trimmed -- crystal moved to u1, see s5u4/s5u5
-  // one more diagonal jump up-and-left off the top of the climb, then a
-  // final jump straight up from there -- the aragonite's new home, far
-  // enough from s5r's cushion piece that they don't read as one crowded
-  // pair anymore. Real dead end now, up at the very top of the map.
+  // the aragonite moved on from here down to the new s5uNook (see there)
+  // -- a real vertical drop-and-climb-out payoff instead of just another
+  // up-climb dead end. This top-of-the-climb spot is now empty, same
+  // trim as uTop after the crystal moved off it.
   { id: "s5u4", parent: "s5u3", x: 1140, heightAboveGround: 475, dir: "up", hasItem: false, dug: false },
-  { id: "s5u5", parent: "s5u4", x: 1155, heightAboveGround: 550, dir: "up", hasItem: true, itemType: "aragonite", dug: false },
+  { id: "s5u5", parent: "s5u4", x: 1155, heightAboveGround: 550, dir: "up", hasItem: false, dug: false },
   // a real vertical "dig down" hole, the one requested back -- a trapdoor
   // shortcut off the summit dead end. Doesn't duplicate an easy nearby
   // path (the only other way down from here is the whole climb back
@@ -24116,7 +24435,9 @@ const TUNNEL_NODES = [
   // reaching the top rather than an illogical drop next to open ground.
   // pushed to +80 from s5u5 (was +20, same too-close bug as uTopDrop --
   // see its comment) so digging this one doesn't collapse s5u5's own
-  // standable footprint out from under the aragonite.
+  // standable footprint out from under whoever's standing on it (the
+  // aragonite that used to live here moved on to s5uNook -- this is now
+  // an empty landing, same as s5u5 itself).
   { id: "s5u5Drop", parent: "s5u5", x: 1235, heightAboveGround: 550, dir: "up", hasItem: false, dug: false, trapGap: true },
   // a bit more flat ground out past the reward too -- built out
   // horizontally as well as vertically, matching the same "further in"
@@ -25337,8 +25658,15 @@ function updateTunnelTownScene(deltaTime) {
   }
 
   if (elderDialogue.active) {
-    if (keys.spaceJustPressed) advanceElderDialogue();
-    return; // mid-conversation -- don't also process digging/exit this frame
+    // same walk-away auto-close as the mole-hole NPCs -- otherwise the
+    // speech bubble just sits at the elders' fixed spot forever once you
+    // wander off mid-conversation, never actually dismissed
+    if (!isPlayerNear(ELDER_X, 0, 150, 90, 90)) {
+      elderDialogue.active = false;
+    } else {
+      if (keys.spaceJustPressed) advanceElderDialogue();
+      return; // mid-conversation -- don't also process digging/exit this frame
+    }
   }
 
   if (isPlayerNear(ELDER_X, 0, 35, 25, 20) && keys.spaceJustPressed) {
@@ -26400,26 +26728,40 @@ heldItem = "shovel";
 for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible forest haul by the time you reach the mole hole entrance
 for (let i = 0; i < 3; i++) addToInventory("acorn");
 addToInventory("appleSlice"); // apple splits into 3 -- 2 spent filling the autumn->spring and spring->forest doors, 1 left over
-addToInventory("cushionPart"); // the shaft gear -- skips the tunnel-town s5r dig for testing the cart directly. Hold it, walk to the shaft, press down to fit it.
+// removed: addToInventory("cushionPart") -- this was granting a SECOND,
+// free gear on top of the real one buried at s5r. Placing the real one
+// into the shaft slot still left this debug-granted one sitting in
+// inventory afterward, which is exactly the "gear remains in inventory
+// after use" report -- the placement/consume logic itself was correct
+// the whole time (verified via harness: inventory.cushionPart really
+// does get decremented and deleted on placement), there were just two
+// gears in play and only one ever got used.
 connections[0].filled = true;
 connections[0].filledItemType = "appleSlice";
 connections[1].filled = true;
 connections[1].filledItemType = "appleSlice";
 updateInventoryUI();
 
-// TEMPORARY -- drops straight into tunnel town, right in front of the
-// dig entrance itself (the wall spot at TUNNELTOWN_WALL_X+16), with the
-// elders already talked to so the wall's immediately diggable (shovel's
-// already held, per the loadout above). Skips the walk in from the
-// molehole's own tunnel-town entrance hole. Revert (remove this block)
-// when done.
+// TEMPORARY -- drops straight into tunnel town, pre-dug most of the way
+// up the right-side climb, standing right at s5u2 -- 2-3 real dig steps
+// short of the new s5uNook vertical drop (s5uTurn, then s5uSide, then
+// hold DOWN + space to open the nook itself) so the new mechanic is
+// immediately testable without redigging the whole chain from the wall.
+// ("put me inside tunnel maybe 2 or 3 dig steps away from this vertical
+// hole so i can test that briefly"). Revert (remove this block, and the
+// door-filled lines above) when done.
 currentScene = "tunneltown";
-player.x = TUNNELTOWN_WALL_X - 4; // a few px short of the dig spot -- close enough to be in digging range (isPlayerNear's own 26px tolerance) without starting stacked right on top of it
-player.y = 0;
+tunnelWallBroken = true;
+['n1', 's1', 's2', 's3b', 's4', 's5', 's5r', 's5u1', 's5u2'].forEach(id => {
+  const n = TUNNEL_NODES.find(n => n.id === id);
+  if (n) n.dug = true;
+});
+player.x = 1250; // s5u2's own x
+player.y = 250; // s5u2's own height
 player.vy = 0;
 player.jumping = false;
 player.usedDoubleJump = false;
-cameraX = 0;
+cameraX = Math.max(0, player.x - canvas.width * 0.4);
 cameraY = 0;
 tunnelSafeX = null;
 tunnelSafeY = null;
