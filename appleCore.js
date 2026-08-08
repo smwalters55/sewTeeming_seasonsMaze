@@ -4007,11 +4007,16 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   }
 
   // sparkle accents at a couple of the needle tips -- more of them, and
-  // a touch brighter, once it's been shined
+  // a touch brighter, once it's been shined. The shined twinkle runs
+  // noticeably slower than the plain unpolished one (0.0022 vs 0.006) --
+  // per direct feedback ("more magical looking, slower"), a lazy dreamy
+  // pulse reads as more special than the same quick shimmer every other
+  // mineral in the game already uses.
   const tips = aragoniteShined ? [0, 1, 2, 3, 4, 5] : [0, 2, 4];
   tips.forEach(i => {
     const a = (i / spikes) * Math.PI * 2;
-    const tw = Math.sin(performance.now() * 0.006 + i * 1.7) * 0.5 + 0.5;
+    const twinkleRate = aragoniteShined ? 0.0022 : 0.006;
+    const tw = Math.sin(performance.now() * twinkleRate + i * 1.7) * 0.5 + 0.5;
     const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
     const baseAlpha = aragoniteShined ? 0.7 : 0.5;
     ctx.fillStyle = `rgba(255,225,170,${baseAlpha + tw * 0.5})`;
@@ -4019,6 +4024,45 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
     ctx.arc(Math.cos(a) * len, Math.sin(a) * len, (aragoniteShined ? 1.3 : 1) + tw * 0.6, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  // once shined, a handful of tiny four-point stars drift in a slow,
+  // lazy swirl around the whole cluster -- the "magical/swirly stars"
+  // ask. Each orbits at its own radius/speed/phase (not a single rigid
+  // ring) so it reads as loose sparkle motion rather than a mechanical
+  // rotating halo. All timing is deliberately slow (orbital period
+  // 12-18s) to match the slowed-down twinkle above -- a lingering,
+  // dreamy effect rather than a busy flashy one.
+  if (aragoniteShined) {
+    const now = performance.now();
+    [
+      { r: size * 1.5, speed: 0.00035, phase: 0, tw: 1.3, starSize: 3.2 },
+      { r: size * 1.9, speed: -0.00028, phase: 2.1, tw: 1.7, starSize: 2.4 },
+      { r: size * 1.3, speed: 0.0005, phase: 4.4, tw: 0.9, starSize: 2.8 }
+    ].forEach(orbit => {
+      const orbitAngle = now * orbit.speed + orbit.phase;
+      const sx = Math.cos(orbitAngle) * orbit.r;
+      const sy = Math.sin(orbitAngle) * orbit.r * 0.6; // squashed vertically, reads as a tilted swirl plane rather than a flat circle
+      const twinkle = Math.sin(now * 0.0018 * orbit.tw + orbit.phase) * 0.5 + 0.5;
+      const alpha = 0.25 + twinkle * 0.55;
+      const s = orbit.starSize * (0.7 + twinkle * 0.4);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(orbitAngle * 0.5);
+      ctx.fillStyle = `rgba(230,220,255,${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(0, -s);
+      ctx.lineTo(s * 0.28, -s * 0.28);
+      ctx.lineTo(s, 0);
+      ctx.lineTo(s * 0.28, s * 0.28);
+      ctx.lineTo(0, s);
+      ctx.lineTo(-s * 0.28, s * 0.28);
+      ctx.lineTo(-s, 0);
+      ctx.lineTo(-s * 0.28, -s * 0.28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+  }
 
   ctx.restore();
 }
@@ -4107,38 +4151,72 @@ function drawGeodeShape(ctx, x, y, size, rotation, cracked) {
     });
   } else {
     const pulse = Math.sin(performance.now() * 0.005) * 0.5 + 0.5;
-    // two cracked-open halves, split apart slightly -- the reveal itself
-    [-1, 1].forEach(side => {
-      ctx.save();
-      ctx.translate(side * size * 0.22, size * 0.08);
-      ctx.rotate(side * 0.18);
-      ctx.fillStyle = "#4a4038";
+
+    // outer rock shell -- one solid bowl, broken open along a jagged
+    // top rim, rather than the previous two separate offset halves
+    // (those were each just an open ctx.arc() path -- canvas fill()
+    // closes an open path with a straight chord between its two arc
+    // endpoints, not a route back through the center, so each "half"
+    // was actually a thin crescent sliver rather than a solid rock
+    // body. At held-item icon size that crescent all but disappeared
+    // against the dark background, leaving only the bright green
+    // needles/glow visible -- exactly "floating just as a green
+    // mineral on its own, no rock bowl shape"). This is a real closed
+    // wedge with a lighter, higher-contrast rock color so the bowl
+    // silhouette reads clearly on its own before the crystals even
+    // draw on top of it.
+    ctx.fillStyle = "#8a7a68";
+    ctx.beginPath();
+    const rimPoints = 8;
+    for (let i = 0; i <= rimPoints; i++) {
+      const t = i / rimPoints;
+      const ang = Math.PI - t * Math.PI; // sweeps left (PI) to right (0) across the broken-open top rim
+      const jag = size * (0.06 + pseudoRandom(i * 12.7) * 0.1);
+      const rx = Math.cos(ang) * size * 0.85;
+      const ry = -Math.sin(ang) * size * 0.85 + jag;
+      if (i === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry);
+    }
+    ctx.quadraticCurveTo(size * 0.9, size * 0.55, 0, size * 0.72);
+    ctx.quadraticCurveTo(-size * 0.9, size * 0.55, -size * 0.85, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // hollow cavity -- a dark pocket the crystal cluster sits inside,
+    // reading as "cracked open" against the lighter rock shell around it
+    ctx.fillStyle = "#332a36";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.18, size * 0.6, size * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // green crystal spikes growing up out of the cavity floor -- the
+    // reveal itself, now clearly INSIDE the rock rather than floating
+    // free of it
+    for (let k = 0; k < 6; k++) {
+      const t = k / 5;
+      const a = Math.PI * (0.12 + t * 0.76);
+      const baseX = Math.cos(a) * size * 0.42;
+      const len = size * (0.4 + (k % 2) * 0.22);
+      ctx.strokeStyle = `rgba(140,235,170,${0.6 + pulse * 0.35})`;
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(0, 0, size * 0.62, Math.PI * (side < 0 ? 0.15 : 0.85), Math.PI * (side < 0 ? 0.95 : 1.65));
-      ctx.fill();
-      // bright interior needle cluster peeking out of the crack
-      for (let k = 0; k < 4; k++) {
-        const a = Math.PI * (side < 0 ? 0.25 : 1.1) + (k / 4) * Math.PI * 0.5 * side;
-        const len = size * (0.35 + (k % 2) * 0.18);
-        ctx.strokeStyle = `rgba(140,235,170,${0.55 + pulse * 0.35})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len * 0.7);
-        ctx.stroke();
-      }
-      ctx.restore();
-    });
-    // soft glow tying the two halves together -- green, so this doesn't
-    // read as just another blue mineral (crystal/aragonite/gear cushion
-    // are all blue already; per direct feedback the geode should stand
-    // apart from that)
-    const glow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
-    glow.addColorStop(0, `rgba(140,235,170,${0.18 + pulse * 0.12})`);
+      ctx.moveTo(baseX, size * 0.32);
+      ctx.lineTo(baseX * 0.4, size * 0.32 - len);
+      ctx.stroke();
+    }
+
+    // soft glow tying the crystal cluster together -- green, so this
+    // doesn't read as just another blue mineral (crystal/aragonite/gear
+    // cushion are all blue already; per direct feedback the geode should
+    // stand apart from that)
+    const glow = ctx.createRadialGradient(0, size * 0.1, size * 0.15, 0, size * 0.1, size * 1.15);
+    glow.addColorStop(0, `rgba(140,235,170,${0.2 + pulse * 0.12})`);
     glow.addColorStop(1, "rgba(140,235,170,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(0, 0, size * 1.3, 0, Math.PI * 2);
+    ctx.arc(0, size * 0.1, size * 1.15, 0, Math.PI * 2);
     ctx.fill();
   }
 
