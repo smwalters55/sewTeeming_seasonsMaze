@@ -2284,9 +2284,33 @@ function applyPhysics(){
   // suppress for the whole ride from the trap's own shelf down to true
   // ground -- covers the entire real fall path through this one gap
   // without opening the door back up to unrelated shelves elsewhere.
-  const overTrapGap = TUNNEL_NODES.some(n => n.trapGap && n.dug &&
-    Math.abs((player.x + player.width / 2) - n.x) <= 20 &&
-    player.y <= n.heightAboveGround + 14);
+  // STATEFUL now, not a plain per-frame position/height check -- the old
+  // version suppressed ledge-landing for ANY height at or below the trap's
+  // own height in that x column, forever, with no way to tell "genuinely
+  // mid-fall through THIS trap's own gap" apart from "just so happens to be
+  // near this x while jumping around on some completely unrelated real
+  // shelf lower down at a totally different height" (real repro: s5u5Drop's
+  // own column sits only ~16px from s5u3's ledge edge below it -- once
+  // s5u5Drop was dug, jumping near the RIGHT edge of s5u3, more than 400
+  // units below the trap and nothing to do with it, intermittently fell
+  // straight through instead of landing, because the old check only looked
+  // at x + an upper-bound height, which s5u3 always satisfied). Now only
+  // enters "falling through" mode by actually being at/just below the
+  // trap's own shelf height while already heading downward, and only
+  // STAYS suppressed while still actively falling -- landing anywhere
+  // (vy hits 0) or turning upward (a jump) drops out of it immediately, so
+  // an unrelated shelf elsewhere in the same x column is never touched.
+  if (!tunnelFallingThroughTrap) {
+    const enteringTrap = TUNNEL_NODES.find(n => n.trapGap && n.dug &&
+      Math.abs((player.x + player.width / 2) - n.x) <= 20 &&
+      player.y <= n.heightAboveGround + 14 &&
+      player.y >= n.heightAboveGround - 20 &&
+      player.vy <= 0);
+    if (enteringTrap) tunnelFallingThroughTrap = enteringTrap;
+  }
+  const overTrapGap = !!tunnelFallingThroughTrap && player.vy < 0 &&
+    Math.abs((player.x + player.width / 2) - tunnelFallingThroughTrap.x) <= 20;
+  if (!overTrapGap) tunnelFallingThroughTrap = null;
 
   if (!keys.down && !overTrapGap) {
     TUNNEL_NODES.forEach(node => {
@@ -20373,12 +20397,56 @@ const MOLEHOLE_ROOT_SWING_INPUT = 0.025;
 const MOLEHOLE_ROOT_HOP_MIN_ANGLE = 0.75;
 const MOLEHOLE_ROOT_HOP_RANGE = 260;
 const MOLEHOLE_ROOT_PUMP_COOLDOWN = 120;
+// the hop used to just instantly SET player.x/y to the next root/ledge
+// the moment a committed swing released -- worked, but read as an
+// automatic teleport rather than an actual leap ("can we make the
+// attachment to the next vine/root not look so automatic snap like").
+// This eases the player across that same gap over a short beat instead,
+// with a little extra upward arc so it reads as a real jump between
+// holds rather than a straight-line slide.
+const MOLEHOLE_ROOT_HOP_DURATION = 220; // ms
+const moleholeRootHop = { active: false, t: 0, fromX: 0, fromY: 0, toX: 0, toY: 0, arcHeight: 0, targetRoot: null, targetIsLedge: false };
 
 function moleholeRootGrabHeight(r) {
   return r.anchorHeight - r.length;
 }
 
 function updateMoleholeRootSwing(deltaTime) {
+  // mid-hop -- ease the player across to the next root/ledge instead of
+  // just snapping there. Suspends everything else (mounting, swinging)
+  // until it resolves.
+  if (moleholeRootHop.active) {
+    moleholeRootHop.t += deltaTime * 1000;
+    const p = Math.min(1, moleholeRootHop.t / MOLEHOLE_ROOT_HOP_DURATION);
+    // ease-out cubic -- fast start (carries the swing's own momentum),
+    // settling gently into the landing rather than a linear slide
+    const eased = 1 - Math.pow(1 - p, 3);
+    player.x = moleholeRootHop.fromX + (moleholeRootHop.toX - moleholeRootHop.fromX) * eased;
+    // a shallow upward arc partway through, so it reads as a real leap
+    // over the gap rather than a straight-line glide between the two points
+    const arc = Math.sin(p * Math.PI) * moleholeRootHop.arcHeight;
+    player.y = moleholeRootHop.fromY + (moleholeRootHop.toY - moleholeRootHop.fromY) * eased + arc;
+    if (p >= 1) {
+      moleholeRootHop.active = false;
+      player.x = moleholeRootHop.toX;
+      player.y = moleholeRootHop.toY;
+      player.vx = 0;
+      player.vy = 0;
+      player.vineFlying = false;
+      player.jumping = false;
+      if (moleholeRootHop.targetIsLedge) {
+        player.usedDoubleJump = false;
+      } else if (moleholeRootHop.targetRoot) {
+        moleholeRootHop.targetRoot.mounted = true;
+        moleholeRootHop.targetRoot.angle = 0;
+        moleholeRootHop.targetRoot.angularVel = 0;
+        moleholeRootHop.targetRoot.pumpCooldown = 0;
+      }
+      moleholeRootHop.targetRoot = null;
+    }
+    return;
+  }
+
   const mounted = moleholeRoots.find(r => r.mounted);
 
   moleholeRoots.forEach(r => {
@@ -20413,27 +20481,36 @@ function updateMoleholeRootSwing(deltaTime) {
         .sort((a, b) => Math.abs(a.x - releaseX) - Math.abs(b.x - releaseX))[0];
       if (nextRoot) {
         r.mounted = false;
-        nextRoot.mounted = true;
-        nextRoot.angle = 0;
-        nextRoot.angularVel = 0;
-        nextRoot.pumpCooldown = 0;
-        player.x = nextRoot.x - player.width / 2;
-        player.y = nextRoot.anchorHeight - nextRoot.length;
+        moleholeRootHop.active = true;
+        moleholeRootHop.t = 0;
+        moleholeRootHop.fromX = player.x;
+        moleholeRootHop.fromY = player.y;
+        moleholeRootHop.toX = nextRoot.x - player.width / 2;
+        moleholeRootHop.toY = nextRoot.anchorHeight - nextRoot.length;
+        moleholeRootHop.arcHeight = 22;
+        moleholeRootHop.targetRoot = nextRoot;
+        moleholeRootHop.targetIsLedge = false;
         player.vx = 0;
         player.vy = 0;
         player.vineFlying = false;
-        player.jumping = false;
+        player.jumping = true;
         return;
       }
       if (dir > 0 && Math.abs(GEODE_BREAKER_X - releaseX) <= MOLEHOLE_ROOT_HOP_RANGE) {
         r.mounted = false;
-        player.x = GEODE_BREAKER_X - player.width / 2;
-        player.y = GEODE_BREAKER_HEIGHT;
+        moleholeRootHop.active = true;
+        moleholeRootHop.t = 0;
+        moleholeRootHop.fromX = player.x;
+        moleholeRootHop.fromY = player.y;
+        moleholeRootHop.toX = GEODE_BREAKER_X - player.width / 2;
+        moleholeRootHop.toY = GEODE_BREAKER_HEIGHT;
+        moleholeRootHop.arcHeight = 22;
+        moleholeRootHop.targetRoot = null;
+        moleholeRootHop.targetIsLedge = true;
         player.vx = 0;
         player.vy = 0;
         player.vineFlying = false;
-        player.jumping = false;
-        player.usedDoubleJump = false;
+        player.jumping = true;
         return;
       }
     }
@@ -22281,6 +22358,14 @@ const MOLEHOLE_CUSHIONS = [
   { x: MOLEHOLE_SHAFT_X, heightAboveGround: 210, radius: 19, swingAmp: 18, swingSpeed: 0.0016, phase: 5.0, color: "#8a6a3a", colorLight: "#c9a05a", wMult: 3.0, hMult: 0.8, cornerMult: 0.55 }
 ];
 
+// which cushion (if any) the player is currently standing on -- lets the
+// landing check below carry the player along with that cushion's own
+// side-to-side drift instead of leaving them stranded at a fixed x while
+// the platform slides out from under them, and lets the draw pipeline
+// know when to redraw the pole segment over the player too (see the
+// molehole draw block, right after the player sprite renders).
+let moleholeRidingCushion = null;
+
 function moleholeCushionX(c) {
   return c.x + Math.sin(performance.now() * c.swingSpeed + c.phase) * c.swingAmp;
 }
@@ -23273,6 +23358,26 @@ function updateMoleholeScene(deltaTime) {
       const cx = moleholeCushionX(c);
       const cHalfWidth = (c.radius * (c.wMult ?? 3.2)) / 2; // matches the actual drawn width, which now varies a lot per cushion
       const platformTop = c.heightAboveGround;
+      const wasRiding = moleholeRidingCushion === c;
+
+      // already riding this exact cushion -- drag the player along with
+      // its own frame-to-frame drift BEFORE re-checking the landing box,
+      // so just standing still doesn't read as sliding off a platform
+      // that's actually moving under you ("move player aligned with
+      // cushion movement"). Used to also require player.vy === 0 exactly,
+      // but gravity re-applies a tiny downward nudge to vy every frame
+      // BEFORE this code runs, so vy is never still precisely 0 on any
+      // frame after the very first landing one -- the strict equality
+      // silently failed every single frame past that, which is why the
+      // carry never visibly did anything (confirmed via harness: riding
+      // stayed correctly set the whole time, only the x offset itself
+      // never applied). A loose y-proximity check (matching the looser
+      // margin the landing snap just below already uses) is enough --
+      // if we're still riding at all, we're still on the platform.
+      if (wasRiding && Math.abs(player.y - platformTop) < 6) {
+        player.x += cx - (c._lastX ?? cx);
+      }
+
       const playerBottom = player.y;
       if (
         player.x + player.width > cx - cHalfWidth &&
@@ -23286,8 +23391,15 @@ function updateMoleholeScene(deltaTime) {
         player.jumping = false;
         player.usedDoubleJump = false;
         player.vineFlying = false;
+        moleholeRidingCushion = c;
+      } else if (moleholeRidingCushion === c) {
+        // drifted out of range, or jumped/fell off -- no longer riding
+        moleholeRidingCushion = null;
       }
+      c._lastX = cx;
     });
+  } else {
+    moleholeRidingCushion = null;
   }
 
   // the secret arch piece -- standard platform landing (same pattern as
@@ -24094,6 +24206,11 @@ let tunnelStuckFrames = 0; // counts consecutive unrevealed frames -- a real esc
 // ordinary idle-standing on solid ground is untouched. Cleared again the
 // moment the player genuinely moves off of it under their own power.
 let tunnelRecoveryAnchor = null;
+// tracks which trapdoor (if any) the player is CURRENTLY mid-fall through --
+// see the overTrapGap computation in applyPhysics for why this needs to be
+// stateful rather than a plain per-frame position check. Cleared the moment
+// the player isn't actively falling anymore (lands, or starts moving upward).
+let tunnelFallingThroughTrap = null;
 
 // the wall's leading face (the one the elders sit next to) used to be a
 // perfectly flat rectangle -- only the DIRT INSIDE it was textured, so
@@ -25996,6 +26113,17 @@ drawBoomerangPrompt(camX);
 if (currentScene === "molehole") {
   drawMoleholeShaftActivation(camX);
   drawMineCartFrontRim();
+  // the cushion-behind-pole occlusion (see the MOLEHOLE_CUSHIONS draw
+  // loop above) only ever redrew the pole over the CUSHION -- the player
+  // riding it still drew on top of everything, so the moment the
+  // cushion swung behind the pole, the rider visibly floated in front of
+  // it instead of also passing behind ("when player is on a moving
+  // cushion... going behind the pole when cushion does?"). Redraw the
+  // same pole segment again here, after the player sprite, for whichever
+  // cushion the player is actually riding.
+  if (moleholeShaftFixed && moleholeRidingCushion && moleholeCushionDepth(moleholeRidingCushion) < 0) {
+    drawMoleholeShaftPoleSegment(moleholeRidingCushion, camX);
+  }
 }
 
 // held item — floats above the head while selected, so it's clear it's
