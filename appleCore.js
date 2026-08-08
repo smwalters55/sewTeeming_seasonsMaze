@@ -23275,7 +23275,12 @@ function updateMineCartRide(deltaTime) {
   if (mineCart.localY <= 0.5) {
     MINE_CART_BUMPS.forEach(b => {
       if (prevT < b.t && mineCart.t >= b.t) {
-        mineCart.vy = MINE_CART_JUMP_VY * 0.16 * b.strength;
+        // bumped up from 0.16 -- at that strength the actual peak height
+        // worked out to only ~1-3px, effectively invisible ("i didnt
+        // notice...the mini bumps at all"). 0.4 gives a real, noticeable
+        // 3-17px hop depending on the bump's own strength, still well
+        // under a real jump's ~72px peak
+        mineCart.vy = MINE_CART_JUMP_VY * 0.4 * b.strength;
       }
     });
   }
@@ -23414,8 +23419,12 @@ function drawMineCartRide(camX) {
     const worldT = (i / stalCount) * (MINE_CART_TRACK_LENGTH + 300) - 150;
     const sx2 = MINE_CART_SCREEN_X + (worldT - mineCart.t);
     if (sx2 < -20 || sx2 > canvas.width + 20) continue;
-    const len = 18 + pseudoRandom(seed + 1) * 28;
-    const topW = 6 + pseudoRandom(seed + 2) * 5;
+    // every few gets a real dramatic reach instead of all sitting in the
+    // same narrow band -- per direct feedback ("some of the stalactites
+    // longer than others so they grab your eye a lil more")
+    const isBig = i % 5 === 2;
+    const len = isBig ? 55 + pseudoRandom(seed + 1) * 40 : 18 + pseudoRandom(seed + 1) * 22;
+    const topW = isBig ? 9 + pseudoRandom(seed + 2) * 5 : 6 + pseudoRandom(seed + 2) * 4;
     const tipY = 0 + len;
     const shadow = ctx.createRadialGradient(sx2, 0, 2, sx2, 0, topW * 2.2);
     shadow.addColorStop(0, "rgba(0,0,0,0.35)");
@@ -23453,6 +23462,31 @@ function drawMineCartRide(camX) {
       ctx.beginPath();
       ctx.ellipse(sx2 + topW * 0.02, tipY + fall * 26, 1.1, 1.8, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // a puddle on the track under each big stalactite, where all that
+    // dripping actually ends up -- a still reflective pool, plus a
+    // faint ripple ring timed to the drip cycle right above it landing
+    if (isBig) {
+      const pw = topW * 1.6, ph = pw * 0.32;
+      ctx.fillStyle = "rgba(90,130,160,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(sx2, railY - 1, pw, ph, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(180,215,235,0.25)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(sx2, railY - 1, pw * 0.7, ph * 0.7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // ripple ring, right as a falling drip would land
+      if (dp >= 0.5 && dp < 0.85) {
+        const rp = (dp - 0.5) / 0.35;
+        ctx.strokeStyle = `rgba(200,225,240,${(1 - rp) * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(sx2, railY - 1, pw * 0.3 + rp * pw * 0.6, ph * 0.3 + rp * ph * 0.6, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 
