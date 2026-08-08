@@ -194,7 +194,8 @@ const ITEM_ICONS = {
   feather: "🪶",
   cushionPart: "⚙️",
   stone: "🪨",
-  aragonite: "🟠"
+  aragonite: "🟠",
+  geode: "🪨"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -440,6 +441,10 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 7, 0, "aragonite");
   },
+  geode: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 7, 0, "geode");
+  },
   bridgePiece: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "bridgePiece");
@@ -459,7 +464,10 @@ const ITEM_CANVAS_RENDER = {
 // it has no entry in ITEM_CANVAS_RENDER, so it fell into the plain-text
 // `else` branch below, which unconditionally appended the count and
 // showed "x1" even though boomerang was already listed here.
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel"];
+// aragonite and geode both added -- neither is a stackable pickup, each
+// is exactly one unique found mineral (with its own permanent shine/crack
+// cosmetic state), so a "x1" count reads as clutter rather than useful info
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode"];
 
 function updateInventoryUI() {
   const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
@@ -4061,6 +4069,79 @@ function drawCrystalShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// geode: the tunnel-town s1u2 find used to just be a second copy of the
+// sky crystal (shared itemType, same shiny blue gem icon) -- per direct
+// feedback ("i want the blue crystal to actually be a different thing,
+// like a mineral or neat rock... maybe actually do a real geode to crack
+// open") it's now its own item entirely, with its own uncracked/cracked
+// visual states, and it's the geode breaker himself who cracks it open
+// (see geodeCracked / startGeodeBreakerDialogue) -- a real match for his
+// actual name and his own stall's own before/after story, rather than
+// just another thing to "shine". Uncracked, it's deliberately dull and
+// unremarkable (same hand-torn irregular-rock technique as his counter's
+// own rock pile) -- cracked, it splits into two jagged halves with a
+// bright needle cluster inside, echoing his counter's own cracked
+// samples almost exactly.
+function drawGeodeShape(ctx, x, y, size, rotation, cracked) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  if (!cracked) {
+    ctx.fillStyle = "#5c5248";
+    pathFromPoints(irregularOvalPoints(0, 0, size, size * 0.82, x * 1.3 + y * 0.7, 0.32, 8));
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // a couple of faint mineral flecks -- just enough to read as "worth
+    // a second look", same restrained texture as the counter's own pile
+    [0.4, -0.6].forEach((a, i) => {
+      ctx.strokeStyle = "rgba(230,225,190,0.4)";
+      ctx.lineWidth = 0.8;
+      const fx = Math.cos(a) * size * 0.4, fy = Math.sin(a) * size * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(fx - 1.2, fy - 0.6);
+      ctx.lineTo(fx + 1.2, fy + 0.6);
+      ctx.stroke();
+    });
+  } else {
+    const pulse = Math.sin(performance.now() * 0.005) * 0.5 + 0.5;
+    // two cracked-open halves, split apart slightly -- the reveal itself
+    [-1, 1].forEach(side => {
+      ctx.save();
+      ctx.translate(side * size * 0.22, size * 0.08);
+      ctx.rotate(side * 0.18);
+      ctx.fillStyle = "#4a4038";
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.62, Math.PI * (side < 0 ? 0.15 : 0.85), Math.PI * (side < 0 ? 0.95 : 1.65));
+      ctx.fill();
+      // bright interior needle cluster peeking out of the crack
+      for (let k = 0; k < 4; k++) {
+        const a = Math.PI * (side < 0 ? 0.25 : 1.1) + (k / 4) * Math.PI * 0.5 * side;
+        const len = size * (0.35 + (k % 2) * 0.18);
+        ctx.strokeStyle = `rgba(150,200,255,${0.55 + pulse * 0.35})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len * 0.7);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+    // soft glow tying the two halves together
+    const glow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
+    glow.addColorStop(0, `rgba(150,200,255,${0.18 + pulse * 0.12})`);
+    glow.addColorStop(1, "rgba(150,200,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 1.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 // bucket: always drawn empty in-world — the only time it's ever rendered
 // on canvas is sitting in the bush and flying to the basket on pickup,
 // both of which happen before it's ever been filled. Fill state only
@@ -4521,6 +4602,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawTulipShape(ctx, x, y, size, rotation);
   } else if (itemType === "crystal") {
     drawCrystalShape(ctx, x, y, size, rotation);
+  } else if (itemType === "geode") {
+    drawGeodeShape(ctx, x, y, size, rotation, geodeCracked);
   } else if (itemType === "aragonite") {
     drawAragoniteShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
@@ -20652,13 +20735,16 @@ function drawMoleholeRootSwing(camX) {
 }
 
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
-// same permanent-cosmetic treatment now extended to the crystal -- he
-// used to just turn it down entirely ("too fine for my hammer, take it
-// to someone who'd appreciate it properly"), but per "change the blue
-// diamond to be something for the stones and minerals mole to do
-// something with" he now genuinely wants a look at it too, same
-// shine-it-up beat as the aragonite, just its own reaction lines.
-let crystalShined = false;
+// same permanent-cosmetic treatment, but for the geode it's a real crack
+// rather than a shine -- matches both his actual name and his own
+// stall's before/after story (dull pile -> cracked halves) far better
+// than reusing the aragonite's "polish" language. Per "i want the blue
+// crystal to actually be a different thing, like a mineral or neat
+// rock... maybe actually do a real geode to crack open" -- the tunnel-
+// town find is its own "geode" item now (see TUNNEL_NODES' s1u2 and
+// drawGeodeShape), fully separate from the unrelated sky/cloud "crystal"
+// pickup elsewhere, which this mole has no reaction to at all.
+let geodeCracked = false;
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
 const geodeBreakerShineLines = [
   ["Ohhh, real aragonite! Don't see one of those every day.", "There... polished bright as starlight."]
@@ -20666,31 +20752,33 @@ const geodeBreakerShineLines = [
 const geodeBreakerAlreadyShinedLines = [
   ["Ah, my little shine-work! Still glowing lovely.", "Keep that one close -- it's rare."]
 ];
-const geodeBreakerCrystalShineLines = [
-  ["Ho -- now THAT'S a find. Held right, even a crystal takes a shine.", "There. Catch the light with it, go on."]
+const geodeBreakerCrackLines = [
+  ["Ho -- now THIS is what I'm here for. Hold still...", "*CRACK* -- would you look at that. Never gets old."]
 ];
-const geodeBreakerCrystalAlreadyShinedLines = [
-  ["That crystal's still catching the light beautifully.", "Rarer than the aragonite, if you ask me."]
+const geodeBreakerAlreadyCrackedLines = [
+  ["Still my finest work, if I say so myself.", "Every crack's a little different -- that one's a real beauty."]
 ];
 // nothing held at all -- his own generic "mind the pile" line works fine
 // standalone here, no need to react to an empty hand
 const geodeBreakerNoStoneLines = [
-  ["Mind the pile -- mostly plain rock.", "Bring me something worth shining up."]
+  ["Mind the pile -- mostly plain rock.", "Bring me something worth cracking open."]
 ];
-// a gear is somebody else's business entirely -- keeps him from giving
-// the same generic "mind the pile" line to literally anything you're
-// holding
+// a crystal (the unrelated sky/cloud one) is too fine to touch, a gear
+// is somebody else's business entirely -- keeps him from giving the
+// same generic "mind the pile" line to literally anything you're holding
+const geodeBreakerCrystalLines = [
+  ["Ho -- that's no rock, that's a crystal.", "Too fine for my hammer. Take that to someone who'd appreciate it properly."]
+];
 // down THERE (the shaft), not up HERE (his own alcove) -- he's talking
 // about somewhere else entirely, so the direction words need to point
 // away from himself, not toward himself
 const geodeBreakerGearLines = [
-  ["That's a gear, not a mineral to shine!", "Belongs down there in that old shaft nearby, not up here with me."]
+  ["That's a gear, not a geode!", "Belongs down there in that old shaft nearby, not up here with me."]
 ];
 // holding literally anything else (a shovel, an apple, a stick, etc) --
-// a quick "huh, what's this" beat, then the actual ask, naming both
-// minerals he's actually after now
+// a quick "huh, what's this" beat, then the actual ask
 const geodeBreakerOtherItemLines = [
-  ["Huh. What's this now?", "Ah, that's not of use here. Bring me the aragonite or a real crystal you dig up down below -- those are the only things worth shining up."]
+  ["Huh. What's this now?", "Ah, that's not of use here. Bring me the aragonite or a real geode you dig up down below -- those are the only things worth cracking open."]
 ];
 
 function startGeodeBreakerDialogue() {
@@ -20701,11 +20789,13 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerShineLines;
   } else if (heldItem === "aragonite" && aragoniteShined) {
     geodeBreakerDialogue.lines = geodeBreakerAlreadyShinedLines;
-  } else if (heldItem === "crystal" && !crystalShined) {
-    crystalShined = true;
-    geodeBreakerDialogue.lines = geodeBreakerCrystalShineLines;
-  } else if (heldItem === "crystal" && crystalShined) {
-    geodeBreakerDialogue.lines = geodeBreakerCrystalAlreadyShinedLines;
+  } else if (heldItem === "geode" && !geodeCracked) {
+    geodeCracked = true;
+    geodeBreakerDialogue.lines = geodeBreakerCrackLines;
+  } else if (heldItem === "geode" && geodeCracked) {
+    geodeBreakerDialogue.lines = geodeBreakerAlreadyCrackedLines;
+  } else if (heldItem === "crystal") {
+    geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
   } else if (heldItem === null) {
@@ -22854,6 +22944,11 @@ function startMineCartRide() {
 // into darkness with dust kicking up -- no text/stats overlay at all.
 const MINE_CART_TIP_DURATION = 700; // ms -- the nose-down pitch into the hole
 const MINE_CART_SINK_DURATION = 2000; // ms -- the slow drop into darkness
+// how far right of the cart's own center the player slides out to, and
+// where the hole they fall into is centered -- past the tub's own right
+// wall (roughly +25-27px in drawMineCartRide) so the hole reads as its
+// own separate spot beside the cart, not overlapping/hidden under it
+const MINE_CART_HOLE_OFFSET_X = 46;
 
 function mineCartEase(p) {
   // smoothstep -- gentle ease in/out rather than a linear tip/sink, reads
@@ -22895,8 +22990,31 @@ function updateMineCartRide(deltaTime) {
         return;
       }
     }
-    player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2;
-    player.y = mineCart.localY;
+    // the player used to just stay pinned at the cart's own center while
+    // the tub rotated out from underneath them -- since the tub's tip
+    // rotation only ever transforms the TUB's own shapes (see
+    // drawMineCartRide), not the separately-drawn player sprite, the two
+    // visibly drifted apart: the tub tipped one way, the player just sat
+    // there exposed next to it rather than tipped out of it. Real repro:
+    // "player is v slightly sticking out bottom of cart... this is cart
+    // sitch" (screenshot showed the player sitting fully beside the
+    // tipped tub, nowhere near the hole). Rather than fight that by
+    // trying to rotate the player WITH the tub, leaning into it instead
+    // per "make player slide out to the right of the cart tipping to the
+    // right and out into a hole there" -- the player now visibly slides
+    // out to the right as the cart tips, into its OWN hole out there
+    // (see MINE_CART_HOLE_OFFSET_X in drawMineCartEndingEffects), rather
+    // than a hole dead-center under the cart that read as the player
+    // sinking behind/under it.
+    const tipE = mineCart.endPhase === "tip" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_TIP_DURATION)) : 1;
+    const sinkE = mineCart.endPhase === "sink" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION)) : 0;
+    const slideX = tipE * MINE_CART_HOLE_OFFSET_X + sinkE * 10;
+    player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2 + slideX;
+    // +2 matches the cart's own floor (cartY = gy - 2, see drawMineCartRide)
+    // -- without it the rider's feet sit exactly at gy, 2px BELOW the tub's
+    // actual floor line, poking out under the front rim's bottom edge
+    // ("player is v slightly sticking out bottom of cart")
+    player.y = mineCart.localY + 2;
     player.vy = 0;
     return;
   }
@@ -22945,7 +23063,9 @@ function updateMineCartRide(deltaTime) {
   // half a player-width (20px) to the right of the tub, so they visibly
   // hung off the right side instead of sitting centered in it.
   player.x = cameraX + MINE_CART_SCREEN_X - player.width / 2;
-  player.y = mineCart.localY;
+  // +2 matches the cart's own floor (cartY = gy - 2) -- see the matching
+  // comment in the ending branch above
+  player.y = mineCart.localY + 2;
   player.vy = mineCart.vy;
   player.jumping = mineCart.localY > 0;
 
@@ -23376,12 +23496,15 @@ function drawMineCartRide(camX) {
 // that drops you slowly back into molehole", answered "Cinematic dip, no
 // stats" when asked) this is now a pure atmosphere beat instead: the
 // cart's own tip is drawn back in drawMineCartRide (the rotated tub), and
-// this draws the dark hole it's tipping into, growing under the front of
-// the cart, plus a scatter of dust kicking up around its rim -- no text,
-// no stats, ever.
+// this draws the dark hole the PLAYER slides out into -- offset to the
+// right of the cart (MINE_CART_HOLE_OFFSET_X, matching the player's own
+// slide-out in updateMineCartRide) rather than dead-center under the
+// tub, which used to read as the player sinking behind/under the cart
+// instead of actually being tipped out of it -- plus a scatter of dust
+// kicking up around its rim. No text, no stats, ever.
 function drawMineCartEndingEffects() {
   if (!mineCart.ending) return;
-  const cx = MINE_CART_SCREEN_X + 10, holeY = gy - 2;
+  const cx = MINE_CART_SCREEN_X + MINE_CART_HOLE_OFFSET_X, holeY = gy - 2;
   const tipP = mineCart.endPhase === "tip" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_TIP_DURATION)) : 1;
   const sinkP = mineCart.endPhase === "sink" ? mineCartEase(Math.min(1, mineCart.endT / MINE_CART_SINK_DURATION)) : 0;
 
@@ -24862,7 +24985,7 @@ const TUNNEL_NODES = [
   // reward" -- a real dead end just 2 climbs up from the ground branch,
   // away from uTop where it used to sit right after the bridgePiece find
   // one level below it and read as redundant.
-  { id: "s1u2", parent: "s1u1", x: 1010, heightAboveGround: 150, dir: "up", hasItem: true, itemType: "crystal", dug: false },
+  { id: "s1u2", parent: "s1u1", x: 1010, heightAboveGround: 150, dir: "up", hasItem: true, itemType: "geode", dug: false }, // used to grant "crystal" -- the same shared item as the sky/cloud pickup elsewhere. Now its own real geode (see drawGeodeShape), per "i want the blue crystal to actually be a different thing... maybe actually do a real geode to crack open" -- cracked open by the geode breaker himself, not just shined.
   { id: "s2", parent: "s1", x: 990, heightAboveGround: 0, dir: "sunken", hasItem: false, dug: false },
   // s3a/s3b used to sit only 20-60 units apart -- close enough that
   // their two markers visually overlapped into what read as one
