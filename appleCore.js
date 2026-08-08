@@ -26012,18 +26012,20 @@ function updateTunnelTownScene(deltaTime) {
       } else {
         const node = TUNNEL_NODES.find(n => n.id === activeDig.id);
         node.dug = true;
-        // s5uHole is special -- digging it should both open the hole AND
-        // have the pocket below it already have a floor waiting, so
-        // gravity carrying the player down (next frame, no input needed)
-        // lands them somewhere real instead of an undug airborne gap.
-        // See s5uHole/s5uNook's own comments for why this couldn't just
-        // be "dig the nook floor separately while falling through" --
-        // that's the exact mid-air-digging problem this whole redesign
-        // was meant to get rid of.
-        if (node.id === "s5uHole") {
-          const nook = TUNNEL_NODES.find(n => n.id === "s5uNook");
-          if (nook) nook.dug = true;
-        }
+        // s5uHole used to also auto-dig s5uNook as a floor to catch the
+        // player one short hop below -- but with no ledge marker drawn
+        // there (see the render skip above, "remove the mini platform
+        // right under the new vertical hole"), landing on that invisible
+        // floor just read as stopping and floating in mid-air with
+        // nothing visibly holding them up. Per direct feedback ("lets
+        // fall all the way down this vertical hole"), s5uNook is no
+        // longer dug at all -- the hole just opens straight through with
+        // no floor waiting underneath, and gravity carries the player
+        // the rest of the way down to real ground, same as any other
+        // undug gap in tunnel town. s5uNook itself is left in
+        // TUNNEL_NODES inert (parented off the map/frontier flow
+        // already) rather than deleted, in case a real floor down there
+        // is wanted again later.
         // step the player up onto their own newly-dug platform, if this
         // was an elevated ("up"/"side") spot and they're sitting
         // somewhere below it -- without this, digging one of these was
