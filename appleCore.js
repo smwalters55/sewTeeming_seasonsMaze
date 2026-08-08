@@ -24942,7 +24942,16 @@ const TUNNEL_NODES = [
   // off u3, well clear of the mound (mound only spans height 118-251;
   // this sits at 300, above it, so the lower x is safe here even though
   // it wouldn't be lower down)
-  { id: "u3Turn", parent: "u3", x: 760, heightAboveGround: 300, dir: "side", hasItem: true, itemType: "bridgePiece", dug: false }, // the bridgePiece's new home -- one level down from uTop, per "move the other reward up here like one level down"
+  // swapped with s5u2's own find -- this used to hold the bridgePiece,
+  // but that just sat on a path you'd walk anyway (no real detour), same
+  // problem the stone had in ITS old spot. The stone now lives here
+  // instead: a genuinely separate branch from the s5uHole climb entirely
+  // (this is off the LEFT u-chain), so getting it means a deliberate trip
+  // over here and remembering to bring it all the way back across to the
+  // vertical hole -- real exploring, not an unavoidable pickup along the
+  // same corridor. Per "swap hard stone and bridge branch material with
+  // each other's location".
+  { id: "u3Turn", parent: "u3", x: 760, heightAboveGround: 300, dir: "side", hasItem: true, itemType: "stone", dug: false },
   // the reward that used to live at the end of the left leg (uTop) --
   // now climbs off the jog instead of straight off u3, same relative
   // jump (dx50/dh80) that already worked off u3 directly, just shifted
@@ -24992,7 +25001,12 @@ const TUNNEL_NODES = [
   // confusing double-hole. Spaced them further apart: the stone's dead
   // end continues straight along the ground well to the right, while
   // the path onward breaks off up and away instead of nearly on top of it.
-  { id: "s3a", parent: "s2", x: 1120, heightAboveGround: 0, dir: "side", hasItem: true, itemType: "stone", dug: false }, // the stone -- a real dead end, but not empty anymore
+  // used to hold the stone -- moved much further up the right climb (see
+  // s5u2) per "move the stone HIGHER, like again 3 hole digs before the
+  // rightmost top vertical hole... you haaave to explore more before you
+  // can dig that hard hole and have to remember it". A real dead end
+  // again now, same as before the stone was ever added here.
+  { id: "s3a", parent: "s2", x: 1120, heightAboveGround: 0, dir: "side", hasItem: false, dug: false },
   { id: "s3b", parent: "s2", x: 1020, heightAboveGround: 90, dir: "up", hasItem: false, dug: false }, // a real jump up and away, continues the reward path
   { id: "s4", parent: "s3b", x: 1100, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
   { id: "s5", parent: "s4", x: 1180, heightAboveGround: 90, dir: "side", hasItem: false, dug: false },
@@ -25009,10 +25023,11 @@ const TUNNEL_NODES = [
   // see s5u4/s5u5 below, well off past the top of the right-side climb.
   // the cushion-shaft piece lives here -- a real dead end, no longer
   // crowded now that the aragonite moved off the ground floor entirely.
-  // needsStone brought back -- this is the harder-rock spot, gated on
-  // the stone dug up earlier at s3a. Real reason to detour for it before
-  // this one cracks open, instead of the mechanic sitting unused in code
-  // with nothing actually gating on it.
+  // needsStone REMOVED from here -- it used to gate the gear behind the
+  // stone found just one branch over (s3a), which put the find and the
+  // gate "almost directly next to each other" with no real exploring or
+  // remembering involved. The gate moved much further up the climb
+  // instead (see s5uHole below); the gear itself is a free dig again.
   // x pulled back in from 1290 to 1260 (dx 80 from s5, not 110) --
   // confirmed via a real physics simulation that a plain walk-off-the-
   // ledge fall reaches a same-height "side" spot up to about dx 85 away,
@@ -25022,12 +25037,19 @@ const TUNNEL_NODES = [
   // subtree pulled back the same -30 so every relative jump distance
   // past this point (already verified reachable at the old spacing)
   // stays exactly as it was.
-  { id: "s5r", parent: "s5", x: 1260, heightAboveGround: 90, dir: "side", hasItem: true, needsStone: true, dug: false },
+  { id: "s5r", parent: "s5", x: 1260, heightAboveGround: 90, dir: "side", hasItem: true, dug: false },
   // the right side was all flat side-to-side walking past the reward --
   // a real climbing branch out here mirrors the left side's up-chain and
   // gives the right half of the maze its own vertical movement too.
   { id: "s5u1", parent: "s5r", x: 1300, heightAboveGround: 170, dir: "up", hasItem: false, dug: false },
-  { id: "s5u2", parent: "s5u1", x: 1250, heightAboveGround: 250, dir: "up", hasItem: false, dug: false }, // pass-through now, not the dead end -- see s5u3
+  // swapped with u3Turn's own find -- holding the stone here meant it
+  // sat on the same unavoidable path as s5uHole's own needsStone gate
+  // just a few dig-steps up, so it was always auto-collected on the way
+  // there with zero real detour or memory involved. The bridgePiece
+  // lives here now instead (harmless on this path, nothing gates on it);
+  // the stone moved to u3Turn, a genuinely separate branch off the LEFT
+  // u-chain -- see there.
+  { id: "s5u2", parent: "s5u1", x: 1250, heightAboveGround: 250, dir: "up", hasItem: true, itemType: "bridgePiece", dug: false },
   // the climb used to just keep going straight up -- bent it left into an
   // actual horizontal turn partway up instead, then kept climbing from
   // there, and gave the bend its own little side branch so the extra
@@ -25087,7 +25109,14 @@ const TUNNEL_NODES = [
   // there's already solid ground waiting for them -- press space once,
   // standing still, and the whole thing (hole opens + reward pops +
   // dropped into a real floor below) just happens.
-  { id: "s5uHole", parent: "s5uSide", x: 1115, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "aragonite", dug: false, shelfGap: true },
+  // needsStone gate lives here now, not down at s5r -- and the stone
+  // itself lives all the way over at u3Turn, on the completely separate
+  // LEFT u-chain (see there), not anywhere along this climb. Reaching
+  // this spot with no stone in hand is entirely possible (the gate only
+  // blocks the actual dig, not walking up to it) -- getting past it means
+  // a real deliberate trip back across the map for the stone, then
+  // remembering to bring it all the way up here.
+  { id: "s5uHole", parent: "s5uSide", x: 1115, heightAboveGround: 250, dir: "side", hasItem: true, itemType: "aragonite", needsStone: true, dug: false, shelfGap: true },
   // the actual pocket floor -- no reward and no separate dig of its own
   // anymore, auto-dug alongside s5uHole (see above). Parented to
   // s5uHole purely so it stays off the map/frontier logic entirely until
