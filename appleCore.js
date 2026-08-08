@@ -4120,7 +4120,7 @@ function drawGeodeShape(ctx, x, y, size, rotation, cracked) {
       for (let k = 0; k < 4; k++) {
         const a = Math.PI * (side < 0 ? 0.25 : 1.1) + (k / 4) * Math.PI * 0.5 * side;
         const len = size * (0.35 + (k % 2) * 0.18);
-        ctx.strokeStyle = `rgba(150,200,255,${0.55 + pulse * 0.35})`;
+        ctx.strokeStyle = `rgba(140,235,170,${0.55 + pulse * 0.35})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -4129,10 +4129,13 @@ function drawGeodeShape(ctx, x, y, size, rotation, cracked) {
       }
       ctx.restore();
     });
-    // soft glow tying the two halves together
+    // soft glow tying the two halves together -- green, so this doesn't
+    // read as just another blue mineral (crystal/aragonite/gear cushion
+    // are all blue already; per direct feedback the geode should stand
+    // apart from that)
     const glow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
-    glow.addColorStop(0, `rgba(150,200,255,${0.18 + pulse * 0.12})`);
-    glow.addColorStop(1, "rgba(150,200,255,0)");
+    glow.addColorStop(0, `rgba(140,235,170,${0.18 + pulse * 0.12})`);
+    glow.addColorStop(1, "rgba(140,235,170,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(0, 0, size * 1.3, 0, Math.PI * 2);
@@ -11017,15 +11020,23 @@ const FOREST_INTRO_GEARS = [
   // -- a first taste of the clockwork motion ahead, without any of the
   // actual timed-launch mechanics. Lighter growth than the wild bramble
   // side, easing visually into the mechanical grove ahead. Spread
-  // across the full 2330 (bramble exit) - 2730 (lever, now pushed
-  // further right for real breathing room between the two set-pieces)
-  // gap -- five gears now instead of three, more to actually hop
-  // around on rather than just cross in two steps.
-  { x: 2360, height: 30, outerR: 20, overgrown: 1, slowSpin: 0.0004 },
-  { x: 2430, height: 55, outerR: 18, overgrown: 0, slowSpin: 0.00045 },
-  { x: 2500, height: 35, outerR: 22, overgrown: 1, slowSpin: 0.0005 },
-  { x: 2570, height: 60, outerR: 16, overgrown: 0, slowSpin: 0.00055 },
-  { x: 2640, height: 40, outerR: 20, overgrown: 0, slowSpin: 0.0006 } // last of the row, well clear of the lever
+  // across the full 2330 (bramble exit) - 2730 (lever) gap -- five
+  // gears now instead of three, more to actually hop around on rather
+  // than just cross in two steps.
+  //
+  // Spacing/heights/radii widened and varied per direct feedback
+  // ("spread out... a bit more, and give them more varying heights and
+  // widths") -- gaps now range 60-105 (was a flat 70 every time),
+  // heights range 22-90 (was a narrow 30-60 band), and outerR ranges
+  // 13-26 (was 16-22). Every jump verified reachable via the same
+  // frame-by-frame physics simulation used elsewhere in this file
+  // (vy0=12/gravity=0.8 for the climbs, a plain walk-off-the-edge fall
+  // for the one net-downhill gap at the end) before locking these in.
+  { x: 2360, height: 22, outerR: 24, overgrown: 1, slowSpin: 0.0004 },
+  { x: 2465, height: 75, outerR: 14, overgrown: 0, slowSpin: 0.00045 }, // dx105 climb up -- the real stretch of the row
+  { x: 2550, height: 32, outerR: 26, overgrown: 1, slowSpin: 0.0005 }, // dx85 back down -- widest gear in the row, generous landing
+  { x: 2645, height: 90, outerR: 13, overgrown: 0, slowSpin: 0.00055 }, // dx95 climb, tallest/narrowest of the five
+  { x: 2705, height: 45, outerR: 20, overgrown: 0, slowSpin: 0.0006 } // dx60 easy drop back down, still 25px clear of the lever
 ];
 
 // overgrown tier -> (vine wraps, moss patches). 0 keeps a gear reading
@@ -12925,6 +12936,12 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  // set inside the FOREST_INTRO_GEARS loop below when the player is
+  // standing still on one of the five always-spinning breather-row
+  // gears -- read further down alongside onSpinningGear to drive the
+  // same ride-carry/tilt effect the real clockwork grove uses.
+  let onSpinningIntroGear = null;
+
   // RACCOON INTERACTION — same shape as frog/rabbit's trigger
   const raccoonCenterX = raccoon.x + raccoon.width / 2;
   if (keys.spaceJustPressed && isPlayerNear(raccoonCenterX, 0, 70, 6, 999)) {
@@ -13052,6 +13069,22 @@ function updateForestScene(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+    }
+    // the five breather-row gears visually spin in place (slowSpin,
+    // always-on -- no lever/timer gating like the real clockwork grove
+    // has). Per direct feedback ("make the 5 gears that auto rotate
+    // also rotate player naturally... when player on them"), standing
+    // still on one of these now carries/tilts the rider too, reusing
+    // the same forestGearRideAngle lean the real clockwork grove uses
+    // (see the onSpinningGear handling below) -- these just aren't
+    // gated on clockworkSpeedFactor since they're never lever-stopped.
+    if (
+      g.slowSpin &&
+      Math.abs(player.y - gTop) < 1 &&
+      player.x + player.width > g.x - g.outerR &&
+      player.x < g.x + g.outerR
+    ) {
+      onSpinningIntroGear = g;
     }
     if (
       g.piece && !g.pieceCollected &&
@@ -13515,6 +13548,18 @@ function updateForestScene(deltaTime) {
     const angularDelta = onSpinningGear.dir * FOREST_CLOCKWORK_SPIN_SPEED * forestGearSpinMult(onSpinningGear) * clockworkSpeedFactor * deltaTime * 1000;
     player.x += onSpinningGear.outerR * angularDelta;
     const targetLean = onSpinningGear.dir * 0.3;
+    forestGearRideAngle += (targetLean - forestGearRideAngle) * 0.15;
+  } else if (onSpinningIntroGear && !player.launched) {
+    // same carry/tilt as the real clockwork grove above, just driven by
+    // the breather-row gear's own always-on spin rate (slowSpin, a
+    // rad/ms constant used directly for rot in drawForestIntroGears)
+    // instead of FOREST_CLOCKWORK_SPIN_SPEED*clockworkSpeedFactor --
+    // these five aren't lever-gated, so there's no speed factor to
+    // multiply against. All five spin the same direction (every
+    // slowSpin value is positive), so dir is just +1 here.
+    const angularDelta = onSpinningIntroGear.slowSpin * deltaTime * 1000;
+    player.x += onSpinningIntroGear.outerR * angularDelta;
+    const targetLean = 0.3;
     forestGearRideAngle += (targetLean - forestGearRideAngle) * 0.15;
   } else if (forestGearRideAngle !== 0) {
     // eases back to upright once you've stepped off, rather than
@@ -21036,7 +21081,7 @@ function drawMoleShopAlcove(camX) {
     { color: "#c98a3a", shape: "ellipse" },
     { color: "#7a2f2f", shape: "box" },
     { color: "#3f5766", shape: "triangle" },
-    { color: "#5c8a35", shape: "ellipse" },
+    { color: "#aad2e1", shape: "klein" }, // "make one of the items a klein bottle" -- swapped in for the second plain ellipse
     { color: "#b09040", shape: "stack" }
   ].forEach((item, i) => {
     const seed = MOLE_SHOP_X * 5.3 + i * 41.7;
@@ -21064,6 +21109,32 @@ function drawMoleShopAlcove(camX) {
         ctx.ellipse(wx + (k - 1) * 3, wy - k * 2, 4, 2.6, 0, 0, Math.PI * 2);
         ctx.fill();
       }
+    } else if (item.shape === "klein") {
+      // a little glass klein bottle -- the neck loops up, over, and
+      // dives back down through the body's own wall, the shape's whole
+      // "impossible surface" signature. Translucent glass fill (rather
+      // than an opaque one like the other wares) so the tube reads as
+      // passing through the body instead of just stopping at its
+      // surface. "make one of the items a klein bottle?? for visual item"
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.fillStyle = "rgba(170,210,225,0.5)";
+      ctx.strokeStyle = "rgba(70,110,130,0.85)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(0, 3, 6, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-1, -3);
+      ctx.bezierCurveTo(-1, -10, 6.5, -12, 6.5, -4);
+      ctx.bezierCurveTo(6.5, 1.5, 1, -1, 0, 3.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(1, -3);
+      ctx.bezierCurveTo(1, -9, 4.5, -10.5, 4.5, -4.5);
+      ctx.stroke();
+      ctx.restore();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 3, ry = 4 + pseudoRandom(seed + 3) * 2;
       ctx.beginPath();
