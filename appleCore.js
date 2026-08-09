@@ -10942,34 +10942,68 @@ function drawForestRiver(camX) {
     const pts = [];
     for (let i = 0; i <= samples; i++) {
       const worldX = x1 + (x2 - x1) * (i / samples);
-      pts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) });
+      pts.push({ worldX, x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) });
     }
     return pts;
   };
+  // width of one log along the bridge -- matches the scale of the
+  // carried/piled logs (drawBridgePieceShape) so the deck reads as the
+  // SAME logs laid side by side, not a generic plank surface
+  const LOG_WIDTH = 18;
+  const LOG_BUMP = 3; // how far each log's rounded top pokes above the smooth arc line
   const drawDeckSpan = (pts, alpha) => {
     if (pts.length < 2 || alpha <= 0) return;
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#8a6438";
+    const bumpAt = (worldX) => Math.max(0, Math.sin((worldX / LOG_WIDTH) * Math.PI * 2)) * LOG_BUMP;
+    // base fill -- same bark brown as the carried log's own body, so
+    // the finished deck is visibly the same material the player's
+    // been hauling over one at a time
+    ctx.fillStyle = "#6b4423";
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y - 6);
-    pts.forEach(p => ctx.lineTo(p.x, p.y - 6));
+    ctx.moveTo(pts[0].x, pts[0].y - 6 - bumpAt(pts[0].worldX));
+    pts.forEach(p => ctx.lineTo(p.x, p.y - 6 - bumpAt(p.worldX)));
     for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + 2);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "#4a3420";
+    ctx.strokeStyle = "#3a2410";
     ctx.lineWidth = 1;
-    for (let i = 0; i < pts.length; i++) {
+    ctx.stroke();
+
+    // a pale highlight tracing just the rounded top of each log -- the
+    // same pale-wood accent drawBridgePieceShape uses on the carried
+    // log's sawn end, stretched along the whole row so each hump reads
+    // as a round log catching the light rather than a flat plank
+    ctx.strokeStyle = "rgba(216,185,136,0.55)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const py = p.y - 6 - bumpAt(p.worldX) + 1;
+      if (i === 0) ctx.moveTo(p.x, py); else ctx.lineTo(p.x, py);
+    });
+    ctx.stroke();
+
+    // dark seams at each log-to-log boundary (where the bump dips back
+    // to 0), same bark-shadow color as the carried log's own outline
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = 0.8;
+    const spanStart = pts[0].worldX, spanEnd = pts[pts.length - 1].worldX;
+    const firstSeam = Math.ceil(spanStart / LOG_WIDTH) * LOG_WIDTH;
+    for (let wx = firstSeam; wx < spanEnd; wx += LOG_WIDTH) {
+      const t = (wx - spanStart) / (spanEnd - spanStart);
+      const idx = Math.min(pts.length - 1, Math.max(0, Math.round(t * (pts.length - 1))));
+      const p = pts[idx];
       ctx.beginPath();
-      ctx.moveTo(pts[i].x, pts[i].y - 6);
-      ctx.lineTo(pts[i].x, pts[i].y + 2);
+      ctx.moveTo(p.x, p.y - 6);
+      ctx.lineTo(p.x, p.y + 2);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   };
 
-  // always-solid lead-ins
-  drawDeckSpan(sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, postSpanX1, 4), 1);
-  drawDeckSpan(sampleDeckPts(postSpanX2, FOREST_RIVER_FAR_BANK_X, 4), 1);
+  // always-solid lead-ins -- fine enough sampling for the per-log bump
+  // to read smoothly rather than as sharp facets
+  drawDeckSpan(sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, postSpanX1, Math.max(4, Math.round((postSpanX1 - FOREST_RIVER_NEAR_BANK_X) / 4))), 1);
+  drawDeckSpan(sampleDeckPts(postSpanX2, FOREST_RIVER_FAR_BANK_X, Math.max(4, Math.round((FOREST_RIVER_FAR_BANK_X - postSpanX2) / 4))), 1);
 
   // main segments, gated on build progress
   const buildSegW = (postSpanX2 - postSpanX1) / FOREST_RIVER_LOG_SEGMENTS;
@@ -10978,7 +11012,7 @@ function drawForestRiver(camX) {
     const segX1 = postSpanX1 + seg * buildSegW, segX2 = segX1 + buildSegW;
     const placedAt = forestRiverLogPlacedAt[seg];
     const alpha = placedAt ? Math.min(1, (performance.now() - placedAt) / FOREST_RIVER_LOG_FADE_MS) : 1;
-    drawDeckSpan(sampleDeckPts(segX1, segX2, 5), alpha);
+    drawDeckSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), alpha);
   }
 
   // full bank-to-bank sample, kept for the railings below -- the
@@ -13455,22 +13489,31 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
-  // re-scatter the near riverbank's pebbles once per real "step" of
-  // walking, not once per frame -- the first pass bumped this on every
-  // single frame the player moved even a fraction of a pixel, which at
-  // 60fps read as constant flicker rather than a deliberate shift
-  // ("rocks still scatter with each movement" -- too much, too fast).
-  // player.speed is 3px/frame, so even the first 18px threshold was
-  // still retriggering ~10x/sec -- still a flicker, not a step. Raised
-  // to 50px, landing around 3-4 reshuffles/sec at normal walk speed,
-  // closer to an actual footstep cadence.
-  const FOREST_RIVER_PEBBLE_STEP_DIST = 50;
-  if (forestRiverPebbleLastX === null || forestRiverPebbleLastX === undefined) forestRiverPebbleLastX = player.x;
-  forestRiverPebbleAccumX += Math.abs(player.x - forestRiverPebbleLastX);
-  forestRiverPebbleLastX = player.x;
-  if (forestRiverPebbleAccumX >= FOREST_RIVER_PEBBLE_STEP_DIST) {
-    forestRiverPebbleShuffle++;
-    forestRiverPebbleAccumX = 0;
+  // re-scatter the near riverbank's pebbles occasionally as the player
+  // moves around near the bank, not on every step -- two earlier passes
+  // (first: every frame; then: every 18px, still ~10x/sec at
+  // player.speed=3px/frame) both still read as constant flicker,
+  // especially since the log-building loop has the player pacing right
+  // next to this exact spot on every single round trip. Two changes
+  // this time: only accumulate distance while actually near the bank
+  // (so unrelated walking elsewhere in the forest doesn't quietly bank
+  // up distance that dumps out as a pop the moment the player arrives
+  // back here), and a much longer 400px throw before the next reshuffle
+  // -- more than a full round trip to the build edge early on, so it
+  // reads as "shifted since I was last here" rather than "shifting
+  // under my feet."
+  const FOREST_RIVER_PEBBLE_STEP_DIST = 400;
+  const nearRiverBank = Math.abs(player.x - FOREST_RIVER_NEAR_BANK_X) < 400;
+  if (nearRiverBank) {
+    if (forestRiverPebbleLastX === null || forestRiverPebbleLastX === undefined) forestRiverPebbleLastX = player.x;
+    forestRiverPebbleAccumX += Math.abs(player.x - forestRiverPebbleLastX);
+    forestRiverPebbleLastX = player.x;
+    if (forestRiverPebbleAccumX >= FOREST_RIVER_PEBBLE_STEP_DIST) {
+      forestRiverPebbleShuffle++;
+      forestRiverPebbleAccumX = 0;
+    }
+  } else {
+    forestRiverPebbleLastX = null; // re-anchor cleanly next time the player comes back
   }
 
   // RIVER BRIDGE ARC — same sampled-ramp technique as autumn's own
