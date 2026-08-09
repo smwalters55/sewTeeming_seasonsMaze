@@ -10694,18 +10694,62 @@ const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 s
 const FOREST_RIVER_LOG_PILE_START = 9; // 7 needed + 2 extra sitting there once finished ("slightly more than needed")
 const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 85; // moved further left into the grass, away from the bank slant
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
+const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
 
 let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
-let forestRiverLogsBuilt = 0; // how many of the 7 segments are decked so far
-let forestRiverLogPlacedAt = []; // performance.now() per segment index, for the fade-in
+// two-step build, matching how a real beam bridge actually goes up:
+// the long stringer beam gets carried over and placed first (crossable
+// right away, but bare and wobbly), and decking it into its finished,
+// stable form is a separate second pass done AT that same span, no new
+// log required. forestRiverSegmentsStrung drives the wall (a placed
+// stringer is enough to walk on); forestRiverSegmentsDecked is always
+// <= strung and drives which segments render fully finished.
+let forestRiverSegmentsStrung = 0;
+let forestRiverSegmentsDecked = 0;
+let forestRiverStringerPlacedAt = []; // performance.now() per segment index, when its stringer went down -- drives the wobble decay
+let forestRiverLogPlacedAt = []; // performance.now() per segment index, when it was DECKED -- for the finished-texture fade-in
 
-// x of the post-span boundary the NEXT log needs to be placed at (the
-// current "building edge") -- also doubles as the invisible wall
-// position blocking any further progress until that log goes down
-function forestRiverBuildEdgeX() {
+// shared post-span geometry -- used by both the render side (drawing
+// the posts/segments) and the update side (the wall, collision, and
+// figuring out which segment the player is currently standing over),
+// so the two can never drift out of sync with each other
+function forestRiverSegSpan() {
   const postSpanX1 = FOREST_RIVER_NEAR_BANK_X + 28, postSpanX2 = FOREST_RIVER_FAR_BANK_X - 28;
   const segW = (postSpanX2 - postSpanX1) / FOREST_RIVER_LOG_SEGMENTS;
-  return postSpanX1 + forestRiverLogsBuilt * segW;
+  return { postSpanX1, postSpanX2, segW };
+}
+function forestRiverSegmentIndexAt(worldX) {
+  // -1 for anywhere outside the actual post span (e.g. standing at the
+  // pile) -- this used to clamp those positions into segment 0, which
+  // let the decking check fire from clear across the bank as long as
+  // enough real time had passed, since -1 never legitimately matches
+  // a real segment index the way a clamped 0 could
+  const { postSpanX1, postSpanX2, segW } = forestRiverSegSpan();
+  if (worldX < postSpanX1 || worldX >= postSpanX2) return -1;
+  return Math.floor((worldX - postSpanX1) / segW);
+}
+
+// x of the post-span boundary the NEXT stringer needs to be placed at
+// (the current "building edge") -- also doubles as the invisible wall
+// position blocking any further progress until that stringer goes down
+function forestRiverBuildEdgeX() {
+  const { postSpanX1, segW } = forestRiverSegSpan();
+  return postSpanX1 + forestRiverSegmentsStrung * segW;
+}
+
+// a placed-but-undecked stringer's live wobble -- a real rock right
+// after it's set down that decays over about a second and a half,
+// settling into a small permanent sway that never fully disappears
+// until it's actually decked. Applied to both the visual render and
+// (while the player is standing on that exact segment) their own
+// height, so an unfinished span feels unstable underfoot, not just
+// different-looking.
+function forestRiverStringerWobble(seg) {
+  const placedAt = forestRiverStringerPlacedAt[seg];
+  if (placedAt == null) return 0;
+  const elapsed = performance.now() - placedAt;
+  const amp = 6 * Math.exp(-elapsed / 500) + 1;
+  return Math.sin(elapsed * 0.02) * amp;
 }
 
 // a handful of fixed irregular offsets for the shoreline -- NOT equal
@@ -11098,19 +11142,43 @@ function drawForestRiver(camX) {
     ctx.globalAlpha = 1;
   };
 
+  // a bare, just-placed stringer -- plain and thin with none of the
+  // finished deck's bark bump/highlight/seam texture yet (that's what
+  // decking adds), so it visually reads as genuinely unfinished. The
+  // whole span shares ONE wobble offset -- a rigid beam rocking on its
+  // two end posts, not a point-by-point ripple.
+  const drawStringerSpan = (pts, wobble) => {
+    if (pts.length < 2) return;
+    ctx.fillStyle = "#8a7358";
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y - 4 + wobble);
+    pts.forEach(p => ctx.lineTo(p.x, p.y - 4 + wobble));
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + 1 + wobble);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#4a3f30";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  };
+
   // always-solid lead-ins -- fine enough sampling for the per-log bump
   // to read smoothly rather than as sharp facets
   drawDeckSpan(sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, postSpanX1, Math.max(4, Math.round((postSpanX1 - FOREST_RIVER_NEAR_BANK_X) / 4))), 1);
   drawDeckSpan(sampleDeckPts(postSpanX2, FOREST_RIVER_FAR_BANK_X, Math.max(4, Math.round((FOREST_RIVER_FAR_BANK_X - postSpanX2) / 4))), 1);
 
-  // main segments, gated on build progress
+  // main segments -- decked ones get the full finished-log render
+  // (with their own fade-in), strung-but-undecked ones get the bare
+  // wobbling stringer, and anything beyond that isn't drawn at all
   const buildSegW = (postSpanX2 - postSpanX1) / FOREST_RIVER_LOG_SEGMENTS;
   for (let seg = 0; seg < FOREST_RIVER_LOG_SEGMENTS; seg++) {
-    if (seg >= forestRiverLogsBuilt) continue;
     const segX1 = postSpanX1 + seg * buildSegW, segX2 = segX1 + buildSegW;
-    const placedAt = forestRiverLogPlacedAt[seg];
-    const alpha = placedAt ? Math.min(1, (performance.now() - placedAt) / FOREST_RIVER_LOG_FADE_MS) : 1;
-    drawDeckSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), alpha);
+    if (seg < forestRiverSegmentsDecked) {
+      const placedAt = forestRiverLogPlacedAt[seg];
+      const alpha = placedAt ? Math.min(1, (performance.now() - placedAt) / FOREST_RIVER_LOG_FADE_MS) : 1;
+      drawDeckSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), alpha);
+    } else if (seg < forestRiverSegmentsStrung) {
+      drawStringerSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), forestRiverStringerWobble(seg));
+    }
   }
 
   // full bank-to-bank sample, kept for the railings below -- the
@@ -11150,6 +11218,30 @@ function drawForestRiver(camX) {
   if (forestRiverLogPile > 0) {
     const pileX = FOREST_RIVER_LOG_PILE_X - camX;
     const pileBaseY = gy + 2;
+
+    // a quick settle-bounce right after a log is lifted off -- the
+    // remaining stack dips down and springs back, like it actually
+    // just resettled under its own weight, instead of the pile just
+    // silently having one fewer log in it
+    const sinceSettle = performance.now() - forestRiverPileSettleAt;
+    const settleDip = sinceSettle < 260
+      ? Math.sin(Math.min(1, sinceSettle / 260) * Math.PI) * 3
+      : 0;
+
+    // a little puff of dust/debris kicked up at the moment of pickup,
+    // fading out fast
+    if (sinceSettle < 320) {
+      const puffT = sinceSettle / 320;
+      for (let i = 0; i < 3; i++) {
+        const ang = -0.4 + i * 0.4;
+        const dist = puffT * (10 + i * 4);
+        ctx.fillStyle = `rgba(120,100,70,${0.35 * (1 - puffT)})`;
+        ctx.beginPath();
+        ctx.ellipse(pileX + Math.cos(ang) * dist, pileBaseY - 2 - Math.sin(ang) * dist * 0.6, 3 - puffT * 1.5, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     // a proper wide, low pile -- a full row across the base, a shorter
     // row on top, rather than one narrow column stacked tall
     const rows = [
@@ -11161,7 +11253,7 @@ function drawForestRiver(camX) {
     for (let r = 0; r < rows.length && shown < forestRiverLogPile; r++) {
       for (const rowOffset of rows[r]) {
         if (shown >= forestRiverLogPile) break;
-        drawBridgePieceShape(ctx, pileX + rowOffset, pileBaseY - 4 - r * 6, 9, 0.05 * (rowOffset < 0 ? 1 : rowOffset > 0 ? -1 : 0));
+        drawBridgePieceShape(ctx, pileX + rowOffset, pileBaseY - 4 - r * 6 + settleDip, 9, 0.05 * (rowOffset < 0 ? 1 : rowOffset > 0 ? -1 : 0));
         shown++;
       }
     }
@@ -12699,6 +12791,12 @@ let forestRiverPebbleShuffle = 0;
 let forestRiverPebbleAccumX = 0;
 let forestRiverPebbleLastX = null;
 
+// pickup polish for the log pile -- a settle-bounce on the stack and a
+// pop-in on the carried icon, so lifting a log reads as an actual
+// physical action rather than an instant item swap
+let forestRiverPileSettleAt = 0;
+let forestRiverLogPickedUpAt = 0;
+
 // simple back-out ease -- overshoots past 1 then settles, used for the
 // punchy "just got yanked" feel on the lever pull
 function easeOutBack(x) {
@@ -13632,7 +13730,18 @@ function updateForestScene(deltaTime) {
   // not moving upward, same guard the ramp uses, so a jump made while
   // crossing isn't yanked back down onto the curve mid-air.
   if (player.x + player.width > FOREST_RIVER_NEAR_BANK_X && player.x < FOREST_RIVER_FAR_BANK_X) {
-    const bridgeHeight = forestRiverBridgeHeightAt(player.x + player.width / 2);
+    const centerX = player.x + player.width / 2;
+    let bridgeHeight = forestRiverBridgeHeightAt(centerX);
+    // an unfinished stringer actually feels unstable underfoot, not
+    // just different-looking -- add its live wobble to the height the
+    // player is standing on, same offset the render uses
+    const { postSpanX1, postSpanX2 } = forestRiverSegSpan();
+    if (centerX > postSpanX1 && centerX < postSpanX2) {
+      const segIdx = forestRiverSegmentIndexAt(centerX);
+      if (segIdx >= forestRiverSegmentsDecked && segIdx < forestRiverSegmentsStrung) {
+        bridgeHeight += forestRiverStringerWobble(segIdx);
+      }
+    }
     const heightDiff = bridgeHeight - player.y;
     if (heightDiff >= -6 && heightDiff <= 10 && player.vy <= 0) {
       player.y = bridgeHeight;
@@ -13644,7 +13753,7 @@ function updateForestScene(deltaTime) {
       // x is always known outright (no reason to lag behind it the way
       // the gear lean does, which is smoothing out a genuinely abrupt
       // per-frame carry motion)
-      forestBridgeTiltAngle = -forestRiverBridgeSlopeAt(player.x + player.width / 2) * 0.7;
+      forestBridgeTiltAngle = -forestRiverBridgeSlopeAt(centerX) * 0.7;
     }
   } else if (forestBridgeTiltAngle !== 0) {
     // eased back to upright once off the bridge entirely
@@ -13652,33 +13761,75 @@ function updateForestScene(deltaTime) {
     if (Math.abs(forestBridgeTiltAngle) < 0.01) forestBridgeTiltAngle = 0;
   }
 
-  // RIVER BRIDGE BUILDING — pickup at the pile, placement at the
-  // current building edge. The pile is a local found stack (not
-  // general inventory); picking one up sets heldItem the same way any
-  // other carried item does elsewhere in the game.
+  // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
+  // beam bridge actually goes up: place the stringer first (pickup at
+  // the pile, carry the full round trip, place at the building edge --
+  // unlocks walking onto it right away, but bare and wobbly), then a
+  // separate second pass -- no new log needed -- decks it into its
+  // finished, stable form while actually standing on that same span.
+  // captured BEFORE the placement branch below can change
+  // forestRiverSegmentsStrung this same frame -- the decking guard
+  // further down needs to know where the edge was at the START of
+  // this press, not after a stringer placement just moved it
+  const riverEdgeBeforeThisPress = forestRiverBuildEdgeX();
+
   if (keys.spaceJustPressed && !heldItem && forestRiverLogPile > 0 &&
-      forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS &&
+      forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
     heldItem = "log";
     forestRiverLogPile--;
+    forestRiverLogPickedUpAt = performance.now(); // pop-in on the carried icon
+    forestRiverPileSettleAt = performance.now(); // settle-bounce on the remaining stack
   } else if (keys.spaceJustPressed && heldItem === "log" &&
-      forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS &&
-      Math.abs(player.x + player.width / 2 - forestRiverBuildEdgeX()) < 14) {
+      forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
+      Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14) {
     // exact-position placement only, no forgiveness zone -- direct
     // feedback was "just does not place" if you're not actually there
-    forestRiverLogPlacedAt[forestRiverLogsBuilt] = performance.now();
-    forestRiverLogsBuilt++;
+    forestRiverStringerPlacedAt[forestRiverSegmentsStrung] = performance.now();
+    forestRiverSegmentsStrung++;
     heldItem = null;
   }
 
-  // invisible wall -- until the next segment is placed, nothing gets
+  // decking pass -- locks in the finished look on the oldest strung-
+  // but-undecked segment, but only while actually standing on it, and
+  // only once its wobble has had a moment to settle (can't nail down a
+  // plank that's still actively rocking). Always the OLDEST undecked
+  // one, in order -- keeps the wall/collision model simple (one single
+  // "how far is this deck finished" number) even though stringers
+  // themselves can run ahead of decking by several segments.
+  {
+    const deckIdx = forestRiverSegmentsDecked;
+    // excludes the placement tolerance zone around where the build
+    // edge WAS this frame -- that's the boundary shared with the NEXT
+    // segment, and without this a press placing stringer N+1 there
+    // could also silently deck stringer N in the same press,
+    // collapsing the two deliberately separate actions into one. Only
+    // matters while there's actually a next stringer left to place --
+    // once all 7 are strung, buildEdgeX() just collapses to the far
+    // post, and excluding a zone around THAT would wrongly block
+    // decking the far half of the very last real segment too.
+    const nearPendingPlacementEdge = forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
+      Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14;
+    if (keys.spaceJustPressed && !heldItem &&
+        deckIdx < forestRiverSegmentsStrung &&
+        forestRiverSegmentIndexAt(player.x + player.width / 2) === deckIdx &&
+        !nearPendingPlacementEdge &&
+        performance.now() - forestRiverStringerPlacedAt[deckIdx] > FOREST_RIVER_STRINGER_SETTLE_MS) {
+      forestRiverLogPlacedAt[deckIdx] = performance.now();
+      forestRiverSegmentsDecked++;
+    }
+  }
+
+  // invisible wall -- until the next stringer is placed, nothing gets
   // past the current building edge, on foot or in mid-air, so there's
-  // no jumping past an unfinished stretch of river
-  if (forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS) {
+  // no jumping past a completely unbuilt stretch of river. (A placed-
+  // but-undecked stringer is NOT walled off -- it's meant to be
+  // crossable, just wobbly, per the two-step design above.)
+  if (forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS) {
     const riverWallX = forestRiverBuildEdgeX();
     // clamp on the player's CENTER, matching the placement check below,
     // so walking up to the wall actually lands you close enough to
-    // place the next log rather than being stopped short of it
+    // place the next stringer rather than being stopped short of it
     if (player.x + player.width / 2 > riverWallX) {
       player.x = riverWallX - player.width / 2;
       if (player.vx > 0) player.vx = 0;
@@ -31027,6 +31178,14 @@ if (heldItem && !fallState.active && !activeDig) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
     drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 8);
+  } else if (heldItem === "log") {
+    // a quick pop-in/rise on the carried log right after it's lifted
+    // off the pile, instead of it just appearing above the head fully
+    // formed -- a small "heft" beat to match the pile's own settle
+    const sincePickup = performance.now() - forestRiverLogPickedUpAt;
+    const popT = Math.min(1, sincePickup / 220);
+    const eased = 1 - Math.pow(1 - popT, 3); // ease-out, quick then settling
+    drawCollectible(ctx, heldPos.x - camX, heldPos.y + (1 - eased) * 8, 10 * (0.6 + eased * 0.4), 0, heldItem);
   } else {
     drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
   }
