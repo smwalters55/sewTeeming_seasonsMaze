@@ -25074,16 +25074,24 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.clip();
     ctx.fillStyle = waterGrad;
     ctx.fillRect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
+    // current streaks drift DOWN through the band (far bank at top,
+    // near bank at bottom, same depth convention as the rest of the
+    // scene), not sideways along the course -- a river's course can
+    // wind left-to-right across the panorama while its actual current,
+    // seen locally, still flows toward the viewer/downstream. Each
+    // streak keeps a fixed x and cycles top-to-bottom through that x's
+    // own local band height (which changes as the river widens/narrows).
     ctx.strokeStyle = "rgba(210,235,240,0.5)";
     ctx.lineWidth = Math.max(0.5, halfW * 0.022);
     for (let i = 0; i < 16; i++) {
       const seedI = seed + i * 5.7;
-      const spanW = waterEndX - waterStartX;
-      const rx = waterStartX + ((t * 0.022 + pseudoRandom(seedI) * spanW) % spanW);
-      const ry = riverTop(rx) + pseudoRandom(seedI + 1) * (riverBot(rx) - riverTop(rx));
+      const rx = waterStartX + pseudoRandom(seedI) * (waterEndX - waterStartX);
+      const bandTop = riverTop(rx), bandBot = riverBot(rx);
+      const spanH = Math.max(1, bandBot - bandTop);
+      const ry = bandTop + ((t * 0.05 + pseudoRandom(seedI + 1) * spanH) % spanH);
       ctx.beginPath();
       ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + halfW * 0.32, ry + Math.sin(t * 0.003 + seedI) * halfH * 0.02);
+      ctx.lineTo(rx + Math.sin(t * 0.003 + seedI) * halfW * 0.02, ry + halfH * 0.2);
       ctx.stroke();
     }
     // sparkle/glint dots, brightest directly under the bridge
