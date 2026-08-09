@@ -24611,9 +24611,39 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.beginPath();
     ctx.moveTo(vx + halfW * 0.3, vy); ctx.lineTo(vx + halfW * 0.24, vy + halfH * 2);
     ctx.stroke();
-    // real leaf shapes -- the same maple/round pair and LEAF_COLORS the
-    // crown itself is built from, not plain blobby ellipses, clustered
-    // densely enough to read as canopy fringe
+    // a solid bushy silhouette UNDER the individual leaves -- without
+    // this, the leaf shapes floated with gaps of bare background around
+    // them and read as "a few leaves pasted on" rather than an actual
+    // dense canopy mass. Overlapping bumps of varying size along a
+    // scalloped bottom edge, rather than one smooth curve, so the edge
+    // itself reads as bushy/leafy instead of a clean rounded blob.
+    const bushBumps = [
+      { x: 0.02, y: 0.08, r: 0.24 },
+      { x: 0.28, y: -0.02, r: 0.3 },
+      { x: 0.58, y: 0.06, r: 0.28 },
+      { x: 0.86, y: 0.16, r: 0.24 },
+      { x: 1.1, y: 0.28, r: 0.2 },
+      { x: 0.14, y: 0.32, r: 0.22 },
+      { x: 0.42, y: 0.34, r: 0.24 },
+      { x: 0.7, y: 0.38, r: 0.22 },
+      { x: 0.95, y: 0.42, r: 0.19 }
+    ];
+    ctx.fillStyle = "#2e4018";
+    bushBumps.forEach((b, i) => {
+      const jr = 1 + (pseudoRandom(seed + i * 6.6) - 0.5) * 0.12;
+      ctx.beginPath();
+      ctx.arc(vx + halfW * b.x, vy + halfH * b.y, halfW * b.r * jr, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#243212";
+    bushBumps.slice(0, 5).forEach((b, i) => {
+      ctx.beginPath();
+      ctx.arc(vx + halfW * b.x, vy + halfH * (b.y + 0.16), halfW * b.r * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // real leaf shapes on top, for texture/detail -- the same maple/round
+    // pair and LEAF_COLORS the crown itself is built from, clustered
+    // over the bush silhouette rather than floating loose
     for (let i = 0; i < 9; i++) {
       const cxOff = vx + halfW * (0.15 + (i % 5) * 0.34) + (i >= 5 ? halfW * 0.17 : 0);
       const cyOff = vy + halfH * (0.08 + (i % 5 === 0 || i % 5 === 4 ? 0.28 : 0.05)) + (i >= 5 ? halfH * 0.22 : 0);
