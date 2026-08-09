@@ -11440,7 +11440,9 @@ function drawForestRiverFrontRail(camX) {
     railPts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) - 14 });
   }
 
-  ctx.strokeStyle = "rgba(205,195,165,0.85)";
+  // dusty, weathered rope tan rather than a bright/white line -- reads
+  // as an actual old rope railing instead of a clean drawn stroke
+  ctx.strokeStyle = "rgba(178,160,122,0.85)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   railPts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
@@ -13934,7 +13936,16 @@ function updateForestScene(deltaTime) {
   // crossing isn't yanked back down onto the curve mid-air.
   if (player.x + player.width > FOREST_RIVER_NEAR_BANK_X && player.x < FOREST_RIVER_FAR_BANK_X) {
     const centerX = player.x + player.width / 2;
-    let bridgeHeight = forestRiverBridgeHeightAt(centerX);
+    // forestRiverBridgeHeightAt gives the arc's own centerline -- the
+    // actual drawn deck surface (drawDeckSpan's top edge, see
+    // drawForestRiver) sits about 6px above that line since the logs'
+    // rounded cross-section is drawn straddling it, not resting on top
+    // of it. Snapping the player to the raw centerline made them read
+    // as sunk into the logs, worse on the arc's steeper stretches where
+    // the sprite's own tilt-around-center rotation exaggerates it
+    // further. +6 puts their feet on the actual visible top surface.
+    const FOREST_RIVER_DECK_SURFACE_OFFSET = 6;
+    let bridgeHeight = forestRiverBridgeHeightAt(centerX) + FOREST_RIVER_DECK_SURFACE_OFFSET;
     // an unfinished stringer actually feels unstable underfoot, not
     // just different-looking -- add its live wobble to the height the
     // player is standing on, same offset the render uses
@@ -13991,9 +14002,23 @@ function updateForestScene(deltaTime) {
   // this press, not after a stringer placement just moved it
   const riverEdgeBeforeThisPress = forestRiverBuildEdgeX();
 
-  if (keys.spaceJustPressed && !heldItem && forestRiverLogPile > 0 &&
+  if (keys.spaceJustPressed && !heldItem &&
+      (forestRiverLogPile > 0 || inventory.bridgePiece > 0) &&
       forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
+    // any real bridgePieces already sitting in inventory (collected
+    // elsewhere in the game -- forest, molehole, tunnel town -- but
+    // never individually selected and carried over) settle onto the
+    // local stack in one go the first time the player actually reaches
+    // for the pile empty-handed. Otherwise a player who never happened
+    // to select "bridgePiece" from their inventory chips would have a
+    // stash of up to 9 just sitting unused forever, with no way to
+    // feed it in short of walking it over one at a time by hand.
+    if (inventory.bridgePiece > 0) {
+      forestRiverLogPile += inventory.bridgePiece;
+      delete inventory.bridgePiece;
+      updateInventoryUI();
+    }
     heldItem = "log";
     forestRiverLogPile--;
     forestRiverLogPickedUpAt = performance.now(); // pop-in on the carried icon
@@ -32218,6 +32243,11 @@ player.jumping = false;
 player.usedDoubleJump = false;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
 cameraY = 0;
+// also seed a full stack of real bridgePieces (for testing the
+// auto-unload-into-pile behavior) and a geode (uncracked), for debugging
+inventory.bridgePiece = 9;
+inventory.geode = 1;
+geodeCracked = false;
 updateInventoryUI();
 
 update();
