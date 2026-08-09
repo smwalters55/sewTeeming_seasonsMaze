@@ -22203,16 +22203,33 @@ const CORKBOARD_OPEN_CLOSE_MS = 400;
 
 // laid out in a loose 3-2-3 grid, spaced generously enough that no two
 // papers' TEXT overlaps (a little corner overlap for that "pinned on
-// top of each other" look is fine -- covering actual words isn't)
+// top of each other" look is fine -- covering actual words isn't).
+// Each line can be a plain string, or {t, bold: true} for a bolded
+// run (used for headlines/emphasis within a notice). paperColor and
+// fontSize are optional per-notice overrides -- most stay the default
+// cream index card at the default size; a couple deliberately don't,
+// so the board reads as an actual accumulation of different people's
+// postings rather than one uniform prop.
 const corkboardNotices = [
-  { rot: -0.06, dx: -220, dy: -95, lines: ["TOWN NOTICE", "Meeting Tuesdays, after", "lunch -- usual burrow."] },
-  { rot: 0.05, dx: 0, dy: -100, lines: ["Lift's still out of order.", "If you find the gear, bring", "it up to the shaft."] },
-  { rot: -0.04, dx: 220, dy: -92, lines: ["ROLODEX BUILDING", "COMPETITION!! This Tuesday,", "near the lift. Bring your", "best cards."] },
-  { rot: 0.04, dx: -150, dy: 0, lines: ["Some say it's past time we", "opened a way Up Outside", "again. Others say the world", "belongs down here just fine."] },
-  { rot: -0.05, dx: 150, dy: 5, lines: ["Word is there's loot buried", "somewhere in the tunnels", "nearby -- if the stories are", "even half true."] },
-  { rot: 0.03, dx: -220, dy: 95, lines: ["LOST: one (1) very good hat.", "Answers to nothing.", "Reward: a favor, redeemable", "later."] },
-  { rot: -0.07, dx: 0, dy: 100, lines: ["Whoever keeps 'borrowing'", "MY good shovel --", "we know it's you."] },
-  { rot: 0.06, dx: 220, dy: 92, lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
+  { rot: -0.06, dx: -220, dy: -95, fontSize: 11,
+    lines: [{ t: "TOWN NOTICE", bold: true }, "Meeting Tuesdays, after", "lunch -- usual burrow."] },
+  { rot: 0.05, dx: 0, dy: -100,
+    lines: [{ t: "Lift's still out of order.", bold: true }, "If you find the gear, bring", "it up to the shaft."] },
+  // the one event flyer among routine notices -- an actual bright
+  // post-it instead of the usual cream paper, since a real board would
+  // have exactly one thing like this standing out
+  { rot: -0.04, dx: 220, dy: -92, paperColor: "#f2a83a", fontSize: 11,
+    lines: [{ t: "ROLODEX BUILDING", bold: true }, { t: "COMPETITION!!", bold: true }, "This Friday, near the lift.", "Bring your best cards."] },
+  { rot: 0.04, dx: -150, dy: 0,
+    lines: ["Some say it's past time we", "opened a way Up Outside", "again. Others say the world", "belongs down here just fine."] },
+  { rot: -0.05, dx: 150, dy: 5,
+    lines: ["Word is there's loot buried", "somewhere in the tunnels", "nearby -- if the stories are", "even half true."] },
+  { rot: 0.03, dx: -220, dy: 95, fontSize: 9,
+    lines: [{ t: "LOST:", bold: true }, "one (1) very good hat.", "Answers to nothing.", "Reward: a favor, redeemable later."] },
+  { rot: -0.07, dx: 0, dy: 100, fontSize: 9,
+    lines: ["Whoever keeps 'borrowing'", { t: "MY good shovel --", bold: true }, "we know it's you."] },
+  { rot: 0.06, dx: 220, dy: 92, fontSize: 9, taped: true,
+    lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
 ];
 
 function openCorkboardReader() {
@@ -22287,32 +22304,63 @@ function drawCorkboardReader() {
   }
 
   // each pinned notice -- its own slightly rotated paper, offset from
-  // board center, with a small pin at the top
-  ctx.font = "10px ui-monospace";
-  const lineHeight = 12;
-  corkboardNotices.forEach(n => {
+  // board center. Size, paper color, and per-line bold all come from
+  // the notice's own data (see corkboardNotices) so the board reads as
+  // a real accumulation of different postings, not one uniform prop --
+  // plus a soft drop shadow for a little depth, a pin color that
+  // varies per notice, and one notice taped instead of pinned.
+  const PIN_COLORS = ["#b23a3a", "#7a8aa8", "#c9a020", "#6a9a5a"];
+  corkboardNotices.forEach((n, ni) => {
+    const fontSize = n.fontSize || 10;
+    const lineHeight = fontSize + 2;
+    const boldFont = `bold ${fontSize}px ui-monospace`;
+    const normalFont = `${fontSize}px ui-monospace`;
+    const lineText = l => typeof l === "string" ? l : l.t;
+    const lineBold = l => typeof l === "object" && l.bold;
     ctx.save();
     ctx.translate(cx + n.dx, cy + n.dy);
     ctx.rotate(n.rot);
-    const widths = n.lines.map(l => ctx.measureText(l).width);
+    const widths = n.lines.map(l => {
+      ctx.font = lineBold(l) ? boldFont : normalFont;
+      return ctx.measureText(lineText(l)).width;
+    });
     const pw = Math.max(...widths) + 18, ph = n.lines.length * lineHeight + 14;
-    ctx.fillStyle = "rgba(250,244,225,0.97)";
+    // drop shadow, offset slightly downward regardless of this paper's
+    // own rotation (drawn before the rotate-aligned fill/stroke below
+    // would be wrong, so it's just a soft dark rect under everything)
+    ctx.fillStyle = "rgba(15,10,5,0.35)";
+    ctx.fillRect(-pw / 2 + 2, -ph / 2 + 3, pw, ph);
+    ctx.fillStyle = n.paperColor || "rgba(250,244,225,0.97)";
     ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
     ctx.strokeStyle = "rgba(40,30,20,0.5)";
     ctx.lineWidth = 1;
     ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
-    ctx.fillStyle = "#2b2318";
+    ctx.fillStyle = n.paperColor ? "#3a2a10" : "#2b2318";
     n.lines.forEach((line, i) => {
-      ctx.fillText(line, -pw / 2 + 9, -ph / 2 + 13 + i * lineHeight);
+      ctx.font = lineBold(line) ? boldFont : normalFont;
+      ctx.fillText(lineText(line), -pw / 2 + 9, -ph / 2 + fontSize + 3 + i * lineHeight);
     });
-    // the pin
-    ctx.beginPath();
-    ctx.arc(0, -ph / 2, 2.6, 0, Math.PI * 2);
-    ctx.fillStyle = "#b23a3a";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 0.6;
-    ctx.stroke();
+    if (n.taped) {
+      // two small strips of tape across the top corners instead of a
+      // pin -- someone stuck this one up in a hurry
+      ctx.fillStyle = "rgba(235,230,200,0.55)";
+      [-1, 1].forEach(side => {
+        ctx.save();
+        ctx.translate(side * pw * 0.32, -ph / 2);
+        ctx.rotate(side * 0.5);
+        ctx.fillRect(-7, -3, 14, 6);
+        ctx.restore();
+      });
+    } else {
+      // the pin -- color varies per notice instead of one uniform red
+      ctx.beginPath();
+      ctx.arc(0, -ph / 2, 2.6, 0, Math.PI * 2);
+      ctx.fillStyle = PIN_COLORS[ni % PIN_COLORS.length];
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+    }
     ctx.restore();
   });
 
