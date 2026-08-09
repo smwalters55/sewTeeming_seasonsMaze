@@ -24949,8 +24949,12 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // ellipse boundary at this height -- the ellipse narrows toward its
     // edges, so that sliver of water+reeds was being clipped away
     // entirely instead of actually showing. Pulled further left so a
-    // real, visible strip of water shows inside the gear panel itself.
-    const waterStartX = -halfW * 1.35;
+    // real, visible strip of water shows inside the gear panel itself --
+    // and pulled further left again so there's real room, inside the
+    // gear panel's own visible window, to see the river actually narrow
+    // and wind in from a distant source before it reaches the bridge,
+    // rather than just starting already-open right at this edge.
+    const waterStartX = -halfW * 2.1;
 
     // solid ground for everything left of the water line -- the gear
     // sits ON this, not on the water's own bank
@@ -24984,7 +24988,7 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // scene so it reads as "where you just were" rather than a new prop.
     // Much smaller than before -- a background detail on the ground,
     // not a dominant shape competing with the water/bridge/tree story.
-    const gearWorldX = -halfW * 1.9, gearWorldY = waterTop - halfH * 0.05;
+    const gearWorldX = -halfW * 2.7, gearWorldY = waterTop - halfH * 0.05;
     drawForestGear(gearWorldX, gearWorldY, halfW * 0.42, halfW * 0.32, 7, 0.4, "#6b5030", "#2e2014", 4001);
 
     // a little pebbled shore right at the water line, so it doesn't
@@ -25024,35 +25028,63 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     };
     drawReedCluster(waterStartX + halfW * 0.08, waterTop + halfH * 0.03, 5, seed + 200);
 
-    // rushing water -- a real winding river, not a flat band: it winds
-    // IN from a distant, narrow source visible in the gear panel, opens
-    // up to its widest point at the main crossing, then bends away to
-    // the right past the bridge, narrowing and rising again as it
-    // recedes -- instead of one constant-width strip that just faded out.
-    // riverAt(x) interpolates both the river's centerline height and its
-    // half-width through 4 control points, smoothstepped between them.
+    // rushing water -- a real winding RIBBON of roughly consistent width
+    // (not a forced-perspective taper that shrinks to a point -- that
+    // read as the river just vanishing/going backwards, not bending).
+    // The near bank and far bank are each their own independent curve,
+    // smoothstepped through control points, so the ribbon can visibly
+    // wind without ever pinching down to nothing. It winds in from the
+    // gear panel, narrows slightly right at the bridge (a real river
+    // crossing is picked where it's narrowest), then the far bank dips
+    // down sharply after the bridge so the whole band visibly bends and
+    // flattens out toward horizontal in the right panel, still full width.
     const band = waterBot - waterTop;
-    const riverPts = [
-      { x: waterStartX, cy: waterTop + band * 0.20, hw: band * 0.18 }, // source -- far, narrow, high up
-      { x: 0, cy: waterTop + band * 0.65, hw: band * 0.55 }, // main crossing -- closest, widest
-      { x: halfW * 1.3, cy: waterTop + band * 0.45, hw: band * 0.38 }, // starting to bend away
-      { x: halfW * 2.6, cy: waterTop + band * 0.10, hw: band * 0.11 } // far bank -- receded, narrow, high up again
+    // kept comfortably under halfH (the ellipse clip's own visible
+    // bound, further narrowed near the panel's edges) -- the far bank
+    // dipping too close to/past that bound was why almost no water was
+    // showing in the right panel at all; this keeps the dip visible
+    // while staying inside the actually-visible area.
+    // the water's own leftmost edge tapers to an actual POINT (top and
+    // bottom curves meeting) instead of being cut off by a flat vertical
+    // wall where it meets the ground -- a hard 90-degree seam there was
+    // reading as a straight edge, not a diagonal taper. This wedge tip,
+    // plus the widening points after it, are the "receding into the
+    // distance" cue the gear panel needs, opening up as it winds closer
+    // toward the bridge.
+    const waterTipX = waterStartX - halfW * 0.7;
+    const topPts = [
+      { x: waterTipX, y: waterTop + band * 0.17 },
+      { x: waterStartX, y: waterTop + band * 0.06 },
+      { x: -halfW * 1.5, y: waterTop + band * 0.10 },
+      { x: -halfW * 0.3, y: waterTop + band * 0.08 },
+      { x: halfW * 0.3, y: waterTop + band * 0.10 },
+      { x: halfW * 1.3, y: waterTop + band * 0.22 },
+      { x: halfW * 2.6, y: waterTop + band * 0.40 }
     ];
-    const riverAt = (x) => {
-      if (x <= riverPts[0].x) return riverPts[0];
-      if (x >= riverPts[3].x) return riverPts[3];
-      for (let i = 0; i < riverPts.length - 1; i++) {
-        const a = riverPts[i], b = riverPts[i + 1];
+    const botPts = [
+      { x: waterTipX, y: waterTop + band * 0.17 },
+      { x: waterStartX, y: waterTop + band * 0.28 },
+      { x: -halfW * 1.5, y: waterTop + band * 0.50 },
+      { x: -halfW * 0.3, y: waterTop + band * 0.58 },
+      { x: halfW * 0.3, y: waterTop + band * 0.62 },
+      { x: halfW * 1.3, y: waterTop + band * 0.74 },
+      { x: halfW * 2.6, y: waterTop + band * 0.92 }
+    ];
+    const curveAt = (pts, x) => {
+      if (x <= pts[0].x) return pts[0].y;
+      if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
         if (x >= a.x && x <= b.x) {
           const lt = (x - a.x) / (b.x - a.x);
           const s = lt * lt * (3 - 2 * lt); // smoothstep -- no hard kinks where segments meet
-          return { cy: a.cy + (b.cy - a.cy) * s, hw: a.hw + (b.hw - a.hw) * s };
+          return a.y + (b.y - a.y) * s;
         }
       }
-      return riverPts[3];
+      return pts[pts.length - 1].y;
     };
-    const riverTop = (x) => { const r = riverAt(x); return r.cy - r.hw; };
-    const riverBot = (x) => { const r = riverAt(x); return r.cy + r.hw; };
+    const riverTop = (x) => curveAt(topPts, x);
+    const riverBot = (x) => curveAt(botPts, x);
     const waterEndX = halfW * 2.6;
     const waterGrad = ctx.createLinearGradient(0, waterTop, 0, waterBot);
     waterGrad.addColorStop(0, "#5a95a5");
@@ -25062,25 +25094,25 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.beginPath();
     const bendSteps = 24;
     for (let i = 0; i <= bendSteps; i++) {
-      const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
+      const x = waterTipX + (waterEndX - waterTipX) * (i / bendSteps);
       const y = riverTop(x);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     for (let i = bendSteps; i >= 0; i--) {
-      const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
+      const x = waterTipX + (waterEndX - waterTipX) * (i / bendSteps);
       ctx.lineTo(x, riverBot(x));
     }
     ctx.closePath();
     ctx.clip();
     ctx.fillStyle = waterGrad;
-    ctx.fillRect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
+    ctx.fillRect(waterTipX, waterTop, waterEndX - waterTipX, waterBot - waterTop);
     // current streaks drift DOWN through the band (far bank at top,
     // near bank at bottom, same depth convention as the rest of the
     // scene), not sideways along the course -- a river's course can
     // wind left-to-right across the panorama while its actual current,
     // seen locally, still flows toward the viewer/downstream. Each
     // streak keeps a fixed x and cycles top-to-bottom through that x's
-    // own local band height (which changes as the river widens/narrows).
+    // own local band height.
     ctx.strokeStyle = "rgba(210,235,240,0.5)";
     ctx.lineWidth = Math.max(0.5, halfW * 0.022);
     for (let i = 0; i < 16; i++) {
@@ -25107,54 +25139,29 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     }
     ctx.restore();
 
-    // the bridge -- built from real branches/logs lashed together, not a
-    // smooth milled plank. Runs on a genuine diagonal, from the wide
-    // near crossing down at the bottom-left up to the narrow far shore
-    // at the top-right, following the river's own bend instead of
-    // sitting level -- so it visibly angles across the turn rather than
-    // spanning a flat strip. Two thick curved branch-strokes running
-    // side by side (slightly offset so they read as separate logs, not
-    // one shape), knots along their length, and a few dark rope-lashing
-    // wraps binding them down rather than a railing -- same rope/vine
-    // language as the rest of the game (drawVines' own rope color)
-    // instead of invented hardware.
-    const bridgeStartX = -halfW * 0.15, bridgeEndX = halfW * 2.15;
-    const deckStartY = riverTop(bridgeStartX) - halfH * 0.05;
-    const deckEndY = riverTop(bridgeEndX) - halfH * 0.12;
-
-    // a real spit of far shore right under the bridge's own far end --
-    // solid ground, generously sized and starting well BEFORE
-    // bridgeEndX (not just barely touching it), so the far pier plants
-    // solidly into land instead of stopping short in open water
-    const shoreStartX = bridgeEndX - halfW * 0.5;
-    ctx.fillStyle = "#4a3d2e";
-    ctx.beginPath();
-    ctx.moveTo(shoreStartX, riverTop(shoreStartX) - halfH * 0.55);
-    ctx.lineTo(halfW * 2.9, riverTop(halfW * 2.9) - halfH * 0.55);
-    ctx.lineTo(halfW * 2.9, riverBot(halfW * 2.9) + halfH * 0.35);
-    ctx.lineTo(shoreStartX, riverBot(shoreStartX) + halfH * 0.1);
-    ctx.closePath();
-    ctx.fill();
-    // a few grass tufts on the new shore, same language as the gear-side
-    // bank, so it reads as ground and not just a flat color block
-    ctx.strokeStyle = "#6a9a3a";
-    ctx.lineWidth = Math.max(0.7, halfW * 0.025);
-    ctx.lineCap = "round";
-    for (let i = 0; i < 5; i++) {
-      const seedI = seed + 900 + i * 7.4;
-      const gx = shoreStartX + halfW * 0.1 + pseudoRandom(seedI) * halfW * 0.7;
-      const gy3 = riverTop(gx) - halfH * 0.02;
-      ctx.beginPath();
-      ctx.moveTo(gx, gy3 + halfH * 0.08);
-      ctx.lineTo(gx + (pseudoRandom(seedI + 1) - 0.5) * halfW * 0.1, gy3 - halfH * 0.06);
-      ctx.stroke();
-    }
-    const archHeight = halfH * 0.32;
+    // the bridge -- a simple, level stone-and-log arch crossing STRAIGHT
+    // over the river right where it's narrowest (a real crossing point,
+    // not a diagonal chasing the bend), same as any ordinary bridge. Two
+    // thick curved branch-strokes running side by side (slightly offset
+    // so they read as separate logs, not one shape), knots along their
+    // length, and a few dark rope-lashing wraps binding them down rather
+    // than a railing -- same rope/vine language as the rest of the game
+    // (drawVines' own rope color) instead of invented hardware.
+    const bridgeHalfSpan = halfW * 0.6; // shrunk a bit for a clearer margin from the middle panel's own edges, so it doesn't visually run right up against the left oval's seam
+    const deckBaseY = riverTop(0) - halfH * 0.04, archHeight = halfH * 0.34;
     const branchPoint = (t2, riseMult) => {
-      const x = bridgeStartX + t2 * (bridgeEndX - bridgeStartX);
-      const y = deckStartY + t2 * (deckEndY - deckStartY) - archHeight * riseMult * Math.sin(t2 * Math.PI);
+      const x = -bridgeHalfSpan + t2 * bridgeHalfSpan * 2;
+      const y = deckBaseY - archHeight * riseMult * Math.sin(t2 * Math.PI);
       return { x, y };
     };
+    // small bank stubs right where each pier touches down -- real ground
+    // the bridge abuts, not open water on either end
+    ctx.fillStyle = "#4a3d2e";
+    [-bridgeHalfSpan, bridgeHalfSpan].forEach(px => {
+      ctx.beginPath();
+      ctx.ellipse(px, riverTop(px), halfW * 0.22, halfH * 0.09, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
     const branchOffsets = [-halfH * 0.05, halfH * 0.06];
     branchOffsets.forEach((offset, bi) => {
       ctx.strokeStyle = bi === 0 ? "#6b4e30" : "#5a4028";
@@ -25189,21 +25196,16 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.lineTo(p.x, p.y + branchOffsets[1] + halfH * 0.03);
       ctx.stroke();
     }
-    // piers, planted at the ends, down into the water/shore below --
-    // near pier goes into open water, far pier into the new shore spit
+    // piers, planted at the ends, down into the water
     ctx.fillStyle = "#4a3520";
-    ctx.fillRect(bridgeStartX - halfW * 0.06, deckStartY, halfW * 0.12, riverBot(bridgeStartX) - deckStartY);
-    ctx.fillRect(bridgeEndX - halfW * 0.06, deckEndY, halfW * 0.12, riverBot(bridgeEndX) - deckEndY + halfH * 0.15);
+    ctx.fillRect(-bridgeHalfSpan - halfW * 0.06, deckBaseY, halfW * 0.12, riverBot(-bridgeHalfSpan) - deckBaseY);
+    ctx.fillRect(bridgeHalfSpan - halfW * 0.06, deckBaseY, halfW * 0.12, riverBot(bridgeHalfSpan) - deckBaseY);
     // faint rippled reflection of the branches, mirrored below the
-    // near (water-side) end of the bridge only -- the far end lands on
-    // dry shore, which has no reflection to give
+    // waterline
     ctx.save();
     ctx.globalAlpha = 0.2;
-    ctx.translate(0, deckStartY * 2 + halfH * 0.05);
+    ctx.translate(0, deckBaseY * 2 + halfH * 0.05);
     ctx.scale(1, -1);
-    ctx.beginPath();
-    ctx.rect(waterStartX, -halfH * 3, halfW * 1.8, halfH * 6);
-    ctx.clip();
     branchOffsets.forEach(offset => {
       ctx.strokeStyle = "#1a2a30";
       ctx.lineWidth = Math.max(1, halfH * 0.1);
@@ -25227,16 +25229,20 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // the scene, plus slow twinkling sparkle so it reads as something
     // special, not just a normal big tree.
     const treeWorldX = halfW * 2.05;
-    const treeBaseY = waterTop - halfH * 0.55; // a real gap above the water's far bank, not flush with it
+    // anchored to the actual far bank at this x now (the bank curves --
+    // it's no longer a fixed height), with a real gap above it, not
+    // flush with the water
+    const treeFarBankY = riverTop(treeWorldX);
+    const treeBaseY = treeFarBankY - halfH * 0.18;
     // the hazy gap/far-bank strip itself
     ctx.fillStyle = "rgba(150,175,150,0.35)";
-    ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY, halfW * 2.6, waterTop - treeBaseY);
+    ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY, halfW * 2.6, treeFarBankY - treeBaseY);
     // reeds and taller grass along the tree's own far bank too, same
     // cluster as the gear side -- softened by the haze so it still
     // reads as further back, not as crisp as the near-side reeds
     ctx.save();
     ctx.globalAlpha = 0.6;
-    drawReedCluster(treeWorldX - halfW * 0.75, waterTop - halfH * 0.02, 4, seed + 340);
+    drawReedCluster(treeWorldX - halfW * 0.75, treeFarBankY - halfH * 0.02, 4, seed + 340);
     ctx.restore();
 
     // a grander, gnarlier tree -- root buttresses flaring out at the
