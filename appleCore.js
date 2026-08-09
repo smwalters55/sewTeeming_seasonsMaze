@@ -26954,34 +26954,44 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // "a literal tree shape read as odd scenery" reasoning as the
     // dropped background-tree attempt above still applies to the whole
     // tree, just not to its lowest edge), a sliver of trunk climbing up
-    // out of frame off to one side (clear of the rope/seat), and the
-    // fruit hanging down into the canopy rather than floating loose.
-    // Per direct request ("show a hint of the fruit... can it look like
-    // the v bottom of a canopy, also show tree trunk if it makes
-    // sense"). Fixed positions (seeded), not tied to the swing's own
-    // motion. Positioned within the actual visible clip (roughly -halfH
-    // to +halfH, halfW to -halfW -- "by/bx" are the oversized backdrop
-    // rect's own bounds, well outside what the oval clip actually shows)
-    // rather than up near "by", which sits clipped away.
-    ctx.fillStyle = "#3f6b32";
+    // out of frame, and the fruit hanging down into the canopy rather
+    // than floating loose. Per direct request ("show a hint of the
+    // fruit... can it look like the v bottom of a canopy, also show tree
+    // trunk if it makes sense"). Fixed positions (seeded), not tied to
+    // the swing's own motion.
+    //
+    // this is an OVAL clip -- unlike a rectangular frame, the visible
+    // half-width shrinks the closer y gets to the top/bottom (roughly
+    // halfW * sqrt(1-(y/halfH)^2)), so anything placed too far out
+    // toward the corners (the first attempt at both the canopy blobs and
+    // the trunk) was silently clipped away entirely, which is why
+    // neither showed up ("i dont see tree trunk at all"). Kept close to
+    // center and no higher than -0.9*halfH so it all actually stays
+    // inside the visible ellipse. Also bumped to a clearly darker/more
+    // saturated green than the sky gradient's own top stop (#446b32) --
+    // the original canopy color (#3f6b32) was close enough to blend in
+    // and read as invisible even where it WAS inside the clip.
+    ctx.fillStyle = "#274a20";
     [
-      { cx0: -halfW * 0.72, r0: halfW * 0.5, cy0: -halfH * 0.98 },
-      { cx0: -halfW * 0.2, r0: halfW * 0.56, cy0: -halfH * 1.04 },
-      { cx0: halfW * 0.32, r0: halfW * 0.5, cy0: -halfH * 0.96 },
-      { cx0: halfW * 0.78, r0: halfW * 0.42, cy0: -halfH * 0.9 }
+      { cx0: -halfW * 0.34, r0: halfW * 0.3, cy0: -halfH * 0.76 },
+      { cx0: 0, r0: halfW * 0.32, cy0: -halfH * 0.85 },
+      { cx0: halfW * 0.34, r0: halfW * 0.3, cy0: -halfH * 0.76 },
+      { cx0: -halfW * 0.12, r0: halfW * 0.24, cy0: -halfH * 0.64 },
+      { cx0: halfW * 0.14, r0: halfW * 0.24, cy0: -halfH * 0.64 }
     ].forEach(c => {
       ctx.beginPath();
       ctx.arc(c.cx0, c.cy0, c.r0, 0, Math.PI * 2);
       ctx.fill();
     });
-    // trunk, off to the right where it won't cross the rope/seat's own
-    // swept path, climbing up out of frame into the canopy above
+    // trunk, kept near center (not out toward the corners, same clipping
+    // reason as above) so it's actually visible, running up out of frame
+    // into the canopy
     ctx.fillStyle = "#5a4022";
-    ctx.fillRect(halfW * 0.8, -halfH * 1.1, halfW * 0.16, halfH * 0.5);
+    ctx.fillRect(halfW * 0.2, -halfH * 0.9, halfW * 0.16, halfH * 0.42);
 
     const fruitSpots = [
       { fx: -halfW * 0.62, fy: -halfH * 0.78 },
-      { fx: halfW * 0.1, fy: -halfH * 0.86 },
+      { fx: halfW * 0.1, fy: -halfH * 0.6 }, // middle fruit sits a little lower than the other two, per direct request
       { fx: halfW * 0.68, fy: -halfH * 0.7 }
     ];
     ctx.fillStyle = "#6a3a8a";
@@ -27422,40 +27432,60 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.quadraticCurveTo(treeWorldX + halfW * 0.1, trunkBaseY - halfH * 0.5, treeWorldX + halfW * 0.08, trunkBaseY);
     ctx.closePath();
     ctx.fill();
-    // a couple of bare, scraggly branch forks poking out past the
-    // canopy's own silhouette, so the top doesn't read as one neat shape
-    ctx.strokeStyle = "#33413a";
-    ctx.lineWidth = Math.max(0.8, halfW * 0.02);
-    ctx.lineCap = "round";
-    [[treeWorldX - halfW * 0.02, trunkTopY + halfH * 0.15, -0.6, -0.35], [treeWorldX + halfW * 0.03, trunkTopY + halfH * 0.2, 0.55, -0.3]].forEach(([sx0, sy0, dx, dy]) => {
-      ctx.beginPath();
-      ctx.moveTo(sx0, sy0);
-      ctx.lineTo(sx0 + halfW * dx, sy0 + halfH * dy);
-      ctx.stroke();
-    });
-
-    // the bushy foliage cluster -- irregular overlapping lumps instead
-    // of a clean oval, with a scalloped scraggly outline
+    // the bushy foliage cluster -- one coherent rounded silhouette (a
+    // base fill covering the full lump cluster) so it reads clearly as
+    // "a canopy" at this small a scale, THEN just 3 branches poking
+    // clear of its edge in a warm bark tone that actually contrasts
+    // against the green, instead of the previous pileup (8+5 overlapping
+    // lumps, 2 dark forks, 5 more dark branches, all in near-identical
+    // dark green-grey tones under a haze) that read as an indistinct
+    // muddy blob rather than a tree -- per direct feedback ("this tree
+    // looks weird i dont get whats happening").
     const canopyCenterY = trunkTopY - halfH * 0.05;
-    const foliageLumps = [
-      { dx: -0.32, dy: 0.05, r: 0.34 }, { dx: 0.05, dy: -0.18, r: 0.4 },
-      { dx: 0.4, dy: 0.02, r: 0.32 }, { dx: -0.1, dy: 0.22, r: 0.3 },
-      { dx: 0.22, dy: 0.28, r: 0.26 }, { dx: -0.42, dy: 0.26, r: 0.22 },
-      { dx: 0.5, dy: -0.24, r: 0.22 }, { dx: -0.15, dy: -0.35, r: 0.24 }
-    ];
+    const canopyR = halfW * 0.62;
     ctx.fillStyle = "#3f5c4e";
+    ctx.beginPath();
+    ctx.arc(treeWorldX, canopyCenterY, canopyR, 0, Math.PI * 2);
+    ctx.fill();
+    // a few soft lumps riding the base circle's own edge -- enough to
+    // break up the perfectly-round outline without fragmenting the
+    // silhouette into disconnected pieces
+    const foliageLumps = [
+      { dx: -0.42, dy: 0.12, r: 0.34 }, { dx: 0.4, dy: 0.08, r: 0.36 },
+      { dx: -0.1, dy: -0.32, r: 0.34 }, { dx: 0.3, dy: -0.28, r: 0.28 },
+      { dx: -0.35, dy: -0.22, r: 0.26 }
+    ];
     foliageLumps.forEach((lump, i) => {
-      const jr = 1 + (pseudoRandom(seed + i * 4.4) - 0.5) * 0.15;
+      const jr = 1 + (pseudoRandom(seed + i * 4.4) - 0.5) * 0.1;
       ctx.beginPath();
       ctx.arc(treeWorldX + halfW * lump.dx, canopyCenterY + halfH * lump.dy, halfW * lump.r * jr, 0, Math.PI * 2);
       ctx.fill();
     });
+    // one lighter highlight patch, upper-left (consistent "light from
+    // above" cue), instead of 5 scattered highlight lumps competing with
+    // the base tone everywhere
     ctx.fillStyle = "#4a6a5a";
-    foliageLumps.slice(0, 5).forEach((lump, i) => {
+    ctx.beginPath();
+    ctx.arc(treeWorldX - halfW * 0.18, canopyCenterY - halfH * 0.22, canopyR * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3 branches poking clear of the canopy's edge, in a bark tone that
+    // actually contrasts against the green (was the same dark green-grey
+    // as the foliage, which is part of why they disappeared into it)
+    ctx.strokeStyle = "#6b5a48";
+    ctx.lineWidth = Math.max(1, halfW * 0.03);
+    ctx.lineCap = "round";
+    [
+      { sx: -0.3, sy: -0.3, ex: -0.58, ey: -0.55 },
+      { sx: 0.32, sy: -0.28, ex: 0.6, ey: -0.5 },
+      { sx: 0.02, sy: -0.42, ex: 0.06, ey: -0.72 }
+    ].forEach(b => {
       ctx.beginPath();
-      ctx.arc(treeWorldX + halfW * (lump.dx * 0.7), canopyCenterY + halfH * (lump.dy * 0.7 - 0.08), halfW * lump.r * 0.68, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(treeWorldX + halfW * b.sx, canopyCenterY + halfH * b.sy);
+      ctx.lineTo(treeWorldX + halfW * b.ex, canopyCenterY + halfH * b.ey);
+      ctx.stroke();
     });
+
     for (let i = 0; i < 6; i++) {
       const seedI = seed + i * 9.4;
       const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.1;
@@ -27466,37 +27496,10 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.arc(sx, sy, halfW * (0.015 + twinkle * 0.01), 0, Math.PI * 2);
       ctx.fill();
     }
-    // a second, even fainter haze veil layered IN FRONT of the tree --
-    // the actual trick that sells "this is far away", not just small
-    ctx.fillStyle = "rgba(170,195,175,0.16)";
+    // haze veil, lightened (was 0.16) so the tree's own shapes still
+    // read clearly through it instead of washing into the background
+    ctx.fillStyle = "rgba(170,195,175,0.1)";
     ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY - halfH * 1.5, halfW * 2.6, halfH * 1.5);
-
-    // a few more wrangly little branches poking out from within/around
-    // the foliage itself (not just the two main forks above the trunk),
-    // each a real wiggle -- a bend partway along, not a straight twig --
-    // so the canopy's edge reads as genuinely gnarled rather than one
-    // clean bushy blob with two branches stuck on top. Per direct
-    // request. Drawn AFTER the haze veil (rather than back with the rest
-    // of the foliage) -- underneath it, the haze itself was washing these
-    // out to invisible at this thin a line weight.
-    ctx.strokeStyle = "rgba(51,65,58,0.75)";
-    ctx.lineWidth = Math.max(0.9, halfW * 0.026);
-    ctx.lineCap = "round";
-    [
-      { sx: -0.36, sy: 0.16, mx: -0.5, my: -0.02, ex: -0.62, ey: -0.2 },
-      { sx: 0.44, sy: 0.14, mx: 0.56, my: -0.04, ex: 0.68, ey: -0.22 },
-      { sx: -0.06, sy: -0.34, mx: -0.14, my: -0.5, ex: -0.08, ey: -0.64 },
-      { sx: 0.26, sy: -0.3, mx: 0.36, my: -0.44, ex: 0.3, ey: -0.6 },
-      { sx: -0.44, sy: -0.14, mx: -0.58, my: -0.22, ex: -0.7, ey: -0.12 }
-    ].forEach(b => {
-      ctx.beginPath();
-      ctx.moveTo(treeWorldX + halfW * b.sx, canopyCenterY + halfH * b.sy);
-      ctx.quadraticCurveTo(
-        treeWorldX + halfW * b.mx, canopyCenterY + halfH * b.my,
-        treeWorldX + halfW * b.ex, canopyCenterY + halfH * b.ey
-      );
-      ctx.stroke();
-    });
 
     ctx.restore();
 
