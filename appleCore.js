@@ -22632,8 +22632,14 @@ const MOLEHOLE_ALCOVES = [
   // that had plenty of space to spare. Now: 140px to alcove one, 110px
   // on to the shop -- checked against each arch's own half-width
   // (archR) rather than eyeballed
-  // box/ellipse swapped for a bell and a faceted gem, same reasoning
-  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }, { color: "#7a4a8a", shape: "flask" }], shopColor: "#5a7a5a" }
+  // box/ellipse swapped for a bell and a faceted gem, same reasoning.
+  // The flask that used to sit here traded places with the main shop's
+  // klein bottle -- the klein demo (see moleAlcove2Dialogue below)
+  // wanted a background alcove with a currently-silent NPC to attach
+  // to, not the main shopkeeper's own stall (that one already has its
+  // own trade interaction), so the two wares swapped counters instead
+  // of the klein bottle just appearing here with nothing to replace.
+  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }, { color: "#aad2e1", shape: "klein" }], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -22655,6 +22661,46 @@ const moleHoleSecretPiece = { x: 350, heightAboveGround: 130, collected: false, 
 const MOLE_SHOP_X = 850; // nudged right a touch further, keeping the ~140px gap from alcove two's own right edge consistent with the rest of the row's new spacing
 let moleShopTraded = false;
 const moleShopDialogue = { active: false, index: 0, lines: [] };
+
+/* ------------------------------------------------------
+   MOLE HOLE ALCOVE 2's KLEIN BOTTLE -- a small replayable demo, not a
+   trade: walk up and interact with this alcove's own NPC (previously
+   purely ambient/silent, per MOLEHOLE_ALCOVES's comment on why the
+   klein bottle moved here instead of staying on the main shopkeeper's
+   counter) and the bottle tips over, then rights itself, while the NPC
+   comments on it. No physical tea-room-style pour animation -- liquid
+   is already shown inside (see the "klein" ware case above) and just
+   stays put through the tip, which is the whole joke. Replayable every
+   time, same "walk up + press interact" trigger as every other NPC.
+   ------------------------------------------------------ */
+let moleAlcove2KleinTipAt = -99999;
+const moleAlcove2Dialogue = { active: false, index: 0, lines: [] };
+const moleAlcove2Lines = [
+  ["Careful with that one. Found it wedged between two roots, no idea whose it was.", "Pour something in, it stays put -- tip it clean upside down, still doesn't come out."],
+  ["Near as I can tell, it hasn't got a proper outside to spill onto.", "Don't ask me to explain it further than that."]
+];
+
+function startMoleAlcove2Dialogue() {
+  moleAlcove2Dialogue.active = true;
+  moleAlcove2Dialogue.index = 0;
+  moleAlcove2Dialogue.lines = moleAlcove2Lines.slice();
+  moleAlcove2KleinTipAt = performance.now();
+}
+
+function advanceMoleAlcove2Dialogue() {
+  moleAlcove2Dialogue.index++;
+  if (moleAlcove2Dialogue.index >= moleAlcove2Dialogue.lines.length) {
+    moleAlcove2Dialogue.active = false;
+  }
+}
+
+function drawMoleAlcove2SpeechBubble(camX) {
+  if (!moleAlcove2Dialogue.active) return;
+  const beat = moleAlcove2Dialogue.lines[moleAlcove2Dialogue.index];
+  const isLast = moleAlcove2Dialogue.index === moleAlcove2Dialogue.lines.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  drawFittedSpeechBubble(ctx, MOLEHOLE_ALCOVES[1].x - camX - 10, gy - 150, displayLines);
+}
 const moleShopGreetingLines = [
   ["Eyyy, look what the tunnel dragged in. Don't get many of your kind down this deep.", "I deal in... let's say, hard-to-find things. Bridge timber, if you're lucky."]
 ];
@@ -23373,7 +23419,7 @@ function drawMoleShopAlcove(camX) {
     { color: "#c98a3a", shape: "ellipse" },
     { color: "#7a2f2f", shape: "box" },
     { color: "#3f5766", shape: "triangle" },
-    { color: "#aad2e1", shape: "klein" }, // "make one of the items a klein bottle" -- swapped in for the second plain ellipse
+    { color: "#7a4a8a", shape: "flask" }, // traded places with the klein bottle that used to be here -- see MOLEHOLE_ALCOVES's comment for why. Renders as a plain ellipse here (no dedicated "flask" case in this counter's own shape list, same as "ellipse" above) -- fine for a background item on this stall
     { color: "#b09040", shape: "stack" }
   ].forEach((item, i) => {
     const seed = MOLE_SHOP_X * 5.3 + i * 41.7;
@@ -24164,6 +24210,53 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.beginPath();
       ctx.ellipse(wx, wy - s * 0.78, s * 0.22, s * 0.12, 0, 0, Math.PI * 2);
       ctx.fill();
+    } else if (item.shape === "klein") {
+      // same little glass klein bottle that used to sit on the main
+      // shop's counter (see MOLEHOLE_ALCOVES's comment for why it moved
+      // here), now with an actual liquid fill inside -- otherwise "pour
+      // something in, tip it over, nothing comes out" has nothing
+      // visible to point at. Tips over and rights itself when the
+      // player interacts with this alcove's NPC (moleAlcove2KleinTipAt,
+      // set in startMoleAlcove2Dialogue), always ending back upright so
+      // it's replayable rather than a one-time animation.
+      const sinceTip = performance.now() - moleAlcove2KleinTipAt;
+      const TIP_MS = 1500;
+      const tipT = sinceTip >= 0 && sinceTip < TIP_MS ? sinceTip / TIP_MS : -1;
+      // eases out to a real tip and back, not a linear rock -- up fast,
+      // hold near the peak, ease back down
+      const tipAngle = tipT < 0 ? 0 : Math.sin(tipT * Math.PI) * 2.7;
+      ctx.save();
+      ctx.translate(wx, wy + 3);
+      ctx.rotate(tipAngle);
+      ctx.translate(-wx, -(wy + 3));
+      ctx.fillStyle = "rgba(170,210,225,0.5)";
+      ctx.strokeStyle = "rgba(70,110,130,0.85)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + 3, 6, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // the liquid -- a simple pool sitting in the body's lower half,
+      // same wherever the bottle currently is (rights itself just like
+      // the glass does) since the whole point is that it never spills
+      // no matter how the bottle's held
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + 3, 6, 7, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = "rgba(110,180,205,0.75)";
+      ctx.fillRect(wx - 7, wy + 3, 14, 10);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.moveTo(wx - 1, wy - 3);
+      ctx.bezierCurveTo(wx - 1, wy - 10, wx + 6.5, wy - 12, wx + 6.5, wy - 4);
+      ctx.bezierCurveTo(wx + 6.5, wy + 1.5, wx + 1, wy - 1, wx, wy + 3.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(wx + 1, wy - 3);
+      ctx.bezierCurveTo(wx + 1, wy - 9, wx + 4.5, wy - 10.5, wx + 4.5, wy - 4.5);
+      ctx.stroke();
+      ctx.restore();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
       ctx.beginPath();
@@ -29575,6 +29668,7 @@ function drawMoleholeScene(camX) {
   // drawn dead last, same as the elders' bubble in tunnel town, so it's
   // never covered by anything else in the scene
   drawMoleShopSpeechBubble(camX);
+  drawMoleAlcove2SpeechBubble(camX);
   drawGeodeBreakerSpeechBubble(camX);
   drawGeodeCrackReveal(camX);
 }
@@ -29849,6 +29943,21 @@ function updateMoleholeScene(deltaTime) {
   }
   if (isPlayerNear(MOLE_SHOP_X, 0, 32, 25, 20) && keys.spaceJustPressed) {
     startMoleShopDialogue();
+    return;
+  }
+
+  // alcove 2's klein bottle NPC -- same priority/walk-away pattern as
+  // the shopkeeper and geode breaker, just no trade to complete
+  if (moleAlcove2Dialogue.active) {
+    if (!isPlayerNear(MOLEHOLE_ALCOVES[1].x, 0, 150, 90, 90)) {
+      moleAlcove2Dialogue.active = false;
+    } else {
+      if (keys.spaceJustPressed) advanceMoleAlcove2Dialogue();
+      return;
+    }
+  }
+  if (isPlayerNear(MOLEHOLE_ALCOVES[1].x, 0, 32, 25, 20) && keys.spaceJustPressed) {
+    startMoleAlcove2Dialogue();
     return;
   }
 
@@ -33533,17 +33642,17 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- drops right at the far (built) end of the river bridge in
-// forest, for debugging the reflection pool / whatever's past the bridge,
-// instead of the mole hole mirror stall. Still seeds the bridge/mine-cart/
-// shaft state below too, so molehole/tunnel town remain in their completed
-// state without replaying them if that's still needed. Revert (remove this
-// block) once done testing.
-currentScene = "forest";
+// TEMPORARY -- drops right at mole hole alcove 2, for testing the klein
+// bottle NPC interaction, instead of the river bridge/reflection pool.
+// Still seeds the bridge/mine-cart/shaft state below too, so forest's
+// river stays fully built and tunnel town stays completed without
+// replaying them if that's still needed. Revert (remove this block)
+// once done testing.
+currentScene = "molehole";
 mineCartEverRidden = true;
 moleholeShaftFixed = true;
 elderTalkedTo = true;
-player.x = FOREST_RIVER_FAR_BANK_X;
+player.x = MOLEHOLE_ALCOVES[1].x - 40;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
