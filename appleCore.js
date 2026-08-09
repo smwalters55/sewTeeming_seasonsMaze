@@ -27404,16 +27404,21 @@ function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
     ctx.quadraticCurveTo(-w * 0.56, -h * 0.32, -w * 0.42, -h * 0.5);
     ctx.closePath();
   };
-  ctx.fillStyle = "#5a4228";
+  // dark scrappy gunmetal/iron frame, not the same warm wood tone as the
+  // rest of the stall -- fits "patched/mismatched" (it's already the
+  // scrappiest-looking one) and, per direct request, gives it its own
+  // distinct material instead of sharing the brass oval's monopoly on
+  // "looks different from the others"
+  ctx.fillStyle = "#3a3a3e";
   path();
   ctx.fill();
   // a small mismatched patch -- "lopsided/patched" per the brainstorm
-  ctx.fillStyle = "#6a4e30";
+  ctx.fillStyle = "#4a4a50";
   ctx.fillRect(w * 0.1, -h * 0.42, w * 0.22, h * 0.16);
   ctx.strokeStyle = "rgba(0,0,0,0.3)";
   ctx.lineWidth = 0.8;
   ctx.strokeRect(w * 0.1, -h * 0.42, w * 0.22, h * 0.16);
-  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.4], [w * 0.3, -h * 0.3], [-w * 0.3, h * 0.3], [w * 0.1, h * 0.4]]);
+  drawOrnateRim(path, "#5a5a60", "#8a8a92", [[-w * 0.3, -h * 0.4], [w * 0.3, -h * 0.3], [-w * 0.3, h * 0.3], [w * 0.1, h * 0.4]]);
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(0, 0, w * 0.32, h * 0.36, 0, 0, Math.PI * 2);
@@ -27457,9 +27462,12 @@ function drawTriptychMirror(cx, cy, scale, glimpseId, isNear) {
     ctx.translate(p.ox, p.oy);
     ctx.rotate(p.tilt);
     const path = () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.62, r, 0, 0, Math.PI * 2); };
-    ctx.fillStyle = "#6a4e30";
+    // cool pewter/silver instead of the same warm wood-brown as the rest
+    // -- a distinct-enough material that three small panels together
+    // read as their own set, per direct request for more frame variety
+    ctx.fillStyle = "#565a60";
     path(); ctx.fill();
-    drawOrnateRim(path, "#8a6a3a", "#c9a860", [[0, -r * 0.9], [0, r * 0.9]]);
+    drawOrnateRim(path, "#8a8e96", "#cdd2d8", [[0, -r * 0.9], [0, r * 0.9]]);
     ctx.save();
     path(); ctx.clip();
     // counter-rotate just the content -- each panel's own tilt gave the
@@ -27491,9 +27499,11 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(-w / 2, -h / 2, w, h, 4) : ctx.rect(-w / 2, -h / 2, w, h);
   };
-  ctx.fillStyle = "#5a4228";
+  // copper, per direct request -- a warm reddish metal, distinct from
+  // both the wood-brown default and the brass oval's yellower gold
+  ctx.fillStyle = "#8a4a2f";
   path(); ctx.fill();
-  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.42], [w * 0.3, -h * 0.42], [-w * 0.3, h * 0.42], [w * 0.3, h * 0.42]]);
+  drawOrnateRim(path, "#c97a4a", "#e8a878", [[-w * 0.3, -h * 0.42], [w * 0.3, -h * 0.42], [-w * 0.3, h * 0.42], [w * 0.3, h * 0.42]]);
   ctx.save();
   ctx.beginPath();
   ctx.rect(-w * 0.36, -h * 0.44, w * 0.72, h * 0.88);
@@ -27904,6 +27914,97 @@ function drawHourglassApparition(w, h, live) {
   ctx.restore();
 }
 
+// funhouse reflection -- a distorted version of the PLAYER's own shape
+// (not the separate gopher-mask apparition above), replacing the old
+// critter parade as the hourglass's idle "look at it and vibe" content.
+// Per direct request: picks one of three classic funhouse-mirror
+// distortions, weighted so the unstable/wavy one is the common case and
+// the other two are rarer variety, rather than a flat equal-odds
+// random -- see the "and yay the left bank..." conversation for why: a
+// flat random risked whiplashing between a creepy read (wavy) and a
+// comic one (fishbowl) visit to visit, undercutting whichever mood
+// either one was building. Re-rolled only when the player freshly steps
+// back into range (not every frame), so it holds one flavor for the
+// whole time you're looking at it.
+const hourglassFunhouse = { type: null, wasNear: false };
+function rollHourglassFunhouseType() {
+  const r = Math.random();
+  if (r < 0.6) return "wavy"; // common -- unstable, shimmering
+  if (r < 0.8) return "fishbowl"; // rarer -- squat, bulged middle
+  return "tall"; // rarer -- stretched thin and tall
+}
+function updateHourglassFunhouse(isNear) {
+  if (isNear && !hourglassFunhouse.wasNear) hourglassFunhouse.type = rollHourglassFunhouseType();
+  hourglassFunhouse.wasNear = isNear;
+}
+function drawFunhouseEyes(cx, cy, scaleW) {
+  [-1, 1].forEach(side => {
+    const ex = cx + side * scaleW * 0.17;
+    ctx.fillStyle = "#f0f0ff";
+    ctx.beginPath();
+    ctx.ellipse(ex, cy, scaleW * 0.09, scaleW * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#181820";
+    ctx.beginPath();
+    ctx.arc(ex, cy, scaleW * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+function drawHourglassFunhouseReflection(w, h, live) {
+  const now = performance.now();
+  // same live tracking (lateral position, jump height) the mask
+  // apparition already uses, so the reflection visibly follows you
+  // regardless of which distortion flavor is showing
+  const lateralNorm = Math.max(-1, Math.min(1, (live?.lateral ?? 0) / 60));
+  const jumpLift = Math.min(h * 0.3, (live?.jump ?? 0) * 0.5);
+  const driftX = lateralNorm * w * 0.18;
+  const type = hourglassFunhouse.type || "wavy";
+  const bw = w * 0.5, bh = h * 0.44;
+  const bodyColor = "#7a78b8"; // the player's own body color -- it's still recognizably YOU, just wrong
+
+  ctx.save();
+  ctx.translate(driftX, h * 0.08 - jumpLift);
+
+  if (type === "tall") {
+    // stretched thin and tall -- narrow body, close-set eyes
+    ctx.save();
+    ctx.scale(0.6, 1.32);
+    ctx.fillStyle = bodyColor;
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.fill(); }
+    else ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+    ctx.restore();
+    drawFunhouseEyes(0, -bh * 1.32 * 0.14, bw * 0.6);
+  } else if (type === "fishbowl") {
+    // squat and bulged in the middle -- small head/feet, wide belly
+    ctx.beginPath();
+    ctx.moveTo(-bw * 0.22, -bh * 0.5);
+    ctx.quadraticCurveTo(-bw * 0.62, 0, -bw * 0.3, bh * 0.5);
+    ctx.lineTo(bw * 0.3, bh * 0.5);
+    ctx.quadraticCurveTo(bw * 0.62, 0, bw * 0.22, -bh * 0.5);
+    ctx.closePath();
+    ctx.fillStyle = bodyColor;
+    ctx.fill();
+    drawFunhouseEyes(0, -bh * 0.42, bw * 0.55);
+  } else {
+    // wavy -- sliced into thin horizontal strips, each riding its own
+    // slow sine offset, like heat shimmer off the glass itself. Genuine
+    // per-frame motion (unlike the other two, which are static
+    // distortions) is what makes this flavor read as "unstable."
+    const strips = 16;
+    for (let i = 0; i < strips; i++) {
+      const sy = -bh / 2 + (bh / strips) * i;
+      const sh = bh / strips + 0.6;
+      const wob = Math.sin(now * 0.0032 + i * 0.55) * bw * 0.06;
+      ctx.fillStyle = bodyColor;
+      ctx.fillRect(-bw / 2 + wob, sy, bw, sh);
+    }
+    const eyeWob = Math.sin(now * 0.0032 + 3 * 0.55) * bw * 0.06;
+    drawFunhouseEyes(eyeWob, -bh * 0.18, bw);
+  }
+
+  ctx.restore();
+}
+
 function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
   const w = 34 * scale, h = 58 * scale;
   ctx.save();
@@ -27922,12 +28023,18 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
     ctx.quadraticCurveTo(-w * 0.24, -h * 0.06, -w * 0.46, -h * 0.48);
     ctx.closePath();
   };
-  ctx.fillStyle = "#6a4e30";
+  // a deeper, near-black-iron variant of the default wood tone -- darker
+  // and moodier than a plain match to the others, matching its
+  // centerpiece/unsettling-content billing, without competing with the
+  // brass oval's warm gold for "the special one" (per direct request:
+  // some frame variety across the board, but the ornate oval stays the
+  // one true standout)
+  ctx.fillStyle = "#3e3226";
   path(); ctx.fill();
-  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.4, -h * 0.44], [w * 0.4, -h * 0.44], [-w * 0.4, h * 0.44], [w * 0.4, h * 0.44], [0, -h * 0.02], [0, h * 0.02]]);
+  drawOrnateRim(path, "#5a4a34", "#8a7550", [[-w * 0.4, -h * 0.44], [w * 0.4, -h * 0.44], [-w * 0.4, h * 0.44], [w * 0.4, h * 0.44], [0, -h * 0.02], [0, h * 0.02]]);
   // ornate top/bottom rim bands -- the biggest piece gets a touch more
   // detail than the rest, matching "centerpiece" billing
-  ctx.strokeStyle = "#c9a860";
+  ctx.strokeStyle = "#8a7550";
   ctx.lineWidth = 1.2;
   [-h * 0.46, h * 0.46].forEach(by => {
     ctx.beginPath();
@@ -27937,6 +28044,7 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
   });
 
   updateHourglassApparition(isNear);
+  updateHourglassFunhouse(isNear);
   ctx.fillStyle = "#3a4048";
   ctx.save();
   path(); ctx.clip();
@@ -27954,7 +28062,7 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
     ]);
   }
   if (hourglassApparition.active) drawHourglassApparition(w, h, live);
-  else if (isNear) drawHourglassParade(w, h);
+  else if (isNear) drawHourglassFunhouseReflection(w, h, live);
   ctx.restore();
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
   // a real chunk chipped out of the top-right corner -- gives the shard
@@ -28048,9 +28156,12 @@ function drawDiamondMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.translate(cx, cy);
   ctx.rotate(Math.PI / 4);
   const path = () => { ctx.beginPath(); ctx.rect(-s / 2, -s / 2, s, s); };
-  ctx.fillStyle = "#5a4228";
+  // aged bronze with a touch of verdigris in the studs -- another
+  // distinct material from the rest, per direct request for more frame
+  // variety across the stall
+  ctx.fillStyle = "#5a4a2e";
   path(); ctx.fill();
-  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-s * 0.5, -s * 0.5], [s * 0.5, -s * 0.5], [-s * 0.5, s * 0.5], [s * 0.5, s * 0.5]]);
+  drawOrnateRim(path, "#7a6a3e", "#8a9a6a", [[-s * 0.5, -s * 0.5], [s * 0.5, -s * 0.5], [-s * 0.5, s * 0.5], [s * 0.5, s * 0.5]]);
   ctx.save();
   ctx.beginPath();
   ctx.rect(-s * 0.38, -s * 0.38, s * 0.76, s * 0.76);
@@ -28740,9 +28851,18 @@ function drawMirrorStall(camX) {
       // the whole time, same idea as radiusYDown's own generous 200.
       isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 180, 200);
     } else if (m.shape === "hourglass") {
-      // no zone glimpse here -- just the rare reflection-only apparition,
-      // which needs to know when the player's close enough to notice it
-      isNear = isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200);
+      // no zone glimpse here -- just the reflection (funhouse warp, or
+      // the rare mask apparition), which needs to know when the player's
+      // close enough to notice it. Also counts standing right on top of
+      // its own frame (same standing-on-top pattern as the autumn
+      // mirror above) -- per direct feedback that it should still be
+      // visible/active while perched up there, not just from below.
+      const worldX = MIRROR_STALL_X + m.dx;
+      const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
+      const platformTop = gy - (my - frameHalfH);
+      const playerCenterX = player.x + player.width / 2;
+      const standingOnTop = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
+      isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 40, 200);
     } else {
       isNear = m.glimpse
         ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
@@ -32925,19 +33045,16 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- drops right in front of the river bridge site (at the
-// log pile) with the mine cart already ridden and the shaft already
-// fixed (as if that whole chain were already done), so the river area
-// is reachable immediately without replaying molehole/tunnel town
-// first. The bridge itself starts already fully built+decked (per
-// direct request -- "start me with bridge already built"), so it's
-// walkable right away without redoing the build step each time. Revert
-// (remove this block) once the river/bridge is done being tested.
-currentScene = "forest";
+// TEMPORARY -- drops right in the mole hole mirror stall (centered on
+// the hourglass mirror) for debugging the mirrors, instead of the river
+// bridge site. Still seeds the bridge/mine-cart/shaft state below too,
+// so the river is also reachable without replaying molehole/tunnel town
+// if that's still needed. Revert (remove this block) once done testing.
+currentScene = "molehole";
 mineCartEverRidden = true;
 moleholeShaftFixed = true;
 elderTalkedTo = true;
-player.x = FOREST_RIVER_LOG_PILE_X;
+player.x = MIRROR_STALL_X - 55;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
