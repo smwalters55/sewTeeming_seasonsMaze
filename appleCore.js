@@ -10743,9 +10743,18 @@ let forestRiverFootDustParticles = []; // {x, y, t} world-space flecks, spawned 
 // other winds OUT away from it. tipAtStart records which end is the tip
 // so forestRiverWadeDepth below can compute "how deep is the water
 // HERE" instead of just "is the player in the zone at all."
+// NOTE: these stop well short of the water shapes' own full extent
+// (the near source reaches FOREST_RIVER_NEAR_BANK_X-260..NEAR_BANK_X,
+// the far bend reaches FAR_BANK_X..FAR_BANK_X+190) because the sand
+// bank/tendril (see drawForestRiver's NEAR/FAR BANK blocks) sits on top
+// of most of that inner span -- standing there is standing on dry
+// beach, not in water, even though the water polygon underneath it
+// technically extends that far ("when on the banks, dont have water
+// line on body"). Only the genuinely open-water sliver past where the
+// sand actually reaches counts as wadeable.
 const FOREST_RIVER_SHALLOW_ZONES = [
-  { x1: FOREST_RIVER_NEAR_BANK_X - 260, x2: FOREST_RIVER_NEAR_BANK_X, tipAtStart: true },
-  { x1: FOREST_RIVER_FAR_BANK_X, x2: FOREST_RIVER_FAR_BANK_X + 190, tipAtStart: false }
+  { x1: FOREST_RIVER_NEAR_BANK_X - 260, x2: FOREST_RIVER_NEAR_BANK_X - 165, tipAtStart: true },
+  { x1: FOREST_RIVER_FAR_BANK_X + 148, x2: FOREST_RIVER_FAR_BANK_X + 190, tipAtStart: false }
 ];
 let forestRiverWadeAmount = 0;
 // 0 (at a zone's shallow tip -- ankle-deep at most) .. 1 (right at the
@@ -11117,13 +11126,17 @@ function drawForestRiver(camX) {
     const twist1X = topX - 24, twist1Y = topY - 11;
     const twist2X = topX - 44, twist2Y = topY - 3;
     const tendrilTipX = topX - 66, tendrilTipY = topY - 9;
-    // a solid round-capped stroke is literally a brush-stroke shape, so
-    // blend its edges the same way as the main bank fill: a blurred
-    // low-opacity halo first, crisp strokes on top.
+    // three widths instead of two -- an abrupt 13->6 jump right at the
+    // twist reads as a visible kink/step where the two strokes join.
+    // Also matches the lighter "dry sand" tone from the main fill's own
+    // gradient instead of a flat, slightly darker color -- that flat
+    // patch sitting on top of the shaded fill is what read as "a
+    // paint-brush tip poking out," a separate stuck-on piece rather
+    // than a continuation of the same shaded surface.
     ctx.save();
     ctx.filter = "blur(4px)";
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = "#7a6a4a";
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = "#8c7a56";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.lineWidth = 13;
@@ -11131,21 +11144,28 @@ function drawForestRiver(camX) {
     ctx.moveTo(topX, topY);
     ctx.quadraticCurveTo(twist1X, twist1Y, twist2X, twist2Y);
     ctx.stroke();
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 8;
     ctx.beginPath();
     ctx.moveTo(twist2X, twist2Y);
     ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
     ctx.stroke();
     ctx.restore();
-    ctx.strokeStyle = "#7a6a4a";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.lineWidth = 13;
+    ctx.strokeStyle = "#8c7a56";
+    ctx.lineWidth = 12;
     ctx.beginPath();
     ctx.moveTo(topX, topY);
-    ctx.quadraticCurveTo(twist1X, twist1Y, twist2X, twist2Y);
+    ctx.quadraticCurveTo((topX + twist1X) / 2, (topY + twist1Y) / 2, twist1X, twist1Y);
     ctx.stroke();
-    ctx.lineWidth = 6;
+    ctx.strokeStyle = "#84734f";
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(twist1X, twist1Y);
+    ctx.quadraticCurveTo((twist1X + twist2X) / 2, (twist1Y + twist2Y) / 2, twist2X, twist2Y);
+    ctx.stroke();
+    ctx.strokeStyle = "#7a6a4a";
+    ctx.lineWidth = 5.5;
     ctx.beginPath();
     ctx.moveTo(twist2X, twist2Y);
     ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
@@ -11168,11 +11188,34 @@ function drawForestRiver(camX) {
     // jagged hand-drawn edge) is what read as "sloppy"/pasted-on.
     // Tracing the real edge guarantees it always follows the bank's
     // own wiggle exactly, like a groove actually cut into it.
+    // a uniform-opacity stroke with hard round caps at both ends is
+    // exactly a "brushed on" line -- a blurred halo underneath softens
+    // its edges, and fading both ends to transparent (instead of a flat
+    // color stopping abruptly at a round cap) lets it dissolve into the
+    // surrounding sand rather than sitting on top of it like a decal.
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    ctx.filter = "blur(4px)";
+    ctx.globalAlpha = 0.5;
     ctx.strokeStyle = "rgba(45,80,72,0.55)";
-    ctx.lineWidth = 10;
+    ctx.lineWidth = 11;
+    ctx.beginPath();
+    tracePathOrganicOpen(ctx, edgePts);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const chanStart = edgePts[0], chanEnd = edgePts[edgePts.length - 1];
+    const chanGrad = ctx.createLinearGradient(chanStart.x, chanStart.y, chanEnd.x, chanEnd.y);
+    chanGrad.addColorStop(0, "rgba(45,80,72,0)");
+    chanGrad.addColorStop(0.18, "rgba(45,80,72,0.5)");
+    chanGrad.addColorStop(0.82, "rgba(45,80,72,0.5)");
+    chanGrad.addColorStop(1, "rgba(45,80,72,0)");
+    ctx.strokeStyle = chanGrad;
+    ctx.lineWidth = 9;
     ctx.beginPath();
     tracePathOrganicOpen(ctx, edgePts);
     ctx.stroke();
