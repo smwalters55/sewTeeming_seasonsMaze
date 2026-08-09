@@ -1021,6 +1021,17 @@ function updateSeasonTransition(deltaTime) {
         if (heldItem === "plumStick" || heldItem === "pearStick" || heldItem === "peachStick") heldItem = null;
         updateInventoryUI();
       }
+      if (currentScene === "forest" && seasonTransition.targetScene !== "forest" && heldItem === "log") {
+        // heldItem is one shared slot used everywhere in the game (shovel,
+        // lamp, honey, boomerang, etc.) -- a river log carried off into
+        // any other scene would otherwise sit in that slot indefinitely,
+        // silently blocking every other pickup interaction until the
+        // player specifically walked all the way back to place it. Same
+        // "local to its own area" treatment as the lamp: leaving the
+        // forest with a log in hand just sets it back on the pile.
+        forestRiverLogPile++;
+        heldItem = null;
+      }
       const previousScene = currentScene;
       currentScene = seasonTransition.targetScene;
       discoveredScenes[currentScene] = true;
