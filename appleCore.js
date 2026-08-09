@@ -24900,12 +24900,15 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     const ox = worldOffsetX || 0;
     // hazy receding horizon band behind everything, instead of a flat
     // two-tone split -- gives the whole scene actual depth, and lets the
-    // distant tree sit visibly further back than the water/bridge
+    // distant tree sit visibly further back than the water/bridge.
+    // Deepened toward actual forest-canopy tones (dark moss/olive) --
+    // the original stops leaned bright and pastel, reading as spring's
+    // own green rather than forest's darker, denser one.
     const canopy = ctx.createLinearGradient(0, by, 0, by + bh);
-    canopy.addColorStop(0, "#3a5a3a");
-    canopy.addColorStop(0.55, "#6a8f6a");
-    canopy.addColorStop(0.7, "#7a9a7a");
-    canopy.addColorStop(1, "#5a7a3a");
+    canopy.addColorStop(0, "#243620");
+    canopy.addColorStop(0.55, "#3f5a3a");
+    canopy.addColorStop(0.7, "#587058");
+    canopy.addColorStop(1, "#3a4a24");
     ctx.fillStyle = canopy;
     ctx.fillRect(bx, by, bw, bh);
 
@@ -24922,6 +24925,25 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // sits ON this, not on the water's own bank
     ctx.fillStyle = "#4a3d2e";
     ctx.fillRect(-halfW * 4, waterTop - halfH * 0.02, waterStartX - -halfW * 4 + halfW * 0.15, waterBot - waterTop + halfH * 0.02);
+    // a scatter of grass tufts in a few different greens along the
+    // ground -- without this it was one flat dirt color with nothing
+    // breaking it up
+    const grassColors = ["#5a7a3a", "#4a6a30", "#6a8a42", "#3f5c2c"];
+    for (let i = 0; i < 12; i++) {
+      const seedI = seed + i * 8.3;
+      const gxp = -halfW * 3.7 + pseudoRandom(seedI) * (halfW * 3.7 + waterStartX - halfW * 0.1);
+      const gyp = waterTop - halfH * 0.02 - pseudoRandom(seedI + 1) * halfH * 0.03;
+      ctx.strokeStyle = grassColors[i % grassColors.length];
+      ctx.lineWidth = Math.max(0.6, halfW * 0.02);
+      ctx.lineCap = "round";
+      for (let b = 0; b < 3; b++) {
+        const bladeLean = (pseudoRandom(seedI + b * 2.1) - 0.5) * halfW * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(gxp + b * halfW * 0.03, gyp);
+        ctx.lineTo(gxp + b * halfW * 0.03 + bladeLean, gyp - halfH * (0.06 + pseudoRandom(seedI + b) * 0.05));
+        ctx.stroke();
+      }
+    }
 
     // the last gear -- the real forest gear you'd have just climbed off
     // of, tail end only, mostly cropped off the left edge of the whole
@@ -24939,6 +24961,34 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.ellipse(rx, waterTop + halfH * 0.05, halfW * 0.08, halfW * 0.05, 0, 0, Math.PI * 2);
       ctx.fill();
     });
+    // real reeds and taller bank-grass right at the water's edge -- the
+    // one thing actually moving near the gear, gently swaying, so that
+    // side of the scene isn't just a static gear + flat pebbles. Stays
+    // strictly on the water-side of waterStartX, never under the gear.
+    const drawReedCluster = (baseX, baseY, count, seedBase) => {
+      for (let i = 0; i < count; i++) {
+        const seedI = seedBase + i * 6.1;
+        const rx0 = baseX + (pseudoRandom(seedI) - 0.5) * halfW * 0.3;
+        const reedH = halfH * (0.3 + pseudoRandom(seedI + 1) * 0.22);
+        const sway = Math.sin(t * 0.0011 + seedI * 3) * halfW * 0.035;
+        const isReed = pseudoRandom(seedI + 2) < 0.5;
+        ctx.strokeStyle = isReed ? "#7a6a34" : "#5a7a3a";
+        ctx.lineWidth = Math.max(0.6, halfW * 0.018);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(rx0, baseY);
+        ctx.quadraticCurveTo(rx0 + sway * 0.6, baseY - reedH * 0.6, rx0 + sway, baseY - reedH);
+        ctx.stroke();
+        if (isReed) {
+          // the classic cattail head, near the top of the stem
+          ctx.fillStyle = "#5a4022";
+          ctx.beginPath();
+          ctx.ellipse(rx0 + sway * 0.85, baseY - reedH * 0.86, halfW * 0.018, halfW * 0.045, 0.15, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+    drawReedCluster(waterStartX + halfW * 0.08, waterTop + halfH * 0.03, 5, seed + 200);
 
     // rushing water -- starts at waterStartX (not the whole scene width),
     // with a top-to-bottom gradient for depth, drifting current streaks,
@@ -25065,21 +25115,86 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // the hazy gap/far-bank strip itself
     ctx.fillStyle = "rgba(150,175,150,0.35)";
     ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY, halfW * 2.6, waterTop - treeBaseY);
-    ctx.fillStyle = "#3a4a42";
-    ctx.fillRect(treeWorldX - halfW * 0.06, treeBaseY - halfH * 1.1, halfW * 0.12, halfH * 1.1);
+    // reeds and taller grass along the tree's own far bank too, same
+    // cluster as the gear side -- softened by the haze so it still
+    // reads as further back, not as crisp as the near-side reeds
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    drawReedCluster(treeWorldX - halfW * 0.75, waterTop - halfH * 0.02, 4, seed + 340);
+    ctx.restore();
+
+    // a grander, gnarlier tree -- root buttresses flaring out at the
+    // base instead of a plain rectangle trunk, a scraggly leaning trunk
+    // with a couple of bare branch forks poking clear of the canopy, and
+    // an irregular cluster of bushy lumps for foliage instead of one
+    // clean oval on top.
+    // shorter trunk than the first pass -- 1.05*halfH pushed the whole
+    // canopy cluster above the panel's own visible top edge, cropping
+    // the "grander" tree down to basically nothing but a trunk sliver
+    const trunkBaseY = treeBaseY, trunkTopY = treeBaseY - halfH * 0.6;
+    ctx.fillStyle = "#33413a";
+    // root buttresses -- a few asymmetric flares spreading from the base
+    [[-0.22, 0.34, -1], [0.16, 0.3, 1], [-0.05, 0.22, 1], [0.3, 0.4, -1]].forEach(([dx, spread, dir]) => {
+      ctx.beginPath();
+      ctx.moveTo(treeWorldX + halfW * dx, trunkBaseY - halfH * 0.02);
+      ctx.quadraticCurveTo(
+        treeWorldX + halfW * (dx + dir * spread * 0.6), trunkBaseY - halfH * 0.05,
+        treeWorldX + halfW * (dx + dir * spread), trunkBaseY + halfH * 0.06
+      );
+      ctx.lineTo(treeWorldX + halfW * (dx + dir * spread * 0.7), trunkBaseY + halfH * 0.08);
+      ctx.quadraticCurveTo(
+        treeWorldX + halfW * (dx + dir * spread * 0.3), trunkBaseY,
+        treeWorldX + halfW * dx, trunkBaseY - halfH * 0.06
+      );
+      ctx.closePath();
+      ctx.fill();
+    });
+    // the trunk itself -- a slight lean and taper, not a straight rectangle
     ctx.beginPath();
-    ctx.ellipse(treeWorldX, treeBaseY - halfH * 0.75, halfW * 0.6, halfH * 0.62, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#4a6a5a";
+    ctx.moveTo(treeWorldX - halfW * 0.09, trunkBaseY);
+    ctx.quadraticCurveTo(treeWorldX - halfW * 0.13, trunkBaseY - halfH * 0.5, treeWorldX - halfW * 0.03, trunkTopY);
+    ctx.lineTo(treeWorldX + halfW * 0.05, trunkTopY);
+    ctx.quadraticCurveTo(treeWorldX + halfW * 0.1, trunkBaseY - halfH * 0.5, treeWorldX + halfW * 0.08, trunkBaseY);
+    ctx.closePath();
     ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(treeWorldX - halfW * 0.22, treeBaseY - halfH * 0.58, halfW * 0.36, halfH * 0.32, 0, 0, Math.PI * 2);
-    ctx.ellipse(treeWorldX + halfW * 0.25, treeBaseY - halfH * 0.92, halfW * 0.3, halfH * 0.28, 0, 0, Math.PI * 2);
+    // a couple of bare, scraggly branch forks poking out past the
+    // canopy's own silhouette, so the top doesn't read as one neat shape
+    ctx.strokeStyle = "#33413a";
+    ctx.lineWidth = Math.max(0.8, halfW * 0.02);
+    ctx.lineCap = "round";
+    [[treeWorldX - halfW * 0.02, trunkTopY + halfH * 0.15, -0.6, -0.35], [treeWorldX + halfW * 0.03, trunkTopY + halfH * 0.2, 0.55, -0.3]].forEach(([sx0, sy0, dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(sx0, sy0);
+      ctx.lineTo(sx0 + halfW * dx, sy0 + halfH * dy);
+      ctx.stroke();
+    });
+
+    // the bushy foliage cluster -- irregular overlapping lumps instead
+    // of a clean oval, with a scalloped scraggly outline
+    const canopyCenterY = trunkTopY - halfH * 0.05;
+    const foliageLumps = [
+      { dx: -0.32, dy: 0.05, r: 0.34 }, { dx: 0.05, dy: -0.18, r: 0.4 },
+      { dx: 0.4, dy: 0.02, r: 0.32 }, { dx: -0.1, dy: 0.22, r: 0.3 },
+      { dx: 0.22, dy: 0.28, r: 0.26 }, { dx: -0.42, dy: 0.26, r: 0.22 },
+      { dx: 0.5, dy: -0.24, r: 0.22 }, { dx: -0.15, dy: -0.35, r: 0.24 }
+    ];
     ctx.fillStyle = "#3f5c4e";
-    ctx.fill();
+    foliageLumps.forEach((lump, i) => {
+      const jr = 1 + (pseudoRandom(seed + i * 4.4) - 0.5) * 0.15;
+      ctx.beginPath();
+      ctx.arc(treeWorldX + halfW * lump.dx, canopyCenterY + halfH * lump.dy, halfW * lump.r * jr, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#4a6a5a";
+    foliageLumps.slice(0, 5).forEach((lump, i) => {
+      ctx.beginPath();
+      ctx.arc(treeWorldX + halfW * (lump.dx * 0.7), canopyCenterY + halfH * (lump.dy * 0.7 - 0.08), halfW * lump.r * 0.68, 0, Math.PI * 2);
+      ctx.fill();
+    });
     for (let i = 0; i < 6; i++) {
       const seedI = seed + i * 9.4;
-      const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.0;
-      const sy = treeBaseY - halfH * 0.75 + (pseudoRandom(seedI + 1) - 0.5) * halfH * 0.9;
+      const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.1;
+      const sy = canopyCenterY + (pseudoRandom(seedI + 1) - 0.5) * halfH * 0.9;
       const twinkle = 0.25 + 0.75 * Math.max(0, Math.sin(t * 0.0022 + seedI * 5));
       ctx.fillStyle = `rgba(255,245,190,${0.75 * twinkle})`;
       ctx.beginPath();
