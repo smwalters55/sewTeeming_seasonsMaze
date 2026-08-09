@@ -22614,24 +22614,30 @@ function drawMoleholeAmbientMole(mole, camX) {
 // margin -- used to sit at 1300, only ~80px left of the hole and reading
 // as crowded against its rim; moved past the hole entirely instead.
 const MOLEHOLE_FUNGUS_X = 1460;
-function drawMoleholeFungusCluster(camX) {
-  const px = MOLEHOLE_FUNGUS_X - camX;
-  if (px < -40 || px > canvas.width + 40) return;
+// a second, smaller patch just left of alcove one (the first market
+// stall) -- echoes the bigger cluster's glow/moss/mushroom language so
+// the two read as the same fungus, not two unrelated decorations, while
+// each mushroom still gets its own distinct cap width AND height rather
+// than the cap just scaling uniformly with the stem
+const MOLEHOLE_FUNGUS_SMALL_X = 190;
+
+// shared drawer -- takes a world-space anchor, the moss/glow radius, and
+// a list of {dx, h, capWMult} mushrooms. capWMult lets a cap read as
+// short-and-squat or tall-and-narrow independent of its own height, so
+// a cluster's mushrooms genuinely vary in silhouette, not just size.
+function drawMoleholeFungus(px, glowRadius, mushrooms) {
   const py = gy;
-  // moss patch on the ground
   ctx.fillStyle = "rgba(74,90,58,0.4)";
   ctx.beginPath();
-  ctx.ellipse(px, py - 1, 26, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(px, py - 1, glowRadius, glowRadius * 0.23, 0, 0, Math.PI * 2);
   ctx.fill();
-  const glow = ctx.createRadialGradient(px, py - 8, 2, px, py - 8, 26);
+  const glow = ctx.createRadialGradient(px, py - 8, 2, px, py - 8, glowRadius);
   glow.addColorStop(0, "rgba(220,200,90,0.3)");
   glow.addColorStop(1, "rgba(220,200,90,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(px, py - 8, 26, 0, Math.PI * 2);
+  ctx.arc(px, py - 8, glowRadius, 0, Math.PI * 2);
   ctx.fill();
-  // three small glowing mushrooms, staggered heights
-  const mushrooms = [{ dx: -14, h: 9 }, { dx: 2, h: 13 }, { dx: 15, h: 7 }];
   mushrooms.forEach(m => {
     const mx = px + m.dx, stemTop = py - m.h;
     ctx.strokeStyle = "#c9b46a";
@@ -22642,9 +22648,30 @@ function drawMoleholeFungusCluster(camX) {
     ctx.stroke();
     ctx.fillStyle = "#e8d878";
     ctx.beginPath();
-    ctx.ellipse(mx, stemTop, m.h * 0.5, m.h * 0.32, 0, Math.PI, 0);
+    ctx.ellipse(mx, stemTop, m.h * 0.5 * (m.capWMult || 1), m.h * 0.32, 0, Math.PI, 0);
     ctx.fill();
   });
+}
+
+function drawMoleholeFungusCluster(camX) {
+  const px = MOLEHOLE_FUNGUS_X - camX;
+  if (px < -40 || px > canvas.width + 40) return;
+  // three small glowing mushrooms, staggered heights
+  drawMoleholeFungus(px, 26, [
+    { dx: -14, h: 9 }, { dx: 2, h: 13 }, { dx: 15, h: 7 }
+  ]);
+}
+
+// the smaller pair by alcove one -- one short and wide-capped, one
+// tall and narrow-capped, so the two genuinely differ in silhouette
+// rather than just being the same mushroom at two sizes
+function drawMoleholeFungusSmall(camX) {
+  const px = MOLEHOLE_FUNGUS_SMALL_X - camX;
+  if (px < -40 || px > canvas.width + 40) return;
+  drawMoleholeFungus(px, 17, [
+    { dx: -7, h: 6, capWMult: 1.5 },
+    { dx: 6, h: 12, capWMult: 0.7 }
+  ]);
 }
 
 // dirt/earthen jump platforms scattered around the room -- simple
@@ -23263,6 +23290,10 @@ function drawTunnelTownEntrance(camX) {
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
 const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0, startDelay: 0, tubBounceY: 0, tubBounceVy: 0 };
+// set once the player's actually ridden the cart down and back -- the
+// mirror stall stays hidden until then ("i dont want mirror wall
+// appearing until after first gold mine visit")
+let mineCartEverRidden = false;
 // separate from the rider's own localY/vy -- per direct feedback ("can
 // you make the cart bump along with the player slightly instead of just
 // the player bumping"), the tub itself now gets its own small, snappy
@@ -23428,6 +23459,7 @@ function updateMineCartRide(deltaTime) {
         mineCart.ending = false;
         mineCart.endPhase = null;
         mineCart.tipAngle = 0;
+        mineCartEverRidden = true; // the actual "first gold mine visit" moment -- unlocks the mirror stall
         player.x = MOLEHOLE_SHAFT_X;
         player.y = 0;
         player.vy = 0;
@@ -24593,22 +24625,37 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
   // a real chunk chipped out of the top-right corner -- gives the shard
   // pile below an actual visible source, instead of broken glass just
-  // sitting there with an otherwise-intact mirror hanging above it
+  // sitting there with an otherwise-intact mirror hanging above it.
+  // Jagged, irregular outline (not a clean slanted rectangle) -- an
+  // actual broken edge, per direct feedback
   if (seed && drawShards) {
     ctx.fillStyle = "#241708"; // matches the room's own dark wall/sky color showing through
+    const chipCx = w * 0.4, chipCy = -h * 0.4, chipR = w * 0.16;
+    const pts = 8;
     ctx.beginPath();
-    ctx.moveTo(w * 0.34, -h * 0.48);
-    ctx.lineTo(w * 0.47, -h * 0.44);
-    ctx.lineTo(w * 0.44, -h * 0.32);
-    ctx.lineTo(w * 0.3, -h * 0.36);
+    for (let i = 0; i < pts; i++) {
+      const a = (i / pts) * Math.PI * 2;
+      // per-point jitter, seeded so the shape is stable frame to frame
+      // but genuinely irregular point to point, not a smooth circle
+      const rr = chipR * (0.45 + pseudoRandom(seed + 40 + i * 3.1) * 0.85);
+      const px = chipCx + Math.cos(a) * rr;
+      const py = chipCy + Math.sin(a) * rr * 0.85;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
     ctx.closePath();
     ctx.fill();
+    // a couple of thin crack lines splintering off the chipped edge,
+    // down into the still-intact glass
     ctx.strokeStyle = "rgba(20,22,26,0.55)";
     ctx.lineWidth = 0.7;
     ctx.beginPath();
-    ctx.moveTo(w * 0.3, -h * 0.36);
-    ctx.lineTo(w * 0.18, -h * 0.24);
-    ctx.lineTo(w * 0.14, -h * 0.08);
+    ctx.moveTo(chipCx - chipR * 0.3, chipCy + chipR * 0.6);
+    ctx.lineTo(chipCx - chipR * 1.6, chipCy + chipR * 1.9);
+    ctx.lineTo(chipCx - chipR * 1.3, chipCy + chipR * 3.4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(chipCx + chipR * 0.1, chipCy + chipR * 0.9);
+    ctx.lineTo(chipCx + chipR * 0.9, chipCy + chipR * 2.6);
     ctx.stroke();
   }
   ctx.restore();
@@ -25034,7 +25081,11 @@ const MIRROR_STALL_CLUTTER = [
   // after the triptych, so the cracked one actually stands out instead
   // of getting lost between the two biggest mirrors
   { type: "wallmirror+cracked", dx: 200, shape: "oval", y: -150 },
-  { type: "shelf+mirror+trinket", dx: 95 },
+  // brought down to right above where the player naturally stands
+  // (between the oval and the triptych) instead of stranded up near the
+  // header with dead air underneath -- clears both neighbors: below the
+  // oval's own hanging bottom edge, above the triptych's lowest panel
+  { type: "shelf+mirror+trinket", dx: 70 },
   { type: "groundmirror", dx: 175 },
   // a little touch of life on the counter -- dark, drooping flowers
   // rather than anything bright/cheerful
@@ -25197,9 +25248,12 @@ function drawMirrorStallClutter(sx) {
       drawVaseFlowers(cx2 - 6, MIRROR_STALL_HEADER_Y + 30, true);
       drawShelfTrinket(cx2 + 7, MIRROR_STALL_HEADER_Y + 30, "pebble");
     } else if (c.type === "shelf+mirror+trinket") {
-      drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 46);
-      drawTinyWallMirror(cx2 - 6, MIRROR_STALL_HEADER_Y + 40, "oval");
-      drawShelfTrinket(cx2 + 8, MIRROR_STALL_HEADER_Y + 46, "pebble");
+      // lowered from header height to right above head height -- see
+      // the dx comment above
+      const headY = gy - 92;
+      drawSmallShelf(cx2, headY);
+      drawTinyWallMirror(cx2 - 6, headY - 6, "oval");
+      drawShelfTrinket(cx2 + 8, headY, "pebble");
     } else if (c.type === "shelf+mirror+trinket+low") {
       // stacked well below the shelf above it (same dx) instead of
       // crammed into the hourglass/oval gap -- a real two-tier nook,
@@ -25323,7 +25377,9 @@ function drawMoleholeScene(camX) {
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
   drawMoleShopAlcove(camX);
   drawGeodeBreakerAlcove(camX);
-  drawMirrorStall(camX);
+  // hidden until the player's actually ridden the cart down and back --
+  // "i dont want mirror wall appearing until after first gold mine visit"
+  if (mineCartEverRidden) drawMirrorStall(camX);
   drawMoleholeRootSwing(camX);
   drawMoleHoleSecretPiece(camX);
   drawMoleHoleNoticeBoard(camX);
@@ -25443,6 +25499,7 @@ function drawMoleholeScene(camX) {
   drawMoleholeSpores(camX);
   MOLEHOLE_AMBIENT_MOLES.forEach(m => drawMoleholeAmbientMole(m, camX));
   drawMoleholeFungusCluster(camX);
+  drawMoleholeFungusSmall(camX);
 
   // drawn dead last, same as the elders' bubble in tunnel town, so it's
   // never covered by anything else in the scene
@@ -25505,57 +25562,67 @@ function updateMoleholeScene(deltaTime) {
     }
   });
 
-  // the mirror stall's own roof -- standable, same landing pattern as
-  // the dirt platforms above. Per direct feedback ("i want to be able to
-  // jump at least on the roof of mirror stall... more jumping on things
-  // options"), the booth is now something the player can actually climb
-  // onto, not just walk past. Width matches the roof's own drawn overhang
-  // (posts +/- 14), not just the bare post span.
-  {
-    const roofHalfW = (MIRROR_STALL_POST_R - MIRROR_STALL_POST_L) / 2 + 14;
-    const roofCenterX = MIRROR_STALL_X + (MIRROR_STALL_POST_L + MIRROR_STALL_POST_R) / 2;
-    const platformTop = gy - MIRROR_STALL_ROOF_Y;
-    const playerBottom = player.y;
-    if (
-      player.x + player.width > roofCenterX - roofHalfW &&
-      player.x < roofCenterX + roofHalfW &&
-      playerBottom <= platformTop &&
-      playerBottom >= platformTop - 16 &&
-      player.vy <= 0
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      player.vineFlying = false;
+  // the whole mirror stall's collision (roof + all six mirrors) is
+  // gated the same as its visibility -- nothing to stand on before the
+  // player's actually visited the gold mine, since nothing should be
+  // rendered there yet either
+  if (mineCartEverRidden) {
+    // the mirror stall's own roof -- standable, same landing pattern as
+    // the dirt platforms above. Per direct feedback ("i want to be able
+    // to jump at least on the roof of mirror stall... more jumping on
+    // things options"), the booth is now something the player can
+    // actually climb onto, not just walk past. Width matches the roof's
+    // own drawn overhang (posts +/- 14), not just the bare post span.
+    // Guarded by !keys.down, same convention used for the tunnel's own
+    // drop-through ledges -- holding down while standing on the roof
+    // lets gravity pull the player straight through it instead of
+    // re-snapping back onto it every frame.
+    if (!keys.down) {
+      const roofHalfW = (MIRROR_STALL_POST_R - MIRROR_STALL_POST_L) / 2 + 14;
+      const roofCenterX = MIRROR_STALL_X + (MIRROR_STALL_POST_L + MIRROR_STALL_POST_R) / 2;
+      const platformTop = gy - MIRROR_STALL_ROOF_Y;
+      const playerBottom = player.y;
+      if (
+        player.x + player.width > roofCenterX - roofHalfW &&
+        player.x < roofCenterX + roofHalfW &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 16 &&
+        player.vy <= 0
+      ) {
+        player.y = platformTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.vineFlying = false;
+      }
     }
-  }
 
-  // all six mirror-stall mirrors, standable -- including the three
-  // hanging ones now, per direct feedback ("all 6 mirrors and roof i
-  // think"). Shares the exact placement math the render loop uses
-  // (getMirrorPlacement) so a mirror's collision top can never drift
-  // out of sync with where it's actually drawn.
-  MIRRORS.forEach(m => {
-    const worldX = MIRROR_STALL_X + m.dx;
-    const { my, frameHalfH } = getMirrorPlacement(m);
-    const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
-    const platformTop = gy - (my - frameHalfH);
-    const playerBottom = player.y;
-    if (
-      player.x + player.width > worldX - halfW &&
-      player.x < worldX + halfW &&
-      playerBottom <= platformTop &&
-      playerBottom >= platformTop - 16 &&
-      player.vy <= 0
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      player.vineFlying = false;
-    }
-  });
+    // all six mirror-stall mirrors, standable -- including the three
+    // hanging ones now, per direct feedback ("all 6 mirrors and roof i
+    // think"). Shares the exact placement math the render loop uses
+    // (getMirrorPlacement) so a mirror's collision top can never drift
+    // out of sync with where it's actually drawn.
+    MIRRORS.forEach(m => {
+      const worldX = MIRROR_STALL_X + m.dx;
+      const { my, frameHalfH } = getMirrorPlacement(m);
+      const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
+      const platformTop = gy - (my - frameHalfH);
+      const playerBottom = player.y;
+      if (
+        player.x + player.width > worldX - halfW &&
+        player.x < worldX + halfW &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 16 &&
+        player.vy <= 0
+      ) {
+        player.y = platformTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.vineFlying = false;
+      }
+    });
+  }
 
   // the geode breaker's own raised ledge -- same landing pattern as the
   // dirt platforms above, standable so a root-swing release actually has
