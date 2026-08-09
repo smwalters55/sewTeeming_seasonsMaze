@@ -26983,11 +26983,14 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.arc(c.cx0, c.cy0, c.r0, 0, Math.PI * 2);
       ctx.fill();
     });
-    // trunk, kept near center (not out toward the corners, same clipping
-    // reason as above) so it's actually visible, running up out of frame
-    // into the canopy
+    // trunk -- descends from the canopy's own lower edge (~-0.4*halfH)
+    // down toward the ground, instead of sitting stacked at the same
+    // height as the foliage itself, which read as the trunk floating
+    // inside the tree rather than holding it up ("the trunk in spring is
+    // in the tree"). Off to the right side, clear of the rope/seat's own
+    // swept path near center.
     ctx.fillStyle = "#5a4022";
-    ctx.fillRect(halfW * 0.2, -halfH * 0.9, halfW * 0.16, halfH * 0.42);
+    ctx.fillRect(halfW * 0.55, -halfH * 0.42, halfW * 0.16, halfH * 0.95);
 
     const fruitSpots = [
       { fx: -halfW * 0.62, fy: -halfH * 0.78 },
