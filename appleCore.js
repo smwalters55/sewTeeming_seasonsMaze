@@ -22168,25 +22168,69 @@ const moleHoleNoticeBoard = { x: 435, y: 60 }; // re-centered in the wider (140p
 function drawMoleHoleNoticeBoard(camX) {
   const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
   const w = 46, h = 34;
-  ctx.fillStyle = "#4a3018";
+  // actual cork now, not a plain painted plank -- it used to read as
+  // just background trim with a few illegible ink lines, easy to miss
+  // as anything interactive. A visibly busier board (real cork tone,
+  // actual tiny pinned scraps) sells "there's stuff posted here" from
+  // a distance, before the player's even close enough for the prompt.
+  ctx.fillStyle = "#8a6a42";
   ctx.fillRect(nx - w / 2, ny - h / 2, w, h);
-  ctx.strokeStyle = "#2e2014";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 3;
   ctx.strokeRect(nx - w / 2, ny - h / 2, w, h);
+  // cork speckle texture, same treatment as the full reader's board
+  ctx.fillStyle = "rgba(60,40,20,0.3)";
+  for (let i = 0; i < 10; i++) {
+    const sx = nx - w / 2 + pseudoRandom(i * 3.1 + moleHoleNoticeBoard.x) * w;
+    const sy = ny - h / 2 + pseudoRandom(i * 7.7 + 1) * h;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // small peg it hangs from
   ctx.beginPath();
   ctx.arc(nx, ny - h / 2 - 5, 2.5, 0, Math.PI * 2);
   ctx.fillStyle = "#2e2014";
   ctx.fill();
-  // a few illegible ink-mark lines, hinting at posted text
-  ctx.strokeStyle = "rgba(20,14,8,0.55)";
-  ctx.lineWidth = 1.5;
-  [-8, -1, 6].forEach((dy, i) => {
-    ctx.beginPath();
-    ctx.moveTo(nx - w / 2 + 6, ny + dy);
-    ctx.lineTo(nx + w / 2 - 6 - i * 6, ny + dy);
-    ctx.stroke();
+  // a few tiny pinned scraps -- not meant to be readable at this size,
+  // just enough visual texture to read as "notices", echoing the full
+  // board's own pinned-paper look
+  [[-12, -8, -0.15, "#f2e8d0"], [8, -4, 0.1, "#f2a83a"], [-4, 9, -0.08, "#f2e8d0"]].forEach(([dx, dy, rot, col]) => {
+    ctx.save();
+    ctx.translate(nx + dx, ny + dy);
+    ctx.rotate(rot);
+    ctx.fillStyle = col;
+    ctx.fillRect(-7, -5, 14, 10);
+    ctx.strokeStyle = "rgba(40,30,20,0.4)";
+    ctx.lineWidth = 0.6;
+    ctx.strokeRect(-7, -5, 14, 10);
+    ctx.restore();
   });
+
+  // a floating "press space" prompt once the player's close enough to
+  // actually interact -- the board no longer just sits there looking
+  // passive, it visibly invites the walk-up. Placed BELOW the board,
+  // not above -- there's a platform positioned directly above this
+  // board on purpose (see MOLEHOLE_PLATFORMS), drawn after this
+  // function, which was rendering right over an above-board prompt
+  // and hiding it completely.
+  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) &&
+      !corkboardReader.active && !corkboardReader.opening && !corkboardReader.closing) {
+    const bob = Math.sin(performance.now() * 0.005) * 2;
+    const py = ny + h / 2 + 18 + bob;
+    ctx.fillStyle = "#c9a03a";
+    roundRect(ctx, nx - 24, py - 9, 48, 16, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, nx - 24, py - 9, 48, 16, 4);
+    ctx.stroke();
+    ctx.fillStyle = "#241708";
+    ctx.font = "bold 9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("[SPACE]", nx, py + 2);
+    ctx.textAlign = "left";
+  }
 }
 
 /* ======================================================
@@ -22211,10 +22255,10 @@ const CORKBOARD_OPEN_CLOSE_MS = 400;
 // so the board reads as an actual accumulation of different people's
 // postings rather than one uniform prop.
 const corkboardNotices = [
-  { rot: -0.06, dx: -220, dy: -95, fontSize: 11,
+  { rot: -0.06, dx: -220, dy: -95, fontSize: 11, officialBorder: true,
     lines: [{ t: "TOWN NOTICE", bold: true }, "Meeting Tuesdays, after", "lunch -- usual burrow."] },
   { rot: 0.05, dx: 0, dy: -100,
-    lines: [{ t: "Lift's still out of order.", bold: true }, "If you find the gear, bring", "it up to the shaft."] },
+    lines: [{ t: "Lift's still out of order.", bold: true }, "If you find the lost piece,", "bring it up to the shaft."] },
   // the one event flyer among routine notices -- an actual bright
   // post-it instead of the usual cream paper, since a real board would
   // have exactly one thing like this standing out
@@ -22222,11 +22266,11 @@ const corkboardNotices = [
     lines: [{ t: "ROLODEX BUILDING", bold: true }, { t: "COMPETITION!!", bold: true }, "This Friday, near the lift.", "Bring your best cards."] },
   { rot: 0.04, dx: -150, dy: 0,
     lines: ["Some say it's past time we", "opened a way Up Outside", "again. Others say the world", "belongs down here just fine."] },
-  { rot: -0.05, dx: 150, dy: 5,
+  { rot: -0.05, dx: 150, dy: 5, rippedFlap: true,
     lines: ["Word is there's loot buried", "somewhere in the tunnels", "nearby -- if the stories are", "even half true."] },
-  { rot: 0.03, dx: -220, dy: 95, fontSize: 9,
+  { rot: 0.03, dx: -220, dy: 95, fontSize: 9, tornCorner: true,
     lines: [{ t: "LOST:", bold: true }, "one (1) very good hat.", "Answers to nothing.", "Reward: a favor, redeemable later."] },
-  { rot: -0.07, dx: 0, dy: 100, fontSize: 9,
+  { rot: -0.07, dx: 0, dy: 100, fontSize: 9, wrinkled: true,
     lines: ["Whoever keeps 'borrowing'", { t: "MY good shovel --", bold: true }, "we know it's you."] },
   { rot: 0.06, dx: 220, dy: 92, fontSize: 9, taped: true,
     lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
@@ -22335,11 +22379,90 @@ function drawCorkboardReader() {
     ctx.strokeStyle = "rgba(40,30,20,0.5)";
     ctx.lineWidth = 1;
     ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
+    // an official double-ruled inset border -- the "this one's the
+    // actual authority notice" treatment, vs. everything else which is
+    // just someone's handwritten scrap
+    if (n.officialBorder) {
+      ctx.strokeStyle = "rgba(122,32,32,0.65)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-pw / 2 + 3, -ph / 2 + 3, pw - 6, ph - 6);
+      ctx.strokeRect(-pw / 2 + 6, -ph / 2 + 6, pw - 12, ph - 12);
+    }
     ctx.fillStyle = n.paperColor ? "#3a2a10" : "#2b2318";
     n.lines.forEach((line, i) => {
       ctx.font = lineBold(line) ? boldFont : normalFont;
       ctx.fillText(lineText(line), -pw / 2 + 9, -ph / 2 + fontSize + 3 + i * lineHeight);
     });
+    if (n.wrinkled) {
+      // a few faint crease ridges, each a light+dark stroke pair
+      // straddling the same line -- crossing right over the text is
+      // the point, that's how a real crumpled-then-flattened-out
+      // notice would actually look
+      [[-0.55, 0.4], [0.3, -0.5], [-0.15, 0.15]].forEach(([fx, fy], ci) => {
+        const seed = ni * 11 + ci * 3.3;
+        const x1 = fx * pw * 0.9, y1 = -ph / 2 + 2;
+        const x2 = fx * pw * 0.9 + (pseudoRandom(seed) - 0.5) * pw * 0.3, y2 = ph / 2 - 2;
+        ctx.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.strokeStyle = "rgba(255,255,255,0.18)";
+        ctx.lineWidth = 0.7;
+        ctx.beginPath(); ctx.moveTo(x1 + 1, y1); ctx.lineTo(x2 + 1, y2); ctx.stroke();
+      });
+      // a couple of corners folded/curled instead of crisp
+      ctx.fillStyle = "rgba(0,0,0,0.1)";
+      ctx.beginPath();
+      ctx.moveTo(pw / 2, -ph / 2);
+      ctx.lineTo(pw / 2 - 8, -ph / 2);
+      ctx.lineTo(pw / 2, -ph / 2 + 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (n.tornCorner) {
+      // an actual chunk missing from the top-right corner -- painted
+      // over in the board's own base color (rather than a different
+      // paper tone) so it reads as a gap torn away down to the cork,
+      // not just a colored patch, with a jagged (not straight) cut edge
+      const jag = [[pw / 2 - 15, -ph / 2], [pw / 2 - 9, -ph / 2 + 4], [pw / 2 - 13, -ph / 2 + 8],
+        [pw / 2 - 5, -ph / 2 + 6], [pw / 2, -ph / 2 + 14]];
+      ctx.fillStyle = "#8a6a42";
+      ctx.beginPath();
+      ctx.moveTo(pw / 2, -ph / 2);
+      jag.forEach(([px, py]) => ctx.lineTo(px, py));
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(40,25,10,0.55)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(jag[0][0], jag[0][1]);
+      jag.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+      ctx.stroke();
+    }
+    if (n.rippedFlap) {
+      // a piece along the bottom edge that's torn most of the way
+      // loose and hangs down at a slight angle -- still barely
+      // attached (the jagged edge along the top of the flap), not
+      // fully detached
+      ctx.save();
+      ctx.translate(-pw * 0.1, ph / 2 - 1);
+      ctx.rotate(0.16);
+      const fw = pw * 0.42;
+      ctx.fillStyle = n.paperColor || "rgba(250,244,225,0.97)";
+      ctx.beginPath();
+      ctx.moveTo(-fw / 2, 0);
+      ctx.lineTo(-fw / 2 + 6, 3);
+      ctx.lineTo(-fw / 2 + 13, -1);
+      ctx.lineTo(-fw / 2 + 20, 4);
+      ctx.lineTo(fw / 2, 1);
+      ctx.lineTo(fw / 2 - 3, 11);
+      ctx.lineTo(-fw / 2 + 3, 13);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(40,30,20,0.45)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.restore();
+    }
     if (n.taped) {
       // two small strips of tape across the top corners instead of a
       // pin -- someone stuck this one up in a hurry
