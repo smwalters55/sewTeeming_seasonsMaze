@@ -10837,13 +10837,20 @@ function drawForestRiver(camX) {
   // own dirt/reed foreground below, so that nearer shoreline still
   // reads as sitting in front of this more distant curve.
   {
-    const bendStartX = fb + 30, bendMidX = fb + 170, bendEndX = fb + 380;
+    // starts flush at fb (no gap) and matches the main water body's
+    // own depth right at the seam (widthStart puts its bottom edge at
+    // gy+90, same as the main water fill's own bottom-right corner
+    // below) -- the earlier version started 30px late and much
+    // shallower than the real river, which read as a separate patch of
+    // paler water floating off to the side instead of the same body of
+    // water actually continuing ("the water on right isn't connected")
+    const bendStartX = fb, bendMidX = fb + 170, bendEndX = fb + 380;
     // stays close to ground/water height the whole way -- the point is
     // it bends to run ALONGSIDE the ground toward the horizon, not
     // climb up into the canopy (that read as the river rising into the
     // air, not as "almost horizontal")
     const topAtStart = gy - 4, topAtMid = gy - 8, topAtEnd = gy - 12;
-    const widthStart = 48, widthEnd = 8;
+    const widthStart = 94, widthEnd = 8;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(bendStartX, topAtStart);
@@ -10851,10 +10858,14 @@ function drawForestRiver(camX) {
     ctx.lineTo(bendEndX, topAtEnd + widthEnd);
     ctx.quadraticCurveTo(bendMidX, topAtMid + widthStart * 0.65, bendStartX, topAtStart + widthStart);
     ctx.closePath();
+    // opaque and matching the main river's own dark tone right at the
+    // seam, only actually starting to fade in the back half -- so what
+    // peeks out past the sand spit reads as continuous water, not a
+    // lighter disconnected block appearing out of nowhere
     const bendGrad = ctx.createLinearGradient(bendStartX, 0, bendEndX, 0);
-    bendGrad.addColorStop(0, "rgba(61,96,88,0.82)");
-    bendGrad.addColorStop(0.6, "rgba(66,98,92,0.4)");
-    bendGrad.addColorStop(1, "rgba(70,100,95,0.08)");
+    bendGrad.addColorStop(0, "rgba(45,68,62,0.95)");
+    bendGrad.addColorStop(0.4, "rgba(55,80,74,0.6)");
+    bendGrad.addColorStop(1, "rgba(70,100,95,0.05)");
     ctx.fillStyle = bendGrad;
     ctx.fill();
     // a couple of the same soft traveling glints the main channel
@@ -32241,13 +32252,14 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- drops right in front of the river bridge build site
-// (at the log pile, full 9-log pile, nothing built yet) with the mine
-// cart already ridden and the shaft already fixed (as if that whole
-// chain were already done), so the bridge-building mechanic is
-// reachable and testable immediately without replaying molehole/
-// tunnel town first. Revert (remove this block) once the river/bridge
-// is done being tested.
+// TEMPORARY -- drops right in front of the river bridge site (at the
+// log pile) with the mine cart already ridden and the shaft already
+// fixed (as if that whole chain were already done), so the river area
+// is reachable immediately without replaying molehole/tunnel town
+// first. The bridge itself starts already fully built+decked (per
+// direct request -- "start me with bridge already built"), so it's
+// walkable right away without redoing the build step each time. Revert
+// (remove this block) once the river/bridge is done being tested.
 currentScene = "forest";
 mineCartEverRidden = true;
 moleholeShaftFixed = true;
@@ -32259,6 +32271,15 @@ player.jumping = false;
 player.usedDoubleJump = false;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
 cameraY = 0;
+// bridge already fully strung AND decked -- backdated placedAt
+// timestamps (rather than performance.now()) so it doesn't play the
+// fade-in/flash/celebration animations on load, it just looks done
+for (let seg = 0; seg < FOREST_RIVER_LOG_SEGMENTS; seg++) {
+  forestRiverStringerPlacedAt[seg] = -100000;
+  forestRiverLogPlacedAt[seg] = -100000;
+}
+forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
 // also seed a full stack of real bridgePieces (for testing the
 // auto-unload-into-pile behavior) and a geode (uncracked), for debugging
 // -- through addToInventory (not a raw inventory[x]= assignment) so
