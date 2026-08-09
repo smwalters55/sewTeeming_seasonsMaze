@@ -24746,13 +24746,13 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // the autumn mirror's leaves -- into an actual gradient with a
     // richer, less spring-postcard green.
     const sky = ctx.createLinearGradient(0, by, 0, by + bh);
-    sky.addColorStop(0, "#385c28");
-    sky.addColorStop(0.6, "#4f7a32");
-    sky.addColorStop(1, "#5f8a3a");
+    sky.addColorStop(0, "#446b32"); // lightened slightly -- the squirrel's dark silhouette was getting lost against the original deeper green
+    sky.addColorStop(0.6, "#5c8a3d");
+    sky.addColorStop(1, "#6d9a47");
     ctx.fillStyle = sky;
     ctx.fillRect(bx, by, bw, bh);
     // a bit of ground at the bottom so the swing has somewhere to launch from
-    ctx.fillStyle = "#4a7a2e";
+    ctx.fillStyle = "#57903a";
     ctx.fillRect(bx, by + bh * 0.82, bw, bh * 0.2);
 
     // tried a plain background tree here for depth, but it read as an
@@ -25438,7 +25438,93 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
   ctx.restore();
 }
 
-function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
+// a rare, unsettling reflection ONLY visible in the hourglass mirror's
+// glass -- never present in the room itself. The player's own
+// silhouette, but dark and wearing a huge carved gopher mask, slowly
+// turning to face you before fading back out. Rolls for a chance to
+// trigger every few seconds while the player is near, then goes on a
+// long cooldown once it's played through, so it stays a rare "did I
+// actually see that" moment rather than a reliable fixture.
+const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0 };
+const HOURGLASS_APPARITION_MS = 2600;
+function updateHourglassApparition(isNear) {
+  if (!isNear) return;
+  const now = performance.now();
+  if (hourglassApparition.active) {
+    if (now - hourglassApparition.startTime > HOURGLASS_APPARITION_MS) {
+      hourglassApparition.active = false;
+      hourglassApparition.nextRollAt = now + 8000 + Math.random() * 9000;
+    }
+  } else if (now >= hourglassApparition.nextRollAt) {
+    if (Math.random() < 0.18) {
+      hourglassApparition.active = true;
+      hourglassApparition.startTime = now;
+    } else {
+      hourglassApparition.nextRollAt = now + 2500 + Math.random() * 2500;
+    }
+  }
+}
+function drawHourglassApparition(w, h) {
+  const now = performance.now();
+  const p = Math.min(1, (now - hourglassApparition.startTime) / HOURGLASS_APPARITION_MS);
+  // fade in, hold, fade out -- never just snaps on/off
+  const alpha = p < 0.15 ? p / 0.15 : p > 0.78 ? Math.max(0, (1 - p) / 0.22) : 1;
+  if (alpha <= 0.01) return;
+  // starts turned away (in profile) and slowly turns to face the
+  // player over most of the duration -- a horizontal squash stands in
+  // for the actual head/body turn, cheap but reads fine at this size
+  const turnP = Math.min(1, p / 0.72);
+  const turnEase = turnP * turnP * (3 - 2 * turnP);
+  const squash = 0.32 + 0.68 * turnEase;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(0, h * 0.06);
+  ctx.scale(squash, 1);
+  const bw = w * 0.6, bh = h * 0.52;
+  // body -- same silhouette as the real player, but darker/desaturated,
+  // like a shadow of them rather than actually them
+  ctx.fillStyle = "#3a3560";
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.fill(); }
+  else { ctx.fillRect(-bw / 2, -bh / 2, bw, bh); }
+  // the mask -- big, round, carved wood, dominating the upper half of
+  // the body the same way the real player's eyes dominate their head
+  const maskR = bw * 0.5;
+  const maskCy = -bh * 0.16;
+  ctx.fillStyle = "#8a6a3a";
+  ctx.beginPath();
+  ctx.arc(0, maskCy, maskR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = Math.max(0.8, w * 0.02);
+  ctx.stroke();
+  // dark eye holes -- a faint cold glow behind them is what actually
+  // sells "something is looking back at you"
+  ctx.fillStyle = "#1a1420";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.17, maskR * 0.23, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = `rgba(190,170,255,${0.55 * turnEase})`;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.arc(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // two big buck teeth, unmistakably gopher
+  ctx.fillStyle = "#e8ddc0";
+  ctx.fillRect(-maskR * 0.24, maskCy + maskR * 0.62, maskR * 0.2, maskR * 0.4);
+  ctx.fillRect(maskR * 0.04, maskCy + maskR * 0.62, maskR * 0.2, maskR * 0.4);
+  ctx.strokeStyle = "#c9b890";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(0, maskCy + maskR * 0.62);
+  ctx.lineTo(0, maskCy + maskR * 1.02);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear) {
   const w = 34 * scale, h = 58 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -25467,6 +25553,7 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
     ctx.stroke();
   });
 
+  updateHourglassApparition(isNear);
   ctx.fillStyle = "#3a4048";
   ctx.save();
   path(); ctx.clip();
@@ -25477,6 +25564,7 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
     [-w * 0.22, -h * 0.34, -w * 0.05, -h * 0.14, 0.32, 1.3],
     [w * 0.08, h * 0.16, w * 0.24, h * 0.36, 0.3, 1.2]
   ]);
+  if (hourglassApparition.active) drawHourglassApparition(w, h);
   ctx.restore();
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
   // a real chunk chipped out of the top-right corner -- gives the shard
@@ -26225,6 +26313,10 @@ function drawMirrorStall(camX) {
       const playerCenterX = player.x + player.width / 2;
       const standingOnTop = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
       isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 40, 200);
+    } else if (m.shape === "hourglass") {
+      // no zone glimpse here -- just the rare reflection-only apparition,
+      // which needs to know when the player's close enough to notice it
+      isNear = isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200);
     } else {
       isNear = m.glimpse
         ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
@@ -26274,7 +26366,7 @@ function drawMirrorStall(camX) {
     }
     else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale, m.glimpse, isNear);
     else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean, m.glimpse, isNear, m.dx);
-    else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
+    else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards, isNear);
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
     else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass, m.glimpse, isNear);
   });
