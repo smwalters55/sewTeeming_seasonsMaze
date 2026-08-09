@@ -24770,27 +24770,31 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.fillStyle = "#a0693a";
     if (sitting) {
       // reared up on hind legs -- taller, narrower body, tail curled
-      // down behind rather than trailing flat
+      // down behind rather than trailing flat. Scaled down from the
+      // original geometry, which made this pose read noticeably bigger
+      // than the walking body -- sqSit brings its overall size back in
+      // line with that same crawling-body scale, just rearranged taller.
+      const sqSit = sqScale * 0.68;
       ctx.strokeStyle = "#a0693a";
-      ctx.lineWidth = sqScale * 2.4;
+      ctx.lineWidth = sqSit * 2.4;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(-sqScale * 3, sqScale * 2);
-      ctx.quadraticCurveTo(-sqScale * 7, sqScale * 4, -sqScale * 5, sqScale * 9);
+      ctx.moveTo(-sqSit * 3, sqSit * 2);
+      ctx.quadraticCurveTo(-sqSit * 7, sqSit * 4, -sqSit * 5, sqSit * 9);
       ctx.stroke();
       ctx.beginPath();
-      ctx.ellipse(0, -sqScale * 3, sqScale * 4, sqScale * 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -sqSit * 3, sqSit * 4, sqSit * 7, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(sqScale * 1, -sqScale * 10, sqScale * 3.2, 0, Math.PI * 2);
+      ctx.arc(sqSit * 1, -sqSit * 10, sqSit * 3.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(sqScale * -0.5, -sqScale * 12.5, sqScale * 1.1, 0, Math.PI * 2);
-      ctx.arc(sqScale * 2.5, -sqScale * 12.5, sqScale * 1.1, 0, Math.PI * 2);
+      ctx.arc(sqSit * -0.5, -sqSit * 12.5, sqSit * 1.1, 0, Math.PI * 2);
+      ctx.arc(sqSit * 2.5, -sqSit * 12.5, sqSit * 1.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#2b2b2b";
       ctx.beginPath();
-      ctx.arc(sqScale * 2, -sqScale * 10.5, sqScale * 0.7, 0, Math.PI * 2);
+      ctx.arc(sqSit * 2, -sqSit * 10.5, sqSit * 0.7, 0, Math.PI * 2);
       ctx.fill();
     } else {
       // walking -- same silhouette as the real squirrel: fuzzy curled
