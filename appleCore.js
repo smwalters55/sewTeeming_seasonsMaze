@@ -10846,6 +10846,44 @@ function drawForestRiver(camX) {
     ctx.lineTo(nb - 100, gy + 34);
     ctx.closePath();
     ctx.fill();
+
+    // an actual trickle of water flowing DOWN the diagonal cut into
+    // the river, not just an angled patch of exposed sand -- a narrow
+    // water-colored channel carved into the bank, with a few animated
+    // highlight streaks sliding down the slope so it reads as moving
+    // water rather than a static wet stripe
+    {
+      const chanTopX = topX + 16, chanTopY = topY + 8;
+      const chanBotX = waterX - 4, chanBotY = waterY - 6;
+      const cdx = chanBotX - chanTopX, cdy = chanBotY - chanTopY;
+      const clen = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
+      const cnx = -cdy / clen, cny = cdx / clen; // unit normal, for channel width
+      const chanW = 9;
+      ctx.fillStyle = "rgba(45,80,72,0.6)";
+      ctx.beginPath();
+      ctx.moveTo(chanTopX + cnx * chanW * 0.5, chanTopY + cny * chanW * 0.5);
+      ctx.lineTo(chanBotX + cnx * chanW * 0.75, chanBotY + cny * chanW * 0.75);
+      ctx.lineTo(chanBotX - cnx * chanW * 0.75, chanBotY - cny * chanW * 0.75);
+      ctx.lineTo(chanTopX - cnx * chanW * 0.5, chanTopY - cny * chanW * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(30,55,50,0.5)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      for (let i = 0; i < 4; i++) {
+        const speed = 0.00009 + i * 0.00002;
+        const phase = (t * speed + i * 0.31) % 1;
+        const sx = chanTopX + cdx * phase, sy = chanTopY + cdy * phase;
+        const streakLen = 11;
+        ctx.strokeStyle = `rgba(210,238,228,${0.4 - i * 0.06})`;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + (cdx / clen) * streakLen, sy + (cdy / clen) * streakLen);
+        ctx.stroke();
+      }
+    }
     // re-randomized on every player movement (see forestRiverPebbleShuffle,
     // bumped in updateForestScene) rather than a fixed scatter -- per
     // direct request, these pebbles reshuffle position each time the
