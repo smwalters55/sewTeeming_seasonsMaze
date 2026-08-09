@@ -25616,6 +25616,11 @@ function drawHourglassParade(w, h) {
     const col = "rgba(150,125,95,0.9)";
     ctx.fillStyle = col;
     ctx.strokeStyle = col;
+    // bodyRx/bodyRy track each type's own torso ellipse so the costume
+    // below can actually fit that silhouette (draped over the back,
+    // sized to the real body), instead of a fixed-size patch that
+    // happened to land wherever regardless of the body under it
+    let bodyRx = s, bodyRy = s * 0.7;
     if (c.type === "squirrel") {
       ctx.beginPath();
       ctx.ellipse(0, 0, s, s * 0.7, 0, 0, Math.PI * 2);
@@ -25625,8 +25630,9 @@ function drawHourglassParade(w, h) {
       ctx.arc(-s * 0.9, -s * 0.6, s * 0.6, 0, Math.PI * 1.5);
       ctx.stroke();
     } else if (c.type === "rat") {
+      bodyRx = s * 1.2; bodyRy = s * 0.55;
       ctx.beginPath();
-      ctx.ellipse(0, 0, s * 1.2, s * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.lineWidth = s * 0.12;
       ctx.beginPath();
@@ -25634,8 +25640,9 @@ function drawHourglassParade(w, h) {
       ctx.quadraticCurveTo(-s * 1.8, s * 0.3, -s * 2.2, 0);
       ctx.stroke();
     } else if (c.type === "rabbit") {
+      bodyRx = s * 0.9; bodyRy = s * 0.75;
       ctx.beginPath();
-      ctx.ellipse(0, 0, s * 0.9, s * 0.75, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI * 2);
       ctx.fill();
       // two tall ears, the shape that actually reads as "rabbit" at a
       // glance rather than just another rounded blob
@@ -25644,41 +25651,48 @@ function drawHourglassParade(w, h) {
       ctx.ellipse(s * 0.1, -s * 1.15, s * 0.16, s * 0.5, 0.1, 0, Math.PI * 2);
       ctx.fill();
     } else {
+      bodyRy = s * 0.8;
       ctx.beginPath();
-      ctx.ellipse(0, 0, s, s * 0.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, s, bodyRy, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
       ctx.ellipse(s * 0.85, s * 0.1, s * 0.25, s * 0.18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // the costume itself -- a blanket/cape draped over the BACK (the
+    // top of the body, following its actual curve), not a circular
+    // patch floating on the belly. On an all-fours side-view body, a
+    // patch centered mid-torso just reads as an unrelated colored spot;
+    // a shape that sits along the spine and drapes down over the near
+    // flank reads as something actually worn.
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = c.costume;
     if (c.skirt) {
-      // a full bell-shaped polka-dot skirt instead of the usual small
-      // vest patch -- covers most of the lower body, with its own
-      // contrasting dots so it actually reads as a pattern, not just a
-      // flat colored patch
-      ctx.fillStyle = c.costume;
+      // the big polka-dot version -- same draped-over-the-back logic,
+      // just a larger cape that hangs further down over the flank
+      // (clipped to the body silhouette so it still reads as fabric
+      // wrapped around the animal, not a dress hanging in open air)
       ctx.beginPath();
-      ctx.moveTo(-s * 0.05, -s * 0.1);
-      ctx.lineTo(s * 1.05, s * 0.35);
-      ctx.quadraticCurveTo(s * 0.4, s * 0.85, -s * 0.35, s * 0.75);
-      ctx.quadraticCurveTo(-s * 0.75, s * 0.35, -s * 0.05, -s * 0.1);
-      ctx.closePath();
+      ctx.ellipse(bodyRx * 0.05, bodyRy * 0.15, bodyRx * 1.05, bodyRy * 1.05, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = c.dotColor || "#ffffff";
-      [[-s * 0.1, s * 0.15, 0.11], [s * 0.35, s * 0.1, 0.13], [s * 0.05, s * 0.5, 0.12], [-s * 0.45, s * 0.45, 0.1], [s * 0.55, s * 0.45, 0.1]]
-        .forEach(([dx, dy, dr]) => {
+      [[-0.3, -0.15, 0.12], [0.25, -0.3, 0.11], [0.55, 0.1, 0.13], [-0.05, 0.3, 0.12], [-0.5, 0.15, 0.1]]
+        .forEach(([fx, fy, fr]) => {
           ctx.beginPath();
-          ctx.arc(dx, dy, s * dr, 0, Math.PI * 2);
+          ctx.arc(bodyRx * fx, bodyRy * fy, s * fr, 0, Math.PI * 2);
           ctx.fill();
         });
     } else {
-      // costume accent -- a small bright patch/vest on the body, so each
-      // critter reads as dressed up rather than just a plain silhouette
-      ctx.fillStyle = c.costume;
+      // a smaller back-blanket -- sits along the top third of the
+      // torso, same silhouette-fitted logic
       ctx.beginPath();
-      ctx.ellipse(0, s * 0.2, s * 0.4, s * 0.28, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -bodyRy * 0.35, bodyRx * 0.75, bodyRy * 0.85, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
     // the hat -- distinct per critter, sitting right above the head
     ctx.fillStyle = c.costume;
     const headX = c.type === "rat" ? -s * 0.75 : c.type === "rabbit" ? -s * 0.05 : c.type === "mole" ? -s * 0.1 : -s * 0.15;
@@ -25824,28 +25838,6 @@ function drawHourglassApparition(w, h, live) {
   ctx.moveTo(0, maskCy + maskR * 0.62);
   ctx.lineTo(0, maskCy + maskR * 1.02);
   ctx.stroke();
-  // a single worn feather stuck through the top, angled off to one
-  // side -- just enough character to feel like an actual carved ritual
-  // mask someone made, without tipping into festive. Muted, not
-  // colorful, on purpose -- this stays the unsettling one; the parade
-  // is where the color/costume energy lives.
-  ctx.save();
-  ctx.translate(maskR * 0.32, maskCy - maskR * 0.92);
-  ctx.rotate(-0.5);
-  ctx.fillStyle = "#8a7a5a";
-  ctx.beginPath();
-  ctx.moveTo(0, maskR * 0.9);
-  ctx.quadraticCurveTo(maskR * 0.22, maskR * 0.4, maskR * 0.05, 0);
-  ctx.quadraticCurveTo(-maskR * 0.02, maskR * 0.45, 0, maskR * 0.9);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "rgba(60,50,35,0.5)";
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(0, maskR * 0.88);
-  ctx.lineTo(0, maskR * 0.05);
-  ctx.stroke();
-  ctx.restore();
   ctx.restore();
 }
 
