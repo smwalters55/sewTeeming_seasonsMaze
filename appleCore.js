@@ -1921,10 +1921,12 @@ function handleInput(){
   // ratroom's own right boundary -- keeps it feeling like the small
   // enclosed space it's meant to be, rather than technically
   // unbounded. Placed where the hay ground cover's own range actually
-  // ends (x=1400), so the wall lines up with something visually
+  // ends (x=1500 -- widened from 1400 so the snake's shelf sequence has
+  // a bit more breathing room around it instead of sitting right up
+  // against the wall), so the wall lines up with something visually
   // justified instead of stopping in the middle of nothing. Easy to
   // push further out later if more gets added to this room.
-  if (currentScene === "ratroom" && player.x > 1400) player.x = 1400;
+  if (currentScene === "ratroom" && player.x > 1500) player.x = 1500;
 
   // molehole's own right boundary, same small-enclosed-room pattern as
   // ratroom above -- placed at the room's own declared width
@@ -19997,7 +19999,13 @@ ratRoomCheeseArt.src = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDA
 const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
 // wall spot where the feather gets hung once the rat asks for it --
 // near his own area, a specific place he can point to
-const featherHangSpot = { x: 550, heightAboveGround: 55 };
+// pushed further right from the rat (was x:550) and well clear of the
+// rat's own dialogue-interact radius (ratNPC.x=460, radius 55, so its
+// zone ends at x=515) -- previously the jar's own 25px interact radius
+// started at x=525, just 10px past that edge, so pressing space to
+// advance rat dialogue while standing anywhere near the boundary could
+// also trigger the jar. Now clear by well over 100px.
+const featherHangSpot = { x: 680, heightAboveGround: 55 };
 function drawFeatherHangSpot(camX) {
   if (!lampLit && !featherHangAnim.active) return;
   const hx = featherHangSpot.x - camX, hy = gy - featherHangSpot.heightAboveGround;
@@ -20341,9 +20349,12 @@ function drawCarvedInitials(camX) {
   drawHandwrittenS(ctx, 6, 0, s, [-0.3, 0.4, -0.5, 0.3, -0.4]);
   drawHandwrittenW(ctx, 18, 0, s, [0.4, -0.6, 0.3, -0.5, 0.5]);
 
+  // divider between the two initial pairs -- deliberately taller than
+  // the letters themselves (~9px at this size) so it reads as a clear
+  // dividing mark rather than blending in as just another stroke
   ctx.beginPath();
-  ctx.moveTo(0, -5);
-  ctx.lineTo(0, 5);
+  ctx.moveTo(0, -9);
+  ctx.lineTo(0, 9);
   ctx.stroke();
   ctx.restore();
 }
@@ -20842,7 +20853,7 @@ function drawSnake(camX) {
     drawFittedSpeechBubble(ctx, nx, ny - 30, beat);
   }
 }
-const SNAKE_LINE_MS = 2600; // slow enough to actually read each line, auto-advancing rather than requiring a press that conflicts with holding space for the lamp
+const SNAKE_LINE_MS = 3600; // slow enough to actually read each line, auto-advancing rather than requiring a press that conflicts with holding space for the lamp -- bumped up from 2600 since it was too easy to miss while mid-jump through this same shelf sequence
 function updateSnake(deltaTime) {
   snakeState.tailWaveT += deltaTime * 1000;
 
@@ -20857,8 +20868,11 @@ function updateSnake(deltaTime) {
   }
   // auto-triggers on proximity with the lamp lit -- no space press
   // needed, since requiring one would conflict with holding space
-  // continuously just to keep the lamp lit while approaching
-  if (!snakeDialogue.everShownThisVisit && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 70, 60, 30) && lampLit) {
+  // continuously just to keep the lamp lit while approaching. Radius
+  // widened a bit (was 70/60/30) so it starts firing a little earlier
+  // during the approach jump, giving more lead time to actually notice
+  // it before landing (and getting hiss-knocked back off the shelf).
+  if (!snakeDialogue.everShownThisVisit && isPlayerNear(snakeSpot.x, gy - snakeSpot.y, 90, 75, 30) && lampLit) {
     snakeDialogue.active = true;
     snakeDialogue.index = 0;
     snakeDialogue.t = 0;
@@ -21444,7 +21458,9 @@ const nestStrings = [
 // the lamp is lit and within range. Positioned to the right specifically
 // since most of the eyes are to the left, where a player would default
 // to looking first.
-const ratRoomFeather = { x: 600, y: 30, collected: false };
+// pushed further right too (was x:600), same reasoning as the jar above
+// -- keeps both well clear of the rat's own dialogue-interact zone
+const ratRoomFeather = { x: 730, y: 30, collected: false };
 // unravel animation -- pressing space starts a slow unwind rather than
 // an instant pickup, so the string-wrapped feather reads as a
 // deliberate discovery rather than something grabbed by accident
@@ -21766,10 +21782,12 @@ function drawRatNPC(camX) {
 // widespread thin ground-covering hay, scattered across most of the
 // floor -- distinct from the discrete piles below, which stay as
 // denser clusters standing out against this thinner background layer
-const hayGroundCover = Array.from({ length: 503 }, (_, i) => {
+// count scaled up to match the room's widened 1500 floor (was 503 over
+// 1400), keeping the same visual density rather than thinning out
+const hayGroundCover = Array.from({ length: 539 }, (_, i) => {
   const seed = i * 11 + 7;
   return {
-    x: (seed * 37) % 1400,
+    x: (seed * 37) % 1500,
     dy: ((seed * 13) % 8) - 2,
     len: 6 + (seed % 9),
     angle: (((seed * 5) % 100) - 50) / 90,
@@ -32679,8 +32697,9 @@ updateSeasonTransition(deltaTime);
   // ratroom's own right-side camera clamp, mirroring the left-side
   // pattern -- caps the camera a bit past where the hay ground cover
   // actually ends, so the camera stops there even if the player keeps
-  // walking on toward their own boundary further out
-  if (currentScene === "ratroom" && cameraX > 625) cameraX = 625;
+  // walking on toward their own boundary further out. Matches the
+  // widened 1500 room boundary above (was 625, for the old 1400 width).
+  if (currentScene === "ratroom" && cameraX > 725) cameraX = 725;
   // molehole's own right-side camera clamp, same small-room pattern
   if (currentScene === "molehole" && cameraX > MOLEHOLE_WIDTH - canvas.width + 40) cameraX = Math.max(0, MOLEHOLE_WIDTH - canvas.width + 40);
   if (currentScene === "tunneltown" && cameraX > TUNNELTOWN_WIDTH - canvas.width + 40) cameraX = Math.max(0, TUNNELTOWN_WIDTH - canvas.width + 40);
