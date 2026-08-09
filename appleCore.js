@@ -24913,46 +24913,61 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.translate(-ox, 0);
 
     const waterTop = halfH * 0.42, waterBot = halfH * 1.5;
+    // water only actually starts here in shared-scene space -- the gear
+    // panel is mostly solid ground, with just a sliver of water peeking
+    // in at its own right edge, not filling the whole panel underneath it
+    const waterStartX = -halfW * 0.95;
+
+    // solid ground for everything left of the water line -- the gear
+    // sits ON this, not on the water's own bank
+    ctx.fillStyle = "#4a3d2e";
+    ctx.fillRect(-halfW * 4, waterTop - halfH * 0.02, waterStartX - -halfW * 4 + halfW * 0.15, waterBot - waterTop + halfH * 0.02);
 
     // the last gear -- the real forest gear you'd have just climbed off
     // of, tail end only, mostly cropped off the left edge of the whole
     // scene so it reads as "where you just were" rather than a new prop.
-    // Sits right at the water's edge, grounding the transition into
-    // content that doesn't exist yet.
-    const gearWorldX = -halfW * 2.5, gearWorldY = waterTop - halfH * 0.02;
-    drawForestGear(gearWorldX, gearWorldY, halfW * 1.35, halfW * 1.04, 7, 0.4, "#6b5030", "#2e2014", 4001);
-    // a little shore where the gear's own bank meets the water -- a few
-    // rocks, so the water doesn't just start with a hard color cutoff
-    ctx.fillStyle = "#4a4438";
-    [[-halfW * 1.15, 0.35], [-halfW * 0.95, 0.55], [-halfW * 1.3, 0.6]].forEach(([rx, rp]) => {
+    // Much smaller than before -- a background detail on the ground,
+    // not a dominant shape competing with the water/bridge/tree story.
+    const gearWorldX = -halfW * 1.9, gearWorldY = waterTop - halfH * 0.05;
+    drawForestGear(gearWorldX, gearWorldY, halfW * 0.42, halfW * 0.32, 7, 0.4, "#6b5030", "#2e2014", 4001);
+
+    // a little pebbled shore right at the water line, so it doesn't
+    // start with one hard color cutoff
+    ctx.fillStyle = "#5a5040";
+    [[waterStartX - halfW * 0.12, 0.25], [waterStartX + halfW * 0.02, 0.4], [waterStartX - halfW * 0.2, 0.5]].forEach(([rx]) => {
       ctx.beginPath();
-      ctx.ellipse(rx, waterTop + halfH * 0.06, halfW * 0.1, halfW * 0.06, 0, 0, Math.PI * 2);
+      ctx.ellipse(rx, waterTop + halfH * 0.05, halfW * 0.08, halfW * 0.05, 0, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    // rushing water -- a continuous band across the full shared scene,
+    // rushing water -- starts at waterStartX (not the whole scene width),
     // with a top-to-bottom gradient for depth, drifting current streaks,
     // and a brighter sparkle band concentrated right under the bridge
     // where the light would actually hit it
-    const waterSpan = halfW * 6;
+    const waterEndX = halfW * 6;
     const waterGrad = ctx.createLinearGradient(0, waterTop, 0, waterBot);
     waterGrad.addColorStop(0, "#5a95a5");
     waterGrad.addColorStop(0.4, "#3a6a7a");
     waterGrad.addColorStop(1, "#26505c");
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
+    ctx.clip();
     ctx.fillStyle = waterGrad;
-    ctx.fillRect(-waterSpan, waterTop, waterSpan * 2, waterBot - waterTop);
+    ctx.fillRect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
     ctx.strokeStyle = "rgba(210,235,240,0.5)";
     ctx.lineWidth = Math.max(0.5, halfW * 0.022);
     for (let i = 0; i < 16; i++) {
       const seedI = seed + i * 5.7;
-      const rx = -waterSpan + ((t * 0.022 + pseudoRandom(seedI) * waterSpan * 2) % (waterSpan * 2));
+      const spanW = waterEndX - waterStartX;
+      const rx = waterStartX + ((t * 0.022 + pseudoRandom(seedI) * spanW) % spanW);
       const ry = waterTop + pseudoRandom(seedI + 1) * (waterBot - waterTop);
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.lineTo(rx + halfW * 0.32, ry + Math.sin(t * 0.003 + seedI) * halfH * 0.02);
       ctx.stroke();
     }
-    // sparkle/glint dots, brightest directly under the arch
+    // sparkle/glint dots, brightest directly under the bridge
     for (let i = 0; i < 10; i++) {
       const seedI = seed + i * 13.1;
       const gx = (pseudoRandom(seedI) - 0.5) * halfW * 2.2;
@@ -24963,88 +24978,118 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.arc(gx, gy2, halfW * 0.02, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
 
-    // the arc bridge -- a real curved span (not a flat plank), centered
-    // on the shared scene's x=0 (the middle panel), with rail posts
-    // following the curve and two piers planted in the water. A soft,
-    // rippled reflection underneath ties it back down to the water.
+    // the bridge -- built from real branches/logs lashed together, not a
+    // smooth milled plank. Two thick curved branch-strokes running side
+    // by side (slightly offset so they read as separate logs, not one
+    // shape), knots along their length, and a few dark rope-lashing
+    // wraps binding them down rather than a railing -- same rope/vine
+    // language as the rest of the game (drawVines' own rope color)
+    // instead of invented hardware.
     const bridgeHalfSpan = halfW * 1.05;
-    const deckBaseY = waterTop - halfH * 0.02, archHeight = halfH * 0.42, deckThick = halfH * 0.09;
-    const archTopY0 = deckBaseY - deckThick * 0.5;
-    const archPoint = t2 => {
+    const deckBaseY = waterTop - halfH * 0.02, archHeight = halfH * 0.4;
+    const branchPoint = (t2, riseMult) => {
       const x = -bridgeHalfSpan + t2 * bridgeHalfSpan * 2;
-      const y = archTopY0 - archHeight * Math.sin(t2 * Math.PI);
+      const y = deckBaseY - archHeight * riseMult * Math.sin(t2 * Math.PI);
       return { x, y };
     };
-    ctx.beginPath();
-    ctx.moveTo(-bridgeHalfSpan, deckBaseY);
-    ctx.quadraticCurveTo(0, deckBaseY - archHeight + deckThick, bridgeHalfSpan, deckBaseY);
-    ctx.lineTo(bridgeHalfSpan, deckBaseY - deckThick * 0.4);
-    ctx.quadraticCurveTo(0, deckBaseY - archHeight - deckThick * 0.4, -bridgeHalfSpan, deckBaseY - deckThick * 0.4);
-    ctx.closePath();
-    ctx.fillStyle = "#5a4028";
-    ctx.fill();
-    ctx.strokeStyle = "#3a2a18";
-    ctx.lineWidth = Math.max(0.5, halfW * 0.015);
-    ctx.stroke();
-    // rail posts along the curve
-    ctx.strokeStyle = "#4a3520";
-    ctx.lineWidth = Math.max(0.5, halfW * 0.02);
-    for (let i = 1; i < 8; i++) {
-      const p = archPoint(i / 8);
+    const branchOffsets = [-halfH * 0.05, halfH * 0.06];
+    branchOffsets.forEach((offset, bi) => {
+      ctx.strokeStyle = bi === 0 ? "#6b4e30" : "#5a4028";
+      ctx.lineWidth = Math.max(1, halfH * 0.1);
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x, p.y - halfH * 0.1);
+      const steps = 16;
+      for (let i = 0; i <= steps; i++) {
+        const p = branchPoint(i / steps, 1);
+        const px = p.x, py = p.y + offset;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      // knots along the branch
+      ctx.fillStyle = "rgba(40,26,14,0.5)";
+      for (let k = 1; k < 4; k++) {
+        const p = branchPoint(k / 4 + bi * 0.08, 1);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + offset, halfW * 0.025, halfW * 0.018, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    // rope lashings binding the two branches together at intervals --
+    // dark wraps, not vertical rail-post ticks (which read as unexplained
+    // marks floating above the deck)
+    ctx.strokeStyle = "#3a2a18";
+    ctx.lineWidth = Math.max(0.6, halfW * 0.022);
+    for (let i = 1; i < 6; i++) {
+      const p = branchPoint(i / 6, 1);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y + branchOffsets[0] - halfH * 0.03);
+      ctx.lineTo(p.x, p.y + branchOffsets[1] + halfH * 0.03);
       ctx.stroke();
     }
     // piers, planted at the ends, down into the water
     ctx.fillStyle = "#4a3520";
-    ctx.fillRect(-bridgeHalfSpan * 0.88, deckBaseY, halfW * 0.13, waterBot - deckBaseY);
-    ctx.fillRect(bridgeHalfSpan * 0.88 - halfW * 0.13, deckBaseY, halfW * 0.13, waterBot - deckBaseY);
-    // faint rippled reflection of the arch, mirrored below the waterline
+    ctx.fillRect(-bridgeHalfSpan * 0.9, deckBaseY, halfW * 0.12, waterBot - deckBaseY);
+    ctx.fillRect(bridgeHalfSpan * 0.9 - halfW * 0.12, deckBaseY, halfW * 0.12, waterBot - deckBaseY);
+    // faint rippled reflection of the branches, mirrored below the
+    // waterline -- keeping this, it's the one part that was working
     ctx.save();
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.2;
     ctx.translate(0, deckBaseY * 2 + halfH * 0.05);
     ctx.scale(1, -1);
-    ctx.beginPath();
-    ctx.moveTo(-bridgeHalfSpan, deckBaseY);
-    ctx.quadraticCurveTo(0, deckBaseY - archHeight + deckThick, bridgeHalfSpan, deckBaseY);
-    ctx.lineTo(bridgeHalfSpan, deckBaseY - deckThick * 0.4);
-    ctx.quadraticCurveTo(0, deckBaseY - archHeight - deckThick * 0.4, -bridgeHalfSpan, deckBaseY - deckThick * 0.4);
-    ctx.closePath();
-    ctx.fillStyle = "#1a2a30";
-    ctx.fill();
+    branchOffsets.forEach(offset => {
+      ctx.strokeStyle = "#1a2a30";
+      ctx.lineWidth = Math.max(1, halfH * 0.1);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      for (let i = 0; i <= 16; i++) {
+        const p = branchPoint(i / 16, 1);
+        const px = p.x, py = p.y + offset;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    });
     ctx.restore();
 
-    // the big faraway tree -- fixed at the shared scene's right end (the
-    // right panel), set back into the hazy horizon band and tall enough
-    // to crop off the top of the frame so it reads as genuinely huge and
-    // distant. A desaturated, cooler silhouette (real aerial-perspective
-    // trick) rather than the same crisp near-color as everything else,
-    // plus a scatter of slow twinkling sparkle so it reads as something
-    // special/significant, not just a normal big tree.
-    const treeWorldX = halfW * 1.85;
+    // the big faraway tree -- genuinely set back with real depth this
+    // time: a hazy pale gap between the water's far bank and the tree's
+    // own base (not touching the river directly), a see-through veil of
+    // haze layered in FRONT of it, and a noticeably smaller/higher
+    // silhouette than before. Desaturated, cooler color (aerial
+    // perspective) rather than the same crisp near-color as the rest of
+    // the scene, plus slow twinkling sparkle so it reads as something
+    // special, not just a normal big tree.
+    const treeWorldX = halfW * 2.05;
+    const treeBaseY = waterTop - halfH * 0.55; // a real gap above the water's far bank, not flush with it
+    // the hazy gap/far-bank strip itself
+    ctx.fillStyle = "rgba(150,175,150,0.35)";
+    ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY, halfW * 2.6, waterTop - treeBaseY);
     ctx.fillStyle = "#3a4a42";
-    ctx.fillRect(treeWorldX - halfW * 0.09, -halfH * 1.4, halfW * 0.18, waterTop + halfH * 1.4);
+    ctx.fillRect(treeWorldX - halfW * 0.06, treeBaseY - halfH * 1.1, halfW * 0.12, halfH * 1.1);
     ctx.beginPath();
-    ctx.ellipse(treeWorldX, -halfH * 0.58, halfW * 0.88, halfH * 0.88, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX, treeBaseY - halfH * 0.75, halfW * 0.6, halfH * 0.62, 0, 0, Math.PI * 2);
     ctx.fillStyle = "#4a6a5a";
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(treeWorldX - halfW * 0.32, -halfH * 0.32, halfW * 0.52, halfH * 0.46, 0, 0, Math.PI * 2);
-    ctx.ellipse(treeWorldX + halfW * 0.36, -halfH * 0.78, halfW * 0.44, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX - halfW * 0.22, treeBaseY - halfH * 0.58, halfW * 0.36, halfH * 0.32, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX + halfW * 0.25, treeBaseY - halfH * 0.92, halfW * 0.3, halfH * 0.28, 0, 0, Math.PI * 2);
     ctx.fillStyle = "#3f5c4e";
     ctx.fill();
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 6; i++) {
       const seedI = seed + i * 9.4;
-      const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.5;
-      const sy = -halfH * 0.6 + (pseudoRandom(seedI + 1) - 0.5) * halfH * 1.3;
+      const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.0;
+      const sy = treeBaseY - halfH * 0.75 + (pseudoRandom(seedI + 1) - 0.5) * halfH * 0.9;
       const twinkle = 0.25 + 0.75 * Math.max(0, Math.sin(t * 0.0022 + seedI * 5));
       ctx.fillStyle = `rgba(255,245,190,${0.75 * twinkle})`;
       ctx.beginPath();
-      ctx.arc(sx, sy, halfW * (0.018 + twinkle * 0.012), 0, Math.PI * 2);
+      ctx.arc(sx, sy, halfW * (0.015 + twinkle * 0.01), 0, Math.PI * 2);
       ctx.fill();
     }
+    // a second, even fainter haze veil layered IN FRONT of the tree --
+    // the actual trick that sells "this is far away", not just small
+    ctx.fillStyle = "rgba(170,195,175,0.16)";
+    ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY - halfH * 1.5, halfW * 2.6, halfH * 1.5);
 
     ctx.restore();
   }
