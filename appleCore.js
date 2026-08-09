@@ -22672,7 +22672,10 @@ const MOLEHOLE_ALCOVES = [
   // to, not the main shopkeeper's own stall (that one already has its
   // own trade interaction), so the two wares swapped counters instead
   // of the klein bottle just appearing here with nothing to replace.
-  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#8a5040", shape: "bell" }, { color: "#c9a860", shape: "gem" }, { color: "#aad2e1", shape: "klein" }], shopColor: "#5a7a5a" }
+  // the bell has since moved on to stall three in turn, trading places
+  // with that stall's own flask so both counters stay at four wares
+  // apiece -- direct request ("move the bell from stall 2 to stall 3")
+  { x: 560, w: 110, wares: [{ color: "#5c8a35", shape: "sack" }, { color: "#7a4a8a", shape: "flask" }, { color: "#c9a860", shape: "gem" }, { color: "#aad2e1", shape: "klein" }], shopColor: "#5a7a5a" }
 ];
 
 // a secret bridge piece, perched right on top of the first alcove's own
@@ -22717,13 +22720,25 @@ function startMoleAlcove2Dialogue() {
   moleAlcove2Dialogue.active = true;
   moleAlcove2Dialogue.index = 0;
   moleAlcove2Dialogue.lines = moleAlcove2Lines.slice();
-  moleAlcove2KleinTipAt = performance.now();
+  // the tip itself no longer fires the instant the first bubble opens --
+  // that landed at the same moment as the first line of text, so
+  // reading the first bubble and noticing the tip were competing for
+  // attention at once ("trying to read the first when it happens and
+  // missed it a few times"). Now armed for the SECOND bubble instead
+  // (see advanceMoleAlcove2Dialogue), with a short extra delay once
+  // that bubble opens so the tip doesn't fire in the same instant as
+  // the new text either.
+  moleAlcove2KleinTipAt = -99999;
 }
 
 function advanceMoleAlcove2Dialogue() {
   moleAlcove2Dialogue.index++;
   if (moleAlcove2Dialogue.index >= moleAlcove2Dialogue.lines.length) {
     moleAlcove2Dialogue.active = false;
+    return;
+  }
+  if (moleAlcove2Dialogue.index === 1) {
+    moleAlcove2KleinTipAt = performance.now() + 500;
   }
 }
 
@@ -23452,7 +23467,7 @@ function drawMoleShopAlcove(camX) {
     { color: "#c98a3a", shape: "ellipse" },
     { color: "#7a2f2f", shape: "box" },
     { color: "#3f5766", shape: "triangle" },
-    { color: "#7a4a8a", shape: "flask" }, // traded places with the klein bottle that used to be here -- see MOLEHOLE_ALCOVES's comment for why. Renders as a plain ellipse here (no dedicated "flask" case in this counter's own shape list, same as "ellipse" above) -- fine for a background item on this stall
+    { color: "#8a5040", shape: "bell" }, // traded places with alcove two's own bell -- see MOLEHOLE_ALCOVES's comment for why. Has its own dedicated rendering case below (copied from the alcove counter's bell), not the flat-ellipse fallback the flask that used to sit here relied on
     { color: "#b09040", shape: "stack" }
   ].forEach((item, i) => {
     const seed = MOLE_SHOP_X * 5.3 + i * 41.7;
@@ -23480,6 +23495,23 @@ function drawMoleShopAlcove(camX) {
         ctx.ellipse(wx + (k - 1) * 3, wy - k * 2, 4, 2.6, 0, 0, Math.PI * 2);
         ctx.fill();
       }
+    } else if (item.shape === "bell") {
+      // a little bell -- a rounded dome, flared bottom rim, small knob.
+      // same shape as alcove two's own bell (see drawMoleholeAlcove),
+      // now that the two counters traded wares
+      const s = 6 + pseudoRandom(seed + 2) * 1.5;
+      ctx.beginPath();
+      ctx.arc(wx, wy, s * 0.7, Math.PI, 0);
+      ctx.lineTo(wx + s * 0.9, wy + s * 0.35);
+      ctx.quadraticCurveTo(wx, wy + s * 0.55, wx - s * 0.9, wy + s * 0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.3)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(wx, wy - s * 0.75, s * 0.18, 0, Math.PI * 2);
+      ctx.fill();
     } else if (item.shape === "klein") {
       // a little glass klein bottle -- the neck loops up, over, and
       // dives back down through the body's own wall, the shape's whole
@@ -24250,14 +24282,18 @@ function drawMoleholeAlcove(alcove, camX) {
       // something in, tip it over, nothing comes out" has nothing
       // visible to point at. Tips over and rights itself when the
       // player interacts with this alcove's NPC (moleAlcove2KleinTipAt,
-      // set in startMoleAlcove2Dialogue), always ending back upright so
-      // it's replayable rather than a one-time animation.
+      // armed for the second dialogue beat -- see
+      // advanceMoleAlcove2Dialogue), always ending back upright so it's
+      // replayable rather than a one-time animation. Tips twice, slower
+      // than the first pass (was one quick 1.5s tip; per direct
+      // feedback, now two tips over ~2.6s each) -- Math.abs() on a
+      // double-frequency sine gives two same-direction bumps with a
+      // brief return to level between them, instead of the second half
+      // rocking the other way.
       const sinceTip = performance.now() - moleAlcove2KleinTipAt;
-      const TIP_MS = 1500;
+      const TIP_MS = 2600;
       const tipT = sinceTip >= 0 && sinceTip < TIP_MS ? sinceTip / TIP_MS : -1;
-      // eases out to a real tip and back, not a linear rock -- up fast,
-      // hold near the peak, ease back down
-      const tipAngle = tipT < 0 ? 0 : Math.sin(tipT * Math.PI) * 2.7;
+      const tipAngle = tipT < 0 ? 0 : Math.abs(Math.sin(tipT * Math.PI * 2)) * 2.7;
       ctx.save();
       ctx.translate(wx, wy + 3);
       ctx.rotate(tipAngle);
@@ -24272,12 +24308,17 @@ function drawMoleholeAlcove(alcove, camX) {
       // the liquid -- a simple pool sitting in the body's lower half,
       // same wherever the bottle currently is (rights itself just like
       // the glass does) since the whole point is that it never spills
-      // no matter how the bottle's held
+      // no matter how the bottle's held. Switched from a pale blue (too
+      // close to the glass's own pale blue tint, and to the molehole's
+      // warm-brown backdrop it just read as a dim smudge) to a
+      // saturated magic-potion violet -- reads clearly against both the
+      // cool glass and the warm background now, and leans into
+      // "whimsical/magical" rather than just "water."
       ctx.save();
       ctx.beginPath();
       ctx.ellipse(wx, wy + 3, 6, 7, 0, 0, Math.PI * 2);
       ctx.clip();
-      ctx.fillStyle = "rgba(110,180,205,0.75)";
+      ctx.fillStyle = "rgba(196,104,224,0.82)";
       ctx.fillRect(wx - 7, wy + 3, 14, 10);
       ctx.restore();
       ctx.beginPath();
