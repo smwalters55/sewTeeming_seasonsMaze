@@ -24630,14 +24630,16 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   // actual broken edge, per direct feedback
   if (seed && drawShards) {
     ctx.fillStyle = "#241708"; // matches the room's own dark wall/sky color showing through
-    const chipCx = w * 0.4, chipCy = -h * 0.4, chipR = w * 0.16;
-    const pts = 8;
+    const chipCx = w * 0.4, chipCy = -h * 0.4, chipR = w * 0.18;
+    const pts = 12;
     ctx.beginPath();
     for (let i = 0; i < pts; i++) {
       const a = (i / pts) * Math.PI * 2;
-      // per-point jitter, seeded so the shape is stable frame to frame
-      // but genuinely irregular point to point, not a smooth circle
-      const rr = chipR * (0.45 + pseudoRandom(seed + 40 + i * 3.1) * 0.85);
+      // alternating short/long spikes, not just mild per-point jitter --
+      // sharp in-out swings read as an actual jagged break rather than a
+      // lumpy-but-still-basically-round blob
+      const spike = i % 2 === 0 ? 1.5 : 0.55;
+      const rr = chipR * spike * (0.7 + pseudoRandom(seed + 40 + i * 3.1) * 0.6);
       const px = chipCx + Math.cos(a) * rr;
       const py = chipCy + Math.sin(a) * rr * 0.85;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
@@ -25248,9 +25250,9 @@ function drawMirrorStallClutter(sx) {
       drawVaseFlowers(cx2 - 6, MIRROR_STALL_HEADER_Y + 30, true);
       drawShelfTrinket(cx2 + 7, MIRROR_STALL_HEADER_Y + 30, "pebble");
     } else if (c.type === "shelf+mirror+trinket") {
-      // lowered from header height to right above head height -- see
-      // the dx comment above
-      const headY = gy - 92;
+      // lowered from header height to right above head height, then
+      // lowered again per direct feedback -- see the dx comment above
+      const headY = gy - 70;
       drawSmallShelf(cx2, headY);
       drawTinyWallMirror(cx2 - 6, headY - 6, "oval");
       drawShelfTrinket(cx2 + 8, headY, "pebble");
