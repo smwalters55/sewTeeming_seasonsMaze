@@ -22240,7 +22240,12 @@ const corkboardNotices = [
   // have exactly one thing like this standing out
   { rot: -0.04, dx: 220, dy: -92, paperColor: "#f2a83a", fontSize: 11,
     lines: [{ t: "ROLODEX BUILDING", bold: true }, { t: "COMPETITION!!", bold: true }, "This Friday, near the lift.", "Bring your best cards."] },
-  { rot: 0.04, dx: -150, dy: 0,
+  // an old one, left up long enough to yellow -- per "make another
+  // notice like a darker color, like it's older paper" -- a genuinely
+  // aged sepia tone rather than the same cream as everything else, and
+  // it fits: the Down Underground/Up Outside debate reads like
+  // long-running town lore, not something posted this week
+  { rot: 0.04, dx: -150, dy: 0, paperColor: "#c9b48a",
     lines: ["Some say it's past time we", "opened a way Up Outside", "again. Others say the world", "belongs down here just fine."] },
   { rot: -0.05, dx: 150, dy: 5, rippedFlap: true,
     lines: ["Word is there's loot buried", "somewhere in the tunnels", "nearby -- if the stories are", "even half true."] },
@@ -22249,7 +22254,15 @@ const corkboardNotices = [
   { rot: -0.07, dx: 0, dy: 100, fontSize: 9, wrinkled: true,
     lines: ["Whoever keeps 'borrowing'", { t: "MY good shovel --", bold: true }, "I know it's you."] },
   { rot: 0.06, dx: 220, dy: 92, fontSize: 9, taped: true,
-    lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
+    lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] },
+  // the open center slot in the middle row -- someone's tacked up a
+  // grainy little polaroid of the player themselves (down in the mole
+  // hole, or caught riding the garden snake) with "WANTED" scrawled
+  // across it in red, like a joke wanted poster rather than an actual
+  // threat -- per "someone stuck a poloroid of player in molehole or on
+  // snake and it says WANTED on top of it"
+  { rot: 0.08, dx: 0, dy: 3, fontSize: 9, wanted: true,
+    lines: ["Last seen riding a", "gigantic yellow snake.", "Approach with croissants."] }
 ];
 
 function openCorkboardReader() {
@@ -22344,7 +22357,11 @@ function drawCorkboardReader() {
       ctx.font = lineBold(l) ? boldFont : normalFont;
       return ctx.measureText(lineText(l)).width;
     });
-    const pw = Math.max(...widths) + 18, ph = n.lines.length * lineHeight + 14;
+    // the wanted poster's polaroid needs its own headroom above the
+    // text lines -- taller than a line of text, wide enough that the
+    // little photo inside doesn't feel cramped
+    const photoH = n.wanted ? 44 : 0;
+    const pw = Math.max(Math.max(...widths) + 18, n.wanted ? 76 : 0), ph = n.lines.length * lineHeight + 14 + photoH;
     // drop shadow, offset slightly downward regardless of this paper's
     // own rotation (drawn before the rotate-aligned fill/stroke below
     // would be wrong, so it's just a soft dark rect under everything)
@@ -22355,6 +22372,60 @@ function drawCorkboardReader() {
     ctx.strokeStyle = "rgba(40,30,20,0.5)";
     ctx.lineWidth = 1;
     ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
+    // the polaroid itself -- a little white-bordered snapshot pinned
+    // above the flavor text, grainy dark photo with a small illustrated
+    // likeness of the player (same purple body + eyes as the real
+    // sprite, so it's unmistakably "you"), and "WANTED" scrawled across
+    // it in red ink like someone slapped a joke poster together rather
+    // than a real printed one
+    if (n.wanted) {
+      const polW = pw - 14, polH = photoH - 6;
+      const polY = -ph / 2 + 5;
+      ctx.fillStyle = "#f5f1e4";
+      ctx.fillRect(-polW / 2, polY, polW, polH);
+      ctx.strokeStyle = "rgba(40,30,20,0.4)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(-polW / 2, polY, polW, polH);
+      const picPad = 3, picH = polH - picPad * 2 - 5;
+      const picY = polY + picPad;
+      ctx.fillStyle = "#33302a";
+      ctx.fillRect(-polW / 2 + picPad, picY, polW - picPad * 2, picH);
+      // tiny player likeness, centered in the photo
+      const iconCx = 0, iconCy = picY + picH / 2 + 1;
+      ctx.fillStyle = "#7a78b8";
+      roundRect(ctx, iconCx - 6, iconCy - 7, 12, 14, 3);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20,15,10,0.7)";
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(iconCx - 3, iconCy - 2.5, 1.2, 0, Math.PI * 2);
+      ctx.arc(iconCx + 3, iconCy - 2.5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#232020";
+      ctx.beginPath();
+      ctx.arc(iconCx - 3, iconCy - 2.1, 0.6, 0, Math.PI * 2);
+      ctx.arc(iconCx + 3, iconCy - 2.1, 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      // "WANTED" scrawled diagonally across the photo, red marker style
+      ctx.save();
+      ctx.translate(0, picY + picH * 0.42);
+      ctx.rotate(-0.14);
+      ctx.fillStyle = "rgba(190,35,35,0.92)";
+      ctx.font = "bold 10px ui-monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("WANTED", 0, 0);
+      ctx.textAlign = "left";
+      ctx.restore();
+      // the little caption strip under the photo, like a real polaroid's
+      // white border where someone might scrawl a note
+      ctx.fillStyle = "rgba(60,45,25,0.55)";
+      ctx.font = "7px ui-monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("(reward: pending)", 0, polY + polH - 2);
+      ctx.textAlign = "left";
+    }
     // an official double-ruled inset border -- the "this one's the
     // actual authority notice" treatment, vs. everything else which is
     // just someone's handwritten scrap
@@ -22367,7 +22438,7 @@ function drawCorkboardReader() {
     ctx.fillStyle = n.paperColor ? "#3a2a10" : "#2b2318";
     n.lines.forEach((line, i) => {
       ctx.font = lineBold(line) ? boldFont : normalFont;
-      ctx.fillText(lineText(line), -pw / 2 + 9, -ph / 2 + fontSize + 3 + i * lineHeight);
+      ctx.fillText(lineText(line), -pw / 2 + 9, -ph / 2 + photoH + fontSize + 3 + i * lineHeight);
     });
     if (n.wrinkled) {
       // a few faint crease ridges, each a light+dark stroke pair
@@ -22415,42 +22486,64 @@ function drawCorkboardReader() {
       ctx.stroke();
     }
     if (n.rippedFlap) {
-      // a piece that's torn most of the way loose and droops down at
-      // an angle -- the hinge point below is the FIRST vertex of the
-      // flap's own path (not just a translate offset the shape floats
-      // near), and it sits just INSIDE the paper's bottom edge rather
-      // than below it, so the flap actually overlaps/touches the sheet
-      // at that seam instead of reading as a separate piece glued on
-      // nearby with a gap all around it.
+      // an actual jagged chunk cut out of the sheet's own bottom-left
+      // corner, still hanging on by one hinge point -- same idea as
+      // tornCorner (a real notch removed down to the board color, not a
+      // colored patch), except here the removed piece isn't gone, it's
+      // dangling below, still attached at that one hinge. The tear path
+      // is shared by both halves: it's cut out of the main rectangle
+      // AND traced as the outline of the piece hanging beneath it, so
+      // the two visibly match up as one torn sheet instead of a
+      // rectangle with an unrelated scrap glued on nearby.
+      const hx = -pw / 2, hy = ph / 2 - 13; // hinge -- fixed point on the sheet's own left edge
+      const tear = [
+        [hx, hy],
+        [hx + 6, hy + 4],
+        [hx + 3, hy + 9],
+        [hx + 11, hy + 10],
+        [hx + 15, hy + 17] // reaches the bottom edge
+      ];
+      const corner = [hx, ph / 2];
+      // cut the notch out of the main sheet
+      ctx.fillStyle = "#8a6a42";
+      ctx.beginPath();
+      ctx.moveTo(tear[0][0], tear[0][1]);
+      tear.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+      ctx.lineTo(corner[0], corner[1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(40,25,10,0.55)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(tear[0][0], tear[0][1]);
+      tear.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+      ctx.stroke();
+      // the very piece that came out of that notch, hinged at the same
+      // point and drooping down past the sheet's edge under its own
+      // weight -- built from the same tear path, just rotated
       ctx.save();
-      const hx = -pw * 0.18, hy = ph / 2 - 3;
       ctx.translate(hx, hy);
-      ctx.rotate(0.32);
+      ctx.rotate(0.6);
+      const rel = tear.map(([px, py]) => [px - hx, py - hy]);
+      const relCorner = [corner[0] - hx, corner[1] - hy];
+      // faint shadow it casts back onto the board right behind the hinge
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.beginPath();
+      ctx.moveTo(1, 1);
+      rel.slice(1).forEach(([px, py]) => ctx.lineTo(px + 1, py + 1));
+      ctx.lineTo(relCorner[0] + 1, relCorner[1] + 1);
+      ctx.closePath();
+      ctx.fill();
       ctx.fillStyle = n.paperColor || "rgba(250,244,225,0.97)";
       ctx.beginPath();
       ctx.moveTo(0, 0); // the hinge -- still fused to the sheet right here
-      ctx.lineTo(pw * 0.22, 3); // jagged tear seam, running along the boundary with the main paper
-      ctx.lineTo(pw * 0.14, 8);
-      ctx.lineTo(pw * 0.26, 6);
-      ctx.lineTo(pw * 0.32, 14); // far corner -- most separated, drooping the lowest
-      ctx.lineTo(pw * 0.17, 23); // outer/bottom edge of the now-loose flap
-      ctx.lineTo(-pw * 0.02, 16);
+      rel.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+      ctx.lineTo(relCorner[0], relCorner[1]);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(40,30,20,0.45)";
       ctx.lineWidth = 0.8;
       ctx.stroke();
-      // a thin shadow the lifted flap casts back onto the sheet right
-      // behind the hinge -- sells that it's actually raised slightly
-      // off the surface there, not flat/painted on
-      ctx.fillStyle = "rgba(0,0,0,0.14)";
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(pw * 0.22, 3);
-      ctx.lineTo(pw * 0.14, 8);
-      ctx.lineTo(pw * 0.04, 3);
-      ctx.closePath();
-      ctx.fill();
       ctx.restore();
     }
     if (n.taped) {
@@ -31046,7 +31139,10 @@ addToInventory("bridgePiece");
 addToInventory("aragonite");
 addToInventory("geode");
 addToInventory("cushionPart");
-player.x = GEODE_BREAKER_X - 25;
+// retargeted to stand right at the notice board for testing the
+// corkboard notices (was GEODE_BREAKER_X - 25) -- revert to that, or to
+// whatever the next thing being tested needs, when done here
+player.x = moleHoleNoticeBoard.x;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
