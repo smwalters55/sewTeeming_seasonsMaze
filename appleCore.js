@@ -11122,7 +11122,21 @@ function drawForestRiver(camX) {
     // tracePathOrganic) instead of straight lineTo corners, per direct
     // feedback ("remove alllll straight lines... this needs to look
     // organic").
-    const bankPts = [{ x: topX, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }];
+    // the outermost point (facing left, out toward the rest of forest)
+    // eased with an extra in-between point instead of one single sharp
+    // reversal straight back up to topX/topY -- per direct feedback
+    // that corner was still reading "pretty sharp" even after the
+    // organic tracing/rounding, since one hard direction-reversal stays
+    // visually sharp no matter how much a single quadratic rounds it.
+    // Splitting it into two gentler turns (pulled in a bit from nb-100,
+    // plus a new easing point on the way back up to topX) turns that one
+    // sharp hook into a real sweeping curve.
+    const bankPts = [
+      { x: topX, y: topY }, ...edgePts,
+      { x: nb - 55, y: gy + 50 },
+      { x: nb - 84, y: gy + 26 },
+      { x: nb - 95, y: gy + 6 }
+    ];
     // a soft blurred halo of the same shape, drawn first at lower
     // opacity, so the edge blends into the grass/water instead of
     // being one hard vector line meeting another -- a flat single-tone
@@ -24805,10 +24819,15 @@ function drawMoleholeShaftPreview(camX) {
     // once fixed, a bigger, brighter, glowing sign up near the top
     // cushion -- the plain small placard read as barely-there ("i
     // barely noticed it was there"), and offset off the pole's own x so
-    // a swinging cushion never passes in front of it (the top cushion's
-    // swingAmp reaches ~18px either side of the pole -- 38px clears it
-    // with real margin)
-    const sx = px + 38, sy = gy - 225;
+    // a swinging cushion never passes in front of it. The old 38px
+    // offset was computed from just the top cushion's radius+swingAmp
+    // (19+18=37) -- but the cushion's actual drawn half-width is
+    // radius*wMult/2 (see the cushions array / drawCushion's own w),
+    // which for the top cushion is 19*3.0/2=28.5, so its real reach off
+    // the pole is 28.5+18=46.5, well past the old 38px offset -- the
+    // cushion really was swinging in front of the sign sometimes.
+    // Pushed out further to clear that with real margin.
+    const sx = px + 62, sy = gy - 225;
     const pulse = 0.75 + Math.sin(performance.now() * 0.004) * 0.25;
     ctx.strokeStyle = "#3a2814";
     ctx.lineWidth = 2;
@@ -28078,38 +28097,40 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
     ctx.scale(1.9, 1.9);
     ctx.fillStyle = "#6a4e30";
     ctx.fillRect(-9, 3, 18, 2);
-    // the apple book's own spine widened a bit from the other plain
-    // ones (was the same 2.6 width as its neighbors) -- just enough
-    // extra room to actually fit its name lettered down the spine,
-    // same as a real book would have
+    // spines matched to oak's own right-hand shelf palette (colors:
+    // ["#7a4a2f","#5a3a5a","#2f5a6a","#9a5a3a","#3a6a4a"]) so the
+    // glimpse actually reads as the same shelf, not a made-up one --
+    // the apple book keeps its own w=2.6 (same as its neighbors, not
+    // widened) since the real apple book on the shelf is a plain thin
+    // spine too, just picked out by color/label rather than bulk
     const spines = [
-      { dx: -7, h: 9, c: "#7a8a5a", w: 2.6 },
-      { dx: -3.3, h: 7, c: "#5a6a8a", w: 2.6 },
-      { dx: 0.3, h: 8, c: "#7a2f2f", w: 3.4 }, // the apple book itself -- same dark red as its real cover (drawBookCover/carried icon), not a made-up brighter red
-      { dx: 3.9, h: 6, c: "#8a6a3a", w: 2.6 },
-      { dx: 7.3, h: 8.5, c: "#5a8a6a", w: 2.6 }
+      { dx: -7, h: 9, c: "#5a3a5a", w: 2.6 },
+      { dx: -3.3, h: 7, c: "#2f5a6a", w: 2.6 },
+      { dx: 0.3, h: 8, c: "#7a2f2f", w: 2.6 }, // the apple book itself -- same dark red as its real oak-shelf spine (drawOakScene bookshelf, and drawBookCover/carried icon)
+      { dx: 3.9, h: 6, c: "#9a5a3a", w: 2.6 },
+      { dx: 7.3, h: 8.5, c: "#3a6a4a", w: 2.6 }
     ];
     spines.forEach(s => {
       ctx.fillStyle = s.c;
       ctx.fillRect(s.dx - s.w / 2, 3 - s.h, s.w, s.h);
     });
-    // the apple book's real cover treatment, shrunk to spine scale: a
-    // thin gold accent stripe near the top, same as its carried-icon
-    // look, instead of a hand-drawn apple that only reads as a smudge
-    // at this size
-    const ax = 0.3, ay = 3 - 8;
+    // the apple book's real cover treatment, shrunk to spine scale --
+    // matched exactly to oak's own bookshelf rendering: a small gold
+    // dot near the top (not a stripe/border), same "apple" wordmark in
+    // monospace (not serif) lettered down the spine. Per direct
+    // request ("look at how the apple book is done in oak... it is
+    // thinner... make it match along with the surrounding book
+    // colors").
+    const ax = 0.3, ah = 8, ay = 3 - ah;
     ctx.fillStyle = "#d4a520";
-    ctx.fillRect(ax - 1.3, ay + 1.3, 2.6, 0.6);
-    // "apple" lettered down the spine, same as a real book's title --
-    // per direct request ("doesn't the apple book have the word apple
-    // on the spine"). Small enough that it only actually resolves once
-    // the mirror itself is close/legible, same spirit as everything
-    // else in this glimpse.
+    ctx.beginPath();
+    ctx.arc(ax, ay + 1.5, 0.65, 0, Math.PI * 2);
+    ctx.fill();
     ctx.save();
-    ctx.translate(ax, 3 - 3.6);
+    ctx.translate(ax, 3 - ah / 2 + 1.5);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = "#f0dfae";
-    ctx.font = "2.6px Georgia, serif";
+    ctx.fillStyle = "#e8ddc8";
+    ctx.font = "1.6px monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("apple", 0, 0);
@@ -28433,8 +28454,13 @@ function drawMirrorStallBooth(sx) {
   // an ornate finial at each top corner -- a diamond outline with
   // vertical lines through its center (reads like a paned little
   // window) -- real detail there instead of just ambient background
-  // twinkle sitting near the corners
-  [l, r].forEach(px => drawStallCornerOrnament(px, MIRROR_STALL_ROOF_Y - 2));
+  // twinkle sitting near the corners. Moved down from ROOF_Y-2 (was
+  // sitting mostly ABOVE the roof's own top edge, so about half of it
+  // floated in front of the cave wall behind the stall instead of on
+  // the stall itself -- physically impossible, since nothing back
+  // there could actually be holding it up). Now sitting low enough to
+  // read as mounted right at the post/roof corner instead.
+  [l, r].forEach(px => drawStallCornerOrnament(px, MIRROR_STALL_ROOF_Y + 14));
 }
 
 function drawStallCornerOrnament(x, y) {
