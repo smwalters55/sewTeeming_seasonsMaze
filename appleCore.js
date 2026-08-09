@@ -10638,8 +10638,8 @@ function drawForestScene(camX) {
    an actual below-ground water pit here (wading, swimming, falling in)
    without needing to re-place any of this geometry.
    ====================================================== */
-const FOREST_RIVER_NEAR_BANK_X = 3840; // where the arc actually starts, flush with the bank -- no dead unbridged gap
-const FOREST_RIVER_FAR_BANK_X = 4300;  // where the arc ends, flush with the far bank
+const FOREST_RIVER_NEAR_BANK_X = 4340; // where the arc actually starts, flush with the bank -- no dead unbridged gap. Shifted well further right (was 3840) so there's real walking distance from the mole hole entrance before the river shows up, not an immediate reveal.
+const FOREST_RIVER_FAR_BANK_X = 4800;  // where the arc ends, flush with the far bank (same 460 span, just moved with the near bank)
 const FOREST_RIVER_BRIDGE_ARC_HEIGHT = 62; // raised a lot from the first pass ("i want the arc height higher")
 
 // shared by both the visual (drawForestRiver) and the real collision
@@ -10744,14 +10744,23 @@ function drawForestRiver(camX) {
   // irregular spacing, length, and size (not a repeating grid), each
   // one's properties pulled from the jitter table rather than a clean
   // formula, per "wavy not equal distance and size waves"
-  const span = fb - nb + 160;
+  // kept strictly within the actual water band now -- they used to
+  // wrap into a range that overlapped the near bank's own diagonal
+  // slant, so a few would visibly slide across the grass/dirt instead
+  // of staying on the water ("some water lines are moving through the
+  // grass close to the bank")
+  const rippleMinX = nb + 20, rippleMaxX = fb - 20;
+  const waterSpan = Math.max(40, rippleMaxX - rippleMinX);
   for (let i = 0; i < 18; i++) {
     const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
     const seedI = i * 7.7 + j;
     const rippleY = gy + 10 + ((i * 13 + j * 3) % 55) + Math.sin(t * 0.0011 + seedI) * 2;
     const speed = 0.015 + ((i * 3 + Math.abs(j)) % 5) * 0.007;
     const len = 14 + Math.abs(j) * 2.2;
-    const rippleX = ((t * speed + seedI * (37 + Math.abs(j))) % span) + nb - 80;
+    // modulo range is sized so rippleX + len can never exceed
+    // rippleMaxX -- guaranteed inside the water band, no clamping needed
+    const usable = Math.max(10, waterSpan - len);
+    const rippleX = rippleMinX + ((t * speed + seedI * (37 + Math.abs(j))) % usable);
     ctx.strokeStyle = `rgba(205,235,225,${0.12 + (Math.abs(j) % 5) * 0.02})`;
     ctx.lineWidth = 0.9 + (Math.abs(j) % 3) * 0.3;
     ctx.beginPath();
@@ -10769,7 +10778,10 @@ function drawForestRiver(camX) {
   // left...not a wavy vertical line, more natural looking").
   {
     const topX = nb - 92, topY = gy - 5;
-    const waterX = nb + 8, waterY = gy + 20;
+    // the diagonal now runs all the way down into the water band
+    // instead of curling back up partway ("make the slant part on left
+    // go a little lower, [not] stop halfway thru")
+    const waterX = nb + 8, waterY = gy + 46;
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
     ctx.moveTo(topX, topY);
@@ -10779,15 +10791,21 @@ function drawForestRiver(camX) {
       const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 1.1;
       ctx.lineTo(topX + (waterX - topX) * f + j, topY + (waterY - topY) * f);
     }
-    // a little further underwater lip, left of the waterline point, so
-    // the bank doesn't just stop dead at a hard edge
-    ctx.lineTo(nb - 55, gy + 26);
-    ctx.lineTo(nb - 100, gy + 10);
+    // a little further underwater lip, left of the waterline point and
+    // staying low (not curling back up above the diagonal it just
+    // traced), so the whole cut keeps descending instead of doubling
+    // back on itself
+    ctx.lineTo(nb - 55, gy + 50);
+    ctx.lineTo(nb - 100, gy + 34);
     ctx.closePath();
     ctx.fill();
+    // re-randomized on every player movement (see forestRiverPebbleShuffle,
+    // bumped in updateForestScene) rather than a fixed scatter -- per
+    // direct request, these pebbles reshuffle position each time the
+    // player moves instead of sitting still forever
     for (let i = 0; i < 4; i++) {
       const f = 0.4 + i * 0.15;
-      const seedI = nb * 0.7 + i * 5.3;
+      const seedI = i * 5.3 + forestRiverPebbleShuffle * 3.7;
       const px2 = topX + (waterX - topX) * f + pseudoRandom(seedI) * 10 - 5;
       const py2 = topY + (waterY - topY) * f + pseudoRandom(seedI + 2) * 4;
       ctx.fillStyle = "#5a5040";
@@ -12445,6 +12463,12 @@ let forestGearRideAngle = 0;
 // staying a flat box that pokes through the curved deck/rail on the
 // steeper parts ("player needs to go around the arc, not cut into it")
 let forestBridgeTiltAngle = 0;
+// bumped every time the player's x actually changes while in forest --
+// feeds the near riverbank's pebble scatter (see drawForestRiver) so
+// those pebbles re-randomize their positions on every movement, per
+// direct request, rather than sitting in one fixed arrangement forever
+let forestRiverPebbleShuffle = 0;
+let forestRiverLastPlayerX = null;
 
 // simple back-out ease -- overshoots past 1 then settles, used for the
 // punchy "just got yanked" feel on the lever pull
@@ -13344,6 +13368,16 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  // re-scatter the near riverbank's pebbles on every real movement --
+  // compared against last frame's x, not just "vx !== 0", so it only
+  // bumps when the player actually moved (not while blocked against
+  // something and still nominally "trying" to walk)
+  if (forestRiverLastPlayerX === null) forestRiverLastPlayerX = player.x;
+  if (Math.abs(player.x - forestRiverLastPlayerX) > 0.001) {
+    forestRiverPebbleShuffle++;
+    forestRiverLastPlayerX = player.x;
+  }
+
   // RIVER BRIDGE ARC — same sampled-ramp technique as autumn's own
   // ramp collision (see applyPhysics), just following a sine hump
   // instead of a straight slope, so the player's height actually
