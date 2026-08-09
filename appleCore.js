@@ -10692,7 +10692,7 @@ function forestRiverBridgeSlopeAt(worldX) {
    ------------------------------------------------------ */
 const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 support posts
 const FOREST_RIVER_LOG_PILE_START = 9; // 7 needed + 2 extra sitting there once finished ("slightly more than needed")
-const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 60; // in the grass, just before the bank slant starts
+const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 85; // moved further left into the grass, away from the bank slant
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 
 let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
@@ -10833,10 +10833,13 @@ function drawForestRiver(camX) {
     ctx.beginPath();
     ctx.moveTo(topX, topY);
     const steps = 7;
+    const edgePts = [{ x: topX, y: topY }];
     for (let i = 1; i <= steps; i++) {
       const f = i / steps;
       const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 1.1;
-      ctx.lineTo(topX + (waterX - topX) * f + j, topY + (waterY - topY) * f);
+      const ex = topX + (waterX - topX) * f + j, ey = topY + (waterY - topY) * f;
+      ctx.lineTo(ex, ey);
+      edgePts.push({ x: ex, y: ey });
     }
     // a little further underwater lip, left of the waterline point and
     // staying low (not curling back up above the diagonal it just
@@ -10847,69 +10850,68 @@ function drawForestRiver(camX) {
     ctx.closePath();
     ctx.fill();
 
-    // an actual trickle of water flowing DOWN the diagonal cut into
-    // the river, not just an angled patch of exposed sand -- a narrow
-    // water-colored channel carved into the bank, with a few animated
-    // highlight streaks sliding down the slope so it reads as moving
-    // water rather than a static wet stripe
-    {
-      const chanTopX = topX + 16, chanTopY = topY + 8;
-      const chanBotX = waterX - 4, chanBotY = waterY - 6;
-      const cdx = chanBotX - chanTopX, cdy = chanBotY - chanTopY;
-      const clen = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
-      const cnx = -cdy / clen, cny = cdx / clen; // unit normal, for channel width
-      const chanW = 9;
-      ctx.fillStyle = "rgba(45,80,72,0.6)";
-      ctx.beginPath();
-      ctx.moveTo(chanTopX + cnx * chanW * 0.5, chanTopY + cny * chanW * 0.5);
-      ctx.lineTo(chanBotX + cnx * chanW * 0.75, chanBotY + cny * chanW * 0.75);
-      ctx.lineTo(chanBotX - cnx * chanW * 0.75, chanBotY - cny * chanW * 0.75);
-      ctx.lineTo(chanTopX - cnx * chanW * 0.5, chanTopY - cny * chanW * 0.5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = "rgba(30,55,50,0.5)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    // the water channel now just RE-TRACES that exact jittered edge
+    // (edgePts, same path used for the sand cut above) as a soft thick
+    // stroke, instead of being a separately-angled shape with its own
+    // straight endpoints -- that mismatch (a clean quad laid over a
+    // jagged hand-drawn edge) is what read as "sloppy"/pasted-on.
+    // Tracing the real edge guarantees it always follows the bank's
+    // own wiggle exactly, like a groove actually cut into it.
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(45,80,72,0.55)";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    edgePts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.stroke();
+    ctx.restore();
 
-      for (let i = 0; i < 4; i++) {
-        const speed = 0.00009 + i * 0.00002;
-        const phase = (t * speed + i * 0.31) % 1;
-        const sx = chanTopX + cdx * phase, sy = chanTopY + cdy * phase;
-        const streakLen = 11;
-        ctx.strokeStyle = `rgba(210,238,228,${0.4 - i * 0.06})`;
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx + (cdx / clen) * streakLen, sy + (cdy / clen) * streakLen);
-        ctx.stroke();
-      }
+    // two soft traveling glints sliding down that same traced path,
+    // instead of hard-edged streak lines (which read as scribbled
+    // text at this scale) -- a round, blurred-looking highlight reads
+    // as "light catching moving water" much more cleanly
+    const pathLen = edgePts.length - 1;
+    for (let i = 0; i < 2; i++) {
+      const speed = 0.00007 + i * 0.00002;
+      const phase = (t * speed + i * 0.5) % 1;
+      const segF = phase * pathLen;
+      const segI = Math.min(pathLen - 1, Math.floor(segF));
+      const localF = segF - segI;
+      const p0 = edgePts[segI], p1 = edgePts[segI + 1];
+      const gx = p0.x + (p1.x - p0.x) * localF, gy2 = p0.y + (p1.y - p0.y) * localF;
+      const fade = Math.sin(phase * Math.PI); // fades in/out at each end of the run instead of popping
+      ctx.fillStyle = `rgba(215,240,230,${0.45 * fade})`;
+      ctx.beginPath();
+      ctx.ellipse(gx, gy2, 4.5, 2.6, Math.atan2(waterY - topY, waterX - topX), 0, Math.PI * 2);
+      ctx.fill();
     }
-    // re-randomized on every player movement (see forestRiverPebbleShuffle,
-    // bumped in updateForestScene) rather than a fixed scatter -- per
-    // direct request, these pebbles reshuffle position each time the
-    // player moves instead of sitting still forever
+
+    // pebbles sit ON the same traced path (wet stones in the actual
+    // channel), a small perpendicular jitter instead of a wide
+    // independent scatter that could drift outside the channel/bank
+    // edges entirely
     for (let i = 0; i < 4; i++) {
-      const f = 0.4 + i * 0.15;
+      const f = 0.4 + i * 0.13;
+      const segF = f * pathLen;
+      const segI = Math.min(pathLen - 1, Math.floor(segF));
+      const localF = segF - segI;
+      const p0 = edgePts[segI], p1 = edgePts[segI + 1];
+      const bxp = p0.x + (p1.x - p0.x) * localF, byp = p0.y + (p1.y - p0.y) * localF;
       const seedI = i * 5.3 + forestRiverPebbleShuffle * 3.7;
-      const px2 = topX + (waterX - topX) * f + pseudoRandom(seedI) * 10 - 5;
-      const py2 = topY + (waterY - topY) * f + pseudoRandom(seedI + 2) * 4;
+      const px2 = bxp + pseudoRandom(seedI) * 6 - 3;
+      const py2 = byp + pseudoRandom(seedI + 2) * 3 - 1.5;
       ctx.fillStyle = "#5a5040";
       ctx.beginPath();
       ctx.ellipse(px2, py2, 4, 2.4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    for (let i = 0; i < 5; i++) {
-      const f = 0.12 + i * 0.16;
-      // seed by index ONLY, not by nb -- nb is the bank's on-SCREEN x
-      // (world x minus camX), which shifts every single frame the
-      // player moves, so seeding the random height off of it was
-      // re-rolling every reed's height every frame during any walking
-      // at all. That's the exact "taller grasses... still do that
-      // throttle [misbehavior]" bug -- these reeds were never gated by
-      // forestRiverPebbleShuffle in the first place, they had their
-      // own separate always-on reseeding hiding right next to the
-      // (now-fixed) pebbles. Height is now fixed per reed; only the
-      // gentle sway below still moves, off of time, same as always.
+    // reeds stay well up on the dry sand, above where the channel
+    // actually flows, instead of spanning down into/across the moving
+    // water -- that overlap (reeds visibly rooted mid-stream) was part
+    // of what read as sloppy here
+    for (let i = 0; i < 4; i++) {
+      const f = 0.02 + i * 0.06;
       const seedI = i * 9.1;
       const rx = topX + (waterX - topX) * f;
       const ry = topY + (waterY - topY) * f;
@@ -10924,44 +10926,83 @@ function drawForestRiver(camX) {
     }
   }
 
-  // FAR BANK -- kept as the original irregular jagged wedge (no strong
-  // diagonal lean requested for this side)
+  // FAR BANK -- a mirror of the near bank's own diagonal-lean-plus-
+  // flowing-channel treatment (was previously left as a mostly
+  // vertical jagged wedge, which read as inconsistent with the near
+  // side -- "why are the banks still straight vertical lines")
   {
-    const bx = fb, dir = 1;
-    const reach = 50;
+    const topX2 = fb + 92, topY2 = gy - 5;
+    const waterX2 = fb - 8, waterY2 = gy + 46;
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    ctx.moveTo(bx, gy - 2);
-    ctx.lineTo(bx + dir * reach, gy - 4);
-    const edgeSteps = 6;
-    for (let i = 0; i <= edgeSteps; i++) {
-      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
-      const ex = bx + dir * reach * (1 - i / edgeSteps);
-      const ey = gy + 3 + i * 1.8 + j * 0.7;
+    ctx.moveTo(topX2, topY2);
+    const steps2 = 7;
+    const edgePts2 = [{ x: topX2, y: topY2 }];
+    for (let i = 1; i <= steps2; i++) {
+      const f = i / steps2;
+      const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 1.1;
+      const ex = topX2 + (waterX2 - topX2) * f + j, ey = topY2 + (waterY2 - topY2) * f;
       ctx.lineTo(ex, ey);
+      edgePts2.push({ x: ex, y: ey });
     }
-    ctx.lineTo(bx, gy + 16);
+    ctx.lineTo(fb + 55, gy + 50);
+    ctx.lineTo(fb + 100, gy + 34);
     ctx.closePath();
     ctx.fill();
-    for (let i = 0; i < 4; i++) {
-      // seed by index only, same fix as the near bank -- bx is a
-      // screen-space (camera-relative) position, not a stable seed
-      const seedI = i * 5.3;
-      ctx.fillStyle = "#5a5040";
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(45,80,72,0.55)";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    edgePts2.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.stroke();
+    ctx.restore();
+
+    const pathLen2 = edgePts2.length - 1;
+    for (let i = 0; i < 2; i++) {
+      const speed = 0.00007 + i * 0.00002;
+      const phase = (t * speed + i * 0.5 + 0.25) % 1;
+      const segF = phase * pathLen2;
+      const segI = Math.min(pathLen2 - 1, Math.floor(segF));
+      const localF = segF - segI;
+      const p0 = edgePts2[segI], p1 = edgePts2[segI + 1];
+      const gx = p0.x + (p1.x - p0.x) * localF, gy2 = p0.y + (p1.y - p0.y) * localF;
+      const fade = Math.sin(phase * Math.PI);
+      ctx.fillStyle = `rgba(215,240,230,${0.45 * fade})`;
       ctx.beginPath();
-      ctx.ellipse(bx + dir * (10 + i * 9), gy + 10 + pseudoRandom(seedI) * 4, 4, 2.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(gx, gy2, 4.5, 2.6, Math.atan2(waterY2 - topY2, waterX2 - topX2), 0, Math.PI * 2);
       ctx.fill();
     }
-    for (let i = 0; i < 5; i++) {
-      const seedI = i * 9.1;
-      const rx = bx + dir * (6 + i * 7);
+
+    for (let i = 0; i < 4; i++) {
+      const f = 0.4 + i * 0.13;
+      const segF = f * pathLen2;
+      const segI = Math.min(pathLen2 - 1, Math.floor(segF));
+      const localF = segF - segI;
+      const p0 = edgePts2[segI], p1 = edgePts2[segI + 1];
+      const bxp = p0.x + (p1.x - p0.x) * localF, byp = p0.y + (p1.y - p0.y) * localF;
+      const seedI = i * 5.3 + forestRiverPebbleShuffle * 3.7;
+      const px2 = bxp + pseudoRandom(seedI) * 6 - 3;
+      const py2 = byp + pseudoRandom(seedI + 2) * 3 - 1.5;
+      ctx.fillStyle = "#5a5040";
+      ctx.beginPath();
+      ctx.ellipse(px2, py2, 4, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 4; i++) {
+      const f = 0.02 + i * 0.06;
+      const seedI = i * 9.1 + 50; // offset from the near bank's reed seeds so they don't look identical
+      const rx = topX2 + (waterX2 - topX2) * f;
+      const ry = topY2 + (waterY2 - topY2) * f;
       const reedH = 20 + pseudoRandom(seedI) * 14;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
       ctx.strokeStyle = "#5a7a3a";
       ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.moveTo(rx, gy);
-      ctx.quadraticCurveTo(rx + sway * 0.6, gy - reedH * 0.6, rx + sway, gy - reedH);
+      ctx.moveTo(rx, ry);
+      ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
       ctx.stroke();
     }
   }
@@ -11109,10 +11150,20 @@ function drawForestRiver(camX) {
   if (forestRiverLogPile > 0) {
     const pileX = FOREST_RIVER_LOG_PILE_X - camX;
     const pileBaseY = gy + 2;
-    const stackShow = Math.min(forestRiverLogPile, 5); // visually cap the stack height
-    for (let i = 0; i < stackShow; i++) {
-      const rowOffset = i % 2 === 0 ? -6 : 6;
-      drawBridgePieceShape(ctx, pileX + rowOffset, pileBaseY - 5 - i * 6, 10, 0.05 * (i % 2 === 0 ? 1 : -1));
+    // a proper wide, low pile -- a full row across the base, a shorter
+    // row on top, rather than one narrow column stacked tall
+    const rows = [
+      [-13, 0, 13],
+      [-7, 7],
+      [0],
+    ];
+    let shown = 0;
+    for (let r = 0; r < rows.length && shown < forestRiverLogPile; r++) {
+      for (const rowOffset of rows[r]) {
+        if (shown >= forestRiverLogPile) break;
+        drawBridgePieceShape(ctx, pileX + rowOffset, pileBaseY - 4 - r * 6, 9, 0.05 * (rowOffset < 0 ? 1 : rowOffset > 0 ? -1 : 0));
+        shown++;
+      }
     }
   }
 }
