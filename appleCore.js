@@ -11280,19 +11280,20 @@ function drawForestRiver(camX) {
   // regardless of how much decking has been restored underneath it
   const deckPts = sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, FOREST_RIVER_FAR_BANK_X, 32);
 
-  // low rope railings, tracing the same arc a little above the deck --
-  // kept short (knee-height) so they read as a real railing without
-  // competing with the player sprite's own height when crossing
-  [-14, -6].forEach((railOffset, ri) => {
-    ctx.strokeStyle = ri === 0 ? "rgba(205,195,165,0.85)" : "rgba(160,130,90,0.7)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    deckPts.forEach((p, i) => {
-      if (i === 0) ctx.moveTo(p.x, p.y + railOffset);
-      else ctx.lineTo(p.x, p.y + railOffset);
-    });
-    ctx.stroke();
+  // lower brown rope, tracing the same arc a little above the deck --
+  // stays behind the player like the rest of the scene. The pale TOP
+  // rope (the "white string" -- the actual front railing, waist-height)
+  // is drawn separately, AFTER the player, in drawForestRiverFrontRail
+  // below -- so a rail the player is meant to be crossing behind/beside
+  // reads as genuinely in front of them instead of always painted over.
+  ctx.strokeStyle = "rgba(160,130,90,0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  deckPts.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(p.x, p.y - 6);
+    else ctx.lineTo(p.x, p.y - 6);
   });
+  ctx.stroke();
   // railing posts, rising from the deck up to the rails, at each support post
   for (let i = 0; i <= postCount; i++) {
     const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / postCount);
@@ -11305,15 +11306,17 @@ function drawForestRiver(camX) {
     ctx.stroke();
   }
 
-  // a soft warm glow along the full railing line, rising then easing
-  // back out over about 700ms -- the calmer, whole-span half of the
-  // finish celebration, underneath the golden segment-sweep above
+  // a soft warm glow along the lower rope, rising then easing back out
+  // over about 700ms -- the calmer, whole-span half of the finish
+  // celebration, underneath the golden segment-sweep above. The top
+  // rope gets the matching glow in drawForestRiverFrontRail instead,
+  // since it now draws in its own separate (after-player) pass.
   if (forestRiverBridgeCompletedAt) {
     const sinceWin = performance.now() - forestRiverBridgeCompletedAt;
     if (sinceWin < 700) {
       const glowT = Math.min(1, sinceWin / 700);
       const glowAlpha = Math.sin(glowT * Math.PI) * 0.5;
-      [-14, -6].forEach(railOffset => {
+      [-6].forEach(railOffset => {
         ctx.strokeStyle = `rgba(255,235,170,${glowAlpha})`;
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -11413,6 +11416,48 @@ function drawForestRiver(camX) {
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
+    }
+  }
+}
+
+// the bridge's actual front railing -- the pale top rope, waist-height
+// on the player -- drawn in its own separate pass, called AFTER the
+// player sprite in the main draw sequence below, so crossing the
+// bridge reads as genuinely passing behind/beside a real railing
+// instead of the player always painting over it. Mirrors the same arc
+// sampling drawForestRiver's own sampleDeckPts uses, just standalone
+// since that helper is local to drawForestRiver's own closure.
+function drawForestRiverFrontRail(camX) {
+  if (currentScene !== "forest") return;
+  const nb = FOREST_RIVER_NEAR_BANK_X - camX;
+  const fb = FOREST_RIVER_FAR_BANK_X - camX;
+  if (fb < -140 || nb > canvas.width + 140) return;
+
+  const samples = 32;
+  const railPts = [];
+  for (let i = 0; i <= samples; i++) {
+    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / samples);
+    railPts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) - 14 });
+  }
+
+  ctx.strokeStyle = "rgba(205,195,165,0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  railPts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+  ctx.stroke();
+
+  // same finish-celebration glow window as the lower rope (see
+  // drawForestRiver) -- kept in sync even though it's a separate pass
+  if (typeof forestRiverBridgeCompletedAt !== "undefined" && forestRiverBridgeCompletedAt) {
+    const sinceWin = performance.now() - forestRiverBridgeCompletedAt;
+    if (sinceWin < 700) {
+      const glowT = Math.min(1, sinceWin / 700);
+      const glowAlpha = Math.sin(glowT * Math.PI) * 0.5;
+      ctx.strokeStyle = `rgba(255,235,170,${glowAlpha})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      railPts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
     }
   }
 }
@@ -13953,6 +13998,23 @@ function updateForestScene(deltaTime) {
     forestRiverLogPile--;
     forestRiverLogPickedUpAt = performance.now(); // pop-in on the carried icon
     forestRiverPileSettleAt = performance.now(); // settle-bounce on the remaining stack
+  } else if (keys.spaceJustPressed && heldItem === "bridgePiece" && inventory.bridgePiece > 0 &&
+      Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
+    // arriving at the pile already holding a REAL bridgePiece (selected
+    // from inventory, picked up anywhere else in the game -- forest,
+    // molehole, tunnel town) used to just be a dead press here, since
+    // the plain grab-from-pile branch above requires empty hands. Bank
+    // it onto the local stack instead -- grows the same pile the carry-
+    // to-edge step already draws from, so a spare piece brought from
+    // elsewhere doesn't feel wasted or stuck in hand. Doesn't change
+    // the guaranteed starting count (still fixed, so this is purely a
+    // bonus/convenience, never something the build depends on).
+    inventory.bridgePiece--;
+    if (inventory.bridgePiece <= 0) delete inventory.bridgePiece;
+    forestRiverLogPile++;
+    heldItem = null;
+    forestRiverPileSettleAt = performance.now(); // same settle-bounce/dust, reads fine for "added" too
+    updateInventoryUI();
   } else if (keys.spaceJustPressed && heldItem === "log" &&
       forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14) {
@@ -31349,6 +31411,7 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 
 if (currentScene === "forest") {
   drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
+  drawForestRiverFrontRail(camX); // the bridge's pale front railing, drawn after the player so it reads as actually in front, not just painted over
 } else if (currentScene === "molehole") {
   // foreground root pillars, drawn AFTER the player sprite so they sit
   // in front of it -- real depth instead of the player always being
