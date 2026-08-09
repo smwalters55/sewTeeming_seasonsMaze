@@ -26630,9 +26630,11 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     drawHandwrittenS(ctx, -6, 0, initS, [0.3, -0.4, 0.5, -0.3, 0.4]);
     drawHandwrittenS(ctx, 6, 0, initS, [-0.3, 0.4, -0.5, 0.3, -0.4]);
     drawHandwrittenW(ctx, 18, 0, initS, [0.4, -0.6, 0.3, -0.5, 0.5]);
+    // matches the real ratroom wall carving's own divider line, taller
+    // than the letters themselves (see drawCarvedInitials)
     ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(0, 5);
+    ctx.moveTo(0, -9);
+    ctx.lineTo(0, 9);
     ctx.stroke();
     ctx.restore();
     // the moth, wandering a slow loop right around the light -- it's as
@@ -28073,27 +28075,45 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
     ctx.fillStyle = "#3a4048";
     ctx.fillRect(-10, -10, 20, 20);
     ctx.save();
-    ctx.scale(1.45, 1.45);
+    ctx.scale(1.9, 1.9);
     ctx.fillStyle = "#6a4e30";
     ctx.fillRect(-9, 3, 18, 2);
+    // the apple book's own spine widened a bit from the other plain
+    // ones (was the same 2.6 width as its neighbors) -- just enough
+    // extra room to actually fit its name lettered down the spine,
+    // same as a real book would have
     const spines = [
-      { dx: -7, h: 9, c: "#7a8a5a" },
-      { dx: -3.5, h: 7, c: "#5a6a8a" },
-      { dx: 0, h: 8, c: "#7a2f2f" }, // the apple book itself -- same dark red as its real cover (drawBookCover/carried icon), not a made-up brighter red
-      { dx: 3.5, h: 6, c: "#8a6a3a" },
-      { dx: 7, h: 8.5, c: "#5a8a6a" }
+      { dx: -7, h: 9, c: "#7a8a5a", w: 2.6 },
+      { dx: -3.3, h: 7, c: "#5a6a8a", w: 2.6 },
+      { dx: 0.3, h: 8, c: "#7a2f2f", w: 3.4 }, // the apple book itself -- same dark red as its real cover (drawBookCover/carried icon), not a made-up brighter red
+      { dx: 3.9, h: 6, c: "#8a6a3a", w: 2.6 },
+      { dx: 7.3, h: 8.5, c: "#5a8a6a", w: 2.6 }
     ];
     spines.forEach(s => {
       ctx.fillStyle = s.c;
-      ctx.fillRect(s.dx - 1.4, 3 - s.h, 2.6, s.h);
+      ctx.fillRect(s.dx - s.w / 2, 3 - s.h, s.w, s.h);
     });
     // the apple book's real cover treatment, shrunk to spine scale: a
     // thin gold accent stripe near the top, same as its carried-icon
     // look, instead of a hand-drawn apple that only reads as a smudge
     // at this size
-    const ax = 0, ay = 3 - 8;
+    const ax = 0.3, ay = 3 - 8;
     ctx.fillStyle = "#d4a520";
-    ctx.fillRect(ax - 1.1, ay + 1.4, 2.2, 0.55);
+    ctx.fillRect(ax - 1.3, ay + 1.3, 2.6, 0.6);
+    // "apple" lettered down the spine, same as a real book's title --
+    // per direct request ("doesn't the apple book have the word apple
+    // on the spine"). Small enough that it only actually resolves once
+    // the mirror itself is close/legible, same spirit as everything
+    // else in this glimpse.
+    ctx.save();
+    ctx.translate(ax, 3 - 3.6);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = "#f0dfae";
+    ctx.font = "2.6px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("apple", 0, 0);
+    ctx.restore();
     ctx.restore();
   } else {
     ctx.fillStyle = "#3a4048";
@@ -28339,8 +28359,10 @@ const MIRROR_STALL_CLUTTER = [
   { type: "vase", dx: 215 },
   // a small square one, tucked in a nice spot up in the top-right corner
   // instead of the removed lone circle mirror that used to sit outside
-  // the stall entirely -- sized up a bit, it was reading too small
-  { type: "wallmirror", dx: 260, shape: "square", y: -190, scale: 1.9 }
+  // the stall entirely -- sized up again (was 1.9) so the apple book's
+  // own lettered spine actually reads instead of just being a colored
+  // smudge; still comfortably inside the corner with room to the post
+  { type: "wallmirror", dx: 260, shape: "square", y: -190, scale: 2.7 }
 ];
 
 function drawMirrorStallBooth(sx) {
@@ -28568,7 +28590,16 @@ function drawMirrorStall(camX) {
       const platformTop = gy - (my - frameHalfH);
       const playerCenterX = player.x + player.width / 2;
       const standingOnTop = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
-      isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 40, 200);
+      // radiusYUp bumped way up (was 40) -- that only comfortably covered
+      // standing still next to the mirror, not jumping next to it: a
+      // normal jump clears ~90 units and a double jump well over 100,
+      // both past the mirror's own ~95-unit platform height, so jumping
+      // while standing right next to it repeatedly crossed out of "near"
+      // at the peak and back in on the way down -- the glimpse blinking
+      // off and on is exactly what read as "flickers when I jump near
+      // it." Generous enough now that a real jump stays inside the zone
+      // the whole time, same idea as radiusYDown's own generous 200.
+      isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 180, 200);
     } else if (m.shape === "hourglass") {
       // no zone glimpse here -- just the rare reflection-only apparition,
       // which needs to know when the player's close enough to notice it
