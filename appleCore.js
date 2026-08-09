@@ -10581,12 +10581,12 @@ function updateReflectionPool() {
 function drawForestReflectionPool(camX) {
   const px = FOREST_REFLECTION_POOL_X - camX;
   if (px < -160 || px > canvas.width + 160) return;
-  // taller than the first pass (was 34) -- the canopy+trunk reflection
-  // needs real vertical room to read as a canopy near the surface with
-  // a trunk actually descending below it; the shorter pool clipped most
-  // of that away against the ellipse's own bounds (the trunk in
-  // particular was never actually visible, just silently cut off).
-  const poolW = 130, poolH = 46;
+  // taller than the first pass (was 34, then 46) -- the trunk needs a
+  // good deal more room to actually read as a real trunk (roughly 2/3
+  // the canopy's own height) instead of a short stub, and the pool's
+  // own ellipse bounds are what cap how long anything drawn inside it
+  // can be before getting clipped.
+  const poolW = 130, poolH = 64;
   const poolY = gy + 8;
 
   ctx.save();
@@ -10677,43 +10677,56 @@ function drawForestReflectionPool(camX) {
       ctx.arc(s.dx, s.dy, 1.4, 0, Math.PI * 2);
       ctx.fill();
     });
-    // a thick, gnarled trunk descending well past the canopy in a real
-    // curve (not a straight rectangle), hinting the whole thing is much
-    // taller than it has any right to be -- with splayed root/branch
-    // flares where it meets the canopy so it reads as "trunk." Descends
-    // through NEGATIVE local y (down into the pool), staying near x=0
-    // the whole way so it doesn't run outside the ellipse's shrinking
-    // width as it nears the bottom edge.
+    // a thick, gnarled trunk reaching up toward the surface in a real
+    // curve (not a straight rectangle), with splayed root/branch flares
+    // where it meets the canopy so it reads as "trunk." Runs a good
+    // deal longer than the first pass -- roughly 2/3 the canopy's own
+    // height, per direct feedback that a short stub wasn't reading as a
+    // real trunk. Stays near x=0 the whole way so it doesn't run outside
+    // the ellipse's shrinking width as it nears the shallow/surface end.
     ctx.fillStyle = "#2c2115";
     ctx.beginPath();
-    ctx.moveTo(-3.5, -16);
-    ctx.lineTo(-10, -21);
-    ctx.lineTo(-6, -23);
-    ctx.lineTo(-3, -17);
-    ctx.lineTo(3, -17);
-    ctx.lineTo(6, -23);
-    ctx.lineTo(10, -21);
-    ctx.lineTo(3.5, -16);
+    ctx.moveTo(-3.5, -14);
+    ctx.lineTo(-10, -19);
+    ctx.lineTo(-6, -21);
+    ctx.lineTo(-3, -15);
+    ctx.lineTo(3, -15);
+    ctx.lineTo(6, -21);
+    ctx.lineTo(10, -19);
+    ctx.lineTo(3.5, -14);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(-3.5, -16);
-    ctx.quadraticCurveTo(-5, -21, -1.5, -24);
-    ctx.lineTo(2, -24);
-    ctx.quadraticCurveTo(0, -21, 3.5, -16);
+    ctx.moveTo(-3.5, -15);
+    ctx.quadraticCurveTo(-4.5, -25, -1.5, -34);
+    ctx.lineTo(1.5, -34);
+    ctx.quadraticCurveTo(0, -25, 3.5, -15);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
 
-    // a few ripple breaks through the reflection so it reads as sitting
-    // on disturbed water rather than a crisp, too-solid image
-    ctx.strokeStyle = `rgba(230,240,225,${alpha * 0.25})`;
+    // ripples radiate outward from wherever the player is currently
+    // standing relative to the pool, instead of always being flat
+    // horizontal bands -- reads as the water actually responding to
+    // someone standing near it rather than a static texture. A few
+    // staggered rings loop continuously, expanding from the player's
+    // x position (clamped to stay within the pool) and fading in as
+    // they're born, then out again as they near the pool's edge.
+    const playerCenterWorldX = (typeof player !== "undefined" ? player.x + player.width / 2 : FOREST_REFLECTION_POOL_X);
+    const rippleOffsetX = Math.max(-poolW * 0.38, Math.min(poolW * 0.38, playerCenterWorldX - FOREST_REFLECTION_POOL_X));
+    const rippleCenterX = px + rippleOffsetX;
+    const RIPPLE_RING_COUNT = 3;
+    const RIPPLE_PERIOD = 2600;
+    const RIPPLE_MAX_R = poolW * 0.42;
     ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
-      const ry = poolY - 10 + i * 8 + Math.sin(now * 0.0016 + i) * 1.5;
+    for (let i = 0; i < RIPPLE_RING_COUNT; i++) {
+      const phase = ((now + i * (RIPPLE_PERIOD / RIPPLE_RING_COUNT)) % RIPPLE_PERIOD) / RIPPLE_PERIOD;
+      const r = phase * RIPPLE_MAX_R;
+      const ringAlpha = Math.sin(phase * Math.PI) * alpha * 0.3; // fades in, peaks mid-life, fades out
+      if (ringAlpha <= 0.01) continue;
+      ctx.strokeStyle = `rgba(230,240,225,${ringAlpha})`;
       ctx.beginPath();
-      ctx.moveTo(px - poolW * 0.36, ry);
-      ctx.lineTo(px + poolW * 0.36, ry);
+      ctx.ellipse(rippleCenterX, poolY, r, r * (poolH / poolW), 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
