@@ -32245,8 +32245,11 @@ cameraX = Math.max(0, player.x - canvas.width * 0.4);
 cameraY = 0;
 // also seed a full stack of real bridgePieces (for testing the
 // auto-unload-into-pile behavior) and a geode (uncracked), for debugging
-inventory.bridgePiece = 9;
-inventory.geode = 1;
+// -- through addToInventory (not a raw inventory[x]= assignment) so
+// they actually register in inventoryOrder too, otherwise Tab-cycling
+// (cycleHeldItem, which reads off inventoryOrder) has nothing to find
+for (let i = 0; i < 9; i++) addToInventory("bridgePiece");
+addToInventory("geode");
 geodeCracked = false;
 updateInventoryUI();
 
