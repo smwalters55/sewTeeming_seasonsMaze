@@ -10610,6 +10610,7 @@ function drawForestScene(camX) {
   drawForestClockworkGears(camX);
   drawMoleHoleTree(camX);
   drawMoleHoleEntrance(camX);
+  drawForestRiver(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
   // drawForestBrambleFront is called after the player sprite in the
@@ -10618,6 +10619,312 @@ function drawForestScene(camX) {
   // near FOREST_PLATFORM_DROP_GRACE_MS)
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
+}
+
+/* ======================================================
+   FOREST RIVER CROSSING -- the payoff the hourglass mirror's own
+   triptych glimpse previewed (rushing water, a bridge crossing it, a
+   big distant tree looming beyond), now actually built. Sits just past
+   the mole hole entrance, past everything else built in forest so far
+   -- a brand new stretch, not squeezed into existing ground.
+
+   PHASE ONE ONLY, per direct instruction ("build knowing I want water
+   interaction, don't push anything [into that] yet"): this is purely a
+   visual overlay on top of the normal flat ground. Collision is
+   completely untouched -- the player walks straight across at the
+   usual height (y=0), same as anywhere else in the zone, whether
+   they're on the bank or on the bridge deck. The bank/bridge x's below
+   have real room on both sides specifically so a later pass can carve
+   an actual below-ground water pit here (wading, swimming, falling in)
+   without needing to re-place any of this geometry.
+   ====================================================== */
+const FOREST_RIVER_NEAR_BANK_X = 3840; // where the arc actually starts, flush with the bank -- no dead unbridged gap
+const FOREST_RIVER_FAR_BANK_X = 4300;  // where the arc ends, flush with the far bank
+const FOREST_RIVER_BRIDGE_ARC_HEIGHT = 62; // raised a lot from the first pass ("i want the arc height higher")
+
+// shared by both the visual (drawForestRiver) and the real collision
+// (see the bridge snap in updateForestScene) -- a proper arched bridge,
+// not a flat plank deck. The arc now runs the FULL span between the two
+// banks (no separate, unbridged strip of open water in between like
+// the first pass had -- "why doesn't bridge reach river banks?" was a
+// real bug: the deck used to start/end 60px short of each bank). worldX
+// is in world space; returns height ABOVE normal ground (same
+// convention as heightAboveGround elsewhere), 0 at/beyond either bank.
+function forestRiverBridgeHeightAt(worldX) {
+  if (worldX <= FOREST_RIVER_NEAR_BANK_X || worldX >= FOREST_RIVER_FAR_BANK_X) return 0;
+  const t = (worldX - FOREST_RIVER_NEAR_BANK_X) / (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X);
+  return Math.sin(t * Math.PI) * FOREST_RIVER_BRIDGE_ARC_HEIGHT;
+}
+
+// slope (dHeight/dWorldX) of the same arc, at a given world x -- used
+// to tilt the player sprite so it visually leans along the curve while
+// crossing instead of staying a flat, straight-edged box that pokes
+// through the curved deck/railing at the steeper parts of the arc
+// ("player needs to go around the arc, not cut into it")
+function forestRiverBridgeSlopeAt(worldX) {
+  if (worldX <= FOREST_RIVER_NEAR_BANK_X || worldX >= FOREST_RIVER_FAR_BANK_X) return 0;
+  const span = FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X;
+  const t = (worldX - FOREST_RIVER_NEAR_BANK_X) / span;
+  return Math.cos(t * Math.PI) * (Math.PI / span) * FOREST_RIVER_BRIDGE_ARC_HEIGHT;
+}
+
+// a handful of fixed irregular offsets for the shoreline -- NOT equal
+// spacing/size, per direct feedback ("wavy not equal distance and size
+// waves"). Reused for both banks and for the ripple lines below so the
+// whole river reads as one consistently hand-drawn, non-mechanical
+// shape rather than a repeating pattern.
+const FOREST_RIVER_JITTER = [0, 6, -4, 9, -7, 3, 11, -5, 2, -9, 7, -2, 8, -6, 4, 10];
+
+function drawForestRiver(camX) {
+  const nb = FOREST_RIVER_NEAR_BANK_X - camX;
+  const fb = FOREST_RIVER_FAR_BANK_X - camX;
+  if (fb < -140 || nb > canvas.width + 140) return; // fully off-screen either direction
+
+  const t = performance.now();
+
+  // the big distant tree on the far bank -- the actual payoff the
+  // mirror glimpse promised, well past the crossing itself so reaching
+  // the far side reads as arriving somewhere genuinely new, not just
+  // more of the same forest
+  const bigTreeX = fb + 95;
+  ctx.fillStyle = "rgba(18,28,15,0.6)";
+  ctx.fillRect(bigTreeX - 24, gy - 270, 48, 270);
+  ctx.beginPath();
+  ctx.arc(bigTreeX, gy - 260, 105, 0, Math.PI * 2);
+  ctx.arc(bigTreeX - 62, gy - 215, 72, 0, Math.PI * 2);
+  ctx.arc(bigTreeX + 68, gy - 222, 78, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(40,55,32,0.35)";
+  ctx.beginPath();
+  ctx.arc(bigTreeX - 20, gy - 280, 55, 0, Math.PI * 2);
+  ctx.fill();
+
+  // "winding off into the distance" hint at both ends -- this is a 2D
+  // side view, so a true bend-away-from-camera perspective isn't
+  // really available the way it would be from above. What DOES work
+  // in 2D (same trick the game already uses for background depth --
+  // the far silhouette trees fading out with lower alpha/desaturation)
+  // is a hazy, partly-glimpsed patch of water color peeking through
+  // gaps in the canopy well upstream/downstream of the actual crossing,
+  // strongly desaturated and faded so it reads as "the river continues
+  // on beyond the trees" rather than a hard start/end point. It's a
+  // suggestion, not a real bend -- flagging that honestly rather than
+  // overselling it.
+  [[nb, -1], [fb, 1]].forEach(([bx, dir]) => {
+    for (let i = 0; i < 3; i++) {
+      const hazeX = bx + dir * (70 + i * 60);
+      const hazeY = gy - 6 - i * 10;
+      ctx.fillStyle = `rgba(70,110,100,${0.16 - i * 0.04})`;
+      ctx.beginPath();
+      ctx.ellipse(hazeX, hazeY, 34 - i * 4, 10 - i, dir * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // water fill -- a wavy top edge instead of a hard flat rectangle,
+  // sampled with the same irregular jitter table used for the banks
+  const waterSamples = 20;
+  ctx.fillStyle = "#233c34";
+  ctx.beginPath();
+  ctx.moveTo(nb, gy + 90);
+  for (let i = 0; i <= waterSamples; i++) {
+    const wx = nb + (fb - nb) * (i / waterSamples);
+    const jitter = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.6;
+    ctx.lineTo(wx, gy + jitter);
+  }
+  ctx.lineTo(fb, gy + 90);
+  ctx.closePath();
+  const waterGrad = ctx.createLinearGradient(0, gy, 0, gy + 70);
+  waterGrad.addColorStop(0, "#3d6058");
+  waterGrad.addColorStop(1, "#233c34");
+  ctx.fillStyle = waterGrad;
+  ctx.fill();
+
+  // rippled highlight lines drifting along the current -- deliberately
+  // irregular spacing, length, and size (not a repeating grid), each
+  // one's properties pulled from the jitter table rather than a clean
+  // formula, per "wavy not equal distance and size waves"
+  const span = fb - nb + 160;
+  for (let i = 0; i < 18; i++) {
+    const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
+    const seedI = i * 7.7 + j;
+    const rippleY = gy + 10 + ((i * 13 + j * 3) % 55) + Math.sin(t * 0.0011 + seedI) * 2;
+    const speed = 0.015 + ((i * 3 + Math.abs(j)) % 5) * 0.007;
+    const len = 14 + Math.abs(j) * 2.2;
+    const rippleX = ((t * speed + seedI * (37 + Math.abs(j))) % span) + nb - 80;
+    ctx.strokeStyle = `rgba(205,235,225,${0.12 + (Math.abs(j) % 5) * 0.02})`;
+    ctx.lineWidth = 0.9 + (Math.abs(j) % 3) * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(rippleX, rippleY);
+    ctx.lineTo(rippleX + len, rippleY);
+    ctx.stroke();
+  }
+
+  // NEAR BANK -- one continuous diagonal slant leaning left, not a
+  // near-vertical jagged line: the exposed dirt reaches much further
+  // left at the grass line than the waterline does below it, so the
+  // whole cut reads as a real "\"-shaped diagonal bank. Jitter is only
+  // used for small roughness riding along that diagonal, not to define
+  // the overall shape, per direct feedback ("more slanted to the
+  // left...not a wavy vertical line, more natural looking").
+  {
+    const topX = nb - 92, topY = gy - 5;
+    const waterX = nb + 8, waterY = gy + 20;
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    const steps = 7;
+    for (let i = 1; i <= steps; i++) {
+      const f = i / steps;
+      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 1.1;
+      ctx.lineTo(topX + (waterX - topX) * f + j, topY + (waterY - topY) * f);
+    }
+    // a little further underwater lip, left of the waterline point, so
+    // the bank doesn't just stop dead at a hard edge
+    ctx.lineTo(nb - 55, gy + 26);
+    ctx.lineTo(nb - 100, gy + 10);
+    ctx.closePath();
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const f = 0.4 + i * 0.15;
+      const seedI = nb * 0.7 + i * 5.3;
+      const px2 = topX + (waterX - topX) * f + pseudoRandom(seedI) * 10 - 5;
+      const py2 = topY + (waterY - topY) * f + pseudoRandom(seedI + 2) * 4;
+      ctx.fillStyle = "#5a5040";
+      ctx.beginPath();
+      ctx.ellipse(px2, py2, 4, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 5; i++) {
+      const f = 0.12 + i * 0.16;
+      const seedI = nb * 1.3 + i * 9.1;
+      const rx = topX + (waterX - topX) * f;
+      const ry = topY + (waterY - topY) * f;
+      const reedH = 20 + pseudoRandom(seedI) * 14;
+      const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
+      ctx.strokeStyle = "#5a7a3a";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
+      ctx.stroke();
+    }
+  }
+
+  // FAR BANK -- kept as the original irregular jagged wedge (no strong
+  // diagonal lean requested for this side)
+  {
+    const bx = fb, dir = 1;
+    const reach = 50;
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    ctx.moveTo(bx, gy - 2);
+    ctx.lineTo(bx + dir * reach, gy - 4);
+    const edgeSteps = 6;
+    for (let i = 0; i <= edgeSteps; i++) {
+      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
+      const ex = bx + dir * reach * (1 - i / edgeSteps);
+      const ey = gy + 3 + i * 1.8 + j * 0.7;
+      ctx.lineTo(ex, ey);
+    }
+    ctx.lineTo(bx, gy + 16);
+    ctx.closePath();
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const seedI = bx * 0.7 + i * 5.3;
+      ctx.fillStyle = "#5a5040";
+      ctx.beginPath();
+      ctx.ellipse(bx + dir * (10 + i * 9), gy + 10 + pseudoRandom(seedI) * 4, 4, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 5; i++) {
+      const seedI = bx * 1.3 + i * 9.1;
+      const rx = bx + dir * (6 + i * 7);
+      const reedH = 20 + pseudoRandom(seedI) * 14;
+      const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
+      ctx.strokeStyle = "#5a7a3a";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(rx, gy);
+      ctx.quadraticCurveTo(rx + sway * 0.6, gy - reedH * 0.6, rx + sway, gy - reedH);
+      ctx.stroke();
+    }
+  }
+
+  // support posts driven into the water beneath the deck -- taller
+  // toward the middle since that's where the arc lifts the deck
+  // furthest above the water, exactly like a real arched bridge.
+  // Inset from both banks (not flush against them) so there's visible
+  // open water between the outermost posts and the shore, per direct
+  // feedback ("push all in just slightly so we can see river between
+  // those border posts and the bank").
+  const postCount = 7;
+  const POST_INSET = 28;
+  const postSpanX1 = FOREST_RIVER_NEAR_BANK_X + POST_INSET;
+  const postSpanX2 = FOREST_RIVER_FAR_BANK_X - POST_INSET;
+  for (let i = 0; i <= postCount; i++) {
+    const worldX = postSpanX1 + (postSpanX2 - postSpanX1) * (i / postCount);
+    const px = worldX - camX;
+    const deckY = gy - forestRiverBridgeHeightAt(worldX) - 6;
+    ctx.fillStyle = "#4a3420";
+    ctx.fillRect(px - 4, deckY + 2, 8, gy + 40 - deckY);
+  }
+
+  // the bridge deck itself -- a real arc, sampled at each plank
+  // boundary so the curve reads clearly (a smooth Math.sin hump, same
+  // curve the real collision snap in updateForestScene follows, so
+  // what you see is exactly what you stand on). Spans the FULL bank-
+  // to-bank distance now, flush with solid ground on both ends.
+  const deckSamples = 32;
+  const deckPts = [];
+  for (let i = 0; i <= deckSamples; i++) {
+    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / deckSamples);
+    deckPts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) });
+  }
+  ctx.fillStyle = "#8a6438";
+  ctx.beginPath();
+  ctx.moveTo(deckPts[0].x, deckPts[0].y - 6);
+  deckPts.forEach(p => ctx.lineTo(p.x, p.y - 6));
+  for (let i = deckPts.length - 1; i >= 0; i--) ctx.lineTo(deckPts[i].x, deckPts[i].y + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a3420";
+  ctx.lineWidth = 1;
+  // plank divisions, evenly spaced along the curve
+  const plankCount = 22;
+  for (let i = 0; i <= plankCount; i++) {
+    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / plankCount);
+    const px = worldX - camX, py = gy - forestRiverBridgeHeightAt(worldX);
+    ctx.beginPath();
+    ctx.moveTo(px, py - 6);
+    ctx.lineTo(px, py + 2);
+    ctx.stroke();
+  }
+
+  // low rope railings, tracing the same arc a little above the deck --
+  // kept short (knee-height) so they read as a real railing without
+  // competing with the player sprite's own height when crossing
+  [-14, -6].forEach((railOffset, ri) => {
+    ctx.strokeStyle = ri === 0 ? "rgba(205,195,165,0.85)" : "rgba(160,130,90,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    deckPts.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y + railOffset);
+      else ctx.lineTo(p.x, p.y + railOffset);
+    });
+    ctx.stroke();
+  });
+  // railing posts, rising from the deck up to the rails, at each support post
+  for (let i = 0; i <= postCount; i++) {
+    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / postCount);
+    const px = worldX - camX, py = gy - forestRiverBridgeHeightAt(worldX);
+    ctx.strokeStyle = "#4a3420";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px, py - 6);
+    ctx.lineTo(px, py - 16);
+    ctx.stroke();
+  }
 }
 
 // nicer, more detailed foreground trees -- meant to be a real recurring
@@ -12132,6 +12439,12 @@ let forestClockworkLeverReturnTime = -Infinity; // performance.now() of the last
 // eased toward the current ride tilt while riding, eased back to 0 once
 // the player steps off -- read directly by the shared player draw()
 let forestGearRideAngle = 0;
+// same idea, but for the river bridge's arc -- tracks the slope of the
+// curve directly under the player (see forestRiverBridgeSlopeAt) so the
+// sprite visually leans along the arc while crossing it, rather than
+// staying a flat box that pokes through the curved deck/rail on the
+// steeper parts ("player needs to go around the arc, not cut into it")
+let forestBridgeTiltAngle = 0;
 
 // simple back-out ease -- overshoots past 1 then settles, used for the
 // punchy "just got yanked" feel on the lever pull
@@ -13031,6 +13344,34 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  // RIVER BRIDGE ARC — same sampled-ramp technique as autumn's own
+  // ramp collision (see applyPhysics), just following a sine hump
+  // instead of a straight slope, so the player's height actually
+  // follows the arc drawn in drawForestRiver rather than walking flat
+  // across it. Only snaps while genuinely at/near the deck surface and
+  // not moving upward, same guard the ramp uses, so a jump made while
+  // crossing isn't yanked back down onto the curve mid-air.
+  if (player.x + player.width > FOREST_RIVER_NEAR_BANK_X && player.x < FOREST_RIVER_FAR_BANK_X) {
+    const bridgeHeight = forestRiverBridgeHeightAt(player.x + player.width / 2);
+    const heightDiff = bridgeHeight - player.y;
+    if (heightDiff >= -6 && heightDiff <= 10 && player.vy <= 0) {
+      player.y = bridgeHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      // lean the sprite to match the curve's own slope right here --
+      // directly set, not eased, since the correct angle at this exact
+      // x is always known outright (no reason to lag behind it the way
+      // the gear lean does, which is smoothing out a genuinely abrupt
+      // per-frame carry motion)
+      forestBridgeTiltAngle = -forestRiverBridgeSlopeAt(player.x + player.width / 2) * 0.7;
+    }
+  } else if (forestBridgeTiltAngle !== 0) {
+    // eased back to upright once off the bridge entirely
+    forestBridgeTiltAngle *= 0.8;
+    if (Math.abs(forestBridgeTiltAngle) < 0.01) forestBridgeTiltAngle = 0;
+  }
+
   // set inside the FOREST_INTRO_GEARS loop below when the player is
   // standing still on one of the five always-spinning breather-row
   // gears -- read further down alongside onSpinningGear to drive the
@@ -30278,7 +30619,8 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // together"). Capped well under the tub's own angle so it still
   // reads as the character tumbling, not just rotating like a box.
   const mineCartTipLean = (typeof mineCart !== "undefined" && mineCart.ending) ? mineCart.tipAngle * 0.4 : 0;
-  const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0);
+  const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0);
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -31092,6 +31434,26 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
+
+// TEMPORARY -- drops into forest right where you'd climb back out
+// after finishing up molehole/tunnel town, with the mine cart already
+// ridden and the shaft already fixed (as if that whole chain were
+// already done), so the river crossing -- the very next stretch past
+// the mole hole entrance -- is reachable immediately by just walking
+// right, without replaying molehole/tunnel town first. Revert (remove
+// this block) once the river is done being tested.
+currentScene = "forest";
+mineCartEverRidden = true;
+moleholeShaftFixed = true;
+elderTalkedTo = true;
+player.x = moleHoleEntrance.x;
+player.y = 0;
+player.vy = 0;
+player.jumping = false;
+player.usedDoubleJump = false;
+cameraX = Math.max(0, player.x - canvas.width * 0.4);
+cameraY = 0;
+updateInventoryUI();
 
 update();
 
