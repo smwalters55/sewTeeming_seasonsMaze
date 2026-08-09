@@ -11223,6 +11223,31 @@ function drawForestRiver(camX) {
           }
         }
       }
+      // the whole-bridge finish gets its own bigger moment on top of
+      // any individual deck-lock flash above -- once the LAST segment
+      // decks, a golden flash+dust sweeps across every segment in
+      // sequence (staggered ~40ms apart), a distinct warmer color so it
+      // reads as the special "you're done" wave, not just another
+      // regular deck-lock repeating seven times
+      if (forestRiverBridgeCompletedAt) {
+        const sweepElapsed = performance.now() - (forestRiverBridgeCompletedAt + seg * 40);
+        if (sweepElapsed >= 0 && sweepElapsed < 300) {
+          const sweepT = sweepElapsed / 300;
+          const midP = segPts[Math.floor(segPts.length / 2)];
+          ctx.fillStyle = `rgba(255,245,200,${0.55 * (1 - sweepT)})`;
+          ctx.beginPath();
+          ctx.ellipse(midP.x, midP.y - 4, 16 * (0.6 + sweepT * 0.7), 7, 0, 0, Math.PI * 2);
+          ctx.fill();
+          for (let i = 0; i < 5; i++) {
+            const ang = -0.4 + i * 0.2;
+            const dist = sweepT * (14 + i * 3);
+            ctx.fillStyle = `rgba(230,200,140,${0.45 * (1 - sweepT)})`;
+            ctx.beginPath();
+            ctx.ellipse(midP.x + Math.cos(ang) * dist, midP.y - 2 - Math.sin(ang) * dist * 0.5, 3 - sweepT * 1.5, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
     } else if (seg < forestRiverSegmentsStrung) {
       drawStringerSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), forestRiverStringerWobble(seg));
     }
@@ -11278,6 +11303,27 @@ function drawForestRiver(camX) {
     ctx.moveTo(px, py - 6);
     ctx.lineTo(px, py - 16);
     ctx.stroke();
+  }
+
+  // a soft warm glow along the full railing line, rising then easing
+  // back out over about 700ms -- the calmer, whole-span half of the
+  // finish celebration, underneath the golden segment-sweep above
+  if (forestRiverBridgeCompletedAt) {
+    const sinceWin = performance.now() - forestRiverBridgeCompletedAt;
+    if (sinceWin < 700) {
+      const glowT = Math.min(1, sinceWin / 700);
+      const glowAlpha = Math.sin(glowT * Math.PI) * 0.5;
+      [-14, -6].forEach(railOffset => {
+        ctx.strokeStyle = `rgba(255,235,170,${glowAlpha})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        deckPts.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x, p.y + railOffset);
+          else ctx.lineTo(p.x, p.y + railOffset);
+        });
+        ctx.stroke();
+      });
+    }
   }
 
   // the log pile at the near bank -- a found local stack, not carried
@@ -12907,6 +12953,7 @@ let forestRiverPebbleLastX = null;
 // physical action rather than an instant item swap
 let forestRiverPileSettleAt = 0;
 let forestRiverLogPickedUpAt = 0;
+let forestRiverBridgeCompletedAt = 0; // performance.now() the moment the LAST segment decks -- drives the finish-the-bridge sweep+pose celebration
 
 // simple back-out ease -- overshoots past 1 then settles, used for the
 // punchy "just got yanked" feel on the lever pull
@@ -13954,6 +14001,12 @@ function updateForestScene(deltaTime) {
       if (onBeat) {
         forestRiverLogPlacedAt[deckIdx] = performance.now();
         forestRiverSegmentsDecked++;
+        // the very last segment finishing the whole bridge is its own
+        // bigger moment -- kicks off the segment-sweep flash + player
+        // victory pose (see drawForestRiver / the player draw function)
+        if (forestRiverSegmentsDecked === FOREST_RIVER_LOG_SEGMENTS) {
+          forestRiverBridgeCompletedAt = performance.now();
+        }
       } else {
         forestRiverStringerMissBumpAt[deckIdx] = performance.now();
       }
@@ -31244,6 +31297,25 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
       const feetX = swayCx, feetY = drawPy + player.height;
       ctx.translate(feetX, feetY);
       ctx.scale(1 / squashY, squashY);
+      ctx.translate(-feetX, -feetY);
+    }
+  }
+
+  // the whole-bridge finish gets its own bigger moment -- a little
+  // "hooray" hop/stretch instead of the log-pickup's small downward
+  // squash, timed to land right as the segment-sweep flash (see
+  // drawForestRiver) finishes crossing the span. Same feet-anchored
+  // scale trick, just stretching UP instead of compressing down, plus
+  // a small visual-only hop (no actual player.y/physics change).
+  if (typeof forestRiverBridgeCompletedAt !== "undefined" && forestRiverBridgeCompletedAt) {
+    const sinceWin = performance.now() - forestRiverBridgeCompletedAt;
+    if (sinceWin < 500) {
+      const p = sinceWin / 500;
+      const stretchY = 1 + Math.sin(p * Math.PI) * 0.22;
+      const hop = Math.sin(p * Math.PI) * 9;
+      const feetX = swayCx, feetY = drawPy + player.height;
+      ctx.translate(feetX, feetY - hop);
+      ctx.scale(1 / stretchY, stretchY);
       ctx.translate(-feetX, -feetY);
     }
   }
