@@ -10581,7 +10581,12 @@ function updateReflectionPool() {
 function drawForestReflectionPool(camX) {
   const px = FOREST_REFLECTION_POOL_X - camX;
   if (px < -160 || px > canvas.width + 160) return;
-  const poolW = 130, poolH = 34;
+  // taller than the first pass (was 34) -- the canopy+trunk reflection
+  // needs real vertical room to read as a canopy near the surface with
+  // a trunk actually descending below it; the shorter pool clipped most
+  // of that away against the ellipse's own bounds (the trunk in
+  // particular was never actually visible, just silently cut off).
+  const poolW = 130, poolH = 46;
   const poolY = gy + 8;
 
   ctx.save();
@@ -10604,38 +10609,109 @@ function drawForestReflectionPool(camX) {
     else if (elapsed < REFLECTION_FADE_IN_MS + REFLECTION_HOLD_MS) alpha = 1;
     else alpha = Math.max(0, 1 - (elapsed - REFLECTION_FADE_IN_MS - REFLECTION_HOLD_MS) / REFLECTION_FADE_OUT_MS);
 
-    // the reflection itself -- a big, pale, upside-down tree silhouette
-    // hanging DOWN into the pool from its own surface line (a true
-    // reflection's own orientation), instead of a normal upright tree
+    // the reflection itself -- a big, pale-moonlit, upside-down tree
+    // silhouette hanging DOWN into the pool from its own surface line (a
+    // true reflection's own orientation), instead of a normal upright
+    // tree. Foliage-green tones (not pale near-white) so it reads as a
+    // canopy and not a cloud against the blue water. NOTE on the local
+    // coordinate system below: after scale(1,-1), positive local y draws
+    // UP toward the surface/near edge of the pool and negative local y
+    // draws DOWN into the pool's depth -- the canopy mass sits mostly in
+    // positive y (just under the surface) and the trunk descends through
+    // negative y (down into the water), not the other way around. An
+    // earlier pass got this backwards, which silently clipped the trunk
+    // against the ellipse's own bounds so it never actually showed up
+    // ("i dont see tree trunk at all" -- turned out to apply here too).
     ctx.save();
-    ctx.globalAlpha = alpha * 0.55;
+    ctx.globalAlpha = alpha * 0.62;
     ctx.translate(px, poolY - 2);
     ctx.scale(1, -1);
-    ctx.fillStyle = "#dce8d0";
-    // an impossibly big, gnarled canopy -- several overlapping lumps,
-    // wider and taller than anything that could plausibly be standing
-    // just past the bridge, which is exactly the point of it
+    // one continuous lumpy silhouette (traced through irregular points,
+    // same organic-blob technique as the riverbank shapes) instead of a
+    // cluster of same-sized overlapping circles -- a few points pulled
+    // out further than the rest give it real asymmetric character
+    // (a long reaching bough on one side, a squatter knot on the other)
+    // rather than reading as "a pile of balls."
+    const canopyGrad = ctx.createRadialGradient(0, 8, 2, 0, 6, 26);
+    canopyGrad.addColorStop(0, "#6a8a5c");
+    canopyGrad.addColorStop(0.55, "#4f6e46");
+    canopyGrad.addColorStop(1, "#33492c");
+    ctx.fillStyle = canopyGrad;
+    ctx.beginPath();
+    tracePathOrganic(ctx, [
+      { x: -5, y: 21 }, { x: 11, y: 18 }, { x: 21, y: 8 },
+      { x: 28, y: -3 }, { x: 21, y: -12 }, { x: 9, y: -16 },
+      { x: -7, y: -17 }, { x: -21, y: -11 }, { x: -26, y: -1 },
+      { x: -21, y: 10 }, { x: -11, y: 18 }
+    ]);
+    ctx.closePath();
+    ctx.fill();
+    // a couple of gnarled knot-shadows and one whimsical curling
+    // branch-tip peeking out past the main silhouette, so it reads as
+    // a specific, characterful tree rather than a generic round mass
+    ctx.fillStyle = "#33492c";
+    ctx.beginPath();
+    ctx.ellipse(-12, -7, 8, 5.5, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(13, 9, 7, 5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#33492c";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(25, -3);
+    ctx.quadraticCurveTo(34, -1, 35, 6);
+    ctx.quadraticCurveTo(35, 11, 30, 11);
+    ctx.stroke();
+    // faint magical sparkles caught in the branches -- small pale glints
+    // rather than anything explained, the same "wordless hint" language
+    // as the rest of this glimpse, just leaning into "magical" now that
+    // it's meant to feel a little enchanted rather than just oversized
+    const sparkleT = (Math.sin(now * 0.003) + 1) / 2;
     [
-      { dx: -18, dy: 2, r: 20 }, { dx: 6, dy: -8, r: 24 }, { dx: 26, dy: 4, r: 18 },
-      { dx: -6, dy: 12, r: 16 }, { dx: 16, dy: 16, r: 14 }
-    ].forEach(l => {
+      { dx: -8, dy: -1, base: 0.5 }, { dx: 7, dy: -8, base: 0.85 }, { dx: 16, dy: 2, base: 0.2 }
+    ].forEach((s, i) => {
+      const tw = Math.max(0, Math.sin(now * 0.0021 + i * 2.1)) * 0.6 + 0.25;
+      ctx.fillStyle = `rgba(232,242,200,${(0.35 + sparkleT * 0.15) * tw})`;
       ctx.beginPath();
-      ctx.arc(l.dx, l.dy, l.r, 0, Math.PI * 2);
+      ctx.arc(s.dx, s.dy, 1.4, 0, Math.PI * 2);
       ctx.fill();
     });
-    // a slim trunk descending further than the canopy alone would
-    // suggest, hinting the whole thing is much taller than it has any
-    // right to be
-    ctx.fillStyle = "#c8d8ba";
-    ctx.fillRect(-3, 20, 6, 26);
+    // a thick, gnarled trunk descending well past the canopy in a real
+    // curve (not a straight rectangle), hinting the whole thing is much
+    // taller than it has any right to be -- with splayed root/branch
+    // flares where it meets the canopy so it reads as "trunk." Descends
+    // through NEGATIVE local y (down into the pool), staying near x=0
+    // the whole way so it doesn't run outside the ellipse's shrinking
+    // width as it nears the bottom edge.
+    ctx.fillStyle = "#2c2115";
+    ctx.beginPath();
+    ctx.moveTo(-3.5, -16);
+    ctx.lineTo(-10, -21);
+    ctx.lineTo(-6, -23);
+    ctx.lineTo(-3, -17);
+    ctx.lineTo(3, -17);
+    ctx.lineTo(6, -23);
+    ctx.lineTo(10, -21);
+    ctx.lineTo(3.5, -16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-3.5, -16);
+    ctx.quadraticCurveTo(-5, -21, -1.5, -24);
+    ctx.lineTo(2, -24);
+    ctx.quadraticCurveTo(0, -21, 3.5, -16);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
 
-    // a few horizontal ripple breaks through the reflection so it reads
-    // as sitting on disturbed water rather than a crisp, too-solid image
+    // a few ripple breaks through the reflection so it reads as sitting
+    // on disturbed water rather than a crisp, too-solid image
     ctx.strokeStyle = `rgba(230,240,225,${alpha * 0.25})`;
     ctx.lineWidth = 1;
-    for (let i = 0; i < 4; i++) {
-      const ry = poolY - 4 + i * 6 + Math.sin(now * 0.0016 + i) * 1.5;
+    for (let i = 0; i < 5; i++) {
+      const ry = poolY - 10 + i * 8 + Math.sin(now * 0.0016 + i) * 1.5;
       ctx.beginPath();
       ctx.moveTo(px - poolW * 0.36, ry);
       ctx.lineTo(px + poolW * 0.36, ry);
@@ -10849,11 +10925,11 @@ let forestRiverStringerMissBumpAt = []; // performance.now() per segment index, 
 let forestRiverFootDustAt = 0; // last time a dust fleck kicked up from the player's feet while crossing an undecked stringer
 let forestRiverFootDustParticles = []; // {x, y, t} world-space flecks, spawned while crossing an undecked stringer, pruned once faded
 
-// WADING -- the two shallow-water shapes (the near-bank source and the
-// far-bank bend, see drawForestRiver) are walkable, not deep water, per
+// WADING -- the open-water stretches of the near-bank source and the
+// far-bank bend (see drawForestRiver) are walkable, not deep water, per
 // direct steer ("walk normally, just visually wet"). No new movement
 // mechanic -- this just eases a 0..1 amount toward 1 while the player is
-// actually standing in one of those two zones (grounded, not mid-air/on
+// actually standing in one of these zones (grounded, not mid-air/on
 // the bridge deck), which the shared player draw reads to tint the
 // sprite's lower half. Eased rather than snapped so stepping in/out
 // doesn't pop.
@@ -10864,18 +10940,26 @@ let forestRiverFootDustParticles = []; // {x, y, t} world-space flecks, spawned 
 // other winds OUT away from it. tipAtStart records which end is the tip
 // so forestRiverWadeDepth below can compute "how deep is the water
 // HERE" instead of just "is the player in the zone at all."
-// NOTE: these stop well short of the water shapes' own full extent
-// (the near source reaches FOREST_RIVER_NEAR_BANK_X-260..NEAR_BANK_X,
-// the far bend reaches FAR_BANK_X..FAR_BANK_X+190) because the sand
-// bank/tendril (see drawForestRiver's NEAR/FAR BANK blocks) sits on top
-// of most of that inner span -- standing there is standing on dry
-// beach, not in water, even though the water polygon underneath it
-// technically extends that far ("when on the banks, dont have water
-// line on body"). Only the genuinely open-water sliver past where the
-// sand actually reaches counts as wadeable.
+// Four zones now instead of two -- confirmed against actual screenshots
+// (not just the water polygon's own math) that the visible sand dune/
+// path on each bank sits roughly NEAR_BANK_X-230..NEAR_BANK_X-85 and
+// FAR_BANK_X+45..FAR_BANK_X+148, with genuinely open water on either
+// side of it: a short stretch right next to each bridge post (that's
+// the part that used to read as "walking on top of the water" -- see
+// "i should be under water slightly here, between bank and bridge"),
+// and each zone's original far-out shallow tip. A single zone spanning
+// the whole thing (an earlier pass, extending straight to the bridge)
+// overshot and re-wet the sprite while standing on dry sand too ("dont
+// [w]ade under water when on bank"), so the sand's own span is now a
+// gap between two separate wade zones instead of being inside one. The
+// WADING block below already only applies this while grounded and off
+// the bridge deck (player.y <= 2, !jumping), so none of this affects
+// players actually up on the arched bridge itself.
 const FOREST_RIVER_SHALLOW_ZONES = [
-  { x1: FOREST_RIVER_NEAR_BANK_X - 260, x2: FOREST_RIVER_NEAR_BANK_X - 165, tipAtStart: true },
-  { x1: FOREST_RIVER_FAR_BANK_X + 148, x2: FOREST_RIVER_FAR_BANK_X + 190, tipAtStart: false }
+  { x1: FOREST_RIVER_NEAR_BANK_X - 260, x2: FOREST_RIVER_NEAR_BANK_X - 240, tipAtStart: true }, // far-out spring tip
+  { x1: FOREST_RIVER_NEAR_BANK_X - 85, x2: FOREST_RIVER_NEAR_BANK_X, tipAtStart: true }, // open water beside the near bridge post
+  { x1: FOREST_RIVER_FAR_BANK_X, x2: FOREST_RIVER_FAR_BANK_X + 45, tipAtStart: false }, // open water beside the far bridge post
+  { x1: FOREST_RIVER_FAR_BANK_X + 148, x2: FOREST_RIVER_FAR_BANK_X + 190, tipAtStart: false } // far-out loop tip
 ];
 let forestRiverWadeAmount = 0;
 // 0 (at a zone's shallow tip -- ankle-deep at most) .. 1 (right at the
@@ -33317,16 +33401,17 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- drops right in the mole hole mirror stall (centered on
-// the hourglass mirror) for debugging the mirrors, instead of the river
-// bridge site. Still seeds the bridge/mine-cart/shaft state below too,
-// so the river is also reachable without replaying molehole/tunnel town
-// if that's still needed. Revert (remove this block) once done testing.
-currentScene = "molehole";
+// TEMPORARY -- drops right at the far (built) end of the river bridge in
+// forest, for debugging the reflection pool / whatever's past the bridge,
+// instead of the mole hole mirror stall. Still seeds the bridge/mine-cart/
+// shaft state below too, so molehole/tunnel town remain in their completed
+// state without replaying them if that's still needed. Revert (remove this
+// block) once done testing.
+currentScene = "forest";
 mineCartEverRidden = true;
 moleholeShaftFixed = true;
 elderTalkedTo = true;
-player.x = MIRROR_STALL_X - 55;
+player.x = FOREST_RIVER_FAR_BANK_X;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
