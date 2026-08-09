@@ -25329,6 +25329,42 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY - halfH * 1.5, halfW * 2.6, halfH * 1.5);
 
     ctx.restore();
+
+    // a brief burst of mystical sparkles right when the scene reveals
+    // itself -- reinforces "you just uncovered a hidden vision nobody's
+    // supposed to see yet" rather than the picture simply appearing.
+    // Tied to triptychReveal's own timestamp (set once per reveal in
+    // drawTriptychMirror, not per panel), so all three panels sparkle
+    // together on the same beat instead of independently.
+    const revealElapsed = t - triptychReveal.startTime;
+    if (revealElapsed < TRIPTYCH_REVEAL_SPARKLE_MS) {
+      const fade = 1 - revealElapsed / TRIPTYCH_REVEAL_SPARKLE_MS;
+      const panelSeed = ox * 3.7 + oy * 1.3;
+      ctx.save();
+      for (let i = 0; i < 5; i++) {
+        const sp = panelSeed + i * 17.3;
+        const hashX = Math.sin(sp * 12.9898) * 43758.5453;
+        const hashY = Math.sin(sp * 78.233) * 12543.723;
+        const sx = (hashX - Math.floor(hashX) - 0.5) * halfW * 2.4;
+        const sy = (hashY - Math.floor(hashY) - 0.5) * halfH * 2.4;
+        const twinkle = 0.4 + 0.6 * Math.max(0, Math.sin(t * 0.012 + sp * 5));
+        const rr = (0.5 + twinkle * 0.7) * 1.6;
+        ctx.globalAlpha = fade * twinkle;
+        ctx.fillStyle = "rgba(225,240,255,0.95)";
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - rr * 2);
+        ctx.lineTo(sx + rr * 0.5, sy - rr * 0.5);
+        ctx.lineTo(sx + rr * 2, sy);
+        ctx.lineTo(sx + rr * 0.5, sy + rr * 0.5);
+        ctx.lineTo(sx, sy + rr * 2);
+        ctx.lineTo(sx - rr * 0.5, sy + rr * 0.5);
+        ctx.lineTo(sx - rr * 2, sy);
+        ctx.lineTo(sx - rr * 0.5, sy - rr * 0.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 }
 
@@ -25370,7 +25406,15 @@ function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.restore();
 }
 
+// tracks when the triptych's shared glimpse scene last switched on, so
+// all three panels can sparkle together on the same reveal beat (see
+// the "forestPreview" branch of drawMirrorGlimpseContent) instead of
+// each panel timing its own burst independently
+const triptychReveal = { wasNear: false, startTime: -Infinity };
+const TRIPTYCH_REVEAL_SPARKLE_MS = 1400;
 function drawTriptychMirror(cx, cy, scale, glimpseId, isNear) {
+  if (isNear && !triptychReveal.wasNear) triptychReveal.startTime = performance.now();
+  triptychReveal.wasNear = isNear;
   const r = 15 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -25438,43 +25482,64 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
   ctx.restore();
 }
 
-// a rare, unsettling reflection ONLY visible in the hourglass mirror's
-// glass -- never present in the room itself. The player's own
-// silhouette, but dark and wearing a huge carved gopher mask, slowly
-// turning to face you before fading back out. Rolls for a chance to
-// trigger every few seconds while the player is near, then goes on a
-// long cooldown once it's played through, so it stays a rare "did I
-// actually see that" moment rather than a reliable fixture.
-const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0, everSeen: false, firstNearAt: 0 };
-const HOURGLASS_APPARITION_MS = 2600;
+// an unsettling reflection ONLY visible in the hourglass mirror's glass
+// -- never present in the room itself. The player's own silhouette, but
+// dark and wearing a huge carved gopher mask. Rolls for a chance to
+// trigger every few seconds while the player is near. Once triggered it
+// does a slow turn-to-face-you intro, then stays LIVE for as long as the
+// player is still in the mirror's zone -- tracking their left/right
+// movement and jump like a real reflection would -- and simply ends the
+// instant they step out of range (falling back to the idle parade),
+// rather than fading out on its own fixed timer. Still not something
+// you see every single time you walk up (there's a cooldown + a roll),
+// but noticeably more often than the original "rare flicker" version.
+const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0, everSeen: false, firstNearAt: 0, visitCount: 0, wasNear: false };
+const HOURGLASS_INTRO_MS = 700; // just the initial turn-to-face-you beat
 function updateHourglassApparition(isNear) {
-  if (!isNear) return;
   const now = performance.now();
-  if (hourglassApparition.active) {
-    if (now - hourglassApparition.startTime > HOURGLASS_APPARITION_MS) {
+  if (!isNear) {
+    // stepping out of the zone ends it immediately -- no lingering fade,
+    // it just goes back to being a normal (parade) mirror
+    if (hourglassApparition.active) {
       hourglassApparition.active = false;
-      hourglassApparition.nextRollAt = now + 8000 + Math.random() * 9000;
+      hourglassApparition.nextRollAt = now + 3000 + Math.random() * 4000;
     }
+    hourglassApparition.firstNearAt = 0;
+    hourglassApparition.wasNear = false;
     return;
   }
-  // guarantee it plays once, shortly after the very first time the
-  // player is ever near -- otherwise whether someone ever sees it at
-  // all is down to luck, which just reads as "nothing happens here"
+  // count a "visit" the moment the player enters the zone, not every
+  // frame they're in it
+  if (!hourglassApparition.wasNear) {
+    hourglassApparition.wasNear = true;
+    hourglassApparition.visitCount++;
+  }
+  if (hourglassApparition.active) return; // live + responsive while still in the zone
+  // guaranteed on the SECOND time the player ever passes by, not the
+  // first -- walking up once with nothing happening establishes "this
+  // is a normal mirror" first, so the mask showing up the very next
+  // time actually lands as a surprise instead of the mirror seeming
+  // broken/inert from the very first look
   if (!hourglassApparition.everSeen) {
-    if (!hourglassApparition.firstNearAt) hourglassApparition.firstNearAt = now;
-    if (now - hourglassApparition.firstNearAt > 900) {
-      hourglassApparition.active = true;
-      hourglassApparition.startTime = now;
-      hourglassApparition.everSeen = true;
+    if (hourglassApparition.visitCount >= 2) {
+      if (!hourglassApparition.firstNearAt) hourglassApparition.firstNearAt = now;
+      if (now - hourglassApparition.firstNearAt > 900) {
+        hourglassApparition.active = true;
+        hourglassApparition.startTime = now;
+        hourglassApparition.everSeen = true;
+      }
     }
     return;
   }
   if (now >= hourglassApparition.nextRollAt) {
-    if (Math.random() < 0.18) {
+    // higher odds and a much shorter recheck window than before -- less
+    // rare, per direct feedback -- while the post-trigger cooldown above
+    // still keeps it from being a guaranteed thing on every approach
+    if (Math.random() < 0.4) {
       hourglassApparition.active = true;
       hourglassApparition.startTime = now;
     } else {
-      hourglassApparition.nextRollAt = now + 2500 + Math.random() * 2500;
+      hourglassApparition.nextRollAt = now + 1200 + Math.random() * 1800;
     }
   }
 }
@@ -25611,21 +25676,32 @@ function drawHourglassParade(w, h) {
     ctx.restore();
   });
 }
-function drawHourglassApparition(w, h) {
+function drawHourglassApparition(w, h, live) {
   const now = performance.now();
-  const p = Math.min(1, (now - hourglassApparition.startTime) / HOURGLASS_APPARITION_MS);
-  // fade in, hold, fade out -- never just snaps on/off
-  const alpha = p < 0.15 ? p / 0.15 : p > 0.78 ? Math.max(0, (1 - p) / 0.22) : 1;
+  // fade in only, once, during the intro turn -- there's no fade-out
+  // timer anymore, it just cuts back to the parade the instant the
+  // player leaves the zone (see updateHourglassApparition)
+  const introP = Math.min(1, (now - hourglassApparition.startTime) / HOURGLASS_INTRO_MS);
+  const alpha = introP;
   if (alpha <= 0.01) return;
-  // starts turned away (in profile) and slowly turns to face the
-  // player over most of the duration -- a horizontal squash stands in
-  // for the actual head/body turn, cheap but reads fine at this size
-  const turnP = Math.min(1, p / 0.72);
-  const turnEase = turnP * turnP * (3 - 2 * turnP);
-  const squash = 0.32 + 0.68 * turnEase;
+  const introEase = introP * introP * (3 - 2 * introP);
+  // during the intro: starts turned away (in profile) and slowly turns
+  // to face the player, same beat as before. once the intro's done, it
+  // goes live -- tracking the player's own left/right position in front
+  // of the glass (turning further away from full-on the further off to
+  // one side they stand, like a reflection keeping you in view) instead
+  // of holding a fixed pose.
+  const lateralNorm = Math.max(-1, Math.min(1, (live?.lateral ?? 0) / 60));
+  const liveSquash = 0.55 + 0.45 * (1 - Math.abs(lateralNorm));
+  const squash = introP < 1 ? 0.32 + 0.68 * introEase : liveSquash;
+  // a small horizontal drift toward whichever side the player's standing
+  // on, plus a lift that rides the player's own jump height -- so the
+  // reflection visibly moves with you rather than just holding still
+  const driftX = introP < 1 ? 0 : lateralNorm * w * 0.16;
+  const jumpLift = introP < 1 ? 0 : Math.min(h * 0.14, (live?.jump ?? 0) * 0.35);
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.translate(0, h * 0.06);
+  ctx.translate(driftX, h * 0.06 - jumpLift);
   ctx.scale(squash, 1);
   // sized to feel like the player standing in the glass, not a figure
   // looming over the whole bulb -- and a good deal darker than the glass
@@ -25659,7 +25735,8 @@ function drawHourglassApparition(w, h) {
     ctx.ellipse(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.17, maskR * 0.23, 0, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.fillStyle = `rgba(190,170,255,${0.55 * turnEase})`;
+  const faceEase = introP < 1 ? introEase : 1 - Math.abs(lateralNorm);
+  ctx.fillStyle = `rgba(190,170,255,${0.55 * faceEase})`;
   [-1, 1].forEach(side => {
     ctx.beginPath();
     ctx.arc(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.06, 0, Math.PI * 2);
@@ -25678,7 +25755,7 @@ function drawHourglassApparition(w, h) {
   ctx.restore();
 }
 
-function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear) {
+function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
   const w = 34 * scale, h = 58 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -25713,12 +25790,18 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear) {
   path(); ctx.clip();
   ctx.fillRect(-w, -h, w * 2, h * 2);
   // two SEPARATE reflection marks, one per bulb, rather than one
-  // continuous diagonal streak across both -- per direct feedback
-  drawMirrorGlassReflections([
-    [-w * 0.22, -h * 0.34, -w * 0.05, -h * 0.14, 0.32, 1.3],
-    [w * 0.08, h * 0.16, w * 0.24, h * 0.36, 0.3, 1.2]
-  ]);
-  if (hourglassApparition.active) drawHourglassApparition(w, h);
+  // continuous diagonal streak across both -- per direct feedback.
+  // Skipped entirely whenever the parade or the mask apparition is
+  // actually showing (i.e. whenever isNear) -- the glossy diagonal
+  // streak cut right across the critters/mask and read as a stray line
+  // slicing through them rather than glass shine.
+  if (!isNear) {
+    drawMirrorGlassReflections([
+      [-w * 0.22, -h * 0.34, -w * 0.05, -h * 0.14, 0.32, 1.3],
+      [w * 0.08, h * 0.16, w * 0.24, h * 0.36, 0.3, 1.2]
+    ]);
+  }
+  if (hourglassApparition.active) drawHourglassApparition(w, h, live);
   else if (isNear) drawHourglassParade(w, h);
   ctx.restore();
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
@@ -26521,7 +26604,16 @@ function drawMirrorStall(camX) {
     }
     else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale, m.glimpse, isNear);
     else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean, m.glimpse, isNear, m.dx);
-    else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards, isNear);
+    else if (m.shape === "hourglass") {
+      // how far off-center (and how high in a jump) the player currently
+      // is, fed to the live reflection so it can track real movement
+      // instead of just holding a fixed pose
+      const hourglassLive = {
+        lateral: (player.x + player.width / 2) - (MIRROR_STALL_X + m.dx),
+        jump: player.y
+      };
+      drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards, isNear, hourglassLive);
+    }
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
     else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass, m.glimpse, isNear);
   });
