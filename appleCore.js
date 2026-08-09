@@ -116,7 +116,7 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "molehole"; // TEMPORARY — debugging the mole hole pass, revert to "autumn" when done
+let currentScene = "autumn";
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -147,7 +147,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 2400, // TEMPORARY — spawns right at the mirror stall for testing the glimpse mirrors, revert to 150 (then eventually 400) when done
+  x: 400,
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -23657,9 +23657,7 @@ const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJum
 // set once the player's actually ridden the cart down and back -- the
 // mirror stall stays hidden until then ("i dont want mirror wall
 // appearing until after first gold mine visit")
-// TEMPORARY — defaulted true for testing the glimpse mirrors without
-// having to ride the cart first every time; revert to false when done
-let mineCartEverRidden = true;
+let mineCartEverRidden = false;
 // separate from the rider's own localY/vy -- per direct feedback ("can
 // you make the cart bump along with the player slightly instead of just
 // the player bumping"), the tub itself now gets its own small, snappy
@@ -31094,65 +31092,6 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
-
-// TEMPORARY — seeds a mole-hole-entrance loadout so this pass can be
-// tested immediately without backtracking through autumn/spring/
-// forest first. The willow (shovel) sits at forest x2500, well before
-// the mole hole entrance hole at x3650, so the shovel's plausibly
-// already in hand. Revert (remove this block, and the door-filled
-// lines below) when done.
-addToInventory("shovel");
-heldItem = "shovel";
-for (let i = 0; i < 6; i++) addToInventory("bridgePiece"); // plausible forest haul by the time you reach the mole hole entrance
-for (let i = 0; i < 3; i++) addToInventory("acorn");
-addToInventory("appleSlice"); // apple splits into 3 -- 2 spent filling the autumn->spring and spring->forest doors, 1 left over
-// removed: addToInventory("cushionPart") -- this was granting a SECOND,
-// free gear on top of the real one buried at s5r. Placing the real one
-// into the shaft slot still left this debug-granted one sitting in
-// inventory afterward, which is exactly the "gear remains in inventory
-// after use" report -- the placement/consume logic itself was correct
-// the whole time (verified via harness: inventory.cushionPart really
-// does get decremented and deleted on placement), there were just two
-// gears in play and only one ever got used.
-connections[0].filled = true;
-connections[0].filledItemType = "appleSlice";
-connections[1].filled = true;
-connections[1].filledItemType = "appleSlice";
-updateInventoryUI();
-
-// TEMPORARY -- drops straight into the mole hole, standing right under
-// the geode breaker's "STONES AND MINERALS" stand, already holding one
-// of every tunnel-town find (stone, bridgePiece, aragonite, geode,
-// cushionPart/gear) as if the whole dig chain had just been cleared by
-// hand -- so the geode-breaker dialogue/shine/crack visuals and the
-// new lantern sway can all be checked out immediately without
-// redigging tunnel town first ("place me with all inventory from
-// tunneltown now in mole hole under the stones and minerals shop").
-// aragoniteShined/geodeCracked deliberately left false -- talking to
-// the geode breaker in-game is what triggers those, so this spawn
-// still lets that interaction (and its visuals) be tested live rather
-// than skipping straight to the already-polished end state. Revert
-// (remove this block, and the door-filled lines above) when done.
-currentScene = "molehole";
-addToInventory("stone");
-addToInventory("bridgePiece");
-addToInventory("aragonite");
-addToInventory("geode");
-addToInventory("cushionPart");
-// retargeted to stand right at the notice board for testing the
-// corkboard notices (was GEODE_BREAKER_X - 25) -- revert to that, or to
-// whatever the next thing being tested needs, when done here
-player.x = moleHoleNoticeBoard.x;
-player.y = 0;
-player.vy = 0;
-player.jumping = false;
-player.usedDoubleJump = false;
-cameraX = Math.max(0, player.x - canvas.width * 0.4);
-cameraY = 0;
-tunnelSafeX = null;
-tunnelSafeY = null;
-elderTalkedTo = true;
-updateInventoryUI();
 
 update();
 
