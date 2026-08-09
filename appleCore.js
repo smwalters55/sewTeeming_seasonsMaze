@@ -22156,41 +22156,14 @@ function drawMoleholeAlcove(alcove, camX) {
 }
 
 // TOWN NOTICE board -- a small carved-plank detail, same visual
-// language as the game's other carved-wood prompts. Now a real readable
-// notice (press near it, same pattern as the elders/shopkeeper dialogue)
-// instead of just illegible ink-mark lines -- content echoes the
-// reference art directly: the meeting notice, the still-broken lift,
-// and the town's own quiet Down Underground vs. Up Outside debate,
-// which the elders' own "the world belongs down here" line and the new
-// sign up at the tunnel town exit both play off of
+// language as the game's other carved-wood prompts. Press near it to
+// open the full corkboard reader (see CORKBOARD READER below) and read
+// every pinned notice at once -- content echoes the reference art
+// directly: the meeting notice, the still-broken lift, and the town's
+// own quiet Down Underground vs. Up Outside debate, which the elders'
+// own "the world belongs down here" line and the new sign up at the
+// tunnel town exit both play off of
 const moleHoleNoticeBoard = { x: 435, y: 60 }; // re-centered in the wider (140px) gap between the two alcoves after the whole row spread out
-const moleHoleNoticeLines = [
-  ["TOWN NOTICE", "Meeting Tuesdays, after lunch -- usual burrow."],
-  ["Lift's still out of order.", "If you find the gear, bring it up to the shaft."],
-  ["Some say it's past time we opened a way Up Outside again.", "Others say the world belongs down here just fine."]
-];
-const moleHoleBoardDialogue = { active: false, index: 0 };
-
-function startMoleHoleBoardDialogue() {
-  moleHoleBoardDialogue.active = true;
-  moleHoleBoardDialogue.index = 0;
-}
-
-function advanceMoleHoleBoardDialogue() {
-  moleHoleBoardDialogue.index++;
-  if (moleHoleBoardDialogue.index >= moleHoleNoticeLines.length) {
-    moleHoleBoardDialogue.active = false;
-  }
-}
-
-function drawMoleHoleBoardSpeechBubble(camX) {
-  if (!moleHoleBoardDialogue.active) return;
-  const beat = moleHoleNoticeLines[moleHoleBoardDialogue.index];
-  const isLast = moleHoleBoardDialogue.index === moleHoleNoticeLines.length - 1;
-  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
-  const bx = moleHoleNoticeBoard.x - camX - 10, by = gy - moleHoleNoticeBoard.y - 60;
-  drawFittedSpeechBubble(ctx, bx, by, displayLines);
-}
 
 function drawMoleHoleNoticeBoard(camX) {
   const nx = moleHoleNoticeBoard.x - camX, ny = gy - moleHoleNoticeBoard.y;
@@ -22214,6 +22187,144 @@ function drawMoleHoleNoticeBoard(camX) {
     ctx.lineTo(nx + w / 2 - 6 - i * 6, ny + dy);
     ctx.stroke();
   });
+}
+
+/* ======================================================
+   CORKBOARD READER — a lightweight full-overlay "walk up
+   and read the pinned notices" mode, same entry point as
+   the notice board used to have (walk up, press space),
+   but far simpler than the book reader: no page-turning,
+   every notice is just pinned to the board and shown at
+   once, since that's how an actual corkboard reads in
+   real life.
+   ====================================================== */
+const corkboardReader = { active: false, opening: false, openT: 0, closing: false, closeT: 0 };
+const CORKBOARD_OPEN_CLOSE_MS = 400;
+
+// laid out in a loose 3-2-3 grid, spaced generously enough that no two
+// papers' TEXT overlaps (a little corner overlap for that "pinned on
+// top of each other" look is fine -- covering actual words isn't)
+const corkboardNotices = [
+  { rot: -0.06, dx: -220, dy: -95, lines: ["TOWN NOTICE", "Meeting Tuesdays, after", "lunch -- usual burrow."] },
+  { rot: 0.05, dx: 0, dy: -100, lines: ["Lift's still out of order.", "If you find the gear, bring", "it up to the shaft."] },
+  { rot: -0.04, dx: 220, dy: -92, lines: ["ROLODEX BUILDING", "COMPETITION!! This Tuesday,", "near the lift. Bring your", "best cards."] },
+  { rot: 0.04, dx: -150, dy: 0, lines: ["Some say it's past time we", "opened a way Up Outside", "again. Others say the world", "belongs down here just fine."] },
+  { rot: -0.05, dx: 150, dy: 5, lines: ["Word is there's loot buried", "somewhere in the tunnels", "nearby -- if the stories are", "even half true."] },
+  { rot: 0.03, dx: -220, dy: 95, lines: ["LOST: one (1) very good hat.", "Answers to nothing.", "Reward: a favor, redeemable", "later."] },
+  { rot: -0.07, dx: 0, dy: 100, lines: ["Whoever keeps 'borrowing'", "MY good shovel --", "we know it's you."] },
+  { rot: 0.06, dx: 220, dy: 92, lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
+];
+
+function openCorkboardReader() {
+  corkboardReader.opening = true;
+  corkboardReader.openT = 0;
+}
+
+function updateCorkboardReader(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  if (corkboardReader.opening) {
+    corkboardReader.openT += dtMs;
+    if (corkboardReader.openT >= CORKBOARD_OPEN_CLOSE_MS) {
+      corkboardReader.opening = false;
+      corkboardReader.active = true;
+    }
+    return;
+  }
+  if (corkboardReader.closing) {
+    corkboardReader.closeT += dtMs;
+    if (corkboardReader.closeT >= CORKBOARD_OPEN_CLOSE_MS) {
+      corkboardReader.closing = false;
+    }
+    return;
+  }
+  if (!corkboardReader.active) return;
+  if (keys.spaceJustPressed) {
+    corkboardReader.active = false;
+    corkboardReader.closing = true;
+    corkboardReader.closeT = 0;
+  }
+}
+
+function drawCorkboardReader() {
+  const w = canvas.width, h = canvas.height;
+  const t = corkboardReader.opening ? corkboardReader.openT / CORKBOARD_OPEN_CLOSE_MS
+    : corkboardReader.closing ? Math.max(0, 1 - corkboardReader.closeT / CORKBOARD_OPEN_CLOSE_MS)
+    : 1;
+  const ease = t * t * (3 - 2 * t);
+
+  ctx.fillStyle = `rgba(20,14,8,${0.75 * ease})`;
+  ctx.fillRect(0, 0, w, h);
+  if (ease <= 0.01) return;
+
+  // shifted down slightly from dead-center so the board clears the
+  // inventory bar docked at the top of the screen
+  const cx = w / 2, cy = h / 2 + 15;
+  ctx.save();
+  ctx.globalAlpha = ease;
+  ctx.translate(cx, cy);
+  ctx.scale(0.85 + 0.15 * ease, 0.85 + 0.15 * ease);
+  ctx.translate(-cx, -cy);
+
+  // the board itself -- sized for the 3-2-3 notice grid below
+  const bw = Math.min(w - 40, 700), bh = Math.min(h - 70, 280);
+  const bx = cx - bw / 2, by = cy - bh / 2;
+  ctx.fillStyle = "#8a6a42";
+  roundRect(ctx, bx, by, bw, bh, 10);
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 6;
+  roundRect(ctx, bx, by, bw, bh, 10);
+  ctx.stroke();
+  // cork speckle texture -- cheap way to read as cork rather than a
+  // flat brown rectangle
+  ctx.fillStyle = "rgba(60,40,20,0.28)";
+  for (let i = 0; i < 70; i++) {
+    const sx = bx + pseudoRandom(i * 3.1) * bw;
+    const sy = by + pseudoRandom(i * 7.7 + 1) * bh;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.8 + pseudoRandom(i * 5.3) * 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // each pinned notice -- its own slightly rotated paper, offset from
+  // board center, with a small pin at the top
+  ctx.font = "10px ui-monospace";
+  const lineHeight = 12;
+  corkboardNotices.forEach(n => {
+    ctx.save();
+    ctx.translate(cx + n.dx, cy + n.dy);
+    ctx.rotate(n.rot);
+    const widths = n.lines.map(l => ctx.measureText(l).width);
+    const pw = Math.max(...widths) + 18, ph = n.lines.length * lineHeight + 14;
+    ctx.fillStyle = "rgba(250,244,225,0.97)";
+    ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+    ctx.strokeStyle = "rgba(40,30,20,0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
+    ctx.fillStyle = "#2b2318";
+    n.lines.forEach((line, i) => {
+      ctx.fillText(line, -pw / 2 + 9, -ph / 2 + 13 + i * lineHeight);
+    });
+    // the pin
+    ctx.beginPath();
+    ctx.arc(0, -ph / 2, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#b23a3a";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  ctx.restore();
+
+  ctx.globalAlpha = ease;
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "10px ui-monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("press SPACE to close", cx, by + bh + 24);
+  ctx.textAlign = "left";
+  ctx.globalAlpha = 1;
 }
 
 // draws one tapered root "tube" through a wiggly 3-point centerline
@@ -25502,7 +25613,7 @@ function updateHourglassApparition(isNear) {
     // it just goes back to being a normal (parade) mirror
     if (hourglassApparition.active) {
       hourglassApparition.active = false;
-      hourglassApparition.nextRollAt = now + 2500 + Math.random() * 3000;
+      hourglassApparition.nextRollAt = now + 6000 + Math.random() * 6000;
     }
     hourglassApparition.firstNearAt = 0;
     hourglassApparition.wasNear = false;
@@ -25533,14 +25644,16 @@ function updateHourglassApparition(isNear) {
     return;
   }
   if (now >= hourglassApparition.nextRollAt) {
-    // dialed back down a notch from the last pass -- that was tuned a
-    // little too eager, per direct feedback
-    if (Math.random() < 0.48) {
+    // dialed WAY back down -- the last couple passes were still firing
+    // far too often ("every other second"). Lower odds and a much
+    // longer recheck window so it's back to genuinely rare, not a
+    // reliable fixture you see on every glance.
+    if (Math.random() < 0.2) {
       hourglassApparition.active = true;
       hourglassApparition.startTime = now;
       hourglassApparition.introDir = Math.random() < 0.5 ? -1 : 1;
     } else {
-      hourglassApparition.nextRollAt = now + 900 + Math.random() * 1200;
+      hourglassApparition.nextRollAt = now + 4000 + Math.random() * 5000;
     }
   }
 }
@@ -26867,7 +26980,6 @@ function drawMoleholeScene(camX) {
   drawMoleShopSpeechBubble(camX);
   drawGeodeBreakerSpeechBubble(camX);
   drawGeodeCrackReveal(camX);
-  drawMoleHoleBoardSpeechBubble(camX);
 }
 
 function updateMoleholeScene(deltaTime) {
@@ -27118,28 +27230,12 @@ function updateMoleholeScene(deltaTime) {
     }
   }
 
-  // the notice board -- same dialogue-priority pattern as the
-  // shopkeeper/elders below, checked first since it's the first thing
-  // near the entrance
-  if (moleHoleBoardDialogue.active) {
-    // walking off mid-conversation used to leave the speech bubble
-    // hanging there forever, still anchored at the board's world
-    // position while the player wandered off to a totally different
-    // alcove ("this word bubble shouldn't follow player around like
-    // that" -- it wasn't literally following, it just never closed on
-    // its own, so it kept scrolling past with the rest of the room).
-    // A generous leash -- well past the tight trigger radius, so
-    // shifting around to read it doesn't accidentally cancel it -- auto-
-    // closes it once you've actually walked away.
-    if (!isPlayerNear(moleHoleNoticeBoard.x, 0, 150, 90, 90)) {
-      moleHoleBoardDialogue.active = false;
-    } else {
-      if (keys.spaceJustPressed) advanceMoleHoleBoardDialogue();
-      return;
-    }
-  }
-  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) && keys.spaceJustPressed) {
-    startMoleHoleBoardDialogue();
+  // the notice board -- now opens the full corkboard reader (walk up,
+  // press space, see every pinned notice at once) instead of the old
+  // one-line-at-a-time speech bubble
+  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) && keys.spaceJustPressed &&
+      !corkboardReader.active && !corkboardReader.opening && !corkboardReader.closing) {
+    openCorkboardReader();
     return;
   }
 
@@ -29784,6 +29880,8 @@ ctx.clearRect(0,0,canvas.width,canvas.height);
 
 if (bookReader.active || bookReader.opening || bookReader.closing) {
   drawBookReader();
+} else if (corkboardReader.active || corkboardReader.opening || corkboardReader.closing) {
+  drawCorkboardReader();
 } else if (carvingUI.active || carvingUI.opening || carvingUI.closing) {
   drawCarvingUI();
 } else if (camera.topDown) {
@@ -30534,6 +30632,17 @@ lastTime = now;
 
   if (bookReader.active || bookReader.opening || bookReader.closing) {
     updateBookReader(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
+
+  if (corkboardReader.active || corkboardReader.opening || corkboardReader.closing) {
+    updateCorkboardReader(deltaTime);
     keys.upJustPressed = false;
     keys.leftJustPressed = false;
     keys.rightJustPressed = false;
