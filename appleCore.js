@@ -10726,17 +10726,24 @@ function drawForestRiver(camX) {
   // mirror glimpse promised, well past the crossing itself so reaching
   // the far side reads as arriving somewhere genuinely new, not just
   // more of the same forest
+  // colored/opacity like the far background silhouettes elsewhere in
+  // the forest (see "far silhouettes"/"distant trees" further down),
+  // not a near-opaque near-black shape -- it was reading as a huge
+  // dark foreground cutout competing with the actual foreground trees
+  // instead of something hazy and receded, despite being drawn behind
+  // them ("this huge 'shadow' tree should be a background tree not
+  // foreground")
   const bigTreeX = fb + 95;
-  ctx.fillStyle = "rgba(18,28,15,0.6)";
-  ctx.fillRect(bigTreeX - 24, gy - 270, 48, 270);
+  ctx.fillStyle = "rgba(70,100,65,0.3)";
+  ctx.fillRect(bigTreeX - 16, gy - 255, 32, 255);
   ctx.beginPath();
-  ctx.arc(bigTreeX, gy - 260, 105, 0, Math.PI * 2);
-  ctx.arc(bigTreeX - 62, gy - 215, 72, 0, Math.PI * 2);
-  ctx.arc(bigTreeX + 68, gy - 222, 78, 0, Math.PI * 2);
+  ctx.arc(bigTreeX, gy - 248, 95, 0, Math.PI * 2);
+  ctx.arc(bigTreeX - 58, gy - 208, 65, 0, Math.PI * 2);
+  ctx.arc(bigTreeX + 64, gy - 214, 70, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "rgba(40,55,32,0.35)";
+  ctx.fillStyle = "rgba(95,130,80,0.2)";
   ctx.beginPath();
-  ctx.arc(bigTreeX - 20, gy - 280, 55, 0, Math.PI * 2);
+  ctx.arc(bigTreeX - 18, gy - 268, 50, 0, Math.PI * 2);
   ctx.fill();
 
   // "winding off into the distance" hint at both ends -- this is a 2D
@@ -10855,7 +10862,17 @@ function drawForestRiver(camX) {
     }
     for (let i = 0; i < 5; i++) {
       const f = 0.12 + i * 0.16;
-      const seedI = nb * 1.3 + i * 9.1;
+      // seed by index ONLY, not by nb -- nb is the bank's on-SCREEN x
+      // (world x minus camX), which shifts every single frame the
+      // player moves, so seeding the random height off of it was
+      // re-rolling every reed's height every frame during any walking
+      // at all. That's the exact "taller grasses... still do that
+      // throttle [misbehavior]" bug -- these reeds were never gated by
+      // forestRiverPebbleShuffle in the first place, they had their
+      // own separate always-on reseeding hiding right next to the
+      // (now-fixed) pebbles. Height is now fixed per reed; only the
+      // gentle sway below still moves, off of time, same as always.
+      const seedI = i * 9.1;
       const rx = topX + (waterX - topX) * f;
       const ry = topY + (waterY - topY) * f;
       const reedH = 20 + pseudoRandom(seedI) * 14;
@@ -10889,14 +10906,16 @@ function drawForestRiver(camX) {
     ctx.closePath();
     ctx.fill();
     for (let i = 0; i < 4; i++) {
-      const seedI = bx * 0.7 + i * 5.3;
+      // seed by index only, same fix as the near bank -- bx is a
+      // screen-space (camera-relative) position, not a stable seed
+      const seedI = i * 5.3;
       ctx.fillStyle = "#5a5040";
       ctx.beginPath();
       ctx.ellipse(bx + dir * (10 + i * 9), gy + 10 + pseudoRandom(seedI) * 4, 4, 2.4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     for (let i = 0; i < 5; i++) {
-      const seedI = bx * 1.3 + i * 9.1;
+      const seedI = i * 9.1;
       const rx = bx + dir * (6 + i * 7);
       const reedH = 20 + pseudoRandom(seedI) * 14;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
