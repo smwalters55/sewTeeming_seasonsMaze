@@ -26948,21 +26948,78 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     const bobX = pivotX + ropeLen * Math.sin(angle);
     const bobY = pivotY + ropeLen * Math.cos(angle);
 
-    ctx.strokeStyle = "#5a4530";
-    ctx.lineWidth = Math.max(0.7, halfW * 0.05);
-    ctx.beginPath();
-    ctx.moveTo(pivotX, pivotY);
-    ctx.lineTo(bobX, bobY);
-    ctx.stroke();
+    // a hint of the real plum tree the swing actually hangs from -- just
+    // a few fruit peeking down from the top edge of the frame (no
+    // branches/canopy drawn, same "a literal tree shape read as odd
+    // scenery" reasoning as the dropped background-tree attempt above),
+    // per direct request to show a hint of the fruit now that it was
+    // pointed out. Fixed positions (seeded), not tied to the swing's
+    // own motion. Positioned within the actual visible clip (roughly
+    // -halfH to +halfH, halfW to -halfW -- "by/bx" are the oversized
+    // backdrop rect's own bounds, well outside what the oval clip
+    // actually shows) rather than up near "by", which sits clipped away.
+    const fruitSpots = [
+      { fx: -halfW * 0.62, fy: -halfH * 0.78 },
+      { fx: halfW * 0.1, fy: -halfH * 0.88 },
+      { fx: halfW * 0.68, fy: -halfH * 0.7 }
+    ];
+    ctx.fillStyle = "#6a3a8a";
+    fruitSpots.forEach(f => {
+      ctx.beginPath();
+      ctx.arc(f.fx, f.fy, halfW * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    fruitSpots.forEach(f => {
+      ctx.beginPath();
+      ctx.arc(f.fx - halfW * 0.02, f.fy - halfW * 0.02, halfW * 0.018, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // two ropes + rounded wood-grain seat, matching the real spring
+    // swing's own updated look exactly (see drawSwing) -- per direct
+    // request that this glimpse actually match the real thing
+    const seatHalfW = halfW * 0.36, seatH = halfH * 0.24;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    const localToWorld = (lx, ly) => ({
+      x: bobX + lx * cosA - ly * sinA,
+      y: bobY + lx * sinA + ly * cosA
+    });
+    const leftAttach = localToWorld(-seatHalfW + seatHalfW * 0.22, seatH * 0.15);
+    const rightAttach = localToWorld(seatHalfW - seatHalfW * 0.22, seatH * 0.15);
+    ctx.strokeStyle = "#6b5238";
+    ctx.lineWidth = Math.max(0.6, halfW * 0.038);
+    [leftAttach, rightAttach].forEach(p => {
+      ctx.beginPath();
+      ctx.moveTo(pivotX, pivotY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    });
 
     ctx.save();
     ctx.translate(bobX, bobY);
     ctx.rotate(angle);
-    ctx.fillStyle = "#8a5a2e";
-    ctx.fillRect(-halfW * 0.36, 0, halfW * 0.72, halfH * 0.24);
+    ctx.fillStyle = "#9a6a38";
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-seatHalfW, 0, seatHalfW * 2, seatH, Math.max(1, seatH * 0.3)); ctx.fill(); }
+    else ctx.fillRect(-seatHalfW, 0, seatHalfW * 2, seatH);
     ctx.strokeStyle = "#5a3a1a";
     ctx.lineWidth = Math.max(0.5, halfW * 0.02);
-    ctx.strokeRect(-halfW * 0.36, 0, halfW * 0.72, halfH * 0.24);
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-seatHalfW, 0, seatHalfW * 2, seatH, Math.max(1, seatH * 0.3)); ctx.stroke(); }
+    else ctx.strokeRect(-seatHalfW, 0, seatHalfW * 2, seatH);
+    ctx.strokeStyle = "rgba(90,58,26,0.5)";
+    ctx.lineWidth = Math.max(0.4, halfW * 0.015);
+    [seatH * 0.35, seatH * 0.75].forEach(gy2 => {
+      ctx.beginPath();
+      ctx.moveTo(-seatHalfW + seatHalfW * 0.14, gy2);
+      ctx.lineTo(seatHalfW - seatHalfW * 0.14, gy2);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "#4a2e14";
+    [-seatHalfW + seatHalfW * 0.22, seatHalfW - seatHalfW * 0.22].forEach(kx => {
+      ctx.beginPath();
+      ctx.arc(kx, seatH * 0.25, Math.max(0.5, halfW * 0.018), 0, Math.PI * 2);
+      ctx.fill();
+    });
     ctx.restore();
   } else if (glimpseId === "forestPreview") {
     // one continuous scene read across all three triptych panels, not
