@@ -24740,23 +24740,55 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
   } else if (glimpseId === "swing") {
     // spring's own rope-launch swing -- same rope color/plank seat as
     // the real drawSwing, pumping back and forth on its own pivot
-    // rather than a static hang, so it reads as the actual mechanic
+    // rather than a static hang, so it reads as the actual mechanic.
+    // Background deepened from the original flat bright-pastel fill --
+    // same "one flat color reads cheap" fix as the triptych's canopy and
+    // the autumn mirror's leaves -- into an actual gradient with a
+    // richer, less spring-postcard green.
     const sky = ctx.createLinearGradient(0, by, 0, by + bh);
-    sky.addColorStop(0, "#bfe6a0");
-    sky.addColorStop(1, "#8fcf6a");
+    sky.addColorStop(0, "#385c28");
+    sky.addColorStop(0.6, "#4f7a32");
+    sky.addColorStop(1, "#5f8a3a");
     ctx.fillStyle = sky;
     ctx.fillRect(bx, by, bw, bh);
     // a bit of ground at the bottom so the swing has somewhere to launch from
-    ctx.fillStyle = "#6a9a4a";
+    ctx.fillStyle = "#4a7a2e";
     ctx.fillRect(bx, by + bh * 0.82, bw, bh * 0.2);
 
-    // a little life down on the ground -- a few wildflowers, some grass
-    // tufts, and the squirrel wandering (occasionally pausing to rear up
-    // on its hind legs), so the mirror isn't just an empty swing
+    // a plain background tree, off to one side behind the rope -- muted
+    // and desaturated (not the real grafted/hybrid tree, which is tied
+    // to its own mechanic and would read as "is this telling me
+    // something" rather than just scenery) purely for depth so the
+    // whole mirror isn't just flat ground under an empty swing
+    const bgTreeX = -halfW * 0.62, bgTreeGroundY = halfH * 0.78;
+    ctx.fillStyle = "#4a5c3a";
+    ctx.fillRect(bgTreeX - halfW * 0.04, bgTreeGroundY - halfH * 0.55, halfW * 0.08, halfH * 0.55);
+    ["#4f6a42", "#5a7a4a", "#465c38"].forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.ellipse(bgTreeX + (i - 1) * halfW * 0.14, bgTreeGroundY - halfH * 0.62 - (i % 2) * halfH * 0.08, halfW * 0.22, halfH * 0.24, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // soft dappled sunlight through the canopy -- a few translucent warm
+    // spots, purely atmospheric texture
+    for (let i = 0; i < 4; i++) {
+      const seedI = seed + i * 6.8;
+      const dx0 = (pseudoRandom(seedI) - 0.5) * halfW * 1.6;
+      const dy0 = -halfH * 0.3 + pseudoRandom(seedI + 1) * halfH * 0.9;
+      ctx.fillStyle = "rgba(255,240,180,0.1)";
+      ctx.beginPath();
+      ctx.arc(dx0, dy0, halfW * (0.08 + pseudoRandom(seedI + 2) * 0.06), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // a little life down on the ground -- more wildflowers in a wider
+    // color range, denser grass tufts, and the squirrel wandering
+    // (occasionally pausing to rear up on its hind legs), so the mirror
+    // isn't just an empty swing over flat green
     const groundY = halfH * 0.78;
-    const flowerColors = ["#d95a9a", "#caa23a", "#9a6ad9"];
-    for (let i = 0; i < 3; i++) {
-      const fx = -halfW * 0.55 + i * halfW * 0.5 + (pseudoRandom(seed + i * 5.2) - 0.5) * halfW * 0.15;
+    const flowerColors = ["#d95a9a", "#caa23a", "#9a6ad9", "#e07a4a", "#5aa0c9"];
+    for (let i = 0; i < 5; i++) {
+      const fx = -halfW * 0.7 + i * halfW * 0.35 + (pseudoRandom(seed + i * 5.2) - 0.5) * halfW * 0.14;
       const fy = groundY - (pseudoRandom(seed + i * 2.7)) * halfH * 0.05;
       ctx.strokeStyle = "#4a8a3a";
       ctx.lineWidth = Math.max(0.5, halfW * 0.015);
@@ -24776,16 +24808,17 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.arc(fx, fy, halfW * 0.018, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.strokeStyle = "#4a8a3a";
-    ctx.lineWidth = Math.max(0.5, halfW * 0.02);
-    ctx.lineCap = "round";
-    for (let i = 0; i < 6; i++) {
-      const gx = -halfW * 0.75 + i * halfW * 0.3 + (pseudoRandom(seed + i * 9.1) - 0.5) * halfW * 0.1;
+    const grassColors2 = ["#4a8a3a", "#5a9a42", "#3f7a30"];
+    for (let i = 0; i < 10; i++) {
+      const gx = -halfW * 0.85 + i * halfW * 0.19 + (pseudoRandom(seed + i * 9.1) - 0.5) * halfW * 0.08;
+      ctx.strokeStyle = grassColors2[i % grassColors2.length];
+      ctx.lineWidth = Math.max(0.5, halfW * 0.022);
+      ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(gx, groundY + halfH * 0.12);
-      ctx.lineTo(gx - halfW * 0.02, groundY);
+      ctx.lineTo(gx - halfW * 0.025, groundY - halfH * 0.02);
       ctx.moveTo(gx + halfW * 0.02, groundY + halfH * 0.12);
-      ctx.lineTo(gx + halfW * 0.045, groundY + halfH * 0.01);
+      ctx.lineTo(gx + halfW * 0.05, groundY);
       ctx.stroke();
     }
 
@@ -25008,13 +25041,48 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // and a brighter sparkle band concentrated right under the bridge
     // where the light would actually hit it
     const waterEndX = halfW * 6;
+    // past the far pier the river visibly narrows away to the right
+    // instead of running the same flat width all the way to the tree --
+    // reads as the stream bending off into the distance rather than the
+    // bridge just dead-ending in open water. Both banks converge toward
+    // each other (forced-perspective taper); whatever's outside the
+    // narrowed shape just shows the canopy background behind it, which
+    // doubles as the far bank without needing to paint one separately.
+    const bendX = halfW * 1.05 + halfW * 0.35; // matches bridgeHalfSpan below (declared after this block) -- kept as a literal here to avoid a use-before-declare
+    // converges well before waterEndX -- the third panel's own visible
+    // window only reaches to roughly x=2.77*halfW (worldOffsetX for that
+    // panel, plus its own halfW), so if the taper only finished closing
+    // at waterEndX=6*halfW almost none of the narrowing would actually
+    // be visible on screen. Converging by ~2.5*halfW instead means the
+    // bend reads clearly within that same panel.
+    const bendConvergeX = halfW * 2.5;
+    const bendTop = (x) => {
+      if (x <= bendX) return waterTop;
+      const p = Math.min(1, (x - bendX) / (bendConvergeX - bendX));
+      return waterTop + p * p * halfH * 0.48;
+    };
+    const bendBot = (x) => {
+      if (x <= bendX) return waterBot;
+      const p = Math.min(1, (x - bendX) / (bendConvergeX - bendX));
+      return waterBot - p * p * halfH * 0.48;
+    };
     const waterGrad = ctx.createLinearGradient(0, waterTop, 0, waterBot);
     waterGrad.addColorStop(0, "#5a95a5");
     waterGrad.addColorStop(0.4, "#3a6a7a");
     waterGrad.addColorStop(1, "#26505c");
     ctx.save();
     ctx.beginPath();
-    ctx.rect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
+    const bendSteps = 20;
+    for (let i = 0; i <= bendSteps; i++) {
+      const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
+      const y = bendTop(x);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    for (let i = bendSteps; i >= 0; i--) {
+      const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
+      ctx.lineTo(x, bendBot(x));
+    }
+    ctx.closePath();
     ctx.clip();
     ctx.fillStyle = waterGrad;
     ctx.fillRect(waterStartX, waterTop, waterEndX - waterStartX, waterBot - waterTop);
@@ -25626,7 +25694,7 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
     const spines = [
       { dx: -7, h: 9, c: "#7a8a5a" },
       { dx: -3.5, h: 7, c: "#5a6a8a" },
-      { dx: 0, h: 8, c: "#a83a2f" }, // the apple book itself
+      { dx: 0, h: 8, c: "#7a2f2f" }, // the apple book itself -- same dark red as its real cover (drawBookCover/carried icon), not a made-up brighter red
       { dx: 3.5, h: 6, c: "#8a6a3a" },
       { dx: 7, h: 8.5, c: "#5a8a6a" }
     ];
@@ -25634,27 +25702,13 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
       ctx.fillStyle = s.c;
       ctx.fillRect(s.dx - 1.4, 3 - s.h, 2.6, s.h);
     });
-    // an actual small apple shape on its spine (round body, a little
-    // top notch, and a tiny leaf) instead of a plain dot, so it's
-    // identifiable as THE apple book and not just a red one
-    const ax = 0, ay = 3 - 8 * 0.62;
-    ctx.fillStyle = "#c9481f";
-    ctx.beginPath();
-    ctx.arc(ax, ay, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(ax, ay + 0.5, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#7a2a12";
-    ctx.lineWidth = 0.35;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay - 1.5);
-    ctx.lineTo(ax + 0.15, ay - 2.3);
-    ctx.stroke();
-    ctx.fillStyle = "#4a7a3a";
-    ctx.beginPath();
-    ctx.ellipse(ax + 0.7, ay - 2, 0.7, 0.35, 0.6, 0, Math.PI * 2);
-    ctx.fill();
+    // the apple book's real cover treatment, shrunk to spine scale: a
+    // thin gold accent stripe near the top, same as its carried-icon
+    // look, instead of a hand-drawn apple that only reads as a smudge
+    // at this size
+    const ax = 0, ay = 3 - 8;
+    ctx.fillStyle = "#d4a520";
+    ctx.fillRect(ax - 1.1, ay + 1.4, 2.2, 0.55);
     ctx.restore();
   } else {
     ctx.fillStyle = "#3a4048";
@@ -26117,9 +26171,22 @@ function drawMirrorStall(camX) {
     // player is off the ground -- doesn't have to be mid-jump, standing
     // on the roof or another mirror counts too, but flat ground doesn't.
     // player.y is height-above-ground, so >0 covers all of those at once.
-    const isNear = m.glimpse
-      ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
-      : false;
+    // the rectangle mirror's autumn glimpse is the opposite -- it's a
+    // standable platform, so its scene only shows while actually stood
+    // on top of it (same footprint/resting-height check the landing
+    // collision below uses), not just anywhere nearby.
+    let isNear;
+    if (m.glimpse === "autumnLeaves") {
+      const worldX = MIRROR_STALL_X + m.dx;
+      const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
+      const platformTop = gy - (my - frameHalfH);
+      const playerCenterX = player.x + player.width / 2;
+      isNear = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
+    } else {
+      isNear = m.glimpse
+        ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
+        : false;
+    }
     if (m.hang) {
       const hookY = MIRROR_STALL_HEADER_Y + 2;
       if (m.triangleHang) {
