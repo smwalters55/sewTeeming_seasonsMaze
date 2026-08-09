@@ -4578,6 +4578,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawFeatherShape(ctx, x, y, size, rotation);
   } else if (itemType === "bridgePiece") {
     drawBridgePieceShape(ctx, x, y, size, rotation);
+  } else if (itemType === "log") {
+    drawBridgePieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "gnawedStick") {
     drawGnawedStickShape(ctx, x, y, size, rotation);
   } else if (itemType === "acorn") {
@@ -10651,6 +10653,13 @@ const FOREST_RIVER_BRIDGE_ARC_HEIGHT = 62; // raised a lot from the first pass (
 // is in world space; returns height ABOVE normal ground (same
 // convention as heightAboveGround elsewhere), 0 at/beyond either bank.
 function forestRiverBridgeHeightAt(worldX) {
+  // this is the TRUE arc shape, always -- the posts/railings are an
+  // already-standing old frame (see the RIVER BRIDGE BUILDING section
+  // below) and need to show the full arc from the very first frame,
+  // long before any decking is placed. Collision never actually needs
+  // guarding against querying past the building edge: the invisible
+  // wall in updateForestScene keeps the player from ever standing past
+  // it in the first place.
   if (worldX <= FOREST_RIVER_NEAR_BANK_X || worldX >= FOREST_RIVER_FAR_BANK_X) return 0;
   const t = (worldX - FOREST_RIVER_NEAR_BANK_X) / (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X);
   return Math.sin(t * Math.PI) * FOREST_RIVER_BRIDGE_ARC_HEIGHT;
@@ -10666,6 +10675,37 @@ function forestRiverBridgeSlopeAt(worldX) {
   const span = FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X;
   const t = (worldX - FOREST_RIVER_NEAR_BANK_X) / span;
   return Math.cos(t * Math.PI) * (Math.PI / span) * FOREST_RIVER_BRIDGE_ARC_HEIGHT;
+}
+
+/* ------------------------------------------------------
+   RIVER BRIDGE BUILDING -- the arc's posts and railings are an old
+   frame that's already standing; the actual decking is missing, and
+   the player restores it by hand, one log at a time, per direct
+   design: a pile of logs at the near bank (a found/local stack, not
+   something carried in from elsewhere -- there's no general "log"
+   inventory item anywhere else in the game), picked up one at a time,
+   carried the FULL round trip back to the current building edge, and
+   placed there. Placed logs fade in gently rather than snapping in.
+   The far side of whatever's still unbuilt is walled off entirely
+   (on foot or airborne) until that next log is placed, so there's no
+   jumping past an unfinished span.
+   ------------------------------------------------------ */
+const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 support posts
+const FOREST_RIVER_LOG_PILE_START = 9; // 7 needed + 2 extra sitting there once finished ("slightly more than needed")
+const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 60; // in the grass, just before the bank slant starts
+const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
+
+let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
+let forestRiverLogsBuilt = 0; // how many of the 7 segments are decked so far
+let forestRiverLogPlacedAt = []; // performance.now() per segment index, for the fade-in
+
+// x of the post-span boundary the NEXT log needs to be placed at (the
+// current "building edge") -- also doubles as the invisible wall
+// position blocking any further progress until that log goes down
+function forestRiverBuildEdgeX() {
+  const postSpanX1 = FOREST_RIVER_NEAR_BANK_X + 28, postSpanX2 = FOREST_RIVER_FAR_BANK_X - 28;
+  const segW = (postSpanX2 - postSpanX1) / FOREST_RIVER_LOG_SEGMENTS;
+  return postSpanX1 + forestRiverLogsBuilt * segW;
 }
 
 // a handful of fixed irregular offsets for the shoreline -- NOT equal
@@ -10888,36 +10928,63 @@ function drawForestRiver(camX) {
     ctx.fillRect(px - 4, deckY + 2, 8, gy + 40 - deckY);
   }
 
-  // the bridge deck itself -- a real arc, sampled at each plank
-  // boundary so the curve reads clearly (a smooth Math.sin hump, same
-  // curve the real collision snap in updateForestScene follows, so
-  // what you see is exactly what you stand on). Spans the FULL bank-
-  // to-bank distance now, flush with solid ground on both ends.
-  const deckSamples = 32;
-  const deckPts = [];
-  for (let i = 0; i <= deckSamples; i++) {
-    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / deckSamples);
-    deckPts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) });
-  }
-  ctx.fillStyle = "#8a6438";
-  ctx.beginPath();
-  ctx.moveTo(deckPts[0].x, deckPts[0].y - 6);
-  deckPts.forEach(p => ctx.lineTo(p.x, p.y - 6));
-  for (let i = deckPts.length - 1; i >= 0; i--) ctx.lineTo(deckPts[i].x, deckPts[i].y + 2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#4a3420";
-  ctx.lineWidth = 1;
-  // plank divisions, evenly spaced along the curve
-  const plankCount = 22;
-  for (let i = 0; i <= plankCount; i++) {
-    const worldX = FOREST_RIVER_NEAR_BANK_X + (FOREST_RIVER_FAR_BANK_X - FOREST_RIVER_NEAR_BANK_X) * (i / plankCount);
-    const px = worldX - camX, py = gy - forestRiverBridgeHeightAt(worldX);
+  // the bridge deck itself -- a real arc, sampled along the curve so
+  // it reads clearly (a smooth Math.sin hump, same curve the real
+  // collision snap in updateForestScene follows, so what you see is
+  // exactly what you stand on). The two short stretches outside the
+  // post span (bank to first post, last post to bank) are the tail
+  // ends of the old frame's original decking that were never torn
+  // out, so they're always fully solid. The main span between the
+  // posts is built by the player one log at a time -- each segment
+  // only appears once its log has been placed, and fades in gently
+  // rather than snapping into place (see RIVER BRIDGE BUILDING above).
+  const sampleDeckPts = (x1, x2, samples) => {
+    const pts = [];
+    for (let i = 0; i <= samples; i++) {
+      const worldX = x1 + (x2 - x1) * (i / samples);
+      pts.push({ x: worldX - camX, y: gy - forestRiverBridgeHeightAt(worldX) });
+    }
+    return pts;
+  };
+  const drawDeckSpan = (pts, alpha) => {
+    if (pts.length < 2 || alpha <= 0) return;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "#8a6438";
     ctx.beginPath();
-    ctx.moveTo(px, py - 6);
-    ctx.lineTo(px, py + 2);
-    ctx.stroke();
+    ctx.moveTo(pts[0].x, pts[0].y - 6);
+    pts.forEach(p => ctx.lineTo(p.x, p.y - 6));
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#4a3420";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < pts.length; i++) {
+      ctx.beginPath();
+      ctx.moveTo(pts[i].x, pts[i].y - 6);
+      ctx.lineTo(pts[i].x, pts[i].y + 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  // always-solid lead-ins
+  drawDeckSpan(sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, postSpanX1, 4), 1);
+  drawDeckSpan(sampleDeckPts(postSpanX2, FOREST_RIVER_FAR_BANK_X, 4), 1);
+
+  // main segments, gated on build progress
+  const buildSegW = (postSpanX2 - postSpanX1) / FOREST_RIVER_LOG_SEGMENTS;
+  for (let seg = 0; seg < FOREST_RIVER_LOG_SEGMENTS; seg++) {
+    if (seg >= forestRiverLogsBuilt) continue;
+    const segX1 = postSpanX1 + seg * buildSegW, segX2 = segX1 + buildSegW;
+    const placedAt = forestRiverLogPlacedAt[seg];
+    const alpha = placedAt ? Math.min(1, (performance.now() - placedAt) / FOREST_RIVER_LOG_FADE_MS) : 1;
+    drawDeckSpan(sampleDeckPts(segX1, segX2, 5), alpha);
   }
+
+  // full bank-to-bank sample, kept for the railings below -- the
+  // railing/post frame is the old structure and shows in full
+  // regardless of how much decking has been restored underneath it
+  const deckPts = sampleDeckPts(FOREST_RIVER_NEAR_BANK_X, FOREST_RIVER_FAR_BANK_X, 32);
 
   // low rope railings, tracing the same arc a little above the deck --
   // kept short (knee-height) so they read as a real railing without
@@ -10942,6 +11009,20 @@ function drawForestRiver(camX) {
     ctx.moveTo(px, py - 6);
     ctx.lineTo(px, py - 16);
     ctx.stroke();
+  }
+
+  // the log pile at the near bank -- a found local stack, not carried
+  // inventory. Shrinks visually as logs get picked up, and disappears
+  // once empty (all logs either built into the bridge or, with the
+  // 2 extras, just left over).
+  if (forestRiverLogPile > 0) {
+    const pileX = FOREST_RIVER_LOG_PILE_X - camX;
+    const pileBaseY = gy + 2;
+    const stackShow = Math.min(forestRiverLogPile, 5); // visually cap the stack height
+    for (let i = 0; i < stackShow; i++) {
+      const rowOffset = i % 2 === 0 ? -6 : 6;
+      drawBridgePieceShape(ctx, pileX + rowOffset, pileBaseY - 5 - i * 6, 10, 0.05 * (i % 2 === 0 ? 1 : -1));
+    }
   }
 }
 
@@ -12463,12 +12544,18 @@ let forestGearRideAngle = 0;
 // staying a flat box that pokes through the curved deck/rail on the
 // steeper parts ("player needs to go around the arc, not cut into it")
 let forestBridgeTiltAngle = 0;
-// bumped every time the player's x actually changes while in forest --
-// feeds the near riverbank's pebble scatter (see drawForestRiver) so
-// those pebbles re-randomize their positions on every movement, per
-// direct request, rather than sitting in one fixed arrangement forever
+// bumped on every real "step" of movement while in forest -- feeds the
+// near riverbank's pebble scatter (see drawForestRiver) so those
+// pebbles re-randomize their positions as the player moves, rather
+// than sitting in one fixed arrangement forever. Throttled by actual
+// distance walked (see FOREST_RIVER_PEBBLE_STEP_DIST below), not by
+// frame -- bumping it on every single frame of movement (the first
+// pass) reshuffled dozens of times a second while just walking
+// normally, reading as a nonstop flicker rather than a deliberate
+// shift.
 let forestRiverPebbleShuffle = 0;
-let forestRiverLastPlayerX = null;
+let forestRiverPebbleAccumX = 0;
+let forestRiverPebbleLastX = null;
 
 // simple back-out ease -- overshoots past 1 then settles, used for the
 // punchy "just got yanked" feel on the lever pull
@@ -13368,14 +13455,22 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
-  // re-scatter the near riverbank's pebbles on every real movement --
-  // compared against last frame's x, not just "vx !== 0", so it only
-  // bumps when the player actually moved (not while blocked against
-  // something and still nominally "trying" to walk)
-  if (forestRiverLastPlayerX === null) forestRiverLastPlayerX = player.x;
-  if (Math.abs(player.x - forestRiverLastPlayerX) > 0.001) {
+  // re-scatter the near riverbank's pebbles once per real "step" of
+  // walking, not once per frame -- the first pass bumped this on every
+  // single frame the player moved even a fraction of a pixel, which at
+  // 60fps read as constant flicker rather than a deliberate shift
+  // ("rocks still scatter with each movement" -- too much, too fast).
+  // player.speed is 3px/frame, so even the first 18px threshold was
+  // still retriggering ~10x/sec -- still a flicker, not a step. Raised
+  // to 50px, landing around 3-4 reshuffles/sec at normal walk speed,
+  // closer to an actual footstep cadence.
+  const FOREST_RIVER_PEBBLE_STEP_DIST = 50;
+  if (forestRiverPebbleLastX === null || forestRiverPebbleLastX === undefined) forestRiverPebbleLastX = player.x;
+  forestRiverPebbleAccumX += Math.abs(player.x - forestRiverPebbleLastX);
+  forestRiverPebbleLastX = player.x;
+  if (forestRiverPebbleAccumX >= FOREST_RIVER_PEBBLE_STEP_DIST) {
     forestRiverPebbleShuffle++;
-    forestRiverLastPlayerX = player.x;
+    forestRiverPebbleAccumX = 0;
   }
 
   // RIVER BRIDGE ARC — same sampled-ramp technique as autumn's own
@@ -13404,6 +13499,39 @@ function updateForestScene(deltaTime) {
     // eased back to upright once off the bridge entirely
     forestBridgeTiltAngle *= 0.8;
     if (Math.abs(forestBridgeTiltAngle) < 0.01) forestBridgeTiltAngle = 0;
+  }
+
+  // RIVER BRIDGE BUILDING — pickup at the pile, placement at the
+  // current building edge. The pile is a local found stack (not
+  // general inventory); picking one up sets heldItem the same way any
+  // other carried item does elsewhere in the game.
+  if (keys.spaceJustPressed && !heldItem && forestRiverLogPile > 0 &&
+      forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS &&
+      Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
+    heldItem = "log";
+    forestRiverLogPile--;
+  } else if (keys.spaceJustPressed && heldItem === "log" &&
+      forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS &&
+      Math.abs(player.x + player.width / 2 - forestRiverBuildEdgeX()) < 14) {
+    // exact-position placement only, no forgiveness zone -- direct
+    // feedback was "just does not place" if you're not actually there
+    forestRiverLogPlacedAt[forestRiverLogsBuilt] = performance.now();
+    forestRiverLogsBuilt++;
+    heldItem = null;
+  }
+
+  // invisible wall -- until the next segment is placed, nothing gets
+  // past the current building edge, on foot or in mid-air, so there's
+  // no jumping past an unfinished stretch of river
+  if (forestRiverLogsBuilt < FOREST_RIVER_LOG_SEGMENTS) {
+    const riverWallX = forestRiverBuildEdgeX();
+    // clamp on the player's CENTER, matching the placement check below,
+    // so walking up to the wall actually lands you close enough to
+    // place the next log rather than being stopped short of it
+    if (player.x + player.width / 2 > riverWallX) {
+      player.x = riverWallX - player.width / 2;
+      if (player.vx > 0) player.vx = 0;
+    }
   }
 
   // set inside the FOREST_INTRO_GEARS loop below when the player is
@@ -31469,18 +31597,18 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- drops into forest right where you'd climb back out
-// after finishing up molehole/tunnel town, with the mine cart already
-// ridden and the shaft already fixed (as if that whole chain were
-// already done), so the river crossing -- the very next stretch past
-// the mole hole entrance -- is reachable immediately by just walking
-// right, without replaying molehole/tunnel town first. Revert (remove
-// this block) once the river is done being tested.
+// TEMPORARY -- drops right in front of the river bridge build site
+// (at the log pile, full 9-log pile, nothing built yet) with the mine
+// cart already ridden and the shaft already fixed (as if that whole
+// chain were already done), so the bridge-building mechanic is
+// reachable and testable immediately without replaying molehole/
+// tunnel town first. Revert (remove this block) once the river/bridge
+// is done being tested.
 currentScene = "forest";
 mineCartEverRidden = true;
 moleholeShaftFixed = true;
 elderTalkedTo = true;
-player.x = moleHoleEntrance.x;
+player.x = FOREST_RIVER_LOG_PILE_X;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
