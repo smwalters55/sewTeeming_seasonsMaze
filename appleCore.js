@@ -26948,19 +26948,40 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     const bobX = pivotX + ropeLen * Math.sin(angle);
     const bobY = pivotY + ropeLen * Math.cos(angle);
 
-    // a hint of the real plum tree the swing actually hangs from -- just
-    // a few fruit peeking down from the top edge of the frame (no
-    // branches/canopy drawn, same "a literal tree shape read as odd
-    // scenery" reasoning as the dropped background-tree attempt above),
-    // per direct request to show a hint of the fruit now that it was
-    // pointed out. Fixed positions (seeded), not tied to the swing's
-    // own motion. Positioned within the actual visible clip (roughly
-    // -halfH to +halfH, halfW to -halfW -- "by/bx" are the oversized
-    // backdrop rect's own bounds, well outside what the oval clip
-    // actually shows) rather than up near "by", which sits clipped away.
+    // a hint of the real plum tree the swing actually hangs from -- the
+    // scalloped underside of a canopy along the top edge (a few
+    // overlapping soft-edged lobes, not a full tree silhouette -- same
+    // "a literal tree shape read as odd scenery" reasoning as the
+    // dropped background-tree attempt above still applies to the whole
+    // tree, just not to its lowest edge), a sliver of trunk climbing up
+    // out of frame off to one side (clear of the rope/seat), and the
+    // fruit hanging down into the canopy rather than floating loose.
+    // Per direct request ("show a hint of the fruit... can it look like
+    // the v bottom of a canopy, also show tree trunk if it makes
+    // sense"). Fixed positions (seeded), not tied to the swing's own
+    // motion. Positioned within the actual visible clip (roughly -halfH
+    // to +halfH, halfW to -halfW -- "by/bx" are the oversized backdrop
+    // rect's own bounds, well outside what the oval clip actually shows)
+    // rather than up near "by", which sits clipped away.
+    ctx.fillStyle = "#3f6b32";
+    [
+      { cx0: -halfW * 0.72, r0: halfW * 0.5, cy0: -halfH * 0.98 },
+      { cx0: -halfW * 0.2, r0: halfW * 0.56, cy0: -halfH * 1.04 },
+      { cx0: halfW * 0.32, r0: halfW * 0.5, cy0: -halfH * 0.96 },
+      { cx0: halfW * 0.78, r0: halfW * 0.42, cy0: -halfH * 0.9 }
+    ].forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.cx0, c.cy0, c.r0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // trunk, off to the right where it won't cross the rope/seat's own
+    // swept path, climbing up out of frame into the canopy above
+    ctx.fillStyle = "#5a4022";
+    ctx.fillRect(halfW * 0.8, -halfH * 1.1, halfW * 0.16, halfH * 0.5);
+
     const fruitSpots = [
       { fx: -halfW * 0.62, fy: -halfH * 0.78 },
-      { fx: halfW * 0.1, fy: -halfH * 0.88 },
+      { fx: halfW * 0.1, fy: -halfH * 0.86 },
       { fx: halfW * 0.68, fy: -halfH * 0.7 }
     ];
     ctx.fillStyle = "#6a3a8a";
@@ -27449,6 +27470,33 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // the actual trick that sells "this is far away", not just small
     ctx.fillStyle = "rgba(170,195,175,0.16)";
     ctx.fillRect(treeWorldX - halfW * 1.3, treeBaseY - halfH * 1.5, halfW * 2.6, halfH * 1.5);
+
+    // a few more wrangly little branches poking out from within/around
+    // the foliage itself (not just the two main forks above the trunk),
+    // each a real wiggle -- a bend partway along, not a straight twig --
+    // so the canopy's edge reads as genuinely gnarled rather than one
+    // clean bushy blob with two branches stuck on top. Per direct
+    // request. Drawn AFTER the haze veil (rather than back with the rest
+    // of the foliage) -- underneath it, the haze itself was washing these
+    // out to invisible at this thin a line weight.
+    ctx.strokeStyle = "rgba(51,65,58,0.75)";
+    ctx.lineWidth = Math.max(0.9, halfW * 0.026);
+    ctx.lineCap = "round";
+    [
+      { sx: -0.36, sy: 0.16, mx: -0.5, my: -0.02, ex: -0.62, ey: -0.2 },
+      { sx: 0.44, sy: 0.14, mx: 0.56, my: -0.04, ex: 0.68, ey: -0.22 },
+      { sx: -0.06, sy: -0.34, mx: -0.14, my: -0.5, ex: -0.08, ey: -0.64 },
+      { sx: 0.26, sy: -0.3, mx: 0.36, my: -0.44, ex: 0.3, ey: -0.6 },
+      { sx: -0.44, sy: -0.14, mx: -0.58, my: -0.22, ex: -0.7, ey: -0.12 }
+    ].forEach(b => {
+      ctx.beginPath();
+      ctx.moveTo(treeWorldX + halfW * b.sx, canopyCenterY + halfH * b.sy);
+      ctx.quadraticCurveTo(
+        treeWorldX + halfW * b.mx, canopyCenterY + halfH * b.my,
+        treeWorldX + halfW * b.ex, canopyCenterY + halfH * b.ey
+      );
+      ctx.stroke();
+    });
 
     ctx.restore();
 
