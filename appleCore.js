@@ -10995,13 +10995,25 @@ function drawForestRiver(camX) {
     // instead of curling back up partway ("make the slant part on left
     // go a little lower, [not] stop halfway thru")
     const waterX = nb + 8, waterY = gy + 46;
+    // real curvature -- a genuine bezier bow through a perpendicular
+    // control point, not just small jitter riding a straight line (that
+    // was still reading as "a straight edge with a little noise on it"
+    // even after switching the fill/stroke to organic tracing). Jitter
+    // still rides on top for fine roughness, but the overall SHAPE now
+    // actually bends.
+    const bowDx = waterX - topX, bowDy = waterY - topY;
+    const bowLen = Math.hypot(bowDx, bowDy);
+    const perpX = -bowDy / bowLen, perpY = bowDx / bowLen;
+    const bow = 34;
+    const ctrlX = (topX + waterX) / 2 + perpX * bow, ctrlY = (topY + waterY) / 2 + perpY * bow;
     const steps = 7;
     const edgePts = [{ x: topX, y: topY }];
     for (let i = 1; i <= steps; i++) {
-      const f = i / steps;
-      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 1.1;
-      const ex = topX + (waterX - topX) * f + j, ey = topY + (waterY - topY) * f;
-      edgePts.push({ x: ex, y: ey });
+      const f = i / steps, omf = 1 - f;
+      const bx = omf * omf * topX + 2 * omf * f * ctrlX + f * f * waterX;
+      const by = omf * omf * topY + 2 * omf * f * ctrlY + f * f * waterY;
+      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.8;
+      edgePts.push({ x: bx + j, y: by });
     }
     // a little further underwater lip, left of the waterline point and
     // staying low (not curling back up above the diagonal it just
@@ -11009,10 +11021,14 @@ function drawForestRiver(camX) {
     // back on itself -- traced as one organic closed blob (see
     // tracePathOrganic) instead of straight lineTo corners, per direct
     // feedback ("remove alllll straight lines... this needs to look
-    // organic")
+    // organic"). The extra point at the front (well left of topX, same
+    // shoreline height) widens where this meets the grass into a real
+    // run along the bank instead of pinching to a single point, so the
+    // sand reads as merging into the shoreline rather than sitting next
+    // to it as its own separate island.
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    tracePathOrganic(ctx, [...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
+    tracePathOrganic(ctx, [{ x: topX - 48, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
     ctx.closePath();
     ctx.fill();
     // mottled dirt texture, clipped to this same bank shape (the path
@@ -11109,16 +11125,28 @@ function drawForestRiver(camX) {
   {
     const topX2 = fb + 92, topY2 = gy - 5;
     const waterX2 = fb - 8, waterY2 = gy + 46;
+    // same real-bezier-curvature + wider shoreline-merge treatment as
+    // the near bank, mirrored -- see the near bank's comments above for
+    // why (jitter alone wasn't giving it a genuine bend, and the spit
+    // was pinching to a single point against the grass instead of
+    // reading as part of it, "look disconnected/floating").
+    const bowDx2 = waterX2 - topX2, bowDy2 = waterY2 - topY2;
+    const bowLen2 = Math.hypot(bowDx2, bowDy2);
+    const perpX2 = bowDy2 / bowLen2, perpY2 = -bowDx2 / bowLen2; // opposite sign from the near bank -- bows the other way
+    const bow2 = 34;
+    const ctrlX2 = (topX2 + waterX2) / 2 + perpX2 * bow2, ctrlY2 = (topY2 + waterY2) / 2 + perpY2 * bow2;
     const steps2 = 7;
     const edgePts2 = [{ x: topX2, y: topY2 }];
     for (let i = 1; i <= steps2; i++) {
-      const f = i / steps2;
-      const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 1.1;
-      edgePts2.push({ x: topX2 + (waterX2 - topX2) * f + j, y: topY2 + (waterY2 - topY2) * f });
+      const f = i / steps2, omf = 1 - f;
+      const bx = omf * omf * topX2 + 2 * omf * f * ctrlX2 + f * f * waterX2;
+      const by = omf * omf * topY2 + 2 * omf * f * ctrlY2 + f * f * waterY2;
+      const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 0.8;
+      edgePts2.push({ x: bx + j, y: by });
     }
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    tracePathOrganic(ctx, [...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }]);
+    tracePathOrganic(ctx, [{ x: topX2 + 48, y: topY2 }, ...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }]);
     ctx.closePath();
     ctx.fill();
     ctx.save();
