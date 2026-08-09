@@ -31622,10 +31622,11 @@ const sinkAmount = fallProgress * (player.height + 20); // how far down the body
 // the feet down toward where the water surface is actually drawn, so
 // the wet-tint line and the scene's own water line roughly line up.
 // Scales with both amount (eases in/out at the zone's edges) and depth
-// (deeper water sinks the feet further), never more than ~9px so it
-// still clearly reads as wading, not submerging.
+// (deeper water sinks the feet further). Bumped up from an earlier,
+// too-subtle pass per direct feedback ("move player just a little
+// lower into water to better line up scene and body water line").
 const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRiverWadeAmount : 0) *
-  (3 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 6);
+  (7 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 8);
 const drawPy = py + sinkAmount + riverWadeSink;
 
 // shadow shrinks along with the body sinking in -- pinned to the
