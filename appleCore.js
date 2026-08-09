@@ -10547,12 +10547,17 @@ function drawSpringDoorVineTendril(camX) {
 // Kept as its own constant, deliberately separate from the river's own
 // bank/bridge constants, specifically so this can be relocated to
 // wherever in forest makes more sense once more of the zone is built out.
-// (Hardcoded rather than "FOREST_RIVER_FAR_BANK_X + 260" -- that constant
+// (Hardcoded rather than "FOREST_RIVER_FAR_BANK_X + 600" -- that constant
 // isn't declared until later in this file, and this line runs at module
 // load time, so referencing it directly here would throw a temporal-dead-
 // zone ReferenceError before the game ever starts. FOREST_RIVER_FAR_BANK_X
-// is 4800, so 5060 keeps the same "a bit past the far bank" placement.)
-const FOREST_REFLECTION_POOL_X = 5060;
+// is 4800, so 5400 keeps the same relative placement.) Moved further out
+// than the first pass (was 5060, only 260px past the bank) -- sitting
+// that close to the river's own water read as visually crowded/stressful
+// right next to it. Also now clear of the river's new down-right "fan
+// out" hint (see the FAR BANK block in drawForestRiver), which reaches
+// out to about fb+570 at its faintest.
+const FOREST_REFLECTION_POOL_X = 5400;
 const reflectionPool = { active: false, startTime: 0, nextRollAt: 3000 };
 const REFLECTION_FADE_IN_MS = 900;
 const REFLECTION_HOLD_MS = 3400;
@@ -11833,6 +11838,34 @@ function drawForestRiver(camX) {
         ctx.fill();
       }
     }
+
+    // the river doesn't just dead-end right at the far bank -- a soft
+    // fan of the same water color keeps spreading out down-right past
+    // the sand spit, widening and fading as it goes, hinting the river
+    // keeps going somewhere past what's actually built here yet (see
+    // this function's own "PHASE ONE ONLY" note above -- real geometry
+    // for that comes later; this is purely the visual hint for now, per
+    // direct request: "we didnt fix that right side yet of the river to
+    // fan out downward"). Built from soft radial gradients rather than
+    // a blurred filter shape -- ctx.filter="blur()" recomputed every
+    // frame is what caused the near bank's own flicker bug (see
+    // buildNearBankHaloCache above); a gradient fill has no such
+    // per-frame recompute cost, so no caching layer is needed here.
+    [
+      { dx: 60, dy: 6, r: 70, a: 0.32 },
+      { dx: 160, dy: 18, r: 100, a: 0.24 },
+      { dx: 280, dy: 30, r: 130, a: 0.16 },
+      { dx: 420, dy: 40, r: 150, a: 0.09 }
+    ].forEach(f => {
+      const fx = fb + f.dx, fy = gy + f.dy;
+      const fanGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, f.r);
+      fanGrad.addColorStop(0, `rgba(58,106,114,${f.a})`);
+      fanGrad.addColorStop(1, "rgba(58,106,114,0)");
+      ctx.fillStyle = fanGrad;
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, f.r, f.r * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // support posts driven into the water beneath the deck -- taller
