@@ -24438,7 +24438,11 @@ const MIRRORS = [
   // hung now, at a mid-height rope between the header beam and the
   // counter -- reads as its own middle tier rather than sharing the
   // exact same line as the resting pieces
-  { shape: "triptych", dx: 130, hang: true, ropeLen: 66, scale: 1.5 },
+  // glimpse: "forestPreview" -- one continuous unseen-forest scene read
+  // across all three panels (rushing water -> bridge -> the big distant
+  // tree), none of which exist in the forest zone yet -- a preview of
+  // forest's own next real moments, not a reuse of something already built
+  { shape: "triptych", dx: 130, hang: true, ropeLen: 66, scale: 1.5, glimpse: "forestPreview" },
   // leaned against the right post, top tilted in toward the wall --
   // reads as actually propped there rather than floating perfectly
   // upright in open floor space
@@ -24511,7 +24515,7 @@ function drawMirrorGlassReflections(streaks) {
 // walks up to it. Called with ctx already translated to the mirror's
 // own local center and clipped to its glass path, so halfW/halfH are
 // just that shape's own glass bounding box -- callers pass their own.
-function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
+function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOffsetX) {
   const bw = halfW * 2.8, bh = halfH * 2.8, bx = -halfW * 1.4, by = -halfH * 1.4;
   ctx.fillStyle = "#3a4048";
   ctx.fillRect(bx, by, bw, bh);
@@ -24842,6 +24846,81 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     ctx.lineWidth = Math.max(0.5, halfW * 0.02);
     ctx.strokeRect(-halfW * 0.36, 0, halfW * 0.72, halfH * 0.24);
     ctx.restore();
+  } else if (glimpseId === "forestPreview") {
+    // one continuous scene read across all three triptych panels, not
+    // three unrelated vignettes -- rushing water running the full width,
+    // a bridge crossing it centered on the middle panel, and the big
+    // distant tree looming in on the right. None of this exists in the
+    // forest zone yet (no river, no bridge, no landmark tree built) --
+    // this previews forest's own next real moments rather than reusing
+    // something already on screen, same "upcoming zone" idea as
+    // originally discussed for this mirror. worldOffsetX is each
+    // panel's own position in that shared scene (passed in by
+    // drawTriptychMirror as its ox), so translating by -worldOffsetX
+    // before drawing shared elements at fixed shared-scene coordinates
+    // lines them up continuously across the three separate clips.
+    const ox = worldOffsetX || 0;
+    const canopy = ctx.createLinearGradient(0, by, 0, by + bh);
+    canopy.addColorStop(0, "#2e4a22");
+    canopy.addColorStop(1, "#5a7a3a");
+    ctx.fillStyle = canopy;
+    ctx.fillRect(bx, by, bw, bh);
+
+    ctx.save();
+    ctx.translate(-ox, 0);
+
+    // rushing water -- a continuous band across the full shared scene,
+    // present under every panel, with lighter moving ripple streaks
+    const waterTop = halfH * 0.35, waterBot = halfH * 1.5;
+    const waterSpan = halfW * 6;
+    ctx.fillStyle = "#3a6a7a";
+    ctx.fillRect(-waterSpan, waterTop, waterSpan * 2, waterBot - waterTop);
+    ctx.strokeStyle = "rgba(210,235,240,0.5)";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.025);
+    for (let i = 0; i < 14; i++) {
+      const seedI = seed + i * 5.7;
+      const rx = -waterSpan + ((t * 0.02 + pseudoRandom(seedI) * waterSpan * 2) % (waterSpan * 2));
+      const ry = waterTop + pseudoRandom(seedI + 1) * (waterBot - waterTop);
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx + halfW * 0.3, ry);
+      ctx.stroke();
+    }
+
+    // the bridge -- centered on the shared scene's own x=0 (the middle
+    // panel), a simple plank deck on two support posts crossing the water
+    const bridgeDeckY = halfH * 0.55, bridgeHalfSpan = halfW * 1.05;
+    ctx.fillStyle = "#5a4028";
+    ctx.fillRect(-bridgeHalfSpan, bridgeDeckY - halfH * 0.06, bridgeHalfSpan * 2, halfH * 0.12);
+    ctx.strokeStyle = "#3a2a18";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.02);
+    for (let i = 0; i <= 6; i++) {
+      const px = -bridgeHalfSpan + (i / 6) * bridgeHalfSpan * 2;
+      ctx.beginPath();
+      ctx.moveTo(px, bridgeDeckY - halfH * 0.06);
+      ctx.lineTo(px, bridgeDeckY + halfH * 0.06);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#4a3520";
+    ctx.fillRect(-bridgeHalfSpan * 0.85, bridgeDeckY + halfH * 0.06, halfW * 0.14, waterBot - bridgeDeckY);
+    ctx.fillRect(bridgeHalfSpan * 0.85 - halfW * 0.14, bridgeDeckY + halfH * 0.06, halfW * 0.14, waterBot - bridgeDeckY);
+
+    // the big faraway tree -- fixed at the shared scene's right end (the
+    // right panel), tall enough to crop off the top of the frame so it
+    // reads as genuinely huge/distant rather than a normal-sized tree
+    const treeWorldX = halfW * 1.78;
+    ctx.fillStyle = "#1f3018";
+    ctx.fillRect(treeWorldX - halfW * 0.1, -halfH * 1.4, halfW * 0.2, waterTop + halfH * 1.4);
+    ctx.beginPath();
+    ctx.ellipse(treeWorldX, -halfH * 0.55, halfW * 0.85, halfH * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#2a4020";
+    ctx.beginPath();
+    ctx.ellipse(treeWorldX - halfW * 0.3, -halfH * 0.3, halfW * 0.5, halfH * 0.45, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX + halfW * 0.35, -halfH * 0.75, halfW * 0.42, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 }
 
@@ -24883,14 +24962,18 @@ function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.restore();
 }
 
-function drawTriptychMirror(cx, cy, scale) {
+function drawTriptychMirror(cx, cy, scale, glimpseId, isNear) {
   const r = 15 * scale;
   ctx.save();
   ctx.translate(cx, cy);
   // a real overlapping cluster rather than an evenly-spaced hinged
   // row -- left panel low, middle panel the highest/frontmost, right
   // panel tucked in medium-low behind it, matching the agreed base
-  // layout rather than a straight hinge-connected line
+  // layout rather than a straight hinge-connected line.
+  // ox doubles as each panel's own position in the shared continuous
+  // scene (water/bridge/tree) when a glimpse is active -- left panel
+  // shows the water's own stretch, the front-center panel is centered
+  // on the bridge, the right panel is centered on the tree.
   [
     { ox: -r * 1.15, oy: r * 0.1, tilt: -0.12 },
     { ox: r * 1.1, oy: -r * 0.05, tilt: 0.16 },
@@ -24903,11 +24986,10 @@ function drawTriptychMirror(cx, cy, scale) {
     ctx.fillStyle = "#6a4e30";
     path(); ctx.fill();
     drawOrnateRim(path, "#8a6a3a", "#c9a860", [[0, -r * 0.9], [0, r * 0.9]]);
-    ctx.fillStyle = "#3a4048";
     ctx.save();
     path(); ctx.clip();
-    ctx.fillRect(-r, -r, r * 2, r * 2);
-    drawMirrorGlassReflections([[-r * 0.2, -r * 0.5, r * 0.05, r * 0.1, 0.32, 1.1]]);
+    drawMirrorGlimpseContent(glimpseId, r * 0.62, r, isNear, 7, p.ox);
+    if (!isNear) drawMirrorGlassReflections([[-r * 0.2, -r * 0.5, r * 0.05, r * 0.1, 0.32, 1.1]]);
     ctx.restore();
     ctx.restore();
   });
@@ -25766,7 +25848,7 @@ function drawMirrorStall(camX) {
       drawSmallCrate(mx - 22, gy, 24);
       drawWonkyMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
     }
-    else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale);
+    else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale, m.glimpse, isNear);
     else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean, m.glimpse, isNear, m.dx);
     else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
