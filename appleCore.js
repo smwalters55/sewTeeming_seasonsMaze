@@ -18419,7 +18419,7 @@ function drawOakScene(camX) {
   });
 
   ctx.fillStyle = "#2e1c0a";
-  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  ctx.fillRect(0, gy + cameraY, canvas.width, canvas.height - gy);
 
   // arch entrance/exit door
   const dx = oakReturnDoor.x - camX;
@@ -18451,12 +18451,11 @@ function drawOakScene(camX) {
     let wobbleOffsetX = 0;
     let wobbleOffsetY = 0;
     let wobbleRot = 0;
-    if (fallKey === GIANT_PILE_X && giantPileCollapse.phase === "wobble") {
-      const wobbleP = Math.min(1, giantPileCollapse.t / COLLAPSE_WOBBLE_MS);
-      const amplitude = 2 + wobbleP * 14; // builds from a small shiver to a real, heavy sway
-      wobbleOffsetX = Math.sin(performance.now() * 0.008) * amplitude;
-      wobbleOffsetY = Math.sin(performance.now() * 0.008 + Math.PI / 2) * amplitude * 0.35; // same frequency as X with a phase offset -- traces a smooth connected curve rather than an independent, disjointed bounce
-      wobbleRot = Math.sin(performance.now() * 0.006 + 1) * 0.06 * wobbleP;
+    if (fallKey === GIANT_PILE_X) {
+      const w = giantPileWobbleOffset();
+      wobbleOffsetX = w.x;
+      wobbleOffsetY = w.y;
+      wobbleRot = w.rot;
     }
     const fallState = fallKey !== undefined ? pileFallState[fallKey] : null;
     if (fallState && fallState.scattering) {
@@ -18522,7 +18521,7 @@ function drawOakScene(camX) {
     }
   }
   // drawn from the shared bookPiles array (also used for collision below)
-  bookPiles.forEach(pile => drawBookPile(pile.x, gy, pile.seed, pile.count, pile.x));
+  bookPiles.forEach(pile => drawBookPile(pile.x, gy + cameraY, pile.seed, pile.count, pile.x));
   drawPaperAirplane(camX);
   if (giantPileCollapse.phase === "falling") {
     drawFallingBooks(camX);
@@ -18881,6 +18880,19 @@ function drawOwl(camX) {
 }
 
 function updateOakScene(deltaTime) {
+  // vertical camera -- same follow-once-past-a-comfortable-height
+  // pattern as tunnel town (see updateTunnelTownScene's own cameraY
+  // line for the full rationale). Oak's book-pile jump run climbs well
+  // past that same ~150-250 unit ceiling (the giant capstone pile alone
+  // is 235 tall, before any jump height on top of it), but never got
+  // this same treatment -- so a high jump up there just carried the
+  // player off the top of the fixed-height canvas entirely, with
+  // nothing to bring the view back to them until gravity brought THEM
+  // back down into view a couple seconds later ("player rises off
+  // screen and then falls back down... happened when jump happen high
+  // on highhh book piles").
+  cameraY = Math.max(0, player.y - 150);
+
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
   updateTeaNook(deltaTime);
@@ -19009,23 +19021,39 @@ function updateOakScene(deltaTime) {
   }
 
   // pick up the apple storybook to carry -- no longer opens directly at
-  // the shelf, must be carried to a sitting area to actually read it
+  // the shelf, must be carried to a sitting area to actually read it.
+  // x was 90, a leftover from before the left shelf moved to x=192
+  // ("moved halfway toward the entrance door (was 90...)") -- the pickup
+  // zone was never updated to follow it, so the book sat on-screen at
+  // ~x169 while the only place that would actually pick it up was 80px
+  // to the left, over empty floor. Recomputed from the shelf's own
+  // layout math (row rowCount-1, book v=0: vx = sx-shelfWidth/2+7).
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(90, 27, 30, 30, 30)) {
+      keys.spaceJustPressed && isPlayerNear(169, 27, 30, 30, 30)) {
     carriedBook = "apple";
   }
 
   // pick up the Metaphors book -- only pickup-able once the cushion
-  // pile area is unlocked, matching its shelf visibility
+  // pile area is unlocked, matching its shelf visibility. x was 1948,
+  // stale from before the short shelf was at its current x=2120 --
+  // the book itself actually sits at world x~2073-2089 (shortShelf row
+  // 1, book b=0), which is 133px away from the old target, well outside
+  // even its 25px radius, so it was never actually pickup-able.
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
       oakLamp.collected &&
-      keys.spaceJustPressed && isPlayerNear(1948, 65, 25, 25, 25)) {
+      keys.spaceJustPressed && isPlayerNear(2081, 65, 25, 25, 25)) {
     carriedBook = "metaphors";
   }
 
-  // pick up the manual to carry, same rule
+  // pick up the manual to carry, same rule. Its actual shelf position
+  // (row 3 of the right shelf, second book row from the bottom) sits at
+  // roughly height 65-110 above ground -- the old target height of 20
+  // wasn't even close (off by ~45-90px with only a 32px radius), so it
+  // was completely unreachable no matter how the player jumped.
+  // Recomputed from the shelf's own layout math the same way as the
+  // apple book above.
   if (!bookReader.active && !bookReader.closing && !bookReader.opening &&
-      keys.spaceJustPressed && isPlayerNear(979, 20, 32, 32, 32)) {
+      keys.spaceJustPressed && isPlayerNear(960, 87, 32, 32, 32)) {
     carriedBook = "manual";
   }
 
@@ -19799,6 +19827,27 @@ function drawCarvingUI() {
   ctx.restore();
 }
 
+// a one-time, gentle nudge toward the arrow keys for turning pages --
+// two soft chevrons bobbing in place on either side of a small caption,
+// low enough opacity and low enough on the page that it reads as a
+// friendly tip rather than a UI bar. See drawBookReader's call site for
+// why this exists instead of remapping the controls.
+function drawBookPageTurnHint(spineX, pageW, h, now) {
+  const cx = spineX + pageW / 2, cy = h - 34;
+  const bob = Math.sin(now * 0.003) * 3;
+  ctx.save();
+  ctx.globalAlpha = 0.6 + Math.sin(now * 0.003) * 0.15;
+  ctx.fillStyle = "#8a7050";
+  ctx.font = "italic 13px Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("turn the page", cx, cy);
+  ctx.font = "bold 15px Georgia, serif";
+  ctx.fillText("◀", cx - 62 - bob, cy + 1);
+  ctx.fillText("▶", cx + 62 + bob, cy + 1);
+  ctx.restore();
+}
+
 function drawBookReader() {
   const w = canvas.width, h = canvas.height;
   const spineX = 90, pageRight = w - 40, pageW = pageRight - spineX;
@@ -19907,6 +19956,14 @@ function drawBookReader() {
 
   if (!bookReader.transitioning) {
     drawBookPageContent(pages, bookReader.currentPage, spineX, pageW, h, 1);
+    // a small cute nudge toward the actual page-turn controls -- easy to
+    // miss that this uses the arrow keys (not spacebar, which exits
+    // instead) rather than remapping the controls themselves, since
+    // spacebar-to-exit is already an established habit by the time a
+    // player reaches their second book. Only shown on the very first
+    // page, so it reads as a one-time tip rather than a permanent UI
+    // element competing with the page art.
+    if (bookReader.currentPage === 0) drawBookPageTurnHint(spineX, pageW, h, now);
     return;
   }
 
@@ -20814,7 +20871,7 @@ function updateSnake(deltaTime) {
 const paperAirplaneSpot = { x: 5436, y: 240, collected: false };
 function drawPaperAirplane(camX) {
   if (paperAirplaneSpot.collected) return;
-  const ax0 = paperAirplaneSpot.x - camX, ay0 = gy - paperAirplaneSpot.y;
+  const ax0 = paperAirplaneSpot.x - camX, ay0 = gy + cameraY - paperAirplaneSpot.y;
   const bob = Math.sin(performance.now() * 0.0018) * 3;
   const drift = Math.sin(performance.now() * 0.001) * 4;
   const ax = ax0 + drift, ay = ay0 - bob;
@@ -20850,6 +20907,25 @@ const GIANT_PILE_X = 5436;
 const COLLAPSE_BEAT_MS = 500;
 const COLLAPSE_WOBBLE_MS = 3200;
 const COLLAPSED_HEIGHT = 25;
+
+// shared wobble calc -- used by drawBookPile (to shake the pile itself)
+// AND by the player draw code (to carry the player's on-screen position
+// along with it) so a player standing on the giant pile during its
+// "wobble" phase visibly shakes along with the books instead of sitting
+// rigidly still while everything shifts around them. Render-only: never
+// touches the authoritative player.x/player.y, same pattern as other
+// purely-visual sway effects elsewhere (bridge tilt, gear ride angle),
+// so ground-truth movement physics stay untouched.
+function giantPileWobbleOffset() {
+  if (giantPileCollapse.phase !== "wobble") return { x: 0, y: 0, rot: 0 };
+  const wobbleP = Math.min(1, giantPileCollapse.t / COLLAPSE_WOBBLE_MS);
+  const amplitude = 2 + wobbleP * 14; // builds from a small shiver to a real, heavy sway
+  return {
+    x: Math.sin(performance.now() * 0.008) * amplitude,
+    y: Math.sin(performance.now() * 0.008 + Math.PI / 2) * amplitude * 0.35, // same frequency as X with a phase offset -- traces a smooth connected curve rather than an independent, disjointed bounce
+    rot: Math.sin(performance.now() * 0.006 + 1) * 0.06 * wobbleP,
+  };
+}
 const scatteredBooksField = []; // permanent -- populated once when the giant pile settles, never re-piled
 function generateScatteredBooksField(centerX) {
   const bookCount = 36;
@@ -20890,7 +20966,7 @@ function generateScatteredBooksField(centerX) {
 function drawScatteredBooksField(camX) {
   scatteredBooksField.forEach(book => {
     ctx.save();
-    ctx.translate(book.x - camX, gy - book.y);
+    ctx.translate(book.x - camX, gy + cameraY - book.y);
     ctx.rotate(book.rot);
     ctx.fillStyle = book.color;
     ctx.fillRect(-book.w / 2, -book.h / 2, book.w, book.h);
@@ -31644,14 +31720,20 @@ flyingItems.forEach(f => {
 drawBoomerangThrow(camX); // the boomerang itself, while it's in the air
 
 /* PLAYER */
-const px = player.x - camX;
+// standing on the giant book pile while it wobbles (mid-collapse-sequence,
+// see giantPileWobbleOffset) carries the player's on-screen position along
+// with the shake -- render-only, so it never touches the authoritative
+// player.x/player.y used by physics/collision.
+const pileWobble = (currentScene === "oak" && player.lastPileX === GIANT_PILE_X)
+  ? giantPileWobbleOffset() : { x: 0, y: 0, rot: 0 };
+const px = player.x - camX + pileWobble.x;
 // cameraY is ADDED here (not subtracted): as the player climbs past the
 // follow threshold in tunnel town, cameraY grows to offset player.y 1:1,
 // pinning the sprite's on-screen height instead of letting it keep
 // rising off the top of the canvas -- the world (ground line, walls,
 // etc.) scrolls away underneath instead. A no-op everywhere else, since
 // cameraY is always 0 outside tunnel town.
-const py = gy + cameraY - player.height - player.y;
+const py = gy + cameraY - player.height - player.y + pileWobble.y;
 
 // while falling through a hole, the body actually MOVES downward — it
 // isn't frozen in place; only what crosses below ground level (gy) gets
