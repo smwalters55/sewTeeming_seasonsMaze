@@ -24415,7 +24415,9 @@ const MIRRORS = [
   // lighting up in the lamp's glow) rather than plain firefly ambience,
   // per direct feedback ("i want the lamp to show something...like the
   // initials or the spider")
-  { shape: "wonky", dx: -168, hang: false, surface: "ground", scale: 1.35, crackSeed: 4, glimpse: "ratroomLamp" },
+  // nudged right a bit from the table+handmirror to its left -- that
+  // corner was reading cramped with the crate crowding right up against it
+  { shape: "wonky", dx: -145, hang: false, surface: "ground", scale: 1.35, crackSeed: 4, glimpse: "ratroomLamp" },
   // ropeLen 80 -- long enough that the hourglass's own base actually
   // reaches down to the counter, so its shard pile sits ON something
   // rather than floating in the gap ("glass shards pile reads as not on
@@ -24427,7 +24429,11 @@ const MIRRORS = [
   // real visible gap under the frame itself now.
   { shape: "hourglass", dx: -55, hang: true, ropeLen: 65, triangleHang: true, scale: 1.7, crackSeed: 11, shards: true },
   // the ornate brass one -- "deffff bigger"
-  { shape: "oval", dx: 40, hang: true, ropeLen: 38, scale: 2.1, brass: true },
+  // glimpse: "swing" -- the real rope-launch swing (pump/charge/release
+  // motion), not just plain hanging vines or the grafted fruit trees --
+  // picked for the actual motion and its narrative link to the diamond's
+  // clouds glimpse (the swing is literally how you get up there)
+  { shape: "oval", dx: 40, hang: true, ropeLen: 38, scale: 2.1, brass: true, glimpse: "swing" },
   // hung now, at a mid-height rope between the header beam and the
   // counter -- reads as its own middle tier rather than sharing the
   // exact same line as the resting pieces
@@ -24574,27 +24580,34 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     // a real trunk (cropped by the frame's own left edge -- just part
     // of it showing, not the whole tree) with the very bottom fringe of
     // its canopy poking in at the top, so the leaves read as falling
-    // FROM something specific rather than just drifting in from nowhere
+    // FROM something specific rather than just drifting in from nowhere.
+    // NOTE: positioned relative to the actual VISIBLE clip region
+    // (-halfW/-halfH to +halfW/+halfH), not the oversized bx/by
+    // bounding box -- that oversized box exists so round/diamond frame
+    // corners never show a gap, but a plain rectangle's clip matches
+    // halfW/halfH exactly, so anything drawn out at bx/by is clipped
+    // away entirely (this is why neither was visible before).
+    const vx = -halfW, vy = -halfH;
     ctx.fillStyle = "#3a2416";
     ctx.beginPath();
-    ctx.moveTo(bx, by);
-    ctx.lineTo(bx + halfW * 0.5, by);
-    ctx.quadraticCurveTo(bx + halfW * 0.42, by + bh * 0.5, bx + halfW * 0.36, by + bh);
-    ctx.lineTo(bx, by + bh);
+    ctx.moveTo(vx, vy);
+    ctx.lineTo(vx + halfW * 0.7, vy);
+    ctx.quadraticCurveTo(vx + halfW * 0.58, vy + halfH, vx + halfW * 0.5, vy + halfH * 2);
+    ctx.lineTo(vx, vy + halfH * 2);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = Math.max(0.5, halfW * 0.03);
     ctx.beginPath();
-    ctx.moveTo(bx + halfW * 0.22, by); ctx.lineTo(bx + halfW * 0.18, by + bh);
+    ctx.moveTo(vx + halfW * 0.3, vy); ctx.lineTo(vx + halfW * 0.24, vy + halfH * 2);
     ctx.stroke();
     const canopyColors = ["#c9762f", "#a84a28", "#8a5a2a"];
     for (let i = 0; i < 5; i++) {
-      const cxOff = -halfW * 0.1 + i * halfW * 0.32;
-      const cyOff = by + halfH * 0.18 * (i % 2 === 0 ? 0.4 : 1);
+      const cxOff = vx + halfW * 0.1 + i * halfW * 0.42;
+      const cyOff = vy + halfH * 0.22 * (i % 2 === 0 ? 0.5 : 1);
       ctx.fillStyle = canopyColors[i % canopyColors.length];
       ctx.beginPath();
-      ctx.ellipse(cxOff, cyOff, halfW * 0.34, halfH * 0.22, 0, 0, Math.PI * 2);
+      ctx.ellipse(cxOff, cyOff, halfW * 0.4, halfH * 0.26, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     const colors = ["#c9762f", "#a84a28", "#d99a3a", "#8a5a2a"];
@@ -24640,16 +24653,28 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     ctx.beginPath();
     ctx.arc(0, halfH * 0.1, halfW * 1.15, 0, Math.PI * 2);
     ctx.fill();
+    // the exact same carved "WS SW" initials as the real ratroom
+    // wall carving (drawCarvedInitials/drawHandwrittenW/S), just
+    // scaled down to fit the frame -- not a generic abstraction of
+    // "some marks in wood", the actual found detail
+    ctx.save();
+    const initK = (halfW * 0.032);
+    ctx.scale(initK, initK);
+    ctx.translate(0, halfH * 0.15 / initK);
     ctx.strokeStyle = `rgba(255,235,190,${0.5 + pulse * 0.3})`;
-    ctx.lineWidth = Math.max(0.6, halfW * 0.05);
+    ctx.lineWidth = Math.max(0.6, halfW * 0.05) / initK;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const initS = 7;
+    drawHandwrittenW(ctx, -18, 0, initS, [-0.4, 0.6, -0.3, 0.5, -0.5]);
+    drawHandwrittenS(ctx, -6, 0, initS, [0.3, -0.4, 0.5, -0.3, 0.4]);
+    drawHandwrittenS(ctx, 6, 0, initS, [-0.3, 0.4, -0.5, 0.3, -0.4]);
+    drawHandwrittenW(ctx, 18, 0, initS, [0.4, -0.6, 0.3, -0.5, 0.5]);
     ctx.beginPath();
-    ctx.moveTo(-halfW * 0.32, halfH * 0.08); ctx.lineTo(-halfW * 0.32, -halfH * 0.18);
-    ctx.moveTo(-halfW * 0.32, -halfH * 0.18); ctx.lineTo(-halfW * 0.12, halfH * 0.08);
-    ctx.moveTo(-halfW * 0.12, halfH * 0.08); ctx.lineTo(-halfW * 0.12, -halfH * 0.18);
-    ctx.moveTo(halfW * 0.06, -halfH * 0.18); ctx.lineTo(halfW * 0.06, halfH * 0.08);
-    ctx.moveTo(halfW * 0.28, -halfH * 0.18); ctx.lineTo(halfW * 0.28, halfH * 0.08);
-    ctx.moveTo(halfW * 0.06, -halfH * 0.18); ctx.lineTo(halfW * 0.28, -halfH * 0.18);
+    ctx.moveTo(0, -5);
+    ctx.lineTo(0, 5);
     ctx.stroke();
+    ctx.restore();
     // the moth, wandering a slow loop right around the light -- it's as
     // much a signature of this cozy corner as the lamp itself
     const wanderAngle = t * 0.0009 + seed;
@@ -24668,6 +24693,42 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     ctx.beginPath();
     ctx.ellipse(0, 0, halfW * 0.05, halfW * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  } else if (glimpseId === "swing") {
+    // spring's own rope-launch swing -- same rope color/plank seat as
+    // the real drawSwing, pumping back and forth on its own pivot
+    // rather than a static hang, so it reads as the actual mechanic
+    const sky = ctx.createLinearGradient(0, by, 0, by + bh);
+    sky.addColorStop(0, "#bfe6a0");
+    sky.addColorStop(1, "#8fcf6a");
+    ctx.fillStyle = sky;
+    ctx.fillRect(bx, by, bw, bh);
+    // a bit of ground at the bottom so the swing has somewhere to launch from
+    ctx.fillStyle = "#6a9a4a";
+    ctx.fillRect(bx, by + bh * 0.82, bw, bh * 0.2);
+
+    const pivotX = 0, pivotY = by + halfH * 0.1;
+    const ropeLen = halfH * 1.3;
+    const maxAngle = 0.9;
+    const angle = Math.sin(t * 0.0013 + seed) * maxAngle;
+    const bobX = pivotX + ropeLen * Math.sin(angle);
+    const bobY = pivotY + ropeLen * Math.cos(angle);
+
+    ctx.strokeStyle = "#5a4530";
+    ctx.lineWidth = Math.max(0.7, halfW * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.lineTo(bobX, bobY);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(bobX, bobY);
+    ctx.rotate(angle);
+    ctx.fillStyle = "#8a5a2e";
+    ctx.fillRect(-halfW * 0.36, 0, halfW * 0.72, halfH * 0.24);
+    ctx.strokeStyle = "#5a3a1a";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.02);
+    ctx.strokeRect(-halfW * 0.36, 0, halfW * 0.72, halfH * 0.24);
     ctx.restore();
   }
 }
@@ -24914,7 +24975,7 @@ function drawDiamondMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.restore();
 }
 
-function drawOvalMirror(cx, cy, scale, brass) {
+function drawOvalMirror(cx, cy, scale, brass, glimpseId, isNear) {
   const w = 32 * scale, h = 22 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -24945,11 +25006,10 @@ function drawOvalMirror(cx, cy, scale, brass) {
       ctx.stroke();
     });
   }
-  ctx.fillStyle = "#3a4048";
   ctx.save();
   path(); ctx.clip();
-  ctx.fillRect(-w, -h, w * 2, h * 2);
-  drawMirrorGlassReflections([[-w * 0.18, -h * 0.28, w * 0.05, h * 0.18, 0.3, 1.3]]);
+  drawMirrorGlimpseContent(glimpseId, w / 2, h / 2, isNear, 6);
+  if (!isNear) drawMirrorGlassReflections([[-w * 0.18, -h * 0.28, w * 0.05, h * 0.18, 0.3, 1.3]]);
   ctx.restore();
   ctx.restore();
 }
@@ -25024,7 +25084,7 @@ function drawSmallTable(x, topY, groundY) {
 // small plain background mirror, mounted flat on the wall -- no hook
 // chain, no crack, no big reflection streak, just enough detail to read
 // as "another mirror" without competing with the six real ones
-function drawTinyWallMirror(x, y, shape, cracked, scale) {
+function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale || 1, scale || 1);
@@ -25039,18 +25099,47 @@ function drawTinyWallMirror(x, y, shape, cracked, scale) {
   ctx.strokeStyle = "#8a6a3a";
   ctx.lineWidth = 1.6;
   path(); ctx.stroke();
-  ctx.fillStyle = "#3a4048";
   ctx.save();
   ctx.scale(0.78, 0.78);
   path(); ctx.clip();
-  ctx.fillRect(-10, -10, 20, 20);
+  if (content === "bookshelf") {
+    // a tiny glimpse of oak's own bookshelf, with the apple storybook's
+    // own reddish spine picked out among the plain ones -- a little
+    // easter-egg detail rather than just another plain dark pane
+    ctx.fillStyle = "#3a4048";
+    ctx.fillRect(-10, -10, 20, 20);
+    ctx.fillStyle = "#6a4e30";
+    ctx.fillRect(-9, 3, 18, 2);
+    const spines = [
+      { dx: -7, h: 9, c: "#7a8a5a" },
+      { dx: -3.5, h: 7, c: "#5a6a8a" },
+      { dx: 0, h: 8, c: "#a83a2f" }, // the apple book itself
+      { dx: 3.5, h: 6, c: "#8a6a3a" },
+      { dx: 7, h: 8.5, c: "#5a8a6a" }
+    ];
+    spines.forEach(s => {
+      ctx.fillStyle = s.c;
+      ctx.fillRect(s.dx - 1.4, 3 - s.h, 2.6, s.h);
+    });
+    // a tiny apple mark on its spine, so it's actually identifiable as
+    // THE apple book and not just a red one
+    ctx.fillStyle = "#c9481f";
+    ctx.beginPath();
+    ctx.arc(0, 3 - 8 * 0.62, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#3a4048";
+    ctx.fillRect(-10, -10, 20, 20);
+  }
   ctx.restore();
-  ctx.strokeStyle = "rgba(235,245,255,0.3)";
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(-2, -3);
-  ctx.lineTo(1, 2);
-  ctx.stroke();
+  if (content !== "bookshelf") {
+    ctx.strokeStyle = "rgba(235,245,255,0.3)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-2, -3);
+    ctx.lineTo(1, 2);
+    ctx.stroke();
+  }
 
   // this one's cracked, with a chunk actually broken out of the edge --
   // per direct feedback, one of the background wall mirrors gets this
@@ -25455,7 +25544,11 @@ function drawMirrorStallClutter(sx) {
     } else if (c.type === "vase") {
       drawVaseFlowers(cx2, MIRROR_STALL_COUNTER_Y);
     } else if (c.type === "wallmirror") {
-      drawTinyWallMirror(cx2, MIRROR_STALL_HEADER_Y + c.y + 196, c.shape, false, c.scale);
+      // the little apple-book bookshelf easter egg only shows up close,
+      // and per direct feedback that specifically excludes standing on
+      // flat ground -- same "near AND off the ground" rule as clouds
+      const bookIsNear = isPlayerNear(MIRROR_STALL_X + c.dx, -c.y, 45, 40, 200) && player.y > 0;
+      drawTinyWallMirror(cx2, MIRROR_STALL_HEADER_Y + c.y + 196, c.shape, false, c.scale, bookIsNear ? "bookshelf" : null);
     } else if (c.type === "wallmirror+cracked") {
       const my2 = MIRROR_STALL_HEADER_Y + c.y + 196;
       drawTinyWallMirror(cx2, my2, c.shape, true);
@@ -25491,11 +25584,12 @@ function drawMirrorStall(camX) {
     // ground-standing player (the diamond's own hook sits ~146px up),
     // so radiusYDown has to cover that gap; radiusYUp only needs to
     // handle approaching from slightly above (e.g. off the roof).
-    // the clouds mirror specifically only shows its scene mid-jump, not
-    // just standing near it -- a little bit of physicality tied to its
-    // own theme ("you have to jump to see the cloud zone in that mirror")
+    // the clouds mirror specifically only shows its scene while the
+    // player is off the ground -- doesn't have to be mid-jump, standing
+    // on the roof or another mirror counts too, but flat ground doesn't.
+    // player.y is height-above-ground, so >0 covers all of those at once.
     const isNear = m.glimpse
-      ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.jumping)
+      ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
       : false;
     if (m.hang) {
       const hookY = MIRROR_STALL_HEADER_Y + 2;
@@ -25543,7 +25637,7 @@ function drawMirrorStall(camX) {
     else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean, m.glimpse, isNear, m.dx);
     else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
-    else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass);
+    else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass, m.glimpse, isNear);
   });
 
   drawMirrorStallClutter(sx);
@@ -25825,6 +25919,31 @@ function updateMoleholeScene(deltaTime) {
         player.vineFlying = false;
       }
     });
+
+    // the tiny square wall mirror with the bookshelf easter egg (top
+    // right of the clutter) is standable too, same as the six main
+    // mirrors and the roof -- matches its actual on-screen position:
+    // MIRROR_STALL_HEADER_Y + c.y + 196 above, i.e. height-above-ground
+    // -c.y, scaled frame half-width ~6.5 * c.scale
+    {
+      const bookMirrorWorldX = MIRROR_STALL_X + 260;
+      const bookMirrorHalfW = 6.5 * 1.9;
+      const bookMirrorPlatformTop = gy - 190;
+      const playerBottom = player.y;
+      if (
+        player.x + player.width > bookMirrorWorldX - bookMirrorHalfW &&
+        player.x < bookMirrorWorldX + bookMirrorHalfW &&
+        playerBottom <= bookMirrorPlatformTop &&
+        playerBottom >= bookMirrorPlatformTop - 16 &&
+        player.vy <= 0
+      ) {
+        player.y = bookMirrorPlatformTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.vineFlying = false;
+      }
+    }
   }
 
   // the geode breaker's own raised ledge -- same landing pattern as the
