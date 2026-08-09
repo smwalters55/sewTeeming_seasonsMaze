@@ -4694,7 +4694,14 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
   } else if (itemType === "crystal") {
     drawCrystalShape(ctx, x, y, size, rotation);
   } else if (itemType === "geode") {
-    drawGeodeShape(ctx, x, y, size, rotation, geodeCracked);
+    // geodeCracked itself flips true the instant the breaker's dialogue
+    // starts (so his dialogue lines/logic are correct right away), but
+    // the held-item icon shouldn't visibly show the broken-open geode
+    // until the actual crack reveal animation has finished playing --
+    // per direct feedback ("can you not make the item in play broken
+    // geode until the geode breaking animation occurs"), it read as the
+    // item breaking behind/before its own reveal.
+    drawGeodeShape(ctx, x, y, size, rotation, geodeCracked && !geodeCrackAnim);
   } else if (itemType === "aragonite") {
     drawAragoniteShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
@@ -20570,7 +20577,14 @@ function updateRatRoomScene(deltaTime) {
    of rotating cushion-lifts) is next, once this room has a real feel
    to build it inside of. Climb back out the way you came.
    ====================================================== */
-const MOLEHOLE_WIDTH = 2400; // widened again -- the geode breaker's alcove moved well past jump range of the market platforms so the root-swing chain is genuinely required to reach it, not just decorative
+// widened again -- past the mine cart shaft (2100) there was only ~300px
+// before the far wall, nowhere near enough for a real mirror stall.
+// Rather than squeeze the stall into already-tuned space before the
+// shaft, this carves out genuine new room after it (the cart ride is a
+// round-trip minigame that always returns you to MOLEHOLE_SHAFT_X, not a
+// way to advance -- see the comment there -- so this new stretch has to
+// be real world space, not assumed cart-travel distance).
+const MOLEHOLE_WIDTH = 2820;
 const moleHoleExit = { x: 150 }; // where you climb back up to forest, matches sceneSpawns.molehole's arrival point
 
 // market alcoves -- recessed archways carved into the back wall, each
@@ -24281,6 +24295,370 @@ function drawMineCartFrontRim() {
   ctx.restore();
 }
 
+// ============ MIRROR STALL ============
+// Sits in the new room past the mine cart shaft (see MOLEHOLE_WIDTH).
+// Six mirrors, deliberately non-equidistant and mixed hung/resting, per
+// direct feedback ("i dont want anything...to be equidistant, equal
+// height etc from each other"): wonky is smallest and lowest, crooked
+// in its own corner; the triptych and the tall rectangle rest on the
+// counter rather than hang; the hourglass is the biggest, hung the
+// highest, and the real centerpiece, with a broken-glass pile at its
+// base; the diamond hangs just past it; the ornate brass squat oval
+// takes the furthest "prized" spot. This is purely the visual build --
+// which mirror (if any) ends up showing something real rather than a
+// harmless portal-glimpse elsewhere is still an open decision, not
+// baked into any of this art.
+const MIRROR_STALL_X = 2420;
+const MIRROR_STALL_COUNTER_TOP = gy - 8;
+const MIRROR_STALL_HEADER_Y = gy - 168;
+const MIRRORS = [
+  { shape: "wonky", dx: -215, hang: false, scale: 0.72, crackSeed: 4 },
+  { shape: "triptych", dx: -132, hang: false, scale: 1.25 },
+  { shape: "rectangle", dx: 8, hang: false, scale: 1 },
+  { shape: "hourglass", dx: 102, hang: true, hangDrop: 30, scale: 1.35, crackSeed: 11, shards: true },
+  { shape: "diamond", dx: 206, hang: true, hangDrop: 16, scale: 1, crackSeed: 19 },
+  { shape: "oval", dx: 270, hang: true, hangDrop: 12, scale: 1.15, brass: true }
+];
+
+// small 2-3 segment jagged crack, drawn right on the glass -- reused
+// across whichever 2-3 frames get one (wonky/hourglass/diamond), each
+// at its own seed so the shape/location differs per frame
+function drawMirrorCrack(cx, cy, size, seed) {
+  const segs = 3;
+  ctx.strokeStyle = "rgba(20,22,26,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  let px = cx + (pseudoRandom(seed) - 0.5) * size * 0.6;
+  let py = cy + (pseudoRandom(seed + 1) - 0.5) * size * 0.6;
+  ctx.moveTo(px, py);
+  for (let i = 0; i < segs; i++) {
+    px += (pseudoRandom(seed + i * 3 + 2) - 0.5) * size * 0.5;
+    py += size * 0.18 + pseudoRandom(seed + i * 3 + 3) * size * 0.14;
+    ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(230,240,255,0.3)";
+  ctx.lineWidth = 0.4;
+  ctx.stroke();
+}
+
+// ornate frame border -- small stud dots at the corners/quarter-points
+// plus a double-line rim, the detail pass the user specifically liked
+// on the very first mockup ("i reeeally liked the ornate one you had
+// initially"). color is brass/bronze throughout, never gold -- "the
+// gold reads too much...standing out yellow" against everything else
+// down here.
+function drawOrnateRim(pathFn, rimColor, studColor, studPoints) {
+  ctx.strokeStyle = rimColor;
+  ctx.lineWidth = 3;
+  pathFn();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1;
+  pathFn();
+  ctx.stroke();
+  ctx.fillStyle = studColor;
+  studPoints.forEach(([sx, sy]) => {
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawMirrorGlassReflections(streaks) {
+  streaks.forEach(([x1, y1, x2, y2, alpha, width]) => {
+    ctx.strokeStyle = `rgba(235,245,255,${alpha})`;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+  ctx.lineCap = "butt";
+}
+
+function drawWonkyMirror(cx, cy, scale, seed) {
+  const w = 30 * scale, h = 34 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.14); // genuinely crooked, hung slightly askew
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.42, -h * 0.5);
+    ctx.quadraticCurveTo(w * 0.5, -h * 0.56, w * 0.46, -h * 0.05);
+    ctx.quadraticCurveTo(w * 0.56, h * 0.42, w * 0.1, h * 0.5);
+    ctx.quadraticCurveTo(-w * 0.5, h * 0.46, -w * 0.48, h * 0.02);
+    ctx.quadraticCurveTo(-w * 0.56, -h * 0.32, -w * 0.42, -h * 0.5);
+    ctx.closePath();
+  };
+  ctx.fillStyle = "#5a4228";
+  path();
+  ctx.fill();
+  // a small mismatched patch -- "lopsided/patched" per the brainstorm
+  ctx.fillStyle = "#6a4e30";
+  ctx.fillRect(w * 0.1, -h * 0.42, w * 0.22, h * 0.16);
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(w * 0.1, -h * 0.42, w * 0.22, h * 0.16);
+  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.4], [w * 0.3, -h * 0.3], [-w * 0.3, h * 0.3], [w * 0.1, h * 0.4]]);
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, w * 0.32, h * 0.36, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  drawMirrorGlassReflections([[-w * 0.15, -h * 0.22, w * 0.05, h * 0.12, 0.35, 1.4]]);
+  ctx.restore();
+  if (seed) drawMirrorCrack(-w * 0.05, h * 0.05, w * 0.4, seed);
+  ctx.restore();
+}
+
+function drawTriptychMirror(cx, cy, scale) {
+  const r = 15 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  [-r * 1.9, 0, r * 1.9].forEach((ox, i) => {
+    const tilt = (i - 1) * 0.08;
+    ctx.save();
+    ctx.translate(ox, i === 1 ? -r * 0.15 : 0);
+    ctx.rotate(tilt);
+    const path = () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.62, r, 0, 0, Math.PI * 2); };
+    ctx.fillStyle = "#6a4e30";
+    path(); ctx.fill();
+    drawOrnateRim(path, "#8a6a3a", "#c9a860", [[0, -r * 0.9], [0, r * 0.9]]);
+    ctx.fillStyle = "#3a4048";
+    ctx.save();
+    path(); ctx.clip();
+    ctx.fillRect(-r, -r, r * 2, r * 2);
+    drawMirrorGlassReflections([[-r * 0.2, -r * 0.5, r * 0.05, r * 0.1, 0.32, 1.1]]);
+    ctx.restore();
+    ctx.restore();
+    // small hinge stud connecting each panel to the next
+    if (i < 2) {
+      ctx.fillStyle = "#c9a860";
+      ctx.beginPath();
+      ctx.arc(ox + r * 0.95, i === 0 ? -r * 0.05 : r * 0.1, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.restore();
+}
+
+function drawRectangleMirror(cx, cy, scale) {
+  const w = 22 * scale, h = 58 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const path = () => {
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(-w / 2, -h / 2, w, h, 4) : ctx.rect(-w / 2, -h / 2, w, h);
+  };
+  ctx.fillStyle = "#5a4228";
+  path(); ctx.fill();
+  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.42], [w * 0.3, -h * 0.42], [-w * 0.3, h * 0.42], [w * 0.3, h * 0.42]]);
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-w * 0.36, -h * 0.44, w * 0.72, h * 0.88);
+  ctx.clip();
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  drawMirrorGlassReflections([[-w * 0.1, -h * 0.36, w * 0.02, h * 0.3, 0.3, 1.6]]);
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
+  const w = 34 * scale, h = 58 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.46, -h * 0.48);
+    ctx.lineTo(w * 0.46, -h * 0.48);
+    ctx.quadraticCurveTo(w * 0.14, -h * 0.06, w * 0.1, 0);
+    ctx.quadraticCurveTo(w * 0.14, h * 0.06, w * 0.46, h * 0.48);
+    ctx.lineTo(-w * 0.46, h * 0.48);
+    ctx.quadraticCurveTo(-w * 0.14, h * 0.06, -w * 0.1, 0);
+    ctx.quadraticCurveTo(-w * 0.14, -h * 0.06, -w * 0.46, -h * 0.48);
+    ctx.closePath();
+  };
+  ctx.fillStyle = "#6a4e30";
+  path(); ctx.fill();
+  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.4, -h * 0.44], [w * 0.4, -h * 0.44], [-w * 0.4, h * 0.44], [w * 0.4, h * 0.44], [0, -h * 0.02], [0, h * 0.02]]);
+  // ornate top/bottom rim bands -- the biggest piece gets a touch more
+  // detail than the rest, matching "centerpiece" billing
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = 1.2;
+  [-h * 0.46, h * 0.46].forEach(by => {
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.5, by);
+    ctx.lineTo(w * 0.5, by);
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  path(); ctx.clip();
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  // two SEPARATE reflection marks, one per bulb, rather than one
+  // continuous diagonal streak across both -- per direct feedback
+  drawMirrorGlassReflections([
+    [-w * 0.22, -h * 0.34, -w * 0.05, -h * 0.14, 0.32, 1.3],
+    [w * 0.08, h * 0.16, w * 0.24, h * 0.36, 0.3, 1.2]
+  ]);
+  ctx.restore();
+  if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
+  ctx.restore();
+
+  if (drawShards) drawMirrorGlassShards(cx, MIRROR_STALL_COUNTER_TOP, seed || 7);
+}
+
+// broken glass shards piled on the counter directly below the hourglass
+// -- bigger/messier than a first pass, while keeping the exact same
+// per-shard rendering (small translucent triangle + a bright straight
+// highlight edge) that read so well the first time.
+function drawMirrorGlassShards(cx, groundY, seed) {
+  const shardCount = 10;
+  for (let i = 0; i < shardCount; i++) {
+    const s = seed + i * 5.3;
+    const sx = cx + (pseudoRandom(s) - 0.5) * 30;
+    const sy = groundY - 1 - pseudoRandom(s + 1) * 5;
+    const size = 2.5 + pseudoRandom(s + 2) * 4;
+    const rot = pseudoRandom(s + 3) * Math.PI * 2;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(rot);
+    ctx.fillStyle = `rgba(200,215,225,${0.35 + pseudoRandom(s + 4) * 0.3})`;
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(size * 0.6, size * 0.5);
+    ctx.lineTo(-size * 0.5, size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(240,248,255,0.6)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.2, -size * 0.5);
+    ctx.lineTo(size * 0.15, size * 0.15);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawDiamondMirror(cx, cy, scale, seed) {
+  const s = 20 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.PI / 4);
+  const path = () => { ctx.beginPath(); ctx.rect(-s / 2, -s / 2, s, s); };
+  ctx.fillStyle = "#5a4228";
+  path(); ctx.fill();
+  drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-s * 0.5, -s * 0.5], [s * 0.5, -s * 0.5], [-s * 0.5, s * 0.5], [s * 0.5, s * 0.5]]);
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-s * 0.38, -s * 0.38, s * 0.76, s * 0.76);
+  ctx.clip();
+  ctx.fillRect(-s, -s, s * 2, s * 2);
+  ctx.restore();
+  ctx.rotate(-Math.PI / 4);
+  drawMirrorGlassReflections([[-s * 0.05, -s * 0.32, s * 0.15, s * 0.05, 0.35, 1.2]]);
+  if (seed) drawMirrorCrack(0, s * 0.1, s * 0.5, seed);
+  ctx.restore();
+}
+
+function drawOvalMirror(cx, cy, scale, brass) {
+  const w = 32 * scale, h = 22 * scale;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const path = () => { ctx.beginPath(); ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2); };
+  ctx.fillStyle = brass ? "#7a5a30" : "#5a4228";
+  path(); ctx.fill();
+  const rimColor = brass ? "#c9974a" : "#8a6a3a", studColor = brass ? "#e8c878" : "#c9a860";
+  drawOrnateRim(path, rimColor, studColor, [[-w * 0.32, 0], [w * 0.32, 0], [0, -h * 0.36], [0, h * 0.36]]);
+  // a couple of small decorative flourishes on top -- the "prized spot"
+  // piece gets a bit more presence than the others
+  if (brass) {
+    ctx.strokeStyle = studColor;
+    ctx.lineWidth = 1;
+    [-w * 0.15, w * 0.15].forEach(fx => {
+      ctx.beginPath();
+      ctx.moveTo(fx, -h * 0.5);
+      ctx.quadraticCurveTo(fx + (fx < 0 ? -4 : 4), -h * 0.68, fx, -h * 0.8);
+      ctx.stroke();
+    });
+  }
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  path(); ctx.clip();
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  drawMirrorGlassReflections([[-w * 0.18, -h * 0.28, w * 0.05, h * 0.18, 0.3, 1.3]]);
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawMirrorStall(camX) {
+  const sx = MIRROR_STALL_X - camX;
+  if (sx < -350 || sx > canvas.width + 350) return;
+
+  // a plain wooden counter running the length of the stall, for the
+  // resting mirrors to actually sit on
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx - 260, MIRROR_STALL_COUNTER_TOP, 340, 10);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx - 260, MIRROR_STALL_COUNTER_TOP, 340, 10);
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  [-190, -30, 90].forEach(lx => ctx.fillRect(sx + lx, MIRROR_STALL_COUNTER_TOP + 10, 3, 22));
+
+  // a header beam above, for the hung mirrors to actually hang from
+  ctx.strokeStyle = "rgba(58,40,20,0.7)";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(sx + 60, MIRROR_STALL_HEADER_Y);
+  ctx.lineTo(sx + 330, MIRROR_STALL_HEADER_Y);
+  ctx.stroke();
+
+  MIRRORS.forEach(m => {
+    const mx = sx + m.dx;
+    if (mx < -60 || mx > canvas.width + 60) return;
+    let my;
+    if (m.hang) {
+      const chainLen = m.hangDrop;
+      const hookY = MIRROR_STALL_HEADER_Y + 3;
+      const frameHalfH = { hourglass: 29, diamond: 14, oval: 11 }[m.shape] * m.scale;
+      my = hookY + chainLen + frameHalfH;
+      ctx.strokeStyle = "rgba(40,30,20,0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(mx, hookY);
+      ctx.lineTo(mx, my - frameHalfH);
+      ctx.stroke();
+    } else {
+      const frameHalfH = { wonky: 17, triptych: 15, rectangle: 29 }[m.shape] * m.scale;
+      my = MIRROR_STALL_COUNTER_TOP - frameHalfH * 0.9;
+    }
+
+    if (m.shape === "wonky") drawWonkyMirror(mx, my, m.scale, m.crackSeed);
+    else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale);
+    else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale);
+    else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
+    else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed);
+    else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass);
+  });
+
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx + 45, MIRROR_STALL_HEADER_Y - 20, 68, 20);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx + 45, MIRROR_STALL_HEADER_Y - 20, 68, 20);
+  ctx.fillStyle = "rgba(230,220,255,0.7)";
+  ctx.font = "8px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("MIRRORS", sx + 79, MIRROR_STALL_HEADER_Y - 7);
+  ctx.textAlign = "left";
+}
+
 function drawMoleholeScene(camX) {
   if (mineCart.active) { drawMineCartRide(camX); return; }
 
@@ -24312,6 +24690,7 @@ function drawMoleholeScene(camX) {
   MOLEHOLE_ALCOVES.forEach(a => drawMoleholeAlcove(a, camX));
   drawMoleShopAlcove(camX);
   drawGeodeBreakerAlcove(camX);
+  drawMirrorStall(camX);
   drawMoleholeRootSwing(camX);
   drawMoleHoleSecretPiece(camX);
   drawMoleHoleNoticeBoard(camX);
