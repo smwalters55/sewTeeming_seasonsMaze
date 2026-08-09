@@ -25494,7 +25494,7 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
 // you see every single time you walk up (there's a cooldown + a roll),
 // but noticeably more often than the original "rare flicker" version.
 const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0, everSeen: false, firstNearAt: 0, visitCount: 0, wasNear: false };
-const HOURGLASS_INTRO_MS = 700; // just the initial turn-to-face-you beat
+const HOURGLASS_INTRO_MS = 1000; // just the initial turn-to-face-you beat -- long enough to actually register now that it's fully visible throughout (see drawHourglassApparition)
 function updateHourglassApparition(isNear) {
   const now = performance.now();
   if (!isNear) {
@@ -25502,7 +25502,7 @@ function updateHourglassApparition(isNear) {
     // it just goes back to being a normal (parade) mirror
     if (hourglassApparition.active) {
       hourglassApparition.active = false;
-      hourglassApparition.nextRollAt = now + 3000 + Math.random() * 4000;
+      hourglassApparition.nextRollAt = now + 2000 + Math.random() * 2000;
     }
     hourglassApparition.firstNearAt = 0;
     hourglassApparition.wasNear = false;
@@ -25527,19 +25527,23 @@ function updateHourglassApparition(isNear) {
         hourglassApparition.active = true;
         hourglassApparition.startTime = now;
         hourglassApparition.everSeen = true;
+        hourglassApparition.introDir = Math.random() < 0.5 ? -1 : 1;
       }
     }
     return;
   }
   if (now >= hourglassApparition.nextRollAt) {
-    // higher odds and a much shorter recheck window than before -- less
-    // rare, per direct feedback -- while the post-trigger cooldown above
-    // still keeps it from being a guaranteed thing on every approach
-    if (Math.random() < 0.4) {
+    // higher odds still and an even shorter recheck window -- per direct
+    // feedback, the old rate meant someone could easily walk past a
+    // couple times, shrug, and move on without ever catching it. Now
+    // more likely than not to trigger within the first second or two of
+    // standing near it.
+    if (Math.random() < 0.6) {
       hourglassApparition.active = true;
       hourglassApparition.startTime = now;
+      hourglassApparition.introDir = Math.random() < 0.5 ? -1 : 1;
     } else {
-      hourglassApparition.nextRollAt = now + 1200 + Math.random() * 1800;
+      hourglassApparition.nextRollAt = now + 700 + Math.random() * 900;
     }
   }
 }
@@ -25552,10 +25556,17 @@ function updateHourglassApparition(isNear) {
 // from the rare unsettling mask moment.
 function drawHourglassParade(w, h) {
   const now = performance.now();
+  // smaller and more of them, with more costume variety, per direct
+  // feedback -- a fuller little procession instead of just three widely
+  // spaced critters
   const critters = [
-    { period: 6200, phase: 0, y: -h * 0.16, size: 0.13, type: "squirrel", hat: "party", costume: "#c94a6a" },
-    { period: 7400, phase: 2000, y: h * 0.04, size: 0.14, type: "rat", hat: "scarf", costume: "#4a8ac9" },
-    { period: 8600, phase: 4500, y: h * 0.24, size: 0.14, type: "mole", hat: "crown", costume: "#c9a020", pullsCart: true }
+    { period: 6200, phase: 0, y: -h * 0.16, size: 0.095, type: "squirrel", hat: "party", costume: "#c94a6a" },
+    { period: 7400, phase: 2000, y: h * 0.04, size: 0.1, type: "rat", hat: "scarf", costume: "#4a8ac9" },
+    { period: 8600, phase: 4500, y: h * 0.24, size: 0.1, type: "mole", hat: "crown", costume: "#c9a020", pullsCart: true },
+    { period: 9200, phase: 1200, y: -h * 0.3, size: 0.09, type: "rabbit", hat: "bow", costume: "#8a5fd0" },
+    // the big polka-dot skirt request -- a full bell-shaped skirt
+    // instead of the usual small vest patch, with actual dots on it
+    { period: 7800, phase: 6200, y: h * 0.14, size: 0.1, type: "mole", hat: "none", costume: "#3a9a8a", skirt: true, dotColor: "#fce8a0" }
   ];
   critters.forEach(c => {
     const cyclePos = ((now + c.phase) % c.period) / c.period;
@@ -25625,6 +25636,16 @@ function drawHourglassParade(w, h) {
       ctx.moveTo(-s * 1.1, 0);
       ctx.quadraticCurveTo(-s * 1.8, s * 0.3, -s * 2.2, 0);
       ctx.stroke();
+    } else if (c.type === "rabbit") {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.9, s * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // two tall ears, the shape that actually reads as "rabbit" at a
+      // glance rather than just another rounded blob
+      ctx.beginPath();
+      ctx.ellipse(-s * 0.25, -s * 1.1, s * 0.16, s * 0.5, -0.15, 0, Math.PI * 2);
+      ctx.ellipse(s * 0.1, -s * 1.15, s * 0.16, s * 0.5, 0.1, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.beginPath();
       ctx.ellipse(0, 0, s, s * 0.8, 0, 0, Math.PI * 2);
@@ -25633,17 +25654,55 @@ function drawHourglassParade(w, h) {
       ctx.ellipse(s * 0.85, s * 0.1, s * 0.25, s * 0.18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    // costume accent -- a small bright patch/vest on the body, so each
-    // critter reads as dressed up rather than just a plain silhouette
-    ctx.fillStyle = c.costume;
-    ctx.beginPath();
-    ctx.ellipse(0, s * 0.2, s * 0.4, s * 0.28, 0, 0, Math.PI * 2);
-    ctx.fill();
+    if (c.skirt) {
+      // a full bell-shaped polka-dot skirt instead of the usual small
+      // vest patch -- covers most of the lower body, with its own
+      // contrasting dots so it actually reads as a pattern, not just a
+      // flat colored patch
+      ctx.fillStyle = c.costume;
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.05, -s * 0.1);
+      ctx.lineTo(s * 1.05, s * 0.35);
+      ctx.quadraticCurveTo(s * 0.4, s * 0.85, -s * 0.35, s * 0.75);
+      ctx.quadraticCurveTo(-s * 0.75, s * 0.35, -s * 0.05, -s * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = c.dotColor || "#ffffff";
+      [[-s * 0.1, s * 0.15, 0.11], [s * 0.35, s * 0.1, 0.13], [s * 0.05, s * 0.5, 0.12], [-s * 0.45, s * 0.45, 0.1], [s * 0.55, s * 0.45, 0.1]]
+        .forEach(([dx, dy, dr]) => {
+          ctx.beginPath();
+          ctx.arc(dx, dy, s * dr, 0, Math.PI * 2);
+          ctx.fill();
+        });
+    } else {
+      // costume accent -- a small bright patch/vest on the body, so each
+      // critter reads as dressed up rather than just a plain silhouette
+      ctx.fillStyle = c.costume;
+      ctx.beginPath();
+      ctx.ellipse(0, s * 0.2, s * 0.4, s * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // the hat -- distinct per critter, sitting right above the head
     ctx.fillStyle = c.costume;
-    const headX = c.type === "rat" ? -s * 0.75 : c.type === "mole" ? -s * 0.1 : -s * 0.15;
-    const headY = -s * (c.type === "rat" ? 0.5 : 0.75);
-    if (c.hat === "party") {
+    const headX = c.type === "rat" ? -s * 0.75 : c.type === "rabbit" ? -s * 0.05 : c.type === "mole" ? -s * 0.1 : -s * 0.15;
+    const headY = -s * (c.type === "rat" ? 0.5 : c.type === "rabbit" ? 1.25 : 0.75);
+    if (c.hat === "bow") {
+      ctx.beginPath();
+      ctx.moveTo(headX, headY);
+      ctx.lineTo(headX - s * 0.28, headY - s * 0.18);
+      ctx.lineTo(headX - s * 0.28, headY + s * 0.18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(headX, headY);
+      ctx.lineTo(headX + s * 0.28, headY - s * 0.18);
+      ctx.lineTo(headX + s * 0.28, headY + s * 0.18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(headX, headY, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (c.hat === "party") {
       ctx.beginPath();
       ctx.moveTo(headX - s * 0.3, headY + s * 0.1);
       ctx.lineTo(headX + s * 0.3, headY + s * 0.1);
@@ -25678,26 +25737,35 @@ function drawHourglassParade(w, h) {
 }
 function drawHourglassApparition(w, h, live) {
   const now = performance.now();
-  // fade in only, once, during the intro turn -- there's no fade-out
-  // timer anymore, it just cuts back to the parade the instant the
-  // player leaves the zone (see updateHourglassApparition)
-  const introP = Math.min(1, (now - hourglassApparition.startTime) / HOURGLASS_INTRO_MS);
-  const alpha = introP;
+  // fade-in is now MUCH quicker than the turn itself -- it used to share
+  // the same timeline as the turn, so it was still almost fully
+  // transparent during the early "turned away" pose and only became
+  // clearly visible once it had already turned to face you, which is
+  // why the turn itself was basically invisible. Now it's fully opaque
+  // well before the turn finishes, so the whole motion actually reads.
+  const alpha = Math.min(1, (now - hourglassApparition.startTime) / 180);
   if (alpha <= 0.01) return;
+  const introP = Math.min(1, (now - hourglassApparition.startTime) / HOURGLASS_INTRO_MS);
   const introEase = introP * introP * (3 - 2 * introP);
-  // during the intro: starts turned away (in profile) and slowly turns
-  // to face the player, same beat as before. once the intro's done, it
-  // goes live -- tracking the player's own left/right position in front
-  // of the glass (turning further away from full-on the further off to
-  // one side they stand, like a reflection keeping you in view) instead
-  // of holding a fixed pose.
+  // during the intro: starts turned away to one side (in profile) and
+  // slowly turns to face the player -- both a squash (narrow -> full
+  // width) AND an actual lateral slide from off-center back to center,
+  // since squashing a symmetric mask alone doesn't read as "turned
+  // sideways", it just reads as "thin". Sliding it in from off to one
+  // side while it widens sells the turn far more clearly. introDir
+  // (picked once per trigger) is which side it starts turned toward.
+  // once the intro's done, it goes live -- tracking the player's own
+  // left/right position in front of the glass (turning further away
+  // from full-on the further off to one side they stand, like a
+  // reflection keeping you in view) instead of holding a fixed pose.
   const lateralNorm = Math.max(-1, Math.min(1, (live?.lateral ?? 0) / 60));
   const liveSquash = 0.55 + 0.45 * (1 - Math.abs(lateralNorm));
-  const squash = introP < 1 ? 0.32 + 0.68 * introEase : liveSquash;
+  const squash = introP < 1 ? 0.3 + 0.7 * introEase : liveSquash;
+  const introDir = hourglassApparition.introDir || 1;
   // a small horizontal drift toward whichever side the player's standing
   // on, plus a lift that rides the player's own jump height -- so the
   // reflection visibly moves with you rather than just holding still
-  const driftX = introP < 1 ? 0 : lateralNorm * w * 0.16;
+  const driftX = introP < 1 ? introDir * (1 - introEase) * w * 0.3 : lateralNorm * w * 0.16;
   const jumpLift = introP < 1 ? 0 : Math.min(h * 0.14, (live?.jump ?? 0) * 0.35);
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -25705,14 +25773,18 @@ function drawHourglassApparition(w, h, live) {
   ctx.scale(squash, 1);
   // sized to feel like the player standing in the glass, not a figure
   // looming over the whole bulb -- and a good deal darker than the glass
-  // itself (rather than a close-luminance purple that melted into it),
-  // with a cool rim-light stroke so the silhouette actually reads as an
-  // edge instead of a soft blur
+  // itself (rather than a close-luminance near-black that melted into
+  // it). Dimmed down from the player's own actual body color (#7a78b8)
+  // rather than an unrelated dark purple-black -- keeps it recognizably
+  // "your own color, but dimmed", which reads more like an unsettling
+  // dark reflection of specifically YOU than a generic shadow figure,
+  // while still being clearly darker/different enough (plus the mask)
+  // to avoid just looking like the player standing there.
   const bw = w * 0.5, bh = h * 0.44;
-  ctx.fillStyle = "#1c1730";
+  ctx.fillStyle = "#454272";
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.fill(); }
   else { ctx.fillRect(-bw / 2, -bh / 2, bw, bh); }
-  ctx.strokeStyle = "rgba(150,140,205,0.45)";
+  ctx.strokeStyle = "rgba(170,160,220,0.5)";
   ctx.lineWidth = Math.max(0.7, w * 0.016);
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.stroke(); }
   else { ctx.strokeRect(-bw / 2, -bh / 2, bw, bh); }
