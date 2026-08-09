@@ -147,7 +147,7 @@ const ORCHARD = {
    PLAYER
    ====================================================== */
 const player = {
-  x: 150, // TEMPORARY — spawns at the mole hole's normal entry landing spot (right where you fall in from the forest hole), revert to 400 when done
+  x: 2400, // TEMPORARY — spawns right at the mirror stall for testing the glimpse mirrors, revert to 150 (then eventually 400) when done
   y: 0,               // height above ground
   width: 40,
   height: 54,
@@ -23293,7 +23293,9 @@ const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJum
 // set once the player's actually ridden the cart down and back -- the
 // mirror stall stays hidden until then ("i dont want mirror wall
 // appearing until after first gold mine visit")
-let mineCartEverRidden = false;
+// TEMPORARY — defaulted true for testing the glimpse mirrors without
+// having to ride the cart first every time; revert to false when done
+let mineCartEverRidden = true;
 // separate from the rider's own localY/vy -- per direct feedback ("can
 // you make the cart bump along with the player slightly instead of just
 // the player bumping"), the tub itself now gets its own small, snappy
@@ -24403,11 +24405,17 @@ const MIRROR_STALL_POST_L = -250, MIRROR_STALL_POST_R = 285;
 // sized up and pulled closer together so all six clearly read as one
 // stall's worth of stock, not scattered wall decor
 const MIRRORS = [
-  { shape: "diamond", dx: -160, hang: true, ropeLen: 30, scale: 1.3, crackSeed: 19 },
+  // glimpse: "clouds" -- gentle ambience only (smallest of the six, so
+  // a staged moment wouldn't read clearly at this size anyway)
+  { shape: "diamond", dx: -160, hang: true, ropeLen: 30, scale: 1.3, crackSeed: 19, glimpse: "clouds" },
   // its own true ground tier -- a real step below the counter, not
   // sharing its height, per "make em all dif heights...ground is one,
   // hanging above another, a counter, then another hanging above that"
-  { shape: "wonky", dx: -168, hang: false, surface: "ground", scale: 1.35, crackSeed: 4 },
+  // glimpse: "ratroomLamp" -- a small specific detail (carved marks
+  // lighting up in the lamp's glow) rather than plain firefly ambience,
+  // per direct feedback ("i want the lamp to show something...like the
+  // initials or the spider")
+  { shape: "wonky", dx: -168, hang: false, surface: "ground", scale: 1.35, crackSeed: 4, glimpse: "ratroomLamp" },
   // ropeLen 80 -- long enough that the hourglass's own base actually
   // reaches down to the counter, so its shard pile sits ON something
   // rather than floating in the gap ("glass shards pile reads as not on
@@ -24427,7 +24435,9 @@ const MIRRORS = [
   // leaned against the right post, top tilted in toward the wall --
   // reads as actually propped there rather than floating perfectly
   // upright in open floor space
-  { shape: "rectangle", dx: 245, hang: false, scale: 1.4, lean: 0.16 }
+  // glimpse: "autumnLeaves" -- a real remembered beat (leaves falling
+  // the same way as the crown moment), not just weather ambience
+  { shape: "rectangle", dx: 245, hang: false, scale: 1.4, lean: 0.16, glimpse: "autumnLeaves" }
 ];
 
 // small 2-3 segment jagged crack, drawn right on the glass -- reused
@@ -24488,7 +24498,103 @@ function drawMirrorGlassReflections(streaks) {
   ctx.lineCap = "butt";
 }
 
-function drawWonkyMirror(cx, cy, scale, seed) {
+// mirror interaction -- "only when near" per direct feedback: each
+// glimpse mirror stays a plain dark pane with a faint idle shimmer from
+// a distance, and only plays its actual little scene once the player
+// walks up to it. Called with ctx already translated to the mirror's
+// own local center and clipped to its glass path, so halfW/halfH are
+// just that shape's own glass bounding box -- callers pass their own.
+function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
+  const bw = halfW * 2.8, bh = halfH * 2.8, bx = -halfW * 1.4, by = -halfH * 1.4;
+  ctx.fillStyle = "#3a4048";
+  ctx.fillRect(bx, by, bw, bh);
+
+  if (!isNear || !glimpseId) {
+    // idle shimmer -- a slow, faint brightening sweep so the glass
+    // reads as a little alive even from across the room, without
+    // giving away what the actual scene is until you're close
+    const t = performance.now() * 0.0007 + seed;
+    const sweepX = Math.sin(t) * halfW * 0.8;
+    const shimmer = ctx.createLinearGradient(sweepX - halfW * 0.4, by, sweepX + halfW * 0.4, by + bh);
+    shimmer.addColorStop(0, "rgba(150,175,210,0)");
+    shimmer.addColorStop(0.5, "rgba(150,175,210,0.1)");
+    shimmer.addColorStop(1, "rgba(150,175,210,0)");
+    ctx.fillStyle = shimmer;
+    ctx.fillRect(bx, by, bw, bh);
+    return;
+  }
+
+  const t = performance.now();
+  if (glimpseId === "clouds") {
+    // small and calm on purpose -- the diamond is the smallest of the
+    // six, so this stays gentle ambience rather than a staged moment:
+    // a soft sky gradient with a couple of slow-drifting cloud puffs
+    const sky = ctx.createLinearGradient(0, by, 0, by + bh);
+    sky.addColorStop(0, "#9fc3e8");
+    sky.addColorStop(1, "#cfe3f2");
+    ctx.fillStyle = sky;
+    ctx.fillRect(bx, by, bw, bh);
+    [0, 1, 2].forEach(i => {
+      const speed = 0.00011 + i * 0.00003;
+      const cx0 = (((t * speed + i * 0.6) % 1) * bw) + bx;
+      const cy0 = -halfH * 0.45 + i * halfH * 0.45;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(cx0, cy0, halfW * 0.42, halfH * 0.15, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx0 + halfW * 0.28, cy0 + halfH * 0.04, halfW * 0.26, halfH * 0.11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  } else if (glimpseId === "autumnLeaves") {
+    // a real remembered beat, not just weather -- leaves falling the
+    // same way they do for the crown moment, just seen through glass
+    const bg = ctx.createLinearGradient(0, by, 0, by + bh);
+    bg.addColorStop(0, "#5a3a20");
+    bg.addColorStop(1, "#3a2414");
+    ctx.fillStyle = bg;
+    ctx.fillRect(bx, by, bw, bh);
+    const colors = ["#c9762f", "#a84a28", "#d99a3a", "#8a5a2a"];
+    for (let i = 0; i < 6; i++) {
+      const seedI = seed + i * 11.3;
+      const speed = 0.00016 + pseudoRandom(seedI) * 0.00012;
+      const fallP = (t * speed + pseudoRandom(seedI + 1)) % 1;
+      const ly = by + fallP * bh;
+      const lx = bx + halfW * 1.4 + (pseudoRandom(seedI + 2) - 0.5) * bw * 0.7 + Math.sin(t * 0.0012 + seedI) * halfW * 0.22;
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(t * 0.0018 + seedI);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.beginPath();
+      ctx.ellipse(0, 0, halfW * 0.15, halfW * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else if (glimpseId === "ratroomLamp") {
+    // the lamp catching something small and specific -- carved marks in
+    // the wood, lit up in its glow -- rather than plain firefly ambience
+    ctx.fillStyle = "#241c14";
+    ctx.fillRect(bx, by, bw, bh);
+    const pulse = 0.6 + Math.sin(t * 0.003 + seed) * 0.4;
+    const glow = ctx.createRadialGradient(0, halfH * 0.1, 1, 0, halfH * 0.1, halfW * 1.15);
+    glow.addColorStop(0, `rgba(255,205,120,${0.5 * pulse})`);
+    glow.addColorStop(1, "rgba(255,205,120,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, halfH * 0.1, halfW * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,235,190,${0.5 + pulse * 0.3})`;
+    ctx.lineWidth = Math.max(0.6, halfW * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(-halfW * 0.32, halfH * 0.08); ctx.lineTo(-halfW * 0.32, -halfH * 0.18);
+    ctx.moveTo(-halfW * 0.32, -halfH * 0.18); ctx.lineTo(-halfW * 0.12, halfH * 0.08);
+    ctx.moveTo(-halfW * 0.12, halfH * 0.08); ctx.lineTo(-halfW * 0.12, -halfH * 0.18);
+    ctx.moveTo(halfW * 0.06, -halfH * 0.18); ctx.lineTo(halfW * 0.06, halfH * 0.08);
+    ctx.moveTo(halfW * 0.28, -halfH * 0.18); ctx.lineTo(halfW * 0.28, halfH * 0.08);
+    ctx.moveTo(halfW * 0.06, -halfH * 0.18); ctx.lineTo(halfW * 0.28, -halfH * 0.18);
+    ctx.stroke();
+  }
+}
+
+function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
   const w = 30 * scale, h = 34 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -24512,12 +24618,11 @@ function drawWonkyMirror(cx, cy, scale, seed) {
   ctx.lineWidth = 0.8;
   ctx.strokeRect(w * 0.1, -h * 0.42, w * 0.22, h * 0.16);
   drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.4], [w * 0.3, -h * 0.3], [-w * 0.3, h * 0.3], [w * 0.1, h * 0.4]]);
-  ctx.fillStyle = "#3a4048";
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(0, 0, w * 0.32, h * 0.36, 0, 0, Math.PI * 2);
   ctx.clip();
-  ctx.fillRect(-w, -h, w * 2, h * 2);
+  drawMirrorGlimpseContent(glimpseId, w * 0.32, h * 0.36, isNear, seed || 4);
   drawMirrorGlassReflections([[-w * 0.15, -h * 0.22, w * 0.05, h * 0.12, 0.35, 1.4]]);
   ctx.restore();
   if (seed) drawMirrorCrack(-w * 0.05, h * 0.05, w * 0.4, seed);
@@ -24555,7 +24660,7 @@ function drawTriptychMirror(cx, cy, scale) {
   ctx.restore();
 }
 
-function drawRectangleMirror(cx, cy, scale, lean) {
+function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
   const w = 22 * scale, h = 58 * scale;
   ctx.save();
   // pivots around its own bottom edge, not its center, so leaning it
@@ -24571,12 +24676,11 @@ function drawRectangleMirror(cx, cy, scale, lean) {
   ctx.fillStyle = "#5a4228";
   path(); ctx.fill();
   drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-w * 0.3, -h * 0.42], [w * 0.3, -h * 0.42], [-w * 0.3, h * 0.42], [w * 0.3, h * 0.42]]);
-  ctx.fillStyle = "#3a4048";
   ctx.save();
   ctx.beginPath();
   ctx.rect(-w * 0.36, -h * 0.44, w * 0.72, h * 0.88);
   ctx.clip();
-  ctx.fillRect(-w, -h, w * 2, h * 2);
+  drawMirrorGlimpseContent(glimpseId, w * 0.36, h * 0.44, isNear, seed || 5);
   drawMirrorGlassReflections([[-w * 0.1, -h * 0.36, w * 0.02, h * 0.3, 0.3, 1.6]]);
   ctx.restore();
   ctx.restore();
@@ -24708,7 +24812,7 @@ function drawMirrorGlassShards(cx, groundY, seed, opts) {
   }
 }
 
-function drawDiamondMirror(cx, cy, scale, seed) {
+function drawDiamondMirror(cx, cy, scale, seed, glimpseId, isNear) {
   const s = 20 * scale;
   ctx.save();
   ctx.translate(cx, cy);
@@ -24717,12 +24821,11 @@ function drawDiamondMirror(cx, cy, scale, seed) {
   ctx.fillStyle = "#5a4228";
   path(); ctx.fill();
   drawOrnateRim(path, "#8a6a3a", "#c9a860", [[-s * 0.5, -s * 0.5], [s * 0.5, -s * 0.5], [-s * 0.5, s * 0.5], [s * 0.5, s * 0.5]]);
-  ctx.fillStyle = "#3a4048";
   ctx.save();
   ctx.beginPath();
   ctx.rect(-s * 0.38, -s * 0.38, s * 0.76, s * 0.76);
   ctx.clip();
-  ctx.fillRect(-s, -s, s * 2, s * 2);
+  drawMirrorGlimpseContent(glimpseId, s * 0.38, s * 0.38, isNear, seed || 3);
   ctx.restore();
   ctx.rotate(-Math.PI / 4);
   drawMirrorGlassReflections([[-s * 0.05, -s * 0.32, s * 0.15, s * 0.05, 0.35, 1.2]]);
@@ -25300,6 +25403,14 @@ function drawMirrorStall(camX) {
     const mx = sx + m.dx;
     if (mx < -60 || mx > canvas.width + 60) return;
     const { my, frameHalfH } = getMirrorPlacement(m);
+    // "only when near" -- see drawMirrorGlimpseContent. Generous enough
+    // of a zone that walking up to browse the mirror is what triggers
+    // it, not a pixel-precise stand-here spot. Vertical tolerance is
+    // asymmetric on purpose -- every mirror hangs well above a
+    // ground-standing player (the diamond's own hook sits ~146px up),
+    // so radiusYDown has to cover that gap; radiusYUp only needs to
+    // handle approaching from slightly above (e.g. off the roof).
+    const isNear = m.glimpse ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) : false;
     if (m.hang) {
       const hookY = MIRROR_STALL_HEADER_Y + 2;
       if (m.triangleHang) {
@@ -25340,12 +25451,12 @@ function drawMirrorStall(camX) {
     if (m.shape === "wonky") {
       // a crate to lean against, just to its left -- per direct feedback
       drawSmallCrate(mx - 22, gy, 24);
-      drawWonkyMirror(mx, my, m.scale, m.crackSeed);
+      drawWonkyMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
     }
     else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale);
-    else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean);
+    else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale, m.lean, m.glimpse, isNear, m.dx);
     else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
-    else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed);
+    else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed, m.glimpse, isNear);
     else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass);
   });
 
