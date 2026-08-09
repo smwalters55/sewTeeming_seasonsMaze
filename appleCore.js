@@ -25445,7 +25445,7 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
 // trigger every few seconds while the player is near, then goes on a
 // long cooldown once it's played through, so it stays a rare "did I
 // actually see that" moment rather than a reliable fixture.
-const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0 };
+const hourglassApparition = { active: false, startTime: 0, nextRollAt: 0, everSeen: false, firstNearAt: 0 };
 const HOURGLASS_APPARITION_MS = 2600;
 function updateHourglassApparition(isNear) {
   if (!isNear) return;
@@ -25455,7 +25455,21 @@ function updateHourglassApparition(isNear) {
       hourglassApparition.active = false;
       hourglassApparition.nextRollAt = now + 8000 + Math.random() * 9000;
     }
-  } else if (now >= hourglassApparition.nextRollAt) {
+    return;
+  }
+  // guarantee it plays once, shortly after the very first time the
+  // player is ever near -- otherwise whether someone ever sees it at
+  // all is down to luck, which just reads as "nothing happens here"
+  if (!hourglassApparition.everSeen) {
+    if (!hourglassApparition.firstNearAt) hourglassApparition.firstNearAt = now;
+    if (now - hourglassApparition.firstNearAt > 900) {
+      hourglassApparition.active = true;
+      hourglassApparition.startTime = now;
+      hourglassApparition.everSeen = true;
+    }
+    return;
+  }
+  if (now >= hourglassApparition.nextRollAt) {
     if (Math.random() < 0.18) {
       hourglassApparition.active = true;
       hourglassApparition.startTime = now;
@@ -25463,6 +25477,59 @@ function updateHourglassApparition(isNear) {
       hourglassApparition.nextRollAt = now + 2500 + Math.random() * 2500;
     }
   }
+}
+// the reflection's DEFAULT state, whenever the mask isn't playing -- a
+// tiny silent procession of critters (squirrel, rat, mole/gopher)
+// crossing single-file through the glass, on their own secret errand
+// nobody in the actual room ever sees. Charming and easy to miss on its
+// own, which is the point -- it's what rewards someone who lingers,
+// separate from the rare unsettling mask moment.
+function drawHourglassParade(w, h) {
+  const now = performance.now();
+  const critters = [
+    { period: 6200, phase: 0, y: -h * 0.16, size: 0.09, type: "squirrel" },
+    { period: 7400, phase: 2000, y: h * 0.04, size: 0.1, type: "rat" },
+    { period: 8600, phase: 4500, y: h * 0.24, size: 0.1, type: "mole" }
+  ];
+  critters.forEach(c => {
+    const cyclePos = ((now + c.phase) % c.period) / c.period;
+    const x = -w * 0.55 + cyclePos * w * 1.1;
+    const edgeFade = Math.min(1, Math.min(cyclePos, 1 - cyclePos) * 6);
+    if (edgeFade <= 0.02) return;
+    ctx.save();
+    ctx.globalAlpha = edgeFade * 0.8;
+    ctx.translate(x, c.y);
+    const s = w * c.size;
+    const col = "rgba(22,17,12,0.85)";
+    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    if (c.type === "squirrel") {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s, s * 0.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = s * 0.35;
+      ctx.beginPath();
+      ctx.arc(-s * 0.9, -s * 0.6, s * 0.6, 0, Math.PI * 1.5);
+      ctx.stroke();
+    } else if (c.type === "rat") {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 1.2, s * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = s * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(-s * 1.1, 0);
+      ctx.quadraticCurveTo(-s * 1.8, s * 0.3, -s * 2.2, 0);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s, s * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(s * 0.85, s * 0.1, s * 0.25, s * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
 }
 function drawHourglassApparition(w, h) {
   const now = performance.now();
@@ -25565,6 +25632,7 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear) {
     [w * 0.08, h * 0.16, w * 0.24, h * 0.36, 0.3, 1.2]
   ]);
   if (hourglassApparition.active) drawHourglassApparition(w, h);
+  else if (isNear) drawHourglassParade(w, h);
   ctx.restore();
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
   // a real chunk chipped out of the top-right corner -- gives the shard
