@@ -24591,6 +24591,26 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   ]);
   ctx.restore();
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
+  // a real chunk chipped out of the top-right corner -- gives the shard
+  // pile below an actual visible source, instead of broken glass just
+  // sitting there with an otherwise-intact mirror hanging above it
+  if (seed && drawShards) {
+    ctx.fillStyle = "#241708"; // matches the room's own dark wall/sky color showing through
+    ctx.beginPath();
+    ctx.moveTo(w * 0.34, -h * 0.48);
+    ctx.lineTo(w * 0.47, -h * 0.44);
+    ctx.lineTo(w * 0.44, -h * 0.32);
+    ctx.lineTo(w * 0.3, -h * 0.36);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,22,26,0.55)";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.3, -h * 0.36);
+    ctx.lineTo(w * 0.18, -h * 0.24);
+    ctx.lineTo(w * 0.14, -h * 0.08);
+    ctx.stroke();
+  }
   ctx.restore();
 
   // shards sit right below the hourglass's own bottom edge, wherever
@@ -24698,6 +24718,28 @@ function drawOvalMirror(cx, cy, scale, brass) {
 }
 
 const MIRROR_FRAME_HALF_H = { wonky: 17, triptych: 15, rectangle: 29, hourglass: 29, diamond: 14, oval: 11 };
+// half-widths, same unscaled-then-times-m.scale convention as the
+// heights above -- used both for the diamond's own rotated-square glass
+// and, now, for standing collision on top of each of the six mirrors
+const MIRROR_FRAME_HALF_W = { wonky: 15, triptych: 26, rectangle: 11, hourglass: 17, diamond: 14, oval: 16 };
+
+// shared placement math for a MIRRORS entry -- used by both the render
+// loop and the standing-collision check below, so the two can never
+// drift apart into "looks like it's resting at one height, collides at
+// another"
+function getMirrorPlacement(m) {
+  const frameHalfH = MIRROR_FRAME_HALF_H[m.shape] * m.scale;
+  let my;
+  if (m.hang) {
+    const hookY = MIRROR_STALL_HEADER_Y + 2;
+    my = hookY + m.ropeLen + frameHalfH;
+  } else if (m.surface === "ground") {
+    my = gy - frameHalfH + 2;
+  } else {
+    my = MIRROR_STALL_COUNTER_Y - frameHalfH + 2;
+  }
+  return { my, frameHalfH };
+}
 
 // ---- background clutter: small shelves/table + non-interactive mirrors
 // and trinkets, per "i like having the shelves and stuff too, and want
@@ -24900,13 +24942,16 @@ function drawSmallCrate(x, groundY, size) {
   ctx.restore();
 }
 
-// a small vase of drooping flowers, sitting on the counter -- dark,
-// muted purple-red heads nodding downward on their own stems, not a
-// bright cheerful bouquet
-function drawVaseFlowers(x, counterY) {
+// a small vase of drooping flowers, sitting on a counter or shelf --
+// dark, muted purple-red heads nodding downward on their own stems, not
+// a bright cheerful bouquet. flip mirrors the whole thing left/right so
+// a second vase elsewhere in the stall droops the other way rather than
+// reading as the exact same prop copy-pasted.
+function drawVaseFlowers(x, counterY, flip) {
   const y = counterY;
   ctx.save();
   ctx.translate(x, y);
+  if (flip) ctx.scale(-1, 1);
   // vase body
   ctx.fillStyle = "#5a4a52";
   ctx.beginPath();
@@ -24974,16 +25019,22 @@ function drawVaseFlowers(x, counterY) {
 // flat on the ground, and a couple more tiny mirrors on the wall
 const MIRROR_STALL_CLUTTER = [
   { type: "table+handmirror", dx: -215 },
+  // the shelf's own two trinkets swapped a jar for a small pot of
+  // drooping flowers -- a second, different-height echo of the counter
+  // vase, mirrored so it droops the other way rather than reading as a
+  // copy-pasted prop
   { type: "shelf+trinkets", dx: -110 },
-  // the cracked one -- a chunk actually broken out, shards from it
-  // collected on its own tiny shelf below rather than floating on
-  // nothing
-  { type: "wallmirror+cracked", dx: -20, shape: "oval", y: -150 },
+  // stacked directly below the shelf above instead of crammed into the
+  // hourglass/oval gap -- that gap was genuinely too tight for two props
+  // ("this mirror area is really super cramped"). Reads as a deliberate
+  // two-tier little nook now, and still sits roughly where the player
+  // naturally stands to browse.
+  { type: "shelf+mirror+trinket+low", dx: -110 },
+  // moved out of the packed hourglass/oval gap into the real open gap
+  // after the triptych, so the cracked one actually stands out instead
+  // of getting lost between the two biggest mirrors
+  { type: "wallmirror+cracked", dx: 200, shape: "oval", y: -150 },
   { type: "shelf+mirror+trinket", dx: 95 },
-  // a second, lower shelf around where the player naturally stands to
-  // browse the stall, roughly player-height rather than mounted way up
-  // near the header beam like the others
-  { type: "shelf+mirror+trinket+low", dx: 0 },
   { type: "groundmirror", dx: 175 },
   // a little touch of life on the counter -- dark, drooping flowers
   // rather than anything bright/cheerful
@@ -25140,16 +25191,20 @@ function drawMirrorStallClutter(sx) {
       drawHandMirrorFlat(cx2, MIRROR_STALL_COUNTER_Y - 24, -0.15);
     } else if (c.type === "shelf+trinkets") {
       drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 30);
-      drawShelfTrinket(cx2 - 8, MIRROR_STALL_HEADER_Y + 30, "jar");
+      // a little potted echo of the counter vase -- flipped so it
+      // droops the other way, at a distinctly different height, rather
+      // than reading as the same prop copy-pasted
+      drawVaseFlowers(cx2 - 6, MIRROR_STALL_HEADER_Y + 30, true);
       drawShelfTrinket(cx2 + 7, MIRROR_STALL_HEADER_Y + 30, "pebble");
     } else if (c.type === "shelf+mirror+trinket") {
       drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 46);
       drawTinyWallMirror(cx2 - 6, MIRROR_STALL_HEADER_Y + 40, "oval");
       drawShelfTrinket(cx2 + 8, MIRROR_STALL_HEADER_Y + 46, "pebble");
     } else if (c.type === "shelf+mirror+trinket+low") {
-      // same little arrangement, but hung low -- roughly player-eye
-      // height rather than up near the header beam like the others
-      const lowY = gy - 78;
+      // stacked well below the shelf above it (same dx) instead of
+      // crammed into the hourglass/oval gap -- a real two-tier nook,
+      // still roughly player-eye height
+      const lowY = gy - 95;
       drawSmallShelf(cx2, lowY);
       drawTinyWallMirror(cx2 - 6, lowY - 6, "oval");
       drawShelfTrinket(cx2 + 8, lowY, "pebble");
@@ -25184,11 +25239,9 @@ function drawMirrorStall(camX) {
   MIRRORS.forEach(m => {
     const mx = sx + m.dx;
     if (mx < -60 || mx > canvas.width + 60) return;
-    const frameHalfH = MIRROR_FRAME_HALF_H[m.shape] * m.scale;
-    let my;
+    const { my, frameHalfH } = getMirrorPlacement(m);
     if (m.hang) {
       const hookY = MIRROR_STALL_HEADER_Y + 2;
-      my = hookY + m.ropeLen + frameHalfH;
       if (m.triangleHang) {
         // picture-frame style -- a single nail, two strings running down
         // to the frame's own top corners forming a triangle, rather than
@@ -25222,13 +25275,6 @@ function drawMirrorStall(camX) {
         ctx.arc(mx, hookY, 1.8, 0, Math.PI * 2);
         ctx.fill();
       }
-    } else if (m.surface === "ground") {
-      // sits on the actual cave floor, a real step below the counter --
-      // its own distinct lowest tier, not sharing the counter's height
-      my = gy - frameHalfH + 2;
-    } else {
-      // rests right on the booth's own counter
-      my = MIRROR_STALL_COUNTER_Y - frameHalfH + 2;
     }
 
     if (m.shape === "wonky") {
@@ -25484,6 +25530,32 @@ function updateMoleholeScene(deltaTime) {
       player.vineFlying = false;
     }
   }
+
+  // all six mirror-stall mirrors, standable -- including the three
+  // hanging ones now, per direct feedback ("all 6 mirrors and roof i
+  // think"). Shares the exact placement math the render loop uses
+  // (getMirrorPlacement) so a mirror's collision top can never drift
+  // out of sync with where it's actually drawn.
+  MIRRORS.forEach(m => {
+    const worldX = MIRROR_STALL_X + m.dx;
+    const { my, frameHalfH } = getMirrorPlacement(m);
+    const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
+    const platformTop = gy - (my - frameHalfH);
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > worldX - halfW &&
+      player.x < worldX + halfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.vineFlying = false;
+    }
+  });
 
   // the geode breaker's own raised ledge -- same landing pattern as the
   // dirt platforms above, standable so a root-swing release actually has
