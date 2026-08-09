@@ -27128,24 +27128,30 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.clip();
     ctx.fillStyle = waterGrad;
     ctx.fillRect(waterTipX, waterTop, waterEndX - waterTipX, waterBot - waterTop);
-    // current streaks drift DOWN through the band (far bank at top,
-    // near bank at bottom, same depth convention as the rest of the
-    // scene), not sideways along the course -- a river's course can
-    // wind left-to-right across the panorama while its actual current,
-    // seen locally, still flows toward the viewer/downstream. Each
-    // streak keeps a fixed x and cycles top-to-bottom through that x's
-    // own local band height.
+    // current streaks now actually travel RIGHTWARD along the river's
+    // own course (gear panel -> bridge -> tree), not top-to-bottom --
+    // per direct feedback ("should we make the water go the right way
+    // at least. move right direction"). Each streak cycles its own x
+    // position left-to-right through the water's full span, riding
+    // riverTop/riverBot at that x so it still follows the band's own
+    // wind/bend rather than cutting a straight line across it, with a
+    // small within-band y offset (fixed per streak) so they don't all
+    // pile onto one single centerline as they travel.
     ctx.strokeStyle = "rgba(210,235,240,0.5)";
     ctx.lineWidth = Math.max(0.5, halfW * 0.022);
+    const flowSpan = waterEndX - waterStartX;
     for (let i = 0; i < 16; i++) {
       const seedI = seed + i * 5.7;
-      const rx = waterStartX + pseudoRandom(seedI) * (waterEndX - waterStartX);
+      const rx = waterStartX + ((t * 0.05 + pseudoRandom(seedI) * flowSpan) % flowSpan);
       const bandTop = riverTop(rx), bandBot = riverBot(rx);
       const spanH = Math.max(1, bandBot - bandTop);
-      const ry = bandTop + ((t * 0.05 + pseudoRandom(seedI + 1) * spanH) % spanH);
+      const frac = pseudoRandom(seedI + 1); // fixed relative position within the band, so the streak stays at the same depth as it travels
+      const ry = bandTop + frac * spanH;
+      const rx2 = rx + halfW * 0.16;
+      const ry2 = riverTop(rx2) + frac * (riverBot(rx2) - riverTop(rx2));
       ctx.beginPath();
       ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + Math.sin(t * 0.003 + seedI) * halfW * 0.02, ry + halfH * 0.2);
+      ctx.lineTo(rx2, ry2);
       ctx.stroke();
     }
     // sparkle/glint dots, brightest directly under the bridge
