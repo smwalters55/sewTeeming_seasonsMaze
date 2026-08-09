@@ -22207,30 +22207,6 @@ function drawMoleHoleNoticeBoard(camX) {
     ctx.restore();
   });
 
-  // a floating "press space" prompt once the player's close enough to
-  // actually interact -- the board no longer just sits there looking
-  // passive, it visibly invites the walk-up. Placed BELOW the board,
-  // not above -- there's a platform positioned directly above this
-  // board on purpose (see MOLEHOLE_PLATFORMS), drawn after this
-  // function, which was rendering right over an above-board prompt
-  // and hiding it completely.
-  if (isPlayerNear(moleHoleNoticeBoard.x, 0, 24, 20, 20) &&
-      !corkboardReader.active && !corkboardReader.opening && !corkboardReader.closing) {
-    const bob = Math.sin(performance.now() * 0.005) * 2;
-    const py = ny + h / 2 + 18 + bob;
-    ctx.fillStyle = "#c9a03a";
-    roundRect(ctx, nx - 24, py - 9, 48, 16, 4);
-    ctx.fill();
-    ctx.strokeStyle = "#4a3018";
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, nx - 24, py - 9, 48, 16, 4);
-    ctx.stroke();
-    ctx.fillStyle = "#241708";
-    ctx.font = "bold 9px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("[SPACE]", nx, py + 2);
-    ctx.textAlign = "left";
-  }
 }
 
 /* ======================================================
@@ -22271,7 +22247,7 @@ const corkboardNotices = [
   { rot: 0.03, dx: -220, dy: 95, fontSize: 9, tornCorner: true,
     lines: [{ t: "LOST:", bold: true }, "one (1) very good hat.", "Answers to nothing.", "Reward: a favor, redeemable later."] },
   { rot: -0.07, dx: 0, dy: 100, fontSize: 9, wrinkled: true,
-    lines: ["Whoever keeps 'borrowing'", { t: "MY good shovel --", bold: true }, "we know it's you."] },
+    lines: ["Whoever keeps 'borrowing'", { t: "MY good shovel --", bold: true }, "I know it's you."] },
   { rot: 0.06, dx: 220, dy: 92, fontSize: 9, taped: true,
     lines: ["Shop's got new stock in.", "Ask about the shiny thing", "in the back, if you dare."] }
 ];
@@ -22439,28 +22415,42 @@ function drawCorkboardReader() {
       ctx.stroke();
     }
     if (n.rippedFlap) {
-      // a piece along the bottom edge that's torn most of the way
-      // loose and hangs down at a slight angle -- still barely
-      // attached (the jagged edge along the top of the flap), not
-      // fully detached
+      // a piece that's torn most of the way loose and droops down at
+      // an angle -- the hinge point below is the FIRST vertex of the
+      // flap's own path (not just a translate offset the shape floats
+      // near), and it sits just INSIDE the paper's bottom edge rather
+      // than below it, so the flap actually overlaps/touches the sheet
+      // at that seam instead of reading as a separate piece glued on
+      // nearby with a gap all around it.
       ctx.save();
-      ctx.translate(-pw * 0.1, ph / 2 - 1);
-      ctx.rotate(0.16);
-      const fw = pw * 0.42;
+      const hx = -pw * 0.18, hy = ph / 2 - 3;
+      ctx.translate(hx, hy);
+      ctx.rotate(0.32);
       ctx.fillStyle = n.paperColor || "rgba(250,244,225,0.97)";
       ctx.beginPath();
-      ctx.moveTo(-fw / 2, 0);
-      ctx.lineTo(-fw / 2 + 6, 3);
-      ctx.lineTo(-fw / 2 + 13, -1);
-      ctx.lineTo(-fw / 2 + 20, 4);
-      ctx.lineTo(fw / 2, 1);
-      ctx.lineTo(fw / 2 - 3, 11);
-      ctx.lineTo(-fw / 2 + 3, 13);
+      ctx.moveTo(0, 0); // the hinge -- still fused to the sheet right here
+      ctx.lineTo(pw * 0.22, 3); // jagged tear seam, running along the boundary with the main paper
+      ctx.lineTo(pw * 0.14, 8);
+      ctx.lineTo(pw * 0.26, 6);
+      ctx.lineTo(pw * 0.32, 14); // far corner -- most separated, drooping the lowest
+      ctx.lineTo(pw * 0.17, 23); // outer/bottom edge of the now-loose flap
+      ctx.lineTo(-pw * 0.02, 16);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "rgba(40,30,20,0.45)";
       ctx.lineWidth = 0.8;
       ctx.stroke();
+      // a thin shadow the lifted flap casts back onto the sheet right
+      // behind the hinge -- sells that it's actually raised slightly
+      // off the surface there, not flat/painted on
+      ctx.fillStyle = "rgba(0,0,0,0.14)";
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(pw * 0.22, 3);
+      ctx.lineTo(pw * 0.14, 8);
+      ctx.lineTo(pw * 0.04, 3);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
     if (n.taped) {
@@ -23203,8 +23193,7 @@ function drawMoleholeShaftPreview(camX) {
     ctx.fillStyle = "#241708";
     ctx.font = "bold 11px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("TO CART", sx, sy - 1);
-    ctx.fillText("[SPACE]", sx, sy + 10);
+    ctx.fillText("TO CART", sx, sy + 3);
     ctx.textAlign = "left";
   }
 
@@ -25693,7 +25682,7 @@ function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
 // the "forestPreview" branch of drawMirrorGlimpseContent) instead of
 // each panel timing its own burst independently
 const triptychReveal = { wasNear: false, startTime: -Infinity };
-const TRIPTYCH_REVEAL_SPARKLE_MS = 1400;
+const TRIPTYCH_REVEAL_SPARKLE_MS = 2400;
 function drawTriptychMirror(cx, cy, scale, glimpseId, isNear) {
   if (isNear && !triptychReveal.wasNear) triptychReveal.startTime = performance.now();
   triptychReveal.wasNear = isNear;
@@ -25897,7 +25886,7 @@ function drawHourglassParade(w, h) {
     // glass (#3a4048) the old near-black silhouette barely showed up at
     // all, leaving only the colorful hat/costume floating with no
     // visible body underneath
-    const col = "rgba(150,125,95,0.9)";
+    const col = "rgba(168,142,110,0.92)";
     ctx.fillStyle = col;
     ctx.strokeStyle = col;
     // bodyRx/bodyRy track each type's own torso ellipse so the costume
@@ -25943,6 +25932,19 @@ function drawHourglassParade(w, h) {
       ctx.ellipse(s * 0.85, s * 0.1, s * 0.25, s * 0.18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // a light rim stroke around the whole body silhouette -- this is the
+    // actual fix for "just colored spots floating in the glass": the
+    // warm-brown body fill alone still reads as almost the same tone as
+    // the dark glass at any real viewing distance, so only the costume
+    // patch (sitting on top of a body that barely shows) was visible.
+    // A bright thin outline makes the animal shape itself pop first,
+    // so the costume reads as clothing ON a critter rather than a
+    // disembodied blob.
+    ctx.lineWidth = Math.max(0.6, s * 0.08);
+    ctx.strokeStyle = "rgba(225,212,188,0.6)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
     // the costume itself -- a blanket/cape draped over the BACK (the
     // top of the body, following its actual curve), not a circular
     // patch floating on the belly. On an all-fours side-view body, a
