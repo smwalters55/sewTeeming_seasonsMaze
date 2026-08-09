@@ -11885,7 +11885,7 @@ const FOREST_CLOCKWORK_GEARS = [
   // didn't reach that far right -- fixed below with landingPadR
   // instead of giving up on the fling entirely.
   // real gap (42px edge-to-edge AND a 108px climb together) into the standalone capstone
-  { x: 3182, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, landingPad: 16, landingPadR: 62, catchFlight: true, overgrown: 1 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear". Back to the default launchVx (no more per-gear override) -- see the note below on why there's no longer a dedicated landing GEAR further out for THAT flight. landingPad (left side, 16) fixes the same "footprint narrower than the player" problem as before. landingPadR (right side, 62) is bigger and asymmetric on purpose -- B1's fling arrives from the left and its real, simulated descending pass through this gear's landing height lands somewhere in a fixed, deterministic window relative to this gear's own x (previously x~2905-2950 against a 2877 capstone, i.e. +28 to +73 -- same window now applies relative to this gear's new x). Right edge reaches gear.x+62, comfortably past it. Left untouched (x/height/outerR) beyond the block shift, same reason as B1 -- everything above depends on its exact position/height.
+  { x: 3182, height: 212, outerR: 14, dir: 1, rot: 0, piece: true, pieceCollected: false, launchPad: true, landingPad: 16, landingPadR: 62, catchFlight: true, overgrown: 1, showLandingCap: true, wrapsOverride: 1, mossOverride: 0 }, // the hardest single jump in the whole grove, AND the big showcase launch -- dir flipped from -1 to 1 (was launching BACKWARD, away from progress) so its flight actually carries forward into the flight-only piece. Lighter growth (was random, often the heaviest tier) so the tallest/showcase gear reads cleaner, per "a lil less moss on the top most launch gear". Back to the default launchVx (no more per-gear override) -- see the note below on why there's no longer a dedicated landing GEAR further out for THAT flight. landingPad (left side, 16) fixes the same "footprint narrower than the player" problem as before. landingPadR (right side, 62) is bigger and asymmetric on purpose -- B1's fling arrives from the left and its real, simulated descending pass through this gear's landing height lands somewhere in a fixed, deterministic window relative to this gear's own x (previously x~2905-2950 against a 2877 capstone, i.e. +28 to +73 -- same window now applies relative to this gear's new x). Right edge reaches gear.x+62, comfortably past it. Left untouched (x/height/outerR) beyond the block shift, same reason as B1 -- everything above depends on its exact position/height.
   // gap descending into cluster D widened a touch (was 55px, now ~63 after D0's own resize below) -- falling is easier than climbing, so this one's more forgiving despite the height drop
   { x: 3277, height: 92, outerR: 18, dir: 1, rot: 0 }, // cluster D starts. Height/outerR nudged (was 70/26) -- tall and narrow now instead of matching cluster A's own low/wide gears, real contrast against D1 right next to it
   { x: 3323, height: 30, outerR: 25, dir: -1, rot: 0, overgrown: 0 }, // touches gear D1 (near enough -- a few px gap now, same tolerance as A1/A2 above), easy landing -- bare. Height/outerR nudged (was 50/20), low and wide against D0's tall/narrow, per the same "not equidistant, height and width wise" feedback
@@ -12446,15 +12446,65 @@ function drawForestClockworkGears(camX) {
     // unless a gear specifies its own overgrown tier explicitly (same
     // pattern as the static intro gears)
     const tier = FOREST_OVERGROWN_TIERS[g.overgrown ?? Math.floor(pseudoRandom(g.x * 0.7) * FOREST_OVERGROWN_TIERS.length)];
-    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, tier.wraps);
-    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, tier.moss);
+    // wrapsOverride/mossOverride let one specific gear go lighter than
+    // its own named tier without adding a whole new tier just for it
+    // (see the capstone -- "just a peek of metal" through the growth,
+    // on top of the landing cap below, so its actual standable surface
+    // reads clearly instead of vanishing into solid vine/moss coverage)
+    const wraps = g.wrapsOverride ?? tier.wraps;
+    const moss = g.mossOverride ?? tier.moss;
+    drawForestGearVines(gx, gy2, g.outerR, g.x * 5.1, wraps);
+    drawGearMoss(gx, gy2, g.outerR, g.x * 6.4, moss);
     // a few strands hanging down the front face too, not just wrapped
     // around the rim -- 0-2 per gear, stable per-gear via pseudoRandom
     drawGearHangingVines(gx, gy2, g.outerR, g.x * 8.2, Math.round(pseudoRandom(g.x * 8.9) * 2));
+    // a non-rotating flat metal cap laid across the standing surface --
+    // drawn in world space like the vines/moss (not rotating with the
+    // gear face), so a small, easily-missed gear like the capstone
+    // still reads unmistakably as "a thing to stand on" no matter how
+    // fast it's spinning underneath. Drawn last (on top of the vines/
+    // moss above) so it's never accidentally buried under growth.
+    if (g.showLandingCap) {
+      drawGearLandingCap(gx, gy2 - g.outerR, g.outerR, g.x * 7.3);
+    }
     if (g.piece && !g.pieceCollected) {
       drawGearBridgePiece(gx, gy2 - g.outerR);
     }
   });
+}
+
+// a distinct, non-rotating flat metal plate laid across a gear's own
+// standing surface -- see the call site above for why this exists
+// (the capstone specifically: tiny outerR + heavy growth + a
+// coincidentally-overlapping background tree canopy made it read as
+// an invisible floating platform instead of a real one)
+function drawGearLandingCap(gx, standY, outerR, seed) {
+  const capW = outerR * 1.7, capH = Math.max(5, outerR * 0.34);
+  ctx.save();
+  ctx.fillStyle = "#9a7a4e";
+  roundRect(ctx, gx - capW / 2, standY - capH, capW, capH, capH * 0.4);
+  ctx.fill();
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, gx - capW / 2, standY - capH, capW, capH, capH * 0.4);
+  ctx.stroke();
+  // a bright streak along the top edge -- the metallic "catches the
+  // light" cue that makes it read as a flat, walkable surface rather
+  // than just another lump of gear
+  ctx.strokeStyle = "rgba(255,235,190,0.6)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(gx - capW / 2 + 3, standY - capH + 1.5);
+  ctx.lineTo(gx + capW / 2 - 3, standY - capH + 1.5);
+  ctx.stroke();
+  // two small rivets
+  ctx.fillStyle = "#3a2c1a";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.arc(gx + side * capW * 0.3, standY - capH / 2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
 }
 
 /* ======================================================
