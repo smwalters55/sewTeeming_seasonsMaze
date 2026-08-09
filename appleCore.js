@@ -24667,7 +24667,11 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   // (being hung, not resting) it may sit well above
   // lands right on the booth's own counter now, not floating off the
   // hourglass's own (possibly high-hanging) bottom edge
-  if (drawShards) drawMirrorGlassShards(cx, MIRROR_STALL_COUNTER_Y, seed || 7);
+  // offset to the right, under the chipped corner itself (chipCx = w*0.4
+  // above), instead of dead-center under the whole frame -- the shards
+  // should read as having fallen from the actual break, not just from
+  // "the hourglass" in general
+  if (drawShards) drawMirrorGlassShards(cx + w * 0.4, MIRROR_STALL_COUNTER_Y, seed || 7);
 }
 
 // broken glass shards piled on the counter directly below the hourglass
