@@ -23262,7 +23262,13 @@ function drawTunnelTownEntrance(camX) {
    the idea of this being more interactive than just an animated move
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
-const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0 };
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0, startDelay: 0 };
+// a real beat before the cart actually lurches off -- per direct
+// feedback ("give it a beat or two before the cart starts moving, it
+// happens like so fast automatically"). Jumping/bumps still work fine
+// during this window, only the actual track travel (mineCart.t) is held
+// at 0 until it elapses.
+const MINE_CART_START_DELAY = 1100;
 const MINE_CART_TRACK_LENGTH = 2200;
 const MINE_CART_SPEED = 210; // world units/sec of auto-scroll -- nudged down from 240, a touch less frantic
 const MINE_CART_GRAVITY = 900; // px/sec^2
@@ -23354,6 +23360,7 @@ function startMineCartRide() {
   mineCart.vy = 0;
   mineCart.gold = 0;
   mineCart.usedDoubleJump = false;
+  mineCart.startDelay = MINE_CART_START_DELAY;
   // NOTE: mineCartGoldCollected is deliberately NOT reset here -- see its
   // declaration above. A fresh ride only ever offers whatever gold hasn't
   // already been permanently pulled out on an earlier trip.
@@ -23464,8 +23471,14 @@ function updateMineCartRide(deltaTime) {
     mineCart.usedDoubleJump = false;
   }
 
+  if (mineCart.startDelay > 0) {
+    mineCart.startDelay -= dt * 1000;
+  }
+
   const prevT = mineCart.t;
-  mineCart.t += MINE_CART_SPEED * dt;
+  if (mineCart.startDelay <= 0) {
+    mineCart.t += MINE_CART_SPEED * dt;
+  }
 
   // crossing a bump while grounded gives a small, subtle upward nudge --
   // much gentler than a real jump (see each bump's own strength, capped
