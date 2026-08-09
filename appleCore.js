@@ -10899,6 +10899,45 @@ function tracePathOrganicOpen(ctx, pts) {
   ctx.quadraticCurveTo(last.x, last.y, last.x, last.y);
 }
 
+// draws a chain of quadratic-bezier segments as one continuously
+// tapering, continuously color-blended stroke -- built from many short
+// overlapping round-capped mini-segments rather than a handful of
+// flat-width, flat-color strokes stitched end to end. A few big strokes
+// each with their own fixed width/color is exactly what reads as
+// distinct "brush strokes" with visible seams where one hands off to
+// the next (width jumps AND color jumps at the same point make the
+// seam doubly obvious); sampling finely and lerping both width and
+// color per tiny segment removes that seam entirely since neighboring
+// mini-segments barely differ from each other.
+function drawTaperedBlendedStroke(ctx, beziers, w0, w1, c0, c1, stepsPerSeg) {
+  const pts = [];
+  beziers.forEach(b => {
+    for (let i = 0; i <= stepsPerSeg; i++) {
+      if (pts.length && i === 0) continue; // shared joint point, already added by the previous segment
+      const f = i / stepsPerSeg, omf = 1 - f;
+      pts.push({
+        x: omf * omf * b.p0.x + 2 * omf * f * b.ctrl.x + f * f * b.p1.x,
+        y: omf * omf * b.p0.y + 2 * omf * f * b.ctrl.y + f * f * b.p1.y
+      });
+    }
+  });
+  const n = pts.length - 1;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (let i = 0; i < n; i++) {
+    const tm = (i + 0.5) / n;
+    ctx.lineWidth = w0 + (w1 - w0) * tm;
+    const r = Math.round(c0[0] + (c1[0] - c0[0]) * tm);
+    const g = Math.round(c0[1] + (c1[1] - c0[1]) * tm);
+    const bch = Math.round(c0[2] + (c1[2] - c0[2]) * tm);
+    ctx.strokeStyle = `rgb(${r},${g},${bch})`;
+    ctx.beginPath();
+    ctx.moveTo(pts[i].x, pts[i].y);
+    ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
+    ctx.stroke();
+  }
+}
+
 function drawForestRiver(camX) {
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
@@ -11061,7 +11100,11 @@ function drawForestRiver(camX) {
     const bowDx = waterX - topX, bowDy = waterY - topY;
     const bowLen = Math.hypot(bowDx, bowDy);
     const perpX = -bowDy / bowLen, perpY = bowDx / bowLen;
-    const bow = 34;
+    // softened (was 34) -- the fuller bow read as too large and
+    // prominent a bend/corner relative to the rest of the scene, per
+    // direct feedback to bring its "height" more in line with the
+    // surrounding scene pieces. Still a genuine curve, just a gentler one.
+    const bow = 22;
     const ctrlX = (topX + waterX) / 2 + perpX * bow, ctrlY = (topY + waterY) / 2 + perpY * bow;
     const steps = 7;
     const edgePts = [{ x: topX, y: topY }];
@@ -11125,53 +11168,32 @@ function drawForestRiver(camX) {
     // near the tip) rather than a filled polygon, since a taper is much
     // simpler to fake with decreasing lineWidth than with a pinched
     // closed shape.
-    const twist1X = topX - 24, twist1Y = topY - 11;
-    const twist2X = topX - 44, twist2Y = topY - 3;
-    const tendrilTipX = topX - 66, tendrilTipY = topY - 9;
-    // three widths instead of two -- an abrupt 13->6 jump right at the
-    // twist reads as a visible kink/step where the two strokes join.
-    // Also matches the lighter "dry sand" tone from the main fill's own
-    // gradient instead of a flat, slightly darker color -- that flat
-    // patch sitting on top of the shaded fill is what read as "a
-    // paint-brush tip poking out," a separate stuck-on piece rather
-    // than a continuation of the same shaded surface.
+    // reach softened (was topY-11/-3/-9) -- the tendril curling this
+    // high above the main bank read as its own separate raised hook/
+    // corner poking up out of the scene, per direct feedback to bring
+    // the sand's overall "height" more in line with everything around
+    // it. Flatter now, closer to grazing along the grass line.
+    const twist1X = topX - 24, twist1Y = topY - 6;
+    const twist2X = topX - 44, twist2Y = topY - 2;
+    const tendrilTipX = topX - 66, tendrilTipY = topY - 5;
+    // one continuous tapering, continuously-blended stroke now (was
+    // three separate flat-width, flat-color strokes stitched together
+    // -- that read as "three brush strokes in slightly different
+    // colors, one connecting to another" instead of one organic taper,
+    // per direct feedback). Same overall curve (peel off, twist,
+    // thin out) and same light-to-dark tone range as before, just
+    // smoothly interpolated now via drawTaperedBlendedStroke instead
+    // of stepped at each segment boundary.
+    const tendrilBeziers = [
+      { p0: { x: topX, y: topY }, ctrl: { x: twist1X, y: twist1Y }, p1: { x: twist2X, y: twist2Y } },
+      { p0: { x: twist2X, y: twist2Y }, ctrl: { x: (twist2X + tendrilTipX) / 2, y: twist2Y - 5 }, p1: { x: tendrilTipX, y: tendrilTipY } }
+    ];
     ctx.save();
     ctx.filter = "blur(4px)";
     ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = "#8c7a56";
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = 13;
-    ctx.beginPath();
-    ctx.moveTo(topX, topY);
-    ctx.quadraticCurveTo(twist1X, twist1Y, twist2X, twist2Y);
-    ctx.stroke();
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(twist2X, twist2Y);
-    ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
-    ctx.stroke();
+    drawTaperedBlendedStroke(ctx, tendrilBeziers, 13, 6, [140, 122, 86], [122, 106, 74], 10);
     ctx.restore();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = "#8c7a56";
-    ctx.lineWidth = 12;
-    ctx.beginPath();
-    ctx.moveTo(topX, topY);
-    ctx.quadraticCurveTo((topX + twist1X) / 2, (topY + twist1Y) / 2, twist1X, twist1Y);
-    ctx.stroke();
-    ctx.strokeStyle = "#84734f";
-    ctx.lineWidth = 9;
-    ctx.beginPath();
-    ctx.moveTo(twist1X, twist1Y);
-    ctx.quadraticCurveTo((twist1X + twist2X) / 2, (twist1Y + twist2Y) / 2, twist2X, twist2Y);
-    ctx.stroke();
-    ctx.strokeStyle = "#7a6a4a";
-    ctx.lineWidth = 5.5;
-    ctx.beginPath();
-    ctx.moveTo(twist2X, twist2Y);
-    ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
-    ctx.stroke();
+    drawTaperedBlendedStroke(ctx, tendrilBeziers, 12, 4, [140, 122, 86], [122, 106, 74], 14);
     // the tip fades to fully transparent instead of ending as a solid
     // dot, so it visually dissolves into the grass rather than stopping
     // abruptly
@@ -11226,18 +11248,30 @@ function drawForestRiver(camX) {
     // two soft traveling glints sliding down that same traced path,
     // instead of hard-edged streak lines (which read as scribbled
     // text at this scale) -- a round, blurred-looking highlight reads
-    // as "light catching moving water" much more cleanly
+    // as "light catching moving water" much more cleanly.
+    // Both now share the SAME speed (was 0.00007 and 0.00009) -- with
+    // different speeds their relative phase slowly drifted apart and
+    // back together over time, so every so often both glints would
+    // land bright at once (a brief double-strength flash) followed by
+    // a stretch where both were dim at once (a dead gap) -- that slow
+    // beat pattern was reading as random "flickering" even while
+    // standing still, since it's purely time-driven and had nothing to
+    // do with the player's own movement. Keeping the speed identical
+    // and only staggering by phase offset (still i*0.5, half a cycle
+    // apart) keeps them evenly alternating forever instead of drifting
+    // in and out of sync. Peak brightness also toned down a touch so
+    // even the normal peaks read as a gentle glimmer, not a flash.
     const pathLen = edgePts.length - 1;
+    const glintSpeed = 0.00006;
     for (let i = 0; i < 2; i++) {
-      const speed = 0.00007 + i * 0.00002;
-      const phase = (t * speed + i * 0.5) % 1;
+      const phase = (t * glintSpeed + i * 0.5) % 1;
       const segF = phase * pathLen;
       const segI = Math.min(pathLen - 1, Math.floor(segF));
       const localF = segF - segI;
       const p0 = edgePts[segI], p1 = edgePts[segI + 1];
       const gx = p0.x + (p1.x - p0.x) * localF, gy2 = p0.y + (p1.y - p0.y) * localF;
       const fade = Math.sin(phase * Math.PI); // fades in/out at each end of the run instead of popping
-      ctx.fillStyle = `rgba(215,240,230,${0.45 * fade})`;
+      ctx.fillStyle = `rgba(215,240,230,${0.32 * fade})`;
       ctx.beginPath();
       ctx.ellipse(gx, gy2, 4.5, 2.6, Math.atan2(waterY - topY, waterX - topX), 0, Math.PI * 2);
       ctx.fill();
