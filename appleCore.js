@@ -25165,6 +25165,13 @@ function drawDiamondMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.beginPath();
   ctx.rect(-s * 0.38, -s * 0.38, s * 0.76, s * 0.76);
   ctx.clip();
+  // counter-rotate just for the content itself -- the clip stays
+  // diamond-oriented, but without this the glimpse's own "down" (the
+  // clouds' ground-fluff strip) pointed toward the diamond's bottom-left
+  // corner instead of running level across the actual bottom of the
+  // shape, since the whole diamond is one rotated square and the
+  // content was inheriting that same rotation
+  ctx.rotate(-Math.PI / 4);
   drawMirrorGlimpseContent(glimpseId, s * 0.38, s * 0.38, isNear, seed || 3);
   ctx.restore();
   ctx.rotate(-Math.PI / 4);
