@@ -10609,23 +10609,22 @@ function drawForestReflectionPool(camX) {
     else if (elapsed < REFLECTION_FADE_IN_MS + REFLECTION_HOLD_MS) alpha = 1;
     else alpha = Math.max(0, 1 - (elapsed - REFLECTION_FADE_IN_MS - REFLECTION_HOLD_MS) / REFLECTION_FADE_OUT_MS);
 
-    // the reflection itself -- a big, pale-moonlit, upside-down tree
-    // silhouette hanging DOWN into the pool from its own surface line (a
-    // true reflection's own orientation), instead of a normal upright
-    // tree. Foliage-green tones (not pale near-white) so it reads as a
-    // canopy and not a cloud against the blue water. NOTE on the local
-    // coordinate system below: after scale(1,-1), positive local y draws
-    // UP toward the surface/near edge of the pool and negative local y
-    // draws DOWN into the pool's depth -- the canopy mass sits mostly in
-    // positive y (just under the surface) and the trunk descends through
-    // negative y (down into the water), not the other way around. An
-    // earlier pass got this backwards, which silently clipped the trunk
-    // against the ellipse's own bounds so it never actually showed up
-    // ("i dont see tree trunk at all" -- turned out to apply here too).
+    // the reflection itself -- a true mirror orientation: the trunk base
+    // (closest to the ground in real life) sits right at the surface,
+    // and the canopy -- farthest from the ground -- appears deepest in
+    // the pool, exactly like a real reflection would place it. NOTE on
+    // the local coordinate system below (no y-flip on this transform,
+    // just the translate): local y INCREASING means DEEPER into the
+    // pool, local y DECREASING (going negative) means closer to the
+    // surface. The canopy/trunk point lists further down were authored
+    // assuming positive-y-is-shallow (an earlier pass used an extra
+    // scale(1,-1) to invert them for that reading, which put the canopy
+    // at the surface instead) -- dropping that scale here flips the
+    // whole composition to the physically correct reading without
+    // needing to renumber every point.
     ctx.save();
     ctx.globalAlpha = alpha * 0.62;
     ctx.translate(px, poolY - 2);
-    ctx.scale(1, -1);
     // one continuous lumpy silhouette (traced through irregular points,
     // same organic-blob technique as the riverbank shapes) instead of a
     // cluster of same-sized overlapping circles -- a few points pulled
