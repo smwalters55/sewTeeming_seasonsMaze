@@ -25502,7 +25502,7 @@ function updateHourglassApparition(isNear) {
     // it just goes back to being a normal (parade) mirror
     if (hourglassApparition.active) {
       hourglassApparition.active = false;
-      hourglassApparition.nextRollAt = now + 2000 + Math.random() * 2000;
+      hourglassApparition.nextRollAt = now + 2500 + Math.random() * 3000;
     }
     hourglassApparition.firstNearAt = 0;
     hourglassApparition.wasNear = false;
@@ -25533,17 +25533,14 @@ function updateHourglassApparition(isNear) {
     return;
   }
   if (now >= hourglassApparition.nextRollAt) {
-    // higher odds still and an even shorter recheck window -- per direct
-    // feedback, the old rate meant someone could easily walk past a
-    // couple times, shrug, and move on without ever catching it. Now
-    // more likely than not to trigger within the first second or two of
-    // standing near it.
-    if (Math.random() < 0.6) {
+    // dialed back down a notch from the last pass -- that was tuned a
+    // little too eager, per direct feedback
+    if (Math.random() < 0.48) {
       hourglassApparition.active = true;
       hourglassApparition.startTime = now;
       hourglassApparition.introDir = Math.random() < 0.5 ? -1 : 1;
     } else {
-      hourglassApparition.nextRollAt = now + 700 + Math.random() * 900;
+      hourglassApparition.nextRollAt = now + 900 + Math.random() * 1200;
     }
   }
 }
@@ -25556,17 +25553,17 @@ function updateHourglassApparition(isNear) {
 // from the rare unsettling mask moment.
 function drawHourglassParade(w, h) {
   const now = performance.now();
-  // smaller and more of them, with more costume variety, per direct
-  // feedback -- a fuller little procession instead of just three widely
-  // spaced critters
+  // back to the original larger size (the smaller pass read as "really
+  // weird" per direct feedback) -- more critters and costume variety,
+  // same scale as the original three
   const critters = [
-    { period: 6200, phase: 0, y: -h * 0.16, size: 0.095, type: "squirrel", hat: "party", costume: "#c94a6a" },
-    { period: 7400, phase: 2000, y: h * 0.04, size: 0.1, type: "rat", hat: "scarf", costume: "#4a8ac9" },
-    { period: 8600, phase: 4500, y: h * 0.24, size: 0.1, type: "mole", hat: "crown", costume: "#c9a020", pullsCart: true },
-    { period: 9200, phase: 1200, y: -h * 0.3, size: 0.09, type: "rabbit", hat: "bow", costume: "#8a5fd0" },
+    { period: 6200, phase: 0, y: -h * 0.16, size: 0.13, type: "squirrel", hat: "party", costume: "#c94a6a" },
+    { period: 7400, phase: 2000, y: h * 0.04, size: 0.14, type: "rat", hat: "scarf", costume: "#4a8ac9" },
+    { period: 8600, phase: 4500, y: h * 0.24, size: 0.14, type: "mole", hat: "crown", costume: "#c9a020", pullsCart: true },
+    { period: 9200, phase: 1200, y: -h * 0.3, size: 0.13, type: "rabbit", hat: "bow", costume: "#8a5fd0" },
     // the big polka-dot skirt request -- a full bell-shaped skirt
     // instead of the usual small vest patch, with actual dots on it
-    { period: 7800, phase: 6200, y: h * 0.14, size: 0.1, type: "mole", hat: "none", costume: "#3a9a8a", skirt: true, dotColor: "#fce8a0" }
+    { period: 7800, phase: 6200, y: h * 0.14, size: 0.14, type: "mole", hat: "none", costume: "#3a9a8a", skirt: true, dotColor: "#fce8a0" }
   ];
   critters.forEach(c => {
     const cyclePos = ((now + c.phase) % c.period) / c.period;
@@ -25685,7 +25682,10 @@ function drawHourglassParade(w, h) {
     // the hat -- distinct per critter, sitting right above the head
     ctx.fillStyle = c.costume;
     const headX = c.type === "rat" ? -s * 0.75 : c.type === "rabbit" ? -s * 0.05 : c.type === "mole" ? -s * 0.1 : -s * 0.15;
-    const headY = -s * (c.type === "rat" ? 0.5 : c.type === "rabbit" ? 1.25 : 0.75);
+    // rabbit's bow sits on top of the head, between the ear bases --
+    // was placed up at the ear TIPS, which read as floating above the
+    // head rather than actually worn
+    const headY = -s * (c.type === "rat" ? 0.5 : c.type === "rabbit" ? 0.85 : 0.75);
     if (c.hat === "bow") {
       ctx.beginPath();
       ctx.moveTo(headX, headY);
@@ -25824,6 +25824,28 @@ function drawHourglassApparition(w, h, live) {
   ctx.moveTo(0, maskCy + maskR * 0.62);
   ctx.lineTo(0, maskCy + maskR * 1.02);
   ctx.stroke();
+  // a single worn feather stuck through the top, angled off to one
+  // side -- just enough character to feel like an actual carved ritual
+  // mask someone made, without tipping into festive. Muted, not
+  // colorful, on purpose -- this stays the unsettling one; the parade
+  // is where the color/costume energy lives.
+  ctx.save();
+  ctx.translate(maskR * 0.32, maskCy - maskR * 0.92);
+  ctx.rotate(-0.5);
+  ctx.fillStyle = "#8a7a5a";
+  ctx.beginPath();
+  ctx.moveTo(0, maskR * 0.9);
+  ctx.quadraticCurveTo(maskR * 0.22, maskR * 0.4, maskR * 0.05, 0);
+  ctx.quadraticCurveTo(-maskR * 0.02, maskR * 0.45, 0, maskR * 0.9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(60,50,35,0.5)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(0, maskR * 0.88);
+  ctx.lineTo(0, maskR * 0.05);
+  ctx.stroke();
+  ctx.restore();
   ctx.restore();
 }
 
