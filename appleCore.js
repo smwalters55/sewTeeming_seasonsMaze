@@ -10938,6 +10938,102 @@ function drawTaperedBlendedStroke(ctx, beziers, w0, w1, c0, c1, stepsPerSeg) {
   }
 }
 
+// pre-rendered blurred halo passes for the near bank (sand halo, tendril
+// halo, water-channel halo), built ONCE in local coordinates (treating
+// the bank's own camera-relative x offset, nb, as 0) and drawn back each
+// frame via ctx.drawImage translated by the real nb, instead of
+// recomputing ctx.filter = "blur()" fresh every single frame. Per-frame
+// filter recomputation on a shape this size was the suspected cause of a
+// rendering-stability flicker some Windows/GPU combinations showed in
+// exactly this area, reported as "flickers a little larger and blurrier,
+// then slightly more structured and a little thinner" even while
+// standing still -- a JS-timing bug (the earlier traveling-glint fix)
+// wouldn't produce that symptom, but per-frame canvas filter recompute
+// stability is a known GPU-driver-dependent issue. The shape itself never
+// changes at runtime (only its camera-relative screen position does), so
+// caching it is safe and also cheaper than reapplying the filter 3x/frame.
+// Every other part of this scene (crisp fills, glints, pebbles, reeds)
+// stays drawn exactly as before, unblurred and fully per-frame/dynamic.
+let nearBankHaloCache = null;
+function buildNearBankHaloCache() {
+  const topX = -92, topY = gy - 5;
+  const waterX = 8, waterY = gy + 46;
+  const bowDx = waterX - topX, bowDy = waterY - topY;
+  const bowLen = Math.hypot(bowDx, bowDy);
+  const perpX = -bowDy / bowLen, perpY = bowDx / bowLen;
+  const bow = 22;
+  const ctrlX = (topX + waterX) / 2 + perpX * bow, ctrlY = (topY + waterY) / 2 + perpY * bow;
+  const steps = 7;
+  const edgePts = [{ x: topX, y: topY }];
+  for (let i = 1; i <= steps; i++) {
+    const f = i / steps, omf = 1 - f;
+    const bx = omf * omf * topX + 2 * omf * f * ctrlX + f * f * waterX;
+    const by = omf * omf * topY + 2 * omf * f * ctrlY + f * f * waterY;
+    const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.8;
+    edgePts.push({ x: bx + j, y: by });
+  }
+  const bankPts = [
+    { x: topX, y: topY }, ...edgePts,
+    { x: -55, y: gy + 50 },
+    { x: -84, y: gy + 26 },
+    { x: -95, y: gy + 6 }
+  ];
+  const twist1X = topX - 24, twist1Y = topY - 6;
+  const twist2X = topX - 44, twist2Y = topY - 2;
+  const tendrilTipX = topX - 66, tendrilTipY = topY - 5;
+  const tendrilBeziers = [
+    { p0: { x: topX, y: topY }, ctrl: { x: twist1X, y: twist1Y }, p1: { x: twist2X, y: twist2Y } },
+    { p0: { x: twist2X, y: twist2Y }, ctrl: { x: (twist2X + tendrilTipX) / 2, y: twist2Y - 5 }, p1: { x: tendrilTipX, y: tendrilTipY } }
+  ];
+
+  const margin = 20; // room for the blur falloff so nothing clips at the cache canvas edge
+  function makeLayer(xs, ys, draw) {
+    const minX = Math.min(...xs) - margin, maxX = Math.max(...xs) + margin;
+    const minY = Math.min(...ys) - margin, maxY = Math.max(...ys) + margin;
+    const off = document.createElement("canvas");
+    off.width = Math.ceil(maxX - minX);
+    off.height = Math.ceil(maxY - minY);
+    const octx = off.getContext("2d");
+    const ox = -minX, oy = -minY;
+    octx.translate(ox, oy);
+    draw(octx);
+    return { canvas: off, ox, oy };
+  }
+
+  const sandLayer = makeLayer(bankPts.map(p => p.x), bankPts.map(p => p.y), octx => {
+    octx.filter = "blur(5px)";
+    octx.globalAlpha = 0.6;
+    octx.fillStyle = "#7a6a4a";
+    octx.beginPath();
+    tracePathOrganic(octx, bankPts);
+    octx.closePath();
+    octx.fill();
+  });
+
+  const tendrilLayer = makeLayer([twist1X, twist2X, tendrilTipX, topX], [twist1Y, twist2Y, tendrilTipY, topY], octx => {
+    octx.filter = "blur(4px)";
+    octx.globalAlpha = 0.5;
+    drawTaperedBlendedStroke(octx, tendrilBeziers, 13, 6, [140, 122, 86], [122, 106, 74], 10);
+  });
+
+  const channelLayer = makeLayer(edgePts.map(p => p.x), edgePts.map(p => p.y), octx => {
+    octx.lineCap = "round";
+    octx.lineJoin = "round";
+    octx.filter = "blur(4px)";
+    octx.globalAlpha = 0.5;
+    octx.strokeStyle = "rgba(45,80,72,0.55)";
+    octx.lineWidth = 11;
+    octx.beginPath();
+    tracePathOrganicOpen(octx, edgePts);
+    octx.stroke();
+  });
+
+  nearBankHaloCache = { sandLayer, tendrilLayer, channelLayer };
+}
+function drawNearBankHaloLayer(ctx, layer, nb) {
+  ctx.drawImage(layer.canvas, nb - layer.ox, -layer.oy);
+}
+
 function drawForestRiver(camX) {
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
@@ -11143,15 +11239,11 @@ function drawForestRiver(camX) {
     // shape with a crisp outline is exactly what read as "drawn in
     // Paint." The crisp fill still goes on top right after, so the
     // actual silhouette is unchanged, just softened at the boundary.
-    ctx.save();
-    ctx.filter = "blur(5px)";
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = "#7a6a4a";
-    ctx.beginPath();
-    tracePathOrganic(ctx, bankPts);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    // Pre-rendered once (see buildNearBankHaloCache) and drawn back here
+    // via drawImage instead of recomputing ctx.filter="blur()" every
+    // frame -- see that function's comment for why.
+    if (!nearBankHaloCache) buildNearBankHaloCache();
+    drawNearBankHaloLayer(ctx, nearBankHaloCache.sandLayer, nb);
     // real shading now too -- a gradient along the same diagonal
     // (lighter dry sand up top, darker wet sand down at the water)
     // instead of one flat tone, so the shape reads as having actual
@@ -11202,11 +11294,10 @@ function drawForestRiver(camX) {
       { p0: { x: topX, y: topY }, ctrl: { x: twist1X, y: twist1Y }, p1: { x: twist2X, y: twist2Y } },
       { p0: { x: twist2X, y: twist2Y }, ctrl: { x: (twist2X + tendrilTipX) / 2, y: twist2Y - 5 }, p1: { x: tendrilTipX, y: tendrilTipY } }
     ];
-    ctx.save();
-    ctx.filter = "blur(4px)";
-    ctx.globalAlpha = 0.5;
-    drawTaperedBlendedStroke(ctx, tendrilBeziers, 13, 6, [140, 122, 86], [122, 106, 74], 10);
-    ctx.restore();
+    // pre-rendered halo pass (see buildNearBankHaloCache); the crisp
+    // taper stroke right after is still drawn fresh every frame, unchanged
+    if (!nearBankHaloCache) buildNearBankHaloCache();
+    drawNearBankHaloLayer(ctx, nearBankHaloCache.tendrilLayer, nb);
     drawTaperedBlendedStroke(ctx, tendrilBeziers, 12, 4, [140, 122, 86], [122, 106, 74], 14);
     // the tip fades to fully transparent instead of ending as a solid
     // dot, so it visually dissolves into the grass rather than stopping
@@ -11231,17 +11322,10 @@ function drawForestRiver(camX) {
     // its edges, and fading both ends to transparent (instead of a flat
     // color stopping abruptly at a round cap) lets it dissolve into the
     // surrounding sand rather than sitting on top of it like a decal.
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.filter = "blur(4px)";
-    ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = "rgba(45,80,72,0.55)";
-    ctx.lineWidth = 11;
-    ctx.beginPath();
-    tracePathOrganicOpen(ctx, edgePts);
-    ctx.stroke();
-    ctx.restore();
+    // pre-rendered halo pass (see buildNearBankHaloCache); the crisp
+    // channel stroke right after is still drawn fresh every frame, unchanged
+    if (!nearBankHaloCache) buildNearBankHaloCache();
+    drawNearBankHaloLayer(ctx, nearBankHaloCache.channelLayer, nb);
 
     ctx.save();
     ctx.lineCap = "round";
@@ -27733,10 +27817,19 @@ function drawHourglassApparition(w, h, live) {
   // on, plus a lift that rides the player's own jump height -- so the
   // reflection visibly moves with you rather than just holding still
   const driftX = introP < 1 ? introDir * (1 - introEase) * w * 0.3 : lateralNorm * w * 0.16;
-  const jumpLift = introP < 1 ? 0 : Math.min(h * 0.14, (live?.jump ?? 0) * 0.35);
+  // lifts noticeably higher on a real jump now (was 0.35x/capped at
+  // 0.14h) -- per direct feedback it should visibly jump along with the
+  // player, not just barely shift
+  const jumpLift = introP < 1 ? 0 : Math.min(h * 0.24, (live?.jump ?? 0) * 0.55);
   ctx.save();
   ctx.globalAlpha = alpha;
+  // a faint independent head-wobble riding on top of the real tracking
+  // motion -- a slow, slightly irregular sway that doesn't match
+  // anything the player is actually doing, which is what actually reads
+  // as "wrong" about a reflection rather than just a dim recolor of you
+  const wobble = Math.sin(now * 0.0011) * 0.03 + Math.sin(now * 0.0027 + 1.7) * 0.015;
   ctx.translate(driftX, h * 0.06 - jumpLift);
+  ctx.rotate(wobble);
   ctx.scale(squash, 1);
   // sized to feel like the player standing in the glass, not a figure
   // looming over the whole bulb -- and a good deal darker than the glass
@@ -27766,16 +27859,22 @@ function drawHourglassApparition(w, h, live) {
   ctx.strokeStyle = "#5a4020";
   ctx.lineWidth = Math.max(0.8, w * 0.02);
   ctx.stroke();
-  // dark eye holes -- a faint cold glow behind them is what actually
-  // sells "something is looking back at you"
+  // dark eye holes -- deliberately uneven sizing (left a touch bigger)
+  // instead of a perfectly symmetric mask, since real carved masks
+  // aren't machine-perfect and a slight asymmetry reads as more
+  // unsettling than a clean mirrored pair
   ctx.fillStyle = "#1a1420";
   [-1, 1].forEach(side => {
     ctx.beginPath();
-    ctx.ellipse(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.17, maskR * 0.23, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * (side < 0 ? 0.19 : 0.15), maskR * 0.23, 0, 0, Math.PI * 2);
     ctx.fill();
   });
+  // the glow itself now pulses slowly (like a slow, irregular blink/
+  // breath) rather than holding a flat brightness -- a static glow
+  // reads as decor, a pulsing one reads as something alive back there
+  const pulse = 0.75 + 0.25 * Math.sin(now * 0.0026);
   const faceEase = introP < 1 ? introEase : 1 - Math.abs(lateralNorm);
-  ctx.fillStyle = `rgba(190,170,255,${0.55 * faceEase})`;
+  ctx.fillStyle = `rgba(190,170,255,${0.55 * faceEase * pulse})`;
   [-1, 1].forEach(side => {
     ctx.beginPath();
     ctx.arc(side * maskR * 0.36, maskCy - maskR * 0.05, maskR * 0.06, 0, Math.PI * 2);
@@ -27791,6 +27890,17 @@ function drawHourglassApparition(w, h, live) {
   ctx.moveTo(0, maskCy + maskR * 0.62);
   ctx.lineTo(0, maskCy + maskR * 1.02);
   ctx.stroke();
+  // a single old crack splitting across the carved wood, from upper-
+  // right rim down through past the eye -- a real, damaged-looking mask
+  // reads as far more unsettling than a pristine one
+  ctx.strokeStyle = "rgba(30,20,12,0.75)";
+  ctx.lineWidth = Math.max(0.6, w * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(maskR * 0.62, maskCy - maskR * 0.78);
+  ctx.lineTo(maskR * 0.28, maskCy - maskR * 0.2);
+  ctx.lineTo(maskR * 0.42, maskCy + maskR * 0.15);
+  ctx.lineTo(maskR * 0.2, maskCy + maskR * 0.55);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -27798,15 +27908,18 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards, isNear, live) {
   const w = 34 * scale, h = 58 * scale;
   ctx.save();
   ctx.translate(cx, cy);
+  // waist widened a bit further (was 0.1/0.14) -- per direct request to
+  // give the pinch more breathing room, so whatever's showing in the
+  // glass (mask, parade, etc) isn't quite so pinched off at the middle
   const path = () => {
     ctx.beginPath();
     ctx.moveTo(-w * 0.46, -h * 0.48);
     ctx.lineTo(w * 0.46, -h * 0.48);
-    ctx.quadraticCurveTo(w * 0.14, -h * 0.06, w * 0.1, 0);
-    ctx.quadraticCurveTo(w * 0.14, h * 0.06, w * 0.46, h * 0.48);
+    ctx.quadraticCurveTo(w * 0.24, -h * 0.06, w * 0.19, 0);
+    ctx.quadraticCurveTo(w * 0.24, h * 0.06, w * 0.46, h * 0.48);
     ctx.lineTo(-w * 0.46, h * 0.48);
-    ctx.quadraticCurveTo(-w * 0.14, h * 0.06, -w * 0.1, 0);
-    ctx.quadraticCurveTo(-w * 0.14, -h * 0.06, -w * 0.46, -h * 0.48);
+    ctx.quadraticCurveTo(-w * 0.24, h * 0.06, -w * 0.19, 0);
+    ctx.quadraticCurveTo(-w * 0.24, -h * 0.06, -w * 0.46, -h * 0.48);
     ctx.closePath();
   };
   ctx.fillStyle = "#6a4e30";
