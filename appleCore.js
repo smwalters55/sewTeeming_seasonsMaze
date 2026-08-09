@@ -10623,6 +10623,7 @@ function drawForestScene(camX) {
   drawForestClockworkGears(camX);
   drawMoleHoleTree(camX);
   drawMoleHoleEntrance(camX);
+  drawMoleHoleRootsOverHole(camX); // the roots that reach into the hole draw again here so they land on top of its rim, not hidden under it
   drawForestRiver(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
@@ -10727,6 +10728,33 @@ let forestRiverStringerMissBumpAt = []; // performance.now() per segment index, 
 let forestRiverFootDustAt = 0; // last time a dust fleck kicked up from the player's feet while crossing an undecked stringer
 let forestRiverFootDustParticles = []; // {x, y, t} world-space flecks, spawned while crossing an undecked stringer, pruned once faded
 
+// WADING -- the two shallow-water shapes (the near-bank source and the
+// far-bank bend, see drawForestRiver) are walkable, not deep water, per
+// direct steer ("walk normally, just visually wet"). No new movement
+// mechanic -- this just eases a 0..1 amount toward 1 while the player is
+// actually standing in one of those two zones (grounded, not mid-air/on
+// the bridge deck), which the shared player draw reads to tint the
+// sprite's lower half. Eased rather than snapped so stepping in/out
+// doesn't pop.
+// each zone's tip (shallowest point, where the water shape tapers to
+// almost nothing) vs. its bank end (where it merges into the full-depth
+// main river) -- the near zone's tip is on the LEFT (x1), the far zone's
+// tip is on the RIGHT (x2), since one winds IN toward the bridge and the
+// other winds OUT away from it. tipAtStart records which end is the tip
+// so forestRiverWadeDepth below can compute "how deep is the water
+// HERE" instead of just "is the player in the zone at all."
+const FOREST_RIVER_SHALLOW_ZONES = [
+  { x1: FOREST_RIVER_NEAR_BANK_X - 260, x2: FOREST_RIVER_NEAR_BANK_X, tipAtStart: true },
+  { x1: FOREST_RIVER_FAR_BANK_X, x2: FOREST_RIVER_FAR_BANK_X + 190, tipAtStart: false }
+];
+let forestRiverWadeAmount = 0;
+// 0 (at a zone's shallow tip -- ankle-deep at most) .. 1 (right at the
+// bank, merging into full-depth water) -- read by the shared player draw
+// to slide the wet line down toward the feet as the water gets
+// shallower, instead of always tinting the same fixed fraction of the
+// sprite regardless of how deep the water actually is here
+let forestRiverWadeDepth = 0.6;
+
 // shared post-span geometry -- used by both the render side (drawing
 // the posts/segments) and the update side (the wall, collision, and
 // figuring out which segment the player is currently standing over),
@@ -10811,6 +10839,7 @@ function tracePathOrganic(ctx, pts) {
 // same fill's path, so the speckling stays confined to the actual bank
 // silhouette instead of spilling onto the grass/water around it
 function drawBankTexture(ctx, cx, cy, spread, seedOffset) {
+  // bigger mottled clumps first (unchanged count/scale from before)
   for (let i = 0; i < 10; i++) {
     const seed = seedOffset + i * 4.3;
     const ox = (pseudoRandom(seed) - 0.5) * spread * 2;
@@ -10821,6 +10850,23 @@ function drawBankTexture(ctx, cx, cy, spread, seedOffset) {
     ctx.ellipse(
       cx + ox, cy + oy,
       5 + pseudoRandom(seed + 3) * 6, 2.5 + pseudoRandom(seed + 3) * 2.5,
+      pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2
+    );
+    ctx.fill();
+  }
+  // extra pass of much finer, more numerous grains on top -- reads as
+  // actual sand grain rather than just a few soft dirt blotches, per
+  // direct request ("slightly more sandy texture on banks")
+  for (let i = 0; i < 26; i++) {
+    const seed = seedOffset + 200 + i * 3.1;
+    const ox = (pseudoRandom(seed) - 0.5) * spread * 2.3;
+    const oy = (pseudoRandom(seed + 1) - 0.5) * spread * 0.75;
+    const dark = pseudoRandom(seed + 2) > 0.5;
+    ctx.fillStyle = dark ? "rgba(80,66,42,0.22)" : "rgba(175,158,112,0.24)";
+    ctx.beginPath();
+    ctx.ellipse(
+      cx + ox, cy + oy,
+      1.2 + pseudoRandom(seed + 3) * 1.6, 0.8 + pseudoRandom(seed + 3) * 1,
       pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2
     );
     ctx.fill();
@@ -11021,14 +11067,10 @@ function drawForestRiver(camX) {
     // back on itself -- traced as one organic closed blob (see
     // tracePathOrganic) instead of straight lineTo corners, per direct
     // feedback ("remove alllll straight lines... this needs to look
-    // organic"). The extra point at the front (well left of topX, same
-    // shoreline height) widens where this meets the grass into a real
-    // run along the bank instead of pinching to a single point, so the
-    // sand reads as merging into the shoreline rather than sitting next
-    // to it as its own separate island.
+    // organic").
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    tracePathOrganic(ctx, [{ x: topX - 48, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
+    tracePathOrganic(ctx, [{ x: topX, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
     ctx.closePath();
     ctx.fill();
     // mottled dirt texture, clipped to this same bank shape (the path
@@ -11038,6 +11080,37 @@ function drawForestRiver(camX) {
     ctx.clip();
     drawBankTexture(ctx, topX - 30, (topY + waterY) / 2, 70, 11);
     ctx.restore();
+
+    // a thin trailing tendril twisting off the main sand mass back up
+    // to touch the grass -- not a wide flat merge (that read as one
+    // blocky shape just butted against the shoreline), but an actual
+    // thin organic path that peels off, twists once, and thins out to
+    // almost nothing right where it meets the grass, per direct request
+    // ("gets thinner than a path at the river edge... to touch that
+    // grass"). Drawn as a tapering stroke (wide near the sand, narrow
+    // near the tip) rather than a filled polygon, since a taper is much
+    // simpler to fake with decreasing lineWidth than with a pinched
+    // closed shape.
+    const twist1X = topX - 24, twist1Y = topY - 11;
+    const twist2X = topX - 44, twist2Y = topY - 3;
+    const tendrilTipX = topX - 66, tendrilTipY = topY - 9;
+    ctx.strokeStyle = "#7a6a4a";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 13;
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(twist1X, twist1Y, twist2X, twist2Y);
+    ctx.stroke();
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(twist2X, twist2Y);
+    ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
+    ctx.stroke();
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    ctx.ellipse(tendrilTipX, tendrilTipY, 3, 1.6, 0.3, 0, Math.PI * 2);
+    ctx.fill();
 
     // the water channel now just RE-TRACES that exact jittered edge
     // (edgePts, same path used for the sand cut above) as a soft thick
@@ -11098,16 +11171,19 @@ function drawForestRiver(camX) {
     // reeds stay well up on the dry sand, above where the channel
     // actually flows, instead of spanning down into/across the moving
     // water -- that overlap (reeds visibly rooted mid-stream) was part
-    // of what read as sloppy here
-    for (let i = 0; i < 4; i++) {
-      const f = 0.02 + i * 0.06;
+    // of what read as sloppy here. More of them now, spread further
+    // along the dry stretch, in two alternating hues so the cluster
+    // doesn't read as one stamped plant repeated ("i also want more
+    // reeds").
+    for (let i = 0; i < 9; i++) {
+      const f = 0.02 + i * 0.05;
       const seedI = i * 9.1;
-      const rx = topX + (waterX - topX) * f;
+      const rx = topX + (waterX - topX) * f + (pseudoRandom(seedI + 4) - 0.5) * 8;
       const ry = topY + (waterY - topY) * f;
-      const reedH = 20 + pseudoRandom(seedI) * 14;
+      const reedH = 16 + pseudoRandom(seedI) * 18;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
-      ctx.strokeStyle = "#5a7a3a";
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30";
+      ctx.lineWidth = 1.1 + pseudoRandom(seedI + 6) * 0.6;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
@@ -11166,15 +11242,15 @@ function drawForestRiver(camX) {
       ctx.ellipse(px2, py2, 4, 2.4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    for (let i = 0; i < 4; i++) {
-      const f = 0.02 + i * 0.06;
+    for (let i = 0; i < 9; i++) {
+      const f = 0.02 + i * 0.05;
       const seedI = i * 9.1 + 50; // offset from the near bank's reed seeds so they don't look identical
-      const rx = topX2 + (waterX2 - topX2) * f;
+      const rx = topX2 + (waterX2 - topX2) * f + (pseudoRandom(seedI + 4) - 0.5) * 8;
       const ry = topY2 + (waterY2 - topY2) * f;
-      const reedH = 20 + pseudoRandom(seedI) * 14;
+      const reedH = 16 + pseudoRandom(seedI) * 18;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
-      ctx.strokeStyle = "#5a7a3a";
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30";
+      ctx.lineWidth = 1.1 + pseudoRandom(seedI + 6) * 0.6;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
@@ -12916,6 +12992,49 @@ function updateMoleHoleEntrance(deltaTime) {
   }
 }
 
+// shared by drawMoleHoleTree (drawn once for the roots that stay clear of
+// the hole) and drawMoleHoleRootsOverHole (drawn a second time, AFTER the
+// hole's own rim, for the roots that reach into it) -- same shape/style
+// either way, just a different subset of rootSpecs and a different point
+// in the draw order. Expects the caller to already be translated to
+// (tx, gy) and to have set ctx.fillStyle.
+function drawMoleHoleRoots(ctx, trunkW, specs) {
+  specs.forEach(r => {
+    const dir = Math.sign(r.dx);
+    const attachX = dir * (trunkW / 2 - 3); // hugs the trunk's own base edge instead of starting out at a floating point near dx
+    const midX = (attachX + r.dx) / 2;
+    const humpY = -(5 + r.len * 0.12); // shallow hump breaking the surface before diving back under
+    ctx.beginPath();
+    ctx.moveTo(attachX, 2);
+    ctx.quadraticCurveTo(midX, humpY, r.dx, r.len * 0.55);
+    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.6, r.len * 0.88, r.dx + r.spread * dir, r.len);
+    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.35, r.len * 0.92, r.dx * 0.85, r.len * 0.62);
+    ctx.quadraticCurveTo(midX, humpY + 7, attachX, 8);
+    ctx.closePath();
+    ctx.fill();
+  });
+}
+
+// draws the two roots that reach toward the hole itself, translated the
+// same way drawMoleHoleTree is -- called AFTER drawMoleHoleEntrance so
+// these specific roots land visibly on top of the hole's dirt-clump rim,
+// instead of the rim always covering their tips flat ("hole look pasted
+// on"). Same trunkW as drawMoleHoleTree (kept in sync manually since the
+// hole's rim/entrance drawing has no separate notion of trunk width).
+function drawMoleHoleRootsOverHole(camX) {
+  const tx = moleHoleEntrance.x - camX;
+  const trunkW = 34;
+  ctx.save();
+  ctx.translate(tx, gy);
+  ctx.fillStyle = "#241a10";
+  drawMoleHoleRoots(ctx, trunkW, [
+    { dx: 22, spread: 10, len: 16 },
+    { dx: 46, spread: 20, len: 34 },
+    { dx: 68, spread: 22, len: 40 } // reaches toward the hole itself
+  ]);
+  ctx.restore();
+}
+
 // MOLE HOLE TREE — the landmark surface tree the mole hole is dug
 // beneath (matches the reference image's cutaway: roots down, trunk up
 // into "Up Outside"). Same tapered-trunk + layered-leaf-cluster
@@ -12966,29 +13085,18 @@ function drawMoleHoleTree(camX) {
   // then dive back under toward the tip -- reads as an actual root
   // breaking ground rather than a flat wedge pasted onto the grass.
   // Asymmetric (more/bigger toward the entrance side) so it visually
-  // implies the hole is connected to this specific tree.
-  const rootSpecs = [
-    { dx: -48, spread: 18, len: 30 },
-    { dx: -22, spread: 10, len: 16 },
-    { dx: 22, spread: 10, len: 16 },
-    { dx: 46, spread: 20, len: 34 },
-    { dx: 68, spread: 22, len: 40 } // reaches toward the hole itself
-  ];
+  // implies the hole is connected to this specific tree. The two
+  // rightmost roots (which reach into the hole's own rim) are drawn
+  // separately by drawMoleHoleRoots() below, called a second time AFTER
+  // the hole itself so part of them lands visibly on top of the rim --
+  // otherwise the hole's dirt-clump rim (drawn after this whole
+  // function) always covered their tips flat, making the hole look
+  // pasted on rather than something the roots actually grow across.
   ctx.fillStyle = "#241a10";
-  rootSpecs.forEach(r => {
-    const dir = Math.sign(r.dx);
-    const attachX = dir * (trunkW / 2 - 3); // hugs the trunk's own base edge instead of starting out at a floating point near dx
-    const midX = (attachX + r.dx) / 2;
-    const humpY = -(5 + r.len * 0.12); // shallow hump breaking the surface before diving back under
-    ctx.beginPath();
-    ctx.moveTo(attachX, 2);
-    ctx.quadraticCurveTo(midX, humpY, r.dx, r.len * 0.55);
-    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.6, r.len * 0.88, r.dx + r.spread * dir, r.len);
-    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.35, r.len * 0.92, r.dx * 0.85, r.len * 0.62);
-    ctx.quadraticCurveTo(midX, humpY + 7, attachX, 8);
-    ctx.closePath();
-    ctx.fill();
-  });
+  drawMoleHoleRoots(ctx, trunkW, [
+    { dx: -48, spread: 18, len: 30 },
+    { dx: -22, spread: 10, len: 16 }
+  ]);
 
   // layered canopy -- dark silhouette base, then real leaf-cluster
   // texture over it, then a lighter highlight cluster offset to one
@@ -14102,6 +14210,31 @@ function updateForestScene(deltaTime) {
     // eased back to upright once off the bridge entirely
     forestBridgeTiltAngle *= 0.8;
     if (Math.abs(forestBridgeTiltAngle) < 0.01) forestBridgeTiltAngle = 0;
+  }
+
+  // WADING -- grounded (not jumping/on the bridge deck) and standing
+  // over either shallow-water shape eases the wet-tint amount toward 1;
+  // anywhere else it eases back toward 0. Also tracks how deep the
+  // water is AT the player's current x within that zone (0 at the
+  // shallow tip, 1 at the bank where it merges into full depth), so the
+  // wet line can slide down toward just-the-feet near the tip instead
+  // of always sitting at the same fixed height.
+  {
+    const wadeCenterX = player.x + player.width / 2;
+    let inShallow = false, targetDepth = forestRiverWadeDepth;
+    if (player.y <= 2 && !player.jumping) {
+      for (const zone of FOREST_RIVER_SHALLOW_ZONES) {
+        if (wadeCenterX >= zone.x1 && wadeCenterX <= zone.x2) {
+          inShallow = true;
+          const f = (wadeCenterX - zone.x1) / (zone.x2 - zone.x1);
+          targetDepth = zone.tipAtStart ? f : 1 - f;
+          break;
+        }
+      }
+    }
+    forestRiverWadeAmount += ((inShallow ? 1 : 0) - forestRiverWadeAmount) * 0.15;
+    if (forestRiverWadeAmount < 0.01) forestRiverWadeAmount = 0;
+    forestRiverWadeDepth += (targetDepth - forestRiverWadeDepth) * 0.12;
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
@@ -31517,6 +31650,47 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.strokeStyle = "rgba(40,30,20,0.6)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // river wading -- a translucent teal wash over the lower legs plus a
+  // brighter "water line" stroke right where it sits, eased in/out by
+  // forestRiverWadeAmount (see the WADING block in updateForestScene) so
+  // stepping into/out of the forest river's two shallow-water shapes
+  // reads as actually getting wet rather than popping a sprite swap.
+  // forestRiverWadeDepth (0 at a zone's shallow tip, 1 at the bank where
+  // it merges into full-depth water) slides the line itself down toward
+  // just-the-feet near the tip and up toward the shins near the bank,
+  // instead of always tinting the same fixed fraction of the sprite
+  // regardless of how deep the water actually is here.
+  if (typeof forestRiverWadeAmount !== "undefined" && forestRiverWadeAmount > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, px, drawPy, player.width, player.height, 8);
+    ctx.clip();
+    const depthT = typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6;
+    const waterLineY = drawPy + player.height * (0.85 - depthT * 0.3); // 0.85 (just feet) at the tip -> 0.55 (shins) at the bank
+    // soft gradient wash instead of a flat rect with a hard top edge --
+    // that hard cutoff is what read as "drawn in Paint." Fading it in
+    // over ~10px means there's no crisp line where the tint starts.
+    const wetGrad = ctx.createLinearGradient(0, waterLineY - 10, 0, waterLineY + 10);
+    wetGrad.addColorStop(0, "rgba(45,80,90,0)");
+    wetGrad.addColorStop(1, `rgba(45,80,90,${0.38 * forestRiverWadeAmount})`);
+    ctx.fillStyle = wetGrad;
+    ctx.fillRect(px - 2, waterLineY - 10, player.width + 4, player.height - (waterLineY - 10 - drawPy));
+    // a gentle wavy highlight instead of one dead-straight stroke --
+    // reads as a ripple catching the light rather than a flat cartoon
+    // cut straight across the sprite
+    const wobbleT = performance.now() * 0.004;
+    ctx.strokeStyle = `rgba(180,220,215,${0.5 * forestRiverWadeAmount})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const wx = px - 2 + (player.width + 4) * (i / 6);
+      const wy = waterLineY + Math.sin(wobbleT + i * 1.1) * 1.3;
+      if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // eyes
   ctx.fillStyle = "#ffffff";
