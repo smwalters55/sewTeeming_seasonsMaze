@@ -24417,7 +24417,8 @@ const MIRRORS = [
   // initials or the spider")
   // nudged right a bit from the table+handmirror to its left -- that
   // corner was reading cramped with the crate crowding right up against it
-  { shape: "wonky", dx: -145, hang: false, surface: "ground", scale: 1.35, crackSeed: 4, glimpse: "ratroomLamp" },
+  // sized up from 1.35 so the carved initials inside are actually legible
+  { shape: "wonky", dx: -145, hang: false, surface: "ground", scale: 1.7, crackSeed: 4, glimpse: "ratroomLamp" },
   // ropeLen 80 -- long enough that the hourglass's own base actually
   // reaches down to the counter, so its shard pile sits ON something
   // rather than floating in the gap ("glass shards pile reads as not on
@@ -24537,17 +24538,22 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     // shuttle silhouette (the zone's own specific, recognizable shape)
     // drifting across it, instead of plain puffy ellipses that could be
     // any sky anywhere
+    // darkened from the original pale wash -- against that near-white
+    // gradient the rabbit silhouette barely showed any contrast at all
     const sky = ctx.createLinearGradient(0, by, 0, by + bh);
-    sky.addColorStop(0, "#a9d4f0");
-    sky.addColorStop(0.5, "#c9e6f5");
-    sky.addColorStop(1, "#eef7fc");
+    sky.addColorStop(0, "#7ab0d8");
+    sky.addColorStop(0.5, "#9cc8e0");
+    sky.addColorStop(1, "#c3ddeb");
     ctx.fillStyle = sky;
     ctx.fillRect(bx, by, bw, bh);
     // pale rolling cloud-ground strip along the bottom, echoing the
-    // zone's own "ground here IS cloud" look
-    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    // zone's own "ground here IS cloud" look -- pulled fully inside the
+    // visible clip region (it was centered at halfH*1.1 with the clip
+    // itself only reaching to halfH, so almost the whole shape was
+    // getting clipped away, same bug as the rectangle's trunk)
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.beginPath();
-    ctx.ellipse(0, halfH * 1.1, halfW * 1.3, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, halfH * 0.86, halfW * 1.3, halfH * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
     // small back-and-forth drift rather than a wide traverse -- the
     // mirror's tiny, so a full crossing spent most of its time clipped
@@ -24601,30 +24607,29 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     ctx.beginPath();
     ctx.moveTo(vx + halfW * 0.3, vy); ctx.lineTo(vx + halfW * 0.24, vy + halfH * 2);
     ctx.stroke();
-    const canopyColors = ["#c9762f", "#a84a28", "#8a5a2a"];
-    for (let i = 0; i < 5; i++) {
-      const cxOff = vx + halfW * 0.1 + i * halfW * 0.42;
-      const cyOff = vy + halfH * 0.22 * (i % 2 === 0 ? 0.5 : 1);
-      ctx.fillStyle = canopyColors[i % canopyColors.length];
-      ctx.beginPath();
-      ctx.ellipse(cxOff, cyOff, halfW * 0.4, halfH * 0.26, 0, 0, Math.PI * 2);
-      ctx.fill();
+    // real leaf shapes -- the same maple/round pair and LEAF_COLORS the
+    // crown itself is built from, not plain blobby ellipses, clustered
+    // densely enough to read as canopy fringe
+    for (let i = 0; i < 9; i++) {
+      const cxOff = vx + halfW * (0.15 + (i % 5) * 0.34) + (i >= 5 ? halfW * 0.17 : 0);
+      const cyOff = vy + halfH * (0.08 + (i % 5 === 0 || i % 5 === 4 ? 0.28 : 0.05)) + (i >= 5 ? halfH * 0.22 : 0);
+      const leafShapeC = i % 3 === 0 ? "maple" : "round";
+      const leafSize = halfW * (leafShapeC === "maple" ? 0.2 : 0.26) * (0.9 + pseudoRandom(seed + i * 7.1) * 0.2);
+      const leafRot = (pseudoRandom(seed + i * 3.3) - 0.5) * 1.4;
+      drawLeafShape(ctx, cxOff, cyOff, leafSize, leafRot, leafShapeC, LEAF_COLORS[i % LEAF_COLORS.length]);
     }
-    const colors = ["#c9762f", "#a84a28", "#d99a3a", "#8a5a2a"];
+    // the exact same two leaf shapes the crown is built from (maple's
+    // pointed star + round's oval teardrop, drawLeafShape/LEAF_COLORS),
+    // not a plain rotated ellipse -- same "real remembered beat" logic
+    // as the rest of this glimpse
     for (let i = 0; i < 6; i++) {
       const seedI = seed + i * 11.3;
       const speed = 0.00016 + pseudoRandom(seedI) * 0.00012;
       const fallP = (t * speed + pseudoRandom(seedI + 1)) % 1;
       const ly = by + fallP * bh;
       const lx = bx + halfW * 1.4 + (pseudoRandom(seedI + 2) - 0.5) * bw * 0.7 + Math.sin(t * 0.0012 + seedI) * halfW * 0.22;
-      ctx.save();
-      ctx.translate(lx, ly);
-      ctx.rotate(t * 0.0018 + seedI);
-      ctx.fillStyle = colors[i % colors.length];
-      ctx.beginPath();
-      ctx.ellipse(0, 0, halfW * 0.15, halfW * 0.08, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      const leafShape = i % 2 === 0 ? "round" : "maple";
+      drawLeafShape(ctx, lx, ly, halfW * (leafShape === "maple" ? 0.24 : 0.19), t * 0.0018 + seedI, leafShape, LEAF_COLORS[i % LEAF_COLORS.length]);
     }
   } else if (glimpseId === "ratroomLamp") {
     // the lamp catching something small and specific -- carved marks in
@@ -24706,6 +24711,113 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     // a bit of ground at the bottom so the swing has somewhere to launch from
     ctx.fillStyle = "#6a9a4a";
     ctx.fillRect(bx, by + bh * 0.82, bw, bh * 0.2);
+
+    // a little life down on the ground -- a few wildflowers, some grass
+    // tufts, and the squirrel wandering (occasionally pausing to rear up
+    // on its hind legs), so the mirror isn't just an empty swing
+    const groundY = halfH * 0.78;
+    const flowerColors = ["#d95a9a", "#caa23a", "#9a6ad9"];
+    for (let i = 0; i < 3; i++) {
+      const fx = -halfW * 0.55 + i * halfW * 0.5 + (pseudoRandom(seed + i * 5.2) - 0.5) * halfW * 0.15;
+      const fy = groundY - (pseudoRandom(seed + i * 2.7)) * halfH * 0.05;
+      ctx.strokeStyle = "#4a8a3a";
+      ctx.lineWidth = Math.max(0.5, halfW * 0.015);
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + halfH * 0.14);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      ctx.fillStyle = flowerColors[i % flowerColors.length];
+      for (let p = 0; p < 5; p++) {
+        const pa = (p / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(fx + Math.cos(pa) * halfW * 0.03, fy + Math.sin(pa) * halfW * 0.03, halfW * 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#e8d85a";
+      ctx.beginPath();
+      ctx.arc(fx, fy, halfW * 0.018, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#4a8a3a";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.02);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 6; i++) {
+      const gx = -halfW * 0.75 + i * halfW * 0.3 + (pseudoRandom(seed + i * 9.1) - 0.5) * halfW * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(gx, groundY + halfH * 0.12);
+      ctx.lineTo(gx - halfW * 0.02, groundY);
+      ctx.moveTo(gx + halfW * 0.02, groundY + halfH * 0.12);
+      ctx.lineTo(gx + halfW * 0.045, groundY + halfH * 0.01);
+      ctx.stroke();
+    }
+
+    // the squirrel -- walks back and forth most of the time, but pauses
+    // to sit up on its hind legs for a stretch of its own cycle. Same
+    // body color/silhouette language as the real drawSquirrel, just
+    // small and simplified for a thumbnail this size.
+    const squirrelCycle = (t * 0.00012 + seed) % 1;
+    const sitting = squirrelCycle > 0.62 && squirrelCycle < 0.88;
+    const walkPhase = sitting ? 0.62 : squirrelCycle > 0.88 ? 0.62 - (squirrelCycle - 0.88) / 0.12 * 0.62 : squirrelCycle / 0.62;
+    const sqx = -halfW * 0.4 + walkPhase * halfW * 0.8;
+    const sqy = groundY;
+    ctx.save();
+    ctx.translate(sqx, sqy);
+    const sqScale = halfW * 0.02;
+    ctx.fillStyle = "#a0693a";
+    if (sitting) {
+      // reared up on hind legs -- taller, narrower body, tail curled
+      // down behind rather than trailing flat
+      ctx.strokeStyle = "#a0693a";
+      ctx.lineWidth = sqScale * 2.4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-sqScale * 3, sqScale * 2);
+      ctx.quadraticCurveTo(-sqScale * 7, sqScale * 4, -sqScale * 5, sqScale * 9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, -sqScale * 3, sqScale * 4, sqScale * 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sqScale * 1, -sqScale * 10, sqScale * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sqScale * -0.5, -sqScale * 12.5, sqScale * 1.1, 0, Math.PI * 2);
+      ctx.arc(sqScale * 2.5, -sqScale * 12.5, sqScale * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#2b2b2b";
+      ctx.beginPath();
+      ctx.arc(sqScale * 2, -sqScale * 10.5, sqScale * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // walking -- same silhouette as the real squirrel: fuzzy curled
+      // tail, round body, small head with ears. Faces the direction
+      // it's currently walking: forward on the way out (cycle < 0.62),
+      // back the other way on the return leg.
+      const facing = squirrelCycle < 0.62 ? 1 : -1;
+      ctx.scale(facing, 1);
+      ctx.strokeStyle = "#a0693a";
+      ctx.lineWidth = sqScale * 2;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-sqScale * 2, sqScale * 2);
+      ctx.quadraticCurveTo(-sqScale * 7, -sqScale * 3, -sqScale * 4.5, -sqScale * 7);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, sqScale * 1.5, sqScale * 4.5, sqScale * 3.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sqScale * 4.5, -sqScale * 0.5, sqScale * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(sqScale * 3.2, -sqScale * 2.5, sqScale * 0.9, 0, Math.PI * 2);
+      ctx.arc(sqScale * 5.8, -sqScale * 2.5, sqScale * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#2b2b2b";
+      ctx.beginPath();
+      ctx.arc(sqScale * 5.5, -sqScale * 0.8, sqScale * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
 
     const pivotX = 0, pivotY = by + halfH * 0.1;
     const ropeLen = halfH * 1.3;
@@ -25105,9 +25217,14 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
   if (content === "bookshelf") {
     // a tiny glimpse of oak's own bookshelf, with the apple storybook's
     // own reddish spine picked out among the plain ones -- a little
-    // easter-egg detail rather than just another plain dark pane
+    // easter-egg detail rather than just another plain dark pane.
+    // Zoomed in a bit past the clip's own scale (cropping the outer
+    // books at the edges) so the apple mark actually reads as an apple
+    // instead of a single unparseable dot.
     ctx.fillStyle = "#3a4048";
     ctx.fillRect(-10, -10, 20, 20);
+    ctx.save();
+    ctx.scale(1.45, 1.45);
     ctx.fillStyle = "#6a4e30";
     ctx.fillRect(-9, 3, 18, 2);
     const spines = [
@@ -25121,12 +25238,28 @@ function drawTinyWallMirror(x, y, shape, cracked, scale, content) {
       ctx.fillStyle = s.c;
       ctx.fillRect(s.dx - 1.4, 3 - s.h, 2.6, s.h);
     });
-    // a tiny apple mark on its spine, so it's actually identifiable as
-    // THE apple book and not just a red one
+    // an actual small apple shape on its spine (round body, a little
+    // top notch, and a tiny leaf) instead of a plain dot, so it's
+    // identifiable as THE apple book and not just a red one
+    const ax = 0, ay = 3 - 8 * 0.62;
     ctx.fillStyle = "#c9481f";
     ctx.beginPath();
-    ctx.arc(0, 3 - 8 * 0.62, 0.9, 0, Math.PI * 2);
+    ctx.arc(ax, ay, 1.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ax, ay + 0.5, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#7a2a12";
+    ctx.lineWidth = 0.35;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 1.5);
+    ctx.lineTo(ax + 0.15, ay - 2.3);
+    ctx.stroke();
+    ctx.fillStyle = "#4a7a3a";
+    ctx.beginPath();
+    ctx.ellipse(ax + 0.7, ay - 2, 0.7, 0.35, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else {
     ctx.fillStyle = "#3a4048";
     ctx.fillRect(-10, -10, 20, 20);
@@ -25905,11 +26038,16 @@ function updateMoleholeScene(deltaTime) {
       const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
       const platformTop = gy - (my - frameHalfH);
       const playerBottom = player.y;
+      // measured from the player's own CENTER, not left edge -- the old
+      // left-edge check silently padded the standable zone by a full
+      // player.width on one side, so you could "land" while visibly
+      // floating off to the side of the mirror. This matches the
+      // mirror's actual visual footprint instead.
+      const playerCenterX = player.x + player.width / 2;
       if (
-        player.x + player.width > worldX - halfW &&
-        player.x < worldX + halfW &&
+        Math.abs(playerCenterX - worldX) <= halfW &&
         playerBottom <= platformTop &&
-        playerBottom >= platformTop - 16 &&
+        playerBottom >= platformTop - 12 &&
         player.vy <= 0
       ) {
         player.y = platformTop;
@@ -25930,11 +26068,11 @@ function updateMoleholeScene(deltaTime) {
       const bookMirrorHalfW = 6.5 * 1.9;
       const bookMirrorPlatformTop = gy - 190;
       const playerBottom = player.y;
+      const bookPlayerCenterX = player.x + player.width / 2;
       if (
-        player.x + player.width > bookMirrorWorldX - bookMirrorHalfW &&
-        player.x < bookMirrorWorldX + bookMirrorHalfW &&
+        Math.abs(bookPlayerCenterX - bookMirrorWorldX) <= bookMirrorHalfW &&
         playerBottom <= bookMirrorPlatformTop &&
-        playerBottom >= bookMirrorPlatformTop - 16 &&
+        playerBottom >= bookMirrorPlatformTop - 12 &&
         player.vy <= 0
       ) {
         player.y = bookMirrorPlatformTop;
