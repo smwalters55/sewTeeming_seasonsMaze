@@ -23262,7 +23262,15 @@ function drawTunnelTownEntrance(camX) {
    the idea of this being more interactive than just an animated move
    thing." Ends back at the shaft, ready to ride again.
    ------------------------------------------------------ */
-const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0, startDelay: 0 };
+const mineCart = { active: false, t: 0, localY: 0, vy: 0, gold: 0, usedDoubleJump: false, ending: false, endT: 0, endPhase: null, tipAngle: 0, startDelay: 0, tubBounceY: 0, tubBounceVy: 0 };
+// separate from the rider's own localY/vy -- per direct feedback ("can
+// you make the cart bump along with the player slightly instead of just
+// the player bumping"), the tub itself now gets its own small, snappy
+// jolt on the same rail bumps, rather than only the rider hopping while
+// the tub stays perfectly still. Much higher "gravity" than the rider's
+// own jump so it reads as a quick rattle, not a floaty little jump of
+// its own.
+const MINE_CART_TUB_BOUNCE_GRAVITY = 1250; // tuned so a real bump reads as a visible few-px jolt, not an instant sub-pixel snap
 // a real beat before the cart actually lurches off -- per direct
 // feedback ("give it a beat or two before the cart starts moving, it
 // happens like so fast automatically"). Jumping/bumps still work fine
@@ -23493,9 +23501,12 @@ function updateMineCartRide(deltaTime) {
   // well under a real jump's MINE_CART_JUMP_VY), just enough to read as
   // rattling over rough rail. Ignored entirely if already airborne from
   // an actual jump, so it never stacks with real jump timing.
-  if (mineCart.localY <= 0.5) {
-    MINE_CART_BUMPS.forEach(b => {
-      if (prevT < b.t && mineCart.t >= b.t) {
+  MINE_CART_BUMPS.forEach(b => {
+    if (prevT < b.t && mineCart.t >= b.t) {
+      // the tub itself always jolts on a bump, whether or not the rider
+      // is grounded to feel it too
+      mineCart.tubBounceVy = MINE_CART_JUMP_VY * 0.35 * b.strength;
+      if (mineCart.localY <= 0.5) {
         // bumped up from 0.16 -- at that strength the actual peak height
         // worked out to only ~1-3px, effectively invisible ("i didnt
         // notice...the mini bumps at all"). 0.4 gives a real, noticeable
@@ -23503,7 +23514,14 @@ function updateMineCartRide(deltaTime) {
         // under a real jump's ~72px peak
         mineCart.vy = MINE_CART_JUMP_VY * 0.4 * b.strength;
       }
-    });
+    }
+  });
+
+  mineCart.tubBounceVy -= MINE_CART_TUB_BOUNCE_GRAVITY * dt;
+  mineCart.tubBounceY += mineCart.tubBounceVy * dt;
+  if (mineCart.tubBounceY <= 0) {
+    mineCart.tubBounceY = 0;
+    mineCart.tubBounceVy = 0;
   }
 
   // keep the shared player object in sync so the normal draw() player
@@ -24088,7 +24106,7 @@ function drawMineCartRide(camX) {
   // Deepened well past half the rider's height and given a battered,
   // hand-built look (uneven top edge, worn plank lines, rust streaks)
   // instead of a smooth uniform tub, per "old school rickettee cart".
-  const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
+  const cx = MINE_CART_SCREEN_X, cartY = gy - 2 - mineCart.tubBounceY;
   // the whole tub is drawn relative to (cx, cartY) inside a rotate
   // transform now, not fixed absolute coordinates -- the ending's tip
   // phase pitches mineCart.tipAngle forward as the cart noses into the
@@ -24261,7 +24279,7 @@ function drawMineCartEndingVignette() {
 // of floating on top of a flat shape
 function drawMineCartFrontRim() {
   if (!mineCart.active) return;
-  const cx = MINE_CART_SCREEN_X, cartY = gy - 2;
+  const cx = MINE_CART_SCREEN_X, cartY = gy - 2 - mineCart.tubBounceY;
   // same rotate-around-(cx,cartY) treatment as the back wall in
   // drawMineCartRide, so the near wall tips right along with the rest of
   // the tub instead of staying flat while everything else pitches
@@ -24329,26 +24347,45 @@ function drawMineCartFrontRim() {
 // which mirror (if any) ends up showing something real rather than a
 // harmless portal-glimpse elsewhere is still an open decision, not
 // baked into any of this art.
-// laid out against the agreed base mockup, not the earlier neat single
-// counter-row: diamond and wonky share the left side (wonky low in its
-// own corner, well below the diamond hanging above it); hourglass,
-// squat oval hang up top at a shared mount line, hourglass the biggest
-// and reaching down closest to the floor as the real centerpiece;
-// triptych clusters low to the right of those; tall rectangle sits
-// furthest right with a real, deliberate gap after the triptych. No
-// counter or header beam furniture -- these just mount straight to the
-// dirt wall (small nail/hook per hung piece) or rest right on the cave
-// floor, same as the rest of the room's props.
+// laid out against the agreed base mockup: diamond and wonky share the
+// left side (wonky low in its own corner, well below the diamond hung
+// above it); hourglass and the squat oval hang from a real header beam
+// on obviously visible rope, hourglass the biggest/lowest-hanging as the
+// real centerpiece (its own base -- the shard pile -- reaching down to
+// the counter, not left floating); triptych clusters low on the counter
+// to the right of those; tall rectangle rests furthest right with a
+// real, deliberate gap after the triptych. Per direct feedback ("i am
+// thinking of it being an actual stall...like a much larger one than
+// the other ones", "not just a counter...OR make it a lot more obvious
+// hanging from the wall") this now gets a full booth structure -- posts,
+// a wood-slat roof, a header beam for real visible rope, and one long
+// counter every resting piece (and the hourglass's shard pile) actually
+// sits on -- unmanned, since nothing here is for sale.
 const MIRROR_STALL_X = 2420;
-const MIRROR_STALL_GROUND_Y = gy; // resting mirrors' bottom edge
-const MIRROR_STALL_MOUNT_Y = gy - 172; // hung mirrors' shared top/nail line
+const MIRROR_STALL_ROOF_Y = gy - 240;
+const MIRROR_STALL_HEADER_Y = gy - 196; // beam the hung mirrors' rope attaches to
+const MIRROR_STALL_COUNTER_Y = gy - 16; // top surface of the long counter plank
+const MIRROR_STALL_POST_L = -235, MIRROR_STALL_POST_R = 270;
+// sized up and pulled closer together so all six clearly read as one
+// stall's worth of stock, not scattered wall decor
 const MIRRORS = [
-  { shape: "diamond", dx: -190, hang: true, scale: 1, crackSeed: 19 },
-  { shape: "wonky", dx: -198, hang: false, scale: 0.72, crackSeed: 4 },
-  { shape: "hourglass", dx: -65, hang: true, scale: 1.35, crackSeed: 11, shards: true },
-  { shape: "oval", dx: 40, hang: true, scale: 1.15, brass: true },
-  { shape: "triptych", dx: 150, hang: false, scale: 1.25 },
-  { shape: "rectangle", dx: 285, hang: false, scale: 1.15 }
+  { shape: "diamond", dx: -160, hang: true, ropeLen: 30, scale: 1.3, crackSeed: 19 },
+  // its own true ground tier -- a real step below the counter, not
+  // sharing its height, per "make em all dif heights...ground is one,
+  // hanging above another, a counter, then another hanging above that"
+  { shape: "wonky", dx: -168, hang: false, surface: "ground", scale: 0.95, crackSeed: 4 },
+  // ropeLen 80 -- long enough that the hourglass's own base actually
+  // reaches down to the counter, so its shard pile sits ON something
+  // rather than floating in the gap ("glass shards pile reads as not on
+  // anything")
+  { shape: "hourglass", dx: -55, hang: true, ropeLen: 80, scale: 1.7, crackSeed: 11, shards: true },
+  // the ornate brass one -- "deffff bigger"
+  { shape: "oval", dx: 40, hang: true, ropeLen: 38, scale: 2.1, brass: true },
+  // hung now, at a mid-height rope between the header beam and the
+  // counter -- reads as its own middle tier rather than sharing the
+  // exact same line as the resting pieces
+  { shape: "triptych", dx: 130, hang: true, ropeLen: 66, scale: 1.5 },
+  { shape: "rectangle", dx: 230, hang: false, scale: 1.4 }
 ];
 
 // small 2-3 segment jagged crack, drawn right on the glass -- reused
@@ -24544,7 +24581,9 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   // shards sit right below the hourglass's own bottom edge, wherever
   // that lands -- not pinned to the room's actual ground line, which
   // (being hung, not resting) it may sit well above
-  if (drawShards) drawMirrorGlassShards(cx, cy + h / 2 + 6, seed || 7);
+  // lands right on the booth's own counter now, not floating off the
+  // hourglass's own (possibly high-hanging) bottom edge
+  if (drawShards) drawMirrorGlassShards(cx, MIRROR_STALL_COUNTER_Y, seed || 7);
 }
 
 // broken glass shards piled on the counter directly below the hourglass
@@ -24643,9 +24682,283 @@ function drawOvalMirror(cx, cy, scale, brass) {
 
 const MIRROR_FRAME_HALF_H = { wonky: 17, triptych: 15, rectangle: 29, hourglass: 29, diamond: 14, oval: 11 };
 
+// ---- background clutter: small shelves/table + non-interactive mirrors
+// and trinkets, per "i like having the shelves and stuff too, and want
+// mirrors we cant interqct with...some other ones on the walls...another
+// one on the ground, maybe a small shelf or 2 or 3 that have a small
+// background mirror and or trinkets". None of these six get frames with
+// hooks/cracks/reflections -- they're plain background flavor, not part
+// of the six real mirrors.
+
+// small wall-mounted plank shelf, on a couple of angled brackets
+function drawSmallShelf(x, topY) {
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(x - 16, topY, 32, 4);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 16, topY, 32, 4);
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = 2;
+  [-11, 11].forEach(dx => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx, topY + 4);
+    ctx.lineTo(x + dx * 0.5, topY + 14);
+    ctx.stroke();
+  });
+}
+
+// a low standing table/stool, legs down to the ground -- for the hand
+// mirror to actually lie flat on top of
+function drawSmallTable(x, topY, groundY) {
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(x - 20, topY, 40, 5);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 20, topY, 40, 5);
+  ctx.strokeStyle = "#3a2410";
+  ctx.lineWidth = 3;
+  [-15, 15].forEach(dx => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx, topY + 5);
+    ctx.lineTo(x + dx * 0.8, groundY);
+    ctx.stroke();
+  });
+}
+
+// small plain background mirror, mounted flat on the wall -- no hook
+// chain, no crack, no big reflection streak, just enough detail to read
+// as "another mirror" without competing with the six real ones
+function drawTinyWallMirror(x, y, shape) {
+  ctx.save();
+  ctx.translate(x, y);
+  const path = () => {
+    ctx.beginPath();
+    if (shape === "circle") ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    else ctx.ellipse(0, 0, 6, 8, 0, 0, Math.PI * 2);
+  };
+  ctx.fillStyle = "#5a4228";
+  path(); ctx.fill();
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 1.6;
+  path(); ctx.stroke();
+  ctx.fillStyle = "#3a4048";
+  ctx.save();
+  ctx.scale(0.78, 0.78);
+  path(); ctx.clip();
+  ctx.fillRect(-10, -10, 20, 20);
+  ctx.restore();
+  ctx.strokeStyle = "rgba(235,245,255,0.3)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-2, -3);
+  ctx.lineTo(1, 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// a small hand mirror lying flat on a surface -- squashed oval "glass"
+// (the laying-down perspective) with a short handle, per "smaller
+// mirrors like the hand mirror but layin on table with squashed oval
+// like its laying down"
+function drawHandMirrorFlat(x, y, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot || 0);
+  // handle
+  ctx.fillStyle = "#6a4e30";
+  ctx.fillRect(-3, 6, 6, 13);
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-3, 6, 6, 13);
+  // squashed head, viewed lying flat
+  ctx.fillStyle = "#5a4228";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 12, 6.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = "#3a4048";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 9, 4.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(235,245,255,0.35)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(-4, -1.5);
+  ctx.lineTo(3, 1.8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// tiny background trinkets for the shelves -- a squat jar or a small
+// smooth pebble, just clutter
+function drawShelfTrinket(x, y, kind) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (kind === "jar") {
+    ctx.fillStyle = "#8a6a3a";
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.quadraticCurveTo(-5, -8, -3, -9);
+    ctx.lineTo(3, -9);
+    ctx.quadraticCurveTo(5, -8, 4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = "#6a6258";
+    ctx.beginPath();
+    ctx.ellipse(0, -2, 4.5, 3.2, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// a small wooden crate for the wonky mirror to lean against, per direct
+// feedback -- plain worn planks, a couple of nail heads, nothing ornate
+function drawSmallCrate(x, groundY, size) {
+  const w = size, h = size * 0.9;
+  ctx.save();
+  ctx.translate(x, groundY - h / 2);
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.strokeStyle = "rgba(20,14,8,0.4)";
+  ctx.lineWidth = 0.8;
+  [-w * 0.15, w * 0.15].forEach(lx => {
+    ctx.beginPath();
+    ctx.moveTo(lx, -h / 2);
+    ctx.lineTo(lx, h / 2);
+    ctx.stroke();
+  });
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 0);
+  ctx.lineTo(w / 2, 0);
+  ctx.stroke();
+  ctx.fillStyle = "#6a6a72";
+  [[-w * 0.35, -h * 0.3], [w * 0.35, -h * 0.3], [-w * 0.35, h * 0.3], [w * 0.35, h * 0.3]].forEach(([nx, ny]) => {
+    ctx.beginPath();
+    ctx.arc(nx, ny, 1, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+// small background clutter placed within the booth -- not part of the
+// six real mirrors, just "shelf or 2 or 3...small background mirror
+// and/or trinkets", a hand mirror lying on a table, another mirror lying
+// flat on the ground, and a couple more tiny mirrors on the wall
+const MIRROR_STALL_CLUTTER = [
+  { type: "table+handmirror", dx: -215 },
+  { type: "shelf+trinkets", dx: -110 },
+  { type: "wallmirror", dx: -20, shape: "oval", y: -150 },
+  { type: "shelf+mirror+trinket", dx: 95 },
+  { type: "groundmirror", dx: 175 },
+  { type: "wallmirror", dx: 300, shape: "circle", y: -140 }
+];
+
+function drawMirrorStallBooth(sx) {
+  const l = sx + MIRROR_STALL_POST_L, r = sx + MIRROR_STALL_POST_R;
+
+  // two support posts
+  ctx.fillStyle = "#4a3018";
+  [l, r].forEach(px => {
+    ctx.fillRect(px - 5, MIRROR_STALL_ROOF_Y, 10, gy - MIRROR_STALL_ROOF_Y);
+    ctx.strokeStyle = "#2e2014";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px - 5, MIRROR_STALL_ROOF_Y, 10, gy - MIRROR_STALL_ROOF_Y);
+  });
+
+  // wood-slat roof, a little wider than the posts with a small overhang,
+  // and a gently scalloped front edge instead of a hard flat line
+  ctx.fillStyle = "#5a3e22";
+  ctx.beginPath();
+  ctx.moveTo(l - 14, MIRROR_STALL_ROOF_Y + 14);
+  ctx.lineTo(l - 14, MIRROR_STALL_ROOF_Y);
+  ctx.lineTo(r + 14, MIRROR_STALL_ROOF_Y);
+  ctx.lineTo(r + 14, MIRROR_STALL_ROOF_Y + 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  const scallops = 9;
+  ctx.fillStyle = "#4a3018";
+  for (let i = 0; i < scallops; i++) {
+    const sxp = l - 14 + (i / scallops) * (r - l + 28);
+    ctx.beginPath();
+    ctx.arc(sxp + (r - l + 28) / scallops / 2, MIRROR_STALL_ROOF_Y + 14, 8, 0, Math.PI);
+    ctx.fill();
+  }
+  // hanging sign
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(sx - 34, MIRROR_STALL_ROOF_Y + 16, 68, 20);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx - 34, MIRROR_STALL_ROOF_Y + 16, 68, 20);
+  ctx.fillStyle = "rgba(230,220,255,0.7)";
+  ctx.font = "9px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("MIRRORS", sx, MIRROR_STALL_ROOF_Y + 30);
+  ctx.textAlign = "left";
+
+  // header beam, for the hung mirrors' rope
+  ctx.strokeStyle = "rgba(58,40,20,0.85)";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(l, MIRROR_STALL_HEADER_Y);
+  ctx.lineTo(r, MIRROR_STALL_HEADER_Y);
+  ctx.stroke();
+
+  // one long counter, spanning the whole booth -- every resting mirror,
+  // both shelves, and the hourglass's shard pile all land on this same
+  // surface, per "not just a counter under eg the hourglass...and the
+  // glass shards pile reads as not on anything"
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(l, MIRROR_STALL_COUNTER_Y, r - l, 10);
+  ctx.strokeStyle = "#2e2014";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(l, MIRROR_STALL_COUNTER_Y, r - l, 10);
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  [0.12, 0.4, 0.68, 0.92].forEach(f => ctx.fillRect(l + (r - l) * f, MIRROR_STALL_COUNTER_Y + 10, 3, gy - MIRROR_STALL_COUNTER_Y - 10));
+}
+
+function drawMirrorStallClutter(sx) {
+  MIRROR_STALL_CLUTTER.forEach(c => {
+    const cx2 = sx + c.dx;
+    if (cx2 < -40 || cx2 > canvas.width + 40) return;
+    if (c.type === "table+handmirror") {
+      drawSmallTable(cx2, MIRROR_STALL_COUNTER_Y - 18, MIRROR_STALL_COUNTER_Y);
+      drawHandMirrorFlat(cx2, MIRROR_STALL_COUNTER_Y - 24, -0.15);
+    } else if (c.type === "shelf+trinkets") {
+      drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 30);
+      drawShelfTrinket(cx2 - 8, MIRROR_STALL_HEADER_Y + 30, "jar");
+      drawShelfTrinket(cx2 + 7, MIRROR_STALL_HEADER_Y + 30, "pebble");
+    } else if (c.type === "shelf+mirror+trinket") {
+      drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 46);
+      drawTinyWallMirror(cx2 - 6, MIRROR_STALL_HEADER_Y + 40, "oval");
+      drawShelfTrinket(cx2 + 8, MIRROR_STALL_HEADER_Y + 46, "pebble");
+    } else if (c.type === "wallmirror") {
+      drawTinyWallMirror(cx2, MIRROR_STALL_HEADER_Y + c.y + 196, c.shape);
+    } else if (c.type === "groundmirror") {
+      drawHandMirrorFlat(cx2, MIRROR_STALL_COUNTER_Y + 22, 0.3);
+    }
+  });
+}
+
 function drawMirrorStall(camX) {
   const sx = MIRROR_STALL_X - camX;
-  if (sx < -350 || sx > canvas.width + 350) return;
+  if (sx < -400 || sx > canvas.width + 400) return;
+
+  drawMirrorStallBooth(sx);
 
   MIRRORS.forEach(m => {
     const mx = sx + m.dx;
@@ -24653,32 +24966,42 @@ function drawMirrorStall(camX) {
     const frameHalfH = MIRROR_FRAME_HALF_H[m.shape] * m.scale;
     let my;
     if (m.hang) {
-      // mounted straight to the wall on a short nail/hook, not a long
-      // chain off a header beam -- the frame's own top edge sits right
-      // at the shared mount line
-      my = MIRROR_STALL_MOUNT_Y + frameHalfH;
+      // real, clearly visible rope off the header beam -- long enough
+      // to actually read as hanging rather than pinned flat to the wall
+      const hookY = MIRROR_STALL_HEADER_Y + 2;
+      my = hookY + m.ropeLen + frameHalfH;
+      ctx.strokeStyle = "#5a4228";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(mx, hookY);
+      ctx.lineTo(mx, my - frameHalfH);
+      ctx.stroke();
       ctx.fillStyle = "#2e2014";
       ctx.beginPath();
-      ctx.arc(mx, MIRROR_STALL_MOUNT_Y - 2, 1.6, 0, Math.PI * 2);
+      ctx.arc(mx, hookY, 1.8, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(30,22,14,0.6)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(mx, MIRROR_STALL_MOUNT_Y - 1);
-      ctx.lineTo(mx, my - frameHalfH + 2);
-      ctx.stroke();
+    } else if (m.surface === "ground") {
+      // sits on the actual cave floor, a real step below the counter --
+      // its own distinct lowest tier, not sharing the counter's height
+      my = gy - frameHalfH + 2;
     } else {
-      // rests directly on the cave floor, same as any other ground prop
-      my = MIRROR_STALL_GROUND_Y - frameHalfH + 2;
+      // rests right on the booth's own counter
+      my = MIRROR_STALL_COUNTER_Y - frameHalfH + 2;
     }
 
-    if (m.shape === "wonky") drawWonkyMirror(mx, my, m.scale, m.crackSeed);
+    if (m.shape === "wonky") {
+      // a crate to lean against, just to its left -- per direct feedback
+      drawSmallCrate(mx - 22, gy, 24);
+      drawWonkyMirror(mx, my, m.scale, m.crackSeed);
+    }
     else if (m.shape === "triptych") drawTriptychMirror(mx, my, m.scale);
     else if (m.shape === "rectangle") drawRectangleMirror(mx, my, m.scale);
     else if (m.shape === "hourglass") drawHourglassMirror(mx, my, m.scale, m.crackSeed, m.shards);
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed);
     else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass);
   });
+
+  drawMirrorStallClutter(sx);
 }
 
 function drawMoleholeScene(camX) {
