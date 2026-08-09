@@ -24526,24 +24526,43 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
 
   const t = performance.now();
   if (glimpseId === "clouds") {
-    // small and calm on purpose -- the diamond is the smallest of the
-    // six, so this stays gentle ambience rather than a staged moment:
-    // a soft sky gradient with a couple of slow-drifting cloud puffs
+    // needs to read as THIS zone specifically, not generic sky -- uses
+    // the clouds scene's own multi-stop gradient, and the rabbit-shaped
+    // shuttle silhouette (the zone's own specific, recognizable shape)
+    // drifting across it, instead of plain puffy ellipses that could be
+    // any sky anywhere
     const sky = ctx.createLinearGradient(0, by, 0, by + bh);
-    sky.addColorStop(0, "#9fc3e8");
-    sky.addColorStop(1, "#cfe3f2");
+    sky.addColorStop(0, "#a9d4f0");
+    sky.addColorStop(0.5, "#c9e6f5");
+    sky.addColorStop(1, "#eef7fc");
     ctx.fillStyle = sky;
     ctx.fillRect(bx, by, bw, bh);
-    [0, 1, 2].forEach(i => {
-      const speed = 0.00011 + i * 0.00003;
-      const cx0 = (((t * speed + i * 0.6) % 1) * bw) + bx;
-      const cy0 = -halfH * 0.45 + i * halfH * 0.45;
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.beginPath();
-      ctx.ellipse(cx0, cy0, halfW * 0.42, halfH * 0.15, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx0 + halfW * 0.28, cy0 + halfH * 0.04, halfW * 0.26, halfH * 0.11, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    // pale rolling cloud-ground strip along the bottom, echoing the
+    // zone's own "ground here IS cloud" look
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.beginPath();
+    ctx.ellipse(0, halfH * 1.1, halfW * 1.3, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // small back-and-forth drift rather than a wide traverse -- the
+    // mirror's tiny, so a full crossing spent most of its time clipped
+    // off-frame instead of actually visible
+    const bob = Math.sin(t * 0.0016 + seed) * halfH * 0.12;
+    const rx = Math.sin(t * 0.00035 + seed) * halfW * 0.5;
+    const ry = -halfH * 0.1 + bob;
+    const rs = halfW * 0.42;
+    ctx.fillStyle = "rgba(255,255,255,0.97)";
+    // two ears, round body, small tail -- same silhouette language as
+    // the rabbit shuttle itself, just small
+    ctx.beginPath();
+    ctx.ellipse(rx - rs * 0.35, ry - rs * 0.75, rs * 0.22, rs * 0.65, -0.15, 0, Math.PI * 2);
+    ctx.ellipse(rx + rs * 0.2, ry - rs * 0.75, rs * 0.22, rs * 0.65, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, rs, rs * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rx + rs * 0.95, ry + rs * 0.15, rs * 0.28, 0, Math.PI * 2);
+    ctx.fill();
   } else if (glimpseId === "autumnLeaves") {
     // a real remembered beat, not just weather -- leaves falling the
     // same way they do for the crown moment, just seen through glass
@@ -24552,6 +24571,32 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     bg.addColorStop(1, "#3a2414");
     ctx.fillStyle = bg;
     ctx.fillRect(bx, by, bw, bh);
+    // a real trunk (cropped by the frame's own left edge -- just part
+    // of it showing, not the whole tree) with the very bottom fringe of
+    // its canopy poking in at the top, so the leaves read as falling
+    // FROM something specific rather than just drifting in from nowhere
+    ctx.fillStyle = "#3a2416";
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + halfW * 0.5, by);
+    ctx.quadraticCurveTo(bx + halfW * 0.42, by + bh * 0.5, bx + halfW * 0.36, by + bh);
+    ctx.lineTo(bx, by + bh);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(bx + halfW * 0.22, by); ctx.lineTo(bx + halfW * 0.18, by + bh);
+    ctx.stroke();
+    const canopyColors = ["#c9762f", "#a84a28", "#8a5a2a"];
+    for (let i = 0; i < 5; i++) {
+      const cxOff = -halfW * 0.1 + i * halfW * 0.32;
+      const cyOff = by + halfH * 0.18 * (i % 2 === 0 ? 0.4 : 1);
+      ctx.fillStyle = canopyColors[i % canopyColors.length];
+      ctx.beginPath();
+      ctx.ellipse(cxOff, cyOff, halfW * 0.34, halfH * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     const colors = ["#c9762f", "#a84a28", "#d99a3a", "#8a5a2a"];
     for (let i = 0; i < 6; i++) {
       const seedI = seed + i * 11.3;
@@ -24570,9 +24615,23 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     }
   } else if (glimpseId === "ratroomLamp") {
     // the lamp catching something small and specific -- carved marks in
-    // the wood, lit up in its glow -- rather than plain firefly ambience
+    // the wood, lit up in its glow -- rather than plain firefly ambience.
+    // A warm glow alone reads as "some cozy lit nook", not specifically
+    // ratroom (this game reuses that same language everywhere -- wall
+    // lanterns, the stall ornaments, etc), so a hint of the cushion
+    // pile's own distinct colored cushions sits dim in the background --
+    // that combination of colors doesn't exist anywhere else in the game
     ctx.fillStyle = "#241c14";
     ctx.fillRect(bx, by, bw, bh);
+    const cushionColors = ["#4a6a5a", "#7a3a4a", "#8a5a2f"];
+    cushionColors.forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.ellipse(bx + halfW * (0.35 + i * 0.75), by + bh * 0.85, halfW * 0.4, halfH * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
     const pulse = 0.6 + Math.sin(t * 0.003 + seed) * 0.4;
     const glow = ctx.createRadialGradient(0, halfH * 0.1, 1, 0, halfH * 0.1, halfW * 1.15);
     glow.addColorStop(0, `rgba(255,205,120,${0.5 * pulse})`);
@@ -24591,6 +24650,25 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed) {
     ctx.moveTo(halfW * 0.28, -halfH * 0.18); ctx.lineTo(halfW * 0.28, halfH * 0.08);
     ctx.moveTo(halfW * 0.06, -halfH * 0.18); ctx.lineTo(halfW * 0.28, -halfH * 0.18);
     ctx.stroke();
+    // the moth, wandering a slow loop right around the light -- it's as
+    // much a signature of this cozy corner as the lamp itself
+    const wanderAngle = t * 0.0009 + seed;
+    const mx0 = Math.cos(wanderAngle) * halfW * 0.55;
+    const my0 = halfH * 0.1 + Math.sin(wanderAngle * 1.3) * halfH * 0.32;
+    const flap = Math.sin(t * 0.03 + seed) * 0.5 + 0.6;
+    ctx.save();
+    ctx.translate(mx0, my0);
+    ctx.rotate(wanderAngle * 0.3);
+    ctx.fillStyle = "rgba(225,215,195,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(-halfW * 0.1, 0, halfW * 0.12, halfW * 0.06 * flap, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(halfW * 0.1, 0, halfW * 0.12, halfW * 0.06 * flap, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(80,70,55,0.9)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, halfW * 0.05, halfW * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -24623,7 +24701,10 @@ function drawWonkyMirror(cx, cy, scale, seed, glimpseId, isNear) {
   ctx.ellipse(0, 0, w * 0.32, h * 0.36, 0, 0, Math.PI * 2);
   ctx.clip();
   drawMirrorGlimpseContent(glimpseId, w * 0.32, h * 0.36, isNear, seed || 4);
-  drawMirrorGlassReflections([[-w * 0.15, -h * 0.22, w * 0.05, h * 0.12, 0.35, 1.4]]);
+  // no shine streak while the scene itself is showing -- it read as an
+  // odd line cutting across the animation, per direct feedback. Idle
+  // (not near, or no glimpse at all) still gets the normal glossy streak.
+  if (!isNear) drawMirrorGlassReflections([[-w * 0.15, -h * 0.22, w * 0.05, h * 0.12, 0.35, 1.4]]);
   ctx.restore();
   if (seed) drawMirrorCrack(-w * 0.05, h * 0.05, w * 0.4, seed);
   ctx.restore();
@@ -24681,7 +24762,7 @@ function drawRectangleMirror(cx, cy, scale, lean, glimpseId, isNear, seed) {
   ctx.rect(-w * 0.36, -h * 0.44, w * 0.72, h * 0.88);
   ctx.clip();
   drawMirrorGlimpseContent(glimpseId, w * 0.36, h * 0.44, isNear, seed || 5);
-  drawMirrorGlassReflections([[-w * 0.1, -h * 0.36, w * 0.02, h * 0.3, 0.3, 1.6]]);
+  if (!isNear) drawMirrorGlassReflections([[-w * 0.1, -h * 0.36, w * 0.02, h * 0.3, 0.3, 1.6]]);
   ctx.restore();
   ctx.restore();
 }
@@ -24828,7 +24909,7 @@ function drawDiamondMirror(cx, cy, scale, seed, glimpseId, isNear) {
   drawMirrorGlimpseContent(glimpseId, s * 0.38, s * 0.38, isNear, seed || 3);
   ctx.restore();
   ctx.rotate(-Math.PI / 4);
-  drawMirrorGlassReflections([[-s * 0.05, -s * 0.32, s * 0.15, s * 0.05, 0.35, 1.2]]);
+  if (!isNear) drawMirrorGlassReflections([[-s * 0.05, -s * 0.32, s * 0.15, s * 0.05, 0.35, 1.2]]);
   if (seed) drawMirrorCrack(0, s * 0.1, s * 0.5, seed);
   ctx.restore();
 }
@@ -25410,7 +25491,12 @@ function drawMirrorStall(camX) {
     // ground-standing player (the diamond's own hook sits ~146px up),
     // so radiusYDown has to cover that gap; radiusYUp only needs to
     // handle approaching from slightly above (e.g. off the roof).
-    const isNear = m.glimpse ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) : false;
+    // the clouds mirror specifically only shows its scene mid-jump, not
+    // just standing near it -- a little bit of physicality tied to its
+    // own theme ("you have to jump to see the cloud zone in that mirror")
+    const isNear = m.glimpse
+      ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.jumping)
+      : false;
     if (m.hang) {
       const hookY = MIRROR_STALL_HEADER_Y + 2;
       if (m.triangleHang) {
