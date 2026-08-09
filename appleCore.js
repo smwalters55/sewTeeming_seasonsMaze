@@ -11280,6 +11280,7 @@ function drawForestRiver(camX) {
       ctx.save();
       ctx.globalAlpha = ready ? 0.95 : 0.4;
       ctx.translate(hx, hy);
+      ctx.scale(-1, 1); // face the opposite direction
       ctx.rotate(ready ? -0.5 + Math.sin(t * 0.005) * 0.12 : -0.5);
       // handle
       ctx.fillStyle = ready ? "#7a5330" : "#8a8578";
@@ -31130,6 +31131,24 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
   ctx.translate(-swayCx, -swayCy);
+
+  // a quick crouch-and-spring right when a river log gets picked up --
+  // heftier than the carried icon's own pop-in alone, this is the
+  // player's own body actually dipping down and bouncing back up, not
+  // just an instant grab. Scaled around the FEET (bottom-center), not
+  // the sprite's center, so it reads as compressing toward the ground
+  // rather than squishing from the middle.
+  if (typeof forestRiverLogPickedUpAt !== "undefined" && forestRiverLogPickedUpAt) {
+    const sinceGrab = performance.now() - forestRiverLogPickedUpAt;
+    if (sinceGrab < 260) {
+      const p = sinceGrab / 260;
+      const squashY = 1 - Math.sin(p * Math.PI) * 0.18;
+      const feetX = swayCx, feetY = drawPy + player.height;
+      ctx.translate(feetX, feetY);
+      ctx.scale(1 / squashY, squashY);
+      ctx.translate(-feetX, -feetY);
+    }
+  }
 
   // body
   ctx.fillStyle = "#7a78b8";
