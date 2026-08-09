@@ -24755,22 +24755,10 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.fillStyle = "#4a7a2e";
     ctx.fillRect(bx, by + bh * 0.82, bw, bh * 0.2);
 
-    // a plain background tree, off to one side behind the rope -- muted
-    // and desaturated (not the real grafted/hybrid tree, which is tied
-    // to its own mechanic and would read as "is this telling me
-    // something" rather than just scenery) purely for depth so the
-    // whole mirror isn't just flat ground under an empty swing
-    const bgTreeX = -halfW * 0.62, bgTreeGroundY = halfH * 0.78;
-    ctx.fillStyle = "#4a5c3a";
-    ctx.fillRect(bgTreeX - halfW * 0.04, bgTreeGroundY - halfH * 0.55, halfW * 0.08, halfH * 0.55);
-    ["#4f6a42", "#5a7a4a", "#465c38"].forEach((c, i) => {
-      ctx.fillStyle = c;
-      ctx.beginPath();
-      ctx.ellipse(bgTreeX + (i - 1) * halfW * 0.14, bgTreeGroundY - halfH * 0.62 - (i % 2) * halfH * 0.08, halfW * 0.22, halfH * 0.24, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    // soft dappled sunlight through the canopy -- a few translucent warm
-    // spots, purely atmospheric texture
+    // tried a plain background tree here for depth, but it read as an
+    // odd, out-of-place shape rather than scenery -- dropped it. Soft
+    // dappled sunlight (a few translucent warm spots) still gives some
+    // atmospheric texture without needing a literal tree shape.
     for (let i = 0; i < 4; i++) {
       const seedI = seed + i * 6.8;
       const dx0 = (pseudoRandom(seedI) - 0.5) * halfW * 1.6;
@@ -25036,51 +25024,51 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     };
     drawReedCluster(waterStartX + halfW * 0.08, waterTop + halfH * 0.03, 5, seed + 200);
 
-    // rushing water -- starts at waterStartX (not the whole scene width),
-    // with a top-to-bottom gradient for depth, drifting current streaks,
-    // and a brighter sparkle band concentrated right under the bridge
-    // where the light would actually hit it
-    const waterEndX = halfW * 6;
-    // past the far pier the river visibly narrows away to the right
-    // instead of running the same flat width all the way to the tree --
-    // reads as the stream bending off into the distance rather than the
-    // bridge just dead-ending in open water. Both banks converge toward
-    // each other (forced-perspective taper); whatever's outside the
-    // narrowed shape just shows the canopy background behind it, which
-    // doubles as the far bank without needing to paint one separately.
-    const bendX = halfW * 1.05 + halfW * 0.35; // matches bridgeHalfSpan below (declared after this block) -- kept as a literal here to avoid a use-before-declare
-    // converges well before waterEndX -- the third panel's own visible
-    // window only reaches to roughly x=2.77*halfW (worldOffsetX for that
-    // panel, plus its own halfW), so if the taper only finished closing
-    // at waterEndX=6*halfW almost none of the narrowing would actually
-    // be visible on screen. Converging by ~2.5*halfW instead means the
-    // bend reads clearly within that same panel.
-    const bendConvergeX = halfW * 2.5;
-    const bendTop = (x) => {
-      if (x <= bendX) return waterTop;
-      const p = Math.min(1, (x - bendX) / (bendConvergeX - bendX));
-      return waterTop + p * p * halfH * 0.48;
+    // rushing water -- a real winding river, not a flat band: it winds
+    // IN from a distant, narrow source visible in the gear panel, opens
+    // up to its widest point at the main crossing, then bends away to
+    // the right past the bridge, narrowing and rising again as it
+    // recedes -- instead of one constant-width strip that just faded out.
+    // riverAt(x) interpolates both the river's centerline height and its
+    // half-width through 4 control points, smoothstepped between them.
+    const band = waterBot - waterTop;
+    const riverPts = [
+      { x: waterStartX, cy: waterTop + band * 0.20, hw: band * 0.18 }, // source -- far, narrow, high up
+      { x: 0, cy: waterTop + band * 0.65, hw: band * 0.55 }, // main crossing -- closest, widest
+      { x: halfW * 1.3, cy: waterTop + band * 0.45, hw: band * 0.38 }, // starting to bend away
+      { x: halfW * 2.6, cy: waterTop + band * 0.10, hw: band * 0.11 } // far bank -- receded, narrow, high up again
+    ];
+    const riverAt = (x) => {
+      if (x <= riverPts[0].x) return riverPts[0];
+      if (x >= riverPts[3].x) return riverPts[3];
+      for (let i = 0; i < riverPts.length - 1; i++) {
+        const a = riverPts[i], b = riverPts[i + 1];
+        if (x >= a.x && x <= b.x) {
+          const lt = (x - a.x) / (b.x - a.x);
+          const s = lt * lt * (3 - 2 * lt); // smoothstep -- no hard kinks where segments meet
+          return { cy: a.cy + (b.cy - a.cy) * s, hw: a.hw + (b.hw - a.hw) * s };
+        }
+      }
+      return riverPts[3];
     };
-    const bendBot = (x) => {
-      if (x <= bendX) return waterBot;
-      const p = Math.min(1, (x - bendX) / (bendConvergeX - bendX));
-      return waterBot - p * p * halfH * 0.48;
-    };
+    const riverTop = (x) => { const r = riverAt(x); return r.cy - r.hw; };
+    const riverBot = (x) => { const r = riverAt(x); return r.cy + r.hw; };
+    const waterEndX = halfW * 2.6;
     const waterGrad = ctx.createLinearGradient(0, waterTop, 0, waterBot);
     waterGrad.addColorStop(0, "#5a95a5");
     waterGrad.addColorStop(0.4, "#3a6a7a");
     waterGrad.addColorStop(1, "#26505c");
     ctx.save();
     ctx.beginPath();
-    const bendSteps = 20;
+    const bendSteps = 24;
     for (let i = 0; i <= bendSteps; i++) {
       const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
-      const y = bendTop(x);
+      const y = riverTop(x);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     for (let i = bendSteps; i >= 0; i--) {
       const x = waterStartX + (waterEndX - waterStartX) * (i / bendSteps);
-      ctx.lineTo(x, bendBot(x));
+      ctx.lineTo(x, riverBot(x));
     }
     ctx.closePath();
     ctx.clip();
@@ -25092,7 +25080,7 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       const seedI = seed + i * 5.7;
       const spanW = waterEndX - waterStartX;
       const rx = waterStartX + ((t * 0.022 + pseudoRandom(seedI) * spanW) % spanW);
-      const ry = waterTop + pseudoRandom(seedI + 1) * (waterBot - waterTop);
+      const ry = riverTop(rx) + pseudoRandom(seedI + 1) * (riverBot(rx) - riverTop(rx));
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.lineTo(rx + halfW * 0.32, ry + Math.sin(t * 0.003 + seedI) * halfH * 0.02);
@@ -25112,17 +25100,51 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.restore();
 
     // the bridge -- built from real branches/logs lashed together, not a
-    // smooth milled plank. Two thick curved branch-strokes running side
-    // by side (slightly offset so they read as separate logs, not one
-    // shape), knots along their length, and a few dark rope-lashing
+    // smooth milled plank. Runs on a genuine diagonal, from the wide
+    // near crossing down at the bottom-left up to the narrow far shore
+    // at the top-right, following the river's own bend instead of
+    // sitting level -- so it visibly angles across the turn rather than
+    // spanning a flat strip. Two thick curved branch-strokes running
+    // side by side (slightly offset so they read as separate logs, not
+    // one shape), knots along their length, and a few dark rope-lashing
     // wraps binding them down rather than a railing -- same rope/vine
     // language as the rest of the game (drawVines' own rope color)
     // instead of invented hardware.
-    const bridgeHalfSpan = halfW * 1.05;
-    const deckBaseY = waterTop - halfH * 0.02, archHeight = halfH * 0.4;
+    const bridgeStartX = -halfW * 0.15, bridgeEndX = halfW * 2.15;
+    const deckStartY = riverTop(bridgeStartX) - halfH * 0.05;
+    const deckEndY = riverTop(bridgeEndX) - halfH * 0.12;
+
+    // a real spit of far shore right under the bridge's own far end --
+    // solid ground, generously sized and starting well BEFORE
+    // bridgeEndX (not just barely touching it), so the far pier plants
+    // solidly into land instead of stopping short in open water
+    const shoreStartX = bridgeEndX - halfW * 0.5;
+    ctx.fillStyle = "#4a3d2e";
+    ctx.beginPath();
+    ctx.moveTo(shoreStartX, riverTop(shoreStartX) - halfH * 0.55);
+    ctx.lineTo(halfW * 2.9, riverTop(halfW * 2.9) - halfH * 0.55);
+    ctx.lineTo(halfW * 2.9, riverBot(halfW * 2.9) + halfH * 0.35);
+    ctx.lineTo(shoreStartX, riverBot(shoreStartX) + halfH * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    // a few grass tufts on the new shore, same language as the gear-side
+    // bank, so it reads as ground and not just a flat color block
+    ctx.strokeStyle = "#6a9a3a";
+    ctx.lineWidth = Math.max(0.7, halfW * 0.025);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 5; i++) {
+      const seedI = seed + 900 + i * 7.4;
+      const gx = shoreStartX + halfW * 0.1 + pseudoRandom(seedI) * halfW * 0.7;
+      const gy3 = riverTop(gx) - halfH * 0.02;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy3 + halfH * 0.08);
+      ctx.lineTo(gx + (pseudoRandom(seedI + 1) - 0.5) * halfW * 0.1, gy3 - halfH * 0.06);
+      ctx.stroke();
+    }
+    const archHeight = halfH * 0.32;
     const branchPoint = (t2, riseMult) => {
-      const x = -bridgeHalfSpan + t2 * bridgeHalfSpan * 2;
-      const y = deckBaseY - archHeight * riseMult * Math.sin(t2 * Math.PI);
+      const x = bridgeStartX + t2 * (bridgeEndX - bridgeStartX);
+      const y = deckStartY + t2 * (deckEndY - deckStartY) - archHeight * riseMult * Math.sin(t2 * Math.PI);
       return { x, y };
     };
     const branchOffsets = [-halfH * 0.05, halfH * 0.06];
@@ -25159,16 +25181,21 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       ctx.lineTo(p.x, p.y + branchOffsets[1] + halfH * 0.03);
       ctx.stroke();
     }
-    // piers, planted at the ends, down into the water
+    // piers, planted at the ends, down into the water/shore below --
+    // near pier goes into open water, far pier into the new shore spit
     ctx.fillStyle = "#4a3520";
-    ctx.fillRect(-bridgeHalfSpan * 0.9, deckBaseY, halfW * 0.12, waterBot - deckBaseY);
-    ctx.fillRect(bridgeHalfSpan * 0.9 - halfW * 0.12, deckBaseY, halfW * 0.12, waterBot - deckBaseY);
+    ctx.fillRect(bridgeStartX - halfW * 0.06, deckStartY, halfW * 0.12, riverBot(bridgeStartX) - deckStartY);
+    ctx.fillRect(bridgeEndX - halfW * 0.06, deckEndY, halfW * 0.12, riverBot(bridgeEndX) - deckEndY + halfH * 0.15);
     // faint rippled reflection of the branches, mirrored below the
-    // waterline -- keeping this, it's the one part that was working
+    // near (water-side) end of the bridge only -- the far end lands on
+    // dry shore, which has no reflection to give
     ctx.save();
     ctx.globalAlpha = 0.2;
-    ctx.translate(0, deckBaseY * 2 + halfH * 0.05);
+    ctx.translate(0, deckStartY * 2 + halfH * 0.05);
     ctx.scale(1, -1);
+    ctx.beginPath();
+    ctx.rect(waterStartX, -halfH * 3, halfW * 1.8, halfH * 6);
+    ctx.clip();
     branchOffsets.forEach(offset => {
       ctx.strokeStyle = "#1a2a30";
       ctx.lineWidth = Math.max(1, halfH * 0.1);
@@ -26172,16 +26199,18 @@ function drawMirrorStall(camX) {
     // on the roof or another mirror counts too, but flat ground doesn't.
     // player.y is height-above-ground, so >0 covers all of those at once.
     // the rectangle mirror's autumn glimpse is the opposite -- it's a
-    // standable platform, so its scene only shows while actually stood
-    // on top of it (same footprint/resting-height check the landing
-    // collision below uses), not just anywhere nearby.
+    // standable platform, so its scene shows either while just browsing
+    // nearby (same generous zone every other mirror uses) OR while
+    // actually stood on top of it (same footprint/resting-height check
+    // the landing collision below uses) -- either one counts.
     let isNear;
     if (m.glimpse === "autumnLeaves") {
       const worldX = MIRROR_STALL_X + m.dx;
       const halfW = MIRROR_FRAME_HALF_W[m.shape] * m.scale;
       const platformTop = gy - (my - frameHalfH);
       const playerCenterX = player.x + player.width / 2;
-      isNear = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
+      const standingOnTop = Math.abs(playerCenterX - worldX) <= halfW && Math.abs(player.y - platformTop) < 2;
+      isNear = standingOnTop || isPlayerNear(worldX, gy - my, 45, 40, 200);
     } else {
       isNear = m.glimpse
         ? isPlayerNear(MIRROR_STALL_X + m.dx, gy - my, 45, 40, 200) && (m.glimpse !== "clouds" || player.y > 0)
