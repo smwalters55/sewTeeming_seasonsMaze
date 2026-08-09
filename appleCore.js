@@ -24361,11 +24361,13 @@ function drawMineCartFrontRim() {
 // a wood-slat roof, a header beam for real visible rope, and one long
 // counter every resting piece (and the hourglass's shard pile) actually
 // sits on -- unmanned, since nothing here is for sale.
-const MIRROR_STALL_X = 2460;
+const MIRROR_STALL_X = 2500;
 const MIRROR_STALL_ROOF_Y = gy - 240;
 const MIRROR_STALL_HEADER_Y = gy - 196; // beam the hung mirrors' rope attaches to
 const MIRROR_STALL_COUNTER_Y = gy - 16; // top surface of the long counter plank
-const MIRROR_STALL_POST_L = -235, MIRROR_STALL_POST_R = 270;
+// widened a little past the mirrors' own spread so the small shelves
+// tucked in at the ends aren't crammed right up against the posts
+const MIRROR_STALL_POST_L = -250, MIRROR_STALL_POST_R = 285;
 // sized up and pulled closer together so all six clearly read as one
 // stall's worth of stock, not scattered wall decor
 const MIRRORS = [
@@ -24378,7 +24380,12 @@ const MIRRORS = [
   // reaches down to the counter, so its shard pile sits ON something
   // rather than floating in the gap ("glass shards pile reads as not on
   // anything")
-  { shape: "hourglass", dx: -55, hang: true, ropeLen: 80, triangleHang: true, scale: 1.7, crackSeed: 11, shards: true },
+  // shortened from 80 -- at that length the frame's bottom edge landed
+  // almost flush with the counter, reading as "resting on the ground
+  // with a hanging setup" rather than actually hanging. Kept long enough
+  // that its shard pile below still lands on the counter, just with a
+  // real visible gap under the frame itself now.
+  { shape: "hourglass", dx: -55, hang: true, ropeLen: 65, triangleHang: true, scale: 1.7, crackSeed: 11, shards: true },
   // the ornate brass one -- "deffff bigger"
   { shape: "oval", dx: 40, hang: true, ropeLen: 38, scale: 2.1, brass: true },
   // hung now, at a mid-height rope between the header beam and the
@@ -24388,7 +24395,7 @@ const MIRRORS = [
   // leaned against the right post, top tilted in toward the wall --
   // reads as actually propped there rather than floating perfectly
   // upright in open floor space
-  { shape: "rectangle", dx: 245, hang: false, scale: 1.4, lean: -0.16 }
+  { shape: "rectangle", dx: 245, hang: false, scale: 1.4, lean: 0.16 }
 ];
 
 // small 2-3 segment jagged crack, drawn right on the glass -- reused
@@ -24738,9 +24745,10 @@ function drawSmallTable(x, topY, groundY) {
 // small plain background mirror, mounted flat on the wall -- no hook
 // chain, no crack, no big reflection streak, just enough detail to read
 // as "another mirror" without competing with the six real ones
-function drawTinyWallMirror(x, y, shape, cracked) {
+function drawTinyWallMirror(x, y, shape, cracked, scale) {
   ctx.save();
   ctx.translate(x, y);
+  ctx.scale(scale || 1, scale || 1);
   const path = () => {
     ctx.beginPath();
     if (shape === "circle") ctx.arc(0, 0, 7, 0, Math.PI * 2);
@@ -24796,29 +24804,37 @@ function drawHandMirrorFlat(x, y, rot) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot || 0);
-  // handle
+  // a faint contact shadow right under it, so it reads as resting flat
+  // on the surface rather than propped up at an angle
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(1, 2, 12.5, 3.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // handle -- flattened down onto the surface with the head, not
+  // standing up off it
   ctx.fillStyle = "#6a4e30";
-  ctx.fillRect(-3, 6, 6, 13);
+  ctx.fillRect(-2.5, 4, 5, 11);
   ctx.strokeStyle = "#3a2818";
   ctx.lineWidth = 1;
-  ctx.strokeRect(-3, 6, 6, 13);
-  // squashed head, viewed lying flat
+  ctx.strokeRect(-2.5, 4, 5, 11);
+  // squashed head, flattened further -- a much shallower ellipse so it
+  // genuinely reads as lying flat rather than tilted up on its edge
   ctx.fillStyle = "#5a4228";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 12, 6.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 12, 4.2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#8a6a3a";
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.fillStyle = "#3a4048";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 9, 4.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 9, 2.7, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "rgba(235,245,255,0.35)";
   ctx.lineWidth = 0.7;
   ctx.beginPath();
-  ctx.moveTo(-4, -1.5);
-  ctx.lineTo(3, 1.8);
+  ctx.moveTo(-4, -0.9);
+  ctx.lineTo(3, 1.1);
   ctx.stroke();
   ctx.restore();
 }
@@ -24884,6 +24900,74 @@ function drawSmallCrate(x, groundY, size) {
   ctx.restore();
 }
 
+// a small vase of drooping flowers, sitting on the counter -- dark,
+// muted purple-red heads nodding downward on their own stems, not a
+// bright cheerful bouquet
+function drawVaseFlowers(x, counterY) {
+  const y = counterY;
+  ctx.save();
+  ctx.translate(x, y);
+  // vase body
+  ctx.fillStyle = "#5a4a52";
+  ctx.beginPath();
+  ctx.moveTo(-4, 0);
+  ctx.quadraticCurveTo(-6, -9, -3, -13);
+  ctx.lineTo(3, -13);
+  ctx.quadraticCurveTo(6, -9, 4, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2e34";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(-2, -11);
+  ctx.lineTo(-1.5, -1);
+  ctx.stroke();
+  // stems -- each rises then arcs over at the top like a shepherd's
+  // hook, so the flower head hanging off the end actually noses downward
+  // instead of just tilting slightly off-vertical
+  const stems = [
+    { sx: -1.5, apexX: -7, apexY: -20, dropX: -9, dropY: -15, faceA: 2.4 },
+    { sx: 0, apexX: 2, apexY: -25, dropX: 4, dropY: -19, faceA: 1.9 },
+    { sx: 1.5, apexX: 8, apexY: -19, dropX: 10, dropY: -14, faceA: 2.1 }
+  ];
+  ctx.strokeStyle = "#3f4f30";
+  ctx.lineWidth = 1.2;
+  stems.forEach(s => {
+    ctx.beginPath();
+    ctx.moveTo(s.sx, -12);
+    ctx.quadraticCurveTo(s.sx, -20, s.apexX, s.apexY);
+    ctx.quadraticCurveTo((s.apexX + s.dropX) / 2 + 1, (s.apexY + s.dropY) / 2, s.dropX, s.dropY);
+    ctx.stroke();
+  });
+  // drooping flower heads -- dark, muted purple-red, hanging face-down
+  // off the end of each hooked stem rather than standing upright
+  stems.forEach(s => {
+    ctx.save();
+    ctx.translate(s.dropX, s.dropY);
+    ctx.rotate(s.faceA);
+    ctx.fillStyle = "#4a1a28";
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a) * 2.6, 2 + Math.sin(a) * 2.6, 2, 1.3, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#6a2434";
+    ctx.beginPath();
+    ctx.arc(0, 2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#2a0e18";
+    ctx.beginPath();
+    ctx.arc(0, 2, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
 // small background clutter placed within the booth -- not part of the
 // six real mirrors, just "shelf or 2 or 3...small background mirror
 // and/or trinkets", a hand mirror lying on a table, another mirror lying
@@ -24896,11 +24980,18 @@ const MIRROR_STALL_CLUTTER = [
   // nothing
   { type: "wallmirror+cracked", dx: -20, shape: "oval", y: -150 },
   { type: "shelf+mirror+trinket", dx: 95 },
+  // a second, lower shelf around where the player naturally stands to
+  // browse the stall, roughly player-height rather than mounted way up
+  // near the header beam like the others
+  { type: "shelf+mirror+trinket+low", dx: 0 },
   { type: "groundmirror", dx: 175 },
+  // a little touch of life on the counter -- dark, drooping flowers
+  // rather than anything bright/cheerful
+  { type: "vase", dx: 215 },
   // a small square one, tucked in a nice spot up in the top-right corner
   // instead of the removed lone circle mirror that used to sit outside
-  // the stall entirely
-  { type: "wallmirror", dx: 250, shape: "square", y: -190 }
+  // the stall entirely -- sized up a bit, it was reading too small
+  { type: "wallmirror", dx: 260, shape: "square", y: -190, scale: 1.9 }
 ];
 
 function drawMirrorStallBooth(sx) {
@@ -24976,14 +25067,20 @@ function drawMirrorStallBooth(sx) {
 }
 
 function drawStallCornerOrnament(x, y) {
-  const s = 12;
+  const s = 14;
+  // outer diamond, doubled rim for real presence rather than one thin
+  // stroke
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(Math.PI / 4);
   ctx.strokeStyle = "#c9a860";
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.8;
   ctx.strokeRect(-s / 2, -s / 2, s, s);
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(-s * 0.32, -s * 0.32, s * 0.64, s * 0.64);
   ctx.restore();
+  // vertical panes through the center
   ctx.strokeStyle = "#c9a860";
   ctx.lineWidth = 1.2;
   [-s * 0.28, s * 0.28].forEach(dx => {
@@ -24992,9 +25089,45 @@ function drawStallCornerOrnament(x, y) {
     ctx.lineTo(x + dx, y + s * 0.62);
     ctx.stroke();
   });
+  // small curled flourishes flaring off each of the diamond's 4 points,
+  // same curl language as the brass oval's rim -- this is what actually
+  // reads as "ornate" rather than just a bare outline
+  ctx.strokeStyle = "#c9a860";
+  ctx.lineWidth = 1;
+  [
+    { px: 0, py: -s * 0.71, out: [0, -1] },
+    { px: 0, py: s * 0.71, out: [0, 1] },
+    { px: -s * 0.71, py: 0, out: [-1, 0] },
+    { px: s * 0.71, py: 0, out: [1, 0] }
+  ].forEach(f => {
+    const bx = x + f.px, by = y + f.py;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx + f.out[0] * 5 + 3, by + f.out[1] * 5, bx + f.out[0] * 9, by + f.out[1] * 9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx + f.out[0] * 5 - 3, by + f.out[1] * 5, bx + f.out[0] * 9, by + f.out[1] * 9);
+    ctx.stroke();
+  });
+  // a small cap knob top and bottom, and the center stud
   ctx.fillStyle = "#e8c878";
+  [[0, -s * 0.71 - 2], [0, s * 0.71 + 2], [0, 0]].forEach(([kx, ky]) => {
+    ctx.beginPath();
+    ctx.arc(x + kx, y + ky, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // a faint warm glow, so it reads as a little lit ornament rather than
+  // plain cold metal -- gently pulsing, same breathing-light language as
+  // every other lit thing in the room (wall lanterns, the goal cloud,
+  // etc.) rather than a static glow sitting oddly still among them
+  const pulse = 0.5 + Math.sin(performance.now() * 0.0022 + x * 0.05) * 0.5;
+  const glow = ctx.createRadialGradient(x, y, 1, x, y, s * (1.2 + pulse * 0.2));
+  glow.addColorStop(0, `rgba(255,225,160,${0.14 + pulse * 0.1})`);
+  glow.addColorStop(1, "rgba(255,225,160,0)");
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+  ctx.arc(x, y, s * (1.2 + pulse * 0.2), 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -25013,15 +25146,29 @@ function drawMirrorStallClutter(sx) {
       drawSmallShelf(cx2, MIRROR_STALL_HEADER_Y + 46);
       drawTinyWallMirror(cx2 - 6, MIRROR_STALL_HEADER_Y + 40, "oval");
       drawShelfTrinket(cx2 + 8, MIRROR_STALL_HEADER_Y + 46, "pebble");
+    } else if (c.type === "shelf+mirror+trinket+low") {
+      // same little arrangement, but hung low -- roughly player-eye
+      // height rather than up near the header beam like the others
+      const lowY = gy - 78;
+      drawSmallShelf(cx2, lowY);
+      drawTinyWallMirror(cx2 - 6, lowY - 6, "oval");
+      drawShelfTrinket(cx2 + 8, lowY, "pebble");
+    } else if (c.type === "vase") {
+      drawVaseFlowers(cx2, MIRROR_STALL_COUNTER_Y);
     } else if (c.type === "wallmirror") {
-      drawTinyWallMirror(cx2, MIRROR_STALL_HEADER_Y + c.y + 196, c.shape);
+      drawTinyWallMirror(cx2, MIRROR_STALL_HEADER_Y + c.y + 196, c.shape, false, c.scale);
     } else if (c.type === "wallmirror+cracked") {
       const my2 = MIRROR_STALL_HEADER_Y + c.y + 196;
       drawTinyWallMirror(cx2, my2, c.shape, true);
       // its own little shelf, just below it, catching the shards that
       // broke out of it -- not floating on nothing
       drawSmallShelf(cx2, my2 + 16);
-      drawMirrorGlassShards(cx2, my2 + 20, cx2 * 1.7, { count: 5, spread: 12, maxSize: 2 });
+      // seeded off the fixed layout dx, NOT cx2 (which shifts with camX
+      // every frame the player moves) -- using a camera-relative value
+      // as the random seed was re-rolling the shard positions on every
+      // single frame the camera moved at all ("the glass shards
+      // rescramble every time player moves")
+      drawMirrorGlassShards(cx2, my2 + 20, c.dx * 1.7 + 500, { count: 5, spread: 12, maxSize: 2 });
     } else if (c.type === "groundmirror") {
       drawHandMirrorFlat(cx2, MIRROR_STALL_COUNTER_Y + 22, 0.3);
     }
@@ -25173,7 +25320,11 @@ function drawMoleholeScene(camX) {
   // platforms in the new, much wider shop<->geode-breaker and
   // geode-breaker<->shaft gaps; 1650/1850 light the room's extended
   // tail past the shaft.
-  const wallLanterns = [130, 670, 1015, 1400, 1780, 2000, 2250];
+  // 400 added into the old 130->670 gap -- at 540px that was more than
+  // double the spacing of every other gap in the row, a real dark patch
+  // between the two. Splits it into two ~270px gaps, in line with the
+  // rest of the row's spacing instead of standing out as an outlier.
+  const wallLanterns = [130, 400, 670, 1015, 1400, 1780, 2000, 2250];
   // varied hang height + a gentle sway per lantern now -- these used to
   // hang from a flat, identical gy-60 across all seven, dead still
   // ("i dont want anything...to be equidistant, equal height etc from
@@ -25307,6 +25458,32 @@ function updateMoleholeScene(deltaTime) {
       player.vineFlying = false; // a released root-swing flight lands here like anything else, not phase through it
     }
   });
+
+  // the mirror stall's own roof -- standable, same landing pattern as
+  // the dirt platforms above. Per direct feedback ("i want to be able to
+  // jump at least on the roof of mirror stall... more jumping on things
+  // options"), the booth is now something the player can actually climb
+  // onto, not just walk past. Width matches the roof's own drawn overhang
+  // (posts +/- 14), not just the bare post span.
+  {
+    const roofHalfW = (MIRROR_STALL_POST_R - MIRROR_STALL_POST_L) / 2 + 14;
+    const roofCenterX = MIRROR_STALL_X + (MIRROR_STALL_POST_L + MIRROR_STALL_POST_R) / 2;
+    const platformTop = gy - MIRROR_STALL_ROOF_Y;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > roofCenterX - roofHalfW &&
+      player.x < roofCenterX + roofHalfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.vineFlying = false;
+    }
+  }
 
   // the geode breaker's own raised ledge -- same landing pattern as the
   // dirt platforms above, standable so a root-swing release actually has
