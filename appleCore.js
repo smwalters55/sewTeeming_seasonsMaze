@@ -15247,19 +15247,56 @@ function drawSwing(camX) {
   const bobScreenX = bob.x - camX;
   const bobScreenY = gy - bob.height;
 
-  ctx.strokeStyle = "#5a4530";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(pivotScreenX, pivotScreenY);
-  ctx.lineTo(bobScreenX, bobScreenY);
-  ctx.stroke();
+  // two ropes now (one per side of the seat), both still physically
+  // anchored to the same single pivot point the real physics uses --
+  // just a visual read, doesn't touch swing.angle/pivot math at all.
+  // Reads as an actual seat-swing rather than one pendulum wire, and
+  // lets the seat's own two corners peel apart/together as it swings,
+  // which alone makes it feel much less like a stick figure. Per direct
+  // request ("make that look cuter/more interesting a little").
+  const seatHalfW = 14, seatH = 7;
+  const cosA = Math.cos(displayAngle), sinA = Math.sin(displayAngle);
+  const localToWorld = (lx, ly) => ({
+    x: bobScreenX + lx * cosA - ly * sinA,
+    y: bobScreenY + lx * sinA + ly * cosA
+  });
+  const leftAttach = localToWorld(-seatHalfW + 3, 1);
+  const rightAttach = localToWorld(seatHalfW - 3, 1);
+  ctx.strokeStyle = "#6b5238";
+  ctx.lineWidth = 1.6;
+  [leftAttach, rightAttach].forEach(p => {
+    ctx.beginPath();
+    ctx.moveTo(pivotScreenX, pivotScreenY);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  });
 
-  // seat, perpendicular to the rope so it reads as hanging naturally
+  // seat -- rounded plank with real wood-grain streaks and a darker trim,
+  // instead of one flat rectangle, plus small knot marks where the two
+  // ropes actually tie on
   ctx.save();
   ctx.translate(bobScreenX, bobScreenY);
   ctx.rotate(displayAngle);
-  ctx.fillStyle = "#8a5a2e";
-  ctx.fillRect(-14, 0, 28, 6);
+  ctx.fillStyle = "#9a6a38";
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-seatHalfW, 0, seatHalfW * 2, seatH, 2); ctx.fill(); }
+  else ctx.fillRect(-seatHalfW, 0, seatHalfW * 2, seatH);
+  ctx.strokeStyle = "#5a3a1a";
+  ctx.lineWidth = 1;
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-seatHalfW, 0, seatHalfW * 2, seatH, 2); ctx.stroke(); }
+  ctx.strokeStyle = "rgba(90,58,26,0.5)";
+  ctx.lineWidth = 0.8;
+  [2.2, 4.8].forEach(gy2 => {
+    ctx.beginPath();
+    ctx.moveTo(-seatHalfW + 2, gy2);
+    ctx.lineTo(seatHalfW - 2, gy2);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#4a2e14";
+  [-seatHalfW + 3, seatHalfW - 3].forEach(kx => {
+    ctx.beginPath();
+    ctx.arc(kx, 1.5, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  });
   ctx.restore();
 }
 
