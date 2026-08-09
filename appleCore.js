@@ -10865,16 +10865,35 @@ function drawForestRiver(camX) {
 
 
   // water fill -- a wavy top edge instead of a hard flat rectangle,
-  // sampled with the same irregular jitter table used for the banks
+  // sampled with the same irregular jitter table used for the banks, then
+  // smoothed through tracePathOrganicOpen instead of straight lineTo
+  // segments so the surface reads as one flowing curve, not a jagged
+  // polyline -- per direct feedback ("remove alllll straight lines...
+  // this needs to look organic"). The two end samples are left untouched
+  // (topAtNb/topAtFb below still reference them directly) so the bend and
+  // source shapes downstream still seam up exactly.
   const waterSamples = 20;
-  ctx.fillStyle = "#233c34";
-  ctx.beginPath();
-  ctx.moveTo(nb, gy + 90);
+  const waterTopPts = [];
   for (let i = 0; i <= waterSamples; i++) {
     const wx = nb + (fb - nb) * (i / waterSamples);
     const jitter = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.6;
-    ctx.lineTo(wx, gy + jitter);
+    waterTopPts.push({ x: wx, y: gy + jitter });
   }
+  ctx.fillStyle = "#233c34";
+  ctx.beginPath();
+  ctx.moveTo(nb, gy + 90);
+  ctx.lineTo(waterTopPts[0].x, waterTopPts[0].y);
+  // same midpoint-quadratic smoothing as tracePathOrganicOpen, inlined
+  // rather than calling it directly -- that helper starts with its own
+  // moveTo, which would break this into a disconnected subpath and drop
+  // the straight left/right edges down to the riverbed corners
+  for (let i = 1; i < waterTopPts.length - 1; i++) {
+    const p = waterTopPts[i], next = waterTopPts[i + 1];
+    const mx = (p.x + next.x) / 2, my = (p.y + next.y) / 2;
+    ctx.quadraticCurveTo(p.x, p.y, mx, my);
+  }
+  const lastTopPt = waterTopPts[waterTopPts.length - 1];
+  ctx.quadraticCurveTo(lastTopPt.x, lastTopPt.y, lastTopPt.x, lastTopPt.y);
   ctx.lineTo(fb, gy + 90);
   ctx.closePath();
   const waterGrad = ctx.createLinearGradient(0, gy, 0, gy + 70);
@@ -10887,47 +10906,48 @@ function drawForestRiver(camX) {
   // hard 90-degree turn -- one continuous shape sharing its starting
   // edge EXACTLY with the main water fill above (same x=fb, same top/
   // bottom y values) and reusing that exact same gradient object, so
-  // there's no seam and nothing drawn earlier (like the background
-  // tree) can show through -- it's simply the same opaque water,
-  // continuing. It curves smoothly right while narrowing toward ground
-  // height (shallowing), then tapers all the way closed by bendTipX --
-  // reusing the SAME vertical gradient naturally makes the shallower,
-  // higher-up narrow end read lighter (closer to the gradient's own
-  // light-teal top stop) than the deep water back at the bridge,
-  // "blending into the deep hue naturally" without any extra fade
-  // logic. Past the tip there's no shape at all -- plain ground --
-  // per direct steer to keep this a self-contained wading beat, not an
-  // unfinished stretch of deep water waiting on a future swim feature.
+  // there's no seam and nothing drawn earlier can show through -- it's
+  // simply the same opaque water, continuing. This side reads as the
+  // CLOSE, SHALLOW end: a wide shallow belly right up near the bank
+  // (bulging out further than the bend used to) that then tapers off
+  // fast, rather than a long thin ribbon winding into the distance --
+  // that winding treatment belongs to the source on the other bank
+  // instead, so the two sides don't read as mirror copies of each other.
+  // Reusing the SAME vertical gradient naturally makes the shallow belly
+  // read lighter (closer to the gradient's own light-teal top stop) than
+  // the deep water back at the bridge, blending the hue naturally. Past
+  // the tip there's no shape at all -- plain ground -- keeping this a
+  // self-contained wading beat, not an unfinished stretch of deep water.
   {
     const topAtFb = gy + FOREST_RIVER_JITTER[waterSamples % FOREST_RIVER_JITTER.length] * 0.6;
-    const bendCtrlX = fb + 110, bendTipX = fb + 260;
+    const bellyX = fb + 95, tipX = fb + 190;
     ctx.beginPath();
     ctx.moveTo(fb, topAtFb);
-    ctx.quadraticCurveTo(bendCtrlX, gy + 12, bendTipX, gy + 1);
-    ctx.quadraticCurveTo(bendTipX + 6, gy + 4, bendTipX, gy + 7);
-    ctx.quadraticCurveTo(bendCtrlX, gy + 72, fb, gy + 90);
+    ctx.quadraticCurveTo(fb + 45, gy - 5, bellyX, gy + 2);
+    ctx.quadraticCurveTo(bellyX + 55, gy - 3, tipX, gy + 1);
+    ctx.quadraticCurveTo(tipX + 6, gy + 4, tipX, gy + 7);
+    ctx.quadraticCurveTo(bellyX + 55, gy + 82, bellyX, gy + 87);
+    ctx.quadraticCurveTo(fb + 45, gy + 93, fb, gy + 90);
     ctx.closePath();
     ctx.fillStyle = waterGrad;
     ctx.fill();
   }
 
-  // the water's SOURCE on the near/left side -- mirrors the bend above,
-  // but incoming rather than outgoing: instead of the main river
-  // starting as a hard vertical wall right at x=nb (where the thin
-  // stream groove on the sand bank used to just slam into the full
-  // 90px-deep body with no transition -- "no logical sense"), it now
-  // widens gradually FROM a shallow, narrow trickle further upstream
-  // INTO the main body, sharing its ending edge exactly with the main
-  // fill's own left edge and reusing the same gradient, so there's no
-  // seam and the hue blends the same way the bend's does.
+  // the water's SOURCE on the near/left side -- one single sweeping
+  // curve winding in from upstream (not a double S-bend -- that read as
+  // a second lobe of water poking out beside the main river instead of
+  // one stream flowing into it, "rushing deep water coming sideways out
+  // of it"). Shares its ending edge exactly with the main fill's own
+  // left edge and reuses the same gradient, so there's no seam and the
+  // hue blends the same way the bend's does.
   {
     const topAtNb = gy; // matches the main fill's own top-left corner (jitter[0] is 0)
-    const srcCtrlX = nb - 130, srcTipX = nb - 260;
+    const ctrlX = nb - 140, tipX = nb - 260;
     ctx.beginPath();
     ctx.moveTo(nb, topAtNb);
-    ctx.quadraticCurveTo(srcCtrlX, gy - 9, srcTipX, gy + 1);
-    ctx.quadraticCurveTo(srcTipX - 6, gy + 4, srcTipX, gy + 7);
-    ctx.quadraticCurveTo(srcCtrlX, gy + 74, nb, gy + 90);
+    ctx.quadraticCurveTo(ctrlX, gy - 22, tipX, gy + 2);
+    ctx.quadraticCurveTo(tipX - 6, gy + 5, tipX, gy + 8);
+    ctx.quadraticCurveTo(ctrlX, gy + 80, nb, gy + 90);
     ctx.closePath();
     ctx.fillStyle = waterGrad;
     ctx.fill();
@@ -12912,11 +12932,13 @@ function drawMoleHoleTree(camX) {
     ctx.stroke();
   });
 
-  // real root flare at the base -- several thick roots splitting off
-  // and diving into the ground, explicitly the same roots that carry
-  // on down into the mole hole below. Asymmetric (more/bigger toward
-  // the entrance side) so it visually implies the hole is connected to
-  // this specific tree rather than just standing near it.
+  // real root flare at the base -- roots visibly LEAVE the trunk itself
+  // (attached right at its own base silhouette, not floating shapes
+  // just placed near it), arc up in a shallow hump breaking the surface,
+  // then dive back under toward the tip -- reads as an actual root
+  // breaking ground rather than a flat wedge pasted onto the grass.
+  // Asymmetric (more/bigger toward the entrance side) so it visually
+  // implies the hole is connected to this specific tree.
   const rootSpecs = [
     { dx: -48, spread: 18, len: 30 },
     { dx: -22, spread: 10, len: 16 },
@@ -12926,12 +12948,16 @@ function drawMoleHoleTree(camX) {
   ];
   ctx.fillStyle = "#241a10";
   rootSpecs.forEach(r => {
+    const dir = Math.sign(r.dx);
+    const attachX = dir * (trunkW / 2 - 3); // hugs the trunk's own base edge instead of starting out at a floating point near dx
+    const midX = (attachX + r.dx) / 2;
+    const humpY = -(5 + r.len * 0.12); // shallow hump breaking the surface before diving back under
     ctx.beginPath();
-    ctx.moveTo(r.dx - r.spread * 0.3, -4);
-    ctx.quadraticCurveTo(r.dx, -2, r.dx + r.spread * 0.2, r.len * 0.4);
-    ctx.quadraticCurveTo(r.dx + r.spread * 0.5, r.len * 0.8, r.dx + r.spread, r.len);
-    ctx.lineTo(r.dx + r.spread * 0.5, r.len * 0.9);
-    ctx.quadraticCurveTo(r.dx - r.spread * 0.1, r.len * 0.3, r.dx - r.spread * 0.3, -4);
+    ctx.moveTo(attachX, 2);
+    ctx.quadraticCurveTo(midX, humpY, r.dx, r.len * 0.55);
+    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.6, r.len * 0.88, r.dx + r.spread * dir, r.len);
+    ctx.quadraticCurveTo(r.dx + r.spread * dir * 0.35, r.len * 0.92, r.dx * 0.85, r.len * 0.62);
+    ctx.quadraticCurveTo(midX, humpY + 7, attachX, 8);
     ctx.closePath();
     ctx.fill();
   });
