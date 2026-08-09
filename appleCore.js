@@ -10533,6 +10533,124 @@ function drawSpringDoorVineTendril(camX) {
 // but everything about the space itself signals "this isn't the next
 // season, this is somewhere else": darker, mossier, a little wilder.
 // Base environment only for this pass -- stream/snake/branches come later.
+// a small, separate calm pool sitting a little past the bridge -- pure
+// atmosphere for now, no player interaction (the river itself is still
+// "PHASE ONE ONLY" per its own note below: visual only, real water
+// interaction/puzzles come later). Occasionally, while the player's
+// standing near it, the still water settles enough to briefly reflect
+// something that isn't actually in the sky above it at all: an
+// impossibly large, gnarled tree canopy hanging down into the water --
+// a wordless hint at the Magic Faraway Tree area planned for later in
+// forest. No payoff yet, nothing explained; it just lingers a few
+// seconds and fades, same "storybook glimpse" language as the mirror
+// stall's own apparition/parade content, just moved outdoors into water.
+// Kept as its own constant, deliberately separate from the river's own
+// bank/bridge constants, specifically so this can be relocated to
+// wherever in forest makes more sense once more of the zone is built out.
+// (Hardcoded rather than "FOREST_RIVER_FAR_BANK_X + 260" -- that constant
+// isn't declared until later in this file, and this line runs at module
+// load time, so referencing it directly here would throw a temporal-dead-
+// zone ReferenceError before the game ever starts. FOREST_RIVER_FAR_BANK_X
+// is 4800, so 5060 keeps the same "a bit past the far bank" placement.)
+const FOREST_REFLECTION_POOL_X = 5060;
+const reflectionPool = { active: false, startTime: 0, nextRollAt: 3000 };
+const REFLECTION_FADE_IN_MS = 900;
+const REFLECTION_HOLD_MS = 3400;
+const REFLECTION_FADE_OUT_MS = 1200;
+function updateReflectionPool() {
+  const now = performance.now();
+  const isNear = isPlayerNear(FOREST_REFLECTION_POOL_X, 0, 140, 60, 60);
+  if (!isNear) {
+    reflectionPool.active = false;
+    return;
+  }
+  if (reflectionPool.active) {
+    const total = REFLECTION_FADE_IN_MS + REFLECTION_HOLD_MS + REFLECTION_FADE_OUT_MS;
+    if (now - reflectionPool.startTime > total) {
+      reflectionPool.active = false;
+      reflectionPool.nextRollAt = now + 7000 + Math.random() * 9000;
+    }
+    return;
+  }
+  if (now >= reflectionPool.nextRollAt) {
+    reflectionPool.active = true;
+    reflectionPool.startTime = now;
+  }
+}
+
+function drawForestReflectionPool(camX) {
+  const px = FOREST_REFLECTION_POOL_X - camX;
+  if (px < -160 || px > canvas.width + 160) return;
+  const poolW = 130, poolH = 34;
+  const poolY = gy + 8;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(px, poolY, poolW / 2, poolH / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  // same dark teal-green water tone as the river, but flatter/calmer --
+  // no current streaks, no channel groove, this water isn't moving
+  const waterGrad = ctx.createLinearGradient(0, poolY - poolH / 2, 0, poolY + poolH / 2);
+  waterGrad.addColorStop(0, "#3a6a72");
+  waterGrad.addColorStop(1, "#1e3a3e");
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(px - poolW, poolY - poolH, poolW * 2, poolH * 2);
+
+  const now = performance.now();
+  if (reflectionPool.active) {
+    const elapsed = now - reflectionPool.startTime;
+    let alpha;
+    if (elapsed < REFLECTION_FADE_IN_MS) alpha = elapsed / REFLECTION_FADE_IN_MS;
+    else if (elapsed < REFLECTION_FADE_IN_MS + REFLECTION_HOLD_MS) alpha = 1;
+    else alpha = Math.max(0, 1 - (elapsed - REFLECTION_FADE_IN_MS - REFLECTION_HOLD_MS) / REFLECTION_FADE_OUT_MS);
+
+    // the reflection itself -- a big, pale, upside-down tree silhouette
+    // hanging DOWN into the pool from its own surface line (a true
+    // reflection's own orientation), instead of a normal upright tree
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.translate(px, poolY - 2);
+    ctx.scale(1, -1);
+    ctx.fillStyle = "#dce8d0";
+    // an impossibly big, gnarled canopy -- several overlapping lumps,
+    // wider and taller than anything that could plausibly be standing
+    // just past the bridge, which is exactly the point of it
+    [
+      { dx: -18, dy: 2, r: 20 }, { dx: 6, dy: -8, r: 24 }, { dx: 26, dy: 4, r: 18 },
+      { dx: -6, dy: 12, r: 16 }, { dx: 16, dy: 16, r: 14 }
+    ].forEach(l => {
+      ctx.beginPath();
+      ctx.arc(l.dx, l.dy, l.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // a slim trunk descending further than the canopy alone would
+    // suggest, hinting the whole thing is much taller than it has any
+    // right to be
+    ctx.fillStyle = "#c8d8ba";
+    ctx.fillRect(-3, 20, 6, 26);
+    ctx.restore();
+
+    // a few horizontal ripple breaks through the reflection so it reads
+    // as sitting on disturbed water rather than a crisp, too-solid image
+    ctx.strokeStyle = `rgba(230,240,225,${alpha * 0.25})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const ry = poolY - 4 + i * 6 + Math.sin(now * 0.0016 + i) * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px - poolW * 0.36, ry);
+      ctx.lineTo(px + poolW * 0.36, ry);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = "#5a4a32";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.ellipse(px, poolY, poolW / 2, poolH / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function drawForestScene(camX) {
   // deep, muted under-canopy sky -- darker and greener than spring's
   // light pastels, no bright horizon glow
@@ -10627,6 +10745,7 @@ function drawForestScene(camX) {
   drawMoleHoleEntrance(camX);
   drawMoleHoleRootsOverHole(camX); // the roots that reach into the hole draw again here so they land on top of its rim, not hidden under it
   drawForestRiver(camX);
+  drawForestReflectionPool(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
   // drawForestBrambleFront is called after the player sprite in the
@@ -14364,6 +14483,7 @@ function drawForestSnake(camX) {
 }
 
 function updateForestScene(deltaTime) {
+  updateReflectionPool();
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
