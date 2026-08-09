@@ -24515,7 +24515,7 @@ function drawMirrorGlassReflections(streaks) {
 // walks up to it. Called with ctx already translated to the mirror's
 // own local center and clipped to its glass path, so halfW/halfH are
 // just that shape's own glass bounding box -- callers pass their own.
-function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOffsetX) {
+function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOffsetX, worldOffsetY) {
   const bw = halfW * 2.8, bh = halfH * 2.8, bx = -halfW * 1.4, by = -halfH * 1.4;
   ctx.fillStyle = "#3a4048";
   ctx.fillRect(bx, by, bw, bh);
@@ -24898,6 +24898,7 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // before drawing shared elements at fixed shared-scene coordinates
     // lines them up continuously across the three separate clips.
     const ox = worldOffsetX || 0;
+    const oy = worldOffsetY || 0;
     // hazy receding horizon band behind everything, instead of a flat
     // two-tone split -- gives the whole scene actual depth, and lets the
     // distant tree sit visibly further back than the water/bridge.
@@ -24913,7 +24914,11 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.fillRect(bx, by, bw, bh);
 
     ctx.save();
-    ctx.translate(-ox, 0);
+    // -oy cancels each panel's own vertical placement (oy differs per
+    // panel in drawTriptychMirror's cluster layout) so the water's
+    // absolute height lines up across all three panels too, not just
+    // its horizontal position
+    ctx.translate(-ox, -oy);
 
     const waterTop = halfH * 0.42, waterBot = halfH * 1.5;
     // water only actually starts here in shared-scene space -- the gear
@@ -25282,7 +25287,15 @@ function drawTriptychMirror(cx, cy, scale, glimpseId, isNear) {
     drawOrnateRim(path, "#8a6a3a", "#c9a860", [[0, -r * 0.9], [0, r * 0.9]]);
     ctx.save();
     path(); ctx.clip();
-    drawMirrorGlimpseContent(glimpseId, r * 0.62, r, isNear, 7, p.ox);
+    // counter-rotate just the content -- each panel's own tilt gave the
+    // shared water/bridge scene a different horizon slope per panel
+    // (and, combined with each panel's own oy, a different height too),
+    // which read as three disconnected ponds rather than one continuous
+    // river. The clip itself (just set above) stays fixed in its
+    // already-tilted screen position; only what's drawn after this
+    // rotates back to level.
+    ctx.rotate(-p.tilt);
+    drawMirrorGlimpseContent(glimpseId, r * 0.62, r, isNear, 7, p.ox, p.oy);
     if (!isNear) drawMirrorGlassReflections([[-r * 0.2, -r * 0.5, r * 0.05, r * 0.1, 0.32, 1.1]]);
     ctx.restore();
     ctx.restore();
