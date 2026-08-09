@@ -10695,6 +10695,7 @@ const FOREST_RIVER_LOG_PILE_START = 9; // 7 needed + 2 extra sitting there once 
 const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 85; // moved further left into the grass, away from the bank slant
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
+const FOREST_RIVER_STRINGER_ONBEAT_THRESHOLD = -0.55; // deck-press must land while the wobble's sine phase is below this (near its low point) -- a real small timing action, not just "wait then tap"
 
 let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
 // two-step build, matching how a real beam bridge actually goes up:
@@ -10707,7 +10708,10 @@ let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
 let forestRiverSegmentsStrung = 0;
 let forestRiverSegmentsDecked = 0;
 let forestRiverStringerPlacedAt = []; // performance.now() per segment index, when its stringer went down -- drives the wobble decay
-let forestRiverLogPlacedAt = []; // performance.now() per segment index, when it was DECKED -- for the finished-texture fade-in
+let forestRiverLogPlacedAt = []; // performance.now() per segment index, when it was DECKED -- for the finished-texture fade-in, dust puff, and flash
+let forestRiverStringerMissBumpAt = []; // performance.now() per segment index, for a mistimed decking attempt's little extra "boing" kick
+let forestRiverFootDustAt = 0; // last time a dust fleck kicked up from the player's feet while crossing an undecked stringer
+let forestRiverFootDustParticles = []; // {x, y, t} world-space flecks, spawned while crossing an undecked stringer, pruned once faded
 
 // shared post-span geometry -- used by both the render side (drawing
 // the posts/segments) and the update side (the wall, collision, and
@@ -10749,7 +10753,15 @@ function forestRiverStringerWobble(seg) {
   if (placedAt == null) return 0;
   const elapsed = performance.now() - placedAt;
   const amp = 6 * Math.exp(-elapsed / 500) + 1;
-  return Math.sin(elapsed * 0.02) * amp;
+  let wobble = Math.sin(elapsed * 0.02) * amp;
+  const missAt = forestRiverStringerMissBumpAt[seg];
+  if (missAt != null) {
+    const missElapsed = performance.now() - missAt;
+    if (missElapsed < 400) {
+      wobble += Math.sin(missElapsed * 0.05) * 4 * Math.exp(-missElapsed / 200);
+    }
+  }
+  return wobble;
 }
 
 // a handful of fixed irregular offsets for the shoreline -- NOT equal
@@ -11174,11 +11186,57 @@ function drawForestRiver(camX) {
     const segX1 = postSpanX1 + seg * buildSegW, segX2 = segX1 + buildSegW;
     if (seg < forestRiverSegmentsDecked) {
       const placedAt = forestRiverLogPlacedAt[seg];
+      const segPts = sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4)));
       const alpha = placedAt ? Math.min(1, (performance.now() - placedAt) / FOREST_RIVER_LOG_FADE_MS) : 1;
-      drawDeckSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), alpha);
+      drawDeckSpan(segPts, alpha);
+      // the moment it locks in -- a quick soft flash right on the span
+      // plus a little dust kicked up along it, so nailing the timed
+      // deck-press actually feels like a concrete "landed" hit, not
+      // just the texture quietly fading in
+      if (placedAt) {
+        const sinceLock = performance.now() - placedAt;
+        if (sinceLock < 300) {
+          const flashT = sinceLock / 300;
+          const midP = segPts[Math.floor(segPts.length / 2)];
+          ctx.fillStyle = `rgba(255,250,230,${0.5 * (1 - flashT)})`;
+          ctx.beginPath();
+          ctx.ellipse(midP.x, midP.y - 4, 14 * (0.6 + flashT * 0.6), 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          for (let i = 0; i < 4; i++) {
+            const ang = -0.3 + i * 0.25;
+            const dist = flashT * (12 + i * 3);
+            ctx.fillStyle = `rgba(140,120,90,${0.4 * (1 - flashT)})`;
+            ctx.beginPath();
+            ctx.ellipse(midP.x + Math.cos(ang) * dist, midP.y - 2 - Math.sin(ang) * dist * 0.5, 3 - flashT * 1.5, 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
     } else if (seg < forestRiverSegmentsStrung) {
       drawStringerSpan(sampleDeckPts(segX1, segX2, Math.max(4, Math.round(buildSegW / 4))), forestRiverStringerWobble(seg));
     }
+  }
+
+  // footing dust flecks kicked up while crossing a bare, undecked
+  // stringer -- world-space particles, pruned once fully faded, so
+  // they trail slightly behind actual footfalls rather than being
+  // reset every frame
+  if (forestRiverFootDustParticles.length) {
+    const nowT = performance.now();
+    forestRiverFootDustParticles = forestRiverFootDustParticles.filter(d => nowT - d.t < 400);
+    forestRiverFootDustParticles.forEach(d => {
+      const age = (nowT - d.t) / 400;
+      const dx = d.x - camX;
+      // d.y is stored in the same "height above ground" units as
+      // player.y -- same conversion the rest of this scene uses to get
+      // a screen y (higher off the ground = smaller canvas y)
+      const dyScreen = gy - d.y + 2;
+      const rise = age * 10;
+      ctx.fillStyle = `rgba(150,135,110,${0.4 * (1 - age)})`;
+      ctx.beginPath();
+      ctx.ellipse(dx - 4 + age * 6, dyScreen - rise, 2.5 - age * 1.2, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // full bank-to-bank sample, kept for the railings below -- the
@@ -13778,10 +13836,12 @@ function updateForestScene(deltaTime) {
     // just different-looking -- add its live wobble to the height the
     // player is standing on, same offset the render uses
     const { postSpanX1, postSpanX2 } = forestRiverSegSpan();
+    let onUndeckedStringer = false;
     if (centerX > postSpanX1 && centerX < postSpanX2) {
       const segIdx = forestRiverSegmentIndexAt(centerX);
       if (segIdx >= forestRiverSegmentsDecked && segIdx < forestRiverSegmentsStrung) {
         bridgeHeight += forestRiverStringerWobble(segIdx);
+        onUndeckedStringer = true;
       }
     }
     const heightDiff = bridgeHeight - player.y;
@@ -13796,6 +13856,19 @@ function updateForestScene(deltaTime) {
       // the gear lean does, which is smoothing out a genuinely abrupt
       // per-frame carry motion)
       forestBridgeTiltAngle = -forestRiverBridgeSlopeAt(centerX) * 0.7;
+
+      // a bare stringer's footing feels a little loose underfoot -- kick
+      // a small dust fleck up from the feet every so often while
+      // actually walking across one (not just standing still on it),
+      // throttled so it reads as periodic footfalls, not a constant haze
+      if (onUndeckedStringer && Math.abs(player.vx) > 0.3) {
+        const nowT = performance.now();
+        if (nowT - forestRiverFootDustAt > 220) {
+          forestRiverFootDustAt = nowT;
+          forestRiverFootDustParticles.push({ x: centerX, y: bridgeHeight, t: nowT });
+          if (forestRiverFootDustParticles.length > 12) forestRiverFootDustParticles.shift();
+        }
+      }
     }
   } else if (forestBridgeTiltAngle !== 0) {
     // eased back to upright once off the bridge entirely
@@ -13852,13 +13925,27 @@ function updateForestScene(deltaTime) {
     // decking the far half of the very last real segment too.
     const nearPendingPlacementEdge = forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14;
+    const deckElapsed = deckIdx < forestRiverSegmentsStrung
+      ? performance.now() - forestRiverStringerPlacedAt[deckIdx]
+      : 0;
+    const settled = deckIdx < forestRiverSegmentsStrung && deckElapsed > FOREST_RIVER_STRINGER_SETTLE_MS;
     if (keys.spaceJustPressed && !heldItem &&
         deckIdx < forestRiverSegmentsStrung &&
         forestRiverSegmentIndexAt(player.x + player.width / 2) === deckIdx &&
-        !nearPendingPlacementEdge &&
-        performance.now() - forestRiverStringerPlacedAt[deckIdx] > FOREST_RIVER_STRINGER_SETTLE_MS) {
-      forestRiverLogPlacedAt[deckIdx] = performance.now();
-      forestRiverSegmentsDecked++;
+        !nearPendingPlacementEdge && settled) {
+      // a real small timing action, not just "wait then tap" -- the
+      // press has to land while the stringer's own wobble phase is
+      // near its low point. Nailing it decks the span; missing it
+      // just gets a little extra "boing" kick (forestRiverStringerWobble
+      // reads forestRiverStringerMissBumpAt) as feedback that the timing
+      // -- not the position -- was the problem, rather than doing nothing.
+      const onBeat = Math.sin(deckElapsed * 0.02) < FOREST_RIVER_STRINGER_ONBEAT_THRESHOLD;
+      if (onBeat) {
+        forestRiverLogPlacedAt[deckIdx] = performance.now();
+        forestRiverSegmentsDecked++;
+      } else {
+        forestRiverStringerMissBumpAt[deckIdx] = performance.now();
+      }
     }
   }
 
