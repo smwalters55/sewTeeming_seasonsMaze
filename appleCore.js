@@ -11258,6 +11258,44 @@ function drawForestRiver(camX) {
       }
     }
   }
+
+  // a hint over the player's head while they're standing on the one
+  // segment that's actually ready to deck -- without this there's
+  // nothing on screen telling you a second, log-free step even
+  // exists, which read as "all my logs are gone, now what" once the
+  // pile ran low. Dimmed with "..." while the stringer is still
+  // settling, switches to a bright "[SPACE]" once it'll actually work,
+  // same bracket-prompt language the rest of the game already uses.
+  {
+    const deckIdx = forestRiverSegmentsDecked;
+    if (!heldItem && deckIdx < forestRiverSegmentsStrung) {
+      const segIdx = forestRiverSegmentIndexAt(player.x + player.width / 2);
+      if (segIdx === deckIdx) {
+        const elapsed = t - forestRiverStringerPlacedAt[deckIdx];
+        const ready = elapsed > FOREST_RIVER_STRINGER_SETTLE_MS;
+        const hintX = player.x + player.width / 2 - camX;
+        // matches getHeldItemWorldPos's own head-clearance offset
+        // (player.height + 14) -- the -34 this started as was nowhere
+        // near enough, so the hint was drawing right into the middle
+        // of the player sprite instead of clearing above its head
+        const hintY = gy - forestRiverBridgeHeightAt(player.x + player.width / 2) - player.height - 14 - Math.sin(t * 0.006) * 3;
+        ctx.save();
+        ctx.globalAlpha = ready ? 0.95 : 0.45;
+        ctx.fillStyle = ready ? "#f0e6c8" : "#9a9078";
+        ctx.beginPath();
+        ctx.moveTo(hintX - 5, hintY);
+        ctx.lineTo(hintX + 5, hintY);
+        ctx.lineTo(hintX, hintY + 7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.font = "bold 8px ui-monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(ready ? "[SPACE]" : "...", hintX, hintY - 4);
+        ctx.textAlign = "left";
+        ctx.restore();
+      }
+    }
+  }
 }
 
 // nicer, more detailed foreground trees -- meant to be a real recurring
