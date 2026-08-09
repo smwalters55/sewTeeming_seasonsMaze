@@ -10625,38 +10625,41 @@ function drawForestReflectionPool(camX) {
     ctx.save();
     ctx.globalAlpha = alpha * 0.62;
     ctx.translate(px, poolY - 2);
-    // one continuous full, rounded crown (traced through irregular
-    // points, same organic-blob technique as the riverbank shapes)
-    // instead of a cluster of same-sized overlapping circles -- kept
-    // fuller and less scalloped than an earlier pass, which had enough
-    // concave dips to read as a small, scraggly bush ("wimpy") rather
-    // than a grand old tree. One long reaching bough still breaks the
-    // silhouette for character, but the bulk of the mass now reads as
-    // one confident, ancient crown.
-    const canopyGrad = ctx.createRadialGradient(-4, 4, 2, 0, 6, 32);
+    // several distinct lobes of foliage at different heights/widths
+    // (traced through irregular points, same organic-blob technique as
+    // the riverbank shapes) instead of one same-radius rounded mass --
+    // a tall reaching peak, a wide low-slung bough on the right, a
+    // squat low mass at the bottom, and a smaller higher clump on the
+    // left, each pulled in toward a narrower "waist" where they meet
+    // the next lobe, so the outline actually reads as separate masses
+    // of greenery rather than one circle ("some greenery is
+    // higher/lower/wider/thinner than other parts"). One long reaching
+    // bough still breaks the silhouette for character on top of that.
+    const canopyGrad = ctx.createRadialGradient(-4, 4, 2, 0, 6, 34);
     canopyGrad.addColorStop(0, "#7a9a68");
     canopyGrad.addColorStop(0.5, "#4f6e46");
     canopyGrad.addColorStop(1, "#2c4025");
     ctx.fillStyle = canopyGrad;
     ctx.beginPath();
     tracePathOrganic(ctx, [
-      { x: -4, y: 25 }, { x: 14, y: 22 }, { x: 25, y: 12 },
-      { x: 31, y: -2 }, { x: 26, y: -14 }, { x: 13, y: -20 },
-      { x: -6, y: -21 }, { x: -23, y: -15 }, { x: -30, y: -1 },
-      { x: -25, y: 14 }, { x: -12, y: 22 }
+      { x: 2, y: -32 }, { x: 14, y: -24 }, { x: 18, y: -15 },
+      { x: 33, y: -3 }, { x: 29, y: 12 }, { x: 15, y: 20 },
+      { x: 6, y: 27 }, { x: -10, y: 25 }, { x: -19, y: 14 },
+      { x: -27, y: 2 }, { x: -21, y: -14 }, { x: -9, y: -23 }
     ]);
     ctx.closePath();
     ctx.fill();
-    // a soft golden rim-light tracing the upper silhouette -- moonlight
-    // catching the crown's own edge, the clearest "this is magical, not
-    // just a big plant" signal on a shape this small and low-detail
+    // a soft golden rim-light tracing the tall peak's own silhouette --
+    // moonlight catching the crown's own edge, the clearest "this is
+    // magical, not just a big plant" signal on a shape this small and
+    // low-detail
     ctx.strokeStyle = `rgba(224,214,140,${0.4})`;
     ctx.lineWidth = 1.6;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-23, -15);
-    ctx.quadraticCurveTo(-6, -24, 13, -20);
-    ctx.quadraticCurveTo(24, -17, 26, -14);
+    ctx.moveTo(-21, -13);
+    ctx.quadraticCurveTo(-9, -30, 2, -32);
+    ctx.quadraticCurveTo(15, -28, 19, -14);
     ctx.stroke();
     // a couple of gnarled knot-shadows and one long, sweeping bough
     // peeking out past the main silhouette -- thicker and more
@@ -11714,12 +11717,25 @@ function drawForestRiver(camX) {
       const ry = topY + (waterY - topY) * f;
       const reedH = 16 + pseudoRandom(seedI) * 18;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
-      ctx.strokeStyle = pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30";
+      // about half the cluster are true cattails (a stiffer stem topped
+      // with the classic brown cylinder head) rather than plain grass
+      // blades -- the mirror stall's own small preview of this same
+      // riverbank already had that cattail head, but it never actually
+      // made it into the real river here, so out in the actual forest
+      // every reed just looked like grass ("i do not see one anywhere").
+      const isCattail = pseudoRandom(seedI + 7) < 0.5;
+      ctx.strokeStyle = isCattail ? "#5a7a3a" : (pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30");
       ctx.lineWidth = 1.1 + pseudoRandom(seedI + 6) * 0.6;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
       ctx.stroke();
+      if (isCattail) {
+        ctx.fillStyle = "#5a4022";
+        ctx.beginPath();
+        ctx.ellipse(rx + sway * 0.86, ry - reedH * 0.84, 1.1, 2.9, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -11797,12 +11813,21 @@ function drawForestRiver(camX) {
       const ry = topY2 + (waterY2 - topY2) * f;
       const reedH = 16 + pseudoRandom(seedI) * 18;
       const sway = Math.sin(t * 0.0013 + seedI * 3) * 4;
-      ctx.strokeStyle = pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30";
+      // same cattail treatment as the near bank's reeds -- see that
+      // loop's comment
+      const isCattail = pseudoRandom(seedI + 7) < 0.5;
+      ctx.strokeStyle = isCattail ? "#5a7a3a" : (pseudoRandom(seedI + 5) < 0.5 ? "#5a7a3a" : "#4a6a30");
       ctx.lineWidth = 1.1 + pseudoRandom(seedI + 6) * 0.6;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
       ctx.quadraticCurveTo(rx + sway * 0.6, ry - reedH * 0.6, rx + sway, ry - reedH);
       ctx.stroke();
+      if (isCattail) {
+        ctx.fillStyle = "#5a4022";
+        ctx.beginPath();
+        ctx.ellipse(rx + sway * 0.86, ry - reedH * 0.84, 1.1, 2.9, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
