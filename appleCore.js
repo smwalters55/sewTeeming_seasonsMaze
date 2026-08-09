@@ -21005,7 +21005,7 @@ function drawGeodeCrackReveal(camX) {
   const t = performance.now() - geodeCrackAnim.start;
   if (t > GEODE_CRACK_ANIM_DURATION) { geodeCrackAnim = null; return; }
 
-  const size = 46;
+  const size = 34; // 3/4 of the original 46, per direct feedback
   const gx = GEODE_BREAKER_X - camX, gy0 = gy - GEODE_BREAKER_HEIGHT - 66;
 
   ctx.save();
@@ -23378,7 +23378,15 @@ const MINE_CART_SINK_DURATION = 2000; // ms -- the slow drop into darkness
 // where the hole they fall into is centered -- past the tub's own right
 // wall (roughly +25-27px in drawMineCartRide) so the hole reads as its
 // own separate spot beside the cart, not overlapping/hidden under it
-const MINE_CART_HOLE_OFFSET_X = 46;
+// bumped up from 46 -- at 46, the hole's own starting radius (26, see
+// drawMineCartEndingEffects) already reached back past the tub's right
+// wall (~27px half-width), so right at the start of the tip it read as
+// opening up BETWEEN the cart's back wall and front rim rather than as
+// a clean separate spot beside the cart ("the hole goes in between the
+// two cart walls oddly"). 68 keeps clear of the wall even at that
+// smallest starting radius; it only grows to actually swallow the cart
+// later in the sink, by which point the darkening vignette covers it.
+const MINE_CART_HOLE_OFFSET_X = 68;
 
 function mineCartEase(p) {
   // smoothstep -- gentle ease in/out rather than a linear tip/sink, reads
@@ -24321,16 +24329,26 @@ function drawMineCartFrontRim() {
 // which mirror (if any) ends up showing something real rather than a
 // harmless portal-glimpse elsewhere is still an open decision, not
 // baked into any of this art.
+// laid out against the agreed base mockup, not the earlier neat single
+// counter-row: diamond and wonky share the left side (wonky low in its
+// own corner, well below the diamond hanging above it); hourglass,
+// squat oval hang up top at a shared mount line, hourglass the biggest
+// and reaching down closest to the floor as the real centerpiece;
+// triptych clusters low to the right of those; tall rectangle sits
+// furthest right with a real, deliberate gap after the triptych. No
+// counter or header beam furniture -- these just mount straight to the
+// dirt wall (small nail/hook per hung piece) or rest right on the cave
+// floor, same as the rest of the room's props.
 const MIRROR_STALL_X = 2420;
-const MIRROR_STALL_COUNTER_TOP = gy - 8;
-const MIRROR_STALL_HEADER_Y = gy - 168;
+const MIRROR_STALL_GROUND_Y = gy; // resting mirrors' bottom edge
+const MIRROR_STALL_MOUNT_Y = gy - 172; // hung mirrors' shared top/nail line
 const MIRRORS = [
-  { shape: "wonky", dx: -215, hang: false, scale: 0.72, crackSeed: 4 },
-  { shape: "triptych", dx: -132, hang: false, scale: 1.25 },
-  { shape: "rectangle", dx: 8, hang: false, scale: 1 },
-  { shape: "hourglass", dx: 102, hang: true, hangDrop: 30, scale: 1.35, crackSeed: 11, shards: true },
-  { shape: "diamond", dx: 206, hang: true, hangDrop: 16, scale: 1, crackSeed: 19 },
-  { shape: "oval", dx: 270, hang: true, hangDrop: 12, scale: 1.15, brass: true }
+  { shape: "diamond", dx: -190, hang: true, scale: 1, crackSeed: 19 },
+  { shape: "wonky", dx: -198, hang: false, scale: 0.72, crackSeed: 4 },
+  { shape: "hourglass", dx: -65, hang: true, scale: 1.35, crackSeed: 11, shards: true },
+  { shape: "oval", dx: 40, hang: true, scale: 1.15, brass: true },
+  { shape: "triptych", dx: 150, hang: false, scale: 1.25 },
+  { shape: "rectangle", dx: 285, hang: false, scale: 1.15 }
 ];
 
 // small 2-3 segment jagged crack, drawn right on the glass -- reused
@@ -24431,11 +24449,18 @@ function drawTriptychMirror(cx, cy, scale) {
   const r = 15 * scale;
   ctx.save();
   ctx.translate(cx, cy);
-  [-r * 1.9, 0, r * 1.9].forEach((ox, i) => {
-    const tilt = (i - 1) * 0.08;
+  // a real overlapping cluster rather than an evenly-spaced hinged
+  // row -- left panel low, middle panel the highest/frontmost, right
+  // panel tucked in medium-low behind it, matching the agreed base
+  // layout rather than a straight hinge-connected line
+  [
+    { ox: -r * 1.15, oy: r * 0.1, tilt: -0.12 },
+    { ox: r * 1.1, oy: -r * 0.05, tilt: 0.16 },
+    { ox: 0, oy: -r * 0.4, tilt: 0.03 }
+  ].forEach(p => {
     ctx.save();
-    ctx.translate(ox, i === 1 ? -r * 0.15 : 0);
-    ctx.rotate(tilt);
+    ctx.translate(p.ox, p.oy);
+    ctx.rotate(p.tilt);
     const path = () => { ctx.beginPath(); ctx.ellipse(0, 0, r * 0.62, r, 0, 0, Math.PI * 2); };
     ctx.fillStyle = "#6a4e30";
     path(); ctx.fill();
@@ -24447,13 +24472,6 @@ function drawTriptychMirror(cx, cy, scale) {
     drawMirrorGlassReflections([[-r * 0.2, -r * 0.5, r * 0.05, r * 0.1, 0.32, 1.1]]);
     ctx.restore();
     ctx.restore();
-    // small hinge stud connecting each panel to the next
-    if (i < 2) {
-      ctx.fillStyle = "#c9a860";
-      ctx.beginPath();
-      ctx.arc(ox + r * 0.95, i === 0 ? -r * 0.05 : r * 0.1, 1.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
   });
   ctx.restore();
 }
@@ -24523,7 +24541,10 @@ function drawHourglassMirror(cx, cy, scale, seed, drawShards) {
   if (seed) drawMirrorCrack(w * 0.05, -h * 0.02, w * 0.5, seed);
   ctx.restore();
 
-  if (drawShards) drawMirrorGlassShards(cx, MIRROR_STALL_COUNTER_TOP, seed || 7);
+  // shards sit right below the hourglass's own bottom edge, wherever
+  // that lands -- not pinned to the room's actual ground line, which
+  // (being hung, not resting) it may sit well above
+  if (drawShards) drawMirrorGlassShards(cx, cy + h / 2 + 6, seed || 7);
 }
 
 // broken glass shards piled on the counter directly below the hourglass
@@ -24589,15 +24610,25 @@ function drawOvalMirror(cx, cy, scale, brass) {
   path(); ctx.fill();
   const rimColor = brass ? "#c9974a" : "#8a6a3a", studColor = brass ? "#e8c878" : "#c9a860";
   drawOrnateRim(path, rimColor, studColor, [[-w * 0.32, 0], [w * 0.32, 0], [0, -h * 0.36], [0, h * 0.36]]);
-  // a couple of small decorative flourishes on top -- the "prized spot"
-  // piece gets a bit more presence than the others
+  // decorative curled flourishes all the way around the rim, not just
+  // on top -- the "prized spot" piece earns real extra presence over
+  // the rest of the stall
   if (brass) {
     ctx.strokeStyle = studColor;
     ctx.lineWidth = 1;
-    [-w * 0.15, w * 0.15].forEach(fx => {
+    [
+      { x: -w * 0.15, y: -h * 0.5, dir: -1, out: [0, -1] },
+      { x: w * 0.15, y: -h * 0.5, dir: 1, out: [0, -1] },
+      { x: -w * 0.15, y: h * 0.5, dir: -1, out: [0, 1] },
+      { x: w * 0.15, y: h * 0.5, dir: 1, out: [0, 1] },
+      { x: -w * 0.5, y: 0, dir: -1, out: [-1, 0] },
+      { x: w * 0.5, y: 0, dir: 1, out: [1, 0] }
+    ].forEach(f => {
+      const ex = f.x + f.out[0] * 12, ey = f.y + f.out[1] * 12;
+      const cx1 = f.x + f.out[0] * 6 + f.dir * 4, cy1 = f.y + f.out[1] * 6;
       ctx.beginPath();
-      ctx.moveTo(fx, -h * 0.5);
-      ctx.quadraticCurveTo(fx + (fx < 0 ? -4 : 4), -h * 0.68, fx, -h * 0.8);
+      ctx.moveTo(f.x, f.y);
+      ctx.quadraticCurveTo(cx1, cy1, ex, ey);
       ctx.stroke();
     });
   }
@@ -24610,46 +24641,35 @@ function drawOvalMirror(cx, cy, scale, brass) {
   ctx.restore();
 }
 
+const MIRROR_FRAME_HALF_H = { wonky: 17, triptych: 15, rectangle: 29, hourglass: 29, diamond: 14, oval: 11 };
+
 function drawMirrorStall(camX) {
   const sx = MIRROR_STALL_X - camX;
   if (sx < -350 || sx > canvas.width + 350) return;
 
-  // a plain wooden counter running the length of the stall, for the
-  // resting mirrors to actually sit on
-  ctx.fillStyle = "#4a3018";
-  ctx.fillRect(sx - 260, MIRROR_STALL_COUNTER_TOP, 340, 10);
-  ctx.strokeStyle = "#2e2014";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(sx - 260, MIRROR_STALL_COUNTER_TOP, 340, 10);
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  [-190, -30, 90].forEach(lx => ctx.fillRect(sx + lx, MIRROR_STALL_COUNTER_TOP + 10, 3, 22));
-
-  // a header beam above, for the hung mirrors to actually hang from
-  ctx.strokeStyle = "rgba(58,40,20,0.7)";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(sx + 60, MIRROR_STALL_HEADER_Y);
-  ctx.lineTo(sx + 330, MIRROR_STALL_HEADER_Y);
-  ctx.stroke();
-
   MIRRORS.forEach(m => {
     const mx = sx + m.dx;
     if (mx < -60 || mx > canvas.width + 60) return;
+    const frameHalfH = MIRROR_FRAME_HALF_H[m.shape] * m.scale;
     let my;
     if (m.hang) {
-      const chainLen = m.hangDrop;
-      const hookY = MIRROR_STALL_HEADER_Y + 3;
-      const frameHalfH = { hourglass: 29, diamond: 14, oval: 11 }[m.shape] * m.scale;
-      my = hookY + chainLen + frameHalfH;
-      ctx.strokeStyle = "rgba(40,30,20,0.6)";
+      // mounted straight to the wall on a short nail/hook, not a long
+      // chain off a header beam -- the frame's own top edge sits right
+      // at the shared mount line
+      my = MIRROR_STALL_MOUNT_Y + frameHalfH;
+      ctx.fillStyle = "#2e2014";
+      ctx.beginPath();
+      ctx.arc(mx, MIRROR_STALL_MOUNT_Y - 2, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(30,22,14,0.6)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(mx, hookY);
-      ctx.lineTo(mx, my - frameHalfH);
+      ctx.moveTo(mx, MIRROR_STALL_MOUNT_Y - 1);
+      ctx.lineTo(mx, my - frameHalfH + 2);
       ctx.stroke();
     } else {
-      const frameHalfH = { wonky: 17, triptych: 15, rectangle: 29 }[m.shape] * m.scale;
-      my = MIRROR_STALL_COUNTER_TOP - frameHalfH * 0.9;
+      // rests directly on the cave floor, same as any other ground prop
+      my = MIRROR_STALL_GROUND_Y - frameHalfH + 2;
     }
 
     if (m.shape === "wonky") drawWonkyMirror(mx, my, m.scale, m.crackSeed);
@@ -24659,17 +24679,6 @@ function drawMirrorStall(camX) {
     else if (m.shape === "diamond") drawDiamondMirror(mx, my, m.scale, m.crackSeed);
     else if (m.shape === "oval") drawOvalMirror(mx, my, m.scale, m.brass);
   });
-
-  ctx.fillStyle = "#4a3018";
-  ctx.fillRect(sx + 45, MIRROR_STALL_HEADER_Y - 20, 68, 20);
-  ctx.strokeStyle = "#2e2014";
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(sx + 45, MIRROR_STALL_HEADER_Y - 20, 68, 20);
-  ctx.fillStyle = "rgba(230,220,255,0.7)";
-  ctx.font = "8px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("MIRRORS", sx + 79, MIRROR_STALL_HEADER_Y - 7);
-  ctx.textAlign = "left";
 }
 
 function drawMoleholeScene(camX) {
