@@ -24919,7 +24919,12 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // water only actually starts here in shared-scene space -- the gear
     // panel is mostly solid ground, with just a sliver of water peeking
     // in at its own right edge, not filling the whole panel underneath it
-    const waterStartX = -halfW * 0.95;
+    // was -0.95*halfW, which sat almost exactly on the gear panel's own
+    // ellipse boundary at this height -- the ellipse narrows toward its
+    // edges, so that sliver of water+reeds was being clipped away
+    // entirely instead of actually showing. Pulled further left so a
+    // real, visible strip of water shows inside the gear panel itself.
+    const waterStartX = -halfW * 1.35;
 
     // solid ground for everything left of the water line -- the gear
     // sits ON this, not on the water's own bank
@@ -24928,19 +24933,22 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // a scatter of grass tufts in a few different greens along the
     // ground -- without this it was one flat dirt color with nothing
     // breaking it up
-    const grassColors = ["#5a7a3a", "#4a6a30", "#6a8a42", "#3f5c2c"];
-    for (let i = 0; i < 12; i++) {
+    // bigger, thicker, more numerous blades than the first pass -- at
+    // this scale the original tufts were too faint/small to actually
+    // register as grass texture
+    const grassColors = ["#6a9a3a", "#4a6a30", "#7aa848", "#3f5c2c", "#8ab858"];
+    for (let i = 0; i < 20; i++) {
       const seedI = seed + i * 8.3;
       const gxp = -halfW * 3.7 + pseudoRandom(seedI) * (halfW * 3.7 + waterStartX - halfW * 0.1);
       const gyp = waterTop - halfH * 0.02 - pseudoRandom(seedI + 1) * halfH * 0.03;
       ctx.strokeStyle = grassColors[i % grassColors.length];
-      ctx.lineWidth = Math.max(0.6, halfW * 0.02);
+      ctx.lineWidth = Math.max(0.8, halfW * 0.03);
       ctx.lineCap = "round";
-      for (let b = 0; b < 3; b++) {
-        const bladeLean = (pseudoRandom(seedI + b * 2.1) - 0.5) * halfW * 0.1;
+      for (let b = 0; b < 4; b++) {
+        const bladeLean = (pseudoRandom(seedI + b * 2.1) - 0.5) * halfW * 0.16;
         ctx.beginPath();
-        ctx.moveTo(gxp + b * halfW * 0.03, gyp);
-        ctx.lineTo(gxp + b * halfW * 0.03 + bladeLean, gyp - halfH * (0.06 + pseudoRandom(seedI + b) * 0.05));
+        ctx.moveTo(gxp + b * halfW * 0.035, gyp);
+        ctx.lineTo(gxp + b * halfW * 0.035 + bladeLean, gyp - halfH * (0.1 + pseudoRandom(seedI + b) * 0.09));
         ctx.stroke();
       }
     }
@@ -25128,10 +25136,10 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // with a couple of bare branch forks poking clear of the canopy, and
     // an irregular cluster of bushy lumps for foliage instead of one
     // clean oval on top.
-    // shorter trunk than the first pass -- 1.05*halfH pushed the whole
-    // canopy cluster above the panel's own visible top edge, cropping
-    // the "grander" tree down to basically nothing but a trunk sliver
-    const trunkBaseY = treeBaseY, trunkTopY = treeBaseY - halfH * 0.6;
+    // long enough to actually read as a trunk (0.6 was too short and
+    // read as barely-there), while still leaving the canopy's own
+    // center low enough to mostly clear the panel's visible top edge
+    const trunkBaseY = treeBaseY, trunkTopY = treeBaseY - halfH * 0.8;
     ctx.fillStyle = "#33413a";
     // root buttresses -- a few asymmetric flares spreading from the base
     [[-0.22, 0.34, -1], [0.16, 0.3, 1], [-0.05, 0.22, 1], [0.3, 0.4, -1]].forEach(([dx, spread, dir]) => {
