@@ -24628,14 +24628,18 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
       { x: 0.7, y: 0.38, r: 0.22 },
       { x: 0.95, y: 0.42, r: 0.19 }
     ];
-    ctx.fillStyle = "#2e4018";
+    // warm autumn tones, matching the real crown trees exactly (their
+    // canopy uses only reddish-orange/yellow baseColor+shadeColor pairs
+    // in drawLeafTree -- there's no green in them at all, so the
+    // silhouette base underneath the leaves shouldn't have any either)
+    ctx.fillStyle = "#8a4a1e";
     bushBumps.forEach((b, i) => {
       const jr = 1 + (pseudoRandom(seed + i * 6.6) - 0.5) * 0.12;
       ctx.beginPath();
       ctx.arc(vx + halfW * b.x, vy + halfH * b.y, halfW * b.r * jr, 0, Math.PI * 2);
       ctx.fill();
     });
-    ctx.fillStyle = "#243212";
+    ctx.fillStyle = "#6a3316";
     bushBumps.slice(0, 5).forEach((b, i) => {
       ctx.beginPath();
       ctx.arc(vx + halfW * b.x, vy + halfH * (b.y + 0.16), halfW * b.r * 0.75, 0, Math.PI * 2);
@@ -24894,8 +24898,13 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     // before drawing shared elements at fixed shared-scene coordinates
     // lines them up continuously across the three separate clips.
     const ox = worldOffsetX || 0;
+    // hazy receding horizon band behind everything, instead of a flat
+    // two-tone split -- gives the whole scene actual depth, and lets the
+    // distant tree sit visibly further back than the water/bridge
     const canopy = ctx.createLinearGradient(0, by, 0, by + bh);
-    canopy.addColorStop(0, "#2e4a22");
+    canopy.addColorStop(0, "#3a5a3a");
+    canopy.addColorStop(0.55, "#6a8f6a");
+    canopy.addColorStop(0.7, "#7a9a7a");
     canopy.addColorStop(1, "#5a7a3a");
     ctx.fillStyle = canopy;
     ctx.fillRect(bx, by, bw, bh);
@@ -24903,56 +24912,139 @@ function drawMirrorGlimpseContent(glimpseId, halfW, halfH, isNear, seed, worldOf
     ctx.save();
     ctx.translate(-ox, 0);
 
+    const waterTop = halfH * 0.42, waterBot = halfH * 1.5;
+
+    // the last gear -- the real forest gear you'd have just climbed off
+    // of, tail end only, mostly cropped off the left edge of the whole
+    // scene so it reads as "where you just were" rather than a new prop.
+    // Sits right at the water's edge, grounding the transition into
+    // content that doesn't exist yet.
+    const gearWorldX = -halfW * 2.5, gearWorldY = waterTop - halfH * 0.02;
+    drawForestGear(gearWorldX, gearWorldY, halfW * 1.35, halfW * 1.04, 7, 0.4, "#6b5030", "#2e2014", 4001);
+    // a little shore where the gear's own bank meets the water -- a few
+    // rocks, so the water doesn't just start with a hard color cutoff
+    ctx.fillStyle = "#4a4438";
+    [[-halfW * 1.15, 0.35], [-halfW * 0.95, 0.55], [-halfW * 1.3, 0.6]].forEach(([rx, rp]) => {
+      ctx.beginPath();
+      ctx.ellipse(rx, waterTop + halfH * 0.06, halfW * 0.1, halfW * 0.06, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
     // rushing water -- a continuous band across the full shared scene,
-    // present under every panel, with lighter moving ripple streaks
-    const waterTop = halfH * 0.35, waterBot = halfH * 1.5;
+    // with a top-to-bottom gradient for depth, drifting current streaks,
+    // and a brighter sparkle band concentrated right under the bridge
+    // where the light would actually hit it
     const waterSpan = halfW * 6;
-    ctx.fillStyle = "#3a6a7a";
+    const waterGrad = ctx.createLinearGradient(0, waterTop, 0, waterBot);
+    waterGrad.addColorStop(0, "#5a95a5");
+    waterGrad.addColorStop(0.4, "#3a6a7a");
+    waterGrad.addColorStop(1, "#26505c");
+    ctx.fillStyle = waterGrad;
     ctx.fillRect(-waterSpan, waterTop, waterSpan * 2, waterBot - waterTop);
     ctx.strokeStyle = "rgba(210,235,240,0.5)";
-    ctx.lineWidth = Math.max(0.5, halfW * 0.025);
-    for (let i = 0; i < 14; i++) {
+    ctx.lineWidth = Math.max(0.5, halfW * 0.022);
+    for (let i = 0; i < 16; i++) {
       const seedI = seed + i * 5.7;
-      const rx = -waterSpan + ((t * 0.02 + pseudoRandom(seedI) * waterSpan * 2) % (waterSpan * 2));
+      const rx = -waterSpan + ((t * 0.022 + pseudoRandom(seedI) * waterSpan * 2) % (waterSpan * 2));
       const ry = waterTop + pseudoRandom(seedI + 1) * (waterBot - waterTop);
       ctx.beginPath();
       ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + halfW * 0.3, ry);
+      ctx.lineTo(rx + halfW * 0.32, ry + Math.sin(t * 0.003 + seedI) * halfH * 0.02);
       ctx.stroke();
+    }
+    // sparkle/glint dots, brightest directly under the arch
+    for (let i = 0; i < 10; i++) {
+      const seedI = seed + i * 13.1;
+      const gx = (pseudoRandom(seedI) - 0.5) * halfW * 2.2;
+      const gy2 = waterTop + halfH * 0.08 + pseudoRandom(seedI + 1) * halfH * 0.4;
+      const twinkle = 0.3 + 0.7 * Math.max(0, Math.sin(t * 0.004 + seedI * 7));
+      ctx.fillStyle = `rgba(255,255,255,${0.5 * twinkle})`;
+      ctx.beginPath();
+      ctx.arc(gx, gy2, halfW * 0.02, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    // the bridge -- centered on the shared scene's own x=0 (the middle
-    // panel), a simple plank deck on two support posts crossing the water
-    const bridgeDeckY = halfH * 0.55, bridgeHalfSpan = halfW * 1.05;
+    // the arc bridge -- a real curved span (not a flat plank), centered
+    // on the shared scene's x=0 (the middle panel), with rail posts
+    // following the curve and two piers planted in the water. A soft,
+    // rippled reflection underneath ties it back down to the water.
+    const bridgeHalfSpan = halfW * 1.05;
+    const deckBaseY = waterTop - halfH * 0.02, archHeight = halfH * 0.42, deckThick = halfH * 0.09;
+    const archTopY0 = deckBaseY - deckThick * 0.5;
+    const archPoint = t2 => {
+      const x = -bridgeHalfSpan + t2 * bridgeHalfSpan * 2;
+      const y = archTopY0 - archHeight * Math.sin(t2 * Math.PI);
+      return { x, y };
+    };
+    ctx.beginPath();
+    ctx.moveTo(-bridgeHalfSpan, deckBaseY);
+    ctx.quadraticCurveTo(0, deckBaseY - archHeight + deckThick, bridgeHalfSpan, deckBaseY);
+    ctx.lineTo(bridgeHalfSpan, deckBaseY - deckThick * 0.4);
+    ctx.quadraticCurveTo(0, deckBaseY - archHeight - deckThick * 0.4, -bridgeHalfSpan, deckBaseY - deckThick * 0.4);
+    ctx.closePath();
     ctx.fillStyle = "#5a4028";
-    ctx.fillRect(-bridgeHalfSpan, bridgeDeckY - halfH * 0.06, bridgeHalfSpan * 2, halfH * 0.12);
+    ctx.fill();
     ctx.strokeStyle = "#3a2a18";
+    ctx.lineWidth = Math.max(0.5, halfW * 0.015);
+    ctx.stroke();
+    // rail posts along the curve
+    ctx.strokeStyle = "#4a3520";
     ctx.lineWidth = Math.max(0.5, halfW * 0.02);
-    for (let i = 0; i <= 6; i++) {
-      const px = -bridgeHalfSpan + (i / 6) * bridgeHalfSpan * 2;
+    for (let i = 1; i < 8; i++) {
+      const p = archPoint(i / 8);
       ctx.beginPath();
-      ctx.moveTo(px, bridgeDeckY - halfH * 0.06);
-      ctx.lineTo(px, bridgeDeckY + halfH * 0.06);
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y - halfH * 0.1);
       ctx.stroke();
     }
+    // piers, planted at the ends, down into the water
     ctx.fillStyle = "#4a3520";
-    ctx.fillRect(-bridgeHalfSpan * 0.85, bridgeDeckY + halfH * 0.06, halfW * 0.14, waterBot - bridgeDeckY);
-    ctx.fillRect(bridgeHalfSpan * 0.85 - halfW * 0.14, bridgeDeckY + halfH * 0.06, halfW * 0.14, waterBot - bridgeDeckY);
+    ctx.fillRect(-bridgeHalfSpan * 0.88, deckBaseY, halfW * 0.13, waterBot - deckBaseY);
+    ctx.fillRect(bridgeHalfSpan * 0.88 - halfW * 0.13, deckBaseY, halfW * 0.13, waterBot - deckBaseY);
+    // faint rippled reflection of the arch, mirrored below the waterline
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(0, deckBaseY * 2 + halfH * 0.05);
+    ctx.scale(1, -1);
+    ctx.beginPath();
+    ctx.moveTo(-bridgeHalfSpan, deckBaseY);
+    ctx.quadraticCurveTo(0, deckBaseY - archHeight + deckThick, bridgeHalfSpan, deckBaseY);
+    ctx.lineTo(bridgeHalfSpan, deckBaseY - deckThick * 0.4);
+    ctx.quadraticCurveTo(0, deckBaseY - archHeight - deckThick * 0.4, -bridgeHalfSpan, deckBaseY - deckThick * 0.4);
+    ctx.closePath();
+    ctx.fillStyle = "#1a2a30";
+    ctx.fill();
+    ctx.restore();
 
     // the big faraway tree -- fixed at the shared scene's right end (the
-    // right panel), tall enough to crop off the top of the frame so it
-    // reads as genuinely huge/distant rather than a normal-sized tree
-    const treeWorldX = halfW * 1.78;
-    ctx.fillStyle = "#1f3018";
-    ctx.fillRect(treeWorldX - halfW * 0.1, -halfH * 1.4, halfW * 0.2, waterTop + halfH * 1.4);
+    // right panel), set back into the hazy horizon band and tall enough
+    // to crop off the top of the frame so it reads as genuinely huge and
+    // distant. A desaturated, cooler silhouette (real aerial-perspective
+    // trick) rather than the same crisp near-color as everything else,
+    // plus a scatter of slow twinkling sparkle so it reads as something
+    // special/significant, not just a normal big tree.
+    const treeWorldX = halfW * 1.85;
+    ctx.fillStyle = "#3a4a42";
+    ctx.fillRect(treeWorldX - halfW * 0.09, -halfH * 1.4, halfW * 0.18, waterTop + halfH * 1.4);
     ctx.beginPath();
-    ctx.ellipse(treeWorldX, -halfH * 0.55, halfW * 0.85, halfH * 0.85, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX, -halfH * 0.58, halfW * 0.88, halfH * 0.88, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#4a6a5a";
     ctx.fill();
-    ctx.fillStyle = "#2a4020";
     ctx.beginPath();
-    ctx.ellipse(treeWorldX - halfW * 0.3, -halfH * 0.3, halfW * 0.5, halfH * 0.45, 0, 0, Math.PI * 2);
-    ctx.ellipse(treeWorldX + halfW * 0.35, -halfH * 0.75, halfW * 0.42, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX - halfW * 0.32, -halfH * 0.32, halfW * 0.52, halfH * 0.46, 0, 0, Math.PI * 2);
+    ctx.ellipse(treeWorldX + halfW * 0.36, -halfH * 0.78, halfW * 0.44, halfH * 0.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#3f5c4e";
     ctx.fill();
+    for (let i = 0; i < 7; i++) {
+      const seedI = seed + i * 9.4;
+      const sx = treeWorldX + (pseudoRandom(seedI) - 0.5) * halfW * 1.5;
+      const sy = -halfH * 0.6 + (pseudoRandom(seedI + 1) - 0.5) * halfH * 1.3;
+      const twinkle = 0.25 + 0.75 * Math.max(0, Math.sin(t * 0.0022 + seedI * 5));
+      ctx.fillStyle = `rgba(255,245,190,${0.75 * twinkle})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, halfW * (0.018 + twinkle * 0.012), 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
