@@ -11068,9 +11068,32 @@ function drawForestRiver(camX) {
     // tracePathOrganic) instead of straight lineTo corners, per direct
     // feedback ("remove alllll straight lines... this needs to look
     // organic").
+    const bankPts = [{ x: topX, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }];
+    // a soft blurred halo of the same shape, drawn first at lower
+    // opacity, so the edge blends into the grass/water instead of
+    // being one hard vector line meeting another -- a flat single-tone
+    // shape with a crisp outline is exactly what read as "drawn in
+    // Paint." The crisp fill still goes on top right after, so the
+    // actual silhouette is unchanged, just softened at the boundary.
+    ctx.save();
+    ctx.filter = "blur(5px)";
+    ctx.globalAlpha = 0.6;
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    tracePathOrganic(ctx, [{ x: topX, y: topY }, ...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
+    tracePathOrganic(ctx, bankPts);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // real shading now too -- a gradient along the same diagonal
+    // (lighter dry sand up top, darker wet sand down at the water)
+    // instead of one flat tone, so the shape reads as having actual
+    // form rather than a flood-filled silhouette.
+    const sandGrad = ctx.createLinearGradient(topX, topY, waterX, waterY);
+    sandGrad.addColorStop(0, "#8c7a56");
+    sandGrad.addColorStop(1, "#6b5a3c");
+    ctx.fillStyle = sandGrad;
+    ctx.beginPath();
+    tracePathOrganic(ctx, bankPts);
     ctx.closePath();
     ctx.fill();
     // mottled dirt texture, clipped to this same bank shape (the path
@@ -11094,6 +11117,12 @@ function drawForestRiver(camX) {
     const twist1X = topX - 24, twist1Y = topY - 11;
     const twist2X = topX - 44, twist2Y = topY - 3;
     const tendrilTipX = topX - 66, tendrilTipY = topY - 9;
+    // a solid round-capped stroke is literally a brush-stroke shape, so
+    // blend its edges the same way as the main bank fill: a blurred
+    // low-opacity halo first, crisp strokes on top.
+    ctx.save();
+    ctx.filter = "blur(4px)";
+    ctx.globalAlpha = 0.55;
     ctx.strokeStyle = "#7a6a4a";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -11107,9 +11136,29 @@ function drawForestRiver(camX) {
     ctx.moveTo(twist2X, twist2Y);
     ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
     ctx.stroke();
-    ctx.fillStyle = "#7a6a4a";
+    ctx.restore();
+    ctx.strokeStyle = "#7a6a4a";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 13;
     ctx.beginPath();
-    ctx.ellipse(tendrilTipX, tendrilTipY, 3, 1.6, 0.3, 0, Math.PI * 2);
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(twist1X, twist1Y, twist2X, twist2Y);
+    ctx.stroke();
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(twist2X, twist2Y);
+    ctx.quadraticCurveTo((twist2X + tendrilTipX) / 2, twist2Y - 5, tendrilTipX, tendrilTipY);
+    ctx.stroke();
+    // the tip fades to fully transparent instead of ending as a solid
+    // dot, so it visually dissolves into the grass rather than stopping
+    // abruptly
+    const tipGrad = ctx.createRadialGradient(tendrilTipX, tendrilTipY, 0, tendrilTipX, tendrilTipY, 4.5);
+    tipGrad.addColorStop(0, "rgba(122,106,74,0.9)");
+    tipGrad.addColorStop(1, "rgba(122,106,74,0)");
+    ctx.fillStyle = tipGrad;
+    ctx.beginPath();
+    ctx.ellipse(tendrilTipX, tendrilTipY, 4.5, 2.4, 0.3, 0, Math.PI * 2);
     ctx.fill();
 
     // the water channel now just RE-TRACES that exact jittered edge
@@ -11220,9 +11269,25 @@ function drawForestRiver(camX) {
       const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 0.8;
       edgePts2.push({ x: bx + j, y: by });
     }
+    const bankPts2 = [{ x: topX2 + 48, y: topY2 }, ...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }];
+    // same soft-blurred-halo + real-shading treatment as the near bank
+    // (see its comments) instead of one flat flood-filled tone with a
+    // crisp vector edge.
+    ctx.save();
+    ctx.filter = "blur(5px)";
+    ctx.globalAlpha = 0.6;
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
-    tracePathOrganic(ctx, [{ x: topX2 + 48, y: topY2 }, ...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }]);
+    tracePathOrganic(ctx, bankPts2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    const sandGrad2 = ctx.createLinearGradient(topX2, topY2, waterX2, waterY2);
+    sandGrad2.addColorStop(0, "#8c7a56");
+    sandGrad2.addColorStop(1, "#6b5a3c");
+    ctx.fillStyle = sandGrad2;
+    ctx.beginPath();
+    tracePathOrganic(ctx, bankPts2);
     ctx.closePath();
     ctx.fill();
     ctx.save();
@@ -31550,7 +31615,18 @@ const py = gy + cameraY - player.height - player.y;
 // clipped away, so it reads as sinking into the hole rather than a static cutoff
 const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : (fallJustEndedIntoTransition ? 1 : 0);
 const sinkAmount = fallProgress * (player.height + 20); // how far down the body has moved
-const drawPy = py + sinkAmount;
+// wading into the forest river's shallow water sinks the sprite down a
+// few pixels too -- otherwise the body just floats on top of the ground
+// line with a tint line partway up it, which read as "half wet with
+// that part of its body outside of water." A few px of real sink brings
+// the feet down toward where the water surface is actually drawn, so
+// the wet-tint line and the scene's own water line roughly line up.
+// Scales with both amount (eases in/out at the zone's edges) and depth
+// (deeper water sinks the feet further), never more than ~9px so it
+// still clearly reads as wading, not submerging.
+const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRiverWadeAmount : 0) *
+  (3 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 6);
+const drawPy = py + sinkAmount + riverWadeSink;
 
 // shadow shrinks along with the body sinking in -- pinned to the
 // visual ground line, which itself scrolls with cameraY in tunnel
