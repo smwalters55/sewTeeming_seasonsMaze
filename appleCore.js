@@ -10702,13 +10702,16 @@ function forestRiverBridgeSlopeAt(worldX) {
    jumping past an unfinished span.
    ------------------------------------------------------ */
 const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 support posts
-const FOREST_RIVER_LOG_PILE_START = 9; // 7 needed + 2 extra sitting there once finished ("slightly more than needed")
 const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 85; // moved further left into the grass, away from the bank slant
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
 const FOREST_RIVER_STRINGER_ONBEAT_THRESHOLD = -0.55; // deck-press must land while the wobble's sine phase is below this (near its low point) -- a real small timing action, not just "wait then tap"
 
-let forestRiverLogPile = FOREST_RIVER_LOG_PILE_START;
+// no pile sits here by default anymore -- it only exists once the
+// player actually builds it (see the RIVER BRIDGE BUILDING interaction
+// below), dumping their whole real bridgePiece stock onto the ground
+// in one deliberate action, per direct request
+let forestRiverLogPile = 0;
 // two-step build, matching how a real beam bridge actually goes up:
 // the long stringer beam gets carried over and placed first (crossable
 // right away, but bare and wobbly), and decking it into its finished,
@@ -10782,36 +10785,69 @@ function forestRiverStringerWobble(seg) {
 // shape rather than a repeating pattern.
 const FOREST_RIVER_JITTER = [0, 6, -4, 9, -7, 3, 11, -5, 2, -9, 7, -2, 8, -6, 4, 10];
 
+// traces a rough polygon (an array of {x,y} points) as one smooth,
+// organic closed shape -- every edge a quadratic curve through each
+// vertex toward the midpoint of the next, so the whole outline reads
+// as a hand-drawn blob rather than a series of straight-line facets.
+// Used for the bank/spit shapes below -- per direct feedback ("remove
+// alllll straight lines for river an surrounding river features, this
+// needs to look organic"). Caller still does ctx.beginPath()/fill()
+// around this; this just traces the path.
+function tracePathOrganic(ctx, pts) {
+  const n = pts.length;
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const start = mid(pts[n - 1], pts[0]);
+  ctx.moveTo(start.x, start.y);
+  for (let i = 0; i < n; i++) {
+    const next = pts[(i + 1) % n];
+    const m = mid(pts[i], next);
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+  }
+}
+
+// scatters a handful of soft mottled blotches (dirt clumps/patches of
+// slightly different tone) around a center point -- meant to be called
+// right after filling a bank shape, with a clip still active from that
+// same fill's path, so the speckling stays confined to the actual bank
+// silhouette instead of spilling onto the grass/water around it
+function drawBankTexture(ctx, cx, cy, spread, seedOffset) {
+  for (let i = 0; i < 10; i++) {
+    const seed = seedOffset + i * 4.3;
+    const ox = (pseudoRandom(seed) - 0.5) * spread * 2;
+    const oy = (pseudoRandom(seed + 1) - 0.5) * spread * 0.7;
+    const dark = pseudoRandom(seed + 2) > 0.5;
+    ctx.fillStyle = dark ? "rgba(90,76,50,0.32)" : "rgba(155,138,96,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(
+      cx + ox, cy + oy,
+      5 + pseudoRandom(seed + 3) * 6, 2.5 + pseudoRandom(seed + 3) * 2.5,
+      pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2
+    );
+    ctx.fill();
+  }
+}
+
+// same idea as tracePathOrganic, but for an OPEN path (a stroke, not a
+// closed fill) -- smooths a jittered polyline into one continuous
+// curve instead of straight lineTo segments between each point
+function tracePathOrganicOpen(ctx, pts) {
+  const n = pts.length;
+  if (n < 2) return;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < n - 1; i++) {
+    const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+  }
+  const last = pts[n - 1];
+  ctx.quadraticCurveTo(last.x, last.y, last.x, last.y);
+}
+
 function drawForestRiver(camX) {
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
   if (fb < -140 || nb > canvas.width + 140) return; // fully off-screen either direction
 
   const t = performance.now();
-
-  // the big distant tree on the far bank -- the actual payoff the
-  // mirror glimpse promised, well past the crossing itself so reaching
-  // the far side reads as arriving somewhere genuinely new, not just
-  // more of the same forest
-  // colored/opacity like the far background silhouettes elsewhere in
-  // the forest (see "far silhouettes"/"distant trees" further down),
-  // not a near-opaque near-black shape -- it was reading as a huge
-  // dark foreground cutout competing with the actual foreground trees
-  // instead of something hazy and receded, despite being drawn behind
-  // them ("this huge 'shadow' tree should be a background tree not
-  // foreground")
-  const bigTreeX = fb + 95;
-  ctx.fillStyle = "rgba(70,100,65,0.3)";
-  ctx.fillRect(bigTreeX - 16, gy - 255, 32, 255);
-  ctx.beginPath();
-  ctx.arc(bigTreeX, gy - 248, 95, 0, Math.PI * 2);
-  ctx.arc(bigTreeX - 58, gy - 208, 65, 0, Math.PI * 2);
-  ctx.arc(bigTreeX + 64, gy - 214, 70, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(95,130,80,0.2)";
-  ctx.beginPath();
-  ctx.arc(bigTreeX - 18, gy - 268, 50, 0, Math.PI * 2);
-  ctx.fill();
 
   // "winding off into the distance" hint on the near/left side -- just
   // a hazy, partly-glimpsed patch of water color peeking through gaps
@@ -10827,65 +10863,6 @@ function drawForestRiver(camX) {
     ctx.fill();
   }
 
-  // the river actually bending right, past the far bank -- rather than
-  // just a hazy peek of color suggesting it continues (see the near
-  // side above), this is a real curving continuation: the water sweeps
-  // from crossing the screen into running almost parallel with the
-  // ground toward the horizon, narrowing and fading as it recedes, per
-  // direct request ("bended horizontal not a 90 degree angle... almost
-  // horizontal where the right bank is"). Drawn BEFORE the far bank's
-  // own dirt/reed foreground below, so that nearer shoreline still
-  // reads as sitting in front of this more distant curve.
-  {
-    // starts flush at fb (no gap) and matches the main water body's
-    // own depth right at the seam (widthStart puts its bottom edge at
-    // gy+90, same as the main water fill's own bottom-right corner
-    // below) -- the earlier version started 30px late and much
-    // shallower than the real river, which read as a separate patch of
-    // paler water floating off to the side instead of the same body of
-    // water actually continuing ("the water on right isn't connected")
-    const bendStartX = fb, bendMidX = fb + 170, bendEndX = fb + 380;
-    // stays close to ground/water height the whole way -- the point is
-    // it bends to run ALONGSIDE the ground toward the horizon, not
-    // climb up into the canopy (that read as the river rising into the
-    // air, not as "almost horizontal")
-    const topAtStart = gy - 4, topAtMid = gy - 8, topAtEnd = gy - 12;
-    const widthStart = 94, widthEnd = 8;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(bendStartX, topAtStart);
-    ctx.quadraticCurveTo(bendMidX, topAtMid, bendEndX, topAtEnd);
-    ctx.lineTo(bendEndX, topAtEnd + widthEnd);
-    ctx.quadraticCurveTo(bendMidX, topAtMid + widthStart * 0.65, bendStartX, topAtStart + widthStart);
-    ctx.closePath();
-    // opaque and matching the main river's own dark tone right at the
-    // seam, only actually starting to fade in the back half -- so what
-    // peeks out past the sand spit reads as continuous water, not a
-    // lighter disconnected block appearing out of nowhere
-    const bendGrad = ctx.createLinearGradient(bendStartX, 0, bendEndX, 0);
-    bendGrad.addColorStop(0, "rgba(45,68,62,0.95)");
-    bendGrad.addColorStop(0.4, "rgba(55,80,74,0.6)");
-    bendGrad.addColorStop(1, "rgba(70,100,95,0.05)");
-    ctx.fillStyle = bendGrad;
-    ctx.fill();
-    // a couple of the same soft traveling glints the main channel
-    // uses, faint and slow, so the bend reads as still-moving water
-    // rather than a static painted shape
-    for (let i = 0; i < 2; i++) {
-      const speed = 0.00004 + i * 0.00002;
-      const phase = (t * speed + i * 0.5) % 1;
-      const gx = bendStartX + (bendEndX - bendStartX) * phase;
-      const topY = topAtStart + (topAtMid - topAtStart) * Math.min(1, phase * 2) * (phase < 0.5 ? 1 : 0) +
-        (phase >= 0.5 ? topAtMid + (topAtEnd - topAtMid) * ((phase - 0.5) * 2) : 0);
-      const width = widthStart + (widthEnd - widthStart) * phase;
-      const fade = Math.sin(phase * Math.PI);
-      ctx.fillStyle = `rgba(210,235,225,${0.3 * fade})`;
-      ctx.beginPath();
-      ctx.ellipse(gx, topY + width * 0.5, 5 - phase * 3, 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
 
   // water fill -- a wavy top edge instead of a hard flat rectangle,
   // sampled with the same irregular jitter table used for the banks
@@ -10905,6 +10882,56 @@ function drawForestRiver(camX) {
   waterGrad.addColorStop(1, "#233c34");
   ctx.fillStyle = waterGrad;
   ctx.fill();
+
+  // the water actually bending right past the far bank, instead of a
+  // hard 90-degree turn -- one continuous shape sharing its starting
+  // edge EXACTLY with the main water fill above (same x=fb, same top/
+  // bottom y values) and reusing that exact same gradient object, so
+  // there's no seam and nothing drawn earlier (like the background
+  // tree) can show through -- it's simply the same opaque water,
+  // continuing. It curves smoothly right while narrowing toward ground
+  // height (shallowing), then tapers all the way closed by bendTipX --
+  // reusing the SAME vertical gradient naturally makes the shallower,
+  // higher-up narrow end read lighter (closer to the gradient's own
+  // light-teal top stop) than the deep water back at the bridge,
+  // "blending into the deep hue naturally" without any extra fade
+  // logic. Past the tip there's no shape at all -- plain ground --
+  // per direct steer to keep this a self-contained wading beat, not an
+  // unfinished stretch of deep water waiting on a future swim feature.
+  {
+    const topAtFb = gy + FOREST_RIVER_JITTER[waterSamples % FOREST_RIVER_JITTER.length] * 0.6;
+    const bendCtrlX = fb + 110, bendTipX = fb + 260;
+    ctx.beginPath();
+    ctx.moveTo(fb, topAtFb);
+    ctx.quadraticCurveTo(bendCtrlX, gy + 12, bendTipX, gy + 1);
+    ctx.quadraticCurveTo(bendTipX + 6, gy + 4, bendTipX, gy + 7);
+    ctx.quadraticCurveTo(bendCtrlX, gy + 72, fb, gy + 90);
+    ctx.closePath();
+    ctx.fillStyle = waterGrad;
+    ctx.fill();
+  }
+
+  // the water's SOURCE on the near/left side -- mirrors the bend above,
+  // but incoming rather than outgoing: instead of the main river
+  // starting as a hard vertical wall right at x=nb (where the thin
+  // stream groove on the sand bank used to just slam into the full
+  // 90px-deep body with no transition -- "no logical sense"), it now
+  // widens gradually FROM a shallow, narrow trickle further upstream
+  // INTO the main body, sharing its ending edge exactly with the main
+  // fill's own left edge and reusing the same gradient, so there's no
+  // seam and the hue blends the same way the bend's does.
+  {
+    const topAtNb = gy; // matches the main fill's own top-left corner (jitter[0] is 0)
+    const srcCtrlX = nb - 130, srcTipX = nb - 260;
+    ctx.beginPath();
+    ctx.moveTo(nb, topAtNb);
+    ctx.quadraticCurveTo(srcCtrlX, gy - 9, srcTipX, gy + 1);
+    ctx.quadraticCurveTo(srcTipX - 6, gy + 4, srcTipX, gy + 7);
+    ctx.quadraticCurveTo(srcCtrlX, gy + 74, nb, gy + 90);
+    ctx.closePath();
+    ctx.fillStyle = waterGrad;
+    ctx.fill();
+  }
 
   // rippled highlight lines drifting along the current -- deliberately
   // irregular spacing, length, and size (not a repeating grid), each
@@ -10948,26 +10975,33 @@ function drawForestRiver(camX) {
     // instead of curling back up partway ("make the slant part on left
     // go a little lower, [not] stop halfway thru")
     const waterX = nb + 8, waterY = gy + 46;
-    ctx.fillStyle = "#7a6a4a";
-    ctx.beginPath();
-    ctx.moveTo(topX, topY);
     const steps = 7;
     const edgePts = [{ x: topX, y: topY }];
     for (let i = 1; i <= steps; i++) {
       const f = i / steps;
       const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 1.1;
       const ex = topX + (waterX - topX) * f + j, ey = topY + (waterY - topY) * f;
-      ctx.lineTo(ex, ey);
       edgePts.push({ x: ex, y: ey });
     }
     // a little further underwater lip, left of the waterline point and
     // staying low (not curling back up above the diagonal it just
     // traced), so the whole cut keeps descending instead of doubling
-    // back on itself
-    ctx.lineTo(nb - 55, gy + 50);
-    ctx.lineTo(nb - 100, gy + 34);
+    // back on itself -- traced as one organic closed blob (see
+    // tracePathOrganic) instead of straight lineTo corners, per direct
+    // feedback ("remove alllll straight lines... this needs to look
+    // organic")
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    tracePathOrganic(ctx, [...edgePts, { x: nb - 55, y: gy + 50 }, { x: nb - 100, y: gy + 34 }]);
     ctx.closePath();
     ctx.fill();
+    // mottled dirt texture, clipped to this same bank shape (the path
+    // is still current after fill()) so the speckling stays confined
+    // to the actual sand silhouette instead of spilling onto the grass
+    ctx.save();
+    ctx.clip();
+    drawBankTexture(ctx, topX - 30, (topY + waterY) / 2, 70, 11);
+    ctx.restore();
 
     // the water channel now just RE-TRACES that exact jittered edge
     // (edgePts, same path used for the sand cut above) as a soft thick
@@ -10982,7 +11016,7 @@ function drawForestRiver(camX) {
     ctx.strokeStyle = "rgba(45,80,72,0.55)";
     ctx.lineWidth = 10;
     ctx.beginPath();
-    edgePts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    tracePathOrganicOpen(ctx, edgePts);
     ctx.stroke();
     ctx.restore();
 
@@ -11045,33 +11079,32 @@ function drawForestRiver(camX) {
     }
   }
 
-  // FAR BANK -- the diagonal-lean shoreline shape stays (matches the
-  // near bank's own lean), but WITHOUT the traced flowing-channel
-  // effect (the thick stroke + traveling glints + path-hugging
-  // pebbles) that used to sit on top of it -- removed per direct
-  // feedback, now just a normal water's edge with ordinary scattered
-  // pebbles and reeds, same as any other stretch of shoreline. The
-  // real "water continuing" visual interest on this side now comes
-  // from the actual bending curve drawn further up instead.
+  // FAR BANK -- a rounded, organic sand spit rather than an angular
+  // wedge, its tip curving out to the right instead of two sharp
+  // corners -- woven into the same direction the water bends in
+  // (see the curving fill above), so it reads as part of that one
+  // curving landform instead of a separate straight-edged shape
+  // dropped on top of it ("weave more of the right bank in somehow"
+  // / "the right bank looks messily thrown in there").
   {
     const topX2 = fb + 92, topY2 = gy - 5;
     const waterX2 = fb - 8, waterY2 = gy + 46;
-    ctx.fillStyle = "#7a6a4a";
-    ctx.beginPath();
-    ctx.moveTo(topX2, topY2);
     const steps2 = 7;
     const edgePts2 = [{ x: topX2, y: topY2 }];
     for (let i = 1; i <= steps2; i++) {
       const f = i / steps2;
       const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 1.1;
-      const ex = topX2 + (waterX2 - topX2) * f + j, ey = topY2 + (waterY2 - topY2) * f;
-      ctx.lineTo(ex, ey);
-      edgePts2.push({ x: ex, y: ey });
+      edgePts2.push({ x: topX2 + (waterX2 - topX2) * f + j, y: topY2 + (waterY2 - topY2) * f });
     }
-    ctx.lineTo(fb + 55, gy + 50);
-    ctx.lineTo(fb + 100, gy + 34);
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    tracePathOrganic(ctx, [...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }]);
     ctx.closePath();
     ctx.fill();
+    ctx.save();
+    ctx.clip();
+    drawBankTexture(ctx, topX2 + 10, (topY2 + waterY2) / 2, 70, 61);
+    ctx.restore();
 
     for (let i = 0; i < 4; i++) {
       const f = 0.35 + i * 0.14;
@@ -14029,44 +14062,31 @@ function updateForestScene(deltaTime) {
   // this press, not after a stringer placement just moved it
   const riverEdgeBeforeThisPress = forestRiverBuildEdgeX();
 
-  if (keys.spaceJustPressed && !heldItem &&
-      (forestRiverLogPile > 0 || inventory.bridgePiece > 0) &&
+  if (keys.spaceJustPressed && heldItem === "bridgePiece" && inventory.bridgePiece > 0 &&
+      Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
+    // no pile sits here by default anymore -- the player has to
+    // actually have a real bridgePiece in hand (selected via Tab/the
+    // inventory chips, collected anywhere in the game) and choose to
+    // build it. One press dumps the WHOLE current stock onto the
+    // ground at once (not just the one piece being carried) and empties
+    // it from inventory in the same beat, per direct request ("have a
+    // log in play and press spacebar to then auto build that wood pile
+    // and remove all the bridge pieces from inventory at the same
+    // time"). Note: this does mean the pile is only as big as whatever
+    // the player actually collected -- no guaranteed-minimum safety net
+    // anymore, a deliberate trade the player asked for.
+    forestRiverLogPile += inventory.bridgePiece;
+    delete inventory.bridgePiece;
+    heldItem = null;
+    forestRiverPileSettleAt = performance.now(); // same settle-bounce/dust, reads fine for "just built" too
+    updateInventoryUI();
+  } else if (keys.spaceJustPressed && !heldItem && forestRiverLogPile > 0 &&
       forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
-    // any real bridgePieces already sitting in inventory (collected
-    // elsewhere in the game -- forest, molehole, tunnel town -- but
-    // never individually selected and carried over) settle onto the
-    // local stack in one go the first time the player actually reaches
-    // for the pile empty-handed. Otherwise a player who never happened
-    // to select "bridgePiece" from their inventory chips would have a
-    // stash of up to 9 just sitting unused forever, with no way to
-    // feed it in short of walking it over one at a time by hand.
-    if (inventory.bridgePiece > 0) {
-      forestRiverLogPile += inventory.bridgePiece;
-      delete inventory.bridgePiece;
-      updateInventoryUI();
-    }
     heldItem = "log";
     forestRiverLogPile--;
     forestRiverLogPickedUpAt = performance.now(); // pop-in on the carried icon
     forestRiverPileSettleAt = performance.now(); // settle-bounce on the remaining stack
-  } else if (keys.spaceJustPressed && heldItem === "bridgePiece" && inventory.bridgePiece > 0 &&
-      Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
-    // arriving at the pile already holding a REAL bridgePiece (selected
-    // from inventory, picked up anywhere else in the game -- forest,
-    // molehole, tunnel town) used to just be a dead press here, since
-    // the plain grab-from-pile branch above requires empty hands. Bank
-    // it onto the local stack instead -- grows the same pile the carry-
-    // to-edge step already draws from, so a spare piece brought from
-    // elsewhere doesn't feel wasted or stuck in hand. Doesn't change
-    // the guaranteed starting count (still fixed, so this is purely a
-    // bonus/convenience, never something the build depends on).
-    inventory.bridgePiece--;
-    if (inventory.bridgePiece <= 0) delete inventory.bridgePiece;
-    forestRiverLogPile++;
-    heldItem = null;
-    forestRiverPileSettleAt = performance.now(); // same settle-bounce/dust, reads fine for "added" too
-    updateInventoryUI();
   } else if (keys.spaceJustPressed && heldItem === "log" &&
       forestRiverSegmentsStrung < FOREST_RIVER_LOG_SEGMENTS &&
       Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14) {
