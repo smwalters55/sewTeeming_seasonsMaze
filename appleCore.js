@@ -3996,9 +3996,14 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   // inventory-icon size that read as a stray "horizontal line" slapped
   // over the item rather than a shine effect, so it's been dropped;
   // the brighter/denser sparkle tips below already sell "polished".)
+  // shineP eases 0 -> 1 across ARAGONITE_SHINE_ANIM_DURATION from the
+  // moment it was shined, rather than jumping straight to full strength
+  const shineP = aragoniteShined
+    ? (aragoniteShineAnim ? Math.min(1, (performance.now() - aragoniteShineAnim) / ARAGONITE_SHINE_ANIM_DURATION) : 1)
+    : 0;
   if (aragoniteShined) {
     const shineGlow = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.3);
-    shineGlow.addColorStop(0, "rgba(255,240,210,0.22)");
+    shineGlow.addColorStop(0, `rgba(255,240,210,${0.22 * shineP})`);
     shineGlow.addColorStop(1, "rgba(255,240,210,0)");
     ctx.fillStyle = shineGlow;
     ctx.beginPath();
@@ -4012,16 +4017,21 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
   // per direct feedback ("more magical looking, slower"), a lazy dreamy
   // pulse reads as more special than the same quick shimmer every other
   // mineral in the game already uses.
-  const tips = aragoniteShined ? [0, 1, 2, 3, 4, 5] : [0, 2, 4];
+  // the three extra tips (1,3,5) only exist once shined, and fade in
+  // with shineP rather than appearing at full brightness instantly
+  const baseTips = [0, 2, 4], extraTips = [1, 3, 5];
+  const tips = aragoniteShined ? baseTips.concat(extraTips) : baseTips;
   tips.forEach(i => {
+    const isExtra = aragoniteShined && extraTips.includes(i);
+    const tipP = isExtra ? shineP : 1;
     const a = (i / spikes) * Math.PI * 2;
-    const twinkleRate = aragoniteShined ? 0.0022 : 0.006;
+    const twinkleRate = 0.006 + (aragoniteShined ? (0.0022 - 0.006) * shineP : 0);
     const tw = Math.sin(performance.now() * twinkleRate + i * 1.7) * 0.5 + 0.5;
     const len = size * (0.85 + (i % 2 === 0 ? 0.15 : 0));
-    const baseAlpha = aragoniteShined ? 0.7 : 0.5;
-    ctx.fillStyle = `rgba(255,225,170,${baseAlpha + tw * 0.5})`;
+    const baseAlpha = (aragoniteShined ? 0.5 + 0.2 * shineP : 0.5) * tipP;
+    ctx.fillStyle = `rgba(255,225,170,${baseAlpha + tw * 0.5 * tipP})`;
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * len, Math.sin(a) * len, (aragoniteShined ? 1.3 : 1) + tw * 0.6, 0, Math.PI * 2);
+    ctx.arc(Math.cos(a) * len, Math.sin(a) * len, ((aragoniteShined ? 1 + 0.3 * shineP : 1) + tw * 0.6) * (isExtra ? Math.max(tipP, 0.15) : 1), 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -4043,8 +4053,8 @@ function drawAragoniteShape(ctx, x, y, size, rotation) {
       const sx = Math.cos(orbitAngle) * orbit.r;
       const sy = Math.sin(orbitAngle) * orbit.r * 0.6; // squashed vertically, reads as a tilted swirl plane rather than a flat circle
       const twinkle = Math.sin(now * 0.0018 * orbit.tw + orbit.phase) * 0.5 + 0.5;
-      const alpha = 0.25 + twinkle * 0.55;
-      const s = orbit.starSize * (0.7 + twinkle * 0.4);
+      const alpha = (0.25 + twinkle * 0.55) * shineP;
+      const s = orbit.starSize * (0.7 + twinkle * 0.4) * Math.max(shineP, 0.1);
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(orbitAngle * 0.5);
@@ -20864,6 +20874,15 @@ function drawMoleholeRootSwing(camX) {
 }
 
 let aragoniteShined = false; // permanent, cosmetic -- set once by the geode breaker, never reset. Not a consumable trade: the stone stays with you, it just catches the light differently afterward
+// timestamp of the moment it got shined -- lets the shine itself (glow,
+// extra sparkle tips, swirling stars) ease in gradually over
+// ARAGONITE_SHINE_ANIM_DURATION instead of popping to full strength the
+// instant aragoniteShined flips true. Per direct feedback ("lengthen the
+// animation of the aragonite shining... the process of going from
+// non-shining to shining"). null until first shined, then stays set
+// forever (the eased multiplier below just clamps to 1 once elapsed).
+let aragoniteShineAnim = null;
+const ARAGONITE_SHINE_ANIM_DURATION = 2000;
 // same permanent-cosmetic treatment, but for the geode it's a real crack
 // rather than a shine -- matches both his actual name and his own
 // stall's before/after story (dull pile -> cracked halves) far better
@@ -20874,6 +20893,14 @@ let aragoniteShined = false; // permanent, cosmetic -- set once by the geode bre
 // drawGeodeShape), fully separate from the unrelated sky/cloud "crystal"
 // pickup elsewhere, which this mole has no reaction to at all.
 let geodeCracked = false;
+// the real "cracking open" animation beat -- see drawGeodeCrackReveal.
+// null when idle; { start: <performance.now() at trigger> } while the
+// three-beat reveal (crack line draws in -> comic pop -> halves settle
+// open) is playing. Per direct feedback ("make geode reveal WAY better
+// like a visual crack looking thing that isnt too too fast, and the
+// geode actually cracking open...like some of those comic touches")
+let geodeCrackAnim = null;
+const GEODE_CRACK_ANIM_DURATION = 1500;
 const geodeBreakerDialogue = { active: false, index: 0, lines: [] };
 const geodeBreakerShineLines = [
   ["Ohhh, real aragonite! Don't see one of those every day.", "There... polished bright as starlight."]
@@ -20904,6 +20931,15 @@ const geodeBreakerCrystalLines = [
 const geodeBreakerGearLines = [
   ["That's a gear, not a geode!", "Belongs down there in that old shaft nearby, not up here with me."]
 ];
+// gold and the shiny marble are both already-polished/already-shiny
+// pickups from elsewhere in the game -- per direct feedback ("if you
+// give him gold from e.g. the mine, or any other jewel already shiny
+// from earlier in the game, have him say like its much too shiny
+// already, bring me something rustic from down below") he waves those
+// off entirely rather than reacting to them like a rock worth cracking
+const geodeBreakerTooShinyLines = [
+  ["Ha -- that's plenty shiny already, isn't it?", "Bring me something rustic from down below instead. Plain and dusty does it for me."]
+];
 // holding literally anything else (a shovel, an apple, a stick, etc) --
 // a quick "huh, what's this" beat, then the actual ask
 const geodeBreakerOtherItemLines = [
@@ -20915,11 +20951,13 @@ function startGeodeBreakerDialogue() {
   geodeBreakerDialogue.index = 0;
   if (heldItem === "aragonite" && !aragoniteShined) {
     aragoniteShined = true;
+    aragoniteShineAnim = performance.now();
     geodeBreakerDialogue.lines = geodeBreakerShineLines;
   } else if (heldItem === "aragonite" && aragoniteShined) {
     geodeBreakerDialogue.lines = geodeBreakerAlreadyShinedLines;
   } else if (heldItem === "geode" && !geodeCracked) {
     geodeCracked = true;
+    geodeCrackAnim = { start: performance.now() };
     geodeBreakerDialogue.lines = geodeBreakerCrackLines;
   } else if (heldItem === "geode" && geodeCracked) {
     geodeBreakerDialogue.lines = geodeBreakerAlreadyCrackedLines;
@@ -20927,6 +20965,8 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
+  } else if (heldItem === "goldPile" || heldItem === "marble") {
+    geodeBreakerDialogue.lines = geodeBreakerTooShinyLines;
   } else if (heldItem === null) {
     geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
   } else {
@@ -20939,6 +20979,104 @@ function advanceGeodeBreakerDialogue() {
   if (geodeBreakerDialogue.index >= geodeBreakerDialogue.lines.length) {
     geodeBreakerDialogue.active = false;
   }
+}
+
+// the actual "cracking open" moment -- three short beats (jagged crack
+// line draws in with a building shake, a bright comic-style pop/burst
+// right as it gives way, then the cracked geode eases open/settles),
+// drawn big and clear right over his counter rather than instantly
+// flipping the tiny held-item icon from dull rock to full reveal.
+function drawGeodeCrackReveal(camX) {
+  if (!geodeCrackAnim) return;
+  const t = performance.now() - geodeCrackAnim.start;
+  if (t > GEODE_CRACK_ANIM_DURATION) { geodeCrackAnim = null; return; }
+
+  const size = 46;
+  const gx = GEODE_BREAKER_X - camX, gy0 = gy - GEODE_BREAKER_HEIGHT - 66;
+
+  ctx.save();
+
+  // a soft dark spotlight vignette behind the whole reveal -- the rock's
+  // own muted brown otherwise sits at almost the same value as the
+  // tunnel wall behind it and all but disappears against it. This gives
+  // it real contrast to read against regardless of where in the tunnel
+  // it lands.
+  const vignette = ctx.createRadialGradient(gx, gy0, size * 0.2, gx, gy0, size * 1.6);
+  vignette.addColorStop(0, "rgba(10,8,6,0.55)");
+  vignette.addColorStop(1, "rgba(10,8,6,0)");
+  ctx.fillStyle = vignette;
+  ctx.beginPath();
+  ctx.arc(gx, gy0, size * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (t < 650) {
+    // beat 1: rock still whole, jagged crack line draws in progressively,
+    // with a small shake building right at the end as it nears the break
+    const p = t / 650;
+    const shake = p > 0.7 ? (pseudoRandom(Math.floor(t / 30)) - 0.5) * 6 * ((p - 0.7) / 0.3) : 0;
+    ctx.translate(gx + shake, gy0);
+
+    ctx.fillStyle = "#5c5248";
+    pathFromPoints(irregularOvalPoints(0, 0, size, size * 0.82, gx * 1.3, 0.32, 8));
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const crackPts = [[-size * 0.6, -size * 0.2], [-size * 0.25, size * 0.05], [-size * 0.35, -size * 0.1], [size * 0.05, size * 0.3], [-size * 0.05, size * 0.05], [size * 0.4, size * 0.2], [size * 0.25, -size * 0.05], [size * 0.62, size * 0.15]];
+    const segCount = Math.max(1, Math.floor(p * (crackPts.length - 1)));
+    ctx.strokeStyle = "#1a1410";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(crackPts[0][0], crackPts[0][1]);
+    for (let i = 1; i <= segCount; i++) ctx.lineTo(crackPts[i][0], crackPts[i][1]);
+    ctx.stroke();
+    if (segCount > 1) {
+      // a thin bright inner line right on top -- light already peeking
+      // through the crack, comic-highlight style
+      ctx.strokeStyle = "rgba(200,235,210,0.7)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  } else if (t < 850) {
+    // beat 2: the actual "give" -- a quick comic-style flash + radiating
+    // burst lines right at the break point
+    const p = (t - 650) / 200;
+    ctx.translate(gx, gy0);
+    ctx.fillStyle = "#5c5248";
+    pathFromPoints(irregularOvalPoints(0, 0, size, size * 0.82, gx * 1.3, 0.32, 8));
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - p)})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.3 + p * size * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255,255,255,${0.9 * (1 - p)})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r0 = size * 0.35, r1 = size * (0.7 + p * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+      ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+      ctx.stroke();
+    }
+  } else {
+    // beat 3: the cracked geode eases open/settles into view -- reuses
+    // drawGeodeShape's own cracked artwork (solid broken-open bowl +
+    // crystal cluster), just staged with a gentle scale-in + settle
+    // bounce instead of appearing at full size instantly
+    const p = Math.min(1, (t - 850) / (GEODE_CRACK_ANIM_DURATION - 850));
+    const ease = 1 - Math.pow(1 - p, 3);
+    const scale = 0.55 + ease * 0.45;
+    const bump = Math.sin(p * Math.PI) * 3;
+    ctx.translate(gx, gy0 - bump);
+    ctx.globalAlpha = Math.min(1, p * 2.5);
+    drawGeodeShape(ctx, 0, 0, size * 0.6 * scale, 0, true);
+  }
+
+  ctx.restore();
 }
 
 function drawGeodeBreakerSpeechBubble(camX) {
@@ -23375,6 +23513,57 @@ function updateMineCartRide(deltaTime) {
   }
 }
 
+// a ragged, holey scrap of cloth hanging off a header post -- built as a
+// short vertical strip whose per-band horizontal offset grows with
+// distance from the (fixed) top attachment point, so it reads as a real
+// flag rippling in a breeze rather than a rigid pendulum swing like the
+// lanterns. Kept quite faint (25%) per "kinda 25% translucent maybe also
+// blowing in the wind vibes". The holes are true geometric cutouts (an
+// evenodd fill with the hole subpaths inside the outer contour) rather
+// than a destination-out punch -- destination-out erases straight down
+// to full canvas transparency, which read as stark white gaps against
+// this dark backdrop instead of "worn through" gaps; evenodd just leaves
+// those pixels unfilled, so whatever's actually behind the rag shows
+// through at its own natural brightness.
+function drawMineCartRag(topX, topY, seed) {
+  const now = performance.now();
+  const swaySpeed = 0.0016 + pseudoRandom(seed) * 0.0008;
+  const swayPhase = pseudoRandom(seed + 1) * 10;
+  const ragW = 10 + pseudoRandom(seed + 2) * 5;
+  const ragH = 22 + pseudoRandom(seed + 3) * 12;
+  const bands = 5;
+  const sway = f => Math.sin(now * swaySpeed + swayPhase + f * 2.4) * f * 7;
+
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#9c8468";
+  ctx.beginPath();
+  const leftPts = [], rightPts = [];
+  for (let b = 0; b <= bands; b++) {
+    const f = b / bands;
+    const s = sway(f);
+    const yy = topY + f * ragH;
+    const jagL = b === bands ? pseudoRandom(seed + b + 10) * 5 : 0;
+    const jagR = b === bands ? pseudoRandom(seed + b + 20) * 5 : 0;
+    leftPts.push([topX - ragW / 2 + s, yy + jagL]);
+    rightPts.push([topX + ragW / 2 + s, yy - jagR]);
+  }
+  ctx.moveTo(leftPts[0][0], leftPts[0][1]);
+  leftPts.slice(1).forEach(p => ctx.lineTo(p[0], p[1]));
+  rightPts.slice().reverse().forEach(p => ctx.lineTo(p[0], p[1]));
+  ctx.closePath();
+
+  [0.4, 0.72].forEach((f, hi) => {
+    const s = sway(f);
+    ctx.ellipse(topX + s + (hi === 0 ? -2 : 2.4), topY + f * ragH, 1.8 + pseudoRandom(seed + hi + 30) * 1.2, 1.4, 0, 0, Math.PI * 2);
+  });
+  ctx.fill("evenodd");
+  ctx.strokeStyle = "rgba(30,24,18,0.4)";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawMineCartRide(camX) {
   // dedicated deep-mine backdrop -- cooler and darker than the market
   // room, so the ride reads as genuinely going somewhere new
@@ -23638,31 +23827,53 @@ function drawMineCartRide(camX) {
   // index so it's stable frame to frame, not re-randomized every draw.
   const beamSpacing = 90;
   const beamCount = Math.ceil(MINE_CART_TRACK_LENGTH / beamSpacing) + 2;
-  let prevBeamX = null;
+  let prevBeamX = null, prevTopX = null;
+  // a fixed few header posts get a hanging rag -- not a repeating
+  // background loop like the lanterns, just 2-3 real spots across the
+  // whole ride ("maybe have a rag or 2 r 3 hanging with holes in it")
+  const RAG_POLE_INDICES = [6, 15, 21];
   for (let i = 0; i < beamCount; i++) {
     const xJitter = (pseudoRandom(i * 13.1 + 700) - 0.5) * 30;
     const realBx = i * beamSpacing - mineCart.t + xJitter;
-    if (realBx < -40 || realBx > canvas.width + 40) { prevBeamX = null; continue; }
+    if (realBx < -40 || realBx > canvas.width + 40) { prevBeamX = null; prevTopX = null; continue; }
     const headerBeam = i % 3 === 0;
     const heightJitter = (pseudoRandom(i * 9.3 + 400) - 0.5) * 34;
     const poleTopY = (headerBeam ? gy - 210 : gy - 200) + heightJitter;
 
+    // old worn support posts don't all stand perfectly plumb -- most
+    // lean just a touch, a handful lean hard, per direct feedback
+    // ("tilt some of them a little and a lot. old mine shaft"). Rooted
+    // at the base (gy stays fixed); the top -- where the header/lantern/
+    // rope actually attach -- shifts sideways by the tilt instead.
+    const tiltRoll = pseudoRandom(i * 5.3 + 1200);
+    const tiltMag = tiltRoll > 0.86 ? 0.22 + pseudoRandom(i * 2.9 + 1300) * 0.18
+      : tiltRoll > 0.55 ? 0.04 + pseudoRandom(i * 2.9 + 1300) * 0.05
+      : 0;
+    const tiltDir = pseudoRandom(i * 8.1 + 1400) > 0.5 ? 1 : -1;
+    const poleLen = gy - poleTopY;
+    const topX = realBx + Math.sin(tiltMag * tiltDir) * poleLen;
+
     ctx.strokeStyle = "rgba(58,40,20,0.5)";
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(realBx, poleTopY);
+    ctx.moveTo(topX, poleTopY);
     ctx.lineTo(realBx, gy);
     ctx.stroke();
 
     // a full crossbeam header on every third pole -- reads as a real
-    // timber support frame instead of a row of lone sticks
+    // timber support frame instead of a row of lone sticks. Centered on
+    // the (possibly tilted) pole TOP, not its base.
     if (headerBeam) {
       ctx.strokeStyle = "rgba(58,40,20,0.55)";
       ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.moveTo(realBx - beamSpacing * 0.55, poleTopY + 6);
-      ctx.lineTo(realBx + beamSpacing * 0.55, poleTopY + 6);
+      ctx.moveTo(topX - beamSpacing * 0.55, poleTopY + 6);
+      ctx.lineTo(topX + beamSpacing * 0.55, poleTopY + 6);
       ctx.stroke();
+
+      if (RAG_POLE_INDICES.includes(i)) {
+        drawMineCartRag(topX + beamSpacing * 0.3, poleTopY + 8, i * 3.7);
+      }
 
       // an old rusty cage lantern hanging off the header on a short
       // chain, with a small flickering flame inside -- swings gently on
@@ -23672,9 +23883,17 @@ function drawMineCartRide(camX) {
       // cage/flame draw is rotated with it (save/translate/rotate)
       // rather than hand-recomputing every corner.
       const flick = 0.6 + pseudoRandom(i * 3.1 + Math.floor(performance.now() / 140)) * 0.4;
-      const pivotX = realBx, pivotY = poleTopY + 8;
-      const chainLen = 22;
-      const swingAngle = Math.sin(performance.now() * 0.0011 + i * 1.7) * 0.14;
+      const pivotX = topX, pivotY = poleTopY + 8;
+      // varied per-lantern hang length (was a flat 22 for every one) --
+      // per "hang at different lengths", same stable-per-index pattern
+      // used for the molehole alcove lanterns elsewhere
+      const chainLen = 16 + pseudoRandom(i * 6.7 + 950) * 24;
+      // wider swing arc, and speed varies a little per lantern too --
+      // the old 0.14 amplitude on a short fixed 22px chain barely moved
+      // enough to actually read as swaying rather than just sitting
+      // there glowing ("lights...look static, but glowing")
+      const swingSpeed = 0.0009 + pseudoRandom(i * 4.3 + 200) * 0.0006;
+      const swingAngle = Math.sin(performance.now() * swingSpeed + i * 1.7) * 0.22;
       const lx = pivotX + Math.sin(swingAngle) * chainLen;
       const ly = pivotY + Math.cos(swingAngle) * chainLen;
       ctx.strokeStyle = "rgba(40,30,20,0.6)";
@@ -23701,7 +23920,7 @@ function drawMineCartRide(camX) {
       ctx.arc(0, 6, 9 + flick * 3, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    } else if (prevBeamX !== null && i % 2 === 1) {
+    } else if (prevTopX !== null && i % 2 === 1) {
       // a length of rope strung messily between this pole and the last
       // one, sagging in the middle -- purely decorative, sits well above
       // the cart/gold lane
@@ -23710,11 +23929,12 @@ function drawMineCartRide(camX) {
       ctx.strokeStyle = "rgba(70,55,35,0.45)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(prevBeamX, poleTopY + 4);
-      ctx.quadraticCurveTo((prevBeamX + realBx) / 2, sagY + 22, realBx, poleTopY + 6);
+      ctx.moveTo(prevTopX, poleTopY + 4);
+      ctx.quadraticCurveTo((prevTopX + topX) / 2, sagY + 22, topX, poleTopY + 6);
       ctx.stroke();
     }
     prevBeamX = realBx;
+    prevTopX = topX;
   }
 
   // a handful of collapsed/fallen support beams lying in the dirt --
@@ -24212,6 +24432,7 @@ function drawMoleholeScene(camX) {
   // never covered by anything else in the scene
   drawMoleShopSpeechBubble(camX);
   drawGeodeBreakerSpeechBubble(camX);
+  drawGeodeCrackReveal(camX);
   drawMoleHoleBoardSpeechBubble(camX);
 }
 
