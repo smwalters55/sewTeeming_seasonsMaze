@@ -11259,41 +11259,44 @@ function drawForestRiver(camX) {
     }
   }
 
-  // a hint over the player's head while they're standing on the one
-  // segment that's actually ready to deck -- without this there's
-  // nothing on screen telling you a second, log-free step even
-  // exists, which read as "all my logs are gone, now what" once the
-  // pile ran low. Dimmed with "..." while the stringer is still
-  // settling, switches to a bright "[SPACE]" once it'll actually work,
-  // same bracket-prompt language the rest of the game already uses.
+  // a small hammer hovering over the OLDEST strung-but-undecked
+  // segment -- without this there's nothing on screen telling you a
+  // second, log-free step even exists, which read as "all my logs are
+  // gone, now what" once the pile ran low. Sits over the stringer
+  // itself (not tied to standing on it), so it's visible on approach
+  // as a real environmental marker rather than a text UI prompt --
+  // static and grey while the wobble's still settling, then lifts into
+  // a gentle bob once it's actually ready to be decked.
   {
     const deckIdx = forestRiverSegmentsDecked;
-    if (!heldItem && deckIdx < forestRiverSegmentsStrung) {
-      const segIdx = forestRiverSegmentIndexAt(player.x + player.width / 2);
-      if (segIdx === deckIdx) {
-        const elapsed = t - forestRiverStringerPlacedAt[deckIdx];
-        const ready = elapsed > FOREST_RIVER_STRINGER_SETTLE_MS;
-        const hintX = player.x + player.width / 2 - camX;
-        // matches getHeldItemWorldPos's own head-clearance offset
-        // (player.height + 14) -- the -34 this started as was nowhere
-        // near enough, so the hint was drawing right into the middle
-        // of the player sprite instead of clearing above its head
-        const hintY = gy - forestRiverBridgeHeightAt(player.x + player.width / 2) - player.height - 14 - Math.sin(t * 0.006) * 3;
-        ctx.save();
-        ctx.globalAlpha = ready ? 0.95 : 0.45;
-        ctx.fillStyle = ready ? "#f0e6c8" : "#9a9078";
-        ctx.beginPath();
-        ctx.moveTo(hintX - 5, hintY);
-        ctx.lineTo(hintX + 5, hintY);
-        ctx.lineTo(hintX, hintY + 7);
-        ctx.closePath();
-        ctx.fill();
-        ctx.font = "bold 8px ui-monospace";
-        ctx.textAlign = "center";
-        ctx.fillText(ready ? "[SPACE]" : "...", hintX, hintY - 4);
-        ctx.textAlign = "left";
-        ctx.restore();
-      }
+    if (deckIdx < forestRiverSegmentsStrung) {
+      const { postSpanX1, segW } = forestRiverSegSpan();
+      const segCenterWorldX = postSpanX1 + (deckIdx + 0.5) * segW;
+      const elapsed = t - forestRiverStringerPlacedAt[deckIdx];
+      const ready = elapsed > FOREST_RIVER_STRINGER_SETTLE_MS;
+      const bob = ready ? Math.sin(t * 0.005) * 3 : 0;
+      const hx = segCenterWorldX - camX;
+      const hy = gy - forestRiverBridgeHeightAt(segCenterWorldX) - 26 - bob;
+      ctx.save();
+      ctx.globalAlpha = ready ? 0.95 : 0.4;
+      ctx.translate(hx, hy);
+      ctx.rotate(ready ? -0.5 + Math.sin(t * 0.005) * 0.12 : -0.5);
+      // handle
+      ctx.fillStyle = ready ? "#7a5330" : "#8a8578";
+      ctx.fillRect(-1.5, -2, 3, 11);
+      // head
+      ctx.fillStyle = ready ? "#8b8f96" : "#9a9890";
+      ctx.beginPath();
+      ctx.moveTo(-6, -8);
+      ctx.lineTo(6, -8);
+      ctx.lineTo(5, -2);
+      ctx.lineTo(-5, -2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = ready ? "#4a4d52" : "#6a6860";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
     }
   }
 }
