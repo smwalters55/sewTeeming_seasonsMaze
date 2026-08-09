@@ -27917,21 +27917,19 @@ function drawHourglassApparition(w, h, live) {
 // funhouse reflection -- a distorted version of the PLAYER's own shape
 // (not the separate gopher-mask apparition above), replacing the old
 // critter parade as the hourglass's idle "look at it and vibe" content.
-// Per direct request: picks one of three classic funhouse-mirror
-// distortions, weighted so the unstable/wavy one is the common case and
-// the other two are rarer variety, rather than a flat equal-odds
-// random -- see the "and yay the left bank..." conversation for why: a
-// flat random risked whiplashing between a creepy read (wavy) and a
-// comic one (fishbowl) visit to visit, undercutting whichever mood
-// either one was building. Re-rolled only when the player freshly steps
-// back into range (not every frame), so it holds one flavor for the
-// whole time you're looking at it.
+// Picks one of three classic funhouse-mirror distortions at flat equal
+// odds -- originally weighted toward wavy on the assumption it read as
+// more unsettling than fishbowl/tall, but per direct feedback wavy isn't
+// actually creepier, just different, so there's no reason to favor it.
+// Re-rolled only when the player freshly steps back into range (not
+// every frame), so it holds one flavor for the whole time you're
+// looking at it.
 const hourglassFunhouse = { type: null, wasNear: false };
 function rollHourglassFunhouseType() {
   const r = Math.random();
-  if (r < 0.6) return "wavy"; // common -- unstable, shimmering
-  if (r < 0.8) return "fishbowl"; // rarer -- squat, bulged middle
-  return "tall"; // rarer -- stretched thin and tall
+  if (r < 1 / 3) return "wavy";
+  if (r < 2 / 3) return "fishbowl";
+  return "tall";
 }
 function updateHourglassFunhouse(isNear) {
   if (isNear && !hourglassFunhouse.wasNear) hourglassFunhouse.type = rollHourglassFunhouseType();
