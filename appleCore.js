@@ -25478,29 +25478,69 @@ function updateHourglassApparition(isNear) {
     }
   }
 }
-// the reflection's DEFAULT state, whenever the mask isn't playing -- a
-// tiny silent procession of critters (squirrel, rat, mole/gopher)
-// crossing single-file through the glass, on their own secret errand
-// nobody in the actual room ever sees. Charming and easy to miss on its
-// own, which is the point -- it's what rewards someone who lingers,
-// separate from the rare unsettling mask moment.
+// the reflection's DEFAULT state, whenever the mask isn't playing -- an
+// actual little costumed procession (squirrel, rat, mole/gopher, each in
+// a hat and a colored accent, plus a tiny cart trailing along) crossing
+// single-file through the glass, on their own secret errand nobody in
+// the actual room ever sees. Charming and easy to miss on its own,
+// which is the point -- it's what rewards someone who lingers, separate
+// from the rare unsettling mask moment.
 function drawHourglassParade(w, h) {
   const now = performance.now();
   const critters = [
-    { period: 6200, phase: 0, y: -h * 0.16, size: 0.09, type: "squirrel" },
-    { period: 7400, phase: 2000, y: h * 0.04, size: 0.1, type: "rat" },
-    { period: 8600, phase: 4500, y: h * 0.24, size: 0.1, type: "mole" }
+    { period: 6200, phase: 0, y: -h * 0.16, size: 0.13, type: "squirrel", hat: "party", costume: "#c94a6a" },
+    { period: 7400, phase: 2000, y: h * 0.04, size: 0.14, type: "rat", hat: "scarf", costume: "#4a8ac9" },
+    { period: 8600, phase: 4500, y: h * 0.24, size: 0.14, type: "mole", hat: "crown", costume: "#c9a020", pullsCart: true }
   ];
   critters.forEach(c => {
     const cyclePos = ((now + c.phase) % c.period) / c.period;
     const x = -w * 0.55 + cyclePos * w * 1.1;
     const edgeFade = Math.min(1, Math.min(cyclePos, 1 - cyclePos) * 6);
     if (edgeFade <= 0.02) return;
-    ctx.save();
-    ctx.globalAlpha = edgeFade * 0.8;
-    ctx.translate(x, c.y);
     const s = w * c.size;
-    const col = "rgba(22,17,12,0.85)";
+    // the little cart -- trailing just behind whoever's pulling it, same
+    // fade/timing so it enters and leaves together with them
+    if (c.pullsCart) {
+      ctx.save();
+      ctx.globalAlpha = edgeFade * 0.8;
+      ctx.translate(x - s * 2.4, c.y + s * 0.15);
+      ctx.strokeStyle = "rgba(150,125,95,0.9)";
+      ctx.lineWidth = Math.max(0.5, s * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.3, -s * 0.1);
+      ctx.lineTo(s * 0.9, -s * 0.1);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(150,100,50,0.9)";
+      ctx.fillRect(-s * 0.9, -s * 0.35, s * 1.1, s * 0.6);
+      ctx.fillStyle = "rgba(150,125,95,0.9)";
+      ctx.beginPath();
+      ctx.arc(-s * 0.65, s * 0.3, s * 0.22, 0, Math.PI * 2);
+      ctx.arc(s * 0.05, s * 0.3, s * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      // a tiny flag on a stick, so the cart itself reads as festive too
+      ctx.strokeStyle = "rgba(150,125,95,0.9)";
+      ctx.lineWidth = Math.max(0.4, s * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.4, -s * 0.35);
+      ctx.lineTo(-s * 0.4, -s * 0.85);
+      ctx.stroke();
+      ctx.fillStyle = c.costume;
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.4, -s * 0.85);
+      ctx.lineTo(-s * 0.05, -s * 0.72);
+      ctx.lineTo(-s * 0.4, -s * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.globalAlpha = edgeFade * 0.85;
+    ctx.translate(x, c.y);
+    // a warm mid-tone instead of near-black -- against the cool dark
+    // glass (#3a4048) the old near-black silhouette barely showed up at
+    // all, leaving only the colorful hat/costume floating with no
+    // visible body underneath
+    const col = "rgba(150,125,95,0.9)";
     ctx.fillStyle = col;
     ctx.strokeStyle = col;
     if (c.type === "squirrel") {
@@ -25528,6 +25568,46 @@ function drawHourglassParade(w, h) {
       ctx.ellipse(s * 0.85, s * 0.1, s * 0.25, s * 0.18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // costume accent -- a small bright patch/vest on the body, so each
+    // critter reads as dressed up rather than just a plain silhouette
+    ctx.fillStyle = c.costume;
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.2, s * 0.4, s * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // the hat -- distinct per critter, sitting right above the head
+    ctx.fillStyle = c.costume;
+    const headX = c.type === "rat" ? -s * 0.75 : c.type === "mole" ? -s * 0.1 : -s * 0.15;
+    const headY = -s * (c.type === "rat" ? 0.5 : 0.75);
+    if (c.hat === "party") {
+      ctx.beginPath();
+      ctx.moveTo(headX - s * 0.3, headY + s * 0.1);
+      ctx.lineTo(headX + s * 0.3, headY + s * 0.1);
+      ctx.lineTo(headX, headY - s * 0.55);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(headX, headY - s * 0.55, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (c.hat === "scarf") {
+      ctx.fillRect(headX - s * 0.35, headY + s * 0.15, s * 0.7, s * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(headX + s * 0.15, headY + s * 0.35);
+      ctx.lineTo(headX + s * 0.4, headY + s * 0.75);
+      ctx.lineTo(headX + s * 0.05, headY + s * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    } else if (c.hat === "crown") {
+      ctx.beginPath();
+      ctx.moveTo(headX - s * 0.35, headY + s * 0.12);
+      ctx.lineTo(headX - s * 0.35, headY - s * 0.15);
+      ctx.lineTo(headX - s * 0.15, headY + s * 0.02);
+      ctx.lineTo(headX, headY - s * 0.22);
+      ctx.lineTo(headX + s * 0.15, headY + s * 0.02);
+      ctx.lineTo(headX + s * 0.35, headY - s * 0.15);
+      ctx.lineTo(headX + s * 0.35, headY + s * 0.12);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   });
 }
@@ -25547,12 +25627,19 @@ function drawHourglassApparition(w, h) {
   ctx.globalAlpha = alpha;
   ctx.translate(0, h * 0.06);
   ctx.scale(squash, 1);
-  const bw = w * 0.6, bh = h * 0.52;
-  // body -- same silhouette as the real player, but darker/desaturated,
-  // like a shadow of them rather than actually them
-  ctx.fillStyle = "#3a3560";
+  // sized to feel like the player standing in the glass, not a figure
+  // looming over the whole bulb -- and a good deal darker than the glass
+  // itself (rather than a close-luminance purple that melted into it),
+  // with a cool rim-light stroke so the silhouette actually reads as an
+  // edge instead of a soft blur
+  const bw = w * 0.5, bh = h * 0.44;
+  ctx.fillStyle = "#1c1730";
   if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.fill(); }
   else { ctx.fillRect(-bw / 2, -bh / 2, bw, bh); }
+  ctx.strokeStyle = "rgba(150,140,205,0.45)";
+  ctx.lineWidth = Math.max(0.7, w * 0.016);
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, bw * 0.22); ctx.stroke(); }
+  else { ctx.strokeRect(-bw / 2, -bh / 2, bw, bh); }
   // the mask -- big, round, carved wood, dominating the upper half of
   // the body the same way the real player's eyes dominate their head
   const maskR = bw * 0.5;
