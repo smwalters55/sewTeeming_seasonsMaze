@@ -10625,51 +10625,70 @@ function drawForestReflectionPool(camX) {
     ctx.save();
     ctx.globalAlpha = alpha * 0.62;
     ctx.translate(px, poolY - 2);
-    // one continuous lumpy silhouette (traced through irregular points,
-    // same organic-blob technique as the riverbank shapes) instead of a
-    // cluster of same-sized overlapping circles -- a few points pulled
-    // out further than the rest give it real asymmetric character
-    // (a long reaching bough on one side, a squatter knot on the other)
-    // rather than reading as "a pile of balls."
-    const canopyGrad = ctx.createRadialGradient(0, 8, 2, 0, 6, 26);
-    canopyGrad.addColorStop(0, "#6a8a5c");
-    canopyGrad.addColorStop(0.55, "#4f6e46");
-    canopyGrad.addColorStop(1, "#33492c");
+    // one continuous full, rounded crown (traced through irregular
+    // points, same organic-blob technique as the riverbank shapes)
+    // instead of a cluster of same-sized overlapping circles -- kept
+    // fuller and less scalloped than an earlier pass, which had enough
+    // concave dips to read as a small, scraggly bush ("wimpy") rather
+    // than a grand old tree. One long reaching bough still breaks the
+    // silhouette for character, but the bulk of the mass now reads as
+    // one confident, ancient crown.
+    const canopyGrad = ctx.createRadialGradient(-4, 4, 2, 0, 6, 32);
+    canopyGrad.addColorStop(0, "#7a9a68");
+    canopyGrad.addColorStop(0.5, "#4f6e46");
+    canopyGrad.addColorStop(1, "#2c4025");
     ctx.fillStyle = canopyGrad;
     ctx.beginPath();
     tracePathOrganic(ctx, [
-      { x: -5, y: 21 }, { x: 11, y: 18 }, { x: 21, y: 8 },
-      { x: 28, y: -3 }, { x: 21, y: -12 }, { x: 9, y: -16 },
-      { x: -7, y: -17 }, { x: -21, y: -11 }, { x: -26, y: -1 },
-      { x: -21, y: 10 }, { x: -11, y: 18 }
+      { x: -4, y: 25 }, { x: 14, y: 22 }, { x: 25, y: 12 },
+      { x: 31, y: -2 }, { x: 26, y: -14 }, { x: 13, y: -20 },
+      { x: -6, y: -21 }, { x: -23, y: -15 }, { x: -30, y: -1 },
+      { x: -25, y: 14 }, { x: -12, y: 22 }
     ]);
     ctx.closePath();
     ctx.fill();
-    // a couple of gnarled knot-shadows and one whimsical curling
-    // branch-tip peeking out past the main silhouette, so it reads as
-    // a specific, characterful tree rather than a generic round mass
-    ctx.fillStyle = "#33492c";
-    ctx.beginPath();
-    ctx.ellipse(-12, -7, 8, 5.5, -0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(13, 9, 7, 5, 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#33492c";
-    ctx.lineWidth = 2.2;
+    // a soft golden rim-light tracing the upper silhouette -- moonlight
+    // catching the crown's own edge, the clearest "this is magical, not
+    // just a big plant" signal on a shape this small and low-detail
+    ctx.strokeStyle = `rgba(224,214,140,${0.4})`;
+    ctx.lineWidth = 1.6;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(25, -3);
-    ctx.quadraticCurveTo(34, -1, 35, 6);
-    ctx.quadraticCurveTo(35, 11, 30, 11);
+    ctx.moveTo(-23, -15);
+    ctx.quadraticCurveTo(-6, -24, 13, -20);
+    ctx.quadraticCurveTo(24, -17, 26, -14);
     ctx.stroke();
+    // a couple of gnarled knot-shadows and one long, sweeping bough
+    // peeking out past the main silhouette -- thicker and more
+    // confident than a twig, tapering to a fine tip with a bud of
+    // magic light, so it reads as a deliberate flourish, not clutter
+    ctx.fillStyle = "#2c4025";
+    ctx.beginPath();
+    ctx.ellipse(-13, -8, 8.5, 6, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(14, 10, 7.5, 5.5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2c4025";
+    ctx.lineWidth = 3.4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(27, -4);
+    ctx.quadraticCurveTo(38, -2, 40, 7);
+    ctx.quadraticCurveTo(40, 13, 34, 14);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(224,214,140,0.55)";
+    ctx.beginPath();
+    ctx.arc(35, 14, 1.8, 0, Math.PI * 2);
+    ctx.fill();
     // faint magical sparkles caught in the branches -- small pale glints
     // rather than anything explained, the same "wordless hint" language
     // as the rest of this glimpse, just leaning into "magical" now that
     // it's meant to feel a little enchanted rather than just oversized
     const sparkleT = (Math.sin(now * 0.003) + 1) / 2;
     [
-      { dx: -8, dy: -1, base: 0.5 }, { dx: 7, dy: -8, base: 0.85 }, { dx: 16, dy: 2, base: 0.2 }
+      { dx: -9, dy: -2, base: 0.5 }, { dx: 8, dy: -10, base: 0.85 },
+      { dx: 18, dy: 3, base: 0.2 }, { dx: -18, dy: 12, base: 0.6 }
     ].forEach((s, i) => {
       const tw = Math.max(0, Math.sin(now * 0.0021 + i * 2.1)) * 0.6 + 0.25;
       ctx.fillStyle = `rgba(232,242,200,${(0.35 + sparkleT * 0.15) * tw})`;
@@ -10677,30 +10696,29 @@ function drawForestReflectionPool(camX) {
       ctx.arc(s.dx, s.dy, 1.4, 0, Math.PI * 2);
       ctx.fill();
     });
-    // a thick, gnarled trunk reaching up toward the surface in a real
-    // curve (not a straight rectangle), with splayed root/branch flares
-    // where it meets the canopy so it reads as "trunk." Runs a good
-    // deal longer than the first pass -- roughly 2/3 the canopy's own
-    // height, per direct feedback that a short stub wasn't reading as a
-    // real trunk. Stays near x=0 the whole way so it doesn't run outside
-    // the ellipse's shrinking width as it nears the shallow/surface end.
-    ctx.fillStyle = "#2c2115";
+    // a thick, gnarled trunk reaching up toward the surface -- a single
+    // tapered, gently curved mass (not a zigzag "antler" flare, which
+    // read as two odd branches poking out rather than roots) with two
+    // smooth buttressing bumps where it meets the canopy, wide enough
+    // at the base to actually feel like it could hold up that crown.
+    // Runs a good deal longer than the first pass -- roughly 2/3 the
+    // canopy's own height -- and stays near x=0 the whole way so it
+    // doesn't run outside the ellipse's shrinking width near the
+    // shallow/surface end.
+    ctx.fillStyle = "#241a10";
     ctx.beginPath();
-    ctx.moveTo(-3.5, -14);
-    ctx.lineTo(-10, -19);
-    ctx.lineTo(-6, -21);
-    ctx.lineTo(-3, -15);
-    ctx.lineTo(3, -15);
-    ctx.lineTo(6, -21);
-    ctx.lineTo(10, -19);
-    ctx.lineTo(3.5, -14);
-    ctx.closePath();
+    ctx.ellipse(-11, -14, 5.5, 3.4, -0.35, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(-3.5, -15);
-    ctx.quadraticCurveTo(-4.5, -25, -1.5, -34);
-    ctx.lineTo(1.5, -34);
-    ctx.quadraticCurveTo(0, -25, 3.5, -15);
+    ctx.ellipse(11, -14, 5.5, 3.4, 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-7, -13);
+    ctx.quadraticCurveTo(-9, -20, -6, -26);
+    ctx.quadraticCurveTo(-8, -31, -4, -35);
+    ctx.lineTo(4, -35);
+    ctx.quadraticCurveTo(8, -31, 6, -26);
+    ctx.quadraticCurveTo(9, -20, 7, -13);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -10739,6 +10757,61 @@ function drawForestReflectionPool(camX) {
   ctx.stroke();
 }
 
+// general ground-cover grass, generated procedurally from camX the same
+// way drawSpringGrass is (extends infinitely rather than a fixed-size
+// array) instead of the forest floor staying a flat, textureless fill.
+// Only starts once past the mole hole (moleHoleEntrance.x) per direct
+// request -- everything from there rightward for now, though that may
+// want its own different ground treatment once the Magic Faraway Tree
+// area gets built further out. Two variants: short single blades most
+// of the time, and occasional taller multi-blade clumps for variety --
+// this is the general grass layer, separate from the dedicated reed
+// clusters at the riverbank (those stay water-edge-only, unchanged).
+const FOREST_GRASS_COLORS = ["rgba(94,132,64,0.55)", "rgba(58,90,38,0.55)", "rgba(122,158,88,0.5)", "rgba(46,68,30,0.5)"];
+
+function drawForestGrassScatter(camX) {
+  const step = 15;
+  const grassStartX = moleHoleEntrance.x;
+  const startX = Math.max(grassStartX, Math.floor((camX - 40) / step) * step);
+  const endX = camX + canvas.width + 40;
+  if (startX >= endX) return;
+
+  for (let x = startX; x < endX; x += step) {
+    const isClump = pseudoRandom(x * 0.53 + 900) < 0.14; // occasional taller clump
+    if (isClump) {
+      const seed = x * 1.31 + 900;
+      const bladeCount = 3 + Math.floor(pseudoRandom(seed) * 3);
+      const cx = x - camX;
+      const baseY = gy + 2 + pseudoRandom(seed + 1) * 10;
+      for (let b = 0; b < bladeCount; b++) {
+        const bSeed = seed + b * 7.7;
+        const bx = cx + (pseudoRandom(bSeed) - 0.5) * 10;
+        const h = 10 + pseudoRandom(bSeed + 1) * 9;
+        const lean = (pseudoRandom(bSeed + 2) - 0.5) * 4;
+        const shade = Math.floor(pseudoRandom(bSeed + 3) * FOREST_GRASS_COLORS.length);
+        ctx.strokeStyle = FOREST_GRASS_COLORS[shade];
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, baseY);
+        ctx.quadraticCurveTo(bx + lean * 0.6, baseY - h * 0.6, bx + lean, baseY - h);
+        ctx.stroke();
+      }
+    } else {
+      if (pseudoRandom(x * 0.71 + 901) < 0.35) continue; // patchy, not every slot filled
+      const shade = Math.floor(pseudoRandom(x * 0.71 + 3) * FOREST_GRASS_COLORS.length);
+      const h = 4 + pseudoRandom(x * 0.37 + 7) * 6;
+      const y = gy + 2 + pseudoRandom(x * 0.19 + 11) * 12;
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = FOREST_GRASS_COLORS[shade];
+      const bladeX = x - camX;
+      ctx.beginPath();
+      ctx.moveTo(bladeX, y);
+      ctx.lineTo(bladeX, y - h);
+      ctx.stroke();
+    }
+  }
+}
+
 function drawForestScene(camX) {
   // deep, muted under-canopy sky -- darker and greener than spring's
   // light pastels, no bright horizon glow
@@ -10757,6 +10830,23 @@ function drawForestScene(camX) {
     const dx = (i * 260 + 90) - camX * 0.35;
     ctx.beginPath();
     ctx.ellipse(dx, 60 + Math.sin(i * 1.7) * 30, 70, 40, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // a genuine far-distance layer, hazier and slower-scrolling than
+  // everything else here -- every other outdoor zone (spring's orchard,
+  // autumn's far/distant/mid/near stack) has a true far-back layer like
+  // this; forest only had two closer-in layers before, missing that
+  // extra sense of depth receding into haze. Deliberately duller/flatter
+  // than the layer below (barely darker than the sky itself) and barely
+  // moves with the camera, so it reads as sitting well behind everything
+  // else instead of just being a paler copy of the next layer in.
+  ctx.fillStyle = "rgba(58,74,50,0.22)";
+  for (let i = 0; i < 9; i++) {
+    const tx = i * 210 - camX * 0.18 + Math.sin(i * 1.6) * 40;
+    const th = 170 + Math.sin(i * 0.8) * 30;
+    ctx.beginPath();
+    ctx.arc(tx, gy - th, 82 + Math.sin(i * 1.1) * 14, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -10815,6 +10905,7 @@ function drawForestScene(camX) {
     ctx.fill();
   }
 
+  drawForestGrassScatter(camX);
   drawForestForegroundTrees(camX);
   drawForestEntranceFerns(camX);
   drawForestFernField(camX);
