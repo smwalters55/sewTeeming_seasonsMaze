@@ -10813,27 +10813,68 @@ function drawForestRiver(camX) {
   ctx.arc(bigTreeX - 18, gy - 268, 50, 0, Math.PI * 2);
   ctx.fill();
 
-  // "winding off into the distance" hint at both ends -- this is a 2D
-  // side view, so a true bend-away-from-camera perspective isn't
-  // really available the way it would be from above. What DOES work
-  // in 2D (same trick the game already uses for background depth --
-  // the far silhouette trees fading out with lower alpha/desaturation)
-  // is a hazy, partly-glimpsed patch of water color peeking through
-  // gaps in the canopy well upstream/downstream of the actual crossing,
-  // strongly desaturated and faded so it reads as "the river continues
-  // on beyond the trees" rather than a hard start/end point. It's a
-  // suggestion, not a real bend -- flagging that honestly rather than
-  // overselling it.
-  [[nb, -1], [fb, 1]].forEach(([bx, dir]) => {
-    for (let i = 0; i < 3; i++) {
-      const hazeX = bx + dir * (70 + i * 60);
-      const hazeY = gy - 6 - i * 10;
-      ctx.fillStyle = `rgba(70,110,100,${0.16 - i * 0.04})`;
+  // "winding off into the distance" hint on the near/left side -- just
+  // a hazy, partly-glimpsed patch of water color peeking through gaps
+  // in the canopy well upstream of the actual crossing, not a real
+  // bend. The far/right side gets the fuller actual-bend treatment
+  // below instead (see "the river actually bending right").
+  for (let i = 0; i < 3; i++) {
+    const hazeX = nb - (70 + i * 60);
+    const hazeY = gy - 6 - i * 10;
+    ctx.fillStyle = `rgba(70,110,100,${0.16 - i * 0.04})`;
+    ctx.beginPath();
+    ctx.ellipse(hazeX, hazeY, 34 - i * 4, 10 - i, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // the river actually bending right, past the far bank -- rather than
+  // just a hazy peek of color suggesting it continues (see the near
+  // side above), this is a real curving continuation: the water sweeps
+  // from crossing the screen into running almost parallel with the
+  // ground toward the horizon, narrowing and fading as it recedes, per
+  // direct request ("bended horizontal not a 90 degree angle... almost
+  // horizontal where the right bank is"). Drawn BEFORE the far bank's
+  // own dirt/reed foreground below, so that nearer shoreline still
+  // reads as sitting in front of this more distant curve.
+  {
+    const bendStartX = fb + 30, bendMidX = fb + 170, bendEndX = fb + 380;
+    // stays close to ground/water height the whole way -- the point is
+    // it bends to run ALONGSIDE the ground toward the horizon, not
+    // climb up into the canopy (that read as the river rising into the
+    // air, not as "almost horizontal")
+    const topAtStart = gy - 4, topAtMid = gy - 8, topAtEnd = gy - 12;
+    const widthStart = 48, widthEnd = 8;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(bendStartX, topAtStart);
+    ctx.quadraticCurveTo(bendMidX, topAtMid, bendEndX, topAtEnd);
+    ctx.lineTo(bendEndX, topAtEnd + widthEnd);
+    ctx.quadraticCurveTo(bendMidX, topAtMid + widthStart * 0.65, bendStartX, topAtStart + widthStart);
+    ctx.closePath();
+    const bendGrad = ctx.createLinearGradient(bendStartX, 0, bendEndX, 0);
+    bendGrad.addColorStop(0, "rgba(61,96,88,0.82)");
+    bendGrad.addColorStop(0.6, "rgba(66,98,92,0.4)");
+    bendGrad.addColorStop(1, "rgba(70,100,95,0.08)");
+    ctx.fillStyle = bendGrad;
+    ctx.fill();
+    // a couple of the same soft traveling glints the main channel
+    // uses, faint and slow, so the bend reads as still-moving water
+    // rather than a static painted shape
+    for (let i = 0; i < 2; i++) {
+      const speed = 0.00004 + i * 0.00002;
+      const phase = (t * speed + i * 0.5) % 1;
+      const gx = bendStartX + (bendEndX - bendStartX) * phase;
+      const topY = topAtStart + (topAtMid - topAtStart) * Math.min(1, phase * 2) * (phase < 0.5 ? 1 : 0) +
+        (phase >= 0.5 ? topAtMid + (topAtEnd - topAtMid) * ((phase - 0.5) * 2) : 0);
+      const width = widthStart + (widthEnd - widthStart) * phase;
+      const fade = Math.sin(phase * Math.PI);
+      ctx.fillStyle = `rgba(210,235,225,${0.3 * fade})`;
       ctx.beginPath();
-      ctx.ellipse(hazeX, hazeY, 34 - i * 4, 10 - i, dir * 0.25, 0, Math.PI * 2);
+      ctx.ellipse(gx, topY + width * 0.5, 5 - phase * 3, 2, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-  });
+    ctx.restore();
+  }
 
   // water fill -- a wavy top edge instead of a hard flat rectangle,
   // sampled with the same irregular jitter table used for the banks
@@ -10993,10 +11034,14 @@ function drawForestRiver(camX) {
     }
   }
 
-  // FAR BANK -- a mirror of the near bank's own diagonal-lean-plus-
-  // flowing-channel treatment (was previously left as a mostly
-  // vertical jagged wedge, which read as inconsistent with the near
-  // side -- "why are the banks still straight vertical lines")
+  // FAR BANK -- the diagonal-lean shoreline shape stays (matches the
+  // near bank's own lean), but WITHOUT the traced flowing-channel
+  // effect (the thick stroke + traveling glints + path-hugging
+  // pebbles) that used to sit on top of it -- removed per direct
+  // feedback, now just a normal water's edge with ordinary scattered
+  // pebbles and reeds, same as any other stretch of shoreline. The
+  // real "water continuing" visual interest on this side now comes
+  // from the actual bending curve drawn further up instead.
   {
     const topX2 = fb + 92, topY2 = gy - 5;
     const waterX2 = fb - 8, waterY2 = gy + 46;
@@ -11017,42 +11062,13 @@ function drawForestRiver(camX) {
     ctx.closePath();
     ctx.fill();
 
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = "rgba(45,80,72,0.55)";
-    ctx.lineWidth = 10;
-    ctx.beginPath();
-    edgePts2.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-    ctx.stroke();
-    ctx.restore();
-
-    const pathLen2 = edgePts2.length - 1;
-    for (let i = 0; i < 2; i++) {
-      const speed = 0.00007 + i * 0.00002;
-      const phase = (t * speed + i * 0.5 + 0.25) % 1;
-      const segF = phase * pathLen2;
-      const segI = Math.min(pathLen2 - 1, Math.floor(segF));
-      const localF = segF - segI;
-      const p0 = edgePts2[segI], p1 = edgePts2[segI + 1];
-      const gx = p0.x + (p1.x - p0.x) * localF, gy2 = p0.y + (p1.y - p0.y) * localF;
-      const fade = Math.sin(phase * Math.PI);
-      ctx.fillStyle = `rgba(215,240,230,${0.45 * fade})`;
-      ctx.beginPath();
-      ctx.ellipse(gx, gy2, 4.5, 2.6, Math.atan2(waterY2 - topY2, waterX2 - topX2), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
     for (let i = 0; i < 4; i++) {
-      const f = 0.4 + i * 0.13;
-      const segF = f * pathLen2;
-      const segI = Math.min(pathLen2 - 1, Math.floor(segF));
-      const localF = segF - segI;
-      const p0 = edgePts2[segI], p1 = edgePts2[segI + 1];
-      const bxp = p0.x + (p1.x - p0.x) * localF, byp = p0.y + (p1.y - p0.y) * localF;
+      const f = 0.35 + i * 0.14;
+      const bxp = topX2 + (waterX2 - topX2) * f;
+      const byp = topY2 + (waterY2 - topY2) * f;
       const seedI = i * 5.3 + forestRiverPebbleShuffle * 3.7;
-      const px2 = bxp + pseudoRandom(seedI) * 6 - 3;
-      const py2 = byp + pseudoRandom(seedI + 2) * 3 - 1.5;
+      const px2 = bxp + pseudoRandom(seedI) * 10 - 5;
+      const py2 = byp + pseudoRandom(seedI + 2) * 6 - 3;
       ctx.fillStyle = "#5a5040";
       ctx.beginPath();
       ctx.ellipse(px2, py2, 4, 2.4, 0, 0, Math.PI * 2);
