@@ -10894,7 +10894,12 @@ function throwSkipStone() {
     if (Math.abs(frac - thrownSkipStone.distanceFrac) < 0.06) hitIndex = i;
   });
   thrownSkipStone.hitTargetIndex = hitIndex;
-  if (hitIndex >= 0) skipStoneTargetFlash[hitIndex] = now;
+  // NOT flashed here -- the ring should only start its gold/green
+  // celebration once the stone actually visually lands in it, not the
+  // instant it leaves the player's hand (see the landing block in
+  // updateForestSkipStones, which sets skipStoneTargetFlash once the
+  // throw animation actually completes). Per direct request ("only
+  // turn the pond circle green once a stone is inside it").
   heldItem = null;
   skipStoneCharge = 0;
 }
@@ -10935,6 +10940,12 @@ function updateForestSkipStones(deltaTime) {
 
   if (thrownSkipStone.active && now - thrownSkipStone.startTime > FOREST_SKIP_STONE_THROW_MS) {
     thrownSkipStone.active = false;
+    // the stone has now actually landed -- THIS is when a hit target's
+    // ring starts its gold/green celebration, not back when the throw
+    // was released (see throwSkipStone's own note)
+    if (thrownSkipStone.hitTargetIndex >= 0) {
+      skipStoneTargetFlash[thrownSkipStone.hitTargetIndex] = now;
+    }
     if (heldStoneIndex >= 0) {
       skipStones[heldStoneIndex].onGround = true;
       skipStones[heldStoneIndex].cooldownUntil = now + 1100;
@@ -11266,23 +11277,27 @@ function drawForestFrogs(camX) {
 // Classic orange-bellied look, low elongated body with a wagging tail
 // instead of a frog's hop -- sits still most of the time, then does a
 // slow, brief crawl to a new nearby spot every several seconds. Purely
-// decorative, no interaction.
+// decorative, no interaction. The second one moved off the pool's right
+// side (was a mirrored offsetX:175) out to the breather stretch past
+// the duck vine, per direct request ("move right newt somewhere else")
+// -- gives the newts some spread along the whole breather zone instead
+// of both flanking the same pool.
 const FOREST_NEWT_SPOTS = [
-  { offsetX: -175, offsetY: 0, dir: 1 },
-  { offsetX: 175, offsetY: 2, dir: -1 }
+  { x: FOREST_REFLECTION_POOL_X - 175, offsetY: 0, dir: 1 },
+  { x: 5980, offsetY: 2, dir: -1 } // FOREST_BREATHER_DUCK_BRANCH.x (5900) + 80 -- can't reference that constant directly here, it's declared further down the file
 ];
 const forestNewts = FOREST_NEWT_SPOTS.map((spot, i) => ({
-  x: FOREST_REFLECTION_POOL_X + spot.offsetX,
+  x: spot.x,
   yOffset: spot.offsetY,
   dir: spot.dir,
   tailSeed: i * 4.2 + 0.3,
   crawlT: i * 1300,
-  crawlNextAt: 5000 + i * 1500,
+  crawlNextAt: 4000 + i * 1500,
   crawling: false,
   crawlStart: 0,
   crawlDist: 0
 }));
-const FOREST_NEWT_CRAWL_MS = 1100;
+const FOREST_NEWT_CRAWL_MS = 1300;
 
 function updateForestNewts(deltaTime) {
   const dtMs = deltaTime * 1000;
@@ -11293,7 +11308,7 @@ function updateForestNewts(deltaTime) {
         n.crawling = false;
         n.x += n.crawlDist;
         n.crawlT = 0;
-        n.crawlNextAt = 5000 + Math.random() * 4000;
+        n.crawlNextAt = 3500 + Math.random() * 3000;
       }
       return;
     }
@@ -11301,8 +11316,10 @@ function updateForestNewts(deltaTime) {
     if (n.crawlT >= n.crawlNextAt) {
       n.crawling = true;
       n.crawlStart = now;
+      // back to a coin flip per direct request -- strict alternation
+      // was tried but felt too mechanical/predictable
       n.dir = Math.random() < 0.5 ? -1 : 1;
-      n.crawlDist = n.dir * (8 + Math.random() * 10);
+      n.crawlDist = n.dir * (14 + Math.random() * 12);
     }
   });
 }
@@ -11384,27 +11401,51 @@ function drawForestNewts(camX) {
 }
 
 // AMBIENT DRAGONFLIES -- third ambient near-water critter, flying
-// loops above the pool rather than sitting on the bank. Purely
-// decorative, path is a pure function of time (no per-frame update
-// needed) -- an elliptical wander loop per dragonfly, heading derived
-// from the path's own tangent so it always visibly faces the way it's
-// flying.
+// loops above wherever they're anchored rather than sitting on the
+// bank. Purely decorative, path is a pure function of time (no
+// per-frame update needed) -- an elliptical wander loop per dragonfly,
+// heading derived from the path's own tangent so it always visibly
+// faces the way it's flying. Originally just the pool; extended to the
+// bridge crossing and the float zone's lily pad too, per direct
+// request ("put dragonflies at the bridge river too"). Deliberately
+// NOT scattered over the fast rushing stretch of the float zone itself
+// -- discussed directly ("maybe the water is too fast for them") and
+// real dragonflies do favor calm water, so the float-zone one anchors
+// specifically on the lily pad, the one calm resting pocket in that
+// whole stretch, rather than the rapids around it.
+// yFreq is the y-oscillation's frequency relative to the x-oscillation
+// (1 = a plain ellipse). Anything off exactly-round numbers makes the
+// loop trace an irregular, slightly lopsided figure instead of a clean
+// circuit, so each dragonfly's own path looks a bit erratic on its
+// own; the real "don't look synced up" fix is desyncing speed/seed
+// further apart between them, per direct request ("de-synched the
+// dragonflies more... chaotic") -- two flying the same pool now have
+// noticeably different speeds/radii/phase/loop-shape instead of
+// reading as a matched pair doing the same lap out of step.
 const FOREST_DRAGONFLY_SPECS = [
-  { radiusX: 50, radiusY: 18, heightBase: -32, speed: 0.00048, seed: 1.4, color: "#2f7a8a" },
-  { radiusX: 66, radiusY: 22, heightBase: -46, speed: 0.00063, seed: 4.1, color: "#8a4a2f" }
+  { anchorX: FOREST_REFLECTION_POOL_X, anchorY: FOREST_REFLECTION_POOL_Y, radiusX: 48, radiusY: 17, heightBase: -30, speed: 0.00041, yFreq: 1.3, seed: 1.4, color: "#2f7a8a" },
+  { anchorX: FOREST_REFLECTION_POOL_X, anchorY: FOREST_REFLECTION_POOL_Y, radiusX: 70, radiusY: 24, heightBase: -50, speed: 0.00074, yFreq: 0.7, seed: 4.9, color: "#8a4a2f" },
+  // over the calm water at the bridge crossing (bank span is 4340-4800,
+  // so 4570 sits right at the middle of the crossing)
+  { anchorX: 4570, anchorY: gy, radiusX: 58, radiusY: 15, heightBase: -28, speed: 0.00055, yFreq: 1.6, seed: 2.6, color: "#3a8a6a" },
+  // over the float zone's lily pad (FOREST_FLOAT_LILYPAD.x, computed
+  // here as a literal since that constant is declared further down the
+  // file) -- the calm rest stop, not the rapids around it
+  { anchorX: 7260, anchorY: gy, radiusX: 38, radiusY: 13, heightBase: -24, speed: 0.00086, yFreq: 0.85, seed: 5.5, color: "#2f7a8a" }
 ];
 function drawForestDragonfly(d, camX) {
   const now = performance.now();
   const angle = now * d.speed + d.seed;
-  const poolPx = FOREST_REFLECTION_POOL_X - camX;
-  const cx = poolPx + Math.cos(angle) * d.radiusX;
-  const cy = FOREST_REFLECTION_POOL_Y + d.heightBase + Math.sin(angle) * d.radiusY;
+  const yAngle = angle * d.yFreq;
+  const anchorPx = d.anchorX - camX;
+  const cx = anchorPx + Math.cos(angle) * d.radiusX;
+  const cy = d.anchorY + d.heightBase + Math.sin(yAngle) * d.radiusY;
   if (cx < -30 || cx > canvas.width + 30) return;
 
   // heading from the path's own tangent direction, so the body always
   // visibly points the way it's actually flying
   const vx = -Math.sin(angle) * d.radiusX;
-  const vy = Math.cos(angle) * d.radiusY;
+  const vy = Math.cos(yAngle) * d.radiusY * d.yFreq;
   const heading = Math.atan2(vy, vx);
 
   ctx.save();
@@ -12190,11 +12231,53 @@ const FOREST_FLOAT_ROCK_VARIANTS = [
   { squash: 1.18, crackAngle: -0.25, mossSeed: 1 },
   { squash: 0.86, crackAngle: 0.6, mossSeed: 2 }
 ];
+// moss patches as [mx, my, scaleMul, rotation] -- deliberately irregular
+// and biased toward one side/lower area (like real moss favoring the
+// shaded, damp side of a rock) rather than symmetric. The original
+// layout (two similar dots up top + one below) read as a face ("this
+// sort of looks like a rock animal") -- fixed by breaking that
+// symmetry and drawing each patch as an elongated, rotated blotch
+// instead of a neat round dot.
 const FOREST_FLOAT_ROCK_MOSS_LAYOUTS = [
-  [[-0.3, -0.7], [0.25, -0.55], [0.05, -0.2]],
-  [[0.2, -0.8], [-0.35, -0.3]],
-  [[0, -0.9], [0.3, -0.5], [-0.25, -0.55], [0.1, -0.15]]
+  [[-0.22, -0.15, 1.3, 0.9], [0.05, -0.55, 0.7, -0.3], [-0.35, 0.05, 0.9, 1.2]],
+  [[0.18, -0.1, 1.2, 0.4], [-0.3, -0.5, 0.6, -0.8]],
+  [[-0.1, -0.05, 1.4, 0.15], [0.28, -0.4, 0.65, 1.0], [-0.32, -0.5, 0.55, -0.5]]
 ];
+// a real clumped moss texture -- a fixed cluster of overlapping soft
+// blobs in 3 tones plus a couple of tiny bright flecks, instead of a
+// single flat ellipse. Fixed (not randomized) offsets so it draws
+// identically every frame; drawMossPatch below transforms this cluster
+// by each patch's own position/scale/rotation. Per direct request
+// ("make the moss waaay better").
+const FOREST_MOSS_CLUSTER = [
+  { dx: 0, dy: 0, r: 1.0, tone: 0 },
+  { dx: -0.62, dy: 0.18, r: 0.62, tone: 1 },
+  { dx: 0.55, dy: -0.12, r: 0.58, tone: 1 },
+  { dx: 0.12, dy: 0.52, r: 0.5, tone: 1 },
+  { dx: -0.32, dy: -0.48, r: 0.46, tone: 2 },
+  { dx: 0.42, dy: 0.4, r: 0.38, tone: 2 }
+];
+const FOREST_MOSS_TONES = ["rgba(96,132,64,0.72)", "rgba(72,102,44,0.62)", "rgba(122,152,86,0.48)"];
+function drawMossPatch(cx, cy, baseRw, baseRh, rot) {
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  FOREST_MOSS_CLUSTER.forEach(spot => {
+    const rx = spot.dx * cos - spot.dy * sin;
+    const ry = spot.dx * sin + spot.dy * cos;
+    ctx.fillStyle = FOREST_MOSS_TONES[spot.tone];
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * baseRw, cy + ry * baseRh, baseRw * 0.55 * spot.r, baseRh * 0.55 * spot.r, rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // a couple of tiny bright flecks catching the light, so the clump
+  // reads as textured growth rather than a flat painted-on shape
+  ctx.fillStyle = "rgba(180,200,130,0.35)";
+  [[-0.18, -0.22], [0.22, 0.12]].forEach(([fx, fy]) => {
+    const rx = fx * cos - fy * sin, ry = fx * sin + fy * cos;
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * baseRw, cy + ry * baseRh, baseRw * 0.14, baseRh * 0.14, rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
 function drawFloatRock(ox, obBottom, w, variant, spiky) {
   const v = FOREST_FLOAT_ROCK_VARIANTS[(variant || 0) % FOREST_FLOAT_ROCK_VARIANTS.length];
   const rw = (w / 2) * v.squash;
@@ -12211,8 +12294,12 @@ function drawFloatRock(ox, obBottom, w, variant, spiky) {
   // bulk should visibly continue down into the water, not sit balanced
   // on top of it. Per direct request ("dont have rock sit on surface of
   // water, show it submerged... these are suppose to be boulders").
+  // Submerged blob sized clearly BIGGER than the visible top blobs now
+  // (was roughly the same size as the main top blob, which read as too
+  // small a portion underwater -- "make the half underwater part a
+  // little larger than the top part").
   ctx.fillStyle = "#6b6a5e";
-  [[0, 0.3, 0.95, 0.55], [0, -0.5, 1, 0.62], [-0.35, -0.3, 0.55, 0.4], [0.4, -0.35, 0.5, 0.42]].forEach(([dx, dy, sw, sh]) => {
+  [[0, 0.55, 1.2, 0.85], [0, -0.42, 0.8, 0.5], [-0.32, -0.28, 0.46, 0.34], [0.36, -0.3, 0.42, 0.36]].forEach(([dx, dy, sw, sh]) => {
     ctx.beginPath();
     ctx.ellipse(ox + dx * rw, obBottom + dy * rh, rw * sw, rh * sh, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -12234,12 +12321,11 @@ function drawFloatRock(ox, obBottom, w, variant, spiky) {
   ctx.moveTo(ox - rw * 0.1, obBottom - rh * 0.9);
   ctx.lineTo(ox + rw * 0.15 * Math.cos(v.crackAngle), obBottom - rh * 0.4 + rw * 0.15 * Math.sin(v.crackAngle));
   ctx.stroke();
-  // moss patches
-  ctx.fillStyle = "#5a7a3e";
-  FOREST_FLOAT_ROCK_MOSS_LAYOUTS[v.mossSeed].forEach(([mx, my]) => {
-    ctx.beginPath();
-    ctx.ellipse(ox + mx * rw, obBottom + my * rh, rw * 0.18, rh * 0.12, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // moss patches -- real clumped texture (drawMossPatch), at irregular,
+  // asymmetric spots so they read as growth rather than a face (see
+  // FOREST_FLOAT_ROCK_MOSS_LAYOUTS's own comment)
+  FOREST_FLOAT_ROCK_MOSS_LAYOUTS[v.mossSeed].forEach(([mx, my, scaleMul, rot]) => {
+    drawMossPatch(ox + mx * rw, obBottom + my * rh, rw * 0.3 * scaleMul, rh * 0.24 * scaleMul, rot);
   });
   // spiky -- a fan of jagged points along the top, reading as a real
   // hazard (raised clearance + the bounce-back-if-you-miss behavior in
@@ -12268,14 +12354,17 @@ function drawFloatRock(ox, obBottom, w, variant, spiky) {
   // underwater tint -- clip to the submerged base blob's footprint and
   // wash it with the same translucent teal as the water fill, so the
   // part of the boulder below the surface actually reads as SEEN
-  // THROUGH water rather than dry rock that happens to be low.
+  // THROUGH water rather than dry rock that happens to be low. Sized to
+  // match the now-larger submerged blob above (was noticeably smaller
+  // than the top blobs -- "make the half underwater part a little
+  // larger than the top part").
   ctx.save();
   ctx.beginPath();
-  ctx.rect(ox - rw - 8, obBottom, (rw + 8) * 2, rh);
+  ctx.rect(ox - rw - 8, obBottom, (rw + 8) * 2, rh * 1.4);
   ctx.clip();
   ctx.fillStyle = "rgba(46,90,98,0.55)";
   ctx.beginPath();
-  ctx.ellipse(ox, obBottom + 0.3 * rh, rw * 0.95, rh * 0.55, 0, 0, Math.PI * 2);
+  ctx.ellipse(ox, obBottom + 0.5 * rh, rw * 1.15, rh * 0.8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
   ctx.restore();
@@ -12393,7 +12482,15 @@ function drawFloatLilypad(camX) {
 function drawForestFloatZone(camX) {
   const zoneStartPx = FOREST_FLOAT_ZONE_START_X - camX;
   const zoneEndPx = FOREST_FLOAT_ZONE_END_X - camX;
-  if (zoneEndPx < -50 || zoneStartPx > canvas.width + 50) return;
+  // same class of bug as drawForestRiver's own cull fix -- the organic
+  // bank curve (and the water fill matching it) actually starts at
+  // zoneStartPx-70, not zoneStartPx itself (see "topX" below), so
+  // checking zoneStartPx alone against the buffer made the whole bank
+  // pop in abruptly a beat late as the player approached from the left
+  // (direct report: "the bank of rushing river should be visible where
+  // i am standing. if i move one to the right, it suddenly appears").
+  // Widened buffer covers that -70 extension with room to spare.
+  if (zoneEndPx < -50 || zoneStartPx - 120 > canvas.width + 50) return;
 
   // main water fill -- still a flat translucent tone (no real depth
   // shading/reeds like the main river gets yet, this is still scaffolding
@@ -12539,9 +12636,19 @@ function drawForestFloatZone(camX) {
     if (c.collected) return;
     const cx = c.x - camX;
     if (cx < -20 || cx > canvas.width + 20) return;
+    // height-gated bonus collectibles (minY set) were always drawn at
+    // the same low gy-14 spot regardless of how high you actually have
+    // to jump for them -- reading as sitting in the middle of the rock
+    // rather than a reward for clearing it. Draw those up at their real
+    // required height instead (with a little headroom above minY so
+    // the orb clearly reads as "up here", not right at the cutoff).
+    // Per direct request ("make the current last reward... be on top
+    // of the rock needing a double jump, not in the middle" and "same
+    // w reward on spike, put it above the rock").
+    const cy = c.minY != null ? gy - c.minY - 10 : gy - 14;
     ctx.fillStyle = "#e0c040";
     ctx.beginPath();
-    ctx.arc(cx, gy - 14, 6, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
     ctx.fill();
   });
 }
