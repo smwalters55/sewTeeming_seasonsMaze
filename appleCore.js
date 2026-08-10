@@ -12775,7 +12775,17 @@ function drawNearBankHaloLayer(ctx, layer, nb) {
 function drawForestRiver(camX) {
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
-  if (fb < -140 || nb > canvas.width + 140) return; // fully off-screen either direction
+  // the cull bound has to cover everything this function draws, not
+  // just the two bank edges -- the upstream haze hint reaches out to
+  // nb-190 and the bridge-building log pile sits at nb-130, both well
+  // left of nb itself. Checking only nb/fb made the whole bridge/log
+  // pile complex pop in abruptly right as the player approached from
+  // the mole hole side, instead of the pile (which sits closer to the
+  // player) already being visible before the far bank was (direct
+  // report: "the left bank of the river w the bridge disappears...
+  // one step to the right it re-appears" -- not actually a
+  // travel-progress gate, just this cull window being too tight).
+  if (fb + 200 < -140 || nb - 200 > canvas.width + 140) return; // fully off-screen either direction
 
   const t = performance.now();
 
