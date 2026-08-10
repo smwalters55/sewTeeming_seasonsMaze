@@ -12412,6 +12412,30 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // it go ("floats off into oblivion").
 const FOREST_RIVER_BOAT_PILE_START_X = FOREST_FLOAT_ZONE_START_X + 30;
 const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
+// periodic "notice me" shake on the leaf piles, same pattern the spring
+// wiggle bush uses for its hidden bucket -- a cosmetic jitter that
+// plays every several seconds to signal "this is a thing you can pick
+// up", not just ambient sway. Per direct request ("need to make leaves
+// a little more obvious to pick up... a little shaking like we do for
+// a bush in spring that has the bucket behind it"). Stops for good
+// once the player has actually grabbed a boat at least once -- like
+// the bush, nothing left to draw attention to after that.
+let forestRiverBoatPileEverGrabbed = false;
+const FOREST_RIVER_BOAT_PILE_NOTICE = [
+  { noticeTimer: 3000 + Math.random() * 2000, noticeWiggle: 0 },
+  { noticeTimer: 4500 + Math.random() * 2000, noticeWiggle: 0 }
+];
+function updateForestRiverBoatPileNotice(deltaTime) {
+  if (forestRiverBoatPileEverGrabbed) return;
+  FOREST_RIVER_BOAT_PILE_NOTICE.forEach(n => {
+    n.noticeTimer -= deltaTime * 1000;
+    if (n.noticeTimer <= 0) {
+      n.noticeWiggle = 180;
+      n.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (n.noticeWiggle > 0) n.noticeWiggle--;
+  });
+}
 const forestRiverBoats = []; // active boats: {x, spawnTime, stuck, driftMult, resolvedObstacles, bobSeed, color}
 const FOREST_RIVER_BOAT_MAX = 3;
 const FOREST_RIVER_BOAT_MAX_AGE_MS = 26000;
@@ -12442,6 +12466,10 @@ function updateForestRiverBoats() {
       (isPlayerNear(FOREST_RIVER_BOAT_PILE_START_X, 0, 26, 20, 20) ||
        isPlayerNear(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, 30, 24, 16))) {
     heldItem = "leafBoat";
+    forestRiverBoatPileEverGrabbed = true;
+    // stop the notice-shake at its rest position instead of freezing
+    // mid-swing wherever it happened to be when this fired
+    FOREST_RIVER_BOAT_PILE_NOTICE.forEach(n => { n.noticeWiggle = 0; });
   // launch -- anywhere in the float zone, holding a boat, tap space to drop it in
   } else if (heldItem === "leafBoat" && nearFloatZone && keys.spaceJustPressed) {
     if (forestRiverBoats.length >= FOREST_RIVER_BOAT_MAX) forestRiverBoats.shift();
@@ -12491,17 +12519,21 @@ function updateForestRiverBoats() {
 // perfectly static, plus an occasional soft glint that sweeps across
 // them to catch the eye, the same "notice me" cue used elsewhere in
 // the game for shiny pickups.
-function drawForestRiverBoatPile(worldX, heightAboveGround, camX) {
+function drawForestRiverBoatPile(worldX, heightAboveGround, camX, notice) {
   const lx = worldX - camX;
   if (lx < -30 || lx > canvas.width + 30) return;
   const ly = gy - heightAboveGround;
   const now = performance.now();
+  // the periodic notice-shake -- same sine-driven jitter formula the
+  // spring wiggle bush uses, only active while notice.noticeWiggle is
+  // counting down (see updateForestRiverBoatPileNotice)
+  const shakeX = notice && notice.noticeWiggle > 0 ? Math.sin(notice.noticeWiggle * 0.4) * 1.8 : 0;
   const spots = [{ dx: -3, dy: 0, rot: 0.3, seed: 0 }, { dx: 3, dy: -1, rot: -0.4, seed: 1.7 }];
   spots.forEach(s => {
     const sway = Math.sin(now * 0.0016 + s.seed) * 0.12;
     const bob = Math.sin(now * 0.0022 + s.seed * 2) * 0.6;
     ctx.save();
-    ctx.translate(lx + s.dx, ly + s.dy + bob);
+    ctx.translate(lx + s.dx + shakeX, ly + s.dy + bob);
     ctx.rotate(s.rot + sway);
     ctx.fillStyle = "rgba(10,10,5,0.16)";
     ctx.beginPath();
@@ -12523,8 +12555,8 @@ function drawForestRiverBoatPile(worldX, heightAboveGround, camX) {
 }
 
 function drawForestRiverBoatPiles(camX) {
-  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_START_X, 0, camX);
-  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, camX);
+  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_START_X, 0, camX, FOREST_RIVER_BOAT_PILE_NOTICE[0]);
+  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, camX, FOREST_RIVER_BOAT_PILE_NOTICE[1]);
 }
 
 function drawForestRiverBoats(camX) {
@@ -16898,6 +16930,7 @@ function updateForestScene(deltaTime) {
   updateForestWaterStriders();
   updateForestRiverBoats();
   updateForestRiverFrog();
+  updateForestRiverBoatPileNotice(deltaTime);
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
@@ -36358,28 +36391,13 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- debug spawn, now pointed right at the float zone itself
-// instead of just past the bridge. Direct request: "place me right in
-// front of testing river area." Marks the bridge as fully strung AND
-// decked (so the invisible build-edge wall doesn't hold the player back
-// at the near bank -- see the "FLOAT ZONE" and "RIVER BRIDGE BUILDING"
-// comments in updateForestScene for how that wall works) and spawns
-// right at the float zone's own start edge, ready to walk straight in
-// without a long walk from the bridge first. Swap back to the previous
-// "9 logs, unbuilt bridge" version (see git history) if the build flow
-// itself needs testing again. Remove this block once done testing.
-currentScene = "forest";
-forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-player.x = FOREST_FLOAT_ZONE_START_X - 40;
-player.y = 0;
-player.vy = 0;
-player.jumping = false;
-player.usedDoubleJump = false;
-cameraX = Math.max(0, player.x - canvas.width * 0.5);
-cameraY = 0;
-updateInventoryUI();
-
+// debug spawn removed -- per direct request ("put me in the beginning
+// as a fresh start of the game"), the game now boots into its real
+// starting state: currentScene's own default ("autumn"), player's own
+// default x/y (400, 0), cameraX's own default (0). If the float zone
+// (or any other spot) needs a quick debug spawn again for testing
+// later, that override block can come back -- see git history for the
+// exact block that used to sit here.
 update();
 
 });
