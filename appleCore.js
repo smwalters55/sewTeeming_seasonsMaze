@@ -13009,6 +13009,27 @@ function drawForestFloatZone(camX) {
     tracePathOrganic(ctx, bankPts);
     ctx.closePath();
     ctx.fill();
+
+    // a scatter of loose sand grains bleeding out into the grass just
+    // past the bank's own top edge, so the sand-to-grass transition
+    // reads as a natural gradual fade instead of a hard boundary. Per
+    // direct request ("sprinkles of sand in the grass right next to it
+    // so it looks more natural"). Fixed pseudo-random offsets (not
+    // re-rolled every frame) so they don't flicker as the player walks
+    // past -- same "stable positions, only look changes over time"
+    // approach the rest of the scene's scattered ground clutter uses.
+    for (let i = 0; i < 14; i++) {
+      const seed = i * 7.31;
+      const spread = pseudoRandom(seed); // 0 = right at the bank edge, 1 = furthest out
+      const sx = topX - 6 - spread * 60;
+      const sy = topY + 2 - pseudoRandom(seed + 1) * 10;
+      const alpha = 0.15 + (1 - spread) * 0.35; // denser/darker near the bank, fading with distance
+      const r = 1 + pseudoRandom(seed + 2) * 1.4;
+      ctx.fillStyle = `rgba(140,122,86,${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, r, r * 0.55, pseudoRandom(seed + 3) * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // gentle current -- rippled highlight lines drifting rightward (same
