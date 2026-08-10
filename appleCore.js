@@ -12256,16 +12256,17 @@ const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
   { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
-  // out-of-phase moving log trio -- three logs close enough together
-  // that their swings overlap, but on different speeds/phases (each
-  // offset from the others) so there's no single fixed rhythm that
-  // clears all three -- each has to be read and timed on its own. Per
-  // direct request ("out of phase double moving logs", then "add the
-  // third moving log to right of the two moving logs next to each
-  // other").
+  // out-of-phase moving log quartet -- logs close enough together that
+  // their swings overlap, but on different speeds/phases (each offset
+  // from the others) so there's no single fixed rhythm that clears all
+  // of them -- each has to be read and timed on its own. Per direct
+  // request ("out of phase double moving logs", then "add the third
+  // moving log to right of the two moving logs next to each other",
+  // then "add a fourth moving log with the other three").
   { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
   { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
   { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1660, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1760, range: 55, speed: 0.0019, phase: 3.4, w: 40, clearance: 40, type: "movingJump", variant: 5 },
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2000, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
@@ -12412,29 +12413,42 @@ function updateForestRiverBoats() {
   }
 }
 
+// per direct feedback that the pile didn't read as something to
+// interact with -- previously just two flat, perfectly still leaf
+// ellipses, indistinguishable from ordinary ground clutter. Now drawn
+// already folded into the same little boat shape you'll end up holding
+// (drawLeafBoatShape, matching the carried icon -- a preview of what
+// picking it up gets you), with a gentle idle sway so it's never
+// perfectly static, plus an occasional soft glint that sweeps across
+// them to catch the eye, the same "notice me" cue used elsewhere in
+// the game for shiny pickups.
 function drawForestRiverBoatPile(worldX, heightAboveGround, camX) {
   const lx = worldX - camX;
   if (lx < -30 || lx > canvas.width + 30) return;
   const ly = gy - heightAboveGround;
-  const spots = [{ dx: -3, dy: 0, rot: 0.3 }, { dx: 3, dy: -1, rot: -0.4 }];
+  const now = performance.now();
+  const spots = [{ dx: -3, dy: 0, rot: 0.3, seed: 0 }, { dx: 3, dy: -1, rot: -0.4, seed: 1.7 }];
   spots.forEach(s => {
+    const sway = Math.sin(now * 0.0016 + s.seed) * 0.12;
+    const bob = Math.sin(now * 0.0022 + s.seed * 2) * 0.6;
     ctx.save();
-    ctx.translate(lx + s.dx, ly + s.dy);
-    ctx.rotate(s.rot);
+    ctx.translate(lx + s.dx, ly + s.dy + bob);
+    ctx.rotate(s.rot + sway);
     ctx.fillStyle = "rgba(10,10,5,0.16)";
     ctx.beginPath();
     ctx.ellipse(0, 3, 5.5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#6a7a2f";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 5, 2.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(-4, 0);
-    ctx.lineTo(4, 0);
-    ctx.stroke();
+    drawLeafBoatShape(ctx, 0, 0, 9, 0, "#6a7a2f");
+    // a soft glint that sweeps across each leaf every few seconds,
+    // rather than a constant static shine -- reads as "something worth
+    // noticing" without being distracting the rest of the time
+    const glint = Math.sin(now * 0.0009 + s.seed * 3);
+    if (glint > 0.82) {
+      ctx.fillStyle = `rgba(255,255,235,${((glint - 0.82) / 0.18 * 0.6).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(1, -1, 2.4, 1, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   });
 }
@@ -12781,7 +12795,8 @@ const FOREST_FLOAT_LOG_VARIANTS = [
   { lenMul: 1.15, barkTone: "#5a3f22", knotX: 0.3 },
   { lenMul: 0.9, barkTone: "#755233", knotX: 0.05 },
   { lenMul: 1.05, barkTone: "#634428", knotX: -0.35 },
-  { lenMul: 0.95, barkTone: "#6f4d2e", knotX: 0.18 }
+  { lenMul: 0.95, barkTone: "#6f4d2e", knotX: 0.18 },
+  { lenMul: 1.1, barkTone: "#7a5738", knotX: -0.1 } // added for the quartet's 4th log, distinct from its neighbors
 ];
 function drawFloatLog(ox, obBottom, w, variant) {
   const v = FOREST_FLOAT_LOG_VARIANTS[(variant || 0) % FOREST_FLOAT_LOG_VARIANTS.length];
@@ -12919,8 +12934,38 @@ function drawForestFloatZone(camX) {
   // NOT reaching any higher -- closes exactly that gap without
   // recreating the earlier floating-rectangle bug (this stays flush
   // against the horizon the whole way, never floats above it).
-  ctx.fillStyle = "rgba(46,90,98,0.72)";
-  ctx.fillRect(zoneStartPx - 70, gy, zoneEndPx - (zoneStartPx - 70), canvas.height - gy);
+  // wavy top edge instead of a hard flat rectangle -- same jittered-
+  // sample-then-smooth technique the main river's own water fill uses
+  // (see drawForestRiver's "waterTopPts"), just sampled across whatever
+  // stretch of the (much longer) float zone is actually on-screen right
+  // now rather than the zone's full world width. Per direct feedback
+  // ("make river top border more organic, not a stick straight horiz
+  // line").
+  {
+    const leftX = Math.max(zoneStartPx - 70, -60);
+    const rightX = Math.min(zoneEndPx, canvas.width + 60);
+    const waterSamples = Math.max(2, Math.round((rightX - leftX) / 55));
+    const waterTopPts = [];
+    for (let i = 0; i <= waterSamples; i++) {
+      const wx = leftX + (rightX - leftX) * (i / waterSamples);
+      const jitter = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.6;
+      waterTopPts.push({ x: wx, y: gy + jitter });
+    }
+    ctx.fillStyle = "rgba(46,90,98,0.72)";
+    ctx.beginPath();
+    ctx.moveTo(leftX, canvas.height);
+    ctx.lineTo(waterTopPts[0].x, waterTopPts[0].y);
+    for (let i = 1; i < waterTopPts.length - 1; i++) {
+      const p = waterTopPts[i], next = waterTopPts[i + 1];
+      const mx = (p.x + next.x) / 2, my = (p.y + next.y) / 2;
+      ctx.quadraticCurveTo(p.x, p.y, mx, my);
+    }
+    const lastTopPt = waterTopPts[waterTopPts.length - 1];
+    ctx.quadraticCurveTo(lastTopPt.x, lastTopPt.y, lastTopPt.x, lastTopPt.y);
+    ctx.lineTo(rightX, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // LEFT EDGE -- an organic diagonal bank instead of a straight vertical
   // cut, same "\"-shaped-diagonal-through-jittered-bezier technique as
