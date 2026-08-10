@@ -1052,6 +1052,20 @@ function updateSeasonTransition(deltaTime) {
       currentScene = seasonTransition.targetScene;
       discoveredScenes[currentScene] = true;
       updateMapUI(); // covers both "newly discovered" and "current-scene highlight moved"
+      // CONFIRMED BUG FIX: the lamp is local to oak/ratroom ONLY -- the
+      // two specific checks below (ratroom->oak, and re-arriving in
+      // ratroom) only covered that one back-and-forth pair, so carrying
+      // it out through any OTHER exit (oak -> autumn via the seesaw,
+      // etc.) silently let it leak into scenes it should never reach
+      // ("it shouldn't be down in autumn or anywhere else ever"). This
+      // is the general rule those two were both special cases of:
+      // whatever scene you're arriving in, if it isn't oak or ratroom,
+      // the lamp gets put back (heldItem only -- inventory.lamp itself
+      // is untouched, same "stays local, comes back next visit"
+      // treatment as a carried book).
+      if (heldItem === "lamp" && currentScene !== "oak" && currentScene !== "ratroom") {
+        heldItem = null;
+      }
       if (currentScene === "ratroom" && previousScene !== "ratroom") {
         ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
         ratRoomHighShelves.forEach(s => { if (s.tier > 0) s.unlocked = false; });
@@ -1477,9 +1491,31 @@ function updateFlyingItems(deltaTime, camX) {
         }
 
       } else if (f.phase === "hold") {
-        if (f.t >= COLLECT_DURATIONS.hold) {
+        // CONFIRMED CHANGE: the paper airplane gets a real fly-around
+        // right here at the zoomed-in center spot, instead of just
+        // sitting still for COLLECT_DURATIONS.hold like every other
+        // item -- per direct request, done AS the middle beat of the
+        // normal collect animation (zoom in -> fly-around -> to basket)
+        // rather than as a second, separate animation stacked after it.
+        const holdDur = f.itemType === "paperAirplane" ? PAPER_AIRPLANE_FLYAROUND_MS : COLLECT_DURATIONS.hold;
+        if (f.itemType === "paperAirplane") {
+          if (f.planePattern === undefined) f.planePattern = Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length);
+          const flyP = Math.min(f.t / holdDur, 1);
+          const offset = PAPER_AIRPLANE_FLIGHT_PATTERNS[f.planePattern](flyP);
+          f.x = f.holdX + offset.dx;
+          f.y = f.holdY + offset.dy;
+          f.rotation = (f.rotation || 0) + deltaTime * 1000 * (f.planePattern === 2 ? 0.016 : 0.007);
+          f.scale = 1.3;
+        }
+        if (f.t >= holdDur) {
           f.phase = "toBasket";
           f.t = 0;
+          // capture wherever the fly-around actually left it (not the
+          // original hold anchor) as the toBasket start point, so the
+          // flight to the basket continues smoothly from there instead
+          // of snapping back to center first
+          f.holdX = f.x;
+          f.holdY = f.y;
 
           if (f.itemType === "leaf") {
             // leaves fly to the crown-in-progress, not the fixed basket
@@ -1514,6 +1550,21 @@ function updateFlyingItems(deltaTime, camX) {
             }
           } else {
             addToInventory(f.itemType); // counter updates ONLY on arrival
+          }
+          // CONFIRMED CHANGE: paper airplane auto-equips the moment the
+          // whole animation actually resolves -- per direct question
+          // ("should it be auto in-play, what u think"). Same "essential
+          // tool, skip the manual select" treatment the lamp/boomerang
+          // get, but deliberately delayed to HERE (arrival) rather than
+          // at the initial pickup like those two, since showing it
+          // "in play" before its own intro animation finishes was
+          // exactly the earlier bug. The book pile also waits a couple
+          // beats from here before it starts shaking, so the two don't
+          // compete for attention.
+          if (f.itemType === "paperAirplane") {
+            heldItem = "paperAirplane";
+            updateInventoryUI();
+            giantPileCollapsePendingMs = 500;
           }
           flyingItems.splice(i, 1);
         }
@@ -1585,6 +1636,20 @@ const BOOMERANG_HIT_RADIUS = 15; // tightened further — verified honey/vault w
 // variability made the shared 15px radius nearly impossible to land.
 const FOREST_BOOMERANG_HIT_RADIUS = 45; // pulled back way down (was 150 -- that was landing hits without even trying, which stopped feeling like a real throw at all). The actual fix for "impossible to hit" was dropping the thrownWhileAirborne requirement below, not this radius -- so this can now be a normal, visually-sane radius plus a bit of real slack for the moving target, not an enormous catch-all
 
+// CONFIRMED CHANGE: clouds gust zone -- a fixed, learnable patch of sky
+// (not random ambient gusts everywhere) where the wind visibly does
+// something different. Per direct discussion: a dedicated zone the
+// player can walk into on purpose and mess around in, rather than an
+// unpredictable global timer that could hit anywhere and just annoy
+// normal platforming. Sits in the open stretch of already-reachable
+// low clouds under the shuttle zone (x:1610-2110 h40-90), clear of
+// every fixed pickup/landmark out there (crystal x:1955, peanut/balloon
+// x:2400+).
+const GUST_ZONE = { xMin: 1650, xMax: 1820 };
+function isInGustZone(x) {
+  return x >= GUST_ZONE.xMin && x <= GUST_ZONE.xMax;
+}
+
 let boomerangThrow = null; // null when not in flight
 
 function throwBoomerang() {
@@ -1613,6 +1678,16 @@ function updateBoomerangThrow(deltaTime) {
     const eased = 1 - Math.pow(1 - p, 2); // ease-out — fast start, settles at the far point
     b.x = b.startX + b.facing * BOOMERANG_OUT_DISTANCE * eased;
     b.y = b.startY + Math.sin(p * Math.PI) * 90; // real upward arc — has to reach the hive's height
+
+    // gust zone -- extra turbulence layered on top of the normal arc
+    // while passing through it, same idea as the paper airplane's own
+    // gust distortion. Envelope fades in/out with the throw itself
+    // (sin(p*pi)) so it never introduces a snap at the start or end.
+    if (currentScene === "clouds" && isInGustZone(b.x)) {
+      const gustEnvelope = Math.sin(p * Math.PI);
+      b.y += Math.sin(b.t * 0.024 + 1.1) * 14 * gustEnvelope;
+      b.x += Math.sin(b.t * 0.017) * 9 * gustEnvelope;
+    }
 
     // hit-checking only counts near the PEAK of the flight (p=0.45-0.55), not
     // anywhere along the whole arc. The peak is also the slowest, most visually
@@ -1797,7 +1872,20 @@ const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
   }
 ];
 const PAPER_AIRPLANE_FLIGHT_MS = 1500;
-let paperAirplaneFlight = null; // null when not flying
+// CONFIRMED CHANGE: the oak "teach the mechanic" moment is no longer a
+// separate scripted throw that runs after pickup -- per direct
+// feedback, that read as two things happening ("don't add it as 'in
+// play' above player head until the animation has finished" -- the
+// thing hovering above the head WAS the real collect-to-basket flight,
+// still in progress underneath the new scripted one). Folded directly
+// into the shared collect animation instead (see updateFlyingItems'
+// "hold" phase): the plane zooms to screen-center exactly like every
+// other collectible, then -- instead of just pausing there -- does its
+// little fly-around loop right at that spot, then continues on to the
+// basket same as normal. One animation, one thing to look at, in the
+// order it actually happens.
+const PAPER_AIRPLANE_FLYAROUND_MS = 2600;
+let paperAirplaneFlight = null; // null when not flying (real clouds throw only)
 
 // real, player-triggered throw -- clouds only, spacebar while held,
 // same key convention as the boomerang
@@ -1809,28 +1897,11 @@ function throwPaperAirplane() {
     y: player.y + player.height * 0.6,
     facing: player.facing,
     t: 0,
+    duration: PAPER_AIRPLANE_FLIGHT_MS,
     pattern: Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length),
-    rotation: 0,
-    auto: false
+    rotation: 0
   };
   heldItem = null; // out of hand while it flies, same as the boomerang
-}
-
-// one-time scripted intro throw -- fires itself on pickup in oak, no
-// input required, purely to teach the throw-and-return grammar by
-// showing it rather than telling the player about it
-function playPaperAirplaneIntroThrow() {
-  paperAirplaneFlight = {
-    originX: player.x + player.width / 2,
-    originY: player.y + player.height * 0.6,
-    x: player.x + player.width / 2,
-    y: player.y + player.height * 0.6,
-    facing: player.facing,
-    t: 0,
-    pattern: Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length),
-    rotation: 0,
-    auto: true // doesn't touch heldItem -- purely decorative, plays over the collect animation
-  };
 }
 
 function updatePaperAirplaneFlight(deltaTime) {
@@ -1838,18 +1909,26 @@ function updatePaperAirplaneFlight(deltaTime) {
   const f = paperAirplaneFlight;
   f.t += deltaTime * 1000;
   f.rotation += deltaTime * (f.pattern === 2 ? 16 : 7); // corkscrew spins visibly faster, cosmetic only
-  const p = Math.min(f.t / PAPER_AIRPLANE_FLIGHT_MS, 1);
+  const p = Math.min(f.t / f.duration, 1);
   const offset = PAPER_AIRPLANE_FLIGHT_PATTERNS[f.pattern](p);
   // mirrored by facing so it always reads as thrown the direction
   // the player's actually facing, not always to one fixed side
   f.x = f.originX + offset.dx * f.facing;
   f.y = f.originY + offset.dy;
 
+  // gust zone -- wonkier, less predictable path while passing through
+  // it (see GUST_ZONE); fades in/out smoothly via the sin(p*pi)
+  // envelope so it never snaps at the start or end of the throw
+  // regardless of where the plane happens to be when it lands
+  if (currentScene === "clouds" && isInGustZone(f.x)) {
+    const wobbleEnvelope = Math.sin(p * Math.PI);
+    f.x += Math.sin(f.t * 0.013 + 2.2) * 10 * wobbleEnvelope;
+    f.y += Math.sin(f.t * 0.021) * 8 * wobbleEnvelope;
+  }
+
   if (p >= 1) {
-    if (!f.auto) {
-      heldItem = "paperAirplane";
-      updateInventoryUI();
-    }
+    heldItem = "paperAirplane";
+    updateInventoryUI();
     paperAirplaneFlight = null;
   }
 }
@@ -25183,12 +25262,13 @@ function updateGiantPileCollapse(deltaTime) {
   }
 }
 
-// CONFIRMED CHANGE: a short delay before the one-time intro throw
-// plays (see playPaperAirplaneIntroThrow), so it doesn't visually
-// collide with the collect animation flying up into the inventory bar
-// -- the player sees "collected" resolve first, then their own
-// character tries the toy out unprompted a beat later.
-let paperAirplaneIntroPendingMs = 0;
+// CONFIRMED CHANGE: the fly-around now happens INSIDE the normal
+// collect animation's own "hold" phase (see updateFlyingItems) instead
+// of a separate scripted throw fired after the fact -- one animation,
+// not two stacked on each other. giantPileCollapsePendingMs (set once
+// that whole animation actually reaches the basket) is what delays the
+// book pile shaking until a couple beats after, so they don't compete.
+let giantPileCollapsePendingMs = 0;
 function updatePaperAirplane() {
   if (paperAirplaneSpot.collected) return;
   if (keys.spaceJustPressed && isPlayerNear(paperAirplaneSpot.x, paperAirplaneSpot.y, 20, 18, 15)) {
@@ -25197,16 +25277,15 @@ function updatePaperAirplane() {
     touchInventoryOrder("paperAirplane");
     updateInventoryUI();
     startCollectAnimation({ x: paperAirplaneSpot.x, y: paperAirplaneSpot.y, size: 7, rotation: 0 }, "paperAirplane");
-    startGiantPileCollapse();
-    paperAirplaneIntroPendingMs = 550;
   }
 }
-function updatePaperAirplaneIntroPending(deltaTime) {
-  if (paperAirplaneIntroPendingMs <= 0) return;
-  paperAirplaneIntroPendingMs -= deltaTime * 1000;
-  if (paperAirplaneIntroPendingMs <= 0) {
-    paperAirplaneIntroPendingMs = 0;
-    playPaperAirplaneIntroThrow();
+function updateGiantPileCollapsePending(deltaTime) {
+  if (giantPileCollapsePendingMs > 0) {
+    giantPileCollapsePendingMs -= deltaTime * 1000;
+    if (giantPileCollapsePendingMs <= 0) {
+      giantPileCollapsePendingMs = 0;
+      startGiantPileCollapse();
+    }
   }
 }
 
@@ -36528,6 +36607,135 @@ function updateTunnelTownScene(deltaTime) {
   }
 }
 
+// CONFIRMED CHANGE: clouds atmosphere -- a slow, continuous day/dusk/
+// night/dawn drift rather than discrete timed swaps, per direct
+// discussion ("a hard swap would read as mechanical... I'd tie the
+// clock to time spent in the scene"). Purely cosmetic color-grade
+// overlay for now, drawn last (screen-space, on top of everything) so
+// it tints the whole scene without touching any of the actual gameplay
+// layers underneath. cloudsAtmosphereT only accumulates while actually
+// in clouds, and resets on leaving, so every fresh visit starts back
+// at the same calm daytime point rather than potentially dropping you
+// into "night" the instant you walk in from spring.
+const CLOUDS_ATMOSPHERE_CYCLE_MS = 5 * 60 * 1000; // one full day/night loop every 5 real minutes spent here
+let cloudsAtmosphereT = 0;
+// keyframes across the 0..1 cycle -- interpolated between whichever two
+// this straddles. midday/dawn both use alpha 0 (no tint at all -- the
+// base sky gradient already reads as "daytime" on its own)
+const CLOUDS_ATMOSPHERE_KEYFRAMES = [
+  { t: 0.0,  color: "255,255,255", alpha: 0 },     // midday -- no tint
+  { t: 0.35, color: "255,150,110", alpha: 0.16 },  // dusk -- warm orange
+  { t: 0.55, color: "40,35,90",    alpha: 0.42 },  // night -- deep blue
+  { t: 0.85, color: "255,190,150", alpha: 0.12 },  // dawn -- soft pink
+  { t: 1.0,  color: "255,255,255", alpha: 0 }      // back to midday
+];
+function updateCloudsAtmosphere(deltaTime) {
+  if (currentScene !== "clouds") { cloudsAtmosphereT = 0; return; }
+  cloudsAtmosphereT = (cloudsAtmosphereT + deltaTime * 1000) % CLOUDS_ATMOSPHERE_CYCLE_MS;
+}
+function getCloudsNightAmount() {
+  // 0..1, peaking at the night keyframe -- used to fade a small
+  // starfield in/out along with the color overlay itself
+  const t = cloudsAtmosphereT / CLOUDS_ATMOSPHERE_CYCLE_MS;
+  for (let i = 0; i < CLOUDS_ATMOSPHERE_KEYFRAMES.length - 1; i++) {
+    const a = CLOUDS_ATMOSPHERE_KEYFRAMES[i], b = CLOUDS_ATMOSPHERE_KEYFRAMES[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const localP = (t - a.t) / (b.t - a.t);
+      const alpha = a.alpha + (b.alpha - a.alpha) * localP;
+      // only the night keyframe (index 2) actually contributes stars --
+      // dusk/dawn share the same alpha range but shouldn't show any
+      const isNightSide = (i === 1 || i === 2);
+      return isNightSide ? alpha / 0.42 : 0;
+    }
+  }
+  return 0;
+}
+// fixed screen-space star positions, generated once -- twinkle via a
+// simple per-star phase offset rather than actual movement
+const CLOUDS_STARS = Array.from({ length: 40 }, (_, i) => ({
+  x: pseudoRandom(i * 3.1) * 900,
+  y: pseudoRandom(i * 7.7 + 2) * 220,
+  phase: pseudoRandom(i * 5.3 + 5) * Math.PI * 2
+}));
+function drawCloudsAtmosphereOverlay() {
+  const t = cloudsAtmosphereT / CLOUDS_ATMOSPHERE_CYCLE_MS;
+  let color = "255,255,255", alpha = 0;
+  for (let i = 0; i < CLOUDS_ATMOSPHERE_KEYFRAMES.length - 1; i++) {
+    const a = CLOUDS_ATMOSPHERE_KEYFRAMES[i], b = CLOUDS_ATMOSPHERE_KEYFRAMES[i + 1];
+    if (t >= a.t && t <= b.t) {
+      const localP = (t - a.t) / (b.t - a.t);
+      alpha = a.alpha + (b.alpha - a.alpha) * localP;
+      // blend the two keyframe colors channel-by-channel
+      const ca = a.color.split(",").map(Number), cb = b.color.split(",").map(Number);
+      color = ca.map((v, idx) => Math.round(v + (cb[idx] - v) * localP)).join(",");
+      break;
+    }
+  }
+  const nightAmount = getCloudsNightAmount();
+  if (nightAmount > 0.02) {
+    ctx.save();
+    ctx.fillStyle = "white";
+    CLOUDS_STARS.forEach(s => {
+      const twinkle = 0.5 + Math.sin(performance.now() * 0.002 + s.phase) * 0.5;
+      ctx.globalAlpha = nightAmount * twinkle * 0.85;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+  if (alpha > 0.01) {
+    ctx.save();
+    ctx.fillStyle = `rgba(${color},${alpha})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+}
+
+// gust zone -- visible swirl so the zone is a real discoverable
+// landmark, not an invisible trap. Drawn as a loose ring of drifting
+// wisps rather than a hard-edged box, matching the soft cloud aesthetic
+// everywhere else in this scene.
+function drawGustZone(camX) {
+  const zoneScreenX = (GUST_ZONE.xMin + GUST_ZONE.xMax) / 2 - camX;
+  const t = performance.now() * 0.001;
+  ctx.save();
+  for (let i = 0; i < 10; i++) {
+    const seed = i * 11.3;
+    const orbitR = 30 + (i % 4) * 22;
+    const speed = 0.6 + (i % 3) * 0.25;
+    const ang = t * speed + seed;
+    const wx = zoneScreenX + Math.cos(ang) * orbitR;
+    const wy = gy - 70 + Math.sin(ang * 1.4) * 40 - (i % 5) * 8;
+    ctx.globalAlpha = 0.25 + Math.sin(t * 2 + seed) * 0.12;
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(wx - 10, wy);
+    ctx.quadraticCurveTo(wx, wy - 6, wx + 10, wy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// gust zone -- wonkier player movement while airborne inside it. Not a
+// steady push (that would just read as one-directional wind), two
+// overlapping sine waves at different speeds/phases so it reads as
+// real turbulence instead
+let gustSeed = 0;
+let wasInGustZone = false;
+function updateCloudsGustZone(deltaTime) {
+  if (currentScene !== "clouds") { wasInGustZone = false; return; }
+  const centerX = player.x + player.width / 2;
+  const inZone = isInGustZone(centerX);
+  if (inZone && !wasInGustZone) gustSeed = Math.random() * 1000; // fresh wobble each time you enter, not the same pattern every visit
+  wasInGustZone = inZone;
+  if (inZone && player.jumping) {
+    const t = performance.now() * 0.001 + gustSeed;
+    player.x += Math.sin(t * 2.3) * 1.1 + Math.sin(t * 5.1 + 1.7) * 0.6;
+  }
+}
+
 function drawCloudsScene(camX) {
   // multi-stop sky — deeper blue up top, fading toward near-white
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -36581,9 +36789,13 @@ function drawCloudsScene(camX) {
   vaultClouds.forEach(v => drawVaultCloud(v, camX));
   drawElephantSpot(camX);
   drawBalloonNPC(camX);
+  drawGustZone(camX);
+  drawCloudsAtmosphereOverlay(); // last -- screen-space color grade over everything above
 }
 
 function updateCloudsScene(deltaTime) {
+  updateCloudsAtmosphere(deltaTime);
+  updateCloudsGustZone(deltaTime);
   if (fallState.active) return; // handled globally by updateFallState
 
   updateWaterDrips(deltaTime);
@@ -37777,6 +37989,15 @@ if (currentScene === "autumn") {
 
   // throw the boomerang — spacebar while it's held, works in any scene.
   // !boomerangThrow guards against re-triggering while holding the key down.
+  // CONFIRMED BUG FIX: continuous safety net, not just a one-time check
+  // at the oak/ratroom transition site -- catches the lamp leaking out
+  // via ANY other path that can change currentScene (debug spawns,
+  // future scene connections, etc.), not just the one seasonTransition
+  // block. The lamp is local to oak/ratroom, full stop, no exceptions.
+  if (heldItem === "lamp" && currentScene !== "oak" && currentScene !== "ratroom") {
+    heldItem = null;
+  }
+
   if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
     throwBoomerang();
   }
@@ -37788,7 +38009,7 @@ if (currentScene === "autumn") {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
-  updatePaperAirplaneIntroPending(deltaTime);
+  updateGiantPileCollapsePending(deltaTime);
 
   if (player.cloudLandingImmunity > 0) player.cloudLandingImmunity -= deltaTime * 1000;
 
@@ -37889,6 +38110,16 @@ lampEverUsedInRatroom = true; // so re-entering ratroom auto-carries the lamp ba
 // pickup flag, so it needs to be set directly for the debug spawn to
 // match a real post-lamp-pickup state.
 oakLamp.collected = true;
+// CONFIRMED BUG FIX: the hay bales in autumn only topple once
+// discoveredScenes.oak AND discoveredScenes.ratroom are both true (see
+// updateHayBales) -- those only ever get set by the real scene-transition
+// code, which this debug spawn skips entirely by jumping currentScene
+// straight to "oak". Without this, walking down into autumn from this
+// debug spawn permanently couldn't trigger the topple at all, since
+// updateHayBales' one-time trigger check would just keep failing.
+discoveredScenes.oak = true;
+discoveredScenes.ratroom = true;
+updateMapUI();
 
 update();
 
