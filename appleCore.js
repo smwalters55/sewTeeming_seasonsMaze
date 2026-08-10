@@ -38571,13 +38571,15 @@ updateSeasonTransition(deltaTime);
   if (currentScene === "autumn" && !hayBales.toppled && cameraX > hayBales.x + 56 - canvas.width + 40) {
     cameraX = hayBales.x + 56 - canvas.width + 40;
   }
-  // CONFIRMED CHANGE: "room cut" at the far end of the squash patch, per
-  // direct request -- once the camera reaches this point the view just
-  // stops scrolling, even though the player can keep walking right past
-  // it. Anchored a bit before the messy end-cap bale pile (x:6300) so
-  // that pile sits just past the visible edge, reading as a hard stop
-  // to the space rather than trailing off into more empty ground.
-  const AUTUMN_END_ROOM_CUT_X = 6150;
+  // CONFIRMED BUG FIX: this was anchored so far back (6150) that the
+  // end-cap bale pile (x:6245-6330) landed entirely past the clamped
+  // camera's own right edge -- invisible, not "just past" it. The
+  // whole point of this pile is to be the visible wall the room cuts
+  // off at, so the anchor needs to sit PAST the pile, not before it.
+  // "Room cut" at the far end of the squash patch: once the camera
+  // reaches this point the view just stops scrolling, even though the
+  // player can keep walking right past it.
+  const AUTUMN_END_ROOM_CUT_X = 6420;
   if (currentScene === "autumn" && hayBales.toppled && cameraX > AUTUMN_END_ROOM_CUT_X - canvas.width + 40) {
     cameraX = AUTUMN_END_ROOM_CUT_X - canvas.width + 40;
   }
