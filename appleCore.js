@@ -8116,7 +8116,13 @@ function drawDecorativeSquash(cx, cy, size, type) {
 // repeating jokes -- a small patch of squashes that each say their own
 // single thing reads more like a real little cast than a joke machine.
 const decorativeSquash = [
-  { x: 4505, size: 30, type: "gourd", talkedTo: false, line: "Too knobby to carve, too pretty to eat. I've made my peace with it." },
+  // CONFIRMED CHANGE: only this FIRST squash gets a notice-wiggle timer
+  // (see updateSquashNoticeWiggle/drawDecorativeSquashField) -- per
+  // direct request, a subtle hint that the patch is interactable at
+  // all, without spelling it out with a UI prompt. Once you've talked
+  // to this one, you already know to try space on the rest yourself,
+  // so none of the others need their own wiggle.
+  { x: 4505, size: 30, type: "gourd", talkedTo: false, line: "Too knobby to carve, too pretty to eat. I've made my peace with it.", noticeTimer: 2500 + Math.random() * 2000, noticeWiggle: 0 },
   { x: 5110, size: 34, type: "white", talkedTo: false, line: "Pale on purpose. It's called dramatic contrast." },
   { x: 4915, size: 42, type: "hubbard", talkedTo: false, line: "Bloated on purpose too. Confidence, mostly." },
   { x: 5656, size: 28, type: "white", talkedTo: false, line: "..." },
@@ -8175,8 +8181,12 @@ const SQUASH_TOP_EXTENT = {
 
 function drawDecorativeSquashField(camX) {
   decorativeSquash.forEach(s => {
-    const sx = s.x - camX;
+    let sx = s.x - camX;
     if (sx < -50 || sx > canvas.width + 50) return;
+    // CONFIRMED CHANGE: idle notice-shake, same shape as the graft
+    // sticks/wiggle bush/willow -- only ever set on decorativeSquash[0]
+    const shake = s.noticeWiggle > 0 ? Math.sin(s.noticeWiggle * 0.4) * 1.6 : 0;
+    sx += shake;
     ctx.fillStyle = "rgba(0,0,0,0.15)";
     ctx.beginPath();
     ctx.ellipse(sx, gy + 3, s.size * 0.4, s.size * 0.1, 0, 0, Math.PI * 2);
@@ -8207,6 +8217,24 @@ function drawDecorativeSquashField(camX) {
       drawFittedSpeechBubble(ctx, spx, gy - SPECIAL_SQUASH.size * bottomExtent - SPECIAL_SQUASH.size * 0.5 - 30, lines);
     }
   }
+}
+
+// CONFIRMED CHANGE: subtle idle hint that the squash patch is
+// interactable at all -- same noticeTimer/noticeWiggle language used by
+// the graft sticks, wiggle bush, willow, and vault clouds elsewhere in
+// the game. Only the first squash gets this; once you've talked to it
+// you already know to try space on the rest, so the wiggle stops there
+// for good instead of just resetting on a timer like the others.
+function updateSquashNoticeWiggle(deltaTime) {
+  const s = decorativeSquash[0];
+  if (!s || s.talkedTo) return;
+
+  s.noticeTimer -= deltaTime * 1000;
+  if (s.noticeTimer <= 0) {
+    s.noticeWiggle = 150;
+    s.noticeTimer = 7000 + Math.random() * 4000;
+  }
+  if (s.noticeWiggle > 0) s.noticeWiggle--;
 }
 
 function updateSquashChatter() {
@@ -37557,6 +37585,7 @@ updateAcorns();
 updateVinePumpkin();
 updateWormRock();
 updateSquashChatter();
+updateSquashNoticeWiggle(deltaTime);
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
@@ -38316,53 +38345,30 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request. Drops the player inside
-// oak, near its entrance (x:380, the real seesaw-launch arrival point --
-// see connections' oak: {x:380}), with paper airplane, acorn, crown, and
-// pumpkin already in hand, plus already past ratroom (lampEverUsedInRatroom
-// set, so walking down into ratroom carries the lamp along automatically,
-// same as the real "lamp follows you into ratroom" logic near the top of
-// this file). Remove this block (see the "debug spawn removed" comment
-// further up in git history for the exact revert pattern) whenever a
-// real fresh-start playtest is next needed.
-currentScene = "oak";
-player.x = 380;
+// TEMPORARY debug spawn -- per direct request. Drops the player into
+// autumn, right in front of the carving station (carvingStation.x:4655),
+// with a pumpkin in hand ready to place (space, per the real placement
+// check) so the whole carving sequence -- placement, the eyebrows/eyes/
+// nose/mouth carving UI, the in-world 4-beat carve, and the final grown
+// glowing pumpkin -- can be tested immediately. Remove this block (see
+// the "debug spawn removed" comment further up in git history for the
+// exact revert pattern) whenever a real fresh-start playtest is next
+// needed.
+currentScene = "autumn";
+player.x = carvingStation.x - 30;
 player.y = 0;
+// CONFIRMED BUG FIX: the carving station only even DRAWS once
+// hayBales.toppled is true (see drawCarvingStation's early return),
+// and the standing-wall block elsewhere physically blocks the player
+// from passing hayBales.x at all until then -- without this the
+// station would be both invisible and unreachable from this spawn.
+hayBales.toppled = true;
 addToInventory("pumpkin");
-addToInventory("acorn");
-addToInventory("paperAirplane");
-touchInventoryOrder("paperAirplane");
-heldItem = "paperAirplane"; // matches the real auto-equip-in-oak behavior
-addToInventory("lamp");
-touchInventoryOrder("lamp");
-lampEverUsedInRatroom = true; // so re-entering ratroom auto-carries the lamp back in, per the real crossing logic
-// crown -- built from 8 leaves (CROWN_LEAVES_NEEDED), same shape the
-// real catch-the-falling-leaves sequence would produce, then marked
-// ready and worn so it shows up immediately with no extra key press.
-crownLeaves = Array.from({ length: CROWN_LEAVES_NEEDED }, (_, i) => ({
-  shape: i % 2 ? "maple" : "round",
-  color: LEAF_COLORS[i % LEAF_COLORS.length]
-}));
-crownState.ready = true;
-crownState.worn = true;
-crownState.promptEverShown = true;
-// CONFIRMED BUG FIX: the tea nook / cushion pile corner is gated on
-// oakLamp.collected specifically (see sittingAreas' cushionPile entry
-// and the tea nook's own comment "same unlock condition"), not on
-// inventory.lamp or lampEverUsedInRatroom -- just adding the lamp to
-// inventory above never actually unlocked it. This is the real lamp
-// pickup flag, so it needs to be set directly for the debug spawn to
-// match a real post-lamp-pickup state.
-oakLamp.collected = true;
-// CONFIRMED BUG FIX: the hay bales in autumn only topple once
-// discoveredScenes.oak AND discoveredScenes.ratroom are both true (see
-// updateHayBales) -- those only ever get set by the real scene-transition
-// code, which this debug spawn skips entirely by jumping currentScene
-// straight to "oak". Without this, walking down into autumn from this
-// debug spawn permanently couldn't trigger the topple at all, since
-// updateHayBales' one-time trigger check would just keep failing.
+touchInventoryOrder("pumpkin");
+heldItem = "pumpkin";
 discoveredScenes.oak = true;
 discoveredScenes.ratroom = true;
+discoveredScenes.autumn = true;
 updateMapUI();
 
 update();
