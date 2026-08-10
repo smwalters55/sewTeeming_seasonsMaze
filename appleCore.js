@@ -12453,15 +12453,25 @@ function drawForestRiverBoats(camX) {
     const by = gy + bob;
     const rot = b.stuck ? Math.sin(now * 0.002 + b.bobSeed) * 0.15 : 0.08;
     drawLeafBoatShape(ctx, bx, by, 9, rot, b.color);
-    // a small trailing wake while actually moving; a stuck boat instead
-    // gets a couple of faint still-water ripple rings around it so it
-    // visibly reads as caught rather than just paused mid-frame
+    // a trailing wake while actually moving -- two staggered ripple
+    // rings continuously growing and fading out behind the stern
+    // (instead of one single fixed-size ring, which just read as a
+    // static stray dot sitting behind the boat rather than anything
+    // rippling). Each ring eases outward in both size and distance
+    // behind the hull as it fades, then loops, so it reads as a real
+    // wake being left behind rather than a decoration painted in place.
     if (!b.stuck) {
-      ctx.strokeStyle = "rgba(230,240,225,0.35)";
-      ctx.lineWidth = 0.7;
-      ctx.beginPath();
-      ctx.ellipse(bx - 7, by + 1, 3.5, 1.4, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      [0, 0.5].forEach(offset => {
+        const phase = (now * 0.0011 + b.bobSeed + offset) % 1;
+        const ringR = 2 + phase * 5;
+        const alpha = 0.4 * (1 - phase);
+        const wx = bx - 6 - phase * 9;
+        ctx.strokeStyle = `rgba(230,240,225,${alpha.toFixed(3)})`;
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.ellipse(wx, by + 1, ringR, ringR * 0.42, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
     } else {
       ctx.strokeStyle = "rgba(230,240,225,0.25)";
       ctx.lineWidth = 0.6;
