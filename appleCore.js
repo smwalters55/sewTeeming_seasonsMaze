@@ -38603,7 +38603,13 @@ updateSeasonTransition(deltaTime);
 // removed" comment further up in git history for the exact revert
 // pattern) whenever a real fresh-start playtest is next needed.
 currentScene = "clouds";
-player.x = 300;
+// CONFIRMED BUG FIX: x:300 sits directly over cloudHole (x:300-360) --
+// landing there at ground level (y<=0) immediately triggers the same
+// fall-through-to-spring logic as jumping down the hole on purpose,
+// which is why this was dropping straight back into spring instead of
+// staying in clouds. Moved well clear of the hole, and further out
+// toward the gust zone (x:1650-1820) for direct testing.
+player.x = 1500;
 player.y = 0;
 addToInventory("boomerang");
 touchInventoryOrder("boomerang");
