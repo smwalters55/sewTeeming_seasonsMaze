@@ -33514,13 +33514,18 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     roundRect(ctx, px, drawPy, player.width, player.height, 8);
     ctx.clip();
     const duckT = typeof playerDuckAmount !== "undefined" ? playerDuckAmount : 0;
-    // deeper and much more visible than the first pass -- per direct
-    // feedback ("im not actually partially submerged lower though"),
-    // that version's low alpha (0.42) and pale teal barely read against
-    // the player's own body color. Darker/more saturated tint, higher
-    // alpha, and the line itself sits lower on the body by default
-    // (0.55 instead of 0.62) so more of the sprite genuinely looks wet.
-    const waterLineY = drawPy + player.height * (0.55 - duckT * 0.45); // waist-deep normally, nearly full-depth while ducking
+    // was 0.55 (and 0.62 before that) -- both put the tint line well
+    // above where the player's feet actually are, which reads as a
+    // chunk of "imaginary water" floating above the real river surface
+    // instead of lining up with it, per direct feedback ("the water
+    // line on player body needs to be much closer to the water line in
+    // the river... there is a lot of imaginary water above the river on
+    // player"). At rest the player's feet sit right at the real water
+    // surface, so the line needs to start down near the BOTTOM of the
+    // sprite (high fraction), not partway up the torso -- only ducking
+    // (which visually sinks the body down via the translate above)
+    // should pull it further up toward genuinely submerged.
+    const waterLineY = drawPy + player.height * (0.9 - duckT * 0.6); // just the feet/ankles normally, submerged well past the waist while ducking
     const wetGrad = ctx.createLinearGradient(0, waterLineY - 6, 0, waterLineY + 6);
     wetGrad.addColorStop(0, "rgba(20,55,68,0)");
     wetGrad.addColorStop(1, `rgba(20,55,68,${0.68 * floatSubmergeAmount})`);
