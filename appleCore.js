@@ -2888,22 +2888,41 @@ function drawLeafBoatShape(ctx, x, y, size, rotation, color) {
   ctx.translate(x, y);
   ctx.rotate(rotation);
   ctx.fillStyle = color || "#6a7a2f";
+  // a real canoe-ish hull now, not a pointed-both-ends leaf lens -- flat-
+  // ish bottom sweep between two upturned tips (bow and stern both curl
+  // up like the corners of an actual folded leaf boat would), instead of
+  // tapering to a point at each end, which read as too leaf-shaped and
+  // not boat-shaped enough. Per direct request ("make the folded leaf
+  // boat a lil more boat-ee").
   ctx.beginPath();
-  ctx.moveTo(size * 0.55, 0);
-  ctx.quadraticCurveTo(size * 0.15, -size * 0.32, -size * 0.5, -size * 0.16);
-  ctx.quadraticCurveTo(-size * 0.62, 0, -size * 0.5, size * 0.16);
-  ctx.quadraticCurveTo(size * 0.15, size * 0.32, size * 0.55, 0);
+  ctx.moveTo(size * 0.6, -size * 0.06); // bow tip, curled up
+  ctx.quadraticCurveTo(size * 0.58, size * 0.14, size * 0.34, size * 0.24); // down into the hull
+  ctx.quadraticCurveTo(0, size * 0.34, -size * 0.34, size * 0.24); // flat-ish bottom sweep
+  ctx.quadraticCurveTo(-size * 0.58, size * 0.14, -size * 0.6, -size * 0.06); // up into the stern
+  ctx.quadraticCurveTo(-size * 0.32, -size * 0.18, 0, -size * 0.15); // top rail back toward the bow
+  ctx.quadraticCurveTo(size * 0.32, -size * 0.18, size * 0.6, -size * 0.06);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  // a gunwale rim line along the top edge -- suggests real raised sides
+  // rather than a flat silhouette, the single biggest thing that reads
+  // as "boat" instead of "leaf floating flat"
+  ctx.strokeStyle = "rgba(0,0,0,0.24)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.56, -size * 0.07);
+  ctx.quadraticCurveTo(0, -size * 0.17, -size * 0.56, -size * 0.07);
+  ctx.stroke();
+  // fold crease down the middle, still the "this used to be a flat leaf"
+  // detail from before
+  ctx.strokeStyle = "rgba(0,0,0,0.16)";
   ctx.lineWidth = 0.6;
   ctx.beginPath();
-  ctx.moveTo(size * 0.5, 0);
-  ctx.lineTo(-size * 0.45, 0);
+  ctx.moveTo(size * 0.5, size * 0.02);
+  ctx.lineTo(-size * 0.5, size * 0.02);
   ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
   ctx.beginPath();
-  ctx.ellipse(size * 0.05, -size * 0.12, size * 0.18, size * 0.08, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(size * 0.06, -size * 0.06, size * 0.16, size * 0.07, -0.1, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -12158,8 +12177,18 @@ const FOREST_BREATHER_DUCK_BRANCH = { x: 5900, w: 46, clearance: 58, duckThresho
 // future between-beats content, and width (END - START) kept the same
 // so none of the internal obstacle spacing needed to change.
 const FOREST_FLOAT_ZONE_START_X = 6600;
-const FOREST_FLOAT_ZONE_END_X = 9000; // stretched again (was 7100, then 7400, then 7700, then 8100) -- room for the new double-jump gate near the end, per direct request ("can extend river to right more")
+const FOREST_FLOAT_ZONE_END_X = 9300; // pushed out another 300 to match FOREST_FLOAT_CALM_LEAD below, so the trailing gap after the last obstacle stays the same size it was before the calmer entrance was added
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
+// extra calm distance prepended before the obstacle course actually
+// starts -- the current (and the leaf/bark boat launch pile) still
+// begins right at FOREST_FLOAT_ZONE_START_X, but every obstacle,
+// collectible, and the lily pad are now offset by this much further
+// out, so there's a real stretch of "just drifting, nothing to dodge
+// yet" first. Per direct request ("more river that is calmer in the
+// start, left, of the rushing river"). FOREST_RIVER_BOAT_PILE_START_X
+// deliberately does NOT get this offset -- it should stay right at the
+// zone's own start, in that same calm lead-in.
+const FOREST_FLOAT_CALM_LEAD = 300;
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
 // "actually sitting partly in the water" wash on the player sprite (see
@@ -12220,13 +12249,13 @@ const FOREST_FLOAT_OBSTACLES = [
   // (peaks at 96), but now needs a real full jump instead of a tiny
   // reflexive hop. Per direct request ("make the single jump rocks
   // higher too so they are harder to clear").
-  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 72, type: "jump", variant: 0 },
-  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
-  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
-  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
-  { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 160, w: 40, clearance: 72, type: "jump", variant: 0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
   // out-of-phase moving log trio -- three logs close enough together
   // that their swings overlap, but on different speeds/phases (each
   // offset from the others) so there's no single fixed rhythm that
@@ -12234,10 +12263,10 @@ const FOREST_FLOAT_OBSTACLES = [
   // direct request ("out of phase double moving logs", then "add the
   // third moving log to right of the two moving logs next to each
   // other").
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1660, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
-  { x: FOREST_FLOAT_ZONE_START_X + 2000, w: 40, clearance: 110, type: "jump", variant: 2 }
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1660, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2000, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -12269,7 +12298,7 @@ const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 // collision (see the FLOAT ZONE update block), same landing-snap
 // pattern the autumn scene's own platforms use -- player.y actually
 // rests at heightAboveGround while standing on it, not just a visual.
-const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + 660, width: 56, heightAboveGround: 20 };
+const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 660, width: 56, heightAboveGround: 20 };
 let playerOnFloatLilypad = false;
 // minY (optional) gates a collectible behind actually reaching a
 // specific arc height, not just walking/floating near it at ground
@@ -12279,14 +12308,14 @@ let playerOnFloatLilypad = false;
 // gates, just above each one's own clearance, so grabbing one means
 // you cleared that gate at close to its real peak, not just barely.
 const FOREST_FLOAT_COLLECTIBLES = [
-  { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 430, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 600, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 860, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 1080, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 1300, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 1000, collected: false, minY: 128 }, // right over the spiky double-jump rock
-  { x: FOREST_FLOAT_ZONE_START_X + 2000, collected: false, minY: 113 }  // right over the plain double-jump gate
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 250, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 430, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 600, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 860, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1080, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1000, collected: false, minY: 128 }, // right over the spiky double-jump rock
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2000, collected: false, minY: 113 }  // right over the plain double-jump gate
 ];
 
 // leaf/bark boats -- launched right where the current starts, well
@@ -12643,7 +12672,15 @@ function drawFloatRock(ox, obBottom, w, variant, spiky) {
   // small a portion underwater -- "make the half underwater part a
   // little larger than the top part").
   ctx.fillStyle = "#6b6a5e";
-  [[0, 0.55, 1.2, 0.85], [0, -0.42, 0.8, 0.5], [-0.32, -0.28, 0.46, 0.34], [0.36, -0.3, 0.42, 0.36]].forEach(([dx, dy, sw, sh]) => {
+  // the submerged base and the main top blob now overlap by a lot more
+  // than before (top blob pulled down from dy -0.42 to -0.22, submerged
+  // blob pulled up from dy 0.55 to 0.42) -- at the old spacing the two
+  // circles only barely touched, which pinched in at the waterline and
+  // read as two distinct balls stacked rather than one boulder ("this
+  // still looks like two balls on top of each other"). A third small
+  // blob sits right at the waterline itself, sized to bridge whatever
+  // seam is still visible between the other two.
+  [[0, 0.42, 1.15, 0.9], [0, -0.22, 0.82, 0.52], [0, 0.08, 0.62, 0.4], [-0.32, -0.16, 0.46, 0.34], [0.36, -0.18, 0.42, 0.36]].forEach(([dx, dy, sw, sh]) => {
     ctx.beginPath();
     ctx.ellipse(ox + dx * rw, obBottom + dy * rh, rw * sw, rh * sh, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -12695,21 +12732,30 @@ function drawFloatRock(ox, obBottom, w, variant, spiky) {
       ctx.stroke();
     }
   }
-  // underwater tint -- clip to the submerged base blob's footprint and
-  // wash it with the same translucent teal as the water fill, so the
-  // part of the boulder below the surface actually reads as SEEN
-  // THROUGH water rather than dry rock that happens to be low. Sized to
-  // match the now-larger submerged blob above (was noticeably smaller
-  // than the top blobs -- "make the half underwater part a little
-  // larger than the top part").
+  // underwater tint -- washes the part of the boulder below the surface
+  // with the same translucent teal as the water fill, so it reads as
+  // SEEN THROUGH water rather than dry rock that happens to sit low.
+  // Re-traces the SAME blob shapes used for the rock body above (just
+  // clipped to below the waterline) instead of a separate hand-sized
+  // ellipse -- that separate ellipse had its own hard, perfectly
+  // circular edge that didn't match the rock's actual silhouette,
+  // cutting a crisp seam across the boulder right at the waterline.
+  // THAT seam was the real reason it read as two distinct balls stacked
+  // rather than one boulder ("this still looks like two balls on top of
+  // each other. the rock jumps"). Tracing the real silhouette means the
+  // tint's own edge can only ever fall exactly where the rock itself
+  // already is, so there's no extra boundary to misread as a second
+  // shape.
   ctx.save();
   ctx.beginPath();
   ctx.rect(ox - rw - 8, obBottom, (rw + 8) * 2, rh * 1.4);
   ctx.clip();
   ctx.fillStyle = "rgba(46,90,98,0.55)";
-  ctx.beginPath();
-  ctx.ellipse(ox, obBottom + 0.5 * rh, rw * 1.15, rh * 0.8, 0, 0, Math.PI * 2);
-  ctx.fill();
+  [[0, 0.42, 1.15, 0.9], [0, -0.22, 0.82, 0.52], [0, 0.08, 0.62, 0.4], [-0.32, -0.16, 0.46, 0.34], [0.36, -0.18, 0.42, 0.36]].forEach(([dx, dy, sw, sh]) => {
+    ctx.beginPath();
+    ctx.ellipse(ox + dx * rw, obBottom + dy * rh, rw * sw, rh * sh, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
   ctx.restore();
   ctx.restore();
 }
