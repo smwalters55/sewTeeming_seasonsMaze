@@ -3496,12 +3496,36 @@ function drawFruitTree(x, camX, type) {
   ctx.lineTo(tx - 6, gy - 80);
   ctx.stroke();
 
-  // canopy — spring green, gentle pulse (x-offset so trees don't pulse in sync)
+  // canopy — spring green, gentle pulse (x-offset so trees don't pulse in
+  // sync). Layered overlapping clusters plus individual leaf-shape
+  // accents on top, same technique autumn's own trees use (see
+  // drawLeafTree), instead of one flat plain circle -- per direct
+  // request for more real leaf shapes here instead of just circles.
   const pulse = 0.08 + Math.sin(performance.now() * 0.0012 + x) * 0.04;
-  ctx.fillStyle = `rgba(120,170,90,${0.9 + pulse})`;
-  ctx.beginPath();
-  ctx.arc(tx, gy - 120, 50, 0, Math.PI * 2);
-  ctx.fill();
+  const canopyCenterY = gy - 120;
+  const SPRING_CANOPY_CLUSTERS = [
+    { dx: -18, dy: -6, r: 27 }, { dx: 17, dy: -10, r: 28 },
+    { dx: 0, dy: -24, r: 28 }, { dx: -8, dy: 4, r: 24 }, { dx: 20, dy: 10, r: 22 },
+    { dx: -22, dy: 14, r: 20 }, { dx: 4, dy: 20, r: 22 }
+  ];
+  SPRING_CANOPY_CLUSTERS.forEach((c, i) => {
+    ctx.fillStyle = i % 2 === 0 ? `rgba(120,170,90,${0.9 + pulse})` : `rgba(100,150,75,${0.9 + pulse})`;
+    ctx.beginPath();
+    ctx.arc(tx + c.dx, canopyCenterY + c.dy, c.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // dense individual leaf accents on the canopy -- reuses the same
+  // round leaf silhouette autumn's own trees use, just in spring greens,
+  // so it reads as real scattered foliage rather than a smooth blob
+  const SPRING_LEAF_GREENS = ["#8fbf5e", "#7ea855", "#a8cf72"];
+  for (let i = 0; i < 11; i++) {
+    const a = pseudoRandom(x * 0.4 + i * 2.1) * Math.PI * 2;
+    const r = 14 + pseudoRandom(x * 0.7 + i * 1.3) * 22;
+    const accentX = tx + Math.cos(a) * r;
+    const accentY = canopyCenterY + Math.sin(a) * r * 0.7;
+    drawLeafShape(ctx, accentX, accentY, 5.5, pseudoRandom(x * 1.1 + i) * Math.PI, "round", SPRING_LEAF_GREENS[i % SPRING_LEAF_GREENS.length]);
+  }
 
   // fruit + highlight — count and layout vary per tree (seeded by x and
   // type), structured into evenly-divided slots with bounded jitter, so
@@ -5483,10 +5507,14 @@ const springFruitTrees = [
    ====================================================== */
 const STICK_HEIGHT_ABOVE_GROUND = 65;
 
+// noticeTimer/noticeWiggle -- same idle-tell language as the elephant's
+// tail and the forest leaf piles: an unclaimed stick gives itself away
+// with a small periodic tug on a slow timer, rather than sitting
+// perfectly static and easy to miss against the tree.
 const sticks = {
-  plum: { x: 330, collected: false, color: "#5a3a5e", cracking: false, crackT: 0 },
-  pear: { x: 550, collected: false, color: "#7a9a4a", cracking: false, crackT: 0 },
-  peach: { x: 950, collected: false, color: "#c98a4a", cracking: false, crackT: 0 }
+  plum: { x: 330, collected: false, color: "#5a3a5e", cracking: false, crackT: 0, noticeTimer: 3000 + Math.random() * 3000, noticeWiggle: 0 },
+  pear: { x: 550, collected: false, color: "#7a9a4a", cracking: false, crackT: 0, noticeTimer: 4500 + Math.random() * 3000, noticeWiggle: 0 },
+  peach: { x: 950, collected: false, color: "#c98a4a", cracking: false, crackT: 0, noticeTimer: 6000 + Math.random() * 3000, noticeWiggle: 0 }
 };
 const STICK_CRACK_DURATION = 700; // ms — a real delay before it actually detaches
 const STICK_BURST_DURATION = 500; // ms — wood-bit particles fly off and fade
@@ -5552,7 +5580,9 @@ function drawTreeSticks(camX) {
       return;
     }
 
-    const shake = stick.cracking ? Math.sin(stick.crackT * 0.05) * (stick.crackT / STICK_CRACK_DURATION) * 2 : 0;
+    const shake = stick.cracking
+      ? Math.sin(stick.crackT * 0.05) * (stick.crackT / STICK_CRACK_DURATION) * 2
+      : (stick.noticeWiggle > 0 ? Math.sin(stick.noticeWiggle * 0.4) * 1.6 : 0);
 
     ctx.strokeStyle = "#4a3020";
     ctx.lineWidth = 2;
@@ -5581,15 +5611,87 @@ function updateTreeSticks(deltaTime) {
         inventory[treeType + "Stick"] = 2; // grants 2 automatically per collection, not just 1
         touchInventoryOrder(treeType + "Stick");
         updateInventoryUI();
+        graftStickPromptState.promptEverShown = true; // real first use -- retire the carved prompt for good
       }
       return;
     }
+
+    stick.noticeTimer -= deltaTime * 1000;
+    if (stick.noticeTimer <= 0) {
+      stick.noticeWiggle = 150;
+      stick.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (stick.noticeWiggle > 0) stick.noticeWiggle--;
 
     if (player.jumping && pressedDownNear(stick.x, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
       stick.cracking = true;
       stick.crackT = 0;
     }
   });
+}
+
+// GRAFT CLARITY PROMPTS -- two one-time carved-wood callouts (same
+// component/materialize animation as the crown and boomerang prompts),
+// added because the graft process tested as genuinely confusing: the
+// jump-then-press-down interaction has no on-screen explanation
+// anywhere else, and the snail's own dialogue is deliberately more
+// riddle than instruction. First prompt fires the first time the
+// player is ever near an unclaimed stick, explaining how to snap one
+// off; it retires for good the moment a stick is actually collected.
+// Second prompt fires the first time the player is actually carrying
+// honey near any graft tree, explaining both the honey-dab step AND
+// the "different tree's stick" follow-up in one line, since those two
+// steps are really one continuous action; it retires once honey is
+// actually placed for the first time.
+const graftStickPromptState = { promptEverShown: false, promptAnimT: 9999 };
+const GRAFT_STICK_PROMPT_LINES = ["Press ↓ while jumping here", "to snap off a branch."];
+const graftHoneyPromptState = { promptEverShown: false, promptAnimT: 9999 };
+const GRAFT_HONEY_PROMPT_LINES = ["Press ↓ while jumping to dab honey —", "then bring a different tree's own stick, same way."];
+
+function updateGraftPrompts(deltaTime) {
+  if (!graftStickPromptState.promptEverShown) {
+    if (graftStickPromptState.promptAnimT >= 9999) {
+      const nearAnyStick = Object.values(sticks).some(s => !s.collected && Math.abs(player.x + player.width / 2 - s.x) < 45);
+      if (nearAnyStick) graftStickPromptState.promptAnimT = 0;
+    }
+    if (graftStickPromptState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
+      graftStickPromptState.promptAnimT += deltaTime * 1000;
+    }
+  }
+  if (!graftHoneyPromptState.promptEverShown) {
+    if (graftHoneyPromptState.promptAnimT >= 9999) {
+      const nearAnyTree = heldItem === "honey" && Object.values(GRAFT_TREE_X).some(x => Math.abs(player.x + player.width / 2 - x) < 45);
+      if (nearAnyTree) graftHoneyPromptState.promptAnimT = 0;
+    }
+    if (graftHoneyPromptState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
+      graftHoneyPromptState.promptAnimT += deltaTime * 1000;
+    }
+  }
+}
+
+function drawGraftStickPrompt(camX) {
+  if (graftStickPromptState.promptEverShown || graftStickPromptState.promptAnimT >= 9999) return;
+  let nearest = null, nearestDist = Infinity;
+  Object.values(sticks).forEach(s => {
+    if (s.collected) return;
+    const d = Math.abs(player.x + player.width / 2 - s.x);
+    if (d < nearestDist) { nearestDist = d; nearest = s; }
+  });
+  if (!nearest) return;
+  const sx = nearest.x - camX, sy = gy - STICK_HEIGHT_ABOVE_GROUND;
+  drawCarvedWoodPrompt(sx, sy - 40, graftStickPromptState.promptAnimT, GRAFT_STICK_PROMPT_LINES);
+}
+
+function drawGraftHoneyPrompt(camX) {
+  if (graftHoneyPromptState.promptEverShown || graftHoneyPromptState.promptAnimT >= 9999) return;
+  let nearestX = null, nearestDist = Infinity;
+  Object.values(GRAFT_TREE_X).forEach(x => {
+    const d = Math.abs(player.x + player.width / 2 - x);
+    if (d < nearestDist) { nearestDist = d; nearestX = x; }
+  });
+  if (nearestX === null) return;
+  const sx = nearestX - camX, sy = gy - STICK_HEIGHT_ABOVE_GROUND;
+  drawCarvedWoodPrompt(sx, sy - 40, graftHoneyPromptState.promptAnimT, GRAFT_HONEY_PROMPT_LINES);
 }
 
 const springBushes = [280, 400, 700, 830, 1060, 1160].map(x => ({ x }));
@@ -9875,6 +9977,7 @@ function updateGraftTrees(deltaTime) {
       state.honeyGloop = true;
       honeyScoops--;
       updateInventoryUI();
+      graftHoneyPromptState.promptEverShown = true; // real first use -- retire the carved prompt for good
       return;
     }
 
@@ -10055,7 +10158,7 @@ function drawSnail(camX) {
     const anyHoneyWaiting = Object.values(graftState).some(s => s.honeyGloop);
     drawSpeechBubble(ctx, nx - 20, ny - 30, anyHoneyWaiting ? [
       "I know you love your graph-ts, don't you?",
-      "A branch might stick nicely there now."
+      "A DIFFERENT tree's own stick sticks nicely there now."
     ] : [
       "Something sweet and sappy goes a long way."
     ]);
@@ -10088,13 +10191,22 @@ const squirrel = {
 const SQUIRREL_WALK_SPEED = 20;
 
 function getSquirrelStage() {
-  if (digSite.dug && !digSite.planted) return "dug";
+  if (digSite.dug && !digSite.planted) {
+    // the hole's ready, but there's nothing to plant without a peanut
+    // first -- and the elephant's tail (already wiggling its own
+    // notice-tell up in the clouds) is the only place one ever comes
+    // from, so point at it directly instead of leaving the "circus
+    // snack" line to be the only clue.
+    const hasPeanut = (inventory.peanut > 0) || heldItem === "peanut";
+    return hasPeanut ? "dug" : "dugNoPeanut";
+  }
   if (digSite.planted && !digSite.watered) return "planted";
   return null;
 }
 
 const SQUIRREL_DIALOGUE = {
   dug: ["Now THAT'S a hole.", "A circus snack might do well in there."],
+  dugNoPeanut: ["Now THAT'S a hole.", "Something's shaking its tail up in the clouds — hungry for a peanut, I'd bet."],
   planted: ["All planted and patient.", "Thirsty dirt doesn't grow much."]
 };
 
@@ -10531,6 +10643,8 @@ function drawSpringScene(camX) {
   springFruitTrees.forEach(t => drawFruitTree(t.x, camX, t.type));
   drawTreeSticks(camX);
   drawGraftEffects(camX);
+  drawGraftStickPrompt(camX);
+  drawGraftHoneyPrompt(camX);
   drawKnockableFruits(camX);
   drawSnail(camX);
 
@@ -10542,7 +10656,7 @@ function drawSpringScene(camX) {
   drawWiggleBush(camX);
   drawWillow(camX);
   drawDigSitePlantVine(camX);
-  drawSquirrel(camX);
+  if (discoveredScenes.clouds) drawSquirrel(camX); // stays out of sight until the clouds have actually been visited
 
   drawRabbit(camX);
 
@@ -36207,12 +36321,15 @@ function updateSpringScene(deltaTime) {
   updateWiggleBush(deltaTime);
   updateWillow(deltaTime);
   updateDigPlantVine(deltaTime);
-  updateSquirrelWander(deltaTime);
+  if (discoveredScenes.clouds) {
+    updateSquirrelWander(deltaTime);
+    updateNPCIdle(squirrel);
+  }
   updateTreeSticks(deltaTime);
   updateSnailWander(deltaTime);
   updateGraftTrees(deltaTime);
+  updateGraftPrompts(deltaTime);
   updateKnockableFruits(deltaTime);
-  updateNPCIdle(squirrel);
 
   // HOLES — only trip the fall if grounded (player.y<=0) and NOT mid-jump
   // over it; jumping keeps player.y > 0 while crossing the hole's x-range
