@@ -11230,13 +11230,22 @@ let floatSubmergeAmount = 0;
 // zone's new extra length -- real obstacle variety is still an open
 // brainstorm (see the reply this was built alongside), this just keeps
 // the stretched zone from having a long empty gap in the meantime.
+// duck-type obstacles are widened (44 -> 70) from the jump ones -- the
+// occlusion overlay (drawForestFloatDuckOverlay) only redraws the
+// log's own rectangle over the player, so whenever the player was
+// passing through near an EDGE of that rectangle rather than dead
+// center, a sliver of the (slightly-widened-by-the-duck-squash) head
+// stuck out past it -- visible in a direct video report as a small
+// purple corner poking out from under the log. Widening the log gives
+// real horizontal margin so the overlay fully covers the player
+// anywhere within the obstacle's passable zone, not just its middle.
 const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 44, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck" },
   { x: FOREST_FLOAT_ZONE_START_X + 520, w: 40, clearance: 40, type: "jump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 44, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck" },
   { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 1220, w: 44, clearance: 48, type: "duck" }
+  { x: FOREST_FLOAT_ZONE_START_X + 1220, w: 70, clearance: 48, type: "duck" }
 ];
 const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
