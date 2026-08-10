@@ -20759,11 +20759,25 @@ function drawTrapDoorSequence(camX) {
     const remainingW = w * (1 - p);
     const rollX = rx + w / 2 - remainingW;
     if (remainingW > 1) {
+      // CONFIRMED BUG FIX: that extra `ctx.translate(camX, 0)` before
+      // calling drawNookRug(camX) was double-applying the camera shift --
+      // drawNookRug already converts world->screen internally via
+      // `rx = nookRug.x - camX`, so translating by camX first and THEN
+      // subtracting it again inside drawNookRug put the actual rug
+      // artwork back out at world x (nookRug.x), off to the side of the
+      // clip rect (which was correctly built in real screen space from
+      // the outer `rx` above). Any time the camera had actually scrolled
+      // (camX > 0 -- true for basically every real approach to this nook),
+      // the clip window showed nothing at all, and only the separately-
+      // drawn plain cylinder shape below was visible -- reported as "the
+      // carpet disappear[s] snap and then some weird pretend roll thing
+      // happens." Removing the stray translate lets the real rug art
+      // shrink away inside its own clip instead of a bare cylinder
+      // standing in for it.
       ctx.save();
       ctx.beginPath();
       ctx.rect(rollX, ry - h / 2, remainingW, h);
       ctx.clip();
-      ctx.translate(camX, 0);
       drawNookRug(camX);
       ctx.restore();
     }
@@ -26245,9 +26259,20 @@ const moleShopDialogue = { active: false, index: 0, lines: [] };
    ------------------------------------------------------ */
 let moleAlcove2KleinTipAt = -99999;
 const moleAlcove2Dialogue = { active: false, index: 0, lines: [] };
+// CONFIRMED CHANGE: added a third, short beat purely to host the tip.
+// It used to fire 500ms after the SECOND bubble opened -- but that
+// bubble carries the longer of the two explanation lines, and 500ms
+// isn't reliably enough time to read it before the bottle demo grabs
+// attention out from under it. Per direct feedback ("do klein bottle tip
+// as third interaction? or wait a few more beats"), went with the third
+// interaction: the player now advances past both explanation lines at
+// their own pace, and the tip only fires once they choose to move on to
+// this last, deliberately brief "go ahead and look" beat -- no more
+// guessing at a reading-time delay at all.
 const moleAlcove2Lines = [
   ["Careful with that one. Found it wedged between two roots, no idea whose it was.", "Pour something in, it stays put -- tip it clean upside down, still doesn't come out."],
-  ["Near as I can tell, it hasn't got a proper outside to spill onto.", "Don't ask me to explain it further than that."]
+  ["Near as I can tell, it hasn't got a proper outside to spill onto.", "Don't ask me to explain it further than that."],
+  ["Go on, take a look."]
 ];
 
 function startMoleAlcove2Dialogue() {
@@ -26258,10 +26283,11 @@ function startMoleAlcove2Dialogue() {
   // that landed at the same moment as the first line of text, so
   // reading the first bubble and noticing the tip were competing for
   // attention at once ("trying to read the first when it happens and
-  // missed it a few times"). Now armed for the SECOND bubble instead
-  // (see advanceMoleAlcove2Dialogue), with a short extra delay once
-  // that bubble opens so the tip doesn't fire in the same instant as
-  // the new text either.
+  // missed it a few times"). Now armed for the THIRD bubble instead
+  // (see advanceMoleAlcove2Dialogue), with a short buffer once that
+  // bubble opens -- just enough to feel intentional, not a reading-time
+  // safety net, since the player already chose to advance past both
+  // explanation lines before reaching it.
   moleAlcove2KleinTipAt = -99999;
 }
 
@@ -26271,8 +26297,8 @@ function advanceMoleAlcove2Dialogue() {
     moleAlcove2Dialogue.active = false;
     return;
   }
-  if (moleAlcove2Dialogue.index === 1) {
-    moleAlcove2KleinTipAt = performance.now() + 500;
+  if (moleAlcove2Dialogue.index === 2) {
+    moleAlcove2KleinTipAt = performance.now() + 300;
   }
 }
 
