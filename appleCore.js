@@ -195,7 +195,8 @@ const ITEM_ICONS = {
   cushionPart: "⚙️",
   stone: "🪨",
   aragonite: "🟠",
-  geode: "🪨"
+  geode: "🪨",
+  cloudBlossom: "🌸"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -448,6 +449,10 @@ const ITEM_CANVAS_RENDER = {
   bridgePiece: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "bridgePiece");
+  },
+  cloudBlossom: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCloudBlossomShape(iconCtx, 10, 11, 7, 0);
   }
   // NOTE: "gnawedStick" is itemType-checked in drawCollectible but is never
   // actually granted anywhere in the game (no addToInventory/hasItem call
@@ -467,7 +472,7 @@ const ITEM_CANVAS_RENDER = {
 // aragonite and geode both added -- neither is a stackable pickup, each
 // is exactly one unique found mineral (with its own permanent shine/crack
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode"];
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "cloudBlossom"];
 
 function updateInventoryUI() {
   const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
@@ -4667,6 +4672,65 @@ function drawExtravagantGoldPileShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
+// the vine-top reward -- replaces the old gold pile now that tunnel
+// town's mine cart has its own real gold-collecting minigame (see
+// drawExtravagantGoldPileShape above). A single pale blossom that only
+// grows this high up: soft glow, radiating translucent petals, a
+// glinting center, a few drifting sparkle motes. Deliberately not
+// naming anything specific about it -- same fairytale-vague spirit as
+// the squirrel's own "something huge and gold is slowly becoming
+// itself" hint elsewhere, just for the vine's own secret instead.
+function drawCloudBlossomShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+
+  // soft glow
+  ctx.fillStyle = `rgba(255,250,230,${0.18 + pulse * 0.18})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 1.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // petals -- six, pale and slightly translucent, radiating from center
+  const petalCount = 6;
+  for (let i = 0; i < petalCount; i++) {
+    const a = (i / petalCount) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.fillStyle = i % 2 === 0 ? "#f6ecff" : "#eaf6ff";
+    ctx.strokeStyle = "rgba(150,140,180,0.35)";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(size * 0.35, -size * 0.55, 0, -size * 1.05);
+    ctx.quadraticCurveTo(-size * 0.35, -size * 0.55, 0, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // glowing center
+  ctx.fillStyle = `rgba(255,224,140,${0.85 + pulse * 0.15})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a few drifting sparkle motes
+  for (let i = 0; i < 4; i++) {
+    const a = performance.now() * 0.0015 + i * (Math.PI / 2);
+    const r = size * 1.3 + Math.sin(performance.now() * 0.002 + i) * 3;
+    ctx.fillStyle = `rgba(255,255,240,${0.5 + pulse * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r * 0.7, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
   if (itemType === "boomerang") {
@@ -4814,6 +4878,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawStickShape(ctx, x, y, size * 1.3, rotation + 0.5, sticks[treeType].color);
   } else if (itemType === "goldPile") {
     drawGoldPileShape(ctx, x, y, size, rotation);
+  } else if (itemType === "cloudBlossom") {
+    drawCloudBlossomShape(ctx, x, y, size, rotation);
   } else if (itemType === "cloudPiece") {
     drawCloudPieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "peanut") {
@@ -9652,18 +9718,32 @@ const PEANUT_PIT_DEPTH = 14; // how far below the flat ground line the peanut/vi
 const PLANT_FALL_DURATION = 700; // ms — gentle fall, not instant
 const DIG_ANIM_DURATION = 1800;
 
+// climbHeight raised way past a single fixed 400px canvas (per direct
+// request, "make vine grow taller up past normal y... I want it to feel
+// grander") -- spring now gets its own vertical camera follow, same
+// cameraY pattern oak's book-pile jump run already uses, so the climb
+// isn't capped at "whatever leaves 50px of screen headroom" anymore.
+// See updateSpringScene's own cameraY line and drawSpringScene's ground
+// translate for the other half of this.
 const peanutVine = {
   x: 2680,
   growProgress: 0, // 0 to 1 over GROW_DURATION
   grown: false,
-  climbHeight: 250, // reduced — verified: 50px margin below screen top, still well beyond double-jump max (~140.6)
+  climbHeight: 700,
   mounted: false,
   playerClimbHeight: 0
 };
 const VINE_GROW_DURATION = 4000;
-const VINE_CLIMB_SPEED = 70; // units/sec while holding up
+const VINE_CLIMB_SPEED = 100; // units/sec while holding up -- raised alongside climbHeight so the taller climb doesn't just take proportionally longer
 
-const vineGoldPile = {
+// the reward waiting at the top -- was a gold pile, but tunnel town's
+// mine cart now has its own whole gold-collecting minigame (see
+// MINE_CART_GOLD / addToInventory("goldPile") there), which made a
+// single static gold pile up here read as a redundant, lesser version
+// of the same thing rather than its own moment. Swapped for something
+// that belongs to the vine specifically. Kept the variable name generic
+// (not vineGoldPile) since it's not gold anymore.
+const vineTopReward = {
   collected: false,
   collecting: false
 };
@@ -10565,7 +10645,12 @@ function drawSpringScene(camX) {
   sky.addColorStop(0.85, "#fbf0d8"); // cream near horizon
   sky.addColorStop(1, "#f7e6c9");    // soft ground blend
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  // extended by cameraY (a no-op except while climbing the vine) so the
+  // sky stays solid all the way down to wherever the translated ground
+  // layer below actually sits this frame -- same white-gap fix oak
+  // needed for its own book-pile jump run, same root cause: the ground
+  // layer scrolls to follow the player up, the fixed background didn't.
+  ctx.fillRect(0, 0, canvas.width, gy + cameraY);
 
   // soft horizon glow
   const glow = ctx.createLinearGradient(0, gy - 130, 0, gy + 30);
@@ -10609,6 +10694,15 @@ function drawSpringScene(camX) {
   }
 
   drawCrows(camX); // same birds, consistent across zones
+
+  // everything from here down is ground-level (or reaches up from it, like
+  // the vine and the goal cloud) -- translating the whole block by cameraY
+  // in one shot keeps every element's position relative to each other
+  // exactly as authored, without threading a manual +cameraY into dozens
+  // of individual draw calls the way drawOakScene's book piles needed to.
+  // A no-op except while mounted on the vine (see updateSpringScene).
+  ctx.save();
+  ctx.translate(0, cameraY);
 
   // --- GROUND ---
   ctx.fillStyle = "#a8ce85"; // base grass fill
@@ -10668,6 +10762,8 @@ function drawSpringScene(camX) {
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
   drawConnectionDoor(ctx, camX, connections[1].doors.spring, connections[1]);
   drawSpringDoorVineTendril(camX);
+
+  ctx.restore();
 }
 
 // a single thin, pale tendril curling onto one corner of the spring-side
@@ -18468,7 +18564,11 @@ function drawDigSitePlantVine(camX) {
     ctx.lineWidth = peanutVine.grown ? 6 : 3 + (currentHeight / peanutVine.climbHeight) * 3;
     ctx.beginPath();
     ctx.moveTo(dx, pitDepth); // anchored below ground, at the peanut's depth
-    const segments = Math.max(2, Math.round((currentHeight / peanutVine.climbHeight) * 12));
+    // segment count now scales off real world height instead of a flat
+    // 12 total -- climbHeight tripled (250 -> 700) for the taller climb,
+    // and locking segment count to the old fixed total would have
+    // stretched each one thin and sparse over the new distance
+    const segments = Math.max(2, Math.round(currentHeight / 40));
     for (let i = 1; i <= segments; i++) {
       const t = i / segments;
       const segH = t * currentHeight;
@@ -18490,10 +18590,10 @@ function drawDigSitePlantVine(camX) {
       }
     }
 
-    // gold pile near the top, until collected — only once FULLY grown
-    if (peanutVine.grown && !vineGoldPile.collected) {
+    // the blossom near the top, until collected — only once FULLY grown
+    if (peanutVine.grown && !vineTopReward.collected) {
       const topX = dx + Math.sin(peanutVine.climbHeight * 0.05) * 15;
-      drawGoldPileShape(ctx, topX, pitDepth - (peanutVine.climbHeight - 20), 12, 0);
+      drawCloudBlossomShape(ctx, topX, pitDepth - (peanutVine.climbHeight - 20), 12, 0);
     }
   }
 
@@ -18607,17 +18707,17 @@ function updateDigPlantVine(deltaTime) {
     }
   }
 
-  // GOLD PILE — sits near the vine's top, collectible once grown.
+  // BLOSSOM — sits near the vine's top, collectible once grown.
   // Wider tolerance than a typical pickup, since the spiral climb motion
   // drifts the player left-right — needs real forgiveness to reliably reach.
-  if (peanutVine.grown && !vineGoldPile.collected && !vineGoldPile.collecting) {
+  if (peanutVine.grown && !vineTopReward.collected && !vineTopReward.collecting) {
     if (pressedDownNear(peanutVine.x, peanutVine.climbHeight - 20, 40, 30, 30)) {
-      vineGoldPile.collecting = true;
+      vineTopReward.collecting = true;
       startCollectAnimation(
         { x: peanutVine.x, y: gy + PEANUT_PIT_DEPTH - (peanutVine.climbHeight - 20), size: 12, rotation: 0 },
-        "goldPile"
+        "cloudBlossom"
       );
-      vineGoldPile.collected = true;
+      vineTopReward.collected = true;
     }
   }
 
@@ -25669,7 +25769,7 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
-  } else if (heldItem === "goldPile" || heldItem === "marble") {
+  } else if (heldItem === "goldPile" || heldItem === "marble" || heldItem === "cloudBlossom") {
     geodeBreakerDialogue.lines = geodeBreakerTooShinyLines;
   } else if (heldItem === null) {
     geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
@@ -36304,6 +36404,16 @@ function updateFallState(deltaTime) {
 }
 
 function updateSpringScene(deltaTime) {
+  // vertical camera -- same follow-once-past-a-comfortable-height pattern
+  // oak's book-pile jump run uses (see updateOakScene's own cameraY line
+  // for the full rationale), but scoped to ONLY while actually mounted on
+  // the vine (rather than any time player.y crosses a threshold) so it
+  // can't touch the swing's own launch-toward-the-goal-cloud arc, which
+  // already legitimately reaches player.y ~220+ and was tuned and working
+  // fine on a static camera long before this. peanutVine.mounted covers
+  // the whole ride, up and back down (see its own dismount check further
+  // below), so the camera settles back to 0 the instant you're off it.
+  cameraY = peanutVine.mounted ? Math.max(0, player.y - 150) : 0;
 
   // mid-fall — timer/completion handled globally now, just don't run
   // anything else in this scene while it's happening
