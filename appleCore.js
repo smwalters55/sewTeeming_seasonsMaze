@@ -1756,6 +1756,110 @@ function drawBoomerangThrow(camX) {
   drawBoomerangShape(ctx, b.x - camX, gy - b.y, 12, b.rotation);
 }
 
+// CONFIRMED CHANGE: paper airplane throw-and-return-to-inventory, per
+// direct request after a brainstorm ("throw paper airplane in clouds,
+// have it return to inventory like a cute little fly around" + an
+// unprompted little intro throw the first time you pick it up in oak,
+// so the mechanic is shown rather than hinted at with text) +
+// ("want like at least 3 different flight patterns so it isn't the
+// same exact thing every time, random choice each throw").
+// Deliberately scoped to just clouds (the real, player-triggered
+// throw) and oak (a one-time scripted intro throw on pickup, no input
+// needed) rather than every scene -- see the brainstorm discussion:
+// clouds is open sky with nothing to clip into, other scenes would
+// need their own geometry/vibe pass before this makes sense there too.
+// Each pattern is a closed loop, defined purely as a function of
+// p (0..1) returning a {dx, dy} offset from the throw origin, always
+// ending back at (0,0) so the plane always visually returns to right
+// where it was thrown from -- same "never truly leaves inventory,
+// just un-held while in the air" trick the boomerang uses.
+const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
+  // 0: loop-de-loop -- one big vertical circle up and over
+  (p) => {
+    const ang = p * Math.PI * 2;
+    return { dx: Math.sin(ang) * 65, dy: -(1 - Math.cos(ang)) * 65 };
+  },
+  // 1: lazy figure-8, drifting out and looping back
+  (p) => {
+    const ang = p * Math.PI * 2;
+    return { dx: Math.sin(ang) * 85, dy: -Math.sin(ang * 2) * 40 };
+  },
+  // 2: tight corkscrew -- spirals out then winds back in on itself
+  (p) => {
+    const ang = p * Math.PI * 6;
+    const r = Math.sin(p * Math.PI) * 42;
+    return { dx: Math.sin(ang) * r, dy: -Math.abs(Math.cos(ang)) * r * 0.6 - Math.sin(p * Math.PI) * 12 };
+  },
+  // 3: flat skimming glide -- wide, shallow, low-altitude out-and-back
+  (p) => {
+    const ang = p * Math.PI;
+    return { dx: Math.sin(ang * 2) * 95, dy: -Math.sin(ang) * 22 };
+  }
+];
+const PAPER_AIRPLANE_FLIGHT_MS = 1500;
+let paperAirplaneFlight = null; // null when not flying
+
+// real, player-triggered throw -- clouds only, spacebar while held,
+// same key convention as the boomerang
+function throwPaperAirplane() {
+  paperAirplaneFlight = {
+    originX: player.x + player.width / 2,
+    originY: player.y + player.height * 0.6,
+    x: player.x + player.width / 2,
+    y: player.y + player.height * 0.6,
+    facing: player.facing,
+    t: 0,
+    pattern: Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length),
+    rotation: 0,
+    auto: false
+  };
+  heldItem = null; // out of hand while it flies, same as the boomerang
+}
+
+// one-time scripted intro throw -- fires itself on pickup in oak, no
+// input required, purely to teach the throw-and-return grammar by
+// showing it rather than telling the player about it
+function playPaperAirplaneIntroThrow() {
+  paperAirplaneFlight = {
+    originX: player.x + player.width / 2,
+    originY: player.y + player.height * 0.6,
+    x: player.x + player.width / 2,
+    y: player.y + player.height * 0.6,
+    facing: player.facing,
+    t: 0,
+    pattern: Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length),
+    rotation: 0,
+    auto: true // doesn't touch heldItem -- purely decorative, plays over the collect animation
+  };
+}
+
+function updatePaperAirplaneFlight(deltaTime) {
+  if (!paperAirplaneFlight) return;
+  const f = paperAirplaneFlight;
+  f.t += deltaTime * 1000;
+  f.rotation += deltaTime * (f.pattern === 2 ? 16 : 7); // corkscrew spins visibly faster, cosmetic only
+  const p = Math.min(f.t / PAPER_AIRPLANE_FLIGHT_MS, 1);
+  const offset = PAPER_AIRPLANE_FLIGHT_PATTERNS[f.pattern](p);
+  // mirrored by facing so it always reads as thrown the direction
+  // the player's actually facing, not always to one fixed side
+  f.x = f.originX + offset.dx * f.facing;
+  f.y = f.originY + offset.dy;
+
+  if (p >= 1) {
+    if (!f.auto) {
+      heldItem = "paperAirplane";
+      updateInventoryUI();
+    }
+    paperAirplaneFlight = null;
+  }
+}
+
+function drawPaperAirplaneFlight(camX) {
+  if (!paperAirplaneFlight) return;
+  const f = paperAirplaneFlight;
+  drawCollectible(ctx, f.x - camX, gy - f.y, 9, f.rotation, "paperAirplane");
+}
+
 
 // hay positions (generated ONCE)
 const hay = Array.from({length: 90}, () => ({
@@ -23934,8 +24038,9 @@ function drawFeatherHangSpot(camX) {
   if (hungAndDark) {
     // darkened again per direct feedback ("darken feather and jar after
     // placement, it should be visible in the dark but more just barely")
-    // -- 0.32 was still reading as a little too present in the dark.
-    ctx.globalAlpha = 0.15;
+    // -- 0.32 then 0.15 were both still reading as too present in the
+    // dark ("this is still very bright").
+    ctx.globalAlpha = 0.07;
   } else if (featherHung && lampLit && !featherHangAnim.active) {
     // CONFIRMED CHANGE: once the feather's actually resting here, even
     // WITH the lamp lit and pointed right at it this used to render at
@@ -24035,19 +24140,24 @@ function drawFeatherHangSpot(camX) {
     // the tilt is now real enough (bumped up from 0.34) that the lean is
     // unmistakable instead of a barely-there crook.
     const FEATHER_REST_SIZE = 17;
-    const FEATHER_REST_TILT = 0.58;
-    const startX = 0, endX = -5;
-    // CONFIRMED BUG FIX: endY moved from -9 down to -6 -- I rendered this
-    // standalone to actually check (not just reasoned about it), and at
-    // -9 the base landed right AT the rim line (y:-10) instead of past
-    // it, so the "redraw the pot on top" step below had nothing of the
-    // feather below the rim left to cover -- it read as resting ON the
-    // rim's edge, not planted down inside the neck. At -6 the base sits
-    // a few units inside the neck (rim is at y:-10, neck walls run
-    // roughly -7..-4 in x through here), so that redraw genuinely hides
-    // the part that's "inside," and the feather reads as coming out of
-    // the opening instead of perched on top of it.
-    const startY = -46, endY = -6;
+    // CONFIRMED BUG FIX: tilt pulled back from 0.58 to 0.55 and endX
+    // moved from -5 to 0 -- rendered standalone again (per direct
+    // feedback "feather is still slightly outside of jar on feather's
+    // bottom lefthand side") and confirmed the old -5/0.58 combo pushed
+    // the vane's wide mid-section left of the neck's actual wall at
+    // that height, poking out the left side right where it exits the
+    // rim. Centering endX and easing the tilt back slightly keeps the
+    // same unmistakable lean but tucks the whole base inside the neck
+    // width instead of clipping its own pot.
+    const FEATHER_REST_TILT = 0.55;
+    const startX = 0, endX = 0;
+    // CONFIRMED BUG FIX: endY moved from -6 to -7 alongside the above --
+    // rendered together, -7 keeps the base a couple units inside the
+    // neck (rim at y:-10, neck walls roughly -7..-4 in x through here)
+    // so the "redraw the pot on top" step still hides the inside part
+    // and the feather reads as coming out of the opening, not perched
+    // on top of it.
+    const startY = -46, endY = -7;
     const baseX = startX + (endX - startX) * settleP;
     const baseY = startY + (endY - startY) * settleP;
     const dropTilt = (1 - settleP) * 0.6; // still falls in with the old tumbling tilt...
@@ -25071,6 +25181,12 @@ function updateGiantPileCollapse(deltaTime) {
   }
 }
 
+// CONFIRMED CHANGE: a short delay before the one-time intro throw
+// plays (see playPaperAirplaneIntroThrow), so it doesn't visually
+// collide with the collect animation flying up into the inventory bar
+// -- the player sees "collected" resolve first, then their own
+// character tries the toy out unprompted a beat later.
+let paperAirplaneIntroPendingMs = 0;
 function updatePaperAirplane() {
   if (paperAirplaneSpot.collected) return;
   if (keys.spaceJustPressed && isPlayerNear(paperAirplaneSpot.x, paperAirplaneSpot.y, 20, 18, 15)) {
@@ -25080,6 +25196,15 @@ function updatePaperAirplane() {
     updateInventoryUI();
     startCollectAnimation({ x: paperAirplaneSpot.x, y: paperAirplaneSpot.y, size: 7, rotation: 0 }, "paperAirplane");
     startGiantPileCollapse();
+    paperAirplaneIntroPendingMs = 550;
+  }
+}
+function updatePaperAirplaneIntroPending(deltaTime) {
+  if (paperAirplaneIntroPendingMs <= 0) return;
+  paperAirplaneIntroPendingMs -= deltaTime * 1000;
+  if (paperAirplaneIntroPendingMs <= 0) {
+    paperAirplaneIntroPendingMs = 0;
+    playPaperAirplaneIntroThrow();
   }
 }
 
@@ -25612,9 +25737,21 @@ function drawRatRoomFeather(camX) {
     ctx.fill();
   });
 
-  // tucked at an angle among the clutter, leaning slightly right --
-  // reduced from a steep angle that read as too deliberately posed
-  drawFeatherShape(ctx, fx, fy, 9, 0.2);
+  // CONFIRMED CHANGE: leaning against the ledge from its BASE, not
+  // rotated around its own center. drawFeatherShape treats its (x,y)
+  // as the shape's middle (vane spans -size to +size around that
+  // point) -- rotating in place around the center is exactly what
+  // read as pinned/strapped to the wall rather than resting/leaning,
+  // the repeated feedback on this spot. Same fix pattern already
+  // applied to the feather-in-jar spot (featherHangSpot): translate
+  // to the actual resting point (the ledge), rotate, then draw the
+  // shape shifted up by its own size so the vane's BASE lands at the
+  // pivot instead of its middle.
+  ctx.save();
+  ctx.translate(fx - 1, fy + 7);
+  ctx.rotate(0.42);
+  drawFeatherShape(ctx, 0, -9, 9, 0);
+  ctx.restore();
 
   // string -- thin, loose, mostly-horizontal strands rather than
   // neat wound loops, since real string just tossed on wouldn't form
@@ -36565,6 +36702,7 @@ flyingItems.forEach(f => {
 });
 
 drawBoomerangThrow(camX); // the boomerang itself, while it's in the air
+drawPaperAirplaneFlight(camX); // the paper airplane, mid-throw (real or the oak intro)
 
 /* PLAYER */
 // standing on the giant book pile while it wobbles (mid-collapse-sequence,
@@ -37635,6 +37773,14 @@ if (currentScene === "autumn") {
     throwBoomerang();
   }
   updateBoomerangThrow(deltaTime);
+
+  // paper airplane -- real throw, clouds only, per the scoping from
+  // the brainstorm (see the big comment above throwPaperAirplane)
+  if (keys.space && heldItem === "paperAirplane" && currentScene === "clouds" && !paperAirplaneFlight) {
+    throwPaperAirplane();
+  }
+  updatePaperAirplaneFlight(deltaTime);
+  updatePaperAirplaneIntroPending(deltaTime);
 
   if (player.cloudLandingImmunity > 0) player.cloudLandingImmunity -= deltaTime * 1000;
 
