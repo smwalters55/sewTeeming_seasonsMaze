@@ -36674,13 +36674,16 @@ if (apple.split) {
 
   // honey: pickable once the hive's actually been knocked down, either
   // the ORIGINAL way (wait for it to settle on the ground, walk up,
-  // press down) OR now also by jumping up and catching it on the way
-  // down mid-fall -- same "must be descending" logic the boomerang catch
-  // above already uses, so it reads as a consistent rule across the game
-  // rather than a one-off. Settled pickup still needs no vy check at all
-  // (standing still and pressing down obviously still works).
+  // press down) OR now also by jumping and catching it mid-air while
+  // it's still falling. CONFIRMED CHANGE: this used to also require
+  // player.vy <= 0 (only while descending, matching the boomerang
+  // catch), but that meant jumping straight up INTO it on the way up
+  // didn't count even if the timing/position was otherwise right --
+  // now any jump timed right while it's still falling works, ascending
+  // or descending, since the honey's own height is what's actually
+  // being checked for proximity either way.
   if (honey.available && !honey.collected && !honey.collecting && !pickupHandledThisFrame) {
-    const canJumpCatchMidFall = honey.falling && player.jumping && player.vy <= 0;
+    const canJumpCatchMidFall = honey.falling && player.jumping;
     if ((!honey.falling || canJumpCatchMidFall) && pressedDownNear(honey.x, honey.heightAboveGround, 26, 20, 20)) {
       honey.falling = false; // catching it mid-air stops its own fall immediately
       honey.collecting = true;
@@ -37178,6 +37181,17 @@ updateSeasonTransition(deltaTime);
   // the gate.
   if (currentScene === "oak" && !discoveredScenes.ratroom && cameraX > OAK_JUMPRUN_GATE_X - canvas.width + 40) {
     cameraX = OAK_JUMPRUN_GATE_X - canvas.width + 40;
+  }
+  // CONFIRMED BUG FIX: before the hay bales topple, the player is
+  // physically walled off right at hayBales.x (see the standing-wall
+  // block above), but nothing was stopping the camera's own smooth
+  // follow from still drifting well past that wall, revealing a wide
+  // stretch of empty ground on the right that isn't reachable or
+  // populated with anything yet (the squash patch/carving station
+  // beyond only draw in once toppled). Clamp it to roughly one door's
+  // width past the bales instead, same pattern as the oak jump-run gate.
+  if (currentScene === "autumn" && !hayBales.toppled && cameraX > hayBales.x + 56 - canvas.width + 40) {
+    cameraX = hayBales.x + 56 - canvas.width + 40;
   }
 
   keys.leftJustPressed = false;
