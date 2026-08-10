@@ -12345,7 +12345,7 @@ const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
 const forestRiverBoats = []; // active boats: {x, spawnTime, stuck, driftMult, resolvedObstacles, bobSeed, color}
 const FOREST_RIVER_BOAT_MAX = 3;
 const FOREST_RIVER_BOAT_MAX_AGE_MS = 26000;
-const FOREST_RIVER_BOAT_COLORS = ["#6a7a2f", "#8a6a2f", "#5a6a2a"]; // leaf, bark, darker leaf
+const FOREST_RIVER_BOAT_COLORS = ["#6a7a2f", "#5a6a2a"]; // two leaf tones -- bark dropped per direct request
 // snag odds by obstacle type -- rocks (plain and spiky) are real solid
 // things to catch on; a moving log is a smaller/rarer target since it's
 // only in the boat's way part of the time; duck-type swamp-tree roots
