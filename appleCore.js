@@ -1944,10 +1944,16 @@ function handleInput(){
   // ratroom above -- placed at the room's own declared width
   if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
 
-  // oak's book-pile jump run stays gated until the ratroom has been
-  // visited -- see OAK_JUMPRUN_GATE_X's own comment. Matching camera
-  // clamp lives down with the other scene camera clamps below.
-  if (currentScene === "oak" && !discoveredScenes.ratroom && player.x > OAK_JUMPRUN_GATE_X) {
+  // oak's book-pile jump run stays gated until the lamp has actually
+  // been carried down and lit in the ratroom -- see OAK_JUMPRUN_GATE_X's
+  // own comment. CONFIRMED CHANGE: tightened from just having visited
+  // the ratroom (discoveredScenes.ratroom) to lampEverUsedInRatroom per
+  // direct request -- visiting alone left a long stretch of oak's floor
+  // sitting empty and out of reach for however long it took to also
+  // find, light, and hand off the lamp down there, which read as too
+  // much dead space with no clear reason. Matching camera clamp lives
+  // down with the other scene camera clamps below.
+  if (currentScene === "oak" && !lampEverUsedInRatroom && player.x > OAK_JUMPRUN_GATE_X) {
     player.x = OAK_JUMPRUN_GATE_X;
   }
 
@@ -12616,6 +12622,8 @@ function drawForestScene(camX) {
   drawForestBrambleBehindLayer(camX); // cached -- covers both the transition tapers and the main wall's behind layer
   drawForestBrambleBehindSnakeStrand(camX); // one crossing strand, live (not cached) so it can sit behind the snake specifically -- the rest of the front layer still draws after the snake, see drawForestBrambleFrontLayer below
   drawForestSnake(camX);
+  drawSnakeAskHint(camX);
+  drawSnakeBlockedHint(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
   drawForestClockworkLever(camX);
@@ -15896,8 +15904,32 @@ const forestSnake = {
   jumpGraceUntil: 0, // timestamp until which obstacle collision is suppressed right after initiating a jump, so the physics has time to actually lift the player before the check re-applies
   midJump: false, // true while airborne from a mid-ride jump (not a full dismount) -- keeps x tracking the snake's movement so a jump can actually carry the player past an obstacle, not just straight up and back down
   mountTime: 0, // performance.now() when riding last became true -- drives a brief ease-in on player.y (see the riding position update below) instead of an instant teleport onto the body
-  mountFromY: 0 // player's own y at the moment of mounting -- the ease-in blends FROM this TOWARD the body's height, so catches near the edge of the (deliberately generous) catch windows don't pop the player a large distance in a single frame
+  mountFromY: 0, // player's own y at the moment of mounting -- the ease-in blends FROM this TOWARD the body's height, so catches near the edge of the (deliberately generous) catch windows don't pop the player a large distance in a single frame
+  marbleGiven: false // the snake won't carry a rider until offered the ratroom marble first (see updateForestScene's own offer/mount-block handling) -- a one-time toll, permanent once paid
 };
+
+// brief floating hint shown when trying to mount the snake before
+// offering the marble -- same fade-in/hold/fade-out pattern as tunnel
+// town's own dig-blocked hint (see tunnelBlockedHint), just anchored to
+// the snake's head instead of a dig spot. Without this, a blocked mount
+// just silently bounced the player back to the ground with no
+// indication why, which reads as broken rather than "you're missing
+// something" -- especially since the marble itself was picked up a
+// long way back, in the ratroom, and is easy to forget about by the
+// time the player reaches the forest.
+const SNAKE_BLOCKED_HINT_DURATION = 2200;
+let snakeBlockedHint = { active: false, t: 0, x: 0, heightAboveGround: 0 };
+
+// the snake's own ask -- shown proactively the first time it's actually
+// close enough to matter (docked and near the player), not just as a
+// reaction to a failed mount attempt. Fires once and stays remembered,
+// so it doesn't nag on every later approach -- the blocked-mount hint
+// above still covers reminding a returning player who's forgotten.
+let snakeAskShown = false;
+let snakeAskActive = false;
+const SNAKE_ASK_HINT_DURATION = 3200;
+let snakeAskT = 0;
+const forestSnakeAskLines = ["This old snake won't carry just anyone...", "offer it something small, round, and shiny first."];
 
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
@@ -17578,6 +17610,35 @@ function drawForestSnake(camX) {
   ctx.restore();
 }
 
+// the snake's proactive ask, shown once on first encounter -- same
+// fitted speech bubble every other NPC uses, anchored above the head
+function drawSnakeAskHint(camX) {
+  if (!snakeAskActive) return;
+  const headP = getForestSnakePoint(0);
+  const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
+  const sx = headP.x - camX;
+  const sy = gy - headBodyTop - 30;
+  const p = snakeAskT / SNAKE_ASK_HINT_DURATION;
+  const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
+  ctx.globalAlpha = Math.max(0, fade);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, forestSnakeAskLines);
+  ctx.globalAlpha = 1;
+}
+
+// reaction to a blocked mount attempt -- same fade pattern as tunnel
+// town's own dig-blocked hint (see tunnelBlockedHint), just anchored to
+// wherever along the body the player actually tried to land
+function drawSnakeBlockedHint(camX) {
+  if (!snakeBlockedHint.active) return;
+  const p = snakeBlockedHint.t / SNAKE_BLOCKED_HINT_DURATION;
+  const fade = p < 0.15 ? p / 0.15 : (p > 0.75 ? (1 - p) / 0.25 : 1);
+  const sx = snakeBlockedHint.x - camX;
+  const sy = gy - snakeBlockedHint.heightAboveGround - 40;
+  ctx.globalAlpha = Math.max(0, fade);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["It curls away, unconvinced.", "Still wants that something round and shiny first."]);
+  ctx.globalAlpha = 1;
+}
+
 function updateForestScene(deltaTime) {
   updateReflectionPool();
   updateForestFrogs(deltaTime);
@@ -18201,6 +18262,55 @@ function updateForestScene(deltaTime) {
   // itself (see the removal note further up, near where its constants
   // used to live).
 
+  // offering the marble -- the toll that unlocks riding for good. Checked
+  // against the snake's actual current head position (not a fixed dock
+  // spot), so it works whichever side it's currently sitting at. Requires
+  // actively holding the marble (matches every other trade in the game,
+  // e.g. the mole shop's acorn check) rather than just having one buried
+  // in inventory, so it's a deliberate offer, not an accidental one.
+  if (!forestSnake.marbleGiven) {
+    const headP = getForestSnakePoint(0);
+    const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
+    // radiusYDown needs to comfortably cover standing at ordinary ground
+    // level (player.y=0) reaching up to the head's own resting height
+    // (FOREST_SNAKE_HEIGHT_ABOVE_GROUND=32) -- the first version of this
+    // used 30/20, just short of that, which meant a player standing flat
+    // on the ground right next to the snake wouldn't register as "near"
+    // at all.
+    const nearHead = isPlayerNear(headP.x, headBodyTop, 60, 50, 45);
+
+    // the snake's own ask -- fires once, the first time it's actually
+    // docked (not mid-travel across the bramble gap) and close enough
+    // to the player to notice, so the very first encounter proactively
+    // explains what it wants instead of leaving the player to guess
+    // after a failed jump.
+    if (!snakeAskShown && forestSnake.state === "docked" && nearHead) {
+      snakeAskShown = true;
+      snakeAskActive = true;
+      snakeAskT = 0;
+    }
+    if (snakeAskActive) {
+      snakeAskT += deltaTime * 1000;
+      if (snakeAskT >= SNAKE_ASK_HINT_DURATION) snakeAskActive = false;
+    }
+
+    if (heldItem === "marble" && inventory.marble > 0 && keys.spaceJustPressed &&
+        isPlayerNear(headP.x, headBodyTop, 30, 40, 45)) {
+      snakeAskActive = false;
+      inventory.marble -= 1;
+      if (inventory.marble <= 0) delete inventory.marble;
+      heldItem = null;
+      updateInventoryUI();
+      startPlaceAnimation("marble", headP.x, gy - headBodyTop, () => {
+        forestSnake.marbleGiven = true;
+      });
+    }
+  }
+  if (snakeBlockedHint.active) {
+    snakeBlockedHint.t += deltaTime * 1000;
+    if (snakeBlockedHint.t >= SNAKE_BLOCKED_HINT_DURATION) snakeBlockedHint.active = false;
+  }
+
   forestSnake.t += deltaTime * 1000;
 
   if (forestSnake.state === "docked") {
@@ -18285,6 +18395,13 @@ function updateForestScene(deltaTime) {
           player.y <= bodyTop + 6 &&
           player.y >= bodyTop - 34
         ) {
+          if (!forestSnake.marbleGiven) {
+            snakeBlockedHint.active = true;
+            snakeBlockedHint.t = 0;
+            snakeBlockedHint.x = p.x;
+            snakeBlockedHint.heightAboveGround = bodyTop;
+            break;
+          }
           forestSnake.riding = true;
           forestSnake.midJump = false;
           forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
@@ -18321,6 +18438,7 @@ function updateForestScene(deltaTime) {
           player.y <= bodyTop + 20 &&
           player.y >= bodyTop - 60
         ) {
+          if (!forestSnake.marbleGiven) break;
           forestSnake.riding = true;
           forestSnake.midJump = false;
           forestSnake.riderBodyProgress = i / segments;
@@ -21686,6 +21804,26 @@ function drawOakLampTable(camX) {
   }
 
   if (!oakLamp.collected) {
+    // subtle idle flicker -- a soft, slow-breathing glow behind the
+    // still-unlit globe, just enough to catch the eye across the room
+    // without shouting "collectible" the way the marble's own twinkle
+    // does. Deliberately more restrained than that: the marble is an
+    // optional bonus, easy to shrug off if missed, but the lamp is the
+    // one item that actually blocks progress (it's what the rat asks
+    // for next), so losing time hunting for something you already know
+    // you need would read as more frustrating than a missed extra.
+    // Same two-sine-wave organic pulse used elsewhere this session
+    // (the squash notice-wiggle, the nook rug's own light-sliver tell).
+    const t = performance.now();
+    const flicker = Math.max(0, 0.5 + Math.sin(t * 0.0018) * 0.3 + Math.sin(t * 0.0047 + 2.1) * 0.15);
+    const glow = ctx.createRadialGradient(tx, tableTop - 12, 0, tx, tableTop - 12, 22);
+    glow.addColorStop(0, `rgba(255, 235, 190, ${(flicker * 0.32).toFixed(3)})`);
+    glow.addColorStop(1, "rgba(255, 235, 190, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(tx, tableTop - 12, 22, 0, Math.PI * 2);
+    ctx.fill();
+
     drawLampShape(ctx, tx, tableTop - 12, 11, 0, false);
   }
 }
@@ -24943,11 +25081,22 @@ function drawRatRoomScene(camX) {
   if (lampLit) {
     const px = player.x + player.width / 2 - camX;
     const py = gy - player.y - 20;
+    // subtle idle flicker on the carried lamp's own glow -- per direct
+    // request ("general subtle flicker is in ref to the lamp we bring
+    // to rat room"). Only the intensity wavers, same two-sine-wave
+    // organic pulse used elsewhere this session -- the radius itself
+    // (LAMP_LIGHT_RADIUS) stays exactly fixed, since every shelf-unlock
+    // and item-visibility check in this room compares against that
+    // constant directly; flickering the radius instead of just the
+    // opacity would make those checks flicker in and out along with it.
+    const t = performance.now();
+    const flicker = Math.max(0, 0.5 + Math.sin(t * 0.0021) * 0.3 + Math.sin(t * 0.0055 + 0.7) * 0.15);
+    const intensity = 0.75 + flicker * 0.25; // stays mostly lit, just a gentle breathing waver rather than a harsh strobe
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     const glow = ctx.createRadialGradient(px, py, 0, px, py, LAMP_LIGHT_RADIUS);
-    glow.addColorStop(0, "rgba(255, 210, 140, 0.55)");
-    glow.addColorStop(0.6, "rgba(220, 170, 100, 0.25)");
+    glow.addColorStop(0, `rgba(255, 210, 140, ${(0.55 * intensity).toFixed(3)})`);
+    glow.addColorStop(0.6, `rgba(220, 170, 100, ${(0.25 * intensity).toFixed(3)})`);
     glow.addColorStop(1, "rgba(220, 170, 100, 0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
@@ -25099,17 +25248,32 @@ const ratGratefulLines = [
   ["A small lamp -- used to sit up top somewhere.", "Wouldn't have noticed it before now, I'd wager.", "Mind bringing it down?"]
 ];
 const ratNoSnackLines = [["Ah, no matter. Next time, perhaps?"]];
+// shown when the player IS actively holding something at this exact
+// moment, just not an acorn -- a distinct line from ratNoSnackLines
+// (empty-handed) so offering the wrong thing reads as "not that, but
+// keep looking" rather than the same flat "nothing to give" response.
+const ratWrongItemLines = [["Oh -- that's not really my thing.", "Something a bit nuttier would do the trick, if you happen to find one."]];
 
 function advanceRatDialogue() {
   if (ratDialogue.index === 1 && !ratNPC.fed) {
-    if (inventory.acorn > 0) {
+    // CONFIRMED BUG FIX: this used to check inventory.acorn > 0 alone,
+    // which meant the rat happily auto-fed on whatever acorn was
+    // sitting in inventory even if the player was actively holding (and
+    // clearly trying to offer) something else entirely -- silently
+    // ignoring the held item instead of reacting to it. Now gated on
+    // actually HOLDING the acorn, matching every other trade's own
+    // pattern (see the mole shop's identical acorn check), with a
+    // distinct rejection line for "holding something, just not that."
+    if (heldItem === "acorn" && inventory.acorn > 0) {
       inventory.acorn -= 1;
       if (inventory.acorn <= 0) delete inventory.acorn;
-      if (heldItem === "acorn") heldItem = null;
+      heldItem = null;
       updateInventoryUI();
       ratDialogue.lines = ratDialogue.lines.concat(ratGratefulLines);
       startAcornFeedAnim(); // this owns advancing the dialogue once it completes
       return;
+    } else if (heldItem) {
+      ratDialogue.lines = ratDialogue.lines.concat(ratWrongItemLines);
     } else {
       ratDialogue.lines = ratDialogue.lines.concat(ratNoSnackLines);
     }
@@ -37235,8 +37399,13 @@ updateSeasonTransition(deltaTime);
   // independently of player.x (not just derived from it) since the
   // camera's own follow offset (canvas.width*0.4 lead) would otherwise
   // still scroll the jump run into view even with the player pinned at
-  // the gate.
-  if (currentScene === "oak" && !discoveredScenes.ratroom && cameraX > OAK_JUMPRUN_GATE_X - canvas.width + 40) {
+  // the gate. CONFIRMED CHANGE: same tightening as the player clamp --
+  // gated on lampEverUsedInRatroom now, not just discoveredScenes.ratroom,
+  // so the camera stays boxed in (only the ~40px "door's width" sliver of
+  // empty floor past the gate, same pattern as autumn's hay-bale clamp)
+  // for the whole stretch until the lamp is actually delivered, instead
+  // of opening up the moment the ratroom is merely first visited.
+  if (currentScene === "oak" && !lampEverUsedInRatroom && cameraX > OAK_JUMPRUN_GATE_X - canvas.width + 40) {
     cameraX = OAK_JUMPRUN_GATE_X - canvas.width + 40;
   }
   // CONFIRMED BUG FIX: before the hay bales topple, the player is
