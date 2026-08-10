@@ -2876,6 +2876,38 @@ function drawLeafShape(ctx, x, y, size, rotation, shape, color) {
   ctx.restore();
 }
 
+// a leaf (or strip of bark) simply folded into a tiny boat -- pointed
+// bow, a soft curved stern, and a light crease line down the middle
+// suggesting the fold itself. Used both for the carried-in-hand icon
+// (see drawCollectible's "leafBoat" case) and for the actual boats
+// drifting on the float zone's current (drawForestRiverBoats). Per
+// direct request ("player folds it into a boat shaped leaf a very
+// simple one").
+function drawLeafBoatShape(ctx, x, y, size, rotation, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.fillStyle = color || "#6a7a2f";
+  ctx.beginPath();
+  ctx.moveTo(size * 0.55, 0);
+  ctx.quadraticCurveTo(size * 0.15, -size * 0.32, -size * 0.5, -size * 0.16);
+  ctx.quadraticCurveTo(-size * 0.62, 0, -size * 0.5, size * 0.16);
+  ctx.quadraticCurveTo(size * 0.15, size * 0.32, size * 0.55, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(size * 0.5, 0);
+  ctx.lineTo(-size * 0.45, 0);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(size * 0.05, -size * 0.12, size * 0.18, size * 0.08, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // prettier layered trees — multiple overlapping canopy clusters instead of
 // one flat circle, warm autumn tones pulled from the same palette their
 // own leaves use, instead of a mismatched green
@@ -4583,10 +4615,12 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafShape(ctx, x, y, size, rotation, itemType === "mapleLeaf" ? "maple" : "round", itemType === "mapleLeaf" ? "#e8481f" : "#e0722a");
   } else if (itemType === "leafBoat") {
     // carried-in-hand render for the forest leaf/bark boat pickup --
-    // otherwise heldItem="leafBoat" falls through to the generic apple
-    // piece icon at the bottom of this chain, which reads wrong held
-    // over the player's head
-    drawLeafShape(ctx, x, y, size, rotation, "round", "#6a7a2f");
+    // shown already folded into its little boat shape (see
+    // drawLeafBoatShape's own comment), not as a flat leaf, so it's
+    // clear what you're about to launch. Otherwise heldItem="leafBoat"
+    // would fall through to the generic apple piece icon at the bottom
+    // of this chain, which reads wrong held over the player's head
+    drawLeafBoatShape(ctx, x, y, size, rotation, "#6a7a2f");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
   } else if (itemType === "worm") {
@@ -11269,113 +11303,6 @@ function drawForestWaterStriders(camX) {
   forestWaterStriders.forEach(s => drawForestWaterStrider(s, camX, poolPx, poolW, poolH, poolY));
 }
 
-// leaf/bark boats -- a small pile on the bank (opposite side from the
-// skip stones, per direct request "leaf boat launch is cool") that the
-// player can carry to the pool's edge and drop in. The pond itself has
-// no current, so a launched boat just drifts lazily in a loose loop and
-// fades out ("sinks") after a while -- purely a calm, passive-but-
-// interactive beat, no scoring or fail state, matching the skip-stones'
-// own no-fail spirit.
-const FOREST_LEAF_PILE_X = FOREST_REFLECTION_POOL_X + 195; // opposite side of the pool from the stone pile, pushed out past the frog spots (+112/+152) so it doesn't sit right on top of them
-const forestLeafBoats = []; // active floating boats: {x, spawnTime, bobSeed, driftSeed, color}
-const FOREST_LEAF_BOAT_LIFE_MS = 9000;
-const FOREST_LEAF_BOAT_MAX = 4;
-const FOREST_LEAF_BOAT_COLORS = ["#6a7a2f", "#8a6a2f", "#5a6a2a"]; // leaf, bark, darker leaf
-
-function updateForestLeafBoats() {
-  const now = performance.now();
-  // pickup -- near the pile, empty-handed, tap space (same one-frame
-  // pattern the skip stones use for their own pickup)
-  if (!heldItem && isPlayerNear(FOREST_LEAF_PILE_X, 0, 26, 20, 20) && keys.spaceJustPressed) {
-    heldItem = "leafBoat";
-  }
-  // launch -- near the pool, holding a leaf, tap space to drop it in
-  if (heldItem === "leafBoat" && isPlayerNear(FOREST_REFLECTION_POOL_X, 0, 140, 60, 60) && keys.spaceJustPressed) {
-    if (forestLeafBoats.length >= FOREST_LEAF_BOAT_MAX) forestLeafBoats.shift(); // oldest sinks early to make room
-    forestLeafBoats.push({
-      x: player.x + player.width / 2,
-      spawnTime: now,
-      bobSeed: Math.random() * 10,
-      driftSeed: Math.random() * 10,
-      color: FOREST_LEAF_BOAT_COLORS[Math.floor(Math.random() * FOREST_LEAF_BOAT_COLORS.length)]
-    });
-    heldItem = null;
-  }
-  for (let i = forestLeafBoats.length - 1; i >= 0; i--) {
-    if (now - forestLeafBoats[i].spawnTime > FOREST_LEAF_BOAT_LIFE_MS) forestLeafBoats.splice(i, 1);
-  }
-}
-
-function drawForestLeafPile(camX) {
-  const lx = FOREST_LEAF_PILE_X - camX;
-  if (lx < -30 || lx > canvas.width + 30) return;
-  const spots = [{ dx: -3, dy: 0, rot: 0.3 }, { dx: 3, dy: -1, rot: -0.4 }];
-  spots.forEach(s => {
-    ctx.save();
-    ctx.translate(lx + s.dx, gy + s.dy);
-    ctx.rotate(s.rot);
-    ctx.fillStyle = "rgba(10,10,5,0.16)";
-    ctx.beginPath();
-    ctx.ellipse(0, 3, 5.5, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#6a7a2f";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 5, 2.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(-4, 0);
-    ctx.lineTo(4, 0);
-    ctx.stroke();
-    ctx.restore();
-  });
-}
-
-function drawForestLeafBoats(camX) {
-  const poolPx = FOREST_REFLECTION_POOL_X - camX;
-  if (poolPx < -160 || poolPx > canvas.width + 160) return;
-  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H, poolY = FOREST_REFLECTION_POOL_Y;
-  const now = performance.now();
-  forestLeafBoats.forEach(lb => {
-    const age = now - lb.spawnTime;
-    const lifeP = age / FOREST_LEAF_BOAT_LIFE_MS;
-    // lazy drift in a loose loop around its own launch point, clamped
-    // to stay inside the pool's own bounds regardless of where it was
-    // launched from along the edge
-    const driftAngle = now * 0.00035 + lb.driftSeed;
-    const driftR = 14 + lifeP * 10;
-    const clampedHalfW = poolW / 2 - 14;
-    let lxLocal = lb.x - camX + Math.cos(driftAngle) * driftR;
-    lxLocal = Math.max(poolPx - clampedHalfW, Math.min(poolPx + clampedHalfW, lxLocal));
-    const bob = Math.sin(now * 0.004 + lb.bobSeed) * 1.4;
-    const ly = poolY + Math.sin(driftAngle * 0.6) * (poolH * 0.28) + bob;
-    // fades out ("sinks") over the last 20% of its life instead of
-    // popping out abruptly
-    const alpha = lifeP > 0.8 ? Math.max(0, 1 - (lifeP - 0.8) / 0.2) : 1;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(lxLocal, ly);
-    ctx.rotate(driftAngle * 0.3);
-    ctx.fillStyle = lb.color;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 5, 2.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(-4, 0);
-    ctx.lineTo(4, 0);
-    ctx.stroke();
-    ctx.restore();
-    ctx.strokeStyle = `rgba(230,240,225,${(0.18 * alpha).toFixed(3)})`;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.ellipse(lxLocal, poolY, 6, 6 * (poolH / poolW), 0, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-}
-
 // reeds/pond plants scattered around the pool's rim, per direct request
 // ("add some reeds/other pond like plants around it"). Placed at points
 // around the ellipse's own perimeter (just outside it) rather than a
@@ -12029,10 +11956,10 @@ function drawForestScene(camX) {
   drawForestDragonflies(camX);
   drawForestSkipStones(camX);
   drawForestWaterStriders(camX);
-  drawForestLeafPile(camX);
-  drawForestLeafBoats(camX);
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
+  drawForestRiverBoatPiles(camX); // the two leaf/bark boat pickup spots -- one right at the zone's calm start, one on the lily pad rest stop
+  drawForestRiverBoats(camX); // launched leaf/bark boats drifting on the float zone's current -- drawn right after the water/obstacles so they read as sitting on the surface among them
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
   // drawForestBrambleFront is called after the player sprite in the
@@ -12361,6 +12288,160 @@ const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 1000, collected: false, minY: 128 }, // right over the spiky double-jump rock
   { x: FOREST_FLOAT_ZONE_START_X + 2000, collected: false, minY: 113 }  // right over the plain double-jump gate
 ];
+
+// leaf/bark boats -- launched right where the current starts, well
+// before the first obstacle (+160), so there's a real calm stretch to
+// watch one drift before anything gets busy. Per direct request ("do
+// leaf/bark boat launches there... but maybe we wont need to give up
+// camera for this"). Deliberately rides the SAME current the player
+// drifts on (FOREST_FLOAT_DRIFT_SPEED, with a little per-boat variance)
+// instead of anything camera-driven -- since the player is already
+// being swept along by that current too, staying near the boat (or
+// not) falls naturally out of how well the player keeps pace with it,
+// no control handoff needed. A second pile sits right on the lily pad
+// rest stop, so a player who stops to catch their breath there can
+// launch another without fighting the current to go back for one.
+// Each boat rolls, once per obstacle as it reaches it, whether it gets
+// physically snagged there (jump/movingJump rocks and logs -- real
+// things it could catch on) or slides on through (duck-type swamp
+// trees are low, roots-in-the-water obstacles a small boat just floats
+// under, so those never snag it). A snag is permanent for that boat --
+// per direct discussion, "stuck for good" reads as a real event rather
+// than a coin-flip pause -- and every boat is cleaned up once it's
+// either drifted well past the zone or simply been out there too long,
+// so nothing lingers forever whether the player kept up with it or let
+// it go ("floats off into oblivion").
+const FOREST_RIVER_BOAT_PILE_START_X = FOREST_FLOAT_ZONE_START_X + 30;
+const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
+const forestRiverBoats = []; // active boats: {x, spawnTime, stuck, driftMult, resolvedObstacles, bobSeed, color}
+const FOREST_RIVER_BOAT_MAX = 3;
+const FOREST_RIVER_BOAT_MAX_AGE_MS = 26000;
+const FOREST_RIVER_BOAT_COLORS = ["#6a7a2f", "#8a6a2f", "#5a6a2a"]; // leaf, bark, darker leaf
+// snag odds by obstacle type -- rocks (plain and spiky) are real solid
+// things to catch on; a moving log is a smaller/rarer target since it's
+// only in the boat's way part of the time; duck-type swamp-tree roots
+// aren't checked at all (see updateForestRiverBoats), the boat just
+// slides underneath every time
+function forestRiverBoatSnagChance(ob) {
+  if (ob.spiky) return 0.55;
+  if (ob.type === "movingJump") return 0.22;
+  return 0.35;
+}
+
+function updateForestRiverBoats() {
+  const now = performance.now();
+  const nearFloatZone = player.x > FOREST_FLOAT_ZONE_START_X - 20 && player.x < FOREST_FLOAT_ZONE_END_X;
+  // pickup -- either the launch-point pile or the lily pad's, empty-handed, tap space.
+  // Deliberately an else-if against the launch check below -- both piles
+  // sit well inside the float zone's own bounds, so the SAME spacebar
+  // press that triggers the pickup would otherwise also immediately
+  // satisfy the launch condition one line later and drop it right back
+  // in the water the instant it's picked up (same class of bug the skip
+  // stones' own armed-debounce comment describes for their overlapping
+  // pickup/charge zones).
+  if (!heldItem && keys.spaceJustPressed &&
+      (isPlayerNear(FOREST_RIVER_BOAT_PILE_START_X, 0, 26, 20, 20) ||
+       isPlayerNear(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, 30, 24, 16))) {
+    heldItem = "leafBoat";
+  // launch -- anywhere in the float zone, holding a boat, tap space to drop it in
+  } else if (heldItem === "leafBoat" && nearFloatZone && keys.spaceJustPressed) {
+    if (forestRiverBoats.length >= FOREST_RIVER_BOAT_MAX) forestRiverBoats.shift();
+    forestRiverBoats.push({
+      x: player.x + player.width / 2,
+      spawnTime: now,
+      stuck: false,
+      driftMult: 0.85 + Math.random() * 0.35, // each boat drifts at its own slightly different pace
+      resolvedObstacles: {},
+      bobSeed: Math.random() * 10,
+      color: FOREST_RIVER_BOAT_COLORS[Math.floor(Math.random() * FOREST_RIVER_BOAT_COLORS.length)]
+    });
+    heldItem = null;
+  }
+  for (let i = forestRiverBoats.length - 1; i >= 0; i--) {
+    const b = forestRiverBoats[i];
+    if (now - b.spawnTime > FOREST_RIVER_BOAT_MAX_AGE_MS || b.x > FOREST_FLOAT_ZONE_END_X + 80) {
+      forestRiverBoats.splice(i, 1);
+      continue;
+    }
+    if (b.stuck) continue;
+    b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult;
+    FOREST_FLOAT_OBSTACLES.forEach((ob, idx) => {
+      if (b.resolvedObstacles[idx]) return;
+      if (ob.type === "duck") {
+        b.resolvedObstacles[idx] = true; // low roots -- always slides underneath
+        return;
+      }
+      const obX = floatObstacleX(ob);
+      if (b.x >= obX - ob.w / 2 - 6) {
+        b.resolvedObstacles[idx] = true;
+        if (Math.random() < forestRiverBoatSnagChance(ob)) {
+          b.stuck = true;
+          b.x = obX - ob.w / 2 - 6;
+        }
+      }
+    });
+  }
+}
+
+function drawForestRiverBoatPile(worldX, heightAboveGround, camX) {
+  const lx = worldX - camX;
+  if (lx < -30 || lx > canvas.width + 30) return;
+  const ly = gy - heightAboveGround;
+  const spots = [{ dx: -3, dy: 0, rot: 0.3 }, { dx: 3, dy: -1, rot: -0.4 }];
+  spots.forEach(s => {
+    ctx.save();
+    ctx.translate(lx + s.dx, ly + s.dy);
+    ctx.rotate(s.rot);
+    ctx.fillStyle = "rgba(10,10,5,0.16)";
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 5.5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6a7a2f";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function drawForestRiverBoatPiles(camX) {
+  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_START_X, 0, camX);
+  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, camX);
+}
+
+function drawForestRiverBoats(camX) {
+  const now = performance.now();
+  forestRiverBoats.forEach(b => {
+    const bx = b.x - camX;
+    if (bx < -30 || bx > canvas.width + 30) return;
+    const bob = b.stuck ? Math.sin(now * 0.0032 + b.bobSeed) * 0.7 : Math.sin(now * 0.005 + b.bobSeed) * 1.6;
+    const by = gy + bob;
+    const rot = b.stuck ? Math.sin(now * 0.002 + b.bobSeed) * 0.15 : 0.08;
+    drawLeafBoatShape(ctx, bx, by, 9, rot, b.color);
+    // a small trailing wake while actually moving; a stuck boat instead
+    // gets a couple of faint still-water ripple rings around it so it
+    // visibly reads as caught rather than just paused mid-frame
+    if (!b.stuck) {
+      ctx.strokeStyle = "rgba(230,240,225,0.35)";
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.ellipse(bx - 7, by + 1, 3.5, 1.4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = "rgba(230,240,225,0.25)";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.ellipse(bx, by + 1, 8, 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+}
 
 // the duck obstacle's real redesign -- a swamp tree with flared
 // buttress roots planted right in the water, and a cluster of big,
@@ -16624,7 +16705,7 @@ function updateForestScene(deltaTime) {
   updateForestNewts(deltaTime);
   updateForestSkipStones(deltaTime);
   updateForestWaterStriders();
-  updateForestLeafBoats();
+  updateForestRiverBoats();
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
