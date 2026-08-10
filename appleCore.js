@@ -33444,9 +33444,16 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // surface. Per direct feedback ("player doesnt actually duck under
   // the duck obstacle in the water"). Draw-only (no change to
   // player.y/physics), same pattern as forestRiverWadeSink elsewhere.
+  // Bumped from 11 to 21 -- at 11 the squashed sprite's own head was
+  // still a few px taller than the duck log's bottom edge, so the log-
+  // occlusion redraw (see drawForestFloatDuckOverlay) always clipped a
+  // sliver of the head instead of passing clean underneath it, per
+  // direct feedback ("i dont like how duck obstacle partly occludes
+  // the top of player head... i want player to pass smooth under it").
+  // 21 clears the log's bottom edge with real margin at full duck.
   if (typeof riverFloat !== "undefined" && riverFloat.active &&
       typeof playerDuckAmount !== "undefined" && playerDuckAmount > 0.01) {
-    ctx.translate(0, playerDuckAmount * 11);
+    ctx.translate(0, playerDuckAmount * 21);
   }
 
   // body
