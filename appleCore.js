@@ -11023,6 +11023,7 @@ function drawForestScene(camX) {
   drawForestDuckLog(camX);
   drawForestRiver(camX);
   drawForestReflectionPool(camX);
+  drawForestFloatZone(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
   // drawForestBrambleFront is called after the player sprite in the
@@ -11201,6 +11202,75 @@ let playerDuckAmount = 0;
 // over its top (player.y past DUCK_LOG.clearance) -- both read as
 // physically reasonable given the log's own height off the ground.
 const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
+
+// TEST-ONLY river float zone -- a plain, deliberately unpolished stretch
+// of "river" further out past everything else built so far (past even
+// the reflection pool at 5400), just to build and test the drift-and-
+// jump float mechanic in. Per direct request: "we need that to be in a
+// river part on the right hand side. so just make a chunk of river it
+// doesnt have to be pretty rn just to build this in and test in." Real
+// art/placement/tuning comes later once the mechanic itself is proven
+// out -- this is scaffolding, not a finished set piece.
+const FOREST_FLOAT_ZONE_START_X = 5700;
+const FOREST_FLOAT_ZONE_END_X = 6400;
+const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
+const riverFloat = { active: false };
+// mix of "jump" (must be airborne above clearance to pass) and "duck"
+// (same pass rule as FOREST_DUCK_LOG) obstacles, so the zone actually
+// exercises both halves of what was asked for ("jump and double jump
+// over stuff" + "duck under a big log... while floating down the
+// stream")
+const FOREST_FLOAT_OBSTACLES = [
+  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 44, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 520, w: 40, clearance: 40, type: "jump" }
+];
+const FOREST_FLOAT_COLLECTIBLES = [
+  { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 430, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 600, collected: false }
+];
+
+function drawForestFloatZone(camX) {
+  const zoneStartPx = FOREST_FLOAT_ZONE_START_X - camX;
+  const zoneEndPx = FOREST_FLOAT_ZONE_END_X - camX;
+  if (zoneEndPx < -50 || zoneStartPx > canvas.width + 50) return;
+
+  // flat placeholder fill, no shading/reeds/banks like the real river
+  // gets yet -- just enough to see the zone and its obstacles while the
+  // mechanic itself is what's actually being tested right now
+  ctx.fillStyle = "#2e5a62";
+  ctx.fillRect(zoneStartPx, gy, zoneEndPx - zoneStartPx, canvas.height - gy);
+  ctx.strokeStyle = "#ffcc33";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(zoneStartPx, gy);
+  ctx.lineTo(zoneStartPx, canvas.height);
+  ctx.moveTo(zoneEndPx, gy);
+  ctx.lineTo(zoneEndPx, canvas.height);
+  ctx.stroke();
+
+  FOREST_FLOAT_OBSTACLES.forEach(ob => {
+    const ox = ob.x - camX;
+    if (ox < -40 || ox > canvas.width + 40) return;
+    const obH = ob.type === "duck" ? 20 : 26;
+    ctx.fillStyle = ob.type === "duck" ? "#7a4a2a" : "#a05a2a";
+    ctx.fillRect(ox - ob.w / 2, gy - obH, ob.w, obH);
+    ctx.fillStyle = "#fff";
+    ctx.font = "10px monospace";
+    ctx.fillText(ob.type.toUpperCase(), ox - ob.w / 2, gy - obH - 4);
+  });
+
+  FOREST_FLOAT_COLLECTIBLES.forEach(c => {
+    if (c.collected) return;
+    const cx = c.x - camX;
+    if (cx < -20 || cx > canvas.width + 20) return;
+    ctx.fillStyle = "#e0c040";
+    ctx.beginPath();
+    ctx.arc(cx, gy - 14, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
 
 // shared post-span geometry -- used by both the render side (drawing
 // the posts/segments) and the update side (the wall, collision, and
@@ -15033,6 +15103,43 @@ function updateForestScene(deltaTime) {
       }
       player.vx = 0;
     }
+  }
+
+  // FLOAT ZONE -- test-only drift-and-jump river stretch (see
+  // FOREST_FLOAT_ZONE_START_X's own comment). Deliberately doesn't
+  // touch applyPhysics or handleInput at all -- normal jump/double-jump
+  // (handleInput) and the duck system just above both keep working
+  // completely unmodified. All this adds is a steady rightward current
+  // push while inside the zone, plus obstacle blocking and collectible
+  // pickup, same simple push-back-out-of-the-way style as the duck log.
+  riverFloat.active = player.x > FOREST_FLOAT_ZONE_START_X - 20 && player.x < FOREST_FLOAT_ZONE_END_X;
+  if (riverFloat.active) {
+    player.x += FOREST_FLOAT_DRIFT_SPEED;
+
+    const floatCenterX = player.x + player.width / 2;
+    FOREST_FLOAT_OBSTACLES.forEach(ob => {
+      const within = floatCenterX > ob.x - ob.w / 2 - player.width / 2 &&
+                      floatCenterX < ob.x + ob.w / 2 + player.width / 2;
+      const passable = ob.type === "duck"
+        ? (player.y > ob.clearance || (player.y <= 2 && playerDuckAmount > 0.6))
+        : player.y > ob.clearance;
+      if (within && !passable) {
+        if (floatCenterX < ob.x) {
+          player.x = ob.x - ob.w / 2 - player.width - 1;
+        } else {
+          player.x = ob.x + ob.w / 2 + 1;
+        }
+        player.vx = 0;
+      }
+    });
+
+    FOREST_FLOAT_COLLECTIBLES.forEach(c => {
+      if (c.collected) return;
+      if (Math.abs(floatCenterX - c.x) < 16 && player.y < 30) {
+        c.collected = true;
+        addToInventory("driftberry");
+      }
+    });
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
