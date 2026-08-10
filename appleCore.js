@@ -1838,11 +1838,13 @@ function drawBoomerangThrow(camX) {
 // so the mechanic is shown rather than hinted at with text) +
 // ("want like at least 3 different flight patterns so it isn't the
 // same exact thing every time, random choice each throw").
-// Deliberately scoped to just clouds (the real, player-triggered
-// throw) and oak (a one-time scripted intro throw on pickup, no input
-// needed) rather than every scene -- see the brainstorm discussion:
-// clouds is open sky with nothing to clip into, other scenes would
-// need their own geometry/vibe pass before this makes sense there too.
+// Real player-triggered throw is live in clouds and oak (the room it's
+// actually picked up in); the intro-teaching moment itself now lives
+// inside the normal collect animation rather than a separate scripted
+// throw (see updateFlyingItems' "hold" phase). Other scenes still
+// deliberately excluded per the brainstorm discussion -- clouds and
+// oak are both open enough that there's nothing to clip into; other
+// scenes would need their own geometry/vibe pass first.
 // Each pattern is a closed loop, defined purely as a function of
 // p (0..1) returning a {dx, dy} offset from the throw origin, always
 // ending back at (0,0) so the plane always visually returns to right
@@ -38003,9 +38005,12 @@ if (currentScene === "autumn") {
   }
   updateBoomerangThrow(deltaTime);
 
-  // paper airplane -- real throw, clouds only, per the scoping from
-  // the brainstorm (see the big comment above throwPaperAirplane)
-  if (keys.space && heldItem === "paperAirplane" && currentScene === "clouds" && !paperAirplaneFlight) {
+  // paper airplane -- real throw. Originally scoped to clouds only
+  // (see the big comment above throwPaperAirplane), but per direct
+  // request oak throws it too now -- it's the room you actually pick
+  // the plane up in, so being able to fly it there as soon as it's in
+  // play makes sense alongside clouds.
+  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak") && !paperAirplaneFlight) {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
