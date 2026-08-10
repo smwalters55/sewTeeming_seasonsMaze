@@ -37881,6 +37881,14 @@ addToInventory("acorn");
 addToInventory("lamp");
 touchInventoryOrder("lamp");
 lampEverUsedInRatroom = true; // so re-entering ratroom auto-carries the lamp back in, per the real crossing logic
+// CONFIRMED BUG FIX: the tea nook / cushion pile corner is gated on
+// oakLamp.collected specifically (see sittingAreas' cushionPile entry
+// and the tea nook's own comment "same unlock condition"), not on
+// inventory.lamp or lampEverUsedInRatroom -- just adding the lamp to
+// inventory above never actually unlocked it. This is the real lamp
+// pickup flag, so it needs to be set directly for the debug spawn to
+// match a real post-lamp-pickup state.
+oakLamp.collected = true;
 
 update();
 
