@@ -19748,6 +19748,25 @@ function updateTrapDoor(deltaTime) {
   }
 }
 
+// idle affordance for the rug -- a thin warm sliver of light escaping
+// from underneath one edge on a slow timer, hinting that something's
+// under there without giving away what. Deliberately a different
+// language than the leaf-pile notice-wiggle: wiggle already means
+// "pick this up" elsewhere in the game, and the rug isn't a pickup --
+// it's a reveal, so it gets its own tell (light peeking from below,
+// true to the actually-lit room that's really down there).
+const NOOK_RUG_NOTICE = { timer: 4000 + Math.random() * 3000, glowT: 99999 };
+const NOOK_RUG_GLOW_DURATION = 1800;
+function updateNookRugNotice(deltaTime) {
+  if (trapDoor.opened) return; // found for good -- no need to keep hinting
+  NOOK_RUG_NOTICE.timer -= deltaTime * 1000;
+  if (NOOK_RUG_NOTICE.timer <= 0) {
+    NOOK_RUG_NOTICE.glowT = 0;
+    NOOK_RUG_NOTICE.timer = 8000 + Math.random() * 5000;
+  }
+  if (NOOK_RUG_NOTICE.glowT < NOOK_RUG_GLOW_DURATION) NOOK_RUG_NOTICE.glowT += deltaTime * 1000;
+}
+
 function drawNookRug(camX) {
   const rx = nookRug.x - camX;
   const ry = gy + 14;
@@ -19858,6 +19877,41 @@ function drawNookRug(camX) {
   }
 
   ctx.restore();
+}
+
+// the idle light-sliver tell itself -- drawn separately from drawNookRug
+// so it can also sit out during the trap door sequence/opened states
+// without threading extra conditionals through the rug's own draw.
+function drawNookRugGlow(camX) {
+  if (NOOK_RUG_NOTICE.glowT >= NOOK_RUG_GLOW_DURATION) return;
+  const rx = nookRug.x - camX;
+  const ry = gy + 14;
+  const w = nookRug.width, h = nookRug.height;
+
+  const gp = NOOK_RUG_NOTICE.glowT / NOOK_RUG_GLOW_DURATION;
+  const envelope = Math.sin(gp * Math.PI); // smooth fade in, hold, fade out across the whole pulse
+  const flicker = 0.82 + Math.sin(NOOK_RUG_NOTICE.glowT * 0.022) * 0.18; // gentle candle-like waver, not a steady glow
+  const alpha = envelope * flicker;
+  if (alpha <= 0.02) return;
+
+  const edgeY = ry + h / 2 - 1; // rug's bottom edge, where it meets the floor
+  const glowW = w * 0.8;
+
+  // soft wide bloom underneath, faint
+  const bloom = ctx.createLinearGradient(rx - glowW / 2, edgeY, rx + glowW / 2, edgeY);
+  bloom.addColorStop(0, "rgba(255,200,110,0)");
+  bloom.addColorStop(0.5, `rgba(255,200,110,${(alpha * 0.35).toFixed(3)})`);
+  bloom.addColorStop(1, "rgba(255,200,110,0)");
+  ctx.fillStyle = bloom;
+  ctx.fillRect(rx - glowW / 2, edgeY - 3.5, glowW, 8);
+
+  // brighter thin core sliver right at the seam
+  const core = ctx.createLinearGradient(rx - glowW / 2, edgeY, rx + glowW / 2, edgeY);
+  core.addColorStop(0, "rgba(255,220,150,0)");
+  core.addColorStop(0.5, `rgba(255,225,160,${alpha.toFixed(3)})`);
+  core.addColorStop(1, "rgba(255,220,150,0)");
+  ctx.fillStyle = core;
+  ctx.fillRect(rx - glowW / 2, edgeY - 1, glowW, 2);
 }
 
 function easeInOutTrap(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
@@ -21695,6 +21749,7 @@ function drawOakScene(camX) {
     ctx.restore();
   } else {
     drawNookRug(camX);
+    drawNookRugGlow(camX);
   }
   drawShortShelf(camX);
   drawMediumShelf(camX);
@@ -21838,11 +21893,17 @@ function updateOakScene(deltaTime) {
   }
 
   updateTrapDoor(deltaTime);
+  updateNookRugNotice(deltaTime);
   if (!trapDoor.active && keys.spaceJustPressed &&
       isPlayerNear(nookRug.x, 0, nookRug.width / 2, 20, 10)) {
     trapDoor.active = true;
     trapDoor.t = 0;
     carriedBook = null; // books can't leave oak -- nowhere to actually read one elsewhere, so it's quietly set back down
+    // CONFIRMED BUG FIX (same class as the leaf-pile notice freeze): if a
+    // glow pulse is mid-flight right when the door triggers, force it to
+    // idle now rather than leaving it frozen at a nonzero alpha under the
+    // trap door sequence/opened states, which never tick it down again.
+    NOOK_RUG_NOTICE.glowT = 99999;
   }
 
   // book pile collision — same landing pattern as regular platforms.
