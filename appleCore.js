@@ -11482,8 +11482,19 @@ function drawForestFloatZone(camX) {
   // now, replaced by the organic bank below, per direct feedback ("make
   // the river cute and organic looking and natural gradually coming out
   // of its current left side from the bottom").
+  //
+  // Extended well past the organic bank's own leftmost/topmost reach
+  // (the bank shape below can start as far left as zoneStartPx-130 and
+  // as high as gy-4) so water is ALWAYS sitting underneath the entire
+  // sand shape. It used to start exactly at zoneStartPx/gy, which left
+  // a sliver of plain grass-green background showing through wherever
+  // the jittered bank curve dipped inside that rectangle's own left/top
+  // edge -- read as a stray little grass triangle poking through the
+  // sand right at the shoreline. Direct feedback: "have the water go
+  // all the way back behind this sand area, not have that little grass
+  // triangle."
   ctx.fillStyle = "rgba(46,90,98,0.72)";
-  ctx.fillRect(zoneStartPx, gy, zoneEndPx - zoneStartPx, canvas.height - gy);
+  ctx.fillRect(zoneStartPx - 150, gy - 15, zoneEndPx - (zoneStartPx - 150), canvas.height - (gy - 15));
 
   // LEFT EDGE -- an organic diagonal bank instead of a straight vertical
   // cut, same "\"-shaped-diagonal-through-jittered-bezier technique as
@@ -34711,21 +34722,20 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- debug spawn, now pointed at testing past the bridge
-// instead of the bridge-build flow itself. Direct request: "for debug
-// place me on right side of already built bridge." Marks the bridge as
-// fully strung AND decked (so the invisible build-edge wall doesn't
-// hold the player back at the near bank -- see the "FLOAT ZONE" and
-// "RIVER BRIDGE BUILDING" comments in updateForestScene for how that
-// wall works) and spawns just past the far bank, ready to walk on
-// toward the reflection pool and the float-zone scaffolding beyond it.
-// Swap back to the previous "9 logs, unbuilt bridge" version (see git
-// history) if the build flow itself needs testing again. Remove this
-// block once done testing.
+// TEMPORARY -- debug spawn, now pointed right at the float zone itself
+// instead of just past the bridge. Direct request: "place me right in
+// front of testing river area." Marks the bridge as fully strung AND
+// decked (so the invisible build-edge wall doesn't hold the player back
+// at the near bank -- see the "FLOAT ZONE" and "RIVER BRIDGE BUILDING"
+// comments in updateForestScene for how that wall works) and spawns
+// right at the float zone's own start edge, ready to walk straight in
+// without a long walk from the bridge first. Swap back to the previous
+// "9 logs, unbuilt bridge" version (see git history) if the build flow
+// itself needs testing again. Remove this block once done testing.
 currentScene = "forest";
 forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
 forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-player.x = FOREST_RIVER_FAR_BANK_X + 20;
+player.x = FOREST_FLOAT_ZONE_START_X - 40;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
