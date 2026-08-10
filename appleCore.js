@@ -2843,6 +2843,20 @@ const leafTreeTimers = {
 let fallingLeaves = []; // {x, height, shape, color, driftSeed}
 let crownLeaves = []; // {shape, color} — the actual leaves you've caught, in order
 
+// UNIVERSAL head-anchor offset -- the single source of truth for "how far
+// off its neutral px/py has the player's own sprite been nudged for this
+// frame," filled in once by the main player draw (right where it computes
+// its own px/drawPy: pile wobble, fall-through-hole sink, river wade sink,
+// float bob, and anything else added there later) and read back here by
+// the crown so it rides along with the head through every one of those,
+// automatically, instead of each one needing its own copy-pasted term
+// added to drawCrown by hand. Per direct feedback after the fall/float fix
+// still missed the oak book-pile shake: "this should always be true going
+// down any hole or any motion the player does if wearing crown... make
+// this universal." Zero until the first player-draw frame runs.
+let playerVisualDX = 0;
+let playerVisualDY = 0;
+
 const crownState = {
   ready: false,   // true once needed leaves collected — crown exists, waiting to be worn
   worn: false,
@@ -3146,7 +3160,12 @@ function getCrownDisplayLeaves() {
 }
 
 function drawCrownOnHead(camX, sinkAmount) {
-  const px = player.x - camX + player.width / 2;
+  // playerVisualDX folded in here too -- the oak book-pile wobble (see
+  // pileWobble in the main player draw) nudges the player's own px
+  // horizontally, not just vertically, so the head-anchor needs the same
+  // universal offset on both axes to actually stay pinned to the head
+  // through it, not just the sink/bob effects that only ever moved py.
+  const px = player.x - camX + player.width / 2 + playerVisualDX;
   const lowerOffset = 7; // sits closer to the head, more like a resting crown than perched at the peak
   // CONFIRMED BUG FIX: was missing `+ cameraY` -- every other
   // player-relative screen draw (the player sprite itself, drawCrown's
@@ -3221,24 +3240,21 @@ function updateCrown(deltaTime) {
 function drawCrown(camX) {
   if (crownLeaves.length === 0) return;
 
-  const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : (fallJustEndedIntoTransition ? 1 : 0);
-  // CONFIRMED BUG FIX: this used to only account for the fall-through-hole
-  // sink, not the river-wade sink or the floating bob the main player
-  // sprite's own draw position applies (see the real drawPy a few
-  // thousand lines down: `py + sinkAmount + riverWadeSink - floatBob`).
-  // Any time the body was sunk into water or gently bobbing while
-  // floating, the head moved but the crown stayed put at the old,
-  // un-adjusted height -- reported as "the crown flies off up off head."
-  // Matching the exact same three terms here keeps the crown pinned to
-  // the head in every one of those states, not just the fall-through-a-
-  // hole one this originally covered.
-  const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRiverWadeAmount : 0) *
-    (7 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 8);
-  const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
-    Math.sin(performance.now() * 0.0028) * 3;
-  const sinkAmount = fallProgress * (player.height + 20) + riverWadeSink - floatBob;
+  // CONFIRMED BUG FIX: made universal. This used to hand-copy just the
+  // fall-through-hole sink term, then later also the river-wade sink and
+  // float bob -- but that meant every NEW way the player's own draw
+  // position gets nudged (the oak book-pile shake being the one that
+  // slipped through, since it isn't a sink/bob at all, it's a wobble on
+  // px too) needed its own hand-added copy here, forever, or the crown
+  // silently desyncs from the head again. Reading the single shared
+  // playerVisualDX/DY offset instead (set once, in the main player draw,
+  // right where it computes its own px/drawPy) means ANY future nudge
+  // added there just works here too, with nothing to remember to update.
+  // Per direct feedback: "this should always be true going down any hole
+  // or any motion the player does if wearing crown... make this universal."
+  const sinkAmount = playerVisualDY; // still named sinkAmount below -- drawCrownOnHead's own vertical placement term
 
-  const px = player.x - camX + player.width / 2;
+  const px = player.x - camX + player.width / 2 + playerVisualDX;
   const py = gy + cameraY - player.height - player.y + 6 + sinkAmount;
 
   // the mole hole entrance (forest -> mole hole) plays its own bespoke
@@ -8470,7 +8486,10 @@ function drawJoshuaTree(camX) {
 
 // fireflies -- a small drifting group near the Joshua tree, each with
 // its own gentle wander and independent on/off flicker timing, so the
-// glow itself (not fixed eyes) is what makes these read as alive
+// glow itself (not fixed eyes) is what makes these read as alive.
+// Widened from a flat 150 per direct feedback ("give larger radius for
+// fireflies in ratroom to be 'on'").
+const FIREFLY_ON_RADIUS = 210;
 const fireflies = [
   { baseX: 1260, baseY: 60, seed: 3, phaseOffset: 0 },
   { baseX: 1295, baseY: 85, seed: 17, phaseOffset: 0.6 },
@@ -8492,8 +8511,12 @@ function drawFireflies(camX) {
     // the glow itself is always visible, no lamp needed -- fireflies
     // make their own light, so requiring an external lamp to see them
     // at all was backwards. Wider range than the lamp's own radius,
-    // since a glowing point stands out more in real darkness.
-    if (dist > 150) return;
+    // since a glowing point stands out more in real darkness. Widened
+    // again per direct feedback ("give larger radius for fireflies... to
+    // be 'on'") -- 150 meant they were snapping off well before they'd
+    // actually scrolled off screen at normal zoom, reading as popping in
+    // and out abruptly rather than a gradual approach/fade.
+    if (dist > FIREFLY_ON_RADIUS) return;
     // independent flicker -- irregular on/off rather than a smooth
     // pulse, closer to how real fireflies actually blink
     const flickerCycle = (fireflyT * 0.001 + f.phaseOffset) % 3;
@@ -23883,7 +23906,19 @@ function drawFeatherHangSpot(camX) {
   if (!hungAndDark && dist > LAMP_LIGHT_RADIUS && !featherHangAnim.active) return;
 
   ctx.save();
-  if (hungAndDark) ctx.globalAlpha = 0.32; // faint, just barely visible -- not a beacon
+  if (hungAndDark) {
+    ctx.globalAlpha = 0.32; // faint, just barely visible -- not a beacon
+  } else if (featherHung && lampLit && !featherHangAnim.active) {
+    // CONFIRMED CHANGE: once the feather's actually resting here, even
+    // WITH the lamp lit and pointed right at it this used to render at
+    // full, flat opacity -- reading as "daylight lighting," out of place
+    // against everything else in this lamp-lit room having some real
+    // shadow to it. This is a dimmer, lamp-lit-but-still-in-a-dark-room
+    // look for the completed vignette specifically, distinct from the
+    // fully-dark 0.32 above -- the empty pot (still searching) and the
+    // placement animation itself both stay at full brightness.
+    ctx.globalAlpha = 0.62;
+  }
 
   // a temporary glow while the placement animation plays, independent
   // of whether the lamp happens to be actively held right then -- so
@@ -23918,16 +23953,23 @@ function drawFeatherHangSpot(camX) {
   // is in it yet, so it reads as a real display spot from the start.
   ctx.save();
   ctx.translate(hx, hy);
+  // CONFIRMED CHANGE: widened ~1.4x across the board (was moveTo(-3,10)/
+  // rim rx:5/etc) -- the resting feather's own vane (FEATHER_REST_SIZE 17,
+  // ~0.84*size wide once you include both sides = ~14 units) was wider
+  // than this pot's old ~10-unit-wide mouth, so it visibly overhung the
+  // rim on both sides instead of sitting inside it. Per direct feedback
+  // ("lets not make [the feather] even bigger, but lets make sure it fits
+  // in the jar"), the jar grows to actually fit the feather instead.
   ctx.fillStyle = "#b8603a";
   ctx.beginPath();
-  ctx.moveTo(-3, 10);
-  ctx.quadraticCurveTo(-9, 7, -8, 2);
-  ctx.quadraticCurveTo(-7, -3, -4, -5);
-  ctx.lineTo(-5, -7);
-  ctx.lineTo(5, -7);
-  ctx.lineTo(4, -5);
-  ctx.quadraticCurveTo(7, -3, 8, 2);
-  ctx.quadraticCurveTo(9, 7, 3, 10);
+  ctx.moveTo(-4, 14);
+  ctx.quadraticCurveTo(-13, 10, -11, 3);
+  ctx.quadraticCurveTo(-10, -4, -6, -7);
+  ctx.lineTo(-7, -10);
+  ctx.lineTo(7, -10);
+  ctx.lineTo(6, -7);
+  ctx.quadraticCurveTo(10, -4, 11, 3);
+  ctx.quadraticCurveTo(13, 10, 4, 14);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#7a3a20";
@@ -23938,12 +23980,12 @@ function drawFeatherHangSpot(camX) {
   ctx.strokeStyle = "rgba(140,70,40,0.5)";
   ctx.lineWidth = 0.6;
   ctx.beginPath();
-  ctx.moveTo(-7, 1.5); ctx.lineTo(7, 1.5);
-  ctx.moveTo(-8.5, 5); ctx.lineTo(8.5, 5);
+  ctx.moveTo(-10, 2); ctx.lineTo(10, 2);
+  ctx.moveTo(-12, 7); ctx.lineTo(12, 7);
   ctx.stroke();
   ctx.fillStyle = "#8a4426";
   ctx.beginPath();
-  ctx.ellipse(0, -7, 5, 1.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -10, 7, 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (featherHung || featherHangAnim.active) {
@@ -23958,8 +24000,15 @@ function drawFeatherHangSpot(camX) {
     // leaning against the shelf elsewhere in this room.
     const FEATHER_REST_SIZE = 17;
     const FEATHER_REST_TILT = 0.34;
-    const startX = 0, endX = -4;
-    const startY = -46, endY = -11; // ends close to the pot's own rim (rim ellipse is at y=-7), base tucked just inside it
+    const startX = 0, endX = -6;
+    // CONFIRMED CHANGE: endY moved from -11 to -14, matching the rim's own
+    // move from y:-7 to y:-10 above -- same 4-unit clearance above the
+    // rim as before, just against the new, taller neck, so the feather
+    // still settles right at the mouth instead of floating high above it
+    // now that the jar itself is bigger. endX widened from -4 to -6 to
+    // match the rim's own wider mouth (rx 5->7), keeping the same
+    // "leaning against the near-left rim edge" read.
+    const startY = -46, endY = -14;
     ctx.translate(startX + (endX - startX) * settleP, startY + (endY - startY) * settleP);
     ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
     const dropTilt = (1 - settleP) * 0.6; // still falls in with the old tumbling tilt...
@@ -23972,14 +24021,14 @@ function drawFeatherHangSpot(camX) {
     // genuinely sitting inside rather than floating in front
     ctx.fillStyle = "#b8603a";
     ctx.beginPath();
-    ctx.moveTo(-3, 10);
-    ctx.quadraticCurveTo(-9, 7, -8, 2);
-    ctx.quadraticCurveTo(-7, -3, -4, -5);
-    ctx.lineTo(-5, -7);
-    ctx.lineTo(5, -7);
-    ctx.lineTo(4, -5);
-    ctx.quadraticCurveTo(7, -3, 8, 2);
-    ctx.quadraticCurveTo(9, 7, 3, 10);
+    ctx.moveTo(-4, 14);
+    ctx.quadraticCurveTo(-13, 10, -11, 3);
+    ctx.quadraticCurveTo(-10, -4, -6, -7);
+    ctx.lineTo(-7, -10);
+    ctx.lineTo(7, -10);
+    ctx.lineTo(6, -7);
+    ctx.quadraticCurveTo(10, -4, 11, 3);
+    ctx.quadraticCurveTo(13, 10, 4, 14);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#7a3a20";
@@ -23987,7 +24036,7 @@ function drawFeatherHangSpot(camX) {
     ctx.stroke();
     ctx.fillStyle = "#8a4426";
     ctx.beginPath();
-    ctx.ellipse(0, -7, 5, 1.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -10, 7, 2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -24004,7 +24053,7 @@ function drawFeatherHangSpot(camX) {
     const shimmer = Math.max(0, 0.5 + Math.sin(t * 0.0021) * 0.3 + Math.sin(t * 0.0053 + 1.4) * 0.15);
     ctx.fillStyle = `rgba(255,220,140,${shimmer * 0.55})`;
     ctx.beginPath();
-    ctx.ellipse(0, -7, 6.5, 2.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -10, 9, 3, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore(); // closes the pot's local translate (from the inner ctx.save() above)
@@ -24039,7 +24088,15 @@ function updateFeatherHangAnim(deltaTime) {
 // normally. WS on the left, SW on the right, genuinely mirror-symmetric
 // letters carved into the wood, drawn as real hand-carved strokes
 // rather than typeset text.
-const carvedInitialsSpot = { x: 900, y: 240 };
+// CONFIRMED BUG FIX: moved off x:900/y:240 -- that put the carving at the
+// exact same x as featherHangSpot's jar (x:900, heightAboveGround:55, i.e.
+// screen y = gy-55 = 245), only 5px apart vertically. The two sat right on
+// top of each other any time the lamp lit both at once. Per direct
+// feedback ("the jar cannot overlap close to the initials at all"), moved
+// well clear on both axes -- also reads more like an actual wall carving
+// now, higher up than the ground-level jar shelf rather than crowded right
+// next to it.
+const carvedInitialsSpot = { x: 780, y: 150 };
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -24388,7 +24445,16 @@ const ratRoomHighShelves = [
   // meant to be a dead end that knocks you back rather than a valid path
   // forward.
   { x: 1220, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" }, // was 1195
-  { x: 1330, y: 100, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // was 1295 -- marble, one tier further up but actually 45 units LOWER on-screen than safeShelf (a forgiving downward hop, not a climb), spread a bit further right too since descents have plenty of horizontal room to spare
+  // pulled in from 1330 -- at that distance (dx110/dy45, ~119 units from
+  // safeShelf) this sat well outside the lamp's own 90-unit light radius,
+  // so standing on safeShelf with the lamp lit showed nothing at all over
+  // here: no shelf, no marble, no hint anything was worth the hop. Per
+  // direct feedback ("put the marble shelf just a little closer... so
+  // that part of it is juuuust in the boundary of the light shine"), this
+  // is now ~87 units out (dx74/dy45) -- just inside LAMP_LIGHT_RADIUS, so
+  // the far edge of the light catches it as a glimpse from safeShelf
+  // rather than leaving it invisible until you're already standing on it.
+  { x: 1294, y: 100, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // was 1330 (before that, 1295) -- marble, one tier further up but actually 45 units LOWER on-screen than safeShelf (a forgiving downward hop, not a climb)
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -24547,7 +24613,14 @@ function updateSpider(deltaTime) {
 // blind timer regardless of whether anyone's there. Greeting and the
 // reveal of what it's hoarding are one slow combined beat, not two
 // separate triggers.
-const snakeSpot = { x: 1125, y: 78 };
+// CONFIRMED BUG FIX: nudged in from x:1125 -- snakeShelf itself sits at
+// x:1165 with w:55 (spans 1137.5-1192.5), so the old x:1125 put the snake
+// a good 12+ units left of the shelf's own left edge -- reads as "off its
+// shelf to the left a bit." x:1155 sits solidly inside those bounds while
+// still favoring the left half, leaving the shelf's own right portion
+// bare per the shelf's original comment ("somewhere for an uncoiled tail
+// to rest").
+const snakeSpot = { x: 1155, y: 78 };
 const snakeState = { tailWaveT: 0, hissing: 0, hissT: 0 };
 const snakeDialogue = { active: false, index: 0, t: 0, everShownThisVisit: false };
 const snakeLines = [
@@ -24967,7 +25040,7 @@ function updatePaperAirplane() {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1330, y: 93, collected: false }; // x kept in sync with marbleShelf's x (1330) -- was left at the shelf's old pre-move x (1295) after the shelf itself shifted right, leaving the marble floating over empty space instead of sitting on the shelf
+const marbleSpot = { x: 1294, y: 93, collected: false }; // x kept in sync with marbleShelf's x (1294, pulled in from 1330 -- see that shelf's own comment) so the marble still sits on the shelf rather than floating over empty space
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -25857,7 +25930,12 @@ const ratRoomEyes = [
   // more spread further right -- a genuine huddled cluster of three,
   // not evenly spaced like before, plus one further out on its own
   { x: 825, y: 268, phase: 5.2, blinkSpeed: 0.92 },
-  { x: 865, y: 235, phase: 0.9, blinkSpeed: 1.08 },
+  // pulled in from x:865 -- that sat up and to the left of the carved
+  // initials (then at x:900/y:240), close enough to read as "off in its
+  // own spot" rather than part of this huddle. Per direct feedback ("that
+  // rat to top left of initials should move over... maybe left closer to
+  // rat"), tucked in next to its two cluster-mates instead.
+  { x: 830, y: 235, phase: 0.9, blinkSpeed: 1.08 },
   { x: 822, y: 292, phase: 2.1, blinkSpeed: 0.88 },
   { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
@@ -36473,6 +36551,16 @@ const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRive
 const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
   Math.sin(performance.now() * 0.0028) * 3;
 const drawPy = py + sinkAmount + riverWadeSink - floatBob;
+
+// the single shared head-anchor offset for this frame -- see
+// playerVisualDX/DY's own declaration up near the crown state for why
+// this exists. Captures every term that just went into px/drawPy above
+// (pile wobble on both axes, fall sink, river wade, float bob) in one
+// place, so anything worn on the head (right now just the crown) can
+// follow all of them by reading these two numbers instead of needing
+// its own copy of this exact same math kept in sync by hand.
+playerVisualDX = pileWobble.x;
+playerVisualDY = drawPy - (gy + cameraY - player.height - player.y);
 
 // shadow shrinks along with the body sinking in -- pinned to the
 // visual ground line, which itself scrolls with cameraY in tunnel
