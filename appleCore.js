@@ -11212,7 +11212,7 @@ const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
 // art/placement/tuning comes later once the mechanic itself is proven
 // out -- this is scaffolding, not a finished set piece.
 const FOREST_FLOAT_ZONE_START_X = 5700;
-const FOREST_FLOAT_ZONE_END_X = 7100; // stretched further right per direct request ("make this a bit longer to the right") -- was 6400
+const FOREST_FLOAT_ZONE_END_X = 7700; // stretched again (was 7100, then 7400) -- extra room after the new double-moving-log combo per direct request ("spread out river a bit longer... more reasonable room to test these")
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
@@ -11246,14 +11246,26 @@ let floatSubmergeAmount = 0;
 // like idea of a log also floating down the rive you have to jump over
 // the moving target"). floatObstacleX() below resolves its live x each
 // frame; every other obstacle type just keeps its fixed ob.x.
+// duck-type obstacles now also carry duckSpeed/duckPhase -- the roots
+// gently sway/pulse open and closed over time (see floatDuckOpenAmount
+// below), so ducking alone is no longer an automatic pass; you have to
+// duck while the roots also happen to be in their "open" part of the
+// cycle. Per direct request ("i like the more timed duck").
 const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
   { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
   { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump" },
   { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck" }
+  { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
+  // out-of-phase double moving log -- two logs close enough together
+  // that their swings overlap, but on different speeds/phases (one of
+  // them offset a half-cycle via Math.PI) so there's no single fixed
+  // rhythm that clears both -- each has to be read and timed on its
+  // own. Per direct request ("out of phase double moving logs").
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump" },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump" }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -11266,6 +11278,18 @@ function floatObstacleX(ob) {
   }
   return ob.x;
 }
+
+// 0..1 "openness" of a duck obstacle's roots -- 1 = roots lifted, fully
+// safe to duck under; 0 = roots dipped all the way down, blocking even
+// a full duck. Used by both the collision check and the draw functions
+// (which sway/bob the tree in sync) so the obstacle is actually
+// readable, not just an invisible timer -- the player can see the roots
+// rise and fall and time the duck to the visible open window rather
+// than guessing.
+function floatDuckOpenAmount(ob) {
+  return 0.5 + 0.5 * Math.sin(performance.now() * ob.duckSpeed + ob.duckPhase);
+}
+const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 
 // a calm resting spot partway through the zone -- somewhere to actually
 // stand still on instead of only ever passing through. Per direct
@@ -11297,7 +11321,16 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // drawForestFloatDuckOverlay, same "redraw after the player" trick the
 // old log used, since the pods are the part low enough to actually
 // need to occlude a ducking player).
-function drawFloatSwampTreeBack(ox, obBottom) {
+// openAmount (0..1, see floatDuckOpenAmount) bobs the whole tree
+// vertically -- lifted a bit when open (roots pulled up, real headroom
+// to duck under), dipped a bit lower when closed (roots sagged down,
+// blocking even a full duck) -- so the timing window is actually
+// visible/readable, not just an invisible collision timer. Defaults to
+// fully open (no bob) for callers that don't pass it.
+function drawFloatSwampTreeBack(ox, obBottom, openAmount) {
+  const bob = (1 - (openAmount ?? 1)) * 16;
+  ctx.save();
+  ctx.translate(0, bob);
   const trunkTopY = obBottom - 130;
   const trunkBaseY = gy;
   // trunk -- a real taper, wider at the buttressed base than up top
@@ -11341,9 +11374,16 @@ function drawFloatSwampTreeBack(ox, obBottom) {
   ctx.beginPath();
   ctx.arc(ox, trunkTopY - 4, 30, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 }
 
-function drawFloatSeedPods(ox, obBottom, w) {
+// same bob as the tree (see drawFloatSwampTreeBack) applied to the pods
+// so they visibly sway in sync with the roots -- one readable timing
+// cue, not two disagreeing ones.
+function drawFloatSeedPods(ox, obBottom, w, openAmount) {
+  const bob = (1 - (openAmount ?? 1)) * 16;
+  ctx.save();
+  ctx.translate(0, bob);
   const podXs = [ox - w * 0.26, ox, ox + w * 0.28];
   const podLens = [22, 28, 20];
   const podTilts = [-0.14, 0.05, 0.16];
@@ -11383,6 +11423,7 @@ function drawFloatSeedPods(ox, obBottom, w) {
     }
     ctx.restore();
   });
+  ctx.restore();
 }
 
 // the calm mid-river resting spot -- a real lily pad with a classic
@@ -11541,8 +11582,9 @@ function drawForestFloatZone(camX) {
     if (ox < -60 || ox > canvas.width + 60) return;
     if (ob.type === "duck") {
       const obBottom = gy - 14;
-      drawFloatSwampTreeBack(ox, obBottom);
-      drawFloatSeedPods(ox, obBottom, ob.w);
+      const openAmount = floatDuckOpenAmount(ob);
+      drawFloatSwampTreeBack(ox, obBottom, openAmount);
+      drawFloatSeedPods(ox, obBottom, ob.w, openAmount);
     } else {
       // jump / movingJump -- still a plain placeholder log, unchanged
       // for now (today's priority list was the moving obstacle, the
@@ -11587,7 +11629,7 @@ function drawForestFloatDuckOverlay(camX) {
     // only the pods themselves redraw here -- the trunk/roots are tall
     // enough, and far enough back, that they never need to occlude a
     // ducking player the way the low-hanging pods do
-    drawFloatSeedPods(ox, gy - 14, ob.w);
+    drawFloatSeedPods(ox, gy - 14, ob.w, floatDuckOpenAmount(ob));
   });
 }
 
@@ -15467,9 +15509,14 @@ function updateForestScene(deltaTime) {
       // hanging seed pods -- too tall/wide to jump over, so unlike a plain
       // "jump" log the ONLY way through is actually ducking underneath
       // (low to the ground with enough duck depth). Jumping just runs you
-      // straight into the trunk/pods instead of clearing them.
+      // straight into the trunk/pods instead of clearing them. On top of
+      // that, the roots themselves sway open/closed over time (see
+      // floatDuckOpenAmount) -- ducking is necessary but no longer
+      // sufficient on its own; you also need the roots to actually be in
+      // their open part of the cycle. Per direct request ("i like the
+      // more timed duck").
       const passable = ob.type === "duck"
-        ? (player.y <= 2 && playerDuckAmount > 0.6)
+        ? (player.y <= 2 && playerDuckAmount > 0.6 && floatDuckOpenAmount(ob) > FOREST_FLOAT_DUCK_OPEN_THRESHOLD)
         : player.y > ob.clearance;
       if (within && !passable) {
         if (floatCenterX < obX) {
