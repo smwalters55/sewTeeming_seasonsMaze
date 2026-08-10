@@ -1932,6 +1932,13 @@ function handleInput(){
   // ratroom above -- placed at the room's own declared width
   if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
 
+  // oak's book-pile jump run stays gated until the ratroom has been
+  // visited -- see OAK_JUMPRUN_GATE_X's own comment. Matching camera
+  // clamp lives down with the other scene camera clamps below.
+  if (currentScene === "oak" && !discoveredScenes.ratroom && player.x > OAK_JUMPRUN_GATE_X) {
+    player.x = OAK_JUMPRUN_GATE_X;
+  }
+
   // tunnel town's own right boundary -- clamped to whatever's actually
   // been dug so far (the same frontier used to decide what's visible),
   // NOT the room's full width the instant the wall breaks. Otherwise
@@ -3112,7 +3119,17 @@ function getCrownDisplayLeaves() {
 function drawCrownOnHead(camX, sinkAmount) {
   const px = player.x - camX + player.width / 2;
   const lowerOffset = 7; // sits closer to the head, more like a resting crown than perched at the peak
-  const topY = gy - player.height - player.y + (sinkAmount || 0) + lowerOffset;
+  // CONFIRMED BUG FIX: was missing `+ cameraY` -- every other
+  // player-relative screen draw (the player sprite itself, drawCrown's
+  // own `py` a few lines below) uses `gy + cameraY - player.height -
+  // player.y`. Oak's book-pile jump run is the only place cameraY is
+  // ever nonzero, so this only broke there: bouncing up onto a high
+  // pile pushes cameraY away from 0, and without it here the crown's
+  // position drifted further and further from the player's actual
+  // head each frame -- reported as "the crown bounces wildly" while
+  // climbing, and as the crown not following the player back down
+  // when they fell off the pile run.
+  const topY = gy + cameraY - player.height - player.y + (sinkAmount || 0) + lowerOffset;
 
   const isFalling = fallState.active;
   const widthScale = isFalling ? 0.85 : 1; // narrower while falling through a hole, so it stays inside the hole's own width — but still close to the player's own body width, not tiny
@@ -19596,6 +19613,16 @@ const bookPiles = [
 ];
 const BOOK_PILE_WIDTH = 30; // widened from 24 for a bit more forgiveness, but not so wide that adjacent piles in a dense sequence intercept each other's jumps
 
+// the jump-run climb (first isJumpRun pile at x=3000) stays out of both
+// reach and view until the player has actually visited the ratroom --
+// it read oddly to see (and be able to wander into) that whole
+// progression from the nook before ever going down the trap door.
+// Gate sits on the open floor stretch after the last regular pile
+// (x=2398) and well clear of the first jump-run pile's left edge
+// (2985), so neither the player nor the camera creeps into view of it
+// early. Once discoveredScenes.ratroom flips true, this opens for good.
+const OAK_JUMPRUN_GATE_X = 2900;
+
 // fall punishment for the book-pile jump run -- landing back at ground
 // level after having been on a pile triggers a brief woozy stun, plus
 // (only the first time for a given pile) a scatter-then-rebuild
@@ -21122,7 +21149,19 @@ function drawOakScene(camX) {
   sky.addColorStop(0, "#3a2818");
   sky.addColorStop(1, "#5a4028");
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  // CONFIRMED BUG FIX: this used to stop at the fixed screen row `gy`,
+  // but the book-pile jump run pushes cameraY upward as the player
+  // climbs (see updateOakScene's own cameraY line), which shoves the
+  // floor/book-pile draws further DOWN the screen without the
+  // background wall growing to match -- leaving a plain white gap
+  // between the wall and the (now lower) floor whenever the player
+  // bounced up onto one of the higher piles ("shows white on the
+  // bottom"). Extending this fill down by cameraY keeps the wall
+  // solid all the way to wherever the floor actually is this frame;
+  // the gradient's own stops just clamp/pad past `gy`, so this reads
+  // as a seamless solid extension of the same wall color, not a hard
+  // edge.
+  ctx.fillRect(0, 0, canvas.width, gy + cameraY);
 
   // interior wood-grain walls
   ctx.strokeStyle = "rgba(74,48,24,0.3)";
@@ -21131,7 +21170,7 @@ function drawOakScene(camX) {
     const gx = i * 150 - camX * 0.3;
     ctx.beginPath();
     ctx.moveTo(gx, 0);
-    ctx.quadraticCurveTo(gx + 20, gy * 0.5, gx, gy);
+    ctx.quadraticCurveTo(gx + 20, (gy + cameraY) * 0.5, gx, gy + cameraY);
     ctx.stroke();
   }
 
@@ -36378,6 +36417,14 @@ updateSeasonTransition(deltaTime);
   // clamped a little past the shelf's own left edge (~157) so there's a
   // touch of breathing room, but not so much empty wall shows past it
   if (currentScene === "oak" && cameraX < 130) cameraX = 130;
+  // mirrors the player-side OAK_JUMPRUN_GATE_X clamp above -- capped
+  // independently of player.x (not just derived from it) since the
+  // camera's own follow offset (canvas.width*0.4 lead) would otherwise
+  // still scroll the jump run into view even with the player pinned at
+  // the gate.
+  if (currentScene === "oak" && !discoveredScenes.ratroom && cameraX > OAK_JUMPRUN_GATE_X - canvas.width + 40) {
+    cameraX = OAK_JUMPRUN_GATE_X - canvas.width + 40;
+  }
 
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
