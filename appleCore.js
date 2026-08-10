@@ -10592,7 +10592,13 @@ function drawForestReflectionPool(camX) {
   // own ellipse bounds are what cap how long anything drawn inside it
   // can be before getting clipped.
   const poolW = 130, poolH = 64;
-  const poolY = gy + 8;
+  // was gy+8, which put the pool's top edge a good 24px ABOVE the
+  // ground line -- read as a big raised dome poking up out of the
+  // grass instead of a pool sitting in it, per direct feedback
+  // ("reflective pond needs to sit lower. not be a big bump above the
+  // ground"). Dropped so only a small lip breaks the surface, like an
+  // actual pool dug into the ground rather than a half-buried ball.
+  const poolY = gy + 26;
 
   ctx.save();
   ctx.beginPath();
@@ -11889,7 +11895,15 @@ function drawForestRiver(camX) {
       const j = FOREST_RIVER_JITTER[(i + 3) % FOREST_RIVER_JITTER.length] * 0.8;
       edgePts2.push({ x: bx + j, y: by });
     }
-    const bankPts2 = [{ x: topX2 + 48, y: topY2 }, ...edgePts2, { x: fb + 68, y: gy + 56 }, { x: fb + 128, y: gy + 32 }];
+    // the tail past the water point used to RISE back up toward ground
+    // level as it went right (gy+56 -> gy+32), reading as the sand
+    // fanning upward out of the water instead of staying low and
+    // trailing off into it, per direct feedback ("this right side of
+    // the river at current state fans out upward to the right. we need
+    // it to fan out downward to the right"). Now the tail keeps sinking
+    // (gy+46 -> gy+74) so it reads as settling deeper into the water
+    // the further right it goes, not climbing back up onto the bank.
+    const bankPts2 = [{ x: topX2 + 48, y: topY2 }, ...edgePts2, { x: fb + 68, y: gy + 46 }, { x: fb + 128, y: gy + 74 }];
     // same soft-blurred-halo + real-shading treatment as the near bank
     // (see its comments) instead of one flat flood-filled tone with a
     // crisp vector edge.
@@ -24339,11 +24353,15 @@ function drawMoleholeAlcove(alcove, camX) {
   // each stall's own NPC instead of any particular ware, so it shows
   // up "same location in ref to the npc in the stall" per direct
   // feedback ("put stall 2 notice board in stall one same location in
-  // ref to the npc in the stall"). Offset (+38, -3 from bodyTop)
-  // reproduces alcove two's original on-screen position relative to
-  // its own shopkeeper.
+  // ref to the npc in the stall"). Nudged higher and given a distinct
+  // offset per alcove (was the exact same +38,-3 for both) per direct
+  // feedback ("move both stall 1 and 2 notices a little higher, and
+  // not in the exact same location for both stalls") -- alcove one's
+  // mole stall sits a touch lower/closer-in than alcove two's.
+  const plaqueDX = alcove.hasMole ? 33 : 43;
+  const plaqueDY = alcove.hasMole ? -10 : -15;
   ctx.save();
-  ctx.translate(ax + 38, bodyTop - 3);
+  ctx.translate(ax + plaqueDX, bodyTop + plaqueDY);
   ctx.rotate(-0.05);
   ctx.fillStyle = "rgba(120,96,66,0.42)";
   ctx.fillRect(-9, -7, 18, 14);
