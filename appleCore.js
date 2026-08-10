@@ -23517,7 +23517,7 @@ function drawMoleShopAlcove(camX) {
   // language. Fixed in place, off to the left so it stays well clear
   // of the shopkeeper (centered on ax) and the counter below.
   ctx.save();
-  ctx.translate(ax - archR + 34, top + 36);
+  ctx.translate(ax - archR + 46, top + 48);
   ctx.rotate(0.07);
   ctx.fillStyle = "rgba(224,208,168,0.55)";
   ctx.beginPath();
