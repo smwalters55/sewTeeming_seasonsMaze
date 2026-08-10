@@ -11068,6 +11068,7 @@ function drawForestReflectionPoolReeds(camX) {
     const worldX = rimX + camX;
     if (skipStones.some(s => Math.abs(s.x - worldX) < 22)) continue;
     if (forestFrogs.some(f => Math.abs(f.x - worldX) < 22)) continue;
+    if (forestNewts.some(n => Math.abs(n.x - worldX) < 22)) continue;
 
     const reedH = 9 + pseudoRandom(seedI + 3) * 14;
     const sway = Math.sin(t * 0.0012 + seedI * 0.7) * 2.5;
@@ -11194,6 +11195,191 @@ function drawForestFrogs(camX) {
   forestFrogs.forEach(f => drawForestFrog(f, camX));
 }
 
+// AMBIENT NEWTS -- second ambient near-water critter, per direct
+// request ("ooooh i def want dragonflies!! and newts!!! i love newts").
+// Classic orange-bellied look, low elongated body with a wagging tail
+// instead of a frog's hop -- sits still most of the time, then does a
+// slow, brief crawl to a new nearby spot every several seconds. Purely
+// decorative, no interaction.
+const FOREST_NEWT_SPOTS = [
+  { offsetX: -175, offsetY: 0, dir: 1 },
+  { offsetX: 175, offsetY: 2, dir: -1 }
+];
+const forestNewts = FOREST_NEWT_SPOTS.map((spot, i) => ({
+  x: FOREST_REFLECTION_POOL_X + spot.offsetX,
+  yOffset: spot.offsetY,
+  dir: spot.dir,
+  tailSeed: i * 4.2 + 0.3,
+  crawlT: i * 1300,
+  crawlNextAt: 5000 + i * 1500,
+  crawling: false,
+  crawlStart: 0,
+  crawlDist: 0
+}));
+const FOREST_NEWT_CRAWL_MS = 1100;
+
+function updateForestNewts(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  const now = performance.now();
+  forestNewts.forEach(n => {
+    if (n.crawling) {
+      if (now - n.crawlStart > FOREST_NEWT_CRAWL_MS) {
+        n.crawling = false;
+        n.x += n.crawlDist;
+        n.crawlT = 0;
+        n.crawlNextAt = 5000 + Math.random() * 4000;
+      }
+      return;
+    }
+    n.crawlT += dtMs;
+    if (n.crawlT >= n.crawlNextAt) {
+      n.crawling = true;
+      n.crawlStart = now;
+      n.dir = Math.random() < 0.5 ? -1 : 1;
+      n.crawlDist = n.dir * (8 + Math.random() * 10);
+    }
+  });
+}
+
+function drawForestNewt(n, camX) {
+  const px = n.x - camX;
+  if (px < -30 || px > canvas.width + 30) return;
+  const now = performance.now();
+  let crawlShift = 0;
+  if (n.crawling) {
+    const p = Math.min(1, (now - n.crawlStart) / FOREST_NEWT_CRAWL_MS);
+    const eased = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+    crawlShift = n.crawlDist * eased;
+  }
+  const baseY = gy - 1 + n.yOffset;
+  const bx = px + crawlShift;
+  const dir = n.dir;
+
+  // ground shadow
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(bx, baseY + 1, 8, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // tail, wagging continuously even while otherwise still -- the same
+  // "never reads as a static prop" idea as the frog's throat pulse
+  const tailWag = Math.sin(now * 0.006 + n.tailSeed) * 3;
+  ctx.strokeStyle = "#6b5a2e";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(bx - dir * 6, baseY - 2);
+  ctx.quadraticCurveTo(bx - dir * 11, baseY - 2 + tailWag * 0.5, bx - dir * 15, baseY - 2 + tailWag);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+
+  // body -- low, elongated
+  ctx.fillStyle = "#6b5a2e";
+  ctx.beginPath();
+  ctx.ellipse(bx, baseY - 2.5, 8, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // orange belly with a couple tiny dark spots -- the classic newt
+  // color that makes it read as clearly different from the frog
+  ctx.fillStyle = "#d97a3a";
+  ctx.beginPath();
+  ctx.ellipse(bx, baseY - 1.2, 6, 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a2a10";
+  ctx.beginPath();
+  ctx.arc(bx - 2, baseY - 1.2, 0.6, 0, Math.PI * 2);
+  ctx.arc(bx + 1.5, baseY - 1.1, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head, leading in the direction it's facing/crawling
+  const headX = bx + dir * 7;
+  ctx.fillStyle = "#6b5a2e";
+  ctx.beginPath();
+  ctx.ellipse(headX, baseY - 3, 3, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1a1a12";
+  ctx.beginPath();
+  ctx.arc(headX + dir * 1, baseY - 3.6, 0.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 4 short legs
+  ctx.strokeStyle = "#6b5a2e";
+  ctx.lineWidth = 1.4;
+  [-4, 3].forEach(lx => {
+    ctx.beginPath();
+    ctx.moveTo(bx + lx, baseY - 1);
+    ctx.lineTo(bx + lx - dir * 1.5, baseY + 1.5);
+    ctx.stroke();
+  });
+}
+
+function drawForestNewts(camX) {
+  forestNewts.forEach(n => drawForestNewt(n, camX));
+}
+
+// AMBIENT DRAGONFLIES -- third ambient near-water critter, flying
+// loops above the pool rather than sitting on the bank. Purely
+// decorative, path is a pure function of time (no per-frame update
+// needed) -- an elliptical wander loop per dragonfly, heading derived
+// from the path's own tangent so it always visibly faces the way it's
+// flying.
+const FOREST_DRAGONFLY_SPECS = [
+  { radiusX: 50, radiusY: 18, heightBase: -32, speed: 0.00048, seed: 1.4, color: "#2f7a8a" },
+  { radiusX: 66, radiusY: 22, heightBase: -46, speed: 0.00063, seed: 4.1, color: "#8a4a2f" }
+];
+function drawForestDragonfly(d, camX) {
+  const now = performance.now();
+  const angle = now * d.speed + d.seed;
+  const poolPx = FOREST_REFLECTION_POOL_X - camX;
+  const cx = poolPx + Math.cos(angle) * d.radiusX;
+  const cy = FOREST_REFLECTION_POOL_Y + d.heightBase + Math.sin(angle) * d.radiusY;
+  if (cx < -30 || cx > canvas.width + 30) return;
+
+  // heading from the path's own tangent direction, so the body always
+  // visibly points the way it's actually flying
+  const vx = -Math.sin(angle) * d.radiusX;
+  const vy = Math.cos(angle) * d.radiusY;
+  const heading = Math.atan2(vy, vx);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(heading);
+
+  // two pairs of translucent wings, flapping fast
+  const flap = Math.sin(now * 0.05 + d.seed) * 0.5 + 0.5;
+  ctx.fillStyle = "rgba(220,235,235,0.45)";
+  [-1, 1].forEach(side => {
+    ctx.save();
+    ctx.translate(0, side * 1.2);
+    ctx.rotate(side * (0.15 + flap * 0.5));
+    ctx.beginPath();
+    ctx.ellipse(3, 0, 6, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // thorax + long segmented abdomen trailing behind
+  ctx.fillStyle = d.color;
+  ctx.beginPath();
+  ctx.ellipse(-1, 0, 2.4, 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-8, 0, 7, 1, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head with big eyes, leading the way
+  ctx.fillStyle = "#1a1a12";
+  ctx.beginPath();
+  ctx.arc(2.6, 0, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+const forestDragonflies = FOREST_DRAGONFLY_SPECS.map(spec => ({ ...spec }));
+function drawForestDragonflies(camX) {
+  forestDragonflies.forEach(d => drawForestDragonfly(d, camX));
+}
+
 // general ground-cover grass, generated procedurally from camX the same
 // way drawSpringGrass is (extends infinitely rather than a fixed-size
 // array) instead of the forest floor staying a flat, textureless fill.
@@ -11303,83 +11489,57 @@ function drawForestFloatZoneReeds(camX) {
   }
 }
 
-// the duck-log obstacle itself -- a mossy fallen trunk on two low stone
-// supports, drawn as a real physical obstacle (not just a floating
-// bar) so its height off the ground reads honestly against
-// FOREST_DUCK_LOG.clearance. See that constant's own comment and the
-// DUCKING block in updateForestScene for how it's actually collided
-// with.
-function drawForestDuckLog(camX) {
-  const log = FOREST_DUCK_LOG;
-  const lx = log.x - camX;
-  const logBottomY = gy - log.clearance + 14; // underside of the log itself
-  // beefed up considerably -- the original read as a thin flat bar at
-  // a distance/under video compression, which is what made a
-  // background tree crossing behind it look like a broken mechanical
-  // "horizontal gear" rather than a log with a tree behind it (the
-  // occlusion itself was always correct -- see drawForestForegroundTrees'
-  // own note). Fixed at the source instead of fighting the tree layer:
-  // thicker body, a real ground-contact shadow so it doesn't look like
-  // it's floating, a strong dark outline, and bolder bark texture.
-  const logH = 22; // was 16
+// the breather duck branch -- a low hanging vine strung between two
+// unseen anchor points overhead, NOT a heavy log on supports like the
+// old before-the-bridge obstacle. Deliberately reads as light/soft
+// (thin sagging vine, loose leaves, gentle sway) rather than a solid
+// barrier, matching its job as a gentle first introduction to ducking
+// rather than a real gate. Collision uses the same clearance/duck
+// rules as any other duck obstacle -- see FOREST_BREATHER_DUCK_BRANCH's
+// own comment and the DUCKING block in updateForestScene.
+function drawForestBreatherDuckBranch(camX) {
+  const branch = FOREST_BREATHER_DUCK_BRANCH;
+  const bx = branch.x - camX;
+  const sagY = gy - branch.clearance + 10; // lowest point of the vine's sag
+  const sway = Math.sin(performance.now() * 0.0011 + branch.x * 0.01) * 2;
 
-  // a soft grounding shadow beneath the whole log -- ties it visually
-  // to the ground plane so it doesn't read as a stray bar hovering in
-  // front of whatever's behind it
-  ctx.fillStyle = "rgba(10,10,5,0.28)";
+  // faint ground shadow, just enough to ground it without reading as
+  // solid/heavy
+  ctx.fillStyle = "rgba(10,10,5,0.14)";
   ctx.beginPath();
-  ctx.ellipse(lx, gy + 3, log.w / 2 + 14, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(bx, gy + 2, branch.w / 2 + 6, 4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // two squat stone supports holding the log up off the ground
-  ctx.fillStyle = "#68665e";
-  [-1, 1].forEach(side => {
+  // the vine itself -- a thin sagging line rather than a rigid bar, so
+  // it visually reads as soft/passable, not a wall
+  const leftX = bx - branch.w / 2 - 10 + sway * 0.4;
+  const rightX = bx + branch.w / 2 + 10 + sway * 0.4;
+  const topY = sagY - 20;
+  ctx.strokeStyle = "#4c6a34";
+  ctx.lineWidth = 3.4;
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY);
+  ctx.quadraticCurveTo(bx + sway, sagY, rightX, topY);
+  ctx.stroke();
+  ctx.strokeStyle = "#3a5326";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY);
+  ctx.quadraticCurveTo(bx + sway, sagY, rightX, topY);
+  ctx.stroke();
+
+  // small leaf clusters along the sag, a few extra dangling loose so it
+  // reads as foliage rather than a bare rope
+  const leafSpots = [-0.5, -0.22, 0, 0.24, 0.5];
+  leafSpots.forEach((f, i) => {
+    const t = 0.5 + f;
+    const lx = leftX + (rightX - leftX) * t;
+    const ly = topY + (sagY - topY) * (1 - (2 * f) * (2 * f)) + Math.sin(performance.now() * 0.0015 + i * 2) * 1.2;
+    ctx.fillStyle = i % 2 === 0 ? "#5c8a3e" : "#4c7a34";
     ctx.beginPath();
-    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 8, 11, 0, 0, Math.PI * 2);
+    ctx.ellipse(lx, ly, 4, 2.2, f * 1.2, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 1.3;
-  [-1, 1].forEach(side => {
-    ctx.beginPath();
-    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 8, 11, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-
-  // the log itself -- a rounded horizontal trunk, mossy on top. Strong
-  // dark outline (was a thin 0.5-alpha line) so the silhouette holds up
-  // on its own regardless of what's behind it.
-  ctx.fillStyle = "#6b4a2c";
-  roundRect(ctx, lx - log.w / 2 - 8, logBottomY - logH, log.w + 16, logH, 10);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(20,12,5,0.85)";
-  ctx.lineWidth = 2.2;
-  ctx.stroke();
-  // bark texture -- a few bold horizontal-ish lines along the body,
-  // not just the end rings, so the whole length reads as bark/wood
-  // grain even from a distance
-  ctx.strokeStyle = "rgba(40,26,12,0.55)";
-  ctx.lineWidth = 1.4;
-  [-0.3, 0.1, 0.5].forEach(f => {
-    ctx.beginPath();
-    ctx.moveTo(lx - log.w / 2 - 4, logBottomY - logH * 0.75 + f * logH * 0.5);
-    ctx.quadraticCurveTo(lx, logBottomY - logH * 0.6 + f * logH * 0.5, lx + log.w / 2 + 4, logBottomY - logH * 0.75 + f * logH * 0.5);
-    ctx.stroke();
-  });
-  // end-grain rings on the near end, so it clearly reads as a log and
-  // not just a plank
-  ctx.strokeStyle = "rgba(110,74,40,0.75)";
-  ctx.lineWidth = 1.3;
-  [3, 5.5].forEach(r => {
-    ctx.beginPath();
-    ctx.ellipse(lx - log.w / 2 - 8, logBottomY - logH / 2, r * 0.4, r, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-  // a mossy cap along the top
-  ctx.fillStyle = "rgba(100,132,66,0.85)";
-  ctx.beginPath();
-  ctx.ellipse(lx, logBottomY - logH, log.w / 2 + 2, 5.5, 0, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function drawForestScene(camX) {
@@ -11494,12 +11654,14 @@ function drawForestScene(camX) {
   drawMoleHoleTree(camX);
   drawMoleHoleEntrance(camX);
   drawMoleHoleRootsOverHole(camX); // the roots that reach into the hole draw again here so they land on top of its rim, not hidden under it
-  drawForestDuckLog(camX);
   drawForestRiver(camX);
   drawForestReflectionPool(camX);
   drawForestReflectionPoolReeds(camX);
+  drawForestNewts(camX);
   drawForestFrogs(camX);
+  drawForestDragonflies(camX);
   drawForestSkipStones(camX);
+  drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
@@ -11583,9 +11745,11 @@ const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 s
 // the near-bank reed cluster (that cluster spans roughly NEAR_BANK_X-92
 // to NEAR_BANK_X-50), per direct feedback ("i also dont want the log
 // pile to cover the reeds witht he nice brown tops on the left"). Now
-// sitting in the clear gap between the reeds and the duck-log obstacle
-// (FOREST_DUCK_LOG.x=4150, visual footprint out to about x+32), with a
-// little breathing room on both sides.
+// sitting in the clear gap between the reeds and where a duck-log
+// obstacle used to sit before the bridge (that obstacle has since
+// moved downstream into the breather zone -- see
+// FOREST_BREATHER_DUCK_BRANCH's own comment), with a little breathing
+// room on both sides.
 const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 130;
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
@@ -11670,15 +11834,18 @@ let forestRiverWadeDepth = 0.6;
 // a separate, not-yet-built system.
 let playerDuckAmount = 0;
 
-// a single placeholder log spanning the riverside path, positioned on
-// the dry ground between the mole hole and the near bank so it's
-// reachable with the game's normal walk controls right now, well
-// before any float-downstream current exists to carry the player past
-// it on its own. Passable either by ducking under it at ground level
-// (playerDuckAmount past DUCK_LOG.duckThreshold) or by jumping clean
-// over its top (player.y past DUCK_LOG.clearance) -- both read as
-// physically reasonable given the log's own height off the ground.
-const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
+// moved out of the path before the bridge (was x=4150, a heavier log
+// obstacle gating the very start of the walk) per direct feedback
+// ("this duck under thing needs to go... incorporated gently into the
+// breather before the river instead of before the bridge"). Now sits
+// in the breather stretch between the reflection pool/skip-stones spot
+// and the float zone (pool at 5400, float zone starts at 6600), as a
+// low hanging vine rather than a solid log -- a soft, generous
+// introduction to the ducking mechanic (wider clearance, lower
+// duckThreshold than the float zone's own duck obstacles) so the
+// player has already tried it once before the real duck gates further
+// downstream actually require good timing.
+const FOREST_BREATHER_DUCK_BRANCH = { x: 5900, w: 46, clearance: 58, duckThreshold: 0.4 };
 
 // TEST-ONLY river float zone -- a plain, deliberately unpolished stretch
 // of "river" further out past everything else built so far (past even
@@ -16008,6 +16175,7 @@ function drawForestSnake(camX) {
 function updateForestScene(deltaTime) {
   updateReflectionPool();
   updateForestFrogs(deltaTime);
+  updateForestNewts(deltaTime);
   updateForestSkipStones(deltaTime);
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
@@ -16136,13 +16304,15 @@ function updateForestScene(deltaTime) {
     if (playerDuckAmount > 0.999) playerDuckAmount = 1;
   }
 
-  // the duck log itself -- solid to upright walking, passable ducked
-  // (at ground level) or jumped clean over the top. Same simple
+  // the breather duck branch -- solid to upright walking, passable
+  // ducked (at ground level) or jumped clean over the top. Same simple
   // push-back-out-of-the-way collision style as other solid forest
   // obstacles, just gated on the pass conditions above instead of
-  // being unconditionally solid.
+  // being unconditionally solid. Moved here from a heavier "duck log"
+  // that used to sit before the bridge (see FOREST_BREATHER_DUCK_BRANCH's
+  // own comment) -- same mechanics, just relocated and softened.
   {
-    const log = FOREST_DUCK_LOG;
+    const log = FOREST_BREATHER_DUCK_BRANCH;
     const playerCenterX = player.x + player.width / 2;
     const withinLogX = playerCenterX > log.x - log.w / 2 - player.width / 2 &&
                         playerCenterX < log.x + log.w / 2 + player.width / 2;
