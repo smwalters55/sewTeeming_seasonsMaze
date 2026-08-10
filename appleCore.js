@@ -6069,8 +6069,10 @@ let crowTalked = false;
 // then the right eye can be edited independently before moving on to
 // the mouth, so someone who wants a normal symmetric face never has
 // to make the same choice twice, but mismatched eyes are just as easy.
-const CARVING_EYE_COUNT = 8;
-const CARVING_MOUTH_COUNT = 8;
+const CARVING_EYE_COUNT = 13; // was 8 -- X, crescent moon, cat-eye slit, cross, spiral added
+const CARVING_MOUTH_COUNT = 13; // was 8 -- fangs/snaggletooth/pucker/zigzag-scream/stitched added
+const CARVING_NOSE_COUNT = 13; // triangle, circle, tiny circle, oval, square, hexagon, diamond, heart, horiz line, vert line, question mark, notched triangle, lightning bolt
+const CARVING_EYEBROW_COUNT = 8; // flat, raised, angry, worried, furrowed, sad/tired, skeptical, double-peak
 const CARVING_OPEN_CLOSE_MS = 500;
 
 const carvingUI = {
@@ -6079,32 +6081,55 @@ const carvingUI = {
   openT: 0,
   closing: false,
   closeT: 0,
-  step: "eyes", // "eyes" -> "eyeRight" -> "mouth" -> "finalize"
+  // top-to-bottom on the face: eyebrows first, then eyes, then nose,
+  // then mouth, matching how you'd actually look at a face rather than
+  // the eyes-first order this used to be in before eyebrows existed
+  step: "eyebrows", // "eyebrows" -> "eyebrowRight" -> "eyes" -> "eyeRight" -> "nose" -> "mouth" -> "finalize"
   cursorIndex: 0,
   transitionT: 999, // time since cursorIndex last changed -- starts high so nothing animates before the first change
+  eyebrowLeft: 0,
+  eyebrowRight: 0,
   eyeLeft: 0,
   eyeRight: 0,
+  nose: 0,
   mouth: 0
 };
 
 function startCarvingUI() {
   carvingUI.opening = true;
   carvingUI.openT = 0;
-  carvingUI.step = "eyes";
+  carvingUI.step = "eyebrows";
   carvingUI.cursorIndex = 0;
+  carvingUI.eyebrowLeft = 0;
+  carvingUI.eyebrowRight = 0;
   carvingUI.eyeLeft = 0;
   carvingUI.eyeRight = 0;
+  carvingUI.nose = 0;
   carvingUI.mouth = 0;
 }
 
 // the finalized design -- what the compositing render (piece 4) reads
 // from, and what the in-world carving animation (piece 5) will
 // eventually act on
-const carvedPumpkinDesign = { eyeLeft: 0, eyeRight: 0, mouth: 0, ready: false };
+const carvedPumpkinDesign = { eyebrowLeft: 0, eyebrowRight: 0, eyeLeft: 0, eyeRight: 0, nose: 0, mouth: 0, ready: false };
+
+// small helper -- builds the drawPumpkinFace `extra` object straight
+// from the finalized design, so every finished/in-progress in-world
+// render just calls this instead of repeating the same four fields
+function carvedFaceExtra() {
+  return {
+    noseIdx: carvedPumpkinDesign.nose,
+    eyebrowLeftIdx: carvedPumpkinDesign.eyebrowLeft,
+    eyebrowRightIdx: carvedPumpkinDesign.eyebrowRight
+  };
+}
 
 function finalizeCarvedPumpkin() {
+  carvedPumpkinDesign.eyebrowLeft = carvingUI.eyebrowLeft;
+  carvedPumpkinDesign.eyebrowRight = carvingUI.eyebrowRight;
   carvedPumpkinDesign.eyeLeft = carvingUI.eyeLeft;
   carvedPumpkinDesign.eyeRight = carvingUI.eyeRight;
+  carvedPumpkinDesign.nose = carvingUI.nose;
   carvedPumpkinDesign.mouth = carvingUI.mouth;
   carvedPumpkinDesign.ready = true;
   carvingUI.active = false;
@@ -6235,7 +6260,7 @@ function drawPumpkinEye(idx, x, y, s, fillColor) {
     ctx.beginPath();
     ctx.ellipse(0, 0, s * 0.55, s * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
-  } else { // hexagon
+  } else if (idx === 7) { // hexagon
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i - Math.PI / 2;
@@ -6244,6 +6269,38 @@ function drawPumpkinEye(idx, x, y, s, fillColor) {
     }
     ctx.closePath();
     ctx.fill();
+  } else if (idx === 8) { // X eyes
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, -s * 0.4); ctx.lineTo(s * 0.4, s * 0.4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.4, -s * 0.4); ctx.lineTo(-s * 0.4, s * 0.4); ctx.stroke();
+  } else if (idx === 9) { // crescent moon -- two overlapping circles, evenodd
+    // punches the offset one out as a "bite", leaving a sliver
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.42, 0, Math.PI * 2);
+    ctx.arc(s * 0.22, 0, s * 0.36, 0, Math.PI * 2);
+    ctx.fill("evenodd");
+  } else if (idx === 10) { // cat-eye slit -- narrow tall oval, more
+    // mysterious/sly than the wide surprised oval
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.12, s * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 11) { // cross / plus
+    ctx.fillRect(-s * 0.12, -s * 0.42, s * 0.24, s * 0.84);
+    ctx.fillRect(-s * 0.42, -s * 0.12, s * 0.84, s * 0.24);
+  } else { // idx 12, spiral -- hypnotized look
+    ctx.lineWidth = s * 0.09;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    const turns = 2.2, steps = 40;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = t * turns * Math.PI * 2;
+      const r = t * s * 0.42;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -6299,7 +6356,7 @@ function drawPumpkinMouth(idx, x, y, s, fillColor) {
     ctx.stroke();
   } else if (idx === 6) { // straight slit
     ctx.fillRect(-s * 0.6, -s * 0.06, s * 1.2, s * 0.12);
-  } else { // wide open happy mouth -- a big genuine laugh, corners
+  } else if (idx === 7) { // wide open happy mouth -- a big genuine laugh, corners
     // curling up into a smile rather than a flat oval
     ctx.beginPath();
     ctx.moveTo(-s * 0.65, s * 0.05);
@@ -6309,11 +6366,211 @@ function drawPumpkinMouth(idx, x, y, s, fillColor) {
     ctx.quadraticCurveTo(-s * 0.5, s * 0.42, -s * 0.65, s * 0.05);
     ctx.closePath();
     ctx.fill();
+  } else if (idx === 8) { // fangs
+    ctx.lineWidth = s * 0.14;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.55, 0); ctx.lineTo(s * 0.55, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.5, 0); ctx.lineTo(-s * 0.36, s * 0.42); ctx.lineTo(-s * 0.28, 0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(s * 0.5, 0); ctx.lineTo(s * 0.36, s * 0.42); ctx.lineTo(s * 0.28, 0); ctx.closePath(); ctx.fill();
+  } else if (idx === 9) { // snaggletooth -- asymmetric single tooth grin
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.6, s * 0.12);
+    ctx.quadraticCurveTo(0, s * 0.4, s * 0.6, s * 0.05);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(s * 0.02, s * 0.18); ctx.lineTo(s * 0.14, -s * 0.18); ctx.lineTo(s * 0.26, s * 0.14);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 10) { // pucker / whistle -- tighter and rounder
+    // than the existing "round o"
+    ctx.beginPath();
+    ctx.arc(0, s * 0.08, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 11) { // zigzag scream -- a tall jagged strip
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.16, -s * 0.5);
+    const steps = 6;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const py = -s * 0.5 + t * s;
+      const px = (i % 2 === 0 ? -1 : 1) * s * 0.16;
+      ctx.lineTo(px, py);
+    }
+    ctx.lineTo(s * 0.16, s * 0.5);
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      const py = -s * 0.5 + t * s;
+      const px = (i % 2 === 0 ? 1 : -1) * s * 0.16;
+      ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else { // idx 12, stitched -- a sewn-shut mouth instead of an opening
+    ctx.lineWidth = s * 0.05;
+    ctx.beginPath(); ctx.moveTo(-s * 0.55, 0); ctx.lineTo(s * 0.55, 0); ctx.stroke();
+    for (let i = -2; i <= 2; i++) {
+      const stitchX = i * s * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(stitchX - s * 0.06, -s * 0.14);
+      ctx.lineTo(stitchX + s * 0.06, s * 0.14);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
 
-function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLeftReveal, eyeRightReveal, mouthReveal, glowColor) {
+function drawPumpkinNose(idx, x, y, s, fillColor) {
+  fillColor = fillColor || "#2a1608";
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = fillColor;
+  if (idx === 0) { // triangle -- the classic jack-o'-lantern nose
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.42); ctx.lineTo(s * 0.32, s * 0.32); ctx.lineTo(-s * 0.32, s * 0.32);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 1) { // circle / button
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 2) { // tiny circle
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 3) { // oval
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.42, s * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (idx === 4) { // square
+    ctx.fillRect(-s * 0.28, -s * 0.28, s * 0.56, s * 0.56);
+  } else if (idx === 5) { // hexagon
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      const px = Math.cos(a) * s * 0.42, py = Math.sin(a) * s * 0.42;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 6) { // diamond
+    ctx.save();
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-s * 0.3, -s * 0.3, s * 0.6, s * 0.6);
+    ctx.restore();
+  } else if (idx === 7) { // heart
+    ctx.beginPath();
+    ctx.moveTo(0, s * 0.32);
+    ctx.bezierCurveTo(-s * 0.5, -s * 0.12, -s * 0.24, -s * 0.5, 0, -s * 0.18);
+    ctx.bezierCurveTo(s * 0.24, -s * 0.5, s * 0.5, -s * 0.12, 0, s * 0.32);
+    ctx.closePath();
+    ctx.fill();
+  } else if (idx === 8) { // horizontal line
+    ctx.fillRect(-s * 0.32, -s * 0.06, s * 0.64, s * 0.12);
+  } else if (idx === 9) { // vertical line
+    ctx.fillRect(-s * 0.06, -s * 0.32, s * 0.12, s * 0.64);
+  } else if (idx === 10) { // question mark
+    ctx.font = "bold " + Math.round(s * 0.85) + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("?", 0, s * 0.06);
+  } else if (idx === 11) { // notched triangle -- a pointy triangle with a
+    // smaller triangle punched out of its middle (evenodd), same
+    // orientation, so it reads as a hollow/framed pointy nose
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.5); ctx.lineTo(s * 0.42, s * 0.36); ctx.lineTo(-s * 0.42, s * 0.36);
+    ctx.closePath();
+    ctx.moveTo(0, -s * 0.24); ctx.lineTo(s * 0.18, s * 0.18); ctx.lineTo(-s * 0.18, s * 0.18);
+    ctx.closePath();
+    ctx.fill("evenodd");
+  } else { // idx 12, lightning bolt
+    ctx.beginPath();
+    ctx.moveTo(s * 0.06, -s * 0.5); ctx.lineTo(-s * 0.24, s * 0.06); ctx.lineTo(s * 0.0, s * 0.06);
+    ctx.lineTo(-s * 0.1, s * 0.5); ctx.lineTo(s * 0.3, -s * 0.1); ctx.lineTo(s * 0.05, -s * 0.1);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// side: -1 for the left eyebrow, 1 for the right -- shapes mirror
+// automatically off this so the same idx reads as a matched pair by
+// default, the same way eyes do before the eyeRight step overrides one
+function drawPumpkinEyebrow(idx, x, y, s, side, fillColor) {
+  fillColor = fillColor || "#2a1608";
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = fillColor;
+  if (idx === 0) { // flat
+    ctx.lineWidth = s * 0.14;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 0.4, 0); ctx.stroke();
+  } else if (idx === 1) { // raised / surprised -- outer end lifts
+    ctx.save();
+    ctx.rotate(-side * 0.4);
+    ctx.lineWidth = s * 0.13;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 0.4, 0); ctx.stroke();
+    ctx.restore();
+  } else if (idx === 2) { // angry -- inner end drops toward the nose, thicker
+    ctx.save();
+    ctx.rotate(side * 0.38);
+    ctx.lineWidth = s * 0.18;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 0.4, 0); ctx.stroke();
+    ctx.restore();
+  } else if (idx === 3) { // worried -- gentle wave, opposite tilt from angry
+    ctx.lineWidth = s * 0.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-side * s * 0.4, s * 0.12);
+    ctx.quadraticCurveTo(0, -s * 0.12, side * s * 0.4, -s * 0.05);
+    ctx.stroke();
+  } else if (idx === 4) { // furrowed -- flat + thick, with a small crease
+    // tick at the inner end
+    ctx.lineWidth = s * 0.2;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 0.4, 0); ctx.stroke();
+    const innerX = -side * s * 0.38;
+    ctx.lineWidth = s * 0.06;
+    ctx.beginPath(); ctx.moveTo(innerX, -s * 0.08); ctx.lineTo(innerX, s * 0.18); ctx.stroke();
+  } else if (idx === 5) { // sad/tired -- a real sagging curve, longer on
+    // each side than "worried", heavier weight -- droops rather than tilts
+    ctx.lineWidth = s * 0.13;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-side * s * 0.5, -s * 0.05);
+    ctx.quadraticCurveTo(0, s * 0.3, side * s * 0.5, s * 0.16);
+    ctx.stroke();
+  } else if (idx === 6) { // skeptical -- a sharp quizzical arch, the
+    // "one eyebrow up" cartoon look
+    ctx.lineWidth = s * 0.14;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-side * s * 0.35, s * 0.06);
+    ctx.quadraticCurveTo(side * s * 0.05, -s * 0.38, side * s * 0.42, -s * 0.02);
+    ctx.stroke();
+  } else { // idx 7, double-peak -- this single brow has its own two
+    // up-points, rather than needing its mirror partner to complete a
+    // shared V the way "angry" does
+    ctx.lineWidth = s * 0.12;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.42, s * 0.1);
+    ctx.lineTo(-s * 0.16, -s * 0.3);
+    ctx.lineTo(0, -s * 0.06);
+    ctx.lineTo(s * 0.16, -s * 0.3);
+    ctx.lineTo(s * 0.42, s * 0.1);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLeftReveal, eyeRightReveal, mouthReveal, glowColor, extra) {
   if (eyeLeftReveal === undefined) eyeLeftReveal = 1;
   if (eyeRightReveal === undefined) eyeRightReveal = 1;
   if (mouthReveal === undefined) mouthReveal = 1;
@@ -6366,6 +6623,27 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
   if (eyeLeftIdx !== null) drawRevealed(eyeLeftReveal, () => drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
   if (eyeRightIdx !== null) drawRevealed(eyeRightReveal, () => drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
   if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3, glowColor));
+
+  // nose + eyebrows -- passed via the trailing `extra` object rather than
+  // new positional params, so every existing call site above (which only
+  // ever passed eyes/mouth) keeps working unchanged and simply doesn't
+  // draw these two features. Nose reveal rides along with the mouth's
+  // own cut timing, eyebrow reveal rides along with the eyes' -- reuses
+  // the existing two-stage carve animation instead of adding a third
+  // knife pass just for these.
+  if (extra) {
+    const noseReveal = extra.noseReveal !== undefined ? extra.noseReveal : mouthReveal;
+    const eyebrowReveal = extra.eyebrowReveal !== undefined ? extra.eyebrowReveal : eyeLeftReveal;
+    if (extra.noseIdx !== undefined && extra.noseIdx !== null) {
+      drawRevealed(noseReveal, () => drawPumpkinNose(extra.noseIdx, cx, cy + size * 0.03, size * 0.2, glowColor));
+    }
+    if (extra.eyebrowLeftIdx !== undefined && extra.eyebrowLeftIdx !== null) {
+      drawRevealed(eyebrowReveal, () => drawPumpkinEyebrow(extra.eyebrowLeftIdx, cx - size * 0.2, cy - size * 0.32, size * 0.22, -1, glowColor));
+    }
+    if (extra.eyebrowRightIdx !== undefined && extra.eyebrowRightIdx !== null) {
+      drawRevealed(eyebrowReveal, () => drawPumpkinEyebrow(extra.eyebrowRightIdx, cx + size * 0.2, cy - size * 0.32, size * 0.22, 1, glowColor));
+    }
+  }
 }
 
 function updateCarvingUI(deltaTime) {
@@ -6391,7 +6669,17 @@ function updateCarvingUI(deltaTime) {
 
   if (!carvingUI.active) return;
 
-  const count = carvingUI.step === "mouth" ? CARVING_MOUTH_COUNT : CARVING_EYE_COUNT;
+  // per-step option counts -- eyebrowRight/eyeRight reuse their own
+  // family's count, same pattern as the original eyes-only version
+  const CARVING_STEP_COUNTS = {
+    eyebrows: CARVING_EYEBROW_COUNT,
+    eyebrowRight: CARVING_EYEBROW_COUNT,
+    eyes: CARVING_EYE_COUNT,
+    eyeRight: CARVING_EYE_COUNT,
+    nose: CARVING_NOSE_COUNT,
+    mouth: CARVING_MOUTH_COUNT
+  };
+  const count = CARVING_STEP_COUNTS[carvingUI.step] || CARVING_EYE_COUNT;
 
   if (keys.rightJustPressed) {
     carvingUI.cursorIndex = (carvingUI.cursorIndex + 1) % count;
@@ -6401,25 +6689,48 @@ function updateCarvingUI(deltaTime) {
     carvingUI.transitionT = 0;
   } else if (keys.upJustPressed) {
     // go back a step, restoring the cursor to whatever was previously
-    // chosen for that step rather than resetting to the first option
-    if (carvingUI.step === "eyeRight") {
+    // chosen for that step rather than resetting to the first option.
+    // Top-to-bottom on the face: eyebrows -> eyes -> nose -> mouth
+    if (carvingUI.step === "eyebrowRight") {
+      carvingUI.step = "eyebrows";
+      carvingUI.cursorIndex = carvingUI.eyebrowLeft;
+    } else if (carvingUI.step === "eyes") {
+      carvingUI.step = "eyebrowRight";
+      carvingUI.cursorIndex = carvingUI.eyebrowRight;
+    } else if (carvingUI.step === "eyeRight") {
       carvingUI.step = "eyes";
       carvingUI.cursorIndex = carvingUI.eyeLeft;
-    } else if (carvingUI.step === "mouth") {
+    } else if (carvingUI.step === "nose") {
       carvingUI.step = "eyeRight";
       carvingUI.cursorIndex = carvingUI.eyeRight;
+    } else if (carvingUI.step === "mouth") {
+      carvingUI.step = "nose";
+      carvingUI.cursorIndex = carvingUI.nose;
     } else if (carvingUI.step === "finalize") {
       carvingUI.step = "mouth";
       carvingUI.cursorIndex = carvingUI.mouth;
     }
   } else if (keys.spaceJustPressed) {
-    if (carvingUI.step === "eyes") {
+    if (carvingUI.step === "eyebrows") {
+      carvingUI.eyebrowLeft = carvingUI.cursorIndex;
+      carvingUI.eyebrowRight = carvingUI.cursorIndex; // mirrored by default
+      carvingUI.step = "eyebrowRight";
+      carvingUI.cursorIndex = carvingUI.eyebrowRight;
+    } else if (carvingUI.step === "eyebrowRight") {
+      carvingUI.eyebrowRight = carvingUI.cursorIndex;
+      carvingUI.step = "eyes";
+      carvingUI.cursorIndex = carvingUI.eyeLeft;
+    } else if (carvingUI.step === "eyes") {
       carvingUI.eyeLeft = carvingUI.cursorIndex;
       carvingUI.eyeRight = carvingUI.cursorIndex; // mirrored by default
       carvingUI.step = "eyeRight";
       carvingUI.cursorIndex = carvingUI.eyeRight;
     } else if (carvingUI.step === "eyeRight") {
       carvingUI.eyeRight = carvingUI.cursorIndex;
+      carvingUI.step = "nose";
+      carvingUI.cursorIndex = carvingUI.nose;
+    } else if (carvingUI.step === "nose") {
+      carvingUI.nose = carvingUI.cursorIndex;
       carvingUI.step = "mouth";
       carvingUI.cursorIndex = carvingUI.mouth;
     } else if (carvingUI.step === "mouth") {
@@ -6979,14 +7290,17 @@ function drawCarvingStation(camX) {
 
   if (carvingStation.phase === "beat2") {
     // carving just finished -- the guts are now sitting there
-    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, undefined, carvedFaceExtra());
     drawPumpkinGuts(sx - 145, gy - 8);
     return;
   }
 
   if (carvingStation.phase === "carving") {
     // knife visibly cutting each feature in, reusing the same
-    // eyes-then-mouth staggered timing as before
+    // eyes-then-mouth staggered timing as before -- nose rides the
+    // mouth's own timing, eyebrows ride the eyes' (see drawPumpkinFace's
+    // own default-fallback comment), so this still reads as a two-beat
+    // cut even with four features now instead of two
     const progress = carvingStation.carveT / CARVING_CARVE_MS;
     const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
     const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
@@ -6999,7 +7313,8 @@ function drawCarvingStation(camX) {
       eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeLeft : null,
       eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeRight : null,
       mouthRevealAmount > 0 ? carvedPumpkinDesign.mouth : null,
-      eyeRevealAmount, eyeRevealAmount, mouthRevealAmount
+      eyeRevealAmount, eyeRevealAmount, mouthRevealAmount,
+      undefined, carvedFaceExtra()
     );
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
@@ -7022,7 +7337,7 @@ function drawCarvingStation(camX) {
 
   if (carvingStation.phase === "sparkle") {
     const p = carvingStation.carveT / CARVING_SPARKLE_MS;
-    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth);
+    drawPumpkinFace(sx, sy, 130, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, undefined, carvedFaceExtra());
     drawPumpkinGuts(sx - 145, gy - 8);
     drawSparkleBurst(sx, sy, p, 1.8);
     return;
@@ -7059,7 +7374,7 @@ function drawCarvingStation(camX) {
       ctx.arc(sx, sy + growY + bob, size * 0.75, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, glowColor);
+    drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, glowColor, carvedFaceExtra());
     drawPumpkinGuts(sx - 145, gy - 8);
   }
 }
@@ -23081,12 +23396,21 @@ function drawCarvingUI() {
 
   // live preview -- whichever feature is currently being browsed
   // updates in real time, everything already confirmed stays fixed
-  let previewEyeLeft = carvingUI.eyeLeft, previewEyeRight = carvingUI.eyeRight, previewMouth = carvingUI.mouth;
-  if (carvingUI.step === "eyes") {
+  let previewEyebrowLeft = carvingUI.eyebrowLeft, previewEyebrowRight = carvingUI.eyebrowRight;
+  let previewEyeLeft = carvingUI.eyeLeft, previewEyeRight = carvingUI.eyeRight;
+  let previewNose = carvingUI.nose, previewMouth = carvingUI.mouth;
+  if (carvingUI.step === "eyebrows") {
+    previewEyebrowLeft = carvingUI.cursorIndex;
+    previewEyebrowRight = carvingUI.cursorIndex;
+  } else if (carvingUI.step === "eyebrowRight") {
+    previewEyebrowRight = carvingUI.cursorIndex;
+  } else if (carvingUI.step === "eyes") {
     previewEyeLeft = carvingUI.cursorIndex;
     previewEyeRight = carvingUI.cursorIndex;
   } else if (carvingUI.step === "eyeRight") {
     previewEyeRight = carvingUI.cursorIndex;
+  } else if (carvingUI.step === "nose") {
+    previewNose = carvingUI.cursorIndex;
   } else if (carvingUI.step === "mouth") {
     previewMouth = carvingUI.cursorIndex;
   }
@@ -23098,7 +23422,9 @@ function drawCarvingUI() {
   ctx.translate(cx, cy);
   ctx.scale(popScale, popScale);
   ctx.translate(-cx, -cy);
-  drawPumpkinFace(cx, cy, 100, previewEyeLeft, previewEyeRight, previewMouth);
+  drawPumpkinFace(cx, cy, 100, previewEyeLeft, previewEyeRight, previewMouth, 1, 1, 1, undefined, {
+    noseIdx: previewNose, eyebrowLeftIdx: previewEyebrowLeft, eyebrowRightIdx: previewEyebrowRight
+  });
   ctx.restore();
 
   // step-specific prompt text
@@ -23106,11 +23432,20 @@ function drawCarvingUI() {
   ctx.font = "16px Georgia, serif";
   ctx.textAlign = "center";
   let promptLine1 = "", promptLine2 = "";
-  if (carvingUI.step === "eyes") {
-    promptLine1 = "Choose a pair of eyes";
+  if (carvingUI.step === "eyebrows") {
+    promptLine1 = "Choose a pair of eyebrows";
     promptLine2 = "← → to browse   •   space to confirm";
+  } else if (carvingUI.step === "eyebrowRight") {
+    promptLine1 = "Want the right eyebrow different? Browse to change it";
+    promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
+  } else if (carvingUI.step === "eyes") {
+    promptLine1 = "Choose a pair of eyes";
+    promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
   } else if (carvingUI.step === "eyeRight") {
     promptLine1 = "Want the right eye different? Browse to change it";
+    promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
+  } else if (carvingUI.step === "nose") {
+    promptLine1 = "Choose a nose";
     promptLine2 = "← → to browse   •   space to confirm   •   ↑ to go back";
   } else if (carvingUI.step === "mouth") {
     promptLine1 = "Choose a mouth";
@@ -23126,7 +23461,15 @@ function drawCarvingUI() {
 
   // option counter, shown while actively browsing (not on finalize)
   if (carvingUI.step !== "finalize") {
-    const count = carvingUI.step === "mouth" ? CARVING_MOUTH_COUNT : CARVING_EYE_COUNT;
+    const CARVING_STEP_COUNTS_DISPLAY = {
+      eyebrows: CARVING_EYEBROW_COUNT,
+      eyebrowRight: CARVING_EYEBROW_COUNT,
+      eyes: CARVING_EYE_COUNT,
+      eyeRight: CARVING_EYE_COUNT,
+      nose: CARVING_NOSE_COUNT,
+      mouth: CARVING_MOUTH_COUNT
+    };
+    const count = CARVING_STEP_COUNTS_DISPLAY[carvingUI.step] || CARVING_EYE_COUNT;
     ctx.font = "12px Georgia, serif";
     ctx.fillStyle = "#8a7a68";
     ctx.fillText((carvingUI.cursorIndex + 1) + " / " + count, cx, h - 26);
@@ -36318,9 +36661,17 @@ if (apple.split) {
     }
   }
 
-  // honey: only pickable once the hive's actually been knocked down AND it's settled
-  if (honey.available && !honey.collected && !honey.collecting && !honey.falling && !pickupHandledThisFrame) {
-    if (pressedDownNear(honey.x, honey.heightAboveGround, 26, 20, 20)) {
+  // honey: pickable once the hive's actually been knocked down, either
+  // the ORIGINAL way (wait for it to settle on the ground, walk up,
+  // press down) OR now also by jumping up and catching it on the way
+  // down mid-fall -- same "must be descending" logic the boomerang catch
+  // above already uses, so it reads as a consistent rule across the game
+  // rather than a one-off. Settled pickup still needs no vy check at all
+  // (standing still and pressing down obviously still works).
+  if (honey.available && !honey.collected && !honey.collecting && !pickupHandledThisFrame) {
+    const canJumpCatchMidFall = honey.falling && player.jumping && player.vy <= 0;
+    if ((!honey.falling || canJumpCatchMidFall) && pressedDownNear(honey.x, honey.heightAboveGround, 26, 20, 20)) {
+      honey.falling = false; // catching it mid-air stops its own fall immediately
       honey.collecting = true;
       startCollectAnimation(
         { x: honey.x, y: gy - honey.heightAboveGround, size: 10, rotation: 0 },
