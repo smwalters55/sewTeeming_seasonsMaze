@@ -8147,11 +8147,11 @@ const SPECIAL_SQUASH = {
   reactedToCarving: false
 };
 const SPECIAL_SQUASH_DIALOGUE = [
-  ["Oh. You're the one that's been going around talking to everyone.", "Fine. Hi. I'm the wonky one. Try not to stare at the shape."],
-  ["Still here. Still wonky.", "They're really not going to pick me for the carving station, are they?"],
-  ["You keep coming back. I don't know how to feel about that.", "Wonky and popular. Never saw that combination coming."]
+  ["Oh good, you found the one that looks like it's melting sideways.", "I'm not lumpy. I'm 'structurally ambitious.'"],
+  ["Still three lobes. Still not sorry about it.", "The bumps are texture, not a rash. Just so we're clear."],
+  ["You keep coming back to the weird-shaped one. That says more about you than me.", "Green on top, burnt on the bottom — like I couldn't commit to a color either."]
 ];
-const SPECIAL_SQUASH_CARVED_DIALOGUE = ["...they picked someone else.", "I'm fine. Really."];
+const SPECIAL_SQUASH_CARVED_DIALOGUE = ["...they picked the round one.", "Fine. FINE. I hope it's hollow inside."];
 
 // each squash type has a different actual vertical extent -- a flat
 // pattypan is much shorter than a round pumpkin -- so a single
