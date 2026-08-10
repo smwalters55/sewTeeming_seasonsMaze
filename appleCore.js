@@ -11311,16 +11311,29 @@ function drawFloatSwampTreeBack(ox, obBottom) {
   ctx.fill();
   // buttress roots -- flared, curved legs radiating out from the base
   // into the water, like a mangrove/cypress, instead of a trunk that
-  // just plants straight into the ground
+  // just plants straight into the ground. Sized deliberately huge --
+  // these are now THE thing you have to duck under (matches the
+  // collision fix that removed jumping-over as a way past duck
+  // obstacles), not just background texture, so they sweep up high
+  // and wide rather than staying a low ankle-height flare.
   [[-1, 1], [-0.55, 0.6], [0.55, 0.6], [1, 1]].forEach(([dir, mag]) => {
     ctx.fillStyle = "#3e2e1c";
     ctx.beginPath();
-    ctx.moveTo(ox + dir * 4, trunkBaseY - 30);
-    ctx.quadraticCurveTo(ox + dir * 20 * mag, trunkBaseY - 10, ox + dir * 34 * mag, trunkBaseY + 10);
-    ctx.lineTo(ox + dir * 26 * mag, trunkBaseY + 12);
-    ctx.quadraticCurveTo(ox + dir * 14 * mag, trunkBaseY - 4, ox + dir * 2, trunkBaseY - 22);
+    ctx.moveTo(ox + dir * 10, trunkBaseY - 62);
+    ctx.quadraticCurveTo(ox + dir * 30 * mag, trunkBaseY - 20, ox + dir * 48 * mag, trunkBaseY + 10);
+    ctx.lineTo(ox + dir * 36 * mag, trunkBaseY + 12);
+    ctx.quadraticCurveTo(ox + dir * 20 * mag, trunkBaseY - 8, ox + dir * 3, trunkBaseY - 48);
     ctx.closePath();
     ctx.fill();
+    // a lighter rim-light stroke along the top outer edge -- without it
+    // the now-much-bigger root reads as a flat dark blob instead of a
+    // real ridged, woody surface catching light
+    ctx.strokeStyle = "rgba(90,70,45,0.5)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(ox + dir * 10, trunkBaseY - 60);
+    ctx.quadraticCurveTo(ox + dir * 30 * mag, trunkBaseY - 20, ox + dir * 46 * mag, trunkBaseY + 6);
+    ctx.stroke();
   });
   // a little canopy stub up top, just enough to read as "this is a real
   // tree" rather than a bare pole -- doesn't need to be a full crown
@@ -11380,13 +11393,19 @@ function drawFloatLilypad(camX) {
   if (lx < -60 || lx > canvas.width + 60) return;
   const topY = gy - FOREST_FLOAT_LILYPAD.heightAboveGround;
   const w = FOREST_FLOAT_LILYPAD.width;
+  // flattened wide oval lying flat on the water, not a near-circle --
+  // rx well beyond the pad's own footprint half-width and a shallow ry
+  // so it reads as a thin flat leaf floating on the surface rather than
+  // something standing up out of the water
+  const rx = w * 0.62;
+  const ry = w * 0.24;
   ctx.fillStyle = "rgba(10,30,30,0.28)";
   ctx.beginPath();
-  ctx.ellipse(lx, gy + 5, w / 2 + 5, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(lx, gy + 5, rx + 5, 7, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#5a8a3e";
   ctx.beginPath();
-  ctx.arc(lx, topY, w / 2, 0.32, Math.PI * 2 - 0.32, false);
+  ctx.ellipse(lx, topY, rx, ry, 0, 0.32, Math.PI * 2 - 0.32, false);
   ctx.lineTo(lx, topY);
   ctx.closePath();
   ctx.fill();
@@ -11398,16 +11417,16 @@ function drawFloatLilypad(camX) {
   for (let a = -1.15; a <= 1.15; a += 0.45) {
     ctx.beginPath();
     ctx.moveTo(lx, topY);
-    ctx.lineTo(lx + Math.cos(a) * w * 0.42, topY + Math.sin(a) * w * 0.24);
+    ctx.lineTo(lx + Math.cos(a) * rx * 0.9, topY + Math.sin(a) * ry * 0.9);
     ctx.stroke();
   }
   ctx.fillStyle = "#e8d0e0";
   ctx.beginPath();
-  ctx.arc(lx - w * 0.18, topY - 3, 3.2, 0, Math.PI * 2);
+  ctx.arc(lx - rx * 0.3, topY - 2, 3.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#e0c040";
   ctx.beginPath();
-  ctx.arc(lx - w * 0.18, topY - 3, 1.3, 0, Math.PI * 2);
+  ctx.arc(lx - rx * 0.3, topY - 2, 1.3, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -11473,10 +11492,21 @@ function drawForestFloatZone(camX) {
   // technique as the main river's own current lines), so the water
   // reads as actually moving instead of a static flat fill. Per direct
   // feedback ("water movement lines and stuff").
+  //
+  // IMPORTANT: the wrap bounds here are computed in WORLD space (the
+  // zone's fixed start/end), not screen space. They used to be derived
+  // from zoneStartPx/zoneEndPx (which shift with camX every frame), so
+  // panning the camera backward -- e.g. the player drifting/bumping
+  // backward in the water -- also shifted the modulo wrap origin every
+  // frame, which made the current's own rightward drift visually stall
+  // or reverse along with the camera instead of always reading as
+  // flowing one direction (right) no matter which way the player or
+  // camera is moving. Now the only camX-dependent step is the final
+  // "world -> screen" conversion, applied once, so camera panning is
+  // pure parallax and never touches the current's own timing/phase.
   {
-    const rippleMinX = Math.max(zoneStartPx + 10, -20);
-    const rippleMaxX = Math.min(zoneEndPx - 10, canvas.width + 20);
-    const waterSpan = Math.max(40, rippleMaxX - rippleMinX);
+    const zoneWorldStart = FOREST_FLOAT_ZONE_START_X;
+    const waterSpan = Math.max(40, FOREST_FLOAT_ZONE_END_X - FOREST_FLOAT_ZONE_START_X);
     const t = performance.now();
     for (let i = 0; i < 22; i++) {
       const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
@@ -11485,7 +11515,9 @@ function drawForestFloatZone(camX) {
       const speed = 0.05 + ((i * 3 + Math.abs(j)) % 5) * 0.02; // faster than the calm main river -- this is a current, not still water
       const len = 16 + Math.abs(j) * 2.4;
       const usable = Math.max(10, waterSpan - len);
-      const rippleX = rippleMinX + ((t * speed + seedI * (37 + Math.abs(j))) % usable);
+      const rippleWorldX = zoneWorldStart + ((t * speed + seedI * (37 + Math.abs(j))) % usable);
+      const rippleX = rippleWorldX - camX;
+      if (rippleX + len < -20 || rippleX > canvas.width + 20) continue;
       ctx.strokeStyle = `rgba(205,235,225,${0.14 + (Math.abs(j) % 5) * 0.02})`;
       ctx.lineWidth = 0.9 + (Math.abs(j) % 3) * 0.3;
       ctx.beginPath();
@@ -15431,8 +15463,13 @@ function updateForestScene(deltaTime) {
       const obX = floatObstacleX(ob);
       const within = floatCenterX > obX - ob.w / 2 - player.width / 2 &&
                       floatCenterX < obX + ob.w / 2 + player.width / 2;
+      // duck obstacles are now real swamp trees with buttress roots and
+      // hanging seed pods -- too tall/wide to jump over, so unlike a plain
+      // "jump" log the ONLY way through is actually ducking underneath
+      // (low to the ground with enough duck depth). Jumping just runs you
+      // straight into the trunk/pods instead of clearing them.
       const passable = ob.type === "duck"
-        ? (player.y > ob.clearance || (player.y <= 2 && playerDuckAmount > 0.6))
+        ? (player.y <= 2 && playerDuckAmount > 0.6)
         : player.y > ob.clearance;
       if (within && !passable) {
         if (floatCenterX < obX) {
