@@ -21833,6 +21833,14 @@ function updateOakLampTable() {
     oakLamp.collected = true;
     inventory.lamp = 1; // set directly, not incremented -- there's only ever one lamp, so this can never double-count regardless of cause
     touchInventoryOrder("lamp");
+    // auto-equip on pickup -- per direct request, held above the head
+    // immediately rather than requiring a manual select/Tab-cycle
+    // afterward. Same "just take it" treatment the boomerang already
+    // gets (see selectBoomerangIfAvailable) -- both are essential-enough
+    // tools that making the player go find them in the inventory strip
+    // right after picking them up is just friction.
+    heldItem = "lamp";
+    carriedBook = null;
     updateInventoryUI();
     startCollectAnimation({ x: oakLamp.x, y: 38, size: 8, rotation: 0 }, "lamp");
   }
@@ -25128,9 +25136,14 @@ const ratReturnGreetingLines = [
 // re-entering the whole room. Un-fed encounters now always reopen (see
 // startRatDialogue's own updated guard below), landing on this shorter
 // re-ask instead of repeating the full first-time greeting verbatim.
+// CONFIRMED CHANGE: the second line here used to repeat the original
+// greeting's ask verbatim ("You wouldn't happen to have anything...
+// nutty on you?") -- per direct feedback, every retry within the same
+// visit now gets its own distinct wording instead of literally
+// replaying that line again.
 const ratStillHungryLines = [
-  ["Still hoping for something nutty, if you happen to have it now!"],
-  ["You wouldn't happen to have anything... nutty on you?", "Small, hard little things -- I'm not picky."]
+  ["Still hoping for something nutty, if you happen to have it now."],
+  ["Anything at all? Doesn't have to be much -- small and hard is all it takes."]
 ];
 const ratFeatherThankLines = [
   ["Oh, thank you for the decoration!", "Feel free to look around a bit more, if you like."]
@@ -25180,12 +25193,31 @@ function startRatDialogue() {
   } else if (ratNPC.fed) {
     ratDialogue.lines = ratReturnGreetingLines.slice();
     ratDialogueRestSuppressed = true; // greeted for this visit -- no need to repeat if approached again
+  } else if (ratNPC.talkedTo && heldItem === "acorn" && inventory.acorn > 0) {
+    // CONFIRMED CHANGE: a retry with the acorn already in hand used to
+    // still make the player click through a filler "still hoping..."
+    // line first before the offer actually registered, which read as
+    // "it didn't take the acorn" even though it would have on the next
+    // press. Checking the held item right here, before any line is even
+    // chosen, means having the right thing out feeds immediately -- the
+    // filler re-ask is now reserved for when the wrong item (or
+    // nothing) is actually held. Safe against the acorn-check in
+    // advanceRatDialogue firing again later while clicking through
+    // ratGratefulLines: that check is also gated on !ratNPC.fed, and
+    // fed flips true the same moment startAcornFeedAnim's own completion
+    // advances the index, before any further clicks are possible.
+    inventory.acorn -= 1;
+    if (inventory.acorn <= 0) delete inventory.acorn;
+    heldItem = null;
+    updateInventoryUI();
+    ratDialogue.lines = ratGratefulLines.slice();
+    startAcornFeedAnim();
   } else {
-    // un-fed: full greeting only the very first time this rat has ever
-    // been talked to, a shorter re-ask on every retry after that --
-    // deliberately NOT setting ratDialogueRestSuppressed here, so this
-    // stays retriggerable for as many attempts as it takes within the
-    // same visit
+    // un-fed, wrong item (or nothing) held: full greeting only the very
+    // first time this rat has ever been talked to, a shorter re-ask on
+    // every retry after that -- deliberately NOT setting
+    // ratDialogueRestSuppressed here, so this stays retriggerable for
+    // as many attempts as it takes within the same visit
     ratDialogue.lines = (ratNPC.talkedTo ? ratStillHungryLines : ratGreetingLines).slice();
   }
   ratNPC.talkedTo = true;
