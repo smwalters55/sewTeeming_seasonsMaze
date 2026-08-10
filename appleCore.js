@@ -7854,7 +7854,15 @@ function drawDecorativeHayPiles(camX) {
 const smallCrows = [
   { x: 4434, y: 46, width: 20, height: 15, bob: 0, bobSpeed: 0.04, facing: 1,
     baseY: 46, flyState: "perched", flyT: 0, flyCooldown: 3000 + Math.random() * 2500, flyOffset: 0 },
-  { x: 5253, y: 68, width: 18, height: 14, bob: 1.2, bobSpeed: 0.045, facing: -1 }
+  { x: 5253, y: 68, width: 18, height: 14, bob: 1.2, bobSpeed: 0.045, facing: -1 },
+  // CONFIRMED CHANGE: a third one near the wonky squash's own bale
+  // stack, per direct request -- same mostly-perched/occasional-flit
+  // pattern as the other two rather than a freely wandering flyer, so
+  // it adds a little ambient life to the end of the patch without
+  // competing with the bat (which already roams the whole map) or the
+  // dialogue happening right there
+  { x: 5920, y: 50, width: 19, height: 14, bob: 0.6, bobSpeed: 0.042, facing: -1,
+    baseY: 50, flyState: "perched", flyT: 0, flyCooldown: 4000 + Math.random() * 3000, flyOffset: 0 }
 ];
 
 const SMALL_CROW_RISE_MS = 1300;
