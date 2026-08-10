@@ -6023,9 +6023,13 @@ function updateTreeSticks(deltaTime) {
 // steps are really one continuous action; it retires once honey is
 // actually placed for the first time.
 const graftStickPromptState = { promptEverShown: false, promptAnimT: 9999 };
-const GRAFT_STICK_PROMPT_LINES = ["Press ↓ while jumping here", "to snap off a branch."];
+// CONFIRMED CHANGE: reworded per direct feedback -- "press down while
+// jumping" read as two contradictory directions happening at once.
+// Framing it as two sequential steps (jump, THEN press down) instead
+// of one simultaneous action matches how the mechanic actually plays.
+const GRAFT_STICK_PROMPT_LINES = ["Jump up to it, then press ↓", "to snap off a branch."];
 const graftHoneyPromptState = { promptEverShown: false, promptAnimT: 9999 };
-const GRAFT_HONEY_PROMPT_LINES = ["Press ↓ while jumping to dab honey —", "then bring a different tree's own stick, same way."];
+const GRAFT_HONEY_PROMPT_LINES = ["Jump up, then press ↓ to dab honey —", "then bring a different tree's own stick, same way."];
 
 function updateGraftPrompts(deltaTime) {
   if (!graftStickPromptState.promptEverShown) {
@@ -6056,19 +6060,27 @@ function drawGraftStickPrompt(camX) {
     const d = Math.abs(player.x + player.width / 2 - s.x);
     if (d < nearestDist) { nearestDist = d; nearest = s; }
   });
-  if (!nearest) return;
+  // CONFIRMED BUG FIX: this had no distance check of its own -- once
+  // the animation had played once (promptAnimT reached full), it drew
+  // on screen from then on wherever the globally-nearest uncollected
+  // stick happened to be, even long after the player had walked away.
+  // That's the "sign won't go away" bug: with the same 45px radius the
+  // trigger itself uses, it now only shows while actually standing near it.
+  if (!nearest || nearestDist >= 45) return;
   const sx = nearest.x - camX, sy = gy - STICK_HEIGHT_ABOVE_GROUND;
   drawCarvedWoodPrompt(sx, sy - 40, graftStickPromptState.promptAnimT, GRAFT_STICK_PROMPT_LINES);
 }
 
 function drawGraftHoneyPrompt(camX) {
   if (graftHoneyPromptState.promptEverShown || graftHoneyPromptState.promptAnimT >= 9999) return;
+  if (heldItem !== "honey") return; // CONFIRMED BUG FIX: same stale-sign issue -- only relevant while actually carrying honey
   let nearestX = null, nearestDist = Infinity;
   Object.values(GRAFT_TREE_X).forEach(x => {
     const d = Math.abs(player.x + player.width / 2 - x);
     if (d < nearestDist) { nearestDist = d; nearestX = x; }
   });
-  if (nearestX === null) return;
+  // CONFIRMED BUG FIX: same missing distance gate as the stick prompt above
+  if (nearestX === null || nearestDist >= 45) return;
   const sx = nearestX - camX, sy = gy - STICK_HEIGHT_ABOVE_GROUND;
   drawCarvedWoodPrompt(sx, sy - 40, graftHoneyPromptState.promptAnimT, GRAFT_HONEY_PROMPT_LINES);
 }
@@ -20026,7 +20038,15 @@ const cloudsDecor = [
   { x: 1260, y: 35,  scale: 0.9, type: "stack" },
   { x: 1400, y: 110, scale: 1.5, type: "puffy" },
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
-  { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
+  // CONFIRMED BUG FIX: this was the other cloud still overlapping the
+  // first vault cloud -- x:1050 is close enough to vaultClouds[0]
+  // (x:1146) that with the two parallaxing at different rates (0.3x
+  // here vs full speed for the vault cloud), their screen positions
+  // actually converge to nearly the same spot early in the walk out
+  // from spawn, even though the "stack" cloud nearby had already been
+  // moved away from this exact problem. Pushed well clear, past the
+  // puffy at 1400 instead of sitting right on top of the vault cloud.
+  { x: 1550, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
   { x: 1860, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
   { x: 700,  y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable, separated from the stack cloud at 520
 ];
@@ -37167,22 +37187,29 @@ function drawCloudsAtmosphereOverlay() {
 // wisps rather than a hard-edged box, matching the soft cloud aesthetic
 // everywhere else in this scene.
 function drawGustZone(camX) {
+  // CONFIRMED BUG FIX: pure white wisps at low alpha were nearly
+  // invisible against clouds' own near-white sky gradient -- the
+  // marker existed but had essentially no contrast to actually see.
+  // Switched to a soft slate-blue that reads clearly against the pale
+  // sky, bumped the alpha and line weight, and widened/raised the
+  // orbit spread so the zone reads as a real patch of turbulent air
+  // rather than a tiny cluster easy to miss.
   const zoneScreenX = (GUST_ZONE.xMin + GUST_ZONE.xMax) / 2 - camX;
   const t = performance.now() * 0.001;
   ctx.save();
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 14; i++) {
     const seed = i * 11.3;
-    const orbitR = 30 + (i % 4) * 22;
+    const orbitR = 36 + (i % 4) * 28;
     const speed = 0.6 + (i % 3) * 0.25;
     const ang = t * speed + seed;
     const wx = zoneScreenX + Math.cos(ang) * orbitR;
-    const wy = gy - 70 + Math.sin(ang * 1.4) * 40 - (i % 5) * 8;
-    ctx.globalAlpha = 0.25 + Math.sin(t * 2 + seed) * 0.12;
-    ctx.strokeStyle = "rgba(255,255,255,0.8)";
-    ctx.lineWidth = 1.4;
+    const wy = gy - 75 + Math.sin(ang * 1.4) * 48 - (i % 5) * 9;
+    ctx.globalAlpha = 0.45 + Math.sin(t * 2 + seed) * 0.18;
+    ctx.strokeStyle = "rgba(90,120,160,0.85)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(wx - 10, wy);
-    ctx.quadraticCurveTo(wx, wy - 6, wx + 10, wy);
+    ctx.moveTo(wx - 12, wy);
+    ctx.quadraticCurveTo(wx, wy - 8, wx + 12, wy);
     ctx.stroke();
   }
   ctx.restore();
@@ -38616,7 +38643,9 @@ touchInventoryOrder("boomerang");
 boomerang.collected = true; // keeps the world copy near the apple tree from also drawing/being collectible again
 addToInventory("bucket");
 touchInventoryOrder("bucket");
-heldItem = "boomerang";
+addToInventory("paperAirplane");
+touchInventoryOrder("paperAirplane");
+heldItem = "paperAirplane"; // CONFIRMED CHANGE: in-play by default per direct request
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 updateMapUI();
