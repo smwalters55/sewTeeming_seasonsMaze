@@ -9706,7 +9706,15 @@ function updateSeesaw(deltaTime) {
       // — no space press needed anymore. Using a near-max threshold
       // rather than the exact max avoids a single-frame timing window,
       // since energy decays slightly every frame even at the peak.
-      if (seesaw.heldItemPlaced && seesaw.pumpEnergy >= 0.3) { // was 0.35 -- lowered a touch for "a lil more generous" per direct request, on top of the double-jump fix above
+      // CONFIRMED BUG FIX: this had been lowered to 0.3 for extra
+      // generosity, but the seesaw's own visual tilt (see the /0.35
+      // normalization in its angle calc below) was still calibrated to
+      // read as "maxed out" at 0.35 -- so the launch was firing before
+      // the only feedback the player has (the tilt) ever looked full,
+      // which read as sudden/premature rather than earned. Back to 0.35
+      // so the two stay in sync; the double-jump fix above is still a
+      // real generosity boost on its own now that it actually counts.
+      if (seesaw.heldItemPlaced && seesaw.pumpEnergy >= 0.35) {
         launchSeesawItem(seesaw.heldItemPlaced, 0.5); // always full-send strength
         seesaw.heldItemPlaced = null;
         seesaw.pumpEnergy = 0;
@@ -9728,13 +9736,16 @@ function updateSeesaw(deltaTime) {
         // time a double jump is even possible) -- so stacking jump +
         // double-jump, the obvious "pump harder" move, silently
         // contributed zero energy. Feels broken exactly as described.
-        // Award a real bump here too, echoing the ~0.75 ratio the normal
-        // double jump uses relative to a first jump (9 vs 12).
+        // Award a real bump here too -- smaller than the first jump's
+        // 0.12 (was 0.08, dialed back further to 0.06) so a full jump +
+        // double-jump combo builds energy at a pace you can actually
+        // follow rather than nearly matching a single jump on its own
+        // and making the whole launch feel like it happens all at once.
         // Gated on keys.upJustPressed too (not just the flag alone) so this
         // can never fire on a later frame where justDoubleJumped happens to
         // still be true but no new press actually occurred this frame.
         player.justDoubleJumped = false; // consume -- one press, one award
-        seesaw.pumpEnergy = Math.min((seesaw.pumpEnergy || 0) + 0.08, 0.5);
+        seesaw.pumpEnergy = Math.min((seesaw.pumpEnergy || 0) + 0.06, 0.5);
         player.vy = 6;
       } else if (!player.onSeesawBounce) {
         seesaw.pumpEnergy = (seesaw.pumpEnergy || 0) * 0.96; // decays over time
