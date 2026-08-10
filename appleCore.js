@@ -24653,6 +24653,29 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.fill();
       ctx.stroke();
 
+      // a little liquid actually sitting in the tube's own lower end,
+      // right where it's about to dive into the body -- sells "this
+      // tube is genuinely plumbed into the bottle, not just glass for
+      // show" per direct feedback ("lets do that re klein bottle tube
+      // thing"). Clipped to the tube's own ring path so it only shows
+      // as a small patch right at the bottom bend, not filling the
+      // whole loop.
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(wx - 2, wy - 12);
+      ctx.bezierCurveTo(wx - 7, wy - 21, wx + 5, wy - 24, wx + 10, wy - 15);
+      ctx.bezierCurveTo(wx + 13, wy - 9, wx + 12, wy - 2, wx + 9, wy + 2);
+      ctx.bezierCurveTo(wx + 8.5, wy + 3.3, wx + 6.7, wy + 3.2, wx + 6.2, wy + 1.8);
+      ctx.bezierCurveTo(wx + 8.6, wy - 2, wx + 9.3, wy - 8, wx + 7.3, wy - 13.5);
+      ctx.bezierCurveTo(wx + 4.5, wy - 19, wx - 1.5, wy - 17, wx + 1, wy - 12);
+      ctx.closePath();
+      ctx.clip();
+      ctx.fillStyle = "rgba(40,120,215,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(wx + 8, wy, 3.5, 5, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
       // the seam -- a small dark crescent right where the tube's lower
       // end overlaps the body's side, suggesting glass-through-glass
       // rather than the tube just stopping at the surface
