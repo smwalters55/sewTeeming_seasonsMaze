@@ -33820,7 +33820,7 @@ const elderAlreadyTalkedLines = [
 // immediately reflects it instead of repeating the old "keep an eye out"
 // line one more time.
 const elderHasGearLines = [
-  ["That's it! That's the gear.", "Head back up top and fit it into the old lift shaft -- should still take it, rusty as it is."]
+  ["Ah -- there it is. We'd given up on ever seeing that again.", "Our thanks, truly. Carry it up and settle it into the old broken shaft -- it'll know its own place, rusty as it's gone."]
 ];
 // the gear's in and the shaft's running -- stop mentioning the gear or
 // the shaft at all past this point, it's done. A little thanks instead,
@@ -35907,9 +35907,17 @@ function drawTunnelTownScene(camX) {
   // (gy + cameraY) scrolls downward as the player climbs, so the sky
   // fill has to stretch to cover the newly-revealed space above it.
   const groundY = gy + cameraY;
+  // brightened well past the old #2e2620->#161210 range -- that sat so
+  // close in value to the solid dirt fill's own #241c14 base that the
+  // carved-open tunnel interior and the un-dug dirt around it were nearly
+  // indistinguishable at a glance ("too dark, hard to tell which parts
+  // are tunnels vs dirt"). Keeping the same cool, damp hue (distinct from
+  // the mole hole's warm soil-orange) but pushing the actual lightness up
+  // a good deal so the carved-open pockets/tubes read as real open space
+  // against the dirt, not just a slightly different shade of near-black.
   const sky = ctx.createLinearGradient(0, 0, 0, groundY);
-  sky.addColorStop(0, "#2e2620");
-  sky.addColorStop(1, "#161210");
+  sky.addColorStop(0, "#6e6152");
+  sky.addColorStop(1, "#3c3428");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, groundY);
 
@@ -35956,10 +35964,14 @@ function drawTunnelTownScene(camX) {
     if (tunnelNodeParentDug(node)) drawTunnelDigSpot(node, camX);
   });
 
-  // ground
-  ctx.fillStyle = "#181310";
+  // ground -- nudged up from the old near-black #181310, which read as
+  // almost the same value as the surrounding dirt once the sky above it
+  // got brightened (see the tunnel-interior sky fill above); still darker
+  // than the sky so it reads as "floor," just no longer indistinguishable
+  // from solid, un-dug earth.
+  ctx.fillStyle = "#241f18";
   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
-  ctx.strokeStyle = "rgba(90,80,70,0.35)";
+  ctx.strokeStyle = "rgba(160,140,110,0.45)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(0, groundY);
@@ -36161,7 +36173,7 @@ function updateTunnelTownScene(deltaTime) {
     // only diggable once the elders have actually explained what's
     // going on -- ties the action to the ask instead of just being a
     // wall you happen to have a shovel for
-    if (elderTalkedTo && heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(TUNNELTOWN_WALL_X + 16, 0, 26, 20, 20)) {
+    if (elderTalkedTo && heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(TUNNELTOWN_WALL_X + 16, 0, 32, 26, 26)) {
       activeDig = { kind: "wall", x: TUNNELTOWN_WALL_X + 16, heightAboveGround: 0, t: 0 };
     }
   } else {
@@ -36169,7 +36181,17 @@ function updateTunnelTownScene(deltaTime) {
     // matches what's actually drawn/visible
     TUNNEL_NODES.forEach(node => {
       if (node.dug || !tunnelNodeParentDug(node)) return;
-      const nearSpot = isPlayerNear(node.x, node.heightAboveGround, 22, 25, 25);
+      // widened from the old flat 22/25/25 -- the "up" spots (the vertical
+      // climbs, e.g. the leftmost u1/u2/u3/uTop chain) are jump-and-often-
+      // fall-back-down to actually reach, so a landing a little off from
+      // the spot's exact center used to just silently whiff the dig. Up
+      // spots get the most generous tolerance of all, especially downward
+      // (falling short/past the spot on the way down is the common miss);
+      // side/sunken spots get a smaller but still looser-than-before bump.
+      const isUpNode = node.dir === "up";
+      const nearSpot = isUpNode
+        ? isPlayerNear(node.x, node.heightAboveGround, 34, 34, 50)
+        : isPlayerNear(node.x, node.heightAboveGround, 30, 30, 30);
       // the reconnect back down toward u1 also needs the stone in hand --
       // that's what makes it a real find, not just another shovel-dig.
       // Trying to dig it without the stone used to just silently do
