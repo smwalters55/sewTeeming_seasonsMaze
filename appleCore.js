@@ -10575,8 +10575,11 @@ const FOREST_REFLECTION_POOL_X = 5400;
 // shared by both drawForestReflectionPool and drawForestSkipStones so
 // the two never drift out of sync with each other -- bumped up from
 // 130x64 per direct request ("lets make the reflective pond bigger"),
-// then widened further (was 190) per "make larger by widening".
-const FOREST_REFLECTION_POOL_W = 280;
+// then widened further (was 190, then 280) per "make larger by
+// widening" and later "should it be even wider, more holes to aim
+// for" -- gives the extra target added below (4 now, was 3) real room
+// to breathe.
+const FOREST_REFLECTION_POOL_W = 320;
 const FOREST_REFLECTION_POOL_H = 94;
 // shared Y too, computed instead of hardcoded, so growing poolH can
 // never push the top edge back up above the horizon (ground) line the
@@ -10821,7 +10824,7 @@ function drawForestReflectionPool(camX) {
 // has its own independent onGround/cooldown, so the pile visibly
 // shrinks as stones are picked up and refills one at a time as they
 // come off cooldown.
-const FOREST_SKIP_STONE_PILE_OFFSET = -105; // pushed out from pool center, clear of the water's edge
+const FOREST_SKIP_STONE_PILE_OFFSET = -125; // pushed out further (was -105) once the pool widened again, clear of the water's edge
 const FOREST_SKIP_STONE_PILE_LAYOUT = [
   { dx: -4, dy: 0, scale: 1 },
   { dx: 4, dy: -1, scale: 0.95 },
@@ -10849,13 +10852,30 @@ const FOREST_SKIP_STONE_CHARGE_MS = 900; // full charge if held this long
 // skipping animation") so the bounce-across-the-pool actually reads
 // instead of blinking by.
 const FOREST_SKIP_STONE_THROW_MS = 1300;
-// target rings, as a fraction of the pool's width from its near (left)
-// edge -- hitting one is just a nicer sparkle payoff, missing all three
-// still gives a normal skip/splash. Per direct request ("release it to
-// try to hit targets somehow").
-const FOREST_SKIP_STONE_TARGETS = [0.3, 0.56, 0.82];
-const skipStoneTargetFlash = [0, 0, 0]; // timestamp of last hit, per target, for the sparkle fade
-const thrownSkipStone = { active: false, startTime: 0, distanceFrac: 0, hitTargetIndex: -1 };
+// target rings, as a fraction of the pool's width measured from
+// whichever edge the throw is actually starting from (see skipTargetX
+// and thrownSkipStone.dir below -- the pool got a 4th target added
+// once it widened enough to give each one real breathing room, per
+// direct request "more holes to aim for").
+const FOREST_SKIP_STONE_TARGETS = [0.18, 0.4, 0.62, 0.84];
+const skipStoneTargetFlash = [0, 0, 0, 0]; // timestamp of last hit, per target, for the sparkle/green/fade animation
+// dir persists after a throw completes (not reset) so the post-throw
+// hit animation can keep computing the right on-screen spot for
+// whichever side that throw actually happened from.
+const thrownSkipStone = { active: false, startTime: 0, distanceFrac: 0, hitTargetIndex: -1, dir: 1 };
+
+// converts a 0..1 fraction-of-the-way-across into an actual pool-local
+// x, starting from whichever edge is nearest the thrower (dir=1 means
+// throwing left-to-right, dir=-1 right-to-left) -- lets the whole skip-
+// stones activity work correctly from either side of the pool, per
+// direct request ("if i am on the right side of the pond with my rock,
+// i should be able to throw there too").
+function skipTargetX(poolPx, poolW, dir, frac) {
+  const inset = 8;
+  const nearX = dir > 0 ? poolPx - poolW / 2 + inset : poolPx + poolW / 2 - inset;
+  const spanW = poolW - inset * 2;
+  return nearX + dir * frac * spanW;
+}
 
 function throwSkipStone() {
   const now = performance.now();
@@ -10865,6 +10885,10 @@ function throwSkipStone() {
   // little, just short -- there's no "too weak, nothing happens" dead
   // zone that would read as the input not working
   thrownSkipStone.distanceFrac = 0.12 + skipStoneCharge * 0.85;
+  // throw direction follows whichever side of the pool the player is
+  // actually standing on right now, not a fixed left-to-right assumption
+  const playerCenterXWorld = player.x + player.width / 2;
+  thrownSkipStone.dir = playerCenterXWorld <= FOREST_REFLECTION_POOL_X ? 1 : -1;
   let hitIndex = -1;
   FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
     if (Math.abs(frac - thrownSkipStone.distanceFrac) < 0.06) hitIndex = i;
@@ -10919,12 +10943,53 @@ function updateForestSkipStones(deltaTime) {
   }
 }
 
+// the sparkle -> green -> fade hit animation, shared by both the
+// "currently aiming" ring pass and the "stone already landed but the
+// celebration is still playing out" pass below. Per direct request
+// ("make a little mini animation sparkly and loop turns green before
+// disappearing if you get the rock into that hole"). Returns true if
+// it drew anything (i.e. still animating), so the caller knows not to
+// also draw the plain idle ring on top.
+const FOREST_SKIP_HIT_ANIM_MS = 1100;
+function drawSkipTargetHitAnim(tx, poolY, poolW, poolH, i) {
+  const now = performance.now();
+  const flashAge = now - skipStoneTargetFlash[i];
+  if (flashAge >= FOREST_SKIP_HIT_ANIM_MS) return false;
+  const p = flashAge / FOREST_SKIP_HIT_ANIM_MS;
+  // color eases from a bright gold spark to a settled green over the
+  // first 60% of the animation, then the whole thing fades to nothing
+  const mixT = Math.min(1, p / 0.6);
+  const rC = Math.round(255 + (110 - 255) * mixT);
+  const gC = Math.round(210 + (230 - 210) * mixT);
+  const bC = Math.round(110 + (140 - 110) * mixT);
+  const alpha = p < 0.7 ? 0.85 : 0.85 * (1 - (p - 0.7) / 0.3);
+  const ringR = 9 + p * 11;
+  ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(tx, poolY, ringR, ringR * (poolH / poolW), 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // a few sparkle dots orbiting the ring while it's still bright
+  if (p < 0.6) {
+    const sparkleCount = 5;
+    for (let s = 0; s < sparkleCount; s++) {
+      const ang = (s / sparkleCount) * Math.PI * 2 + now * 0.006;
+      const sr = ringR + 3;
+      const sx = tx + Math.cos(ang) * sr;
+      const sy = poolY + Math.sin(ang) * sr * (poolH / poolW);
+      ctx.fillStyle = `rgba(255,255,220,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  return true;
+}
+
 function drawForestSkipStones(camX) {
   const poolPx = FOREST_REFLECTION_POOL_X - camX;
   const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H;
   const poolY = FOREST_REFLECTION_POOL_Y;
-  const nearLeftX = poolPx - poolW / 2 + 8;
-  const spanW = poolW - 16;
 
   // pickup pebbles, piled together on the grass before the pool -- one
   // per entry in skipStones, each offset/scaled per its layout spot so
@@ -10957,34 +11022,34 @@ function drawForestSkipStones(camX) {
   // watch the stone travel toward them instead of the rings vanishing
   // the instant they release. Hidden the rest of the time so they read
   // as "here's what you're aiming for right now" rather than permanent
-  // pond decor.
+  // pond decor. Positioned via skipTargetX so they sit correctly
+  // whichever side of the pool the player is throwing from -- while
+  // just holding (not yet thrown) that's a LIVE read of the player's
+  // current side, so walking around the pool while holding the stone
+  // updates the aim preview immediately.
   if (heldItem === "skippingStone" || thrownSkipStone.active) {
+    const liveDir = thrownSkipStone.active
+      ? thrownSkipStone.dir
+      : ((player.x + player.width / 2 <= FOREST_REFLECTION_POOL_X) ? 1 : -1);
     FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
-      const tx = nearLeftX + frac * spanW;
-      const flashAge = performance.now() - skipStoneTargetFlash[i];
-      const flashing = flashAge < 700;
-      const baseAlpha = flashing ? 0.7 - (flashAge / 700) * 0.5 : 0.28;
-      ctx.strokeStyle = flashing ? `rgba(255,230,140,${baseAlpha})` : `rgba(230,240,225,${baseAlpha})`;
-      ctx.lineWidth = flashing ? 2 : 1.2;
+      const tx = skipTargetX(poolPx, poolW, liveDir, frac);
+      if (drawSkipTargetHitAnim(tx, poolY, poolW, poolH, i)) return;
+      ctx.strokeStyle = "rgba(230,240,225,0.28)";
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.ellipse(tx, poolY, flashing ? 10 + (flashAge / 700) * 8 : 7, (flashing ? 10 + (flashAge / 700) * 8 : 7) * (poolH / poolW), 0, 0, Math.PI * 2);
+      ctx.ellipse(tx, poolY, 7, 7 * (poolH / poolW), 0, 0, Math.PI * 2);
       ctx.stroke();
     });
   } else {
-    // the flash sparkle on a hit should still show even after the stone
+    // the hit animation should still play out even after the stone
     // lands and heldItem/thrown both clear, so it doesn't cut off
-    // mid-celebration
+    // mid-celebration -- uses the dir from whatever throw actually hit
+    // it (thrownSkipStone.dir is left in place, not reset, for exactly
+    // this reason)
     FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
-      const flashAge = performance.now() - skipStoneTargetFlash[i];
-      if (flashAge >= 700) return;
-      const tx = nearLeftX + frac * spanW;
-      const baseAlpha = 0.7 - (flashAge / 700) * 0.5;
-      ctx.strokeStyle = `rgba(255,230,140,${baseAlpha})`;
-      ctx.lineWidth = 2;
-      const r = 10 + (flashAge / 700) * 8;
-      ctx.beginPath();
-      ctx.ellipse(tx, poolY, r, r * (poolH / poolW), 0, 0, Math.PI * 2);
-      ctx.stroke();
+      if (performance.now() - skipStoneTargetFlash[i] >= FOREST_SKIP_HIT_ANIM_MS) return;
+      const tx = skipTargetX(poolPx, poolW, thrownSkipStone.dir, frac);
+      drawSkipTargetHitAnim(tx, poolY, poolW, poolH, i);
     });
   }
 
@@ -11012,7 +11077,7 @@ function drawForestSkipStones(camX) {
   if (thrownSkipStone.active) {
     const p = Math.min(1, (performance.now() - thrownSkipStone.startTime) / FOREST_SKIP_STONE_THROW_MS);
     const traveledFrac = thrownSkipStone.distanceFrac * p;
-    const sx = nearLeftX + traveledFrac * spanW;
+    const sx = skipTargetX(poolPx, poolW, thrownSkipStone.dir, traveledFrac);
     const bounces = 4;
     const bouncePhase = (p * bounces) % 1;
     const bounceAmp = 7 * (1 - p * 0.7);
@@ -11093,11 +11158,12 @@ function drawForestReflectionPoolReeds(camX) {
 // decorative for now: sits on the bank by the reflection pool,
 // breathes with an idle throat pulse, and hops in place every few
 // seconds. No interaction, no gameplay effect.
-// offsets pushed out a bit (was 78/120) once the pool got wider, so the
-// nearer frog still sits clearly on the bank instead of at the water's edge
+// offsets pushed out a bit each time the pool's grown (was 78/120,
+// then 95/135) so the nearer frog still sits clearly on the bank
+// instead of at the water's edge
 const FOREST_FROG_SPOTS = [
-  { offsetX: 95, offsetY: 0 },
-  { offsetX: 135, offsetY: 2 }
+  { offsetX: 112, offsetY: 0 },
+  { offsetX: 152, offsetY: 2 }
 ];
 const forestFrogs = FOREST_FROG_SPOTS.map((spot, i) => ({
   x: FOREST_REFLECTION_POOL_X + spot.offsetX,
