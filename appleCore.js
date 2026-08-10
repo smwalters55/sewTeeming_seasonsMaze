@@ -7832,7 +7832,34 @@ const decorativeHayPiles = [
   // CONFIRMED CHANGE: the wonky squash's own perch -- x hardcoded to
   // match SPECIAL_SQUASH.x (5960) rather than referencing it directly,
   // since that const is declared later in the file than this array
-  { x: 5960, topHeight: 44, bales: [{ dx: -10, dy: -11, rot: -0.08, seed: 61 }, { dx: 10, dy: -11, rot: 0.1, seed: 62 }] }
+  // CONFIRMED BUG FIX: these two bales were side-by-side at the same
+  // low height (dy:-11 for both) instead of stacked, so the actual
+  // sprite only reached ~22 up while the squash sitting on it floated
+  // at topHeight 44 -- a visible gap of nothing underneath it. Stacked
+  // vertically now (dy:-11, dy:-33), same pattern as every other
+  // 2-bale pile in this list.
+  { x: 5960, topHeight: 44, bales: [{ dx: 0, dy: -11, rot: -0.06, seed: 61 }, { dx: 0, dy: -33, rot: 0.08, seed: 62 }] },
+  // CONFIRMED CHANGE: a single stepping-stone bale just left of wonky's
+  // own stack, per direct request -- gives the player something to
+  // jump onto first on the way up, rather than needing to clear the
+  // full 44-height stack in one single jump from flat ground
+  { x: 5905, topHeight: 22, bales: [{ dx: 0, dy: -11, rot: 0.1, seed: 63 }] },
+  // CONFIRMED CHANGE: visual "end cap" for the squash patch -- moved
+  // further right, and built out into a genuinely messy pile (was a
+  // clean 3-stack) per direct follow-up requests: a few extra bales
+  // scattered/tilted around the main stack instead of everything
+  // perfectly vertical, closing the space out rather than trailing off
+  // into empty ground
+  { x: 6300, topHeight: 66, bales: [
+    { dx: 0, dy: -11, rot: 0.05, seed: 71 },
+    { dx: 0, dy: -33, rot: -0.05, seed: 72 },
+    { dx: 0, dy: -55, rot: 0.08, seed: 73 },
+    { dx: -18, dy: -11, rot: Math.PI / 2, seed: 75 },
+    { dx: 20, dy: -11, rot: -0.35, seed: 76 },
+    { dx: 12, dy: -28, rot: 0.4, seed: 77 },
+    { dx: -14, dy: -26, rot: -0.2, seed: 78 }
+  ] },
+  { x: 6245, topHeight: 22, bales: [{ dx: 0, dy: -11, rot: -0.12, seed: 74 }] }
 ];
 
 function drawDecorativeHayPiles(camX) {
@@ -7854,15 +7881,7 @@ function drawDecorativeHayPiles(camX) {
 const smallCrows = [
   { x: 4434, y: 46, width: 20, height: 15, bob: 0, bobSpeed: 0.04, facing: 1,
     baseY: 46, flyState: "perched", flyT: 0, flyCooldown: 3000 + Math.random() * 2500, flyOffset: 0 },
-  { x: 5253, y: 68, width: 18, height: 14, bob: 1.2, bobSpeed: 0.045, facing: -1 },
-  // CONFIRMED CHANGE: a third one near the wonky squash's own bale
-  // stack, per direct request -- same mostly-perched/occasional-flit
-  // pattern as the other two rather than a freely wandering flyer, so
-  // it adds a little ambient life to the end of the patch without
-  // competing with the bat (which already roams the whole map) or the
-  // dialogue happening right there
-  { x: 5920, y: 50, width: 19, height: 14, bob: 0.6, bobSpeed: 0.042, facing: -1,
-    baseY: 50, flyState: "perched", flyT: 0, flyCooldown: 4000 + Math.random() * 3000, flyOffset: 0 }
+  { x: 5253, y: 68, width: 18, height: 14, bob: 1.2, bobSpeed: 0.045, facing: -1 }
 ];
 
 const SMALL_CROW_RISE_MS = 1300;
@@ -8164,7 +8183,7 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // dark yellow/mustard rather than a burnt orange-yellow
     wonkyGrad.addColorStop(0, "#42591e");   // deep mossy green up top
     wonkyGrad.addColorStop(0.55, "#6d5c16"); // rich olive transition band
-    wonkyGrad.addColorStop(1, "#a68c10");   // dark yellow / mustard at the bottom
+    wonkyGrad.addColorStop(1, "#c4a000");   // CONFIRMED CHANGE: richer/more saturated yellow at the bottom
     ctx.fillStyle = wonkyGrad;
     ctx.beginPath();
     ctx.ellipse(size * 0.1, size * 0.08, size * 0.52, size * 0.44, 0.22, 0, Math.PI * 2);
@@ -8207,7 +8226,11 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // frame), each a tiny raised bump: a darker crescent shadow on one
     // side and a small highlight fleck on the other, so they read as
     // raised rather than just painted-on dots
-    [[0.02, -0.1, 0.09], [0.28, -0.18, 0.07], [-0.1, 0.22, 0.08], [0.32, 0.22, 0.06], [-0.28, -0.05, 0.06], [0.12, 0.36, 0.055]].forEach(([bx, by, br]) => {
+    // CONFIRMED CHANGE: funkier per direct request -- sizes varied
+    // much more widely (one genuinely big wart down to a couple of
+    // tiny flecks) and positions deliberately clustered/irregular
+    // instead of evenly spaced around the body like a grid
+    [[0.05, -0.12, 0.15], [0.3, -0.2, 0.035], [-0.12, 0.2, 0.11], [0.34, 0.24, 0.045], [-0.3, -0.08, 0.07], [0.14, 0.35, 0.02], [-0.04, 0.03, 0.045], [0.22, 0.02, 0.095]].forEach(([bx, by, br]) => {
       const wx = bx * size, wy = by * size, wr = br * size;
       ctx.fillStyle = "rgba(0,0,0,0.16)";
       ctx.beginPath();
@@ -8257,17 +8280,19 @@ const decorativeSquash = [
   // left edge risked reading as "this one talks" rather than "the whole
   // row does." This one's near the left/entry side...
   { x: 4505, size: 30, type: "gourd", talkedTo: false, line: "Too knobby to carve, too pretty to eat. I've made my peace with it.", noticeTimer: 2500 + Math.random() * 2000, noticeWiggle: 0 },
-  { x: 5110, size: 34, type: "white", talkedTo: false, line: "Pale on purpose. It's called dramatic contrast." },
+  // CONFIRMED CHANGE: this one's the second notice-wiggle now instead
+  // of the far white one -- a cleaner round silhouette reads a wiggle
+  // more clearly than hubbard's asymmetric shape, and it sits right
+  // next to the carving station where players naturally end up
+  { x: 5110, size: 34, type: "white", talkedTo: false, line: "Pale on purpose. It's called dramatic contrast.", noticeTimer: 5500 + Math.random() * 2500, noticeWiggle: 0 },
   // CONFIRMED BUG FIX: was "Bloated on purpose too" -- directly echoed
   // the white one's "on purpose" right next door, reading as a repeated
   // joke rather than its own line
   { x: 4915, size: 42, type: "hubbard", talkedTo: false, line: "Bloated, yes. Confidence, mostly." },
-  // ...and this one's further right, past the midpoint, before the
-  // wonky one -- offset timer range so the two don't sync up
   // CONFIRMED CHANGE: this trio (this one, the gourd below, and the
   // wonky one) spread out more per direct request -- they read too
   // bunched together before
-  { x: 5680, size: 28, type: "white", talkedTo: false, line: "...", noticeTimer: 5500 + Math.random() * 2500, noticeWiggle: 0 },
+  { x: 5680, size: 28, type: "white", talkedTo: false, line: "..." },
   { x: 5810, size: 30, type: "gourd", talkedTo: false, line: "Ask the wonky one further down. It talks more than all of us combined." },
   { x: 4265, size: 38, type: "turban", talkedTo: false, line: "Nice hat, right? Grew it myself." },
   { x: 5500, size: 36, type: "pattypan", talkedTo: false, line: "Flat's a look. Ask anyone." }
@@ -8287,7 +8312,7 @@ const decorativeSquash = [
 const WONKY_BALE_TOP_HEIGHT = 44; // two bales stacked, same height as several other piles in this patch
 const SPECIAL_SQUASH = {
   x: 5960, // CONFIRMED CHANGE: pushed further out with the rest of the trio spreading apart
-  size: 42, // CONFIRMED CHANGE: bumped up from 32 per direct request
+  size: 50, // CONFIRMED CHANGE: bumped up again (was 32, then 42) per direct request
   type: "wonky",
   talkStage: 0, // 0 = never talked, 1 = met once, 2+ = knows you
   reactedToCarving: false,
@@ -8296,7 +8321,7 @@ const SPECIAL_SQUASH = {
 const SPECIAL_SQUASH_DIALOGUE = [
   ["Oh good, you found the one that looks like it's melting sideways.", "I'm not lumpy. I'm 'structurally ambitious.'"],
   ["Still three lobes. Still not sorry about it.", "The bumps are texture, not a rash. Just so we're clear."],
-  ["You keep coming back to the weird-shaped one. That says more about you than me.", "Green on top, burnt on the bottom — like I couldn't commit to a color either."]
+  ["And you're still standing right in front of me. Huh.", "Green on top, burnt on the bottom — like I couldn't commit to a color either."]
 ];
 const SPECIAL_SQUASH_CARVED_DIALOGUE = ["...they picked the round one.", "Fine. FINE. I hope it's hollow inside."];
 
@@ -8346,6 +8371,16 @@ function drawDecorativeSquashField(camX) {
     if (dist < nearestDist) { nearestDist = dist; nearest = SPECIAL_SQUASH; }
   }
 
+  // CONFIRMED BUG FIX: the active bubble used to draw inline, right
+  // after its own squash's body, inside this same forEach -- so
+  // whichever squash happened to be drawn LATER (the wonky one always
+  // draws after this whole loop) could render its own body right on
+  // top of an earlier squash's still-visible bubble. Bubble position/
+  // content is now just recorded here and drawn once, at the very end,
+  // after every single body on screen -- guaranteed on top regardless
+  // of draw order or how close two squash sit to each other.
+  let pendingBubble = null;
+
   decorativeSquash.forEach(s => {
     let sx = s.x - camX;
     if (sx < -50 || sx > canvas.width + 50) return;
@@ -8360,11 +8395,8 @@ function drawDecorativeSquashField(camX) {
     const bottomExtent = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
     drawDecorativeSquash(sx, gy - s.size * bottomExtent, s.size, s.type);
 
-    // CONFIRMED CHANGE: bubble pushed higher (was -30) -- with squash
-    // packed this close together, the player standing right next to one
-    // to talk to it was tall enough to cover its own bubble
     if (nearest === s) {
-      drawFittedSpeechBubble(ctx, sx, gy - s.size * bottomExtent - s.size * 0.5 - 48, [s.line]);
+      pendingBubble = { x: sx, y: gy - s.size * bottomExtent - s.size * 0.5 - 48, lines: [s.line] };
     }
   });
 
@@ -8372,8 +8404,7 @@ function drawDecorativeSquashField(camX) {
   // CONFIRMED CHANGE: elevated onto its own hay bale stack (see the
   // matching decorativeHayPiles entry at the same x) -- everything
   // (body, shadow, bubble) shifts up by WONKY_BALE_TOP_HEIGHT to sit on
-  // top of it, which also happens to push the bubble well clear of the
-  // player's head without needing its own separate offset tweak
+  // top of it
   let spx = SPECIAL_SQUASH.x - camX;
   const isTalkingToSpecial = nearest === SPECIAL_SQUASH;
   // CONFIRMED CHANGE: small side-to-side sway while actively being
@@ -8393,20 +8424,26 @@ function drawDecorativeSquashField(camX) {
       const lines = (carvingStation.phase === "done" && !SPECIAL_SQUASH.reactedToCarving)
         ? SPECIAL_SQUASH_CARVED_DIALOGUE
         : SPECIAL_SQUASH_DIALOGUE[Math.min(SPECIAL_SQUASH.talkStage, SPECIAL_SQUASH_DIALOGUE.length) - 1];
-      drawFittedSpeechBubble(ctx, spx, spy - SPECIAL_SQUASH.size * 0.5 - 30, lines);
+      pendingBubble = { x: spx, y: spy - SPECIAL_SQUASH.size * 0.5 - 30, lines };
     }
+  }
+
+  // drawn last, after every body above, so it's never occluded
+  if (pendingBubble) {
+    drawFittedSpeechBubble(ctx, pendingBubble.x, pendingBubble.y, pendingBubble.lines);
   }
 }
 
 // CONFIRMED CHANGE: subtle idle hint that the squash patch is
 // interactable at all -- same noticeTimer/noticeWiggle language used by
 // the graft sticks, wiggle bush, willow, and vault clouds elsewhere in
-// the game. Two squash get this now -- one near the left/entry side of
-// the patch, one further right past the midpoint -- each stopping for
-// good (independently) once you've talked to that particular one,
-// rather than resetting on a timer like the ambient ones elsewhere.
+// the game. Two squash get this -- the first gourd near the entry, and
+// (per follow-up request, swapped from the far white one) the first
+// white squash next to the carving station -- each stopping for good
+// (independently) once you've talked to that particular one, rather
+// than resetting on a timer like the ambient ones elsewhere.
 function updateSquashNoticeWiggle(deltaTime) {
-  [decorativeSquash[0], decorativeSquash[3]].forEach(s => {
+  [decorativeSquash[0], decorativeSquash[1]].forEach(s => {
     if (!s || s.talkedTo) return;
     s.noticeTimer -= deltaTime * 1000;
     if (s.noticeTimer <= 0) {
@@ -38533,6 +38570,16 @@ updateSeasonTransition(deltaTime);
   // width past the bales instead, same pattern as the oak jump-run gate.
   if (currentScene === "autumn" && !hayBales.toppled && cameraX > hayBales.x + 56 - canvas.width + 40) {
     cameraX = hayBales.x + 56 - canvas.width + 40;
+  }
+  // CONFIRMED CHANGE: "room cut" at the far end of the squash patch, per
+  // direct request -- once the camera reaches this point the view just
+  // stops scrolling, even though the player can keep walking right past
+  // it. Anchored a bit before the messy end-cap bale pile (x:6300) so
+  // that pile sits just past the visible edge, reading as a hard stop
+  // to the space rather than trailing off into more empty ground.
+  const AUTUMN_END_ROOM_CUT_X = 6150;
+  if (currentScene === "autumn" && hayBales.toppled && cameraX > AUTUMN_END_ROOM_CUT_X - canvas.width + 40) {
+    cameraX = AUTUMN_END_ROOM_CUT_X - canvas.width + 40;
   }
 
   keys.leftJustPressed = false;
