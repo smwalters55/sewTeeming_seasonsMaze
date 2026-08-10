@@ -11212,7 +11212,7 @@ const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
 // art/placement/tuning comes later once the mechanic itself is proven
 // out -- this is scaffolding, not a finished set piece.
 const FOREST_FLOAT_ZONE_START_X = 5700;
-const FOREST_FLOAT_ZONE_END_X = 6400;
+const FOREST_FLOAT_ZONE_END_X = 7100; // stretched further right per direct request ("make this a bit longer to the right") -- was 6400
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
@@ -11226,16 +11226,25 @@ let floatSubmergeAmount = 0;
 // (same pass rule as FOREST_DUCK_LOG) obstacles, so the zone actually
 // exercises both halves of what was asked for ("jump and double jump
 // over stuff" + "duck under a big log... while floating down the
-// stream")
+// stream"). Extended with 2 more of the same two types to fill the
+// zone's new extra length -- real obstacle variety is still an open
+// brainstorm (see the reply this was built alongside), this just keeps
+// the stretched zone from having a long empty gap in the meantime.
 const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
   { x: FOREST_FLOAT_ZONE_START_X + 340, w: 44, clearance: 48, type: "duck" },
-  { x: FOREST_FLOAT_ZONE_START_X + 520, w: 40, clearance: 40, type: "jump" }
+  { x: FOREST_FLOAT_ZONE_START_X + 520, w: 40, clearance: 40, type: "jump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 780, w: 44, clearance: 48, type: "duck" },
+  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 1220, w: 44, clearance: 48, type: "duck" }
 ];
 const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 430, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 600, collected: false }
+  { x: FOREST_FLOAT_ZONE_START_X + 600, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 860, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 1080, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 1300, collected: false }
 ];
 
 function drawForestFloatZone(camX) {
@@ -11243,18 +11252,88 @@ function drawForestFloatZone(camX) {
   const zoneEndPx = FOREST_FLOAT_ZONE_END_X - camX;
   if (zoneEndPx < -50 || zoneStartPx > canvas.width + 50) return;
 
-  // flat placeholder fill, no shading/reeds/banks like the real river
-  // gets yet -- just enough to see the zone and its obstacles while the
-  // mechanic itself is what's actually being tested right now. Gently
-  // translucent (was a fully opaque solid fill) per direct feedback
-  // ("make water gently slight transluscent").
+  // main water fill -- still a flat translucent tone (no real depth
+  // shading/reeds like the main river gets yet, this is still scaffolding
+  // for testing the mechanic), but the hard vertical start edge is gone
+  // now, replaced by the organic bank below, per direct feedback ("make
+  // the river cute and organic looking and natural gradually coming out
+  // of its current left side from the bottom").
   ctx.fillStyle = "rgba(46,90,98,0.72)";
   ctx.fillRect(zoneStartPx, gy, zoneEndPx - zoneStartPx, canvas.height - gy);
+
+  // LEFT EDGE -- an organic diagonal bank instead of a straight vertical
+  // cut, same "\"-shaped-diagonal-through-jittered-bezier technique as
+  // the main river's own near/far banks (see tracePathOrganic and its
+  // callers above). Water reaches shallow up near the grass at the top
+  // and only goes full-depth lower down and further right, so it reads
+  // as gradually emerging out of the ground rather than a wall of water
+  // starting mid-air.
+  {
+    const topX = zoneStartPx - 70, topY = gy - 4;
+    const waterX = zoneStartPx + 55, waterY = gy + 50;
+    const bowDx = waterX - topX, bowDy = waterY - topY;
+    const bowLen = Math.hypot(bowDx, bowDy);
+    const perpX = bowDy / bowLen, perpY = -bowDx / bowLen;
+    const bow = 30;
+    const ctrlX = (topX + waterX) / 2 + perpX * bow, ctrlY = (topY + waterY) / 2 + perpY * bow;
+    const steps = 7;
+    const edgePts = [{ x: topX, y: topY }];
+    for (let i = 1; i <= steps; i++) {
+      const f = i / steps, omf = 1 - f;
+      const bx = omf * omf * topX + 2 * omf * f * ctrlX + f * f * waterX;
+      const by = omf * omf * topY + 2 * omf * f * ctrlY + f * f * waterY;
+      const j = FOREST_RIVER_JITTER[(i + 6) % FOREST_RIVER_JITTER.length] * 0.7;
+      edgePts.push({ x: bx + j, y: by });
+    }
+    const bankPts = [{ x: topX - 50, y: topY }, ...edgePts, { x: waterX - 30, y: waterY + 30 }, { x: topX - 60, y: canvas.height + 20 }];
+    ctx.save();
+    ctx.filter = "blur(4px)";
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = "#7a6a4a";
+    ctx.beginPath();
+    tracePathOrganic(ctx, bankPts);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    const sandGrad = ctx.createLinearGradient(topX, topY, waterX, waterY);
+    sandGrad.addColorStop(0, "#8c7a56");
+    sandGrad.addColorStop(1, "#3f6a72");
+    ctx.fillStyle = sandGrad;
+    ctx.beginPath();
+    tracePathOrganic(ctx, bankPts);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // gentle current -- rippled highlight lines drifting rightward (same
+  // technique as the main river's own current lines), so the water
+  // reads as actually moving instead of a static flat fill. Per direct
+  // feedback ("water movement lines and stuff").
+  {
+    const rippleMinX = Math.max(zoneStartPx + 10, -20);
+    const rippleMaxX = Math.min(zoneEndPx - 10, canvas.width + 20);
+    const waterSpan = Math.max(40, rippleMaxX - rippleMinX);
+    const t = performance.now();
+    for (let i = 0; i < 22; i++) {
+      const j = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length];
+      const seedI = i * 7.7 + j;
+      const rippleY = gy + 14 + ((i * 13 + j * 3) % (canvas.height - gy - 20)) + Math.sin(t * 0.0011 + seedI) * 2;
+      const speed = 0.05 + ((i * 3 + Math.abs(j)) % 5) * 0.02; // faster than the calm main river -- this is a current, not still water
+      const len = 16 + Math.abs(j) * 2.4;
+      const usable = Math.max(10, waterSpan - len);
+      const rippleX = rippleMinX + ((t * speed + seedI * (37 + Math.abs(j))) % usable);
+      ctx.strokeStyle = `rgba(205,235,225,${0.14 + (Math.abs(j) % 5) * 0.02})`;
+      ctx.lineWidth = 0.9 + (Math.abs(j) % 3) * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(rippleX, rippleY);
+      ctx.lineTo(rippleX + len, rippleY);
+      ctx.stroke();
+    }
+  }
+
   ctx.strokeStyle = "#ffcc33";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(zoneStartPx, gy);
-  ctx.lineTo(zoneStartPx, canvas.height);
   ctx.moveTo(zoneEndPx, gy);
   ctx.lineTo(zoneEndPx, canvas.height);
   ctx.stroke();
