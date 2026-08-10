@@ -11977,6 +11977,7 @@ function drawForestScene(camX) {
   drawForestWaterStriders(camX);
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
+  drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
   drawForestRiverBoatPiles(camX); // the two leaf/bark boat pickup spots -- one right at the zone's calm start, one on the lily pad rest stop
   drawForestRiverBoats(camX); // launched leaf/bark boats drifting on the float zone's current -- drawn right after the water/obstacles so they read as sitting on the surface among them
   drawForestFlightPiece(camX);
@@ -12189,6 +12190,74 @@ const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of 
 // deliberately does NOT get this offset -- it should stay right at the
 // zone's own start, in that same calm lead-in.
 const FOREST_FLOAT_CALM_LEAD = 300;
+
+// an occasional frog that briefly swims across the float zone's calm
+// lead-in (before the first real obstacle) and then hops back out --
+// deliberately NOT a constant escort for the whole ride. Considered
+// having a frog swim alongside the player the entire float, but with
+// the current, obstacles, collectibles, and any launched boat already
+// competing for attention once things get busy, one more thing tracking
+// with the player the whole way risked being overwhelming rather than
+// charming. Scoped down to just this one already-quiet stretch instead.
+const FOREST_RIVER_FROG_X1 = FOREST_FLOAT_ZONE_START_X + 20;
+const FOREST_RIVER_FROG_X2 = FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD - 40;
+const FOREST_RIVER_FROG_SWIM_MS = 3400;
+const forestRiverFrog = { active: false, startTime: 0, nextRollAt: 5000 + Math.random() * 6000 };
+
+function updateForestRiverFrog() {
+  const now = performance.now();
+  if (forestRiverFrog.active) {
+    if (now - forestRiverFrog.startTime > FOREST_RIVER_FROG_SWIM_MS) {
+      forestRiverFrog.active = false;
+      forestRiverFrog.nextRollAt = now + 10000 + Math.random() * 14000;
+    }
+    return;
+  }
+  if (now >= forestRiverFrog.nextRollAt) {
+    forestRiverFrog.active = true;
+    forestRiverFrog.startTime = now;
+  }
+}
+
+function drawForestRiverFrog(camX) {
+  if (!forestRiverFrog.active) return;
+  const now = performance.now();
+  const p = Math.min(1, (now - forestRiverFrog.startTime) / FOREST_RIVER_FROG_SWIM_MS);
+  const eased = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p; // same ease-in-out the newts crawl with
+  const worldX = FOREST_RIVER_FROG_X1 + (FOREST_RIVER_FROG_X2 - FOREST_RIVER_FROG_X1) * eased;
+  const px = worldX - camX;
+  if (px < -30 || px > canvas.width + 30) return;
+  // fades in/out over the first and last beat of the swim so it reads
+  // as hopping into and back out of the water, not popping in place
+  const fade = p < 0.08 ? p / 0.08 : p > 0.92 ? (1 - p) / 0.08 : 1;
+  const swimBob = Math.sin(now * 0.012) * 1.6; // a steady little kick while it swims
+  const py = gy + 1 + swimBob;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, fade));
+  ctx.strokeStyle = "rgba(230,240,225,0.3)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.ellipse(px - 5, py + 1, 3.5, 1.3, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // mostly-submerged -- only the back and eyes break the surface, like
+  // an actual swimming frog rather than one riding on top of the water
+  ctx.fillStyle = "#4c7a3a";
+  ctx.beginPath();
+  ctx.ellipse(px, py, 5.5, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#5c9a48";
+  ctx.beginPath();
+  ctx.arc(px - 2, py - 1.2, 1.6, 0, Math.PI * 2);
+  ctx.arc(px + 2, py - 1.2, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1e1e1e";
+  ctx.beginPath();
+  ctx.arc(px - 2, py - 1.4, 0.6, 0, Math.PI * 2);
+  ctx.arc(px + 2, py - 1.4, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
 // "actually sitting partly in the water" wash on the player sprite (see
@@ -16828,6 +16897,7 @@ function updateForestScene(deltaTime) {
   updateForestSkipStones(deltaTime);
   updateForestWaterStriders();
   updateForestRiverBoats();
+  updateForestRiverFrog();
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
