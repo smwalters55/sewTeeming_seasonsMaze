@@ -1784,6 +1784,12 @@ function updateNPCIdle(npc) {
    INPUT HANDLING
    ====================================================== */
 function handleInput(){
+  // reset every frame, then set true only inside the actual double-jump
+  // branch below -- lets updateSeesaw's pump code (a different scene's
+  // system, runs later this same frame) detect "a real double jump just
+  // happened" without needing its own separate edge-tracking of usedDoubleJump,
+  // which handleInput itself already mutates before updateSeesaw ever runs.
+  player.justDoubleJumped = false;
   const aboutToMountSeesaw = seesawNPC.onSeesaw && seesawNPC.talkedTo && !seesaw.mounted && !seesaw.launching &&
     Math.abs((player.x + player.width / 2) - (seesaw.x - 90)) < 35;
   // also frozen during a tunnel-town dig -- without this, holding the
@@ -1912,6 +1918,7 @@ function handleInput(){
         // secondary boost rather than an equally strong second jump
         player.vy = 9;
         player.usedDoubleJump = true;
+        player.justDoubleJumped = true;
       }
     }
   }
@@ -9310,7 +9317,7 @@ function updateSeesaw(deltaTime) {
       // — no space press needed anymore. Using a near-max threshold
       // rather than the exact max avoids a single-frame timing window,
       // since energy decays slightly every frame even at the peak.
-      if (seesaw.heldItemPlaced && seesaw.pumpEnergy >= 0.35) {
+      if (seesaw.heldItemPlaced && seesaw.pumpEnergy >= 0.3) { // was 0.35 -- lowered a touch for "a lil more generous" per direct request, on top of the double-jump fix above
         launchSeesawItem(seesaw.heldItemPlaced, 0.5); // always full-send strength
         seesaw.heldItemPlaced = null;
         seesaw.pumpEnergy = 0;
@@ -9323,6 +9330,23 @@ function updateSeesaw(deltaTime) {
         seesaw.pumpEnergy = Math.min((seesaw.pumpEnergy || 0) + 0.12, 0.5);
         player.vy = 8; // reduced from 12 -- combined with the base seesaw height, 12 was still reaching ~160-180 total peak, nearly double a normal jump. This targets a real, normal-feeling jump height instead.
         player.onSeesawBounce = true;
+      } else if (keys.upJustPressed && player.justDoubleJumped) {
+        // CONFIRMED BUG FIX: a double-jump press mid-bounce always DID add
+        // real visible height (the bounce-gravity block above integrates
+        // whatever vy handleInput just gave it, unconditionally), but this
+        // pump code only ever recognized the FIRST press (the branch
+        // above requires !player.onSeesawBounce, which is false by the
+        // time a double jump is even possible) -- so stacking jump +
+        // double-jump, the obvious "pump harder" move, silently
+        // contributed zero energy. Feels broken exactly as described.
+        // Award a real bump here too, echoing the ~0.75 ratio the normal
+        // double jump uses relative to a first jump (9 vs 12).
+        // Gated on keys.upJustPressed too (not just the flag alone) so this
+        // can never fire on a later frame where justDoubleJumped happens to
+        // still be true but no new press actually occurred this frame.
+        player.justDoubleJumped = false; // consume -- one press, one award
+        seesaw.pumpEnergy = Math.min((seesaw.pumpEnergy || 0) + 0.08, 0.5);
+        player.vy = 6;
       } else if (!player.onSeesawBounce) {
         seesaw.pumpEnergy = (seesaw.pumpEnergy || 0) * 0.96; // decays over time
       }
