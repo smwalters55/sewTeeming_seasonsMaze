@@ -4601,6 +4601,20 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawPumpkinShape(ctx, x, y, size, rotation);
   } else if (itemType === "apple") {
     drawWholeAppleShape(ctx, x, y, size, rotation);
+  } else if (itemType === "skippingStone") {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    const r = size * 0.42;
+    ctx.fillStyle = "#8a8478";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 0.72, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.3, -r * 0.2, r * 0.32, r * 0.2, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else if (itemType === "shovel") {
     drawShovelShape(ctx, x, y, size, rotation);
   } else if (itemType === "cushionPart") {
@@ -10775,6 +10789,186 @@ function drawForestReflectionPool(camX) {
   ctx.stroke();
 }
 
+// SKIPPING STONES -- a small chill activity at the reflection pool,
+// part of the breather beat between the bridge finishing and the float
+// zone starting (per direct request: "we need a break from river
+// building stuff" / "i like idea of skipping stones where you pick up
+// a stone, then hold down to 'charge' it, and release to try to hit
+// targets"). Pick up a stone near the pool, hold SPACE (the game's one
+// universal interact button everywhere, not a new key -- "spacebar is
+// what we USE for interactions everywhere in the game") to charge a
+// throw, release to skip it across the pool. No fail state: an
+// uncharged/undercharged throw just lands short, nothing punishes a
+// bad toss, matching the game's whole exploratory-curiosity feel.
+const FOREST_SKIP_STONE_X = FOREST_REFLECTION_POOL_X - 90;
+const skipStone = { onGround: true, cooldownUntil: 0 };
+let skipStoneCharge = 0; // 0..1, ramps while held
+let skipStoneWasCharging = false; // edge-detect release
+// the pickup zone (near the stone) sits inside the charge zone (near
+// the pool), so the SAME keydown that triggers the pickup tap would
+// otherwise immediately start charging too -- release the space bar
+// once, however briefly, before the very next press counts toward a
+// charge. Without this, a plain "tap space to pick up the stone" was
+// also flinging it a short distance in the same motion.
+let skipStoneArmed = true;
+const FOREST_SKIP_STONE_CHARGE_MS = 900; // full charge if held this long
+const FOREST_SKIP_STONE_THROW_MS = 650;
+// target rings, as a fraction of the pool's width from its near (left)
+// edge -- hitting one is just a nicer sparkle payoff, missing all three
+// still gives a normal skip/splash. Per direct request ("release it to
+// try to hit targets somehow").
+const FOREST_SKIP_STONE_TARGETS = [0.3, 0.56, 0.82];
+const skipStoneTargetFlash = [0, 0, 0]; // timestamp of last hit, per target, for the sparkle fade
+const thrownSkipStone = { active: false, startTime: 0, distanceFrac: 0, hitTargetIndex: -1 };
+
+function throwSkipStone() {
+  const now = performance.now();
+  thrownSkipStone.active = true;
+  thrownSkipStone.startTime = now;
+  // undercharged throws (barely tapped and released) still travel a
+  // little, just short -- there's no "too weak, nothing happens" dead
+  // zone that would read as the input not working
+  thrownSkipStone.distanceFrac = 0.12 + skipStoneCharge * 0.85;
+  let hitIndex = -1;
+  FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
+    if (Math.abs(frac - thrownSkipStone.distanceFrac) < 0.06) hitIndex = i;
+  });
+  thrownSkipStone.hitTargetIndex = hitIndex;
+  if (hitIndex >= 0) skipStoneTargetFlash[hitIndex] = now;
+  heldItem = null;
+  skipStoneCharge = 0;
+}
+
+function updateForestSkipStones(deltaTime) {
+  const now = performance.now();
+  const nearPool = isPlayerNear(FOREST_REFLECTION_POOL_X, 0, 140, 60, 60);
+  const nearStonePickup = isPlayerNear(FOREST_SKIP_STONE_X, 0, 26, 20, 20);
+
+  if (skipStone.onGround && now >= skipStone.cooldownUntil && !heldItem &&
+      nearStonePickup && keys.spaceJustPressed) {
+    heldItem = "skippingStone";
+    skipStone.onGround = false;
+    skipStoneArmed = false; // must release space once before a charge can start
+  }
+
+  if (!keys.space) skipStoneArmed = true;
+
+  const canCharge = heldItem === "skippingStone" && nearPool && skipStoneArmed && !thrownSkipStone.active;
+  if (canCharge && keys.space) {
+    skipStoneCharge = Math.min(1, skipStoneCharge + (deltaTime * 1000) / FOREST_SKIP_STONE_CHARGE_MS);
+  }
+  // release fires on the falling edge of keys.space while a charged
+  // throw is in hand -- mirrors how upJustPressed/spaceJustPressed
+  // detect a RISING edge elsewhere in this file, just inverted, since
+  // this is the one place in the game that cares about key-UP
+  if (heldItem === "skippingStone" && skipStoneWasCharging && !keys.space && !thrownSkipStone.active) {
+    throwSkipStone();
+  }
+  skipStoneWasCharging = canCharge && keys.space;
+
+  if (heldItem !== "skippingStone") skipStoneCharge = 0;
+
+  if (thrownSkipStone.active && now - thrownSkipStone.startTime > FOREST_SKIP_STONE_THROW_MS) {
+    thrownSkipStone.active = false;
+    skipStone.onGround = true;
+    skipStone.cooldownUntil = now + 1100;
+  }
+}
+
+function drawForestSkipStones(camX) {
+  const poolPx = FOREST_REFLECTION_POOL_X - camX;
+  const poolW = 130, poolH = 64;
+  const poolY = gy + 26;
+  const nearLeftX = poolPx - poolW / 2 + 8;
+  const spanW = poolW - 16;
+
+  // pickup pebble, sitting on the grass before the pool
+  if (skipStone.onGround) {
+    const sx = FOREST_SKIP_STONE_X - camX;
+    if (sx > -30 && sx < canvas.width + 30) {
+      ctx.fillStyle = "rgba(10,10,10,0.2)";
+      ctx.beginPath();
+      ctx.ellipse(sx, gy + 3, 6, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#8a8478";
+      ctx.beginPath();
+      ctx.ellipse(sx, gy - 2, 5, 3.6, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.beginPath();
+      ctx.ellipse(sx - 1.5, gy - 3, 1.6, 1, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (poolPx < -160 || poolPx > canvas.width + 160) return;
+
+  // faint target rings, always visible so they read as something to
+  // aim for rather than a hidden mechanic
+  FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
+    const tx = nearLeftX + frac * spanW;
+    const flashAge = performance.now() - skipStoneTargetFlash[i];
+    const flashing = flashAge < 700;
+    const baseAlpha = flashing ? 0.7 - (flashAge / 700) * 0.5 : 0.28;
+    ctx.strokeStyle = flashing ? `rgba(255,230,140,${baseAlpha})` : `rgba(230,240,225,${baseAlpha})`;
+    ctx.lineWidth = flashing ? 2 : 1.2;
+    ctx.beginPath();
+    ctx.ellipse(tx, poolY, flashing ? 10 + (flashAge / 700) * 8 : 7, (flashing ? 10 + (flashAge / 700) * 8 : 7) * (poolH / poolW), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // charge meter -- a small arc that fills above the player while
+  // holding the stone near the pool, so the "how hard am I about to
+  // throw" question always has a visible answer
+  if (heldItem === "skippingStone" && skipStoneCharge > 0.02 && !thrownSkipStone.active) {
+    const mx = player.x - camX + player.width / 2;
+    const my = player.y > 0 ? gy - player.y - player.height - 14 : gy - player.height - 14;
+    ctx.strokeStyle = "rgba(20,20,20,0.35)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(mx, my, 9, -Math.PI / 2, Math.PI * 1.5, false);
+    ctx.stroke();
+    ctx.strokeStyle = skipStoneCharge > 0.9 ? "#ffcc55" : "#cfe8e0";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(mx, my, 9, -Math.PI / 2, -Math.PI / 2 + skipStoneCharge * Math.PI * 2, false);
+    ctx.stroke();
+  }
+
+  // active throw -- a decreasing series of skip-bounces along the
+  // pool's surface toward the charged distance, each leaving its own
+  // little ripple
+  if (thrownSkipStone.active) {
+    const p = Math.min(1, (performance.now() - thrownSkipStone.startTime) / FOREST_SKIP_STONE_THROW_MS);
+    const traveledFrac = thrownSkipStone.distanceFrac * p;
+    const sx = nearLeftX + traveledFrac * spanW;
+    const bounces = 4;
+    const bouncePhase = (p * bounces) % 1;
+    const bounceAmp = 7 * (1 - p * 0.7);
+    const sy = poolY - Math.sin(bouncePhase * Math.PI) * bounceAmp;
+    ctx.fillStyle = "#8a8478";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 3.4, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // little ripple pulses at each bounce touchdown (near the bottom of the arc)
+    if (bouncePhase < 0.12 || bouncePhase > 0.94) {
+      ctx.strokeStyle = "rgba(230,240,225,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(sx, poolY, 5, 5 * (poolH / poolW), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (p >= 1) {
+      // final landing burst
+      ctx.strokeStyle = "rgba(230,240,225,0.55)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(sx, poolY, 9, 9 * (poolH / poolW), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
 // general ground-cover grass, generated procedurally from camX the same
 // way drawSpringGrass is (extends infinitely rather than a fixed-size
 // array) instead of the forest floor staying a flat, textureless fill.
@@ -11078,6 +11272,7 @@ function drawForestScene(camX) {
   drawForestDuckLog(camX);
   drawForestRiver(camX);
   drawForestReflectionPool(camX);
+  drawForestSkipStones(camX);
   drawForestFloatZone(camX);
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
@@ -15580,6 +15775,7 @@ function drawForestSnake(camX) {
 
 function updateForestScene(deltaTime) {
   updateReflectionPool();
+  updateForestSkipStones(deltaTime);
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
