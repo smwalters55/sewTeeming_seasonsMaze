@@ -11483,18 +11483,28 @@ function drawForestFloatZone(camX) {
   // the river cute and organic looking and natural gradually coming out
   // of its current left side from the bottom").
   //
-  // Extended well past the organic bank's own leftmost/topmost reach
-  // (the bank shape below can start as far left as zoneStartPx-130 and
-  // as high as gy-4) so water is ALWAYS sitting underneath the entire
-  // sand shape. It used to start exactly at zoneStartPx/gy, which left
-  // a sliver of plain grass-green background showing through wherever
-  // the jittered bank curve dipped inside that rectangle's own left/top
-  // edge -- read as a stray little grass triangle poking through the
-  // sand right at the shoreline. Direct feedback: "have the water go
-  // all the way back behind this sand area, not have that little grass
-  // triangle."
+  // NOTE: a previous pass tried fixing a tiny sliver-of-grass artifact
+  // near the bank by blowing this rect out much further left/up
+  // (zoneStartPx-150, gy-15). That overcorrected -- whenever the camera
+  // was positioned so that extended area was on-screen but the actual
+  // sand shape wasn't, it showed up as a disconnected hard-edged
+  // rectangle of water floating on the grass.
+  //
+  // The REAL, much smaller gap: the diagonal bank curve below starts at
+  // x = zoneStartPx-70 (see "topX") and dips below the horizon (gy)
+  // well before it reaches zoneStartPx, but this rect used to only
+  // start exactly at zoneStartPx -- for that ~70px stretch, the curve
+  // was below gy (so grass correctly should NOT show there) but neither
+  // the polygon (whose fill only starts below its own curve) nor this
+  // rect (which didn't reach that far left yet) painted the gap between
+  // gy and the curve, leaving a thin sliver of plain grass background
+  // exposed right at the shoreline seam. Starting the rect at the same
+  // x as the curve's own leftmost point -- but keeping its y at gy,
+  // NOT reaching any higher -- closes exactly that gap without
+  // recreating the earlier floating-rectangle bug (this stays flush
+  // against the horizon the whole way, never floats above it).
   ctx.fillStyle = "rgba(46,90,98,0.72)";
-  ctx.fillRect(zoneStartPx - 150, gy - 15, zoneEndPx - (zoneStartPx - 150), canvas.height - (gy - 15));
+  ctx.fillRect(zoneStartPx - 70, gy, zoneEndPx - (zoneStartPx - 70), canvas.height - gy);
 
   // LEFT EDGE -- an organic diagonal bank instead of a straight vertical
   // cut, same "\"-shaped-diagonal-through-jittered-bezier technique as
