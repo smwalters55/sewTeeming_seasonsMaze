@@ -10574,9 +10574,16 @@ function drawSpringDoorVineTendril(camX) {
 const FOREST_REFLECTION_POOL_X = 5400;
 // shared by both drawForestReflectionPool and drawForestSkipStones so
 // the two never drift out of sync with each other -- bumped up from
-// 130x64 per direct request ("lets make the reflective pond bigger").
-const FOREST_REFLECTION_POOL_W = 190;
+// 130x64 per direct request ("lets make the reflective pond bigger"),
+// then widened further (was 190) per "make larger by widening".
+const FOREST_REFLECTION_POOL_W = 280;
 const FOREST_REFLECTION_POOL_H = 94;
+// shared Y too, computed instead of hardcoded, so growing poolH can
+// never push the top edge back up above the horizon (ground) line the
+// way a fixed "gy + 26" did once poolH grew past 64 -- keeps the same
+// small ~6px lip above gy that the original "sits lower, not a bump
+// above the ground" fix established, regardless of pool size.
+const FOREST_REFLECTION_POOL_Y = gy + FOREST_REFLECTION_POOL_H / 2 - 6;
 const reflectionPool = { active: false, startTime: 0, nextRollAt: 3000 };
 const REFLECTION_FADE_IN_MS = 900;
 const REFLECTION_HOLD_MS = 3400;
@@ -10617,7 +10624,10 @@ function drawForestReflectionPool(camX) {
   // ("reflective pond needs to sit lower. not be a big bump above the
   // ground"). Dropped so only a small lip breaks the surface, like an
   // actual pool dug into the ground rather than a half-buried ball.
-  const poolY = gy + 26;
+  // now the shared FOREST_REFLECTION_POOL_Y constant (see its own
+  // comment) instead of a fixed offset, so it can't rise back above the
+  // horizon as the pool grows.
+  const poolY = FOREST_REFLECTION_POOL_Y;
 
   ctx.save();
   ctx.beginPath();
@@ -10805,13 +10815,22 @@ function drawForestReflectionPool(camX) {
 // throw, release to skip it across the pool. No fail state: an
 // uncharged/undercharged throw just lands short, nothing punishes a
 // bad toss, matching the game's whole exploratory-curiosity feel.
-// a little scatter of stones near the pool instead of just one, so
-// there's always a fresh one nearby ("add more stones") -- each has its
-// own independent onGround/cooldown so picking one up doesn't affect
-// the others.
-const FOREST_SKIP_STONE_OFFSETS = [-90, -125, -60];
-const skipStones = FOREST_SKIP_STONE_OFFSETS.map(offset => ({
-  x: FOREST_REFLECTION_POOL_X + offset,
+// a little pile of 3 stones at one spot near the pool, rather than
+// scattered separately, so it reads clearly as "something to interact
+// with" instead of ambient pebble clutter -- each layout entry still
+// has its own independent onGround/cooldown, so the pile visibly
+// shrinks as stones are picked up and refills one at a time as they
+// come off cooldown.
+const FOREST_SKIP_STONE_PILE_OFFSET = -105; // pushed out from pool center, clear of the water's edge
+const FOREST_SKIP_STONE_PILE_LAYOUT = [
+  { dx: -4, dy: 0, scale: 1 },
+  { dx: 4, dy: -1, scale: 0.95 },
+  { dx: 0, dy: -4.5, scale: 0.85 } // sits on top of the other two
+];
+const skipStones = FOREST_SKIP_STONE_PILE_LAYOUT.map(spot => ({
+  x: FOREST_REFLECTION_POOL_X + FOREST_SKIP_STONE_PILE_OFFSET + spot.dx,
+  yOffset: spot.dy,
+  scale: spot.scale,
   onGround: true,
   cooldownUntil: 0
 }));
@@ -10903,39 +10922,43 @@ function updateForestSkipStones(deltaTime) {
 function drawForestSkipStones(camX) {
   const poolPx = FOREST_REFLECTION_POOL_X - camX;
   const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H;
-  const poolY = gy + 26;
+  const poolY = FOREST_REFLECTION_POOL_Y;
   const nearLeftX = poolPx - poolW / 2 + 8;
   const spanW = poolW - 16;
 
-  // pickup pebbles, sitting on the grass before the pool -- one per
-  // entry in skipStones
+  // pickup pebbles, piled together on the grass before the pool -- one
+  // per entry in skipStones, each offset/scaled per its layout spot so
+  // together they read as a small stacked pile rather than loose litter
   skipStones.forEach(s => {
     if (!s.onGround) return;
     const sx = s.x - camX;
+    const sy = gy + (s.yOffset || 0);
+    const sc = s.scale || 1;
     if (sx > -30 && sx < canvas.width + 30) {
       ctx.fillStyle = "rgba(10,10,10,0.2)";
       ctx.beginPath();
-      ctx.ellipse(sx, gy + 3, 6, 2.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(sx, sy + 3, 6 * sc, 2.4 * sc, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#8a8478";
       ctx.beginPath();
-      ctx.ellipse(sx, gy - 2, 5, 3.6, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(sx, sy - 2, 5 * sc, 3.6 * sc, -0.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.25)";
       ctx.beginPath();
-      ctx.ellipse(sx - 1.5, gy - 3, 1.6, 1, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(sx - 1.5 * sc, sy - 3, 1.6 * sc, 1 * sc, -0.2, 0, Math.PI * 2);
       ctx.fill();
     }
   });
 
   if (poolPx < -160 || poolPx > canvas.width + 160) return;
 
-  // faint target rings -- only shown while actually holding the stone
-  // (near the pool, about to throw), so they read as "here's what
-  // you're aiming for right now" rather than permanent pond decor.
-  // Still visible even before charge starts so the player can see the
-  // near/middle/far spots to aim for as soon as they pick the stone up.
-  if (heldItem === "skippingStone") {
+  // faint target rings -- shown while holding the stone (about to
+  // throw) AND for the duration of the throw itself, so the player can
+  // watch the stone travel toward them instead of the rings vanishing
+  // the instant they release. Hidden the rest of the time so they read
+  // as "here's what you're aiming for right now" rather than permanent
+  // pond decor.
+  if (heldItem === "skippingStone" || thrownSkipStone.active) {
     FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
       const tx = nearLeftX + frac * spanW;
       const flashAge = performance.now() - skipStoneTargetFlash[i];
@@ -10947,10 +10970,10 @@ function drawForestSkipStones(camX) {
       ctx.ellipse(tx, poolY, flashing ? 10 + (flashAge / 700) * 8 : 7, (flashing ? 10 + (flashAge / 700) * 8 : 7) * (poolH / poolW), 0, 0, Math.PI * 2);
       ctx.stroke();
     });
-  }
-  // the flash sparkle on a hit should still show even after the stone
-  // is thrown and heldItem clears, so it doesn't cut off mid-celebration
-  if (heldItem !== "skippingStone") {
+  } else {
+    // the flash sparkle on a hit should still show even after the stone
+    // lands and heldItem/thrown both clear, so it doesn't cut off
+    // mid-celebration
     FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
       const flashAge = performance.now() - skipStoneTargetFlash[i];
       if (flashAge >= 700) return;
@@ -11015,6 +11038,160 @@ function drawForestSkipStones(camX) {
       ctx.stroke();
     }
   }
+}
+
+// reeds/pond plants scattered around the pool's rim, per direct request
+// ("add some reeds/other pond like plants around it"). Placed at points
+// around the ellipse's own perimeter (just outside it) rather than a
+// flat scatter, so they follow the pool's actual shape at any size.
+// Skips anywhere too close to a skip-stone pickup or a frog so nothing
+// gets crowded/hidden.
+const FOREST_POOL_REED_COLORS = ["#5a7a3a", "#4a6a30"];
+const FOREST_POOL_REED_COUNT = 18;
+function drawForestReflectionPoolReeds(camX) {
+  const px = FOREST_REFLECTION_POOL_X - camX;
+  if (px < -200 || px > canvas.width + 200) return;
+  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H;
+  const poolY = FOREST_REFLECTION_POOL_Y;
+  const t = performance.now();
+
+  for (let i = 0; i < FOREST_POOL_REED_COUNT; i++) {
+    const seedI = i * 13.7 + 500;
+    if (pseudoRandom(seedI) < 0.2) continue; // patchy, not a solid ring
+    const angle = (i / FOREST_POOL_REED_COUNT) * Math.PI * 2 + pseudoRandom(seedI + 1) * 0.4;
+    // rooted just outside the rim so they read as growing at the
+    // waterline, not standing in the water itself
+    const rimDist = 5 + pseudoRandom(seedI + 2) * 7;
+    const rimX = px + Math.cos(angle) * (poolW / 2 + rimDist);
+    const rimY = poolY + Math.sin(angle) * (poolH / 2 + rimDist * (poolH / poolW));
+
+    const worldX = rimX + camX;
+    if (skipStones.some(s => Math.abs(s.x - worldX) < 22)) continue;
+    if (forestFrogs.some(f => Math.abs(f.x - worldX) < 22)) continue;
+
+    const reedH = 9 + pseudoRandom(seedI + 3) * 14;
+    const sway = Math.sin(t * 0.0012 + seedI * 0.7) * 2.5;
+    const isCattail = pseudoRandom(seedI + 4) < 0.3;
+    ctx.strokeStyle = FOREST_POOL_REED_COLORS[Math.floor(pseudoRandom(seedI + 5) * FOREST_POOL_REED_COLORS.length)];
+    ctx.lineWidth = 1.1 + pseudoRandom(seedI + 6) * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(rimX, rimY);
+    ctx.quadraticCurveTo(rimX + sway * 0.6, rimY - reedH * 0.6, rimX + sway, rimY - reedH);
+    ctx.stroke();
+    if (isCattail) {
+      ctx.fillStyle = "#5a4022";
+      ctx.beginPath();
+      ctx.ellipse(rimX + sway * 0.86, rimY - reedH * 0.84, 1, 2.6, 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// AMBIENT FROGS -- first ambient near-water critter (per direct
+// request, "start with the ambient animals... i think a frog"). Purely
+// decorative for now: sits on the bank by the reflection pool,
+// breathes with an idle throat pulse, and hops in place every few
+// seconds. No interaction, no gameplay effect.
+// offsets pushed out a bit (was 78/120) once the pool got wider, so the
+// nearer frog still sits clearly on the bank instead of at the water's edge
+const FOREST_FROG_SPOTS = [
+  { offsetX: 95, offsetY: 0 },
+  { offsetX: 135, offsetY: 2 }
+];
+const forestFrogs = FOREST_FROG_SPOTS.map((spot, i) => ({
+  x: FOREST_REFLECTION_POOL_X + spot.offsetX,
+  yOffset: spot.offsetY,
+  dir: i % 2 === 0 ? 1 : -1,
+  throatSeed: i * 3.1 + 0.6,
+  hopT: i * 900, // stagger so both frogs don't hop in unison
+  hopNextAt: 2400 + i * 700,
+  hopping: false,
+  hopStart: 0
+}));
+const FOREST_FROG_HOP_MS = 420;
+
+function updateForestFrogs(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  const now = performance.now();
+  forestFrogs.forEach(f => {
+    if (f.hopping) {
+      if (now - f.hopStart > FOREST_FROG_HOP_MS) {
+        f.hopping = false;
+        f.hopT = 0;
+        f.hopNextAt = 2200 + Math.random() * 3200;
+      }
+      return;
+    }
+    f.hopT += dtMs;
+    if (f.hopT >= f.hopNextAt) {
+      f.hopping = true;
+      f.hopStart = now;
+      f.dir = Math.random() < 0.5 ? -1 : 1;
+    }
+  });
+}
+
+function drawForestFrog(f, camX) {
+  const px = f.x - camX;
+  if (px < -30 || px > canvas.width + 30) return;
+  const now = performance.now();
+  let hopArc = 0, hopShift = 0;
+  if (f.hopping) {
+    const p = Math.min(1, (now - f.hopStart) / FOREST_FROG_HOP_MS);
+    hopArc = Math.sin(p * Math.PI) * 9;
+    hopShift = p * f.dir * 10;
+  }
+  const baseY = gy - 1 + f.yOffset;
+  const bodyBottom = baseY - hopArc;
+  const bx = px + hopShift;
+  const bodyW = 13, bodyH = 9;
+
+  // ground shadow, shrinks a bit mid-hop so the lift actually reads
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(bx, baseY + 1, Math.max(2, bodyW * 0.5 * (1 - hopArc / 20)), 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hind legs -- tucked while sitting, splayed out mid-hop
+  const legSpread = f.hopping ? 6 : 2.5;
+  ctx.fillStyle = "#4c7a3a";
+  ctx.beginPath();
+  ctx.ellipse(bx - bodyW * 0.55 - legSpread * 0.4, bodyBottom - 1, 4.5, 3, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(bx + bodyW * 0.55 + legSpread * 0.4, bodyBottom - 1, 4.5, 3, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body
+  ctx.fillStyle = "#5c9a48";
+  ctx.beginPath();
+  ctx.ellipse(bx, bodyBottom - bodyH * 0.5, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // lighter belly/throat -- pulses gently even while sitting still so
+  // it never reads as a static prop between hops
+  const throatPulse = f.hopping ? 0.3 : 0.4 + 0.35 * Math.sin(now * 0.006 + f.throatSeed);
+  ctx.fillStyle = "#cfe0a8";
+  ctx.beginPath();
+  ctx.ellipse(bx, bodyBottom - 1.5, bodyW * 0.3, bodyH * 0.22 + throatPulse * 1.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye bumps on top, frog-style, with a tiny dark pupil
+  const eyeY = bodyBottom - bodyH * 0.85;
+  ctx.fillStyle = "#5c9a48";
+  ctx.beginPath();
+  ctx.arc(bx - 3.5, eyeY, 2.4, 0, Math.PI * 2);
+  ctx.arc(bx + 3.5, eyeY, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1a1a12";
+  ctx.beginPath();
+  ctx.arc(bx - 3.5, eyeY - 0.6, 1.1, 0, Math.PI * 2);
+  ctx.arc(bx + 3.5, eyeY - 0.6, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawForestFrogs(camX) {
+  forestFrogs.forEach(f => drawForestFrog(f, camX));
 }
 
 // general ground-cover grass, generated procedurally from camX the same
@@ -11320,6 +11497,8 @@ function drawForestScene(camX) {
   drawForestDuckLog(camX);
   drawForestRiver(camX);
   drawForestReflectionPool(camX);
+  drawForestReflectionPoolReeds(camX);
+  drawForestFrogs(camX);
   drawForestSkipStones(camX);
   drawForestFloatZone(camX);
   drawForestFlightPiece(camX);
@@ -15828,6 +16007,7 @@ function drawForestSnake(camX) {
 
 function updateForestScene(deltaTime) {
   updateReflectionPool();
+  updateForestFrogs(deltaTime);
   updateForestSkipStones(deltaTime);
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
