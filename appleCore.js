@@ -10795,6 +10795,16 @@ function drawForestGrassScatter(camX) {
   if (startX >= endX) return;
 
   for (let x = startX; x < endX; x += step) {
+    // skip the river float zone entirely -- this generic scatter draws
+    // its blades a little BELOW gy (baseY/y can reach gy+12), which
+    // used to poke up through the float zone's translucent water fill
+    // as stray dark blade-shaped smudges right at the waterline (read
+    // as leftover ordinary forest grass bleeding through the river).
+    // drawForestFloatZoneReeds (called separately, see its own comment)
+    // replaces this stretch with real riverbank reeds instead. Per
+    // direct request ("remove the normal grass patterning behind the
+    // river, and replace with reeds and river-bank like grasses").
+    if (x >= FOREST_FLOAT_ZONE_START_X - 40 && x <= FOREST_FLOAT_ZONE_END_X) continue;
     const isClump = pseudoRandom(x * 0.53 + 900) < 0.14; // occasional taller clump
     if (isClump) {
       const seed = x * 1.31 + 900;
@@ -10826,6 +10836,50 @@ function drawForestGrassScatter(camX) {
       ctx.moveTo(bladeX, y);
       ctx.lineTo(bladeX, y - h);
       ctx.stroke();
+    }
+  }
+}
+
+// riverbank reeds/cattails for the float zone -- replaces the generic
+// forest grass scatter there (see the skip in drawForestGrassScatter)
+// with real bank vegetation, rooted right at the grass/water edge
+// (gy), leaning and swaying like the main river's own reed clusters
+// (see drawForestRiver's near/far-bank reed loops, same visual
+// language: quadraticCurveTo blade, ~half tipped with a cattail head).
+// Per direct request ("replace with reeds and river-bank like grasses.
+// like the part that is the sprinkles grass... to right of mole hole"
+// -- i.e. same DENSITY/scatter feel as the normal grass, just the
+// river-appropriate plant instead).
+const FOREST_FLOAT_REED_COLORS = ["#5a7a3a", "#4a6a30"];
+function drawForestFloatZoneReeds(camX) {
+  const step = 17;
+  const startX = Math.max(FOREST_FLOAT_ZONE_START_X - 40, Math.floor((camX - 40) / step) * step);
+  const endX = Math.min(FOREST_FLOAT_ZONE_END_X, camX + canvas.width + 40);
+  if (startX >= endX) return;
+  const t = performance.now();
+
+  for (let x = startX; x < endX; x += step) {
+    if (pseudoRandom(x * 0.71 + 2100) < 0.3) continue; // patchy, not a solid wall of reeds
+    const seedI = x * 0.91 + 2100;
+    const bladeX = x - camX;
+    // rooted right at the bank edge, never below it -- these read as
+    // growing OUT of the ground at the waterline, not standing in the
+    // current itself
+    const baseY = gy - 1 - pseudoRandom(seedI + 1) * 4;
+    const reedH = 10 + pseudoRandom(seedI + 2) * 16;
+    const sway = Math.sin(t * 0.0012 + seedI * 0.7) * 3;
+    const isCattail = pseudoRandom(seedI + 3) < 0.35;
+    ctx.strokeStyle = FOREST_FLOAT_REED_COLORS[Math.floor(pseudoRandom(seedI + 4) * FOREST_FLOAT_REED_COLORS.length)];
+    ctx.lineWidth = 1.1 + pseudoRandom(seedI + 5) * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(bladeX, baseY);
+    ctx.quadraticCurveTo(bladeX + sway * 0.6, baseY - reedH * 0.6, bladeX + sway, baseY - reedH);
+    ctx.stroke();
+    if (isCattail) {
+      ctx.fillStyle = "#5a4022";
+      ctx.beginPath();
+      ctx.ellipse(bladeX + sway * 0.86, baseY - reedH * 0.84, 1.1, 2.8, 0.15, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
@@ -11003,6 +11057,7 @@ function drawForestScene(camX) {
   }
 
   drawForestGrassScatter(camX);
+  drawForestFloatZoneReeds(camX);
   drawForestForegroundTrees(camX);
   drawForestEntranceFerns(camX);
   drawForestFernField(camX);
