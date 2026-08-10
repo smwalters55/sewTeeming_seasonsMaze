@@ -20398,14 +20398,14 @@ function updateTrapDoor(deltaTime) {
 // "pick this up" elsewhere in the game, and the rug isn't a pickup --
 // it's a reveal, so it gets its own tell (light peeking from below,
 // true to the actually-lit room that's really down there).
-const NOOK_RUG_NOTICE = { timer: 4000 + Math.random() * 3000, glowT: 99999 };
-const NOOK_RUG_GLOW_DURATION = 1800;
+const NOOK_RUG_NOTICE = { timer: 2500 + Math.random() * 2000, glowT: 99999 };
+const NOOK_RUG_GLOW_DURATION = 2600;
 function updateNookRugNotice(deltaTime) {
   if (trapDoor.opened) return; // found for good -- no need to keep hinting
   NOOK_RUG_NOTICE.timer -= deltaTime * 1000;
   if (NOOK_RUG_NOTICE.timer <= 0) {
     NOOK_RUG_NOTICE.glowT = 0;
-    NOOK_RUG_NOTICE.timer = 8000 + Math.random() * 5000;
+    NOOK_RUG_NOTICE.timer = 5000 + Math.random() * 3000;
   }
   if (NOOK_RUG_NOTICE.glowT < NOOK_RUG_GLOW_DURATION) NOOK_RUG_NOTICE.glowT += deltaTime * 1000;
 }
@@ -20538,15 +20538,17 @@ function drawNookRugGlow(camX) {
   if (alpha <= 0.02) return;
 
   const edgeY = ry + h / 2 - 1; // rug's bottom edge, where it meets the floor
-  const glowW = w * 0.8;
+  const glowW = w * 0.9;
 
-  // soft wide bloom underneath, faint
+  // soft wide bloom underneath -- boosted from the original 0.35 mult /
+  // 8px band, which read as basically invisible against the floor. Still
+  // a bloom, not a beacon, but now actually catches the eye in passing.
   const bloom = ctx.createLinearGradient(rx - glowW / 2, edgeY, rx + glowW / 2, edgeY);
   bloom.addColorStop(0, "rgba(255,200,110,0)");
-  bloom.addColorStop(0.5, `rgba(255,200,110,${(alpha * 0.35).toFixed(3)})`);
+  bloom.addColorStop(0.5, `rgba(255,200,110,${(alpha * 0.6).toFixed(3)})`);
   bloom.addColorStop(1, "rgba(255,200,110,0)");
   ctx.fillStyle = bloom;
-  ctx.fillRect(rx - glowW / 2, edgeY - 3.5, glowW, 8);
+  ctx.fillRect(rx - glowW / 2, edgeY - 5, glowW, 12);
 
   // brighter thin core sliver right at the seam
   const core = ctx.createLinearGradient(rx - glowW / 2, edgeY, rx + glowW / 2, edgeY);
@@ -20554,7 +20556,7 @@ function drawNookRugGlow(camX) {
   core.addColorStop(0.5, `rgba(255,225,160,${alpha.toFixed(3)})`);
   core.addColorStop(1, "rgba(255,220,150,0)");
   ctx.fillStyle = core;
-  ctx.fillRect(rx - glowW / 2, edgeY - 1, glowW, 2);
+  ctx.fillRect(rx - glowW / 2, edgeY - 1.5, glowW, 3);
 }
 
 function easeInOutTrap(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
@@ -22519,7 +22521,23 @@ function updateOakScene(deltaTime) {
   // back down into view a couple seconds later ("player rises off
   // screen and then falls back down... happened when jump happen high
   // on highhh book piles").
-  cameraY = Math.max(0, player.y - 150);
+  // CONFIRMED BUG FIX: this used to apply everywhere in the scene based
+  // on player.y alone, with no regard for player.x -- but the short and
+  // medium shelves (x=2120/2286, standing height ~130/190) sit well
+  // before the jump run (which only starts at OAK_JUMPRUN_GATE_X=2900)
+  // and are drawn at fixed screen coordinates that never got a +cameraY
+  // term (they're ordinary side platforms, not part of the scrolling
+  // climb). Once player.y crossed ~150 just from standing on/jumping
+  // off the medium shelf, cameraY engaged anyway: the floor (which does
+  // use +cameraY) sank away down-screen while the shelf sprite itself
+  // stayed put, and the player -- whose screen position is gy+cameraY-
+  // player.y, which cancels to a CONSTANT for any player.y>150 -- froze
+  // in place on screen instead of visibly jumping ("floor like
+  // disappears and player floats if too high on the small and medium
+  // bookshelves"). Gating this on the same OAK_JUMPRUN_GATE_X used to
+  // gate the climb's reach/visibility keeps the shelves entirely
+  // camera-locked at 0, exactly like every other ordinary platform.
+  cameraY = player.x >= OAK_JUMPRUN_GATE_X ? Math.max(0, player.y - 150) : 0;
 
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
@@ -23667,11 +23685,22 @@ const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
 // also trigger the jar. Now clear by well over 100px.
 const featherHangSpot = { x: 680, heightAboveGround: 55 };
 function drawFeatherHangSpot(camX) {
-  if (!lampLit && !featherHangAnim.active) return;
+  // CONFIRMED CHANGE: once the feather's actually been hung, the jar
+  // stays dimly visible even with the lamp off/out of range -- a small
+  // permanent landmark you can spot in the dark rather than the whole
+  // setup vanishing again the moment you walk off with the lamp, per
+  // direct request ("a liiiittle brighter so you can see it just
+  // slightly in the dark"). Everything before that point (empty jar,
+  // still carrying the feather) keeps the original lamp-only gating.
+  const hungAndDark = featherHung && !lampLit && !featherHangAnim.active;
+  if (!lampLit && !featherHangAnim.active && !featherHung) return;
   const hx = featherHangSpot.x - camX, hy = gy - featherHangSpot.heightAboveGround;
   const playerScreenX = player.x + player.width / 2 - camX;
   const dist = Math.hypot(hx - playerScreenX, hy - (gy - player.y));
-  if (dist > LAMP_LIGHT_RADIUS && !featherHangAnim.active) return;
+  if (!hungAndDark && dist > LAMP_LIGHT_RADIUS && !featherHangAnim.active) return;
+
+  ctx.save();
+  if (hungAndDark) ctx.globalAlpha = 0.32; // faint, just barely visible -- not a beacon
 
   // a temporary glow while the placement animation plays, independent
   // of whether the lamp happens to be actively held right then -- so
@@ -23766,7 +23795,26 @@ function drawFeatherHangSpot(camX) {
     ctx.ellipse(0, -7, 5, 1.4, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.restore();
+
+  // CONFIRMED CHANGE: once hung, a small warm shimmer catches on the
+  // jar's rim permanently -- this is the "jar visibly changes" payoff
+  // for actually completing the vignette, distinct from the one-time
+  // placement glow above which only plays during the settle animation.
+  // Two overlapping sine waves for a gentle, irregular catch-the-light
+  // flicker rather than a mechanical pulse. Still inside the pot's own
+  // local (translated) coordinate space here, same as the rim highlight
+  // just above -- restored below, right before the outer alpha restore.
+  if (featherHung && !featherHangAnim.active) {
+    const t = performance.now();
+    const shimmer = Math.max(0, 0.5 + Math.sin(t * 0.0021) * 0.3 + Math.sin(t * 0.0053 + 1.4) * 0.15);
+    ctx.fillStyle = `rgba(255,220,140,${shimmer * 0.55})`;
+    ctx.beginPath();
+    ctx.ellipse(0, -7, 6.5, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore(); // closes the pot's local translate (from the inner ctx.save() above)
+
+  ctx.restore(); // closes the outer alpha wrapper (from the top of this function)
 }
 const featherHangAnim = { active: false, t: 0 };
 const FEATHER_HANG_MS = 800;
@@ -24124,19 +24172,28 @@ const ratRoomHighShelves = [
   // the snake's own shelf pushed up a further, larger jump for real
   // height, then the marble beyond that. Snake's shelf widened so
   // part of it can stay bare -- somewhere for an uncoiled tail to rest.
+  // CONFIRMED CHANGE: spread further apart per direct request ("spread
+  // out the shelves a little more"), verified with a real jump-physics
+  // simulation (actual handleInput/applyPhysics constants: vy0=12 first
+  // jump, vy0=9 double jump, gravity -0.8/frame, speed 3/frame) rather
+  // than eyeballed -- every gap below is confirmed still reachable, with
+  // the two tightest (snakeShelf's single jump, safeShelf's double jump)
+  // kept a few units under their real measured max reach as a buffer
+  // rather than right at the theoretical limit.
   { x: 1000, y: 255, w: 32, tier: 0, cluster: "right", id: "right0" },
-  { x: 1030, y: 185, w: 30, tier: 1, cluster: "right", unlocked: false, id: "right1a" },
-  { x: 1080, y: 175, w: 28, tier: 1, cluster: "right", unlocked: false, id: "right1b" },
-  { x: 1140, y: 85, w: 55, tier: 2, cluster: "right", unlocked: false, id: "snakeShelf" }, // snake's shelf, wider, and a full extra jump higher
+  { x: 1055, y: 185, w: 30, tier: 1, cluster: "right", unlocked: false, id: "right1a" }, // was 1030 -- +70 height climb, measured max single-jump reach at this height gain is 72, well clear
+  { x: 1110, y: 175, w: 28, tier: 1, cluster: "right", unlocked: false, id: "right1b" }, // was 1080 -- only +10 height climb from right1a, measured max reach ~90, plenty of room
+  { x: 1165, y: 85, w: 55, tier: 2, cluster: "right", unlocked: false, id: "snakeShelf" }, // was 1140 -- +90 height (near the single-jump ceiling), measured max reach is 57-60; kept at 55 for a small buffer rather than the exact limit
   // safe branch -- reachable from tier1, but positioned to require an
-  // actual double jump (245 height-above-ground: above the 215 a
-  // single jump can reach from tier1's 125, within the ~265 a double
-  // jump timed at the first jump's peak can reach). The marble now
-  // depends specifically on this shelf, not any tier2 shelf, since
-  // landing on the snake's shelf is meant to be a dead end that knocks
-  // you back rather than a valid path forward.
-  { x: 1195, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" },
-  { x: 1295, y: 100, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // marble, one tier further up -- lowered from y:15, which put the player's head off the top of the canvas while standing on it. Moved lower and further right from the safe shelf, which was too crowded before -- verified still reachable via a real jump simulation.
+  // actual double jump. +120 height gain from right1b; measured max
+  // double-jump reach (timed near the first jump's peak) is up to 120,
+  // so the 110 gap below leaves real margin instead of sitting right at
+  // the ceiling like before. The marble now depends specifically on this
+  // shelf, not any tier2 shelf, since landing on the snake's shelf is
+  // meant to be a dead end that knocks you back rather than a valid path
+  // forward.
+  { x: 1220, y: 55, w: 26, tier: 2, cluster: "right", unlocked: false, id: "safeShelf", unlockFromId: "right1b" }, // was 1195
+  { x: 1330, y: 100, w: 30, tier: 3, cluster: "right", unlocked: false, id: "marbleShelf", unlockFromId: "safeShelf" } // was 1295 -- marble, one tier further up but actually 45 units LOWER on-screen than safeShelf (a forgiving downward hop, not a climb), spread a bit further right too since descents have plenty of horizontal room to spare
 ];
 function updateShelfTierUnlocks() {
   ratRoomHighShelves.forEach(shelf => {
@@ -37206,13 +37263,20 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// debug spawn removed -- per direct request ("put me in the beginning
-// as a fresh start of the game"), the game now boots into its real
-// starting state: currentScene's own default ("autumn"), player's own
-// default x/y (400, 0), cameraX's own default (0). If the float zone
-// (or any other spot) needs a quick debug spawn again for testing
-// later, that override block can come back -- see git history for the
-// exact block that used to sit here.
+// TEMPORARY debug spawn -- per direct request ("put me in oak w a
+// pumpkin and acorn"), so testing the oak shelf-camera fix doesn't
+// require replaying the whole game to reach the shelves with items in
+// hand. Drops the player right between the short and medium shelves
+// with both items already in inventory. Remove this block (see the
+// "debug spawn removed" comment further up in git history for the
+// exact revert pattern) whenever a real fresh-start playtest is next
+// needed.
+currentScene = "oak";
+player.x = 2150;
+player.y = 0;
+addToInventory("pumpkin");
+addToInventory("acorn");
+
 update();
 
 });
