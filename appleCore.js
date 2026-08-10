@@ -11251,21 +11251,27 @@ let floatSubmergeAmount = 0;
 // below), so ducking alone is no longer an automatic pass; you have to
 // duck while the roots also happen to be in their "open" part of the
 // cycle. Per direct request ("i like the more timed duck").
+// "jump" and "movingJump" obstacles now carry a "variant" index into
+// their respective art functions' hardcoded shape-parameter lists (see
+// drawFloatRock / drawFloatLog) -- picked by hand per obstacle so
+// repeats never look like the exact same copy-pasted rock/log. Real art
+// per direct request ("maybe we should work more on the art of what is
+// some jump obstacles... but more variety than just one or other").
 const FOREST_FLOAT_OBSTACLES = [
-  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump", variant: 0 },
   { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump" },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
   { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
-  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump" },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump", variant: 1 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
   { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
   // out-of-phase double moving log -- two logs close enough together
   // that their swings overlap, but on different speeds/phases (one of
   // them offset a half-cycle via Math.PI) so there's no single fixed
   // rhythm that clears both -- each has to be read and timed on its
   // own. Per direct request ("out of phase double moving logs").
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump" },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump" }
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -11423,6 +11429,132 @@ function drawFloatSeedPods(ox, obBottom, w, openAmount) {
     }
     ctx.restore();
   });
+  ctx.restore();
+}
+
+// real art for the still "jump" obstacles -- a lumpy, mossy boulder
+// breaking the water's surface, instead of a plain colored rectangle.
+// Built from a few overlapping ellipses (not one clean ellipse) so the
+// silhouette actually reads as rough stone, plus a shading crescent, a
+// highlight, a crack line, and a scatter of moss patches. `variant`
+// (hand-picked per obstacle, see FOREST_FLOAT_OBSTACLES) swaps in a
+// different squash/crack-angle/moss-layout combo so repeated rocks
+// don't look like exact copies. Per direct request ("more variety than
+// just one or other").
+const FOREST_FLOAT_ROCK_VARIANTS = [
+  { squash: 1.0, crackAngle: 0.35, mossSeed: 0 },
+  { squash: 1.18, crackAngle: -0.25, mossSeed: 1 },
+  { squash: 0.86, crackAngle: 0.6, mossSeed: 2 }
+];
+const FOREST_FLOAT_ROCK_MOSS_LAYOUTS = [
+  [[-0.3, -0.7], [0.25, -0.55], [0.05, -0.2]],
+  [[0.2, -0.8], [-0.35, -0.3]],
+  [[0, -0.9], [0.3, -0.5], [-0.25, -0.55], [0.1, -0.15]]
+];
+function drawFloatRock(ox, obBottom, w, variant) {
+  const v = FOREST_FLOAT_ROCK_VARIANTS[(variant || 0) % FOREST_FLOAT_ROCK_VARIANTS.length];
+  const rw = (w / 2) * v.squash;
+  const rh = 30;
+  ctx.save();
+  // shadow on the water
+  ctx.fillStyle = "rgba(10,30,30,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(ox, obBottom + 4, rw + 6, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // lumpy body -- three overlapping blobs instead of one clean ellipse
+  ctx.fillStyle = "#6b6a5e";
+  [[0, -0.5, 1, 0.62], [-0.35, -0.3, 0.55, 0.4], [0.4, -0.35, 0.5, 0.42]].forEach(([dx, dy, sw, sh]) => {
+    ctx.beginPath();
+    ctx.ellipse(ox + dx * rw, obBottom + dy * rh, rw * sw, rh * sh, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // shading crescent (underside)
+  ctx.fillStyle = "rgba(40,40,35,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(ox, obBottom - rh * 0.25, rw * 0.85, rh * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // highlight (top-left, catching light)
+  ctx.fillStyle = "rgba(200,200,180,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(ox - rw * 0.2, obBottom - rh * 0.75, rw * 0.35, rh * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // crack line -- real stone, not a smooth manmade surface
+  ctx.strokeStyle = "rgba(30,30,25,0.4)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox - rw * 0.1, obBottom - rh * 0.9);
+  ctx.lineTo(ox + rw * 0.15 * Math.cos(v.crackAngle), obBottom - rh * 0.4 + rw * 0.15 * Math.sin(v.crackAngle));
+  ctx.stroke();
+  // moss patches
+  ctx.fillStyle = "#5a7a3e";
+  FOREST_FLOAT_ROCK_MOSS_LAYOUTS[v.mossSeed].forEach(([mx, my]) => {
+    ctx.beginPath();
+    ctx.ellipse(ox + mx * rw, obBottom + my * rh, rw * 0.18, rh * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+// real art for the "movingJump" obstacles -- an actual driftwood log
+// lying flat on the water (matches the fantasy directly: "a log also
+// floating down the river"), tapered rounded ends, bark streaks, a
+// knot, and a small moss tuft, instead of a plain colored rectangle.
+// `variant` swaps length/bark tone/knot position so the 4 logs in this
+// zone don't all look identical.
+const FOREST_FLOAT_LOG_VARIANTS = [
+  { lenMul: 1.0, barkTone: "#6b4a2a", knotX: -0.2 },
+  { lenMul: 1.15, barkTone: "#5a3f22", knotX: 0.3 },
+  { lenMul: 0.9, barkTone: "#755233", knotX: 0.05 },
+  { lenMul: 1.05, barkTone: "#634428", knotX: -0.35 }
+];
+function drawFloatLog(ox, obBottom, w, variant) {
+  const v = FOREST_FLOAT_LOG_VARIANTS[(variant || 0) % FOREST_FLOAT_LOG_VARIANTS.length];
+  const logW = w * v.lenMul;
+  const logH = 22;
+  const topY = obBottom - logH;
+  ctx.save();
+  // shadow/ripple on the water
+  ctx.fillStyle = "rgba(10,30,30,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(ox, obBottom + 3, logW / 2 + 6, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // log body -- rounded capsule shape (tapered ends), not a hard rectangle
+  ctx.fillStyle = v.barkTone;
+  ctx.beginPath();
+  ctx.moveTo(ox - logW / 2 + 8, topY);
+  ctx.lineTo(ox + logW / 2 - 8, topY);
+  ctx.quadraticCurveTo(ox + logW / 2, topY, ox + logW / 2, topY + logH / 2);
+  ctx.quadraticCurveTo(ox + logW / 2, topY + logH, ox + logW / 2 - 8, topY + logH);
+  ctx.lineTo(ox - logW / 2 + 8, topY + logH);
+  ctx.quadraticCurveTo(ox - logW / 2, topY + logH, ox - logW / 2, topY + logH / 2);
+  ctx.quadraticCurveTo(ox - logW / 2, topY, ox - logW / 2 + 8, topY);
+  ctx.closePath();
+  ctx.fill();
+  // end-cap shading (the near end facing us, reads as a real cut log end)
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(ox + logW / 2 - 6, topY + logH / 2, 6, logH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // bark texture lines
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const ly = topY + 4 + i * 6;
+    ctx.beginPath();
+    ctx.moveTo(ox - logW / 2 + 10, ly);
+    ctx.lineTo(ox + logW / 2 - 12, ly + (i - 1) * 1.5);
+    ctx.stroke();
+  }
+  // knot
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(ox + v.knotX * logW, topY + logH / 2, 3.5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // small moss tuft riding on top
+  ctx.fillStyle = "#5a7a3e";
+  ctx.beginPath();
+  ctx.ellipse(ox - logW * 0.15, topY + 2, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -11606,16 +11738,13 @@ function drawForestFloatZone(camX) {
       const openAmount = floatDuckOpenAmount(ob);
       drawFloatSwampTreeBack(ox, obBottom, openAmount);
       drawFloatSeedPods(ox, obBottom, ob.w, openAmount);
+    } else if (ob.type === "movingJump") {
+      // real driftwood log art -- see drawFloatLog's own comment
+      drawFloatLog(ox, gy, ob.w, ob.variant);
     } else {
-      // jump / movingJump -- still a plain placeholder log, unchanged
-      // for now (today's priority list was the moving obstacle, the
-      // lily pad, and the duck redesign specifically)
-      const obH = 26;
-      ctx.fillStyle = ob.type === "movingJump" ? "#8a6a2a" : "#a05a2a";
-      ctx.fillRect(ox - ob.w / 2, gy - obH, ob.w, obH);
-      ctx.fillStyle = "#fff";
-      ctx.font = "10px monospace";
-      ctx.fillText(ob.type === "movingJump" ? "JUMP (moving)" : "JUMP", ox - ob.w / 2, gy - obH - 4);
+      // still "jump" obstacles -- a mossy rock breaking the surface,
+      // see drawFloatRock's own comment
+      drawFloatRock(ox, gy, ob.w, ob.variant);
     }
   });
 
