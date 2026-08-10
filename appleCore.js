@@ -24005,29 +24005,33 @@ function drawFeatherHangSpot(camX) {
   if (featherHung || featherHangAnim.active) {
     ctx.save();
     const settleP = featherHangAnim.active ? Math.min(1, featherHangAnim.t / FEATHER_HANG_MS) : 1;
-    // CONFIRMED CHANGE: bigger (was size 11, a real showpiece deserved
-    // more presence than that), and resting at a fixed lean once
-    // settled instead of standing bolt upright -- reads as casually
-    // propped against the jar's rim rather than rigidly strapped in
-    // place. Anchored a touch left of center so the lean has somewhere
-    // to lean TOWARD (the near rim edge), same idea as the broom
-    // leaning against the shelf elsewhere in this room.
+    // CONFIRMED CHANGE: this used to rotate the vane around its own
+    // MIDDLE (drawFeatherShape's local origin sits at the shape's
+    // center, not its base) -- so "tilting" it just crooked the whole
+    // rigid shape in place around a fixed point in its own middle, which
+    // reads as bolted/strapped on at an angle rather than genuinely
+    // leaning against anything. Per repeated direct feedback ("why is
+    // the feather still surgically strapped to the wall"), reworked so
+    // the rotation pivots from the BASE instead (achieved by drawing the
+    // vane shifted up by its own size before rotating) -- same idea as a
+    // broom actually leaning against a wall, where the foot stays planted
+    // and only the top swings out. The base point itself is what
+    // animates from the drop start down to its resting spot at the rim;
+    // the tilt is now real enough (bumped up from 0.34) that the lean is
+    // unmistakable instead of a barely-there crook.
     const FEATHER_REST_SIZE = 17;
-    const FEATHER_REST_TILT = 0.34;
-    const startX = 0, endX = -6;
-    // CONFIRMED CHANGE: endY moved from -11 to -14, matching the rim's own
-    // move from y:-7 to y:-10 above -- same 4-unit clearance above the
-    // rim as before, just against the new, taller neck, so the feather
-    // still settles right at the mouth instead of floating high above it
-    // now that the jar itself is bigger. endX widened from -4 to -6 to
-    // match the rim's own wider mouth (rx 5->7), keeping the same
-    // "leaning against the near-left rim edge" read.
-    const startY = -46, endY = -14;
-    ctx.translate(startX + (endX - startX) * settleP, startY + (endY - startY) * settleP);
-    ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
+    const FEATHER_REST_TILT = 0.58;
+    const startX = 0, endX = -5;
+    const startY = -46, endY = -9; // ends right at the rim's own inner-left edge (rim ellipse is at y:-10, rx:7)
+    const baseX = startX + (endX - startX) * settleP;
+    const baseY = startY + (endY - startY) * settleP;
     const dropTilt = (1 - settleP) * 0.6; // still falls in with the old tumbling tilt...
-    const tilt = dropTilt + FEATHER_REST_TILT * settleP; // ...but eases into the resting lean instead of settling flat upright
-    drawFeatherShape(ctx, 0, 0, FEATHER_REST_SIZE * (0.7 + settleP * 0.3), tilt);
+    const tilt = dropTilt + FEATHER_REST_TILT * settleP; // ...but eases into the real resting lean instead of settling near-upright
+    const size = FEATHER_REST_SIZE * (0.7 + settleP * 0.3);
+    ctx.translate(baseX, baseY);
+    ctx.rotate(tilt);
+    ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
+    drawFeatherShape(ctx, 0, -size, size, 0); // shifted so the vane's base, not its middle, sits at the pivot
     ctx.restore();
     // re-draw the jar's full body on top, since the feather's actual
     // base extends well below the rim line itself -- a thin ring
@@ -24107,10 +24111,12 @@ function updateFeatherHangAnim(deltaTime) {
 // screen y = gy-55 = 245), only 5px apart vertically. The two sat right on
 // top of each other any time the lamp lit both at once. Per direct
 // feedback ("the jar cannot overlap close to the initials at all"), moved
-// well clear on both axes -- also reads more like an actual wall carving
-// now, higher up than the ground-level jar shelf rather than crowded right
-// next to it.
-const carvedInitialsSpot = { x: 780, y: 150 };
+// well clear on x.
+// Lowered back down from y:150 per direct feedback ("i want initials
+// lower like they were handwritten by someone") -- carved up near the
+// ceiling read as unreachable/staged; this height is roughly where
+// someone standing here could actually reach to scratch it into the wood.
+const carvedInitialsSpot = { x: 780, y: 235 };
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -25941,16 +25947,15 @@ const ratRoomEyes = [
   { x: 690, y: 270, phase: 2.9, blinkSpeed: 0.85 },
   { x: 730, y: 250, phase: 0.4, blinkSpeed: 1.15 },
   { x: 280, y: 55, phase: 3.5, blinkSpeed: 0.75 }, // high up, left of the stairs, perched on top of something
-  // more spread further right -- a genuine huddled cluster of three,
-  // not evenly spaced like before, plus one further out on its own
-  { x: 825, y: 268, phase: 5.2, blinkSpeed: 0.92 },
-  // pulled in from x:865 -- that sat up and to the left of the carved
-  // initials (then at x:900/y:240), close enough to read as "off in its
-  // own spot" rather than part of this huddle. Per direct feedback ("that
-  // rat to top left of initials should move over... maybe left closer to
-  // rat"), tucked in next to its two cluster-mates instead.
-  { x: 830, y: 235, phase: 0.9, blinkSpeed: 1.08 },
-  { x: 822, y: 292, phase: 2.1, blinkSpeed: 0.88 },
+  // CONFIRMED CHANGE: relocated off the tight x:822-830 huddle near the
+  // old initials spot -- per direct feedback ("move the three rats in a
+  // line next to the feather set up elsewhere, just spread them a bit,
+  // we don't need to have that 3 in a row there"). Now a real spread-out
+  // line flanking the feather's jar (featherHangSpot, x:900/screen-y:245)
+  // instead of three nearly stacked on top of each other.
+  { x: 835, y: 225, phase: 5.2, blinkSpeed: 0.92 },
+  { x: 895, y: 205, phase: 0.9, blinkSpeed: 1.08 },
+  { x: 965, y: 230, phase: 2.1, blinkSpeed: 0.88 },
   { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
   { x: 1200, y: 245, phase: 3.8, blinkSpeed: 1.05 },
