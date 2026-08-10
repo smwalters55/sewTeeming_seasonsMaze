@@ -8488,8 +8488,9 @@ function drawJoshuaTree(camX) {
 // its own gentle wander and independent on/off flicker timing, so the
 // glow itself (not fixed eyes) is what makes these read as alive.
 // Widened from a flat 150 per direct feedback ("give larger radius for
-// fireflies in ratroom to be 'on'").
-const FIREFLY_ON_RADIUS = 210;
+// fireflies in ratroom to be 'on'"), then widened again ("widen firefly
+// radius even more pls").
+const FIREFLY_ON_RADIUS = 320;
 const fireflies = [
   { baseX: 1260, baseY: 60, seed: 3, phaseOffset: 0 },
   { baseX: 1295, baseY: 85, seed: 17, phaseOffset: 0.6 },
@@ -19359,7 +19360,17 @@ const cloudsDecor = [
   { x: 520,  y: 130, scale: 1.6, type: "stack" },
   { x: 780,  y: 80,  scale: 1.1, type: "puffy" },
   { x: 950,  y: 150, scale: 1.3, type: "wisp" },
-  { x: 1150, y: 55,  scale: 0.9, type: "stack" },
+  // CONFIRMED CHANGE: nudged from x:1150/y:55 -- that sat almost exactly
+  // on top of the first vault cloud (vaultClouds[0], x:1146, screen
+  // height ~78), which is the one that does the notice-wiggle shake to
+  // flag it's interactive. Background and foreground clouds parallax at
+  // different speeds, but right at the start they lined up closely enough
+  // that this one's own shape blended with the shake instead of reading
+  // as a separate cloud behind it. Per direct feedback ("move the cloud
+  // behind the first shaking cloud so it is easier to see the shaking
+  // one"), pushed further right and higher up -- still reads as sitting
+  // behind/near it, just clearly a separate shape now.
+  { x: 1260, y: 35,  scale: 0.9, type: "stack" },
   { x: 1400, y: 110, scale: 1.5, type: "puffy" },
   { x: 200,  y: 170, scale: 0.8, type: "bunny" },      // decorative — not walkable
   { x: 1050, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
@@ -23921,7 +23932,10 @@ function drawFeatherHangSpot(camX) {
 
   ctx.save();
   if (hungAndDark) {
-    ctx.globalAlpha = 0.32; // faint, just barely visible -- not a beacon
+    // darkened again per direct feedback ("darken feather and jar after
+    // placement, it should be visible in the dark but more just barely")
+    // -- 0.32 was still reading as a little too present in the dark.
+    ctx.globalAlpha = 0.15;
   } else if (featherHung && lampLit && !featherHangAnim.active) {
     // CONFIRMED CHANGE: once the feather's actually resting here, even
     // WITH the lamp lit and pointed right at it this used to render at
@@ -23929,9 +23943,10 @@ function drawFeatherHangSpot(camX) {
     // against everything else in this lamp-lit room having some real
     // shadow to it. This is a dimmer, lamp-lit-but-still-in-a-dark-room
     // look for the completed vignette specifically, distinct from the
-    // fully-dark 0.32 above -- the empty pot (still searching) and the
-    // placement animation itself both stay at full brightness.
-    ctx.globalAlpha = 0.62;
+    // much-fainter 0.15 above -- the empty pot (still searching) and the
+    // placement animation itself both stay at full brightness. Darkened
+    // further along with the fully-dark state above per the same feedback.
+    ctx.globalAlpha = 0.5;
   }
 
   // a temporary glow while the placement animation plays, independent
@@ -24022,7 +24037,17 @@ function drawFeatherHangSpot(camX) {
     const FEATHER_REST_SIZE = 17;
     const FEATHER_REST_TILT = 0.58;
     const startX = 0, endX = -5;
-    const startY = -46, endY = -9; // ends right at the rim's own inner-left edge (rim ellipse is at y:-10, rx:7)
+    // CONFIRMED BUG FIX: endY moved from -9 down to -6 -- I rendered this
+    // standalone to actually check (not just reasoned about it), and at
+    // -9 the base landed right AT the rim line (y:-10) instead of past
+    // it, so the "redraw the pot on top" step below had nothing of the
+    // feather below the rim left to cover -- it read as resting ON the
+    // rim's edge, not planted down inside the neck. At -6 the base sits
+    // a few units inside the neck (rim is at y:-10, neck walls run
+    // roughly -7..-4 in x through here), so that redraw genuinely hides
+    // the part that's "inside," and the feather reads as coming out of
+    // the opening instead of perched on top of it.
+    const startY = -46, endY = -6;
     const baseX = startX + (endX - startX) * settleP;
     const baseY = startY + (endY - startY) * settleP;
     const dropTilt = (1 - settleP) * 0.6; // still falls in with the old tumbling tilt...
