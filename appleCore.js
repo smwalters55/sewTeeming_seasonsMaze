@@ -10602,7 +10602,11 @@ function updateReflectionPool() {
     const total = REFLECTION_FADE_IN_MS + REFLECTION_HOLD_MS + REFLECTION_FADE_OUT_MS;
     if (now - reflectionPool.startTime > total) {
       reflectionPool.active = false;
-      reflectionPool.nextRollAt = now + 7000 + Math.random() * 9000;
+      // widened the gap between glimpses (was 7000-16000) per direct
+      // request to make the faraway magic peeking in the reflection a
+      // little rarer -- still random within the window so it doesn't
+      // read as being on a fixed metronome
+      reflectionPool.nextRollAt = now + 16000 + Math.random() * 16000;
     }
     return;
   }
@@ -10852,6 +10856,13 @@ const FOREST_SKIP_STONE_CHARGE_MS = 900; // full charge if held this long
 // skipping animation") so the bounce-across-the-pool actually reads
 // instead of blinking by.
 const FOREST_SKIP_STONE_THROW_MS = 1300;
+// how long the thrown stone spends crossing the ground from the
+// player's actual release point to the water's edge, BEFORE the real
+// water-skipping bounce sequence starts -- see the two-phase note in
+// the active-throw draw block in drawForestSkipStones for why this
+// exists (keeps a far-off release from stretching the skip cadence
+// itself across dry land).
+const FOREST_SKIP_STONE_TOSS_MS = 220;
 // target rings, as a fraction of the pool's width measured from
 // whichever edge the throw is actually starting from (see skipTargetX
 // and thrownSkipStone.dir below -- the pool got a 4th target added
@@ -11099,28 +11110,46 @@ function drawForestSkipStones(camX) {
   // pool's surface toward the charged distance, each leaving its own
   // little ripple
   if (thrownSkipStone.active) {
-    const p = Math.min(1, (performance.now() - thrownSkipStone.startTime) / FOREST_SKIP_STONE_THROW_MS);
-    // the stone's on-screen path is a straight lerp from where the
-    // player was actually standing at release (startXWorld) to its
-    // final landing spot (skipTargetX at the full charged distance) --
-    // this replaces always starting from the pool's near edge, which
-    // looked wrong when the player released from the middle of the pond
-    // itself rather than clearly standing on one bank. Per direct
-    // question ("how should we mitigate stone throw positioning when
-    // player in middle of pond").
-    const startXScreen = thrownSkipStone.startXWorld - camX;
-    const landingXScreen = skipTargetX(poolPx, poolW, thrownSkipStone.dir, thrownSkipStone.distanceFrac);
-    const sx = startXScreen + (landingXScreen - startXScreen) * p;
-    const bounces = 4;
-    const bouncePhase = (p * bounces) % 1;
-    const bounceAmp = 7 * (1 - p * 0.7);
-    const sy = poolY - Math.sin(bouncePhase * Math.PI) * bounceAmp;
+    const elapsed = performance.now() - thrownSkipStone.startTime;
+    const p = Math.min(1, elapsed / FOREST_SKIP_STONE_THROW_MS);
+    // two-phase path: a short TOSS from wherever the player actually
+    // released (startXWorld -- see the origin fix above) to the water's
+    // edge, THEN the real skip-bounce sequence confined to the pool's
+    // own surface (edge -> charged landing distance). Doing the whole
+    // flight as one straight time-lerp used to stretch the skip-bounce
+    // cadence across however far the player stood from the pool too --
+    // if they released from well back on the grass, the first "skip"
+    // covered most of that ground in one hop and looked like it
+    // teleported straight to near the goal holes instead of actually
+    // skipping across the water. Splitting the ground-crossing toss out
+    // from the water-skipping keeps the skips themselves always reading
+    // as real bounces on the surface, regardless of where the throw
+    // started. Per direct feedback ("teleports the first stone skip on
+    // water to right near the goal holes").
+    const edgeXScreen = skipTargetX(poolPx, poolW, thrownSkipStone.dir, 0);
+    let sx, sy, bouncePhase = -1;
+    if (elapsed < FOREST_SKIP_STONE_TOSS_MS) {
+      const startXScreen = thrownSkipStone.startXWorld - camX;
+      const tp = elapsed / FOREST_SKIP_STONE_TOSS_MS;
+      sx = startXScreen + (edgeXScreen - startXScreen) * tp;
+      sy = poolY - Math.sin(tp * Math.PI) * 10; // one small arc crossing the bank, no ripple yet
+    } else {
+      const sp = Math.min(1, (elapsed - FOREST_SKIP_STONE_TOSS_MS) / (FOREST_SKIP_STONE_THROW_MS - FOREST_SKIP_STONE_TOSS_MS));
+      const traveledFrac = thrownSkipStone.distanceFrac * sp;
+      sx = skipTargetX(poolPx, poolW, thrownSkipStone.dir, traveledFrac);
+      const bounces = 4;
+      bouncePhase = (sp * bounces) % 1;
+      const bounceAmp = 7 * (1 - sp * 0.7);
+      sy = poolY - Math.sin(bouncePhase * Math.PI) * bounceAmp;
+    }
     ctx.fillStyle = "#8a8478";
     ctx.beginPath();
     ctx.ellipse(sx, sy, 3.4, 2.4, 0, 0, Math.PI * 2);
     ctx.fill();
-    // little ripple pulses at each bounce touchdown (near the bottom of the arc)
-    if (bouncePhase < 0.12 || bouncePhase > 0.94) {
+    // little ripple pulses at each bounce touchdown (near the bottom of
+    // the arc) -- only once actually skipping on the water (bouncePhase
+    // stays -1 through the toss, which never ripples)
+    if (bouncePhase >= 0 && (bouncePhase < 0.12 || bouncePhase > 0.94)) {
       ctx.strokeStyle = "rgba(230,240,225,0.4)";
       ctx.lineWidth = 1;
       ctx.beginPath();
