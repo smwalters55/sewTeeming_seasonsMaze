@@ -24141,7 +24141,7 @@ function updateFeatherHangAnim(deltaTime) {
 // lower like they were handwritten by someone") -- carved up near the
 // ceiling read as unreachable/staged; this height is roughly where
 // someone standing here could actually reach to scratch it into the wood.
-const carvedInitialsSpot = { x: 780, y: 235 };
+const carvedInitialsSpot = { x: 740, y: 235 }; // CONFIRMED CHANGE: nudged further left per feedback, along with the two nearest rat eyes below
 function drawHandwrittenW(ctx, x, y, s, jitter) {
   ctx.beginPath();
   ctx.moveTo(x - s, y - s * 0.5 + jitter[0]);
@@ -25978,8 +25978,8 @@ const ratRoomEyes = [
   // we don't need to have that 3 in a row there"). Now a real spread-out
   // line flanking the feather's jar (featherHangSpot, x:900/screen-y:245)
   // instead of three nearly stacked on top of each other.
-  { x: 835, y: 225, phase: 5.2, blinkSpeed: 0.92 },
-  { x: 895, y: 205, phase: 0.9, blinkSpeed: 1.08 },
+  { x: 795, y: 225, phase: 5.2, blinkSpeed: 0.92 }, // CONFIRMED CHANGE: shifted left with the initials -- was 835
+  { x: 855, y: 205, phase: 0.9, blinkSpeed: 1.08 }, // CONFIRMED CHANGE: shifted left with the initials -- was 895
   { x: 965, y: 230, phase: 2.1, blinkSpeed: 0.88 },
   { x: 1040, y: 255, phase: 4.4, blinkSpeed: 1.2 },
   { x: 1120, y: 275, phase: 1.6, blinkSpeed: 0.98 },
@@ -37712,27 +37712,20 @@ updateSeasonTransition(deltaTime);
 
 
 // TEMPORARY debug spawn -- per direct request, so testing doesn't
-// require replaying the whole game to reach oak with items in hand.
-// Drops the player right between the short and medium shelves with
-// pumpkin, acorn, and the fully-assembled/worn fall crown already in
-// place. Remove this block (see the "debug spawn removed" comment
-// further up in git history for the exact revert pattern) whenever a
-// real fresh-start playtest is next needed.
-currentScene = "oak";
-player.x = 2150;
+// require replaying the whole game to reach ratroom with the lamp
+// already in hand. Drops the player into ratroom holding the lamp
+// (space lights it, per the real lampLit logic) so lamp-lit fixes
+// (fireflies, feather/jar, marble shelf, etc.) can be checked
+// immediately. Remove this block (see the "debug spawn removed"
+// comment further up in git history for the exact revert pattern)
+// whenever a real fresh-start playtest is next needed.
+currentScene = "ratroom";
+player.x = 460;
 player.y = 0;
-addToInventory("pumpkin");
-addToInventory("acorn");
-// fall crown -- built from 8 leaves (CROWN_LEAVES_NEEDED), same shape
-// the real catch-the-falling-leaves sequence would produce, then marked
-// ready and worn so it shows up immediately with no extra key press.
-crownLeaves = Array.from({ length: CROWN_LEAVES_NEEDED }, (_, i) => ({
-  shape: i % 2 ? "maple" : "round",
-  color: LEAF_COLORS[i % LEAF_COLORS.length]
-}));
-crownState.ready = true;
-crownState.worn = true;
-crownState.promptEverShown = true;
+addToInventory("lamp");
+touchInventoryOrder("lamp");
+heldItem = "lamp";
+lampEverUsedInRatroom = true; // so the lamp doesn't get stripped back off on scene entry
 
 update();
 
