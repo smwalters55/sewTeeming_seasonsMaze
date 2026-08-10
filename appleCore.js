@@ -11239,14 +11239,42 @@ let floatSubmergeAmount = 0;
 // purple corner poking out from under the log. Widening the log gives
 // real horizontal margin so the overlay fully covers the player
 // anywhere within the obstacle's passable zone, not just its middle.
+// "movingJump" is a new obstacle type -- a log actually drifting on the
+// current, back and forth across a range, instead of sitting still.
+// Same jump-clearance pass rule as a plain "jump" obstacle, but timing
+// now matters since the safe window moves. Per direct request ("i also
+// like idea of a log also floating down the rive you have to jump over
+// the moving target"). floatObstacleX() below resolves its live x each
+// frame; every other obstacle type just keeps its fixed ob.x.
 const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump" },
   { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck" },
-  { x: FOREST_FLOAT_ZONE_START_X + 520, w: 40, clearance: 40, type: "jump" },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump" },
   { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck" },
   { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump" },
-  { x: FOREST_FLOAT_ZONE_START_X + 1220, w: 70, clearance: 48, type: "duck" }
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump" },
+  { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck" }
 ];
+
+// resolves an obstacle's CURRENT world x -- a live oscillation for
+// "movingJump", a fixed value for everything else. Used by both the
+// collision check and the draw/overlay functions so they always agree
+// on where the obstacle actually is this frame.
+function floatObstacleX(ob) {
+  if (ob.type === "movingJump") {
+    return ob.baseX + Math.sin(performance.now() * ob.speed + ob.phase) * ob.range;
+  }
+  return ob.x;
+}
+
+// a calm resting spot partway through the zone -- somewhere to actually
+// stand still on instead of only ever passing through. Per direct
+// request ("a lili pad to catch breath somewhere"). Real platform
+// collision (see the FLOAT ZONE update block), same landing-snap
+// pattern the autumn scene's own platforms use -- player.y actually
+// rests at heightAboveGround while standing on it, not just a visual.
+const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + 660, width: 56, heightAboveGround: 20 };
+let playerOnFloatLilypad = false;
 const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 430, collected: false },
@@ -11255,6 +11283,133 @@ const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 1080, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 1300, collected: false }
 ];
+
+// the duck obstacle's real redesign -- a swamp tree with flared
+// buttress roots planted right in the water, and a cluster of big,
+// oblong, faintly furry seed pods hanging low off it. Replaces the
+// plain brown log per direct feedback ("i dont want any manmade thing
+// for that like no pier. maybe there is a river tree that has low
+// hanging big big seeds... slightly furry... more oblong and dont look
+// like coconuts... buttressing sticking out of water like swamp trees
+// can have"). Split into two pieces: the trunk/roots (drawn once, in
+// the scene layer, BEHIND the player -- nothing to occlude there) and
+// the pods themselves (drawn here AND again by
+// drawForestFloatDuckOverlay, same "redraw after the player" trick the
+// old log used, since the pods are the part low enough to actually
+// need to occlude a ducking player).
+function drawFloatSwampTreeBack(ox, obBottom) {
+  const trunkTopY = obBottom - 130;
+  const trunkBaseY = gy;
+  // trunk -- a real taper, wider at the buttressed base than up top
+  ctx.fillStyle = "#4a3822";
+  ctx.beginPath();
+  ctx.moveTo(ox - 5, trunkTopY);
+  ctx.quadraticCurveTo(ox - 9, (trunkTopY + trunkBaseY) / 2, ox - 15, trunkBaseY);
+  ctx.lineTo(ox + 15, trunkBaseY);
+  ctx.quadraticCurveTo(ox + 9, (trunkTopY + trunkBaseY) / 2, ox + 5, trunkTopY);
+  ctx.closePath();
+  ctx.fill();
+  // buttress roots -- flared, curved legs radiating out from the base
+  // into the water, like a mangrove/cypress, instead of a trunk that
+  // just plants straight into the ground
+  [[-1, 1], [-0.55, 0.6], [0.55, 0.6], [1, 1]].forEach(([dir, mag]) => {
+    ctx.fillStyle = "#3e2e1c";
+    ctx.beginPath();
+    ctx.moveTo(ox + dir * 4, trunkBaseY - 30);
+    ctx.quadraticCurveTo(ox + dir * 20 * mag, trunkBaseY - 10, ox + dir * 34 * mag, trunkBaseY + 10);
+    ctx.lineTo(ox + dir * 26 * mag, trunkBaseY + 12);
+    ctx.quadraticCurveTo(ox + dir * 14 * mag, trunkBaseY - 4, ox + dir * 2, trunkBaseY - 22);
+    ctx.closePath();
+    ctx.fill();
+  });
+  // a little canopy stub up top, just enough to read as "this is a real
+  // tree" rather than a bare pole -- doesn't need to be a full crown
+  ctx.fillStyle = "rgba(40,60,30,0.6)";
+  ctx.beginPath();
+  ctx.arc(ox, trunkTopY - 4, 30, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFloatSeedPods(ox, obBottom, w) {
+  const podXs = [ox - w * 0.26, ox, ox + w * 0.28];
+  const podLens = [22, 28, 20];
+  const podTilts = [-0.14, 0.05, 0.16];
+  const vineTopY = obBottom - 46;
+  podXs.forEach((px2, i) => {
+    const podLen = podLens[i];
+    const podBottomY = obBottom - (i === 1 ? 0 : 4); // center pod hangs lowest
+    const podTopY = podBottomY - podLen;
+    ctx.strokeStyle = "#4a5a2e";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(px2, vineTopY);
+    ctx.quadraticCurveTo(px2 + podTilts[i] * 12, (vineTopY + podTopY) / 2, px2, podTopY);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(px2, (podTopY + podBottomY) / 2);
+    ctx.rotate(podTilts[i]);
+    ctx.fillStyle = "#6a5230";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 7.5, podLen / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(40,30,15,0.5)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // furry texture -- small tick marks off each side, not a smooth
+    // manmade surface
+    ctx.strokeStyle = "rgba(160,140,100,0.55)";
+    ctx.lineWidth = 0.7;
+    for (let k = -3; k <= 3; k++) {
+      const ty = k * (podLen / 8);
+      ctx.beginPath();
+      ctx.moveTo(-7.5, ty);
+      ctx.lineTo(-10.5, ty - 1);
+      ctx.moveTo(7.5, ty);
+      ctx.lineTo(10.5, ty - 1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+// the calm mid-river resting spot -- a real lily pad with a classic
+// notch silhouette, veins, and a small flower accent, not just a green
+// disc. Per direct request ("a lili pad to catch breath somewhere").
+function drawFloatLilypad(camX) {
+  const lx = FOREST_FLOAT_LILYPAD.x - camX;
+  if (lx < -60 || lx > canvas.width + 60) return;
+  const topY = gy - FOREST_FLOAT_LILYPAD.heightAboveGround;
+  const w = FOREST_FLOAT_LILYPAD.width;
+  ctx.fillStyle = "rgba(10,30,30,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(lx, gy + 5, w / 2 + 5, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#5a8a3e";
+  ctx.beginPath();
+  ctx.arc(lx, topY, w / 2, 0.32, Math.PI * 2 - 0.32, false);
+  ctx.lineTo(lx, topY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a6428";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(60,100,40,0.55)";
+  ctx.lineWidth = 1;
+  for (let a = -1.15; a <= 1.15; a += 0.45) {
+    ctx.beginPath();
+    ctx.moveTo(lx, topY);
+    ctx.lineTo(lx + Math.cos(a) * w * 0.42, topY + Math.sin(a) * w * 0.24);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#e8d0e0";
+  ctx.beginPath();
+  ctx.arc(lx - w * 0.18, topY - 3, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e0c040";
+  ctx.beginPath();
+  ctx.arc(lx - w * 0.18, topY - 3, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 function drawForestFloatZone(camX) {
   const zoneStartPx = FOREST_FLOAT_ZONE_START_X - camX;
@@ -11347,22 +11502,26 @@ function drawForestFloatZone(camX) {
   ctx.lineTo(zoneEndPx, canvas.height);
   ctx.stroke();
 
+  drawFloatLilypad(camX);
+
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
-    const ox = ob.x - camX;
-    if (ox < -40 || ox > canvas.width + 40) return;
-    const obH = ob.type === "duck" ? 20 : 26;
-    // duck-type hovers a bit above the water surface now (was flush
-    // with it) -- per direct feedback ("duck obstacles will need to be
-    // just a little higher just a lil and then it is like player is
-    // fully ducking under"), leaving real visible gap for the sunk/
-    // ducked player to fit into instead of the log's own bottom edge
-    // sitting right at the same line the player's feet are already at.
-    const obBottom = ob.type === "duck" ? gy - 14 : gy;
-    ctx.fillStyle = ob.type === "duck" ? "#7a4a2a" : "#a05a2a";
-    ctx.fillRect(ox - ob.w / 2, obBottom - obH, ob.w, obH);
-    ctx.fillStyle = "#fff";
-    ctx.font = "10px monospace";
-    ctx.fillText(ob.type.toUpperCase(), ox - ob.w / 2, obBottom - obH - 4);
+    const ox = floatObstacleX(ob) - camX;
+    if (ox < -60 || ox > canvas.width + 60) return;
+    if (ob.type === "duck") {
+      const obBottom = gy - 14;
+      drawFloatSwampTreeBack(ox, obBottom);
+      drawFloatSeedPods(ox, obBottom, ob.w);
+    } else {
+      // jump / movingJump -- still a plain placeholder log, unchanged
+      // for now (today's priority list was the moving obstacle, the
+      // lily pad, and the duck redesign specifically)
+      const obH = 26;
+      ctx.fillStyle = ob.type === "movingJump" ? "#8a6a2a" : "#a05a2a";
+      ctx.fillRect(ox - ob.w / 2, gy - obH, ob.w, obH);
+      ctx.fillStyle = "#fff";
+      ctx.font = "10px monospace";
+      ctx.fillText(ob.type === "movingJump" ? "JUMP (moving)" : "JUMP", ox - ob.w / 2, gy - obH - 4);
+    }
   });
 
   FOREST_FLOAT_COLLECTIBLES.forEach(c => {
@@ -11391,15 +11550,12 @@ function drawForestFloatDuckOverlay(camX) {
   if (!riverFloat.active) return;
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     if (ob.type !== "duck") return;
-    const ox = ob.x - camX;
-    if (ox < -40 || ox > canvas.width + 40) return;
-    const obH = 20;
-    const obBottom = gy - 14;
-    ctx.fillStyle = "#7a4a2a";
-    ctx.fillRect(ox - ob.w / 2, obBottom - obH, ob.w, obH);
-    ctx.fillStyle = "#fff";
-    ctx.font = "10px monospace";
-    ctx.fillText("DUCK", ox - ob.w / 2, obBottom - obH - 4);
+    const ox = floatObstacleX(ob) - camX;
+    if (ox < -60 || ox > canvas.width + 60) return;
+    // only the pods themselves redraw here -- the trunk/roots are tall
+    // enough, and far enough back, that they never need to occlude a
+    // ducking player the way the low-hanging pods do
+    drawFloatSeedPods(ox, gy - 14, ob.w);
   });
 }
 
@@ -15247,20 +15403,42 @@ function updateForestScene(deltaTime) {
   floatSubmergeAmount += ((riverFloat.active ? 1 : 0) - floatSubmergeAmount) * 0.15;
   if (floatSubmergeAmount < 0.01) floatSubmergeAmount = 0;
   if (riverFloat.active) {
-    player.x += FOREST_FLOAT_DRIFT_SPEED;
+    // the lily pad -- a real resting platform (same landing-snap
+    // pattern the autumn scene's platforms use), so standing on it
+    // actually holds the player up at a real height instead of just
+    // being decorative. Per direct request ("a lili pad to catch
+    // breath somewhere"). Checked BEFORE the drift push below so
+    // landing on it this frame can skip that frame's push -- otherwise
+    // the current would still shove the player sideways while standing
+    // still on a pad that's supposed to be a break from it.
+    const padLeft = FOREST_FLOAT_LILYPAD.x - FOREST_FLOAT_LILYPAD.width / 2;
+    const padRight = FOREST_FLOAT_LILYPAD.x + FOREST_FLOAT_LILYPAD.width / 2;
+    const padTop = FOREST_FLOAT_LILYPAD.heightAboveGround;
+    playerOnFloatLilypad = false;
+    if (player.x + player.width > padLeft && player.x < padRight &&
+        player.y <= padTop && player.y >= padTop - 14 && player.vy <= 0) {
+      player.y = padTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      playerOnFloatLilypad = true;
+    }
+
+    if (!playerOnFloatLilypad) player.x += FOREST_FLOAT_DRIFT_SPEED;
 
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
-      const within = floatCenterX > ob.x - ob.w / 2 - player.width / 2 &&
-                      floatCenterX < ob.x + ob.w / 2 + player.width / 2;
+      const obX = floatObstacleX(ob);
+      const within = floatCenterX > obX - ob.w / 2 - player.width / 2 &&
+                      floatCenterX < obX + ob.w / 2 + player.width / 2;
       const passable = ob.type === "duck"
         ? (player.y > ob.clearance || (player.y <= 2 && playerDuckAmount > 0.6))
         : player.y > ob.clearance;
       if (within && !passable) {
-        if (floatCenterX < ob.x) {
-          player.x = ob.x - ob.w / 2 - player.width - 1;
+        if (floatCenterX < obX) {
+          player.x = obX - ob.w / 2 - player.width - 1;
         } else {
-          player.x = ob.x + ob.w / 2 + 1;
+          player.x = obX + ob.w / 2 + 1;
         }
         player.vx = 0;
       }
