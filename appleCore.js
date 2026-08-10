@@ -10572,6 +10572,11 @@ function drawSpringDoorVineTendril(camX) {
 // out" hint (see the FAR BANK block in drawForestRiver), which reaches
 // out to about fb+570 at its faintest.
 const FOREST_REFLECTION_POOL_X = 5400;
+// shared by both drawForestReflectionPool and drawForestSkipStones so
+// the two never drift out of sync with each other -- bumped up from
+// 130x64 per direct request ("lets make the reflective pond bigger").
+const FOREST_REFLECTION_POOL_W = 190;
+const FOREST_REFLECTION_POOL_H = 94;
 const reflectionPool = { active: false, startTime: 0, nextRollAt: 3000 };
 const REFLECTION_FADE_IN_MS = 900;
 const REFLECTION_HOLD_MS = 3400;
@@ -10605,7 +10610,7 @@ function drawForestReflectionPool(camX) {
   // the canopy's own height) instead of a short stub, and the pool's
   // own ellipse bounds are what cap how long anything drawn inside it
   // can be before getting clipped.
-  const poolW = 130, poolH = 64;
+  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H;
   // was gy+8, which put the pool's top edge a good 24px ABOVE the
   // ground line -- read as a big raised dome poking up out of the
   // grass instead of a pool sitting in it, per direct feedback
@@ -10800,11 +10805,20 @@ function drawForestReflectionPool(camX) {
 // throw, release to skip it across the pool. No fail state: an
 // uncharged/undercharged throw just lands short, nothing punishes a
 // bad toss, matching the game's whole exploratory-curiosity feel.
-const FOREST_SKIP_STONE_X = FOREST_REFLECTION_POOL_X - 90;
-const skipStone = { onGround: true, cooldownUntil: 0 };
+// a little scatter of stones near the pool instead of just one, so
+// there's always a fresh one nearby ("add more stones") -- each has its
+// own independent onGround/cooldown so picking one up doesn't affect
+// the others.
+const FOREST_SKIP_STONE_OFFSETS = [-90, -125, -60];
+const skipStones = FOREST_SKIP_STONE_OFFSETS.map(offset => ({
+  x: FOREST_REFLECTION_POOL_X + offset,
+  onGround: true,
+  cooldownUntil: 0
+}));
+let heldStoneIndex = -1; // which entry in skipStones is currently in heldItem
 let skipStoneCharge = 0; // 0..1, ramps while held
 let skipStoneWasCharging = false; // edge-detect release
-// the pickup zone (near the stone) sits inside the charge zone (near
+// the pickup zone (near a stone) sits inside the charge zone (near
 // the pool), so the SAME keydown that triggers the pickup tap would
 // otherwise immediately start charging too -- release the space bar
 // once, however briefly, before the very next press counts toward a
@@ -10812,7 +10826,10 @@ let skipStoneWasCharging = false; // edge-detect release
 // also flinging it a short distance in the same motion.
 let skipStoneArmed = true;
 const FOREST_SKIP_STONE_CHARGE_MS = 900; // full charge if held this long
-const FOREST_SKIP_STONE_THROW_MS = 650;
+// slowed down (was 650) per direct request ("i also want to slow the
+// skipping animation") so the bounce-across-the-pool actually reads
+// instead of blinking by.
+const FOREST_SKIP_STONE_THROW_MS = 1300;
 // target rings, as a fraction of the pool's width from its near (left)
 // edge -- hitting one is just a nicer sparkle payoff, missing all three
 // still gives a normal skip/splash. Per direct request ("release it to
@@ -10842,13 +10859,18 @@ function throwSkipStone() {
 function updateForestSkipStones(deltaTime) {
   const now = performance.now();
   const nearPool = isPlayerNear(FOREST_REFLECTION_POOL_X, 0, 140, 60, 60);
-  const nearStonePickup = isPlayerNear(FOREST_SKIP_STONE_X, 0, 26, 20, 20);
 
-  if (skipStone.onGround && now >= skipStone.cooldownUntil && !heldItem &&
-      nearStonePickup && keys.spaceJustPressed) {
-    heldItem = "skippingStone";
-    skipStone.onGround = false;
-    skipStoneArmed = false; // must release space once before a charge can start
+  if (!heldItem) {
+    for (let i = 0; i < skipStones.length; i++) {
+      const s = skipStones[i];
+      if (s.onGround && now >= s.cooldownUntil && isPlayerNear(s.x, 0, 26, 20, 20) && keys.spaceJustPressed) {
+        heldItem = "skippingStone";
+        heldStoneIndex = i;
+        s.onGround = false;
+        skipStoneArmed = false; // must release space once before a charge can start
+        break;
+      }
+    }
   }
 
   if (!keys.space) skipStoneArmed = true;
@@ -10870,21 +10892,26 @@ function updateForestSkipStones(deltaTime) {
 
   if (thrownSkipStone.active && now - thrownSkipStone.startTime > FOREST_SKIP_STONE_THROW_MS) {
     thrownSkipStone.active = false;
-    skipStone.onGround = true;
-    skipStone.cooldownUntil = now + 1100;
+    if (heldStoneIndex >= 0) {
+      skipStones[heldStoneIndex].onGround = true;
+      skipStones[heldStoneIndex].cooldownUntil = now + 1100;
+      heldStoneIndex = -1;
+    }
   }
 }
 
 function drawForestSkipStones(camX) {
   const poolPx = FOREST_REFLECTION_POOL_X - camX;
-  const poolW = 130, poolH = 64;
+  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H;
   const poolY = gy + 26;
   const nearLeftX = poolPx - poolW / 2 + 8;
   const spanW = poolW - 16;
 
-  // pickup pebble, sitting on the grass before the pool
-  if (skipStone.onGround) {
-    const sx = FOREST_SKIP_STONE_X - camX;
+  // pickup pebbles, sitting on the grass before the pool -- one per
+  // entry in skipStones
+  skipStones.forEach(s => {
+    if (!s.onGround) return;
+    const sx = s.x - camX;
     if (sx > -30 && sx < canvas.width + 30) {
       ctx.fillStyle = "rgba(10,10,10,0.2)";
       ctx.beginPath();
@@ -10899,23 +10926,44 @@ function drawForestSkipStones(camX) {
       ctx.ellipse(sx - 1.5, gy - 3, 1.6, 1, -0.2, 0, Math.PI * 2);
       ctx.fill();
     }
-  }
+  });
 
   if (poolPx < -160 || poolPx > canvas.width + 160) return;
 
-  // faint target rings, always visible so they read as something to
-  // aim for rather than a hidden mechanic
-  FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
-    const tx = nearLeftX + frac * spanW;
-    const flashAge = performance.now() - skipStoneTargetFlash[i];
-    const flashing = flashAge < 700;
-    const baseAlpha = flashing ? 0.7 - (flashAge / 700) * 0.5 : 0.28;
-    ctx.strokeStyle = flashing ? `rgba(255,230,140,${baseAlpha})` : `rgba(230,240,225,${baseAlpha})`;
-    ctx.lineWidth = flashing ? 2 : 1.2;
-    ctx.beginPath();
-    ctx.ellipse(tx, poolY, flashing ? 10 + (flashAge / 700) * 8 : 7, (flashing ? 10 + (flashAge / 700) * 8 : 7) * (poolH / poolW), 0, 0, Math.PI * 2);
-    ctx.stroke();
-  });
+  // faint target rings -- only shown while actually holding the stone
+  // (near the pool, about to throw), so they read as "here's what
+  // you're aiming for right now" rather than permanent pond decor.
+  // Still visible even before charge starts so the player can see the
+  // near/middle/far spots to aim for as soon as they pick the stone up.
+  if (heldItem === "skippingStone") {
+    FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
+      const tx = nearLeftX + frac * spanW;
+      const flashAge = performance.now() - skipStoneTargetFlash[i];
+      const flashing = flashAge < 700;
+      const baseAlpha = flashing ? 0.7 - (flashAge / 700) * 0.5 : 0.28;
+      ctx.strokeStyle = flashing ? `rgba(255,230,140,${baseAlpha})` : `rgba(230,240,225,${baseAlpha})`;
+      ctx.lineWidth = flashing ? 2 : 1.2;
+      ctx.beginPath();
+      ctx.ellipse(tx, poolY, flashing ? 10 + (flashAge / 700) * 8 : 7, (flashing ? 10 + (flashAge / 700) * 8 : 7) * (poolH / poolW), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  }
+  // the flash sparkle on a hit should still show even after the stone
+  // is thrown and heldItem clears, so it doesn't cut off mid-celebration
+  if (heldItem !== "skippingStone") {
+    FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
+      const flashAge = performance.now() - skipStoneTargetFlash[i];
+      if (flashAge >= 700) return;
+      const tx = nearLeftX + frac * spanW;
+      const baseAlpha = 0.7 - (flashAge / 700) * 0.5;
+      ctx.strokeStyle = `rgba(255,230,140,${baseAlpha})`;
+      ctx.lineWidth = 2;
+      const r = 10 + (flashAge / 700) * 8;
+      ctx.beginPath();
+      ctx.ellipse(tx, poolY, r, r * (poolH / poolW), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  }
 
   // charge meter -- a small arc that fills above the player while
   // holding the stone near the pool, so the "how hard am I about to
@@ -11461,8 +11509,13 @@ const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
 // doesnt have to be pretty rn just to build this in and test in." Real
 // art/placement/tuning comes later once the mechanic itself is proven
 // out -- this is scaffolding, not a finished set piece.
-const FOREST_FLOAT_ZONE_START_X = 5700;
-const FOREST_FLOAT_ZONE_END_X = 8100; // stretched again (was 7100, then 7400, then 7700) -- room for the new double-jump gate near the end, per direct request ("can extend river to right more")
+// moved a lot further right (was 5700) per direct request ("move the
+// river section a lot more to the right") -- opens up more room
+// between the reflection pool/skip-stones spot and the float zone for
+// future between-beats content, and width (END - START) kept the same
+// so none of the internal obstacle spacing needed to change.
+const FOREST_FLOAT_ZONE_START_X = 6600;
+const FOREST_FLOAT_ZONE_END_X = 9000; // stretched again (was 7100, then 7400, then 7700, then 8100) -- room for the new double-jump gate near the end, per direct request ("can extend river to right more")
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
