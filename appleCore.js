@@ -24038,9 +24038,11 @@ function drawFeatherHangSpot(camX) {
   if (hungAndDark) {
     // darkened again per direct feedback ("darken feather and jar after
     // placement, it should be visible in the dark but more just barely")
-    // -- 0.32 then 0.15 were both still reading as too present in the
-    // dark ("this is still very bright").
-    ctx.globalAlpha = 0.07;
+    // -- 0.32, then 0.15, then 0.07 all still read as too present in the
+    // dark ("really needs to be darkened a good amount more... barely
+    // visible sort of"). Down near the floor of "still technically
+    // there if you look for it" rather than genuinely visible now.
+    ctx.globalAlpha = 0.035;
   } else if (featherHung && lampLit && !featherHangAnim.active) {
     // CONFIRMED CHANGE: once the feather's actually resting here, even
     // WITH the lamp lit and pointed right at it this used to render at
@@ -25737,19 +25739,25 @@ function drawRatRoomFeather(camX) {
     ctx.fill();
   });
 
-  // CONFIRMED CHANGE: leaning against the ledge from its BASE, not
-  // rotated around its own center. drawFeatherShape treats its (x,y)
-  // as the shape's middle (vane spans -size to +size around that
-  // point) -- rotating in place around the center is exactly what
-  // read as pinned/strapped to the wall rather than resting/leaning,
-  // the repeated feedback on this spot. Same fix pattern already
-  // applied to the feather-in-jar spot (featherHangSpot): translate
-  // to the actual resting point (the ledge), rotate, then draw the
-  // shape shifted up by its own size so the vane's BASE lands at the
-  // pivot instead of its middle.
+  // CONFIRMED BUG FIX: base-pivot rotation alone (previous fix) wasn't
+  // enough -- rendered it standalone and confirmed why: a near-vertical
+  // shaft whose base disappears flush into the top of a small ledge
+  // reads as staked/impaled into it regardless of pivot point, since
+  // there's no visible contact, no shadow, nothing to sell "resting."
+  // Per repeated direct feedback ("feather is still strapped to the
+  // wall pre jar"), tilted much further toward horizontal (0.42 -> 1.05
+  // rad) so it lies ACROSS the ledge rather than standing up out of it,
+  // and added a small contact shadow beneath the base -- together these
+  // are what actually reads as "resting/leaning" instead of "planted."
   ctx.save();
-  ctx.translate(fx - 1, fy + 7);
-  ctx.rotate(0.42);
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(fx - 7, fy + 11, 6, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(fx - 6, fy + 7);
+  ctx.rotate(1.05);
   drawFeatherShape(ctx, 0, -9, 9, 0);
   ctx.restore();
 
@@ -37857,21 +37865,22 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request, so testing doesn't
-// require replaying the whole game to reach ratroom with the lamp
-// already in hand. Drops the player into ratroom holding the lamp
-// (space lights it, per the real lampLit logic) so lamp-lit fixes
-// (fireflies, feather/jar, marble shelf, etc.) can be checked
-// immediately. Remove this block (see the "debug spawn removed"
-// comment further up in git history for the exact revert pattern)
-// whenever a real fresh-start playtest is next needed.
-currentScene = "ratroom";
-player.x = 460;
+// TEMPORARY debug spawn -- per direct request. Drops the player into
+// oak, already past ratroom (lampEverUsedInRatroom set, so walking
+// back down into ratroom carries the lamp along automatically, same
+// as the real "lamp follows you into ratroom" logic near the top of
+// this file), with pumpkin and acorn already in hand. Remove this
+// block (see the "debug spawn removed" comment further up in git
+// history for the exact revert pattern) whenever a real fresh-start
+// playtest is next needed.
+currentScene = "oak";
+player.x = 2150;
 player.y = 0;
+addToInventory("pumpkin");
+addToInventory("acorn");
 addToInventory("lamp");
 touchInventoryOrder("lamp");
-heldItem = "lamp";
-lampEverUsedInRatroom = true; // so the lamp doesn't get stripped back off on scene entry
+lampEverUsedInRatroom = true; // so re-entering ratroom auto-carries the lamp back in, per the real crossing logic
 
 update();
 
