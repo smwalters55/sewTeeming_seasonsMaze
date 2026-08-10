@@ -5754,6 +5754,11 @@ drawCarvingStation(camX);
 if (hayBales.toppled) {
   drawProminentLeafTree(4210, camX, "maple", 1.35);
   drawProminentLeafTree(5010, camX, "round", 1.3);
+  // CONFIRMED CHANGE: third decorative tree per direct request -- a
+  // second maple, placed deeper into the patch past the midpoint
+  // rather than right at the start, and spaced clear of both its
+  // neighbors and the nearby pattypan/jump-bale beat
+  drawProminentLeafTree(5420, camX, "maple", 1.3);
 }
 drawDecorativeHayPiles(camX);
 drawSmallCrows(camX);
@@ -6465,7 +6470,10 @@ const carvingStation = {
   carveT: 0,
   pickedUp: false
 };
-const CARVING_PLACE_SPARKLE_MS = 900;
+// CONFIRMED CHANGE: pulled back to 2/3 of the previous value per
+// follow-up request -- 2600 ended up too long once the repeating
+// twinkle was in place (was 900, then 1800, then 2600)
+const CARVING_PLACE_SPARKLE_MS = 1733;
 const CARVING_STATION_DURATION_MS = 2600;
 // CONFIRMED CHANGE: each feature now cuts in on its OWN independent
 // beat -- eyebrows, then eyes, then nose, then mouth, in that order --
@@ -6666,11 +6674,14 @@ function drawPumpkinMouth(idx, x, y, s, fillColor) {
       ctx.fillRect(-s * 0.75 + (s * 1.5 / 5) * i - s * 0.03, -s * 0.05, s * 0.06, s * 0.4);
     }
   } else if (idx === 5) { // smirk -- asymmetric, one corner raised
+    // CONFIRMED CHANGE: smirkier per direct request -- deeper belly in
+    // the curve (rounder overall) and the raised corner pulled up a
+    // bit more, instead of reading as a near-straight diagonal line
     ctx.lineWidth = s * 0.16;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-s * 0.55, s * 0.3);
-    ctx.quadraticCurveTo(0, s * 0.15, s * 0.6, -s * 0.15);
+    ctx.moveTo(-s * 0.5, s * 0.32);
+    ctx.quadraticCurveTo(s * 0.05, s * 0.42, s * 0.58, -s * 0.22);
     ctx.stroke();
   } else if (idx === 6) { // straight slit
     ctx.fillRect(-s * 0.6, -s * 0.06, s * 1.2, s * 0.12);
@@ -6905,9 +6916,11 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
     cx - bodyRx * 0.35, cy - bodyRy * 0.4, bodyRx * 0.15,
     cx, cy, bodyRx * 1.15
   );
-  bodyGrad.addColorStop(0, "#e0a35a");   // sunlit highlight, upper-left
-  bodyGrad.addColorStop(0.55, "#c9863a"); // original mid-tone
-  bodyGrad.addColorStop(1, "#a1651f");   // shadowed edge
+  // CONFIRMED CHANGE: darkened a step per direct request, for more
+  // contrast against the candle glow once it's lit from inside
+  bodyGrad.addColorStop(0, "#c98a48");   // sunlit highlight, upper-left
+  bodyGrad.addColorStop(0.55, "#a86f2d"); // original mid-tone, darkened
+  bodyGrad.addColorStop(1, "#7c4d15");   // shadowed edge
   ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(cx, cy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
@@ -6991,7 +7004,9 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
 
   if (eyeLeftIdx !== null) drawRevealed(eyeLeftReveal, () => drawPumpkinEye(eyeLeftIdx, cx - size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
   if (eyeRightIdx !== null) drawRevealed(eyeRightReveal, () => drawPumpkinEye(eyeRightIdx, cx + size * 0.2, cy - size * 0.12, size * 0.26, glowColor));
-  if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.18, size * 0.3, glowColor));
+  // CONFIRMED CHANGE: pushed down from 0.18 -- was close enough to the
+  // nose (at 0.03) that several nose/mouth shape combos visibly overlapped
+  if (mouthIdx !== null) drawRevealed(mouthReveal, () => drawPumpkinMouth(mouthIdx, cx, cy + size * 0.24, size * 0.3, glowColor));
 
   // nose + eyebrows -- passed via the trailing `extra` object rather than
   // new positional params, so every existing call site above (which only
@@ -7641,13 +7656,17 @@ function drawCarvingStation(camX) {
   const sy = stationTopY - 18;
 
   if (!carvingStation.active) {
-    // placement sparkle -- larger particles than the reveal bursts,
-    // pumpkin sitting blank while it settles onto the cloth
-    const p = Math.min(1, carvingStation.placingT / CARVING_PLACE_SPARKLE_MS);
+    // CONFIRMED CHANGE: with the hold stretched out longer, one sparkle
+    // burst spread across the whole wait faded to nothing partway
+    // through and left the blank pumpkin just sitting there for the
+    // rest of it. Cycling the burst on a short repeating loop instead
+    // gives a continuous twinkle for the entire hold.
     drawPumpkinFace(sx, sy, 100, null, null, null);
-    drawSparkleBurst(sx, sy - 10, p, 1.6);
-    drawSparkleBurst(sx - 18, sy + 6, p, 1.3);
-    drawSparkleBurst(sx + 18, sy + 6, p, 1.3);
+    const cycleMs = 550;
+    const cycleProgress = (carvingStation.placingT % cycleMs) / cycleMs;
+    drawSparkleBurst(sx, sy - 10, cycleProgress, 1.6);
+    drawSparkleBurst(sx - 18, sy + 6, (cycleProgress + 0.33) % 1, 1.3);
+    drawSparkleBurst(sx + 18, sy + 6, (cycleProgress + 0.66) % 1, 1.3);
     return;
   }
 
@@ -7719,10 +7738,14 @@ function drawCarvingStation(camX) {
     if (mouthCutProgress >= 0 && mouthCutProgress <= 1) {
       const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 6);
       const kAngle = sawPosition(mouthCutProgress, -0.15, 0.15, 6);
-      drawKnife(kx, sy + 24 - 22, kAngle);
+      // CONFIRMED CHANGE: shifted down from sy+24 to match the mouth's
+      // own drawPumpkinFace offset moving from 0.18 to 0.24 (at this
+      // station's size of 130, that's roughly +8px) so the knife still
+      // lands exactly on the cut line instead of above it
+      drawKnife(kx, sy + 32 - 22, kAngle);
     } else if (progress >= CARVING_MOUTH_REVEAL_AT && progress < CARVING_MOUTH_REVEAL_AT + 0.12) {
       const sparkleP = Math.min(1, (progress - CARVING_MOUTH_REVEAL_AT) / 0.12);
-      drawSparkleBurst(sx, sy + 24, sparkleP);
+      drawSparkleBurst(sx, sy + 32, sparkleP);
     }
     return;
   }
@@ -7798,7 +7821,18 @@ const decorativeHayPiles = [
   { x: 5032, topHeight: 41, bales: [{ dx: -14, dy: -11, rot: Math.PI / 2, seed: 21 }, { dx: 14, dy: -11, rot: Math.PI / 2, seed: 22 }, { dx: 0, dy: -30, rot: 0.15, seed: 23 }] },
   { x: 5253, topHeight: 66, bales: [{ dx: 0, dy: -11, rot: 0, seed: 31 }, { dx: 0, dy: -33, rot: 0, seed: 32 }, { dx: 0, dy: -55, rot: 0, seed: 33 }] },
   { x: 5435, topHeight: 28, bales: [{ dx: -13, dy: -11, rot: Math.PI / 2, seed: 41 }, { dx: 13, dy: -11, rot: Math.PI / 2, seed: 42 }] },
-  { x: 5591, topHeight: 44, bales: [{ dx: 0, dy: -11, rot: -0.06, seed: 51 }, { dx: 0, dy: -33, rot: 0.1, seed: 52 }] }
+  // CONFIRMED CHANGE: this pile now also physically blocks walking (see
+  // the blocksWalking check near decorativeHayPiles.forEach in the main
+  // loop) instead of being purely decorative -- per direct request, a
+  // real jump-required beat placed past the first few squash so the
+  // patch isn't just one flat walk-and-talk the whole way through, and
+  // sits right between the two notice-wiggle squash so pausing to clear
+  // it also puts you right where the second hint is
+  { x: 5591, topHeight: 44, blocksWalking: true, bales: [{ dx: 0, dy: -11, rot: -0.06, seed: 51 }, { dx: 0, dy: -33, rot: 0.1, seed: 52 }] },
+  // CONFIRMED CHANGE: the wonky squash's own perch -- x hardcoded to
+  // match SPECIAL_SQUASH.x (5960) rather than referencing it directly,
+  // since that const is declared later in the file than this array
+  { x: 5960, topHeight: 44, bales: [{ dx: -10, dy: -11, rot: -0.08, seed: 61 }, { dx: 10, dy: -11, rot: 0.1, seed: 62 }] }
 ];
 
 function drawDecorativeHayPiles(camX) {
@@ -7897,10 +7931,26 @@ function drawDecorativeSquash(cx, cy, size, type) {
 
   if (type === "white") {
     // pale cream pumpkin, same rounded shape as the main pumpkin
-    ctx.fillStyle = "#e8e0cc";
+    // CONFIRMED CHANGE: flat fill swapped for a real shading gradient,
+    // same "sunlit highlight -> shadowed edge" approach as the main
+    // carved pumpkin, so it reads as round instead of a flat cutout
+    const whiteGrad = ctx.createRadialGradient(-size * 0.18, -size * 0.2, size * 0.08, 0, 0, size * 0.62);
+    whiteGrad.addColorStop(0, "#f5efdc");
+    whiteGrad.addColorStop(0.55, "#e8e0cc");
+    whiteGrad.addColorStop(1, "#c9c0a0");
+    ctx.fillStyle = whiteGrad;
     ctx.beginPath();
     ctx.ellipse(0, 0, size * 0.55, size * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
+    // CONFIRMED BUG FIX: rib lines were drawn at fixed x-offsets that
+    // exceeded the ellipse's actual width near the top/bottom poles,
+    // poking straight out past the silhouette. Clipping to the body's
+    // own shape (same ellipse) guarantees the ribs never escape it,
+    // regardless of the curve math.
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size * 0.55, size * 0.5, 0, 0, Math.PI * 2);
+    ctx.clip();
     ctx.strokeStyle = "rgba(180,170,140,0.5)";
     ctx.lineWidth = 1.5;
     for (let i = -2; i <= 2; i++) {
@@ -7909,9 +7959,15 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.quadraticCurveTo(i * size * 0.2, 0, i * size * 0.16, size * 0.48);
       ctx.stroke();
     }
+    ctx.restore();
   } else if (type === "gourd") {
     // dark green, warty/bumpy irregular surface
-    ctx.fillStyle = "#3a5a2e";
+    // CONFIRMED CHANGE: shading gradient instead of a flat fill
+    const gourdGrad = ctx.createRadialGradient(-size * 0.16, -size * 0.18, size * 0.06, 0, 0, size * 0.56);
+    gourdGrad.addColorStop(0, "#4f7a3e");
+    gourdGrad.addColorStop(0.55, "#3a5a2e");
+    gourdGrad.addColorStop(1, "#213a18");
+    ctx.fillStyle = gourdGrad;
     ctx.beginPath();
     ctx.ellipse(0, 0, size * 0.5, size * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -7929,7 +7985,12 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // tall blue-gray teardrop shape, distinct silhouette from a round
     // pumpkin -- with real ribbing and warty texture so it reads
     // clearly as a squash rather than an abstract smooth shape
-    ctx.fillStyle = "#6b7a82";
+    // CONFIRMED CHANGE: shading gradient instead of a flat fill
+    const hubbardGrad = ctx.createRadialGradient(-size * 0.14, -size * 0.35, size * 0.08, 0, -size * 0.1, size * 0.75);
+    hubbardGrad.addColorStop(0, "#8a98a0");
+    hubbardGrad.addColorStop(0.55, "#6b7a82");
+    hubbardGrad.addColorStop(1, "#454e54");
+    ctx.fillStyle = hubbardGrad;
     ctx.beginPath();
     ctx.moveTo(0, -size * 0.65);
     ctx.quadraticCurveTo(size * 0.45, -size * 0.2, size * 0.38, size * 0.35);
@@ -7951,6 +8012,20 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.fill();
     }
     // multiple ribbing lines, not just one center seam
+    // CONFIRMED BUG FIX: these were drawn at fixed x-offsets that
+    // exceeded the teardrop's actual (narrow) width near its pointed
+    // top, poking straight out above the silhouette. Clipping to the
+    // body's own path (redefined here) keeps them inside no matter
+    // what x-offset the loop uses.
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.65);
+    ctx.quadraticCurveTo(size * 0.45, -size * 0.2, size * 0.38, size * 0.35);
+    ctx.quadraticCurveTo(size * 0.2, size * 0.62, 0, size * 0.62);
+    ctx.quadraticCurveTo(-size * 0.2, size * 0.62, -size * 0.38, size * 0.35);
+    ctx.quadraticCurveTo(-size * 0.45, -size * 0.2, 0, -size * 0.65);
+    ctx.closePath();
+    ctx.clip();
     ctx.strokeStyle = "rgba(40,50,55,0.4)";
     ctx.lineWidth = 1.2;
     for (let i = -1; i <= 1; i++) {
@@ -7959,6 +8034,7 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.quadraticCurveTo(i * size * 0.22 + size * 0.06, 0, i * size * 0.16, size * 0.58);
       ctx.stroke();
     }
+    ctx.restore();
   } else if (type === "turban") {
     // single continuous silhouette -- wide base narrowing gently to a
     // subtle waist, then the cap bulging back out before rounding off.
@@ -7973,7 +8049,12 @@ function drawDecorativeSquash(cx, cy, size, type) {
     ctx.bezierCurveTo(-size * 0.3, -size * 0.1, -size * 0.27, -size * 0.16, -size * 0.3, -size * 0.28);
     ctx.bezierCurveTo(-size * 0.34, -size * 0.42, -size * 0.26, -size * 0.56, 0, -size * 0.58);
     ctx.closePath();
-    ctx.fillStyle = "#c9863a";
+    // CONFIRMED CHANGE: shading gradient instead of a flat fill
+    const turbanGrad = ctx.createRadialGradient(-size * 0.12, -size * 0.1, size * 0.08, 0, size * 0.05, size * 0.65);
+    turbanGrad.addColorStop(0, "#e0a35a");
+    turbanGrad.addColorStop(0.55, "#c9863a");
+    turbanGrad.addColorStop(1, "#a1651f");
+    ctx.fillStyle = turbanGrad;
     ctx.fill();
     ctx.strokeStyle = "rgba(120,60,20,0.4)";
     ctx.lineWidth = 1.2;
@@ -7983,7 +8064,10 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // into the base color rather than sitting behind a hard outline
     ctx.save();
     ctx.clip();
-    ctx.fillStyle = "#e8ddb8";
+    const turbanCapGrad = ctx.createRadialGradient(-size * 0.1, -size * 0.48, size * 0.05, 0, -size * 0.4, size * 0.4);
+    turbanCapGrad.addColorStop(0, "#f5eed0");
+    turbanCapGrad.addColorStop(1, "#d8c898");
+    ctx.fillStyle = turbanCapGrad;
     ctx.beginPath();
     ctx.ellipse(0, -size * 0.4, size * 0.36, size * 0.24, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -7991,6 +8075,22 @@ function drawDecorativeSquash(cx, cy, size, type) {
 
     // ribbing that flows continuously from base through cap, following
     // the same silhouette rather than two separate sets of lines
+    // CONFIRMED BUG FIX: re-clipped to the turban's own body path --
+    // the earlier clip() (for the cream cap) was already restore()'d
+    // by this point, so these ribs were drawing fully unclipped and
+    // poking out past the narrower parts of the silhouette.
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.58);
+    ctx.bezierCurveTo(size * 0.26, -size * 0.56, size * 0.34, -size * 0.42, size * 0.3, -size * 0.28);
+    ctx.bezierCurveTo(size * 0.27, -size * 0.16, size * 0.3, -size * 0.1, size * 0.4, size * 0.02);
+    ctx.bezierCurveTo(size * 0.52, size * 0.16, size * 0.5, size * 0.32, size * 0.34, size * 0.42);
+    ctx.bezierCurveTo(size * 0.2, size * 0.5, -size * 0.2, size * 0.5, -size * 0.34, size * 0.42);
+    ctx.bezierCurveTo(-size * 0.5, size * 0.32, -size * 0.52, size * 0.16, -size * 0.4, size * 0.02);
+    ctx.bezierCurveTo(-size * 0.3, -size * 0.1, -size * 0.27, -size * 0.16, -size * 0.3, -size * 0.28);
+    ctx.bezierCurveTo(-size * 0.34, -size * 0.42, -size * 0.26, -size * 0.56, 0, -size * 0.58);
+    ctx.closePath();
+    ctx.clip();
     ctx.strokeStyle = "rgba(120,70,30,0.35)";
     ctx.lineWidth = 1;
     for (let i = -2; i <= 2; i++) {
@@ -7999,10 +8099,16 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.quadraticCurveTo(i * size * 0.22, -size * 0.05, i * size * 0.12, size * 0.46);
       ctx.stroke();
     }
+    ctx.restore();
   } else if (type === "pattypan") {
     // wide, flattened shape with a scalloped wavy rim all the way
     // around -- pale yellow, the classic Trader Joe's autumn scallop squash
-    ctx.fillStyle = "#e0d060";
+    // CONFIRMED CHANGE: shading gradient instead of a flat fill
+    const pattypanGrad = ctx.createRadialGradient(-size * 0.14, -size * 0.12, size * 0.06, 0, 0, size * 0.56);
+    pattypanGrad.addColorStop(0, "#f0e080");
+    pattypanGrad.addColorStop(0.55, "#e0d060");
+    pattypanGrad.addColorStop(1, "#b8a840");
+    ctx.fillStyle = pattypanGrad;
     const bumps = 11;
     ctx.beginPath();
     for (let i = 0; i <= bumps; i++) {
@@ -8043,10 +8149,14 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // squash-coloring pattern, distinct from every other type here
     // which are flat single colors), plus a scatter of raised wart-like
     // "bubbles," another real squash trait none of the others have.
+    // CONFIRMED CHANGE: darkened a step per direct request
     const wonkyGrad = ctx.createLinearGradient(0, -size * 0.45, 0, size * 0.48);
-    wonkyGrad.addColorStop(0, "#6f8a3c");   // mossy green up top
-    wonkyGrad.addColorStop(0.55, "#a99248"); // dull olive-tan transition band
-    wonkyGrad.addColorStop(1, "#c07f1e");   // burnt yellow-orange at the bottom
+    // CONFIRMED CHANGE: richer/deeper across the board per direct
+    // follow-up ("less pale"), and the bottom stop pushed toward a
+    // dark yellow/mustard rather than a burnt orange-yellow
+    wonkyGrad.addColorStop(0, "#42591e");   // deep mossy green up top
+    wonkyGrad.addColorStop(0.55, "#6d5c16"); // rich olive transition band
+    wonkyGrad.addColorStop(1, "#a68c10");   // dark yellow / mustard at the bottom
     ctx.fillStyle = wonkyGrad;
     ctx.beginPath();
     ctx.ellipse(size * 0.1, size * 0.08, size * 0.52, size * 0.44, 0.22, 0, Math.PI * 2);
@@ -8059,6 +8169,19 @@ function drawDecorativeSquash(cx, cy, size, type) {
     ctx.beginPath();
     ctx.ellipse(size * 0.38, size * 0.32, size * 0.16, size * 0.13, 0.1, 0, Math.PI * 2);
     ctx.fill();
+    // CONFIRMED BUG FIX: ribs were drawn at fixed offsets against a
+    // three-lobe silhouette, so several poked straight out past the
+    // edge (same bug as the other squash types). Clipping to the union
+    // of all three lobes -- one path with all three ellipses added
+    // before a single clip(), relying on the nonzero winding rule to
+    // treat the overlapping shapes as one combined region -- keeps the
+    // ribs inside the actual irregular outline instead of just one lobe.
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(size * 0.1, size * 0.08, size * 0.52, size * 0.44, 0.22, 0, Math.PI * 2);
+    ctx.ellipse(-size * 0.32, -size * 0.14, size * 0.3, size * 0.26, -0.5, 0, Math.PI * 2);
+    ctx.ellipse(size * 0.38, size * 0.32, size * 0.16, size * 0.13, 0.1, 0, Math.PI * 2);
+    ctx.clip();
     ctx.strokeStyle = "rgba(90,70,20,0.4)";
     ctx.lineWidth = 1.5;
     // ribs bend noticeably more toward the smaller lobe's side than
@@ -8071,6 +8194,7 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.quadraticCurveTo(i * size * bend + size * 0.06, size * 0.04, i * size * 0.14 + size * 0.02, size * 0.42);
       ctx.stroke();
     }
+    ctx.restore();
     // warty surface bubbles -- fixed relative positions (not random per
     // frame), each a tiny raised bump: a darker crescent shadow on one
     // side and a small highlight fleck on the other, so they read as
@@ -8096,10 +8220,14 @@ function drawDecorativeSquash(cx, cy, size, type) {
     // crooked stem, off-center toward the small lobe and visibly
     // tilted -- a straight centered stem on top of an already-lopsided
     // body looked wrong once the body itself actually became irregular
+    // CONFIRMED BUG FIX: pivot was sitting just above the actual
+    // silhouette at this x, reading as floating next to the body
+    // instead of growing out of it. Sunk it down into the body a bit
+    // and lengthened the rect so it visibly overlaps the surface.
     ctx.save();
-    ctx.translate(-size * 0.14, -size * (topExtent + 0.02));
+    ctx.translate(-size * 0.14, -size * (topExtent - 0.06));
     ctx.rotate(-0.35);
-    ctx.fillRect(-size * 0.05, -size * 0.14, size * 0.1, size * 0.14);
+    ctx.fillRect(-size * 0.05, -size * 0.18, size * 0.1, size * 0.2);
     ctx.restore();
   } else {
     ctx.fillRect(-size * 0.05, -size * (topExtent + 0.1), size * 0.1, size * 0.14);
@@ -8116,17 +8244,23 @@ function drawDecorativeSquash(cx, cy, size, type) {
 // repeating jokes -- a small patch of squashes that each say their own
 // single thing reads more like a real little cast than a joke machine.
 const decorativeSquash = [
-  // CONFIRMED CHANGE: only this FIRST squash gets a notice-wiggle timer
-  // (see updateSquashNoticeWiggle/drawDecorativeSquashField) -- per
-  // direct request, a subtle hint that the patch is interactable at
-  // all, without spelling it out with a UI prompt. Once you've talked
-  // to this one, you already know to try space on the rest yourself,
-  // so none of the others need their own wiggle.
+  // CONFIRMED CHANGE: two squash get a notice-wiggle timer now, not just
+  // one -- the patch spans a wide stretch, and a single hint near the
+  // left edge risked reading as "this one talks" rather than "the whole
+  // row does." This one's near the left/entry side...
   { x: 4505, size: 30, type: "gourd", talkedTo: false, line: "Too knobby to carve, too pretty to eat. I've made my peace with it.", noticeTimer: 2500 + Math.random() * 2000, noticeWiggle: 0 },
   { x: 5110, size: 34, type: "white", talkedTo: false, line: "Pale on purpose. It's called dramatic contrast." },
-  { x: 4915, size: 42, type: "hubbard", talkedTo: false, line: "Bloated on purpose too. Confidence, mostly." },
-  { x: 5656, size: 28, type: "white", talkedTo: false, line: "..." },
-  { x: 5740, size: 30, type: "gourd", talkedTo: false, line: "Ask the wonky one further down. It talks more than all of us combined." },
+  // CONFIRMED BUG FIX: was "Bloated on purpose too" -- directly echoed
+  // the white one's "on purpose" right next door, reading as a repeated
+  // joke rather than its own line
+  { x: 4915, size: 42, type: "hubbard", talkedTo: false, line: "Bloated, yes. Confidence, mostly." },
+  // ...and this one's further right, past the midpoint, before the
+  // wonky one -- offset timer range so the two don't sync up
+  // CONFIRMED CHANGE: this trio (this one, the gourd below, and the
+  // wonky one) spread out more per direct request -- they read too
+  // bunched together before
+  { x: 5680, size: 28, type: "white", talkedTo: false, line: "...", noticeTimer: 5500 + Math.random() * 2500, noticeWiggle: 0 },
+  { x: 5810, size: 30, type: "gourd", talkedTo: false, line: "Ask the wonky one further down. It talks more than all of us combined." },
   { x: 4265, size: 38, type: "turban", talkedTo: false, line: "Nice hat, right? Grew it myself." },
   { x: 5500, size: 36, type: "pattypan", talkedTo: false, line: "Flat's a look. Ask anyone." }
 ];
@@ -8139,12 +8273,17 @@ const decorativeSquash = [
 // talking to it again advances it, and it reacts for real once a pumpkin
 // has actually been carved at the station right next door, tying the
 // whole area together instead of just being one more static joke.
+// CONFIRMED CHANGE: sits up on a small hay bale stack now, per direct
+// request -- shares the same landable-platform pile system the rest of
+// the patch already uses (see decorativeHayPiles / WONKY_BALE_TOP_HEIGHT)
+const WONKY_BALE_TOP_HEIGHT = 44; // two bales stacked, same height as several other piles in this patch
 const SPECIAL_SQUASH = {
-  x: 5820,
-  size: 32,
+  x: 5960, // CONFIRMED CHANGE: pushed further out with the rest of the trio spreading apart
+  size: 42, // CONFIRMED CHANGE: bumped up from 32 per direct request
   type: "wonky",
   talkStage: 0, // 0 = never talked, 1 = met once, 2+ = knows you
-  reactedToCarving: false
+  reactedToCarving: false,
+  bobPhase: 0 // CONFIRMED CHANGE: drives a small sway while mid-conversation, see updateSpecialSquashBob
 };
 const SPECIAL_SQUASH_DIALOGUE = [
   ["Oh good, you found the one that looks like it's melting sideways.", "I'm not lumpy. I'm 'structurally ambitious.'"],
@@ -8180,11 +8319,30 @@ const SQUASH_TOP_EXTENT = {
 };
 
 function drawDecorativeSquashField(camX) {
+  // CONFIRMED BUG FIX: squash sit close enough together that being in
+  // range of one talked-to squash's bubble often also fell inside a
+  // neighbor's range, so both drew and overlapped. Only the single
+  // nearest eligible squash to the player gets its bubble drawn now.
+  let nearest = null, nearestDist = Infinity;
+  decorativeSquash.forEach(s => {
+    if (s.talkedTo && isPlayerNear(s.x, 0, 55, 15, 15)) {
+      const dist = Math.abs((player.x + player.width / 2) - s.x);
+      if (dist < nearestDist) { nearestDist = dist; nearest = s; }
+    }
+  });
+  // CONFIRMED CHANGE: now sits up on its own hay bale stack, so the
+  // proximity check targets that height instead of ground level --
+  // matches how you actually reach it (jump up, then talk)
+  if (SPECIAL_SQUASH.talkStage > 0 && isPlayerNear(SPECIAL_SQUASH.x, WONKY_BALE_TOP_HEIGHT, 55, 25, 50)) {
+    const dist = Math.abs((player.x + player.width / 2) - SPECIAL_SQUASH.x);
+    if (dist < nearestDist) { nearestDist = dist; nearest = SPECIAL_SQUASH; }
+  }
+
   decorativeSquash.forEach(s => {
     let sx = s.x - camX;
     if (sx < -50 || sx > canvas.width + 50) return;
     // CONFIRMED CHANGE: idle notice-shake, same shape as the graft
-    // sticks/wiggle bush/willow -- only ever set on decorativeSquash[0]
+    // sticks/wiggle bush/willow
     const shake = s.noticeWiggle > 0 ? Math.sin(s.noticeWiggle * 0.4) * 1.6 : 0;
     sx += shake;
     ctx.fillStyle = "rgba(0,0,0,0.15)";
@@ -8194,27 +8352,40 @@ function drawDecorativeSquashField(camX) {
     const bottomExtent = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
     drawDecorativeSquash(sx, gy - s.size * bottomExtent, s.size, s.type);
 
-    if (s.talkedTo && isPlayerNear(s.x, 0, 55, 15, 15)) {
-      const bottomExtentForBubble = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
-      drawFittedSpeechBubble(ctx, sx, gy - s.size * bottomExtentForBubble - s.size * 0.5 - 30, [s.line]);
+    // CONFIRMED CHANGE: bubble pushed higher (was -30) -- with squash
+    // packed this close together, the player standing right next to one
+    // to talk to it was tall enough to cover its own bubble
+    if (nearest === s) {
+      drawFittedSpeechBubble(ctx, sx, gy - s.size * bottomExtent - s.size * 0.5 - 48, [s.line]);
     }
   });
 
   // the special squash draws separately -- same visual, staged dialogue
-  const spx = SPECIAL_SQUASH.x - camX;
+  // CONFIRMED CHANGE: elevated onto its own hay bale stack (see the
+  // matching decorativeHayPiles entry at the same x) -- everything
+  // (body, shadow, bubble) shifts up by WONKY_BALE_TOP_HEIGHT to sit on
+  // top of it, which also happens to push the bubble well clear of the
+  // player's head without needing its own separate offset tweak
+  let spx = SPECIAL_SQUASH.x - camX;
+  const isTalkingToSpecial = nearest === SPECIAL_SQUASH;
+  // CONFIRMED CHANGE: small side-to-side sway while actively being
+  // talked to, per direct request -- see updateSpecialSquashBob
+  if (isTalkingToSpecial) spx += Math.sin(SPECIAL_SQUASH.bobPhase) * 3;
   if (spx > -50 && spx < canvas.width + 50) {
     ctx.fillStyle = "rgba(0,0,0,0.15)";
     ctx.beginPath();
-    ctx.ellipse(spx, gy + 3, SPECIAL_SQUASH.size * 0.4, SPECIAL_SQUASH.size * 0.1, 0, 0, Math.PI * 2);
+    ctx.ellipse(spx, gy - WONKY_BALE_TOP_HEIGHT + 3, SPECIAL_SQUASH.size * 0.4, SPECIAL_SQUASH.size * 0.1, 0, 0, Math.PI * 2);
     ctx.fill();
     const bottomExtent = SQUASH_BOTTOM_EXTENT[SPECIAL_SQUASH.type] || 0.45;
-    drawDecorativeSquash(spx, gy - SPECIAL_SQUASH.size * bottomExtent, SPECIAL_SQUASH.size, SPECIAL_SQUASH.type);
+    const bobY = isTalkingToSpecial ? Math.sin(SPECIAL_SQUASH.bobPhase * 1.3) * 2 : 0;
+    const spy = gy - WONKY_BALE_TOP_HEIGHT - SPECIAL_SQUASH.size * bottomExtent + bobY;
+    drawDecorativeSquash(spx, spy, SPECIAL_SQUASH.size, SPECIAL_SQUASH.type);
 
-    if (SPECIAL_SQUASH.talkStage > 0 && isPlayerNear(SPECIAL_SQUASH.x, 0, 55, 15, 15)) {
+    if (isTalkingToSpecial) {
       const lines = (carvingStation.phase === "done" && !SPECIAL_SQUASH.reactedToCarving)
         ? SPECIAL_SQUASH_CARVED_DIALOGUE
         : SPECIAL_SQUASH_DIALOGUE[Math.min(SPECIAL_SQUASH.talkStage, SPECIAL_SQUASH_DIALOGUE.length) - 1];
-      drawFittedSpeechBubble(ctx, spx, gy - SPECIAL_SQUASH.size * bottomExtent - SPECIAL_SQUASH.size * 0.5 - 30, lines);
+      drawFittedSpeechBubble(ctx, spx, spy - SPECIAL_SQUASH.size * 0.5 - 30, lines);
     }
   }
 }
@@ -8222,19 +8393,29 @@ function drawDecorativeSquashField(camX) {
 // CONFIRMED CHANGE: subtle idle hint that the squash patch is
 // interactable at all -- same noticeTimer/noticeWiggle language used by
 // the graft sticks, wiggle bush, willow, and vault clouds elsewhere in
-// the game. Only the first squash gets this; once you've talked to it
-// you already know to try space on the rest, so the wiggle stops there
-// for good instead of just resetting on a timer like the others.
+// the game. Two squash get this now -- one near the left/entry side of
+// the patch, one further right past the midpoint -- each stopping for
+// good (independently) once you've talked to that particular one,
+// rather than resetting on a timer like the ambient ones elsewhere.
 function updateSquashNoticeWiggle(deltaTime) {
-  const s = decorativeSquash[0];
-  if (!s || s.talkedTo) return;
+  [decorativeSquash[0], decorativeSquash[3]].forEach(s => {
+    if (!s || s.talkedTo) return;
+    s.noticeTimer -= deltaTime * 1000;
+    if (s.noticeTimer <= 0) {
+      s.noticeWiggle = 150;
+      s.noticeTimer = 7000 + Math.random() * 4000;
+    }
+    if (s.noticeWiggle > 0) s.noticeWiggle--;
+  });
+}
 
-  s.noticeTimer -= deltaTime * 1000;
-  if (s.noticeTimer <= 0) {
-    s.noticeWiggle = 150;
-    s.noticeTimer = 7000 + Math.random() * 4000;
-  }
-  if (s.noticeWiggle > 0) s.noticeWiggle--;
+// CONFIRMED CHANGE: small continuous sway, applied only while the
+// wonky squash is the one actively being talked to (see the "nearest"
+// check in drawDecorativeSquashField) -- a little bit of life while
+// it's mid-conversation, encouraging you to keep the exchange going
+// rather than sitting there static like the rest of the patch
+function updateSpecialSquashBob(deltaTime) {
+  SPECIAL_SQUASH.bobPhase += deltaTime * 3.2;
 }
 
 function updateSquashChatter() {
@@ -8247,7 +8428,9 @@ function updateSquashChatter() {
     }
   }
 
-  if (isPlayerNear(SPECIAL_SQUASH.x, 0, 55, 15, 15)) {
+  // CONFIRMED CHANGE: targets WONKY_BALE_TOP_HEIGHT now that it sits up
+  // on its own bale stack, matching the same check in drawDecorativeSquashField
+  if (isPlayerNear(SPECIAL_SQUASH.x, WONKY_BALE_TOP_HEIGHT, 55, 25, 50)) {
     // once a pumpkin's actually been carved, the NEXT press gives the
     // carved-specific reaction instead of continuing the normal staged
     // lines -- a one-time detour, then talkStage picks back up after
@@ -37586,6 +37769,7 @@ updateVinePumpkin();
 updateWormRock();
 updateSquashChatter();
 updateSquashNoticeWiggle(deltaTime);
+updateSpecialSquashBob(deltaTime);
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
@@ -38178,6 +38362,16 @@ lastTime = now;
           player.vy = 0;
           player.jumping = false;
           player.usedDoubleJump = false;
+        }
+        // CONFIRMED CHANGE: the one flagged pile also solidly blocks
+        // walking through at ground level -- a real jump-required beat
+        // in the squash patch, same standing-wall style as the main
+        // hayBales pile above, but only while below its own top height
+        // (once you've actually cleared it, normal walking off either
+        // side is unaffected)
+        if (pile.blocksWalking && player.x + player.width > pile.x - 24 && player.x < pile.x + 24 && player.y < pile.topHeight) {
+          if (player.x < pile.x) player.x = pile.x - 24 - player.width;
+          else player.x = pile.x + 24;
         }
       });
     }
