@@ -24661,6 +24661,43 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.ellipse(wx + 7.5, wy + 1.5, 1.6, 2.4, 0.5, 0, Math.PI * 2);
       ctx.fill();
 
+      // the tube's OWN continuation, faintly visible through the glass
+      // (and the liquid), diving on from the seam toward the bulb's
+      // actual bottom instead of just stopping dead at the wall -- what
+      // the real glass ones do: the tube pierces the side and keeps
+      // going, ending near (never touching) the bottom, well inside
+      // the body. Per direct feedback ("why cant we show an outline of
+      // the tube in klein bottle going in to the bottom"). Clipped to
+      // the body silhouette so it can't poke outside the glass, and
+      // kept faint/thin -- a solid line here would read as a second
+      // tube rather than a hint of the first one continuing on.
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(wx - 4, wy + 10);
+      ctx.quadraticCurveTo(wx - 7, wy + 6, wx - 7, wy);
+      ctx.quadraticCurveTo(wx - 7, wy - 6, wx - 4, wy - 8);
+      ctx.quadraticCurveTo(wx - 2, wy - 10, wx - 2, wy - 12);
+      ctx.lineTo(wx + 2, wy - 12);
+      ctx.quadraticCurveTo(wx + 4, wy - 10, wx + 5, wy - 7);
+      ctx.quadraticCurveTo(wx + 8, wy - 3, wx + 7, wy + 3);
+      ctx.quadraticCurveTo(wx + 7, wy + 8, wx + 4, wy + 10);
+      ctx.quadraticCurveTo(wx, wy + 12, wx - 4, wy + 10);
+      ctx.closePath();
+      ctx.clip();
+      ctx.strokeStyle = "rgba(220,238,245,0.45)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(wx + 6.6, wy + 1.8);
+      ctx.quadraticCurveTo(wx + 2.5, wy + 5.5, wx - 1, wy + 8.5);
+      ctx.stroke();
+      // small open end, well clear of the bottom so it never touches
+      ctx.strokeStyle = "rgba(220,238,245,0.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(wx - 1, wy + 8.8, 1.7, 1, -0.4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
       ctx.restore();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
