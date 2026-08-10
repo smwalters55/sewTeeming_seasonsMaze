@@ -474,8 +474,23 @@ const ITEM_CANVAS_RENDER = {
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
 const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "cloudBlossom"];
 
+// CONFIRMED CHANGE: items that only ever do anything in a couple of
+// specific "home" scenes (see the matching heldItem safety nets near
+// the bottom of the file) now hide from the inventory strip entirely
+// outside those scenes, rather than sitting there as a dead chip you
+// could click but that would just immediately un-select itself. Per
+// direct request, also a first step toward trimming the strip down in
+// general as inventory keeps growing.
+const SCENE_LOCKED_ITEMS = {
+  lamp: ["oak", "ratroom"],
+  paperAirplane: ["oak", "clouds"]
+};
+let lastInventoryUIScene = null; // tracked so the strip only rebuilds when currentScene actually changes, not every frame
+
 function updateInventoryUI() {
-  const entries = Object.entries(inventory).filter(([type]) => !CARRYING_ITEM_TYPES.has(type));
+  const entries = Object.entries(inventory)
+    .filter(([type]) => !CARRYING_ITEM_TYPES.has(type))
+    .filter(([type]) => !SCENE_LOCKED_ITEMS[type] || SCENE_LOCKED_ITEMS[type].includes(currentScene));
   invEl.innerHTML = "";
   updateCarryingUI();
 
@@ -38027,6 +38042,15 @@ if (currentScene === "autumn") {
   if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds") {
     heldItem = null;
   }
+  // refreshes the inventory strip's scene-locked filtering (SCENE_LOCKED_ITEMS)
+  // the moment currentScene actually changes, regardless of which of the
+  // many code paths changed it (normal transitions, debug spawns, etc.)
+  // -- cheap comparison every frame, only rebuilds the strip's DOM on
+  // an actual change
+  if (currentScene !== lastInventoryUIScene) {
+    lastInventoryUIScene = currentScene;
+    updateInventoryUI();
+  }
 
   if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
     throwBoomerang();
@@ -38119,22 +38143,36 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request. Drops the player into
-// oak, already past ratroom (lampEverUsedInRatroom set, so walking
-// back down into ratroom carries the lamp along automatically, same
-// as the real "lamp follows you into ratroom" logic near the top of
-// this file), with pumpkin and acorn already in hand. Remove this
-// block (see the "debug spawn removed" comment further up in git
-// history for the exact revert pattern) whenever a real fresh-start
-// playtest is next needed.
+// TEMPORARY debug spawn -- per direct request. Drops the player inside
+// oak, near its entrance (x:380, the real seesaw-launch arrival point --
+// see connections' oak: {x:380}), with paper airplane, acorn, crown, and
+// pumpkin already in hand, plus already past ratroom (lampEverUsedInRatroom
+// set, so walking down into ratroom carries the lamp along automatically,
+// same as the real "lamp follows you into ratroom" logic near the top of
+// this file). Remove this block (see the "debug spawn removed" comment
+// further up in git history for the exact revert pattern) whenever a
+// real fresh-start playtest is next needed.
 currentScene = "oak";
-player.x = 2150;
+player.x = 380;
 player.y = 0;
 addToInventory("pumpkin");
 addToInventory("acorn");
+addToInventory("paperAirplane");
+touchInventoryOrder("paperAirplane");
+heldItem = "paperAirplane"; // matches the real auto-equip-in-oak behavior
 addToInventory("lamp");
 touchInventoryOrder("lamp");
 lampEverUsedInRatroom = true; // so re-entering ratroom auto-carries the lamp back in, per the real crossing logic
+// crown -- built from 8 leaves (CROWN_LEAVES_NEEDED), same shape the
+// real catch-the-falling-leaves sequence would produce, then marked
+// ready and worn so it shows up immediately with no extra key press.
+crownLeaves = Array.from({ length: CROWN_LEAVES_NEEDED }, (_, i) => ({
+  shape: i % 2 ? "maple" : "round",
+  color: LEAF_COLORS[i % LEAF_COLORS.length]
+}));
+crownState.ready = true;
+crownState.worn = true;
+crownState.promptEverShown = true;
 // CONFIRMED BUG FIX: the tea nook / cushion pile corner is gated on
 // oakLamp.collected specifically (see sittingAreas' cushionPile entry
 // and the tea nook's own comment "same unlock condition"), not on
