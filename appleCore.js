@@ -38597,29 +38597,22 @@ updateSeasonTransition(deltaTime);
 
 
 // TEMPORARY debug spawn -- per direct request. Drops the player into
-// autumn, right in front of the carving station (carvingStation.x:4655),
-// with a pumpkin in hand ready to place (space, per the real placement
-// check) so the whole carving sequence -- placement, the eyebrows/eyes/
-// nose/mouth carving UI, the in-world 4-beat carve, and the final grown
-// glowing pumpkin -- can be tested immediately. Remove this block (see
-// the "debug spawn removed" comment further up in git history for the
-// exact revert pattern) whenever a real fresh-start playtest is next
-// needed.
-currentScene = "autumn";
-player.x = carvingStation.x - 30;
+// clouds with the boomerang and bucket already in hand, for playtesting
+// the atmosphere/gust-zone work there directly instead of climbing up
+// through spring first. Remove this block (see the "debug spawn
+// removed" comment further up in git history for the exact revert
+// pattern) whenever a real fresh-start playtest is next needed.
+currentScene = "clouds";
+player.x = 300;
 player.y = 0;
-// CONFIRMED BUG FIX: the carving station only even DRAWS once
-// hayBales.toppled is true (see drawCarvingStation's early return),
-// and the standing-wall block elsewhere physically blocks the player
-// from passing hayBales.x at all until then -- without this the
-// station would be both invisible and unreachable from this spawn.
-hayBales.toppled = true;
-addToInventory("pumpkin");
-touchInventoryOrder("pumpkin");
-heldItem = "pumpkin";
-discoveredScenes.oak = true;
-discoveredScenes.ratroom = true;
-discoveredScenes.autumn = true;
+addToInventory("boomerang");
+touchInventoryOrder("boomerang");
+boomerang.collected = true; // keeps the world copy near the apple tree from also drawing/being collectible again
+addToInventory("bucket");
+touchInventoryOrder("bucket");
+heldItem = "boomerang";
+discoveredScenes.spring = true;
+discoveredScenes.clouds = true;
 updateMapUI();
 
 update();
