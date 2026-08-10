@@ -10193,12 +10193,16 @@ const SQUIRREL_WALK_SPEED = 20;
 function getSquirrelStage() {
   if (digSite.dug && !digSite.planted) {
     // the hole's ready, but there's nothing to plant without a peanut
-    // first -- and the elephant's tail (already wiggling its own
-    // notice-tell up in the clouds) is the only place one ever comes
-    // from, so point at it directly instead of leaving the "circus
-    // snack" line to be the only clue.
+    // first. Two different "no peanut yet" cases get two different
+    // lines: once the elephant's tail is actually built and shaking
+    // (peanut.available -- a real thing to go grab right now), the hint
+    // can point straight at it. Before that, the elephant isn't done
+    // yet, so naming it outright would spoil its own "oh, it's an
+    // elephant" reveal -- that case gets a vaguer, fairytale-ish line
+    // instead, just gesturing at something taking shape up in the clouds.
     const hasPeanut = (inventory.peanut > 0) || heldItem === "peanut";
-    return hasPeanut ? "dug" : "dugNoPeanut";
+    if (hasPeanut) return "dug";
+    return peanut.available ? "dugPeanutWaiting" : "dugPeanutUnbuilt";
   }
   if (digSite.planted && !digSite.watered) return "planted";
   return null;
@@ -10206,7 +10210,8 @@ function getSquirrelStage() {
 
 const SQUIRREL_DIALOGUE = {
   dug: ["Now THAT'S a hole.", "A circus snack might do well in there."],
-  dugNoPeanut: ["Now THAT'S a hole.", "Something's shaking its tail up in the clouds — hungry for a peanut, I'd bet."],
+  dugPeanutWaiting: ["Now THAT'S a hole.", "A circus snack might do well in there — something's shaking its tail up in the clouds."],
+  dugPeanutUnbuilt: ["Now THAT'S a hole.", "Up in the clouds, something huge and gold is slowly becoming itself."],
   planted: ["All planted and patient.", "Thirsty dirt doesn't grow much."]
 };
 
