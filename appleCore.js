@@ -4581,6 +4581,12 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawBoomerangShape(ctx, x, y, size, rotation);
   } else if (itemType === "roundLeaf" || itemType === "mapleLeaf") {
     drawLeafShape(ctx, x, y, size, rotation, itemType === "mapleLeaf" ? "maple" : "round", itemType === "mapleLeaf" ? "#e8481f" : "#e0722a");
+  } else if (itemType === "leafBoat") {
+    // carried-in-hand render for the forest leaf/bark boat pickup --
+    // otherwise heldItem="leafBoat" falls through to the generic apple
+    // piece icon at the bottom of this chain, which reads wrong held
+    // over the player's head
+    drawLeafShape(ctx, x, y, size, rotation, "round", "#6a7a2f");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
   } else if (itemType === "worm") {
@@ -10896,6 +10902,23 @@ function skipTargetX(poolPx, poolW, dir, frac) {
   return nearX + dir * frac * spanW;
 }
 
+// same math as skipTargetX but in WORLD space (not screen-relative), so
+// it can be used from update code that doesn't have camX handy -- used
+// to mark where a thrown stone actually lands, for the water striders
+// to react to (see forestPondSplash below).
+function skipTargetWorldX(dir, frac) {
+  const inset = 8;
+  const nearX = dir > 0 ? FOREST_REFLECTION_POOL_X - FOREST_REFLECTION_POOL_W / 2 + inset : FOREST_REFLECTION_POOL_X + FOREST_REFLECTION_POOL_W / 2 - inset;
+  const spanW = FOREST_REFLECTION_POOL_W - inset * 2;
+  return nearX + dir * frac * spanW;
+}
+
+// world-space x/timestamp of the most recent stone landing splash --
+// lets the water striders (see FOREST_WATER_STRIDER_SPECS) dart away
+// from a real event instead of just skating in an endless idle loop,
+// without needing any new input of their own.
+const forestPondSplash = { x: 0, time: 0 };
+
 function throwSkipStone() {
   const now = performance.now();
   thrownSkipStone.active = true;
@@ -10970,6 +10993,11 @@ function updateForestSkipStones(deltaTime) {
     if (thrownSkipStone.hitTargetIndex >= 0) {
       skipStoneTargetFlash[thrownSkipStone.hitTargetIndex] = now;
     }
+    // mark the actual splash spot so nearby water striders scatter --
+    // per direct request for a strider "dash" reaction, reusing this
+    // real landing event rather than adding a dedicated new input
+    forestPondSplash.x = skipTargetWorldX(thrownSkipStone.dir, thrownSkipStone.distanceFrac);
+    forestPondSplash.time = now;
     if (heldStoneIndex >= 0) {
       skipStones[heldStoneIndex].onGround = true;
       skipStones[heldStoneIndex].cooldownUntil = now + 1100;
@@ -11165,6 +11193,187 @@ function drawForestSkipStones(camX) {
       ctx.stroke();
     }
   }
+}
+
+// water striders -- small bugs skating on the pond's own surface,
+// idle-looping like the dragonflies overhead, but reacting to a real
+// event (a skip-stone splash landing near them, see forestPondSplash)
+// with a quick startled dart away and back, rather than a dedicated
+// new input. Per direct request ("water strider dash").
+const FOREST_WATER_STRIDER_SPECS = [
+  { seed: 1.3, radius: 92, speed: 0.00026, yFreq: 0.8 },
+  { seed: 5.6, radius: 58, speed: 0.00039, yFreq: 1.2 },
+  { seed: 8.1, radius: 118, speed: 0.00019, yFreq: 0.6 }
+];
+const forestWaterStriders = FOREST_WATER_STRIDER_SPECS.map(s => ({ ...s, panicUntil: 0, panicDir: 1, lastSplashReacted: 0 }));
+const FOREST_STRIDER_PANIC_MS = 550;
+const FOREST_STRIDER_PANIC_KICK = 26;
+const FOREST_STRIDER_PANIC_RADIUS = 70; // how close a splash has to land to spook a strider
+
+function updateForestWaterStriders() {
+  const now = performance.now();
+  forestWaterStriders.forEach(s => {
+    const angle = now * s.speed + s.seed;
+    const idleXWorld = FOREST_REFLECTION_POOL_X + Math.cos(angle) * s.radius;
+    if (forestPondSplash.time > s.lastSplashReacted &&
+        Math.abs(idleXWorld - forestPondSplash.x) < FOREST_STRIDER_PANIC_RADIUS) {
+      s.lastSplashReacted = forestPondSplash.time;
+      s.panicUntil = now + FOREST_STRIDER_PANIC_MS;
+      s.panicDir = idleXWorld < forestPondSplash.x ? -1 : 1; // dart away from the splash
+    }
+  });
+}
+
+function drawForestWaterStrider(s, camX, poolPx, poolW, poolH, poolY) {
+  const now = performance.now();
+  const angle = now * s.speed + s.seed;
+  let xWorld = FOREST_REFLECTION_POOL_X + Math.cos(angle) * s.radius;
+  if (now < s.panicUntil) {
+    // a quick out-and-back bump layered on top of the idle loop --
+    // reads as a startled dart away from the splash, then settling
+    // back into its normal skating path once the panic window ends
+    const panicElapsed = FOREST_STRIDER_PANIC_MS - (s.panicUntil - now);
+    const panicP = Math.max(0, Math.min(1, panicElapsed / FOREST_STRIDER_PANIC_MS));
+    xWorld += Math.sin(panicP * Math.PI) * FOREST_STRIDER_PANIC_KICK * s.panicDir;
+  }
+  const sx = xWorld - camX;
+  if (sx < poolPx - poolW / 2 - 10 || sx > poolPx + poolW / 2 + 10) return;
+  const sy = poolY + Math.sin(angle * s.yFreq) * (poolH * 0.32);
+  const legSpread = now < s.panicUntil ? 6.5 : 4.5; // legs splay wider while darting
+  ctx.strokeStyle = "rgba(40,40,30,0.55)";
+  ctx.lineWidth = 0.8;
+  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([lx, ly]) => {
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + lx * legSpread, sy + ly * 2.2);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#3a3226";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 2.6, 1.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // faint dimples where the legs touch the surface
+  ctx.strokeStyle = "rgba(230,240,225,0.3)";
+  ctx.lineWidth = 0.6;
+  [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(([lx, ly]) => {
+    ctx.beginPath();
+    ctx.ellipse(sx + lx * legSpread, sy + ly * 2.2, 1.6, 0.8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+function drawForestWaterStriders(camX) {
+  const poolPx = FOREST_REFLECTION_POOL_X - camX;
+  if (poolPx < -160 || poolPx > canvas.width + 160) return;
+  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H, poolY = FOREST_REFLECTION_POOL_Y;
+  forestWaterStriders.forEach(s => drawForestWaterStrider(s, camX, poolPx, poolW, poolH, poolY));
+}
+
+// leaf/bark boats -- a small pile on the bank (opposite side from the
+// skip stones, per direct request "leaf boat launch is cool") that the
+// player can carry to the pool's edge and drop in. The pond itself has
+// no current, so a launched boat just drifts lazily in a loose loop and
+// fades out ("sinks") after a while -- purely a calm, passive-but-
+// interactive beat, no scoring or fail state, matching the skip-stones'
+// own no-fail spirit.
+const FOREST_LEAF_PILE_X = FOREST_REFLECTION_POOL_X + 195; // opposite side of the pool from the stone pile, pushed out past the frog spots (+112/+152) so it doesn't sit right on top of them
+const forestLeafBoats = []; // active floating boats: {x, spawnTime, bobSeed, driftSeed, color}
+const FOREST_LEAF_BOAT_LIFE_MS = 9000;
+const FOREST_LEAF_BOAT_MAX = 4;
+const FOREST_LEAF_BOAT_COLORS = ["#6a7a2f", "#8a6a2f", "#5a6a2a"]; // leaf, bark, darker leaf
+
+function updateForestLeafBoats() {
+  const now = performance.now();
+  // pickup -- near the pile, empty-handed, tap space (same one-frame
+  // pattern the skip stones use for their own pickup)
+  if (!heldItem && isPlayerNear(FOREST_LEAF_PILE_X, 0, 26, 20, 20) && keys.spaceJustPressed) {
+    heldItem = "leafBoat";
+  }
+  // launch -- near the pool, holding a leaf, tap space to drop it in
+  if (heldItem === "leafBoat" && isPlayerNear(FOREST_REFLECTION_POOL_X, 0, 140, 60, 60) && keys.spaceJustPressed) {
+    if (forestLeafBoats.length >= FOREST_LEAF_BOAT_MAX) forestLeafBoats.shift(); // oldest sinks early to make room
+    forestLeafBoats.push({
+      x: player.x + player.width / 2,
+      spawnTime: now,
+      bobSeed: Math.random() * 10,
+      driftSeed: Math.random() * 10,
+      color: FOREST_LEAF_BOAT_COLORS[Math.floor(Math.random() * FOREST_LEAF_BOAT_COLORS.length)]
+    });
+    heldItem = null;
+  }
+  for (let i = forestLeafBoats.length - 1; i >= 0; i--) {
+    if (now - forestLeafBoats[i].spawnTime > FOREST_LEAF_BOAT_LIFE_MS) forestLeafBoats.splice(i, 1);
+  }
+}
+
+function drawForestLeafPile(camX) {
+  const lx = FOREST_LEAF_PILE_X - camX;
+  if (lx < -30 || lx > canvas.width + 30) return;
+  const spots = [{ dx: -3, dy: 0, rot: 0.3 }, { dx: 3, dy: -1, rot: -0.4 }];
+  spots.forEach(s => {
+    ctx.save();
+    ctx.translate(lx + s.dx, gy + s.dy);
+    ctx.rotate(s.rot);
+    ctx.fillStyle = "rgba(10,10,5,0.16)";
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 5.5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6a7a2f";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function drawForestLeafBoats(camX) {
+  const poolPx = FOREST_REFLECTION_POOL_X - camX;
+  if (poolPx < -160 || poolPx > canvas.width + 160) return;
+  const poolW = FOREST_REFLECTION_POOL_W, poolH = FOREST_REFLECTION_POOL_H, poolY = FOREST_REFLECTION_POOL_Y;
+  const now = performance.now();
+  forestLeafBoats.forEach(lb => {
+    const age = now - lb.spawnTime;
+    const lifeP = age / FOREST_LEAF_BOAT_LIFE_MS;
+    // lazy drift in a loose loop around its own launch point, clamped
+    // to stay inside the pool's own bounds regardless of where it was
+    // launched from along the edge
+    const driftAngle = now * 0.00035 + lb.driftSeed;
+    const driftR = 14 + lifeP * 10;
+    const clampedHalfW = poolW / 2 - 14;
+    let lxLocal = lb.x - camX + Math.cos(driftAngle) * driftR;
+    lxLocal = Math.max(poolPx - clampedHalfW, Math.min(poolPx + clampedHalfW, lxLocal));
+    const bob = Math.sin(now * 0.004 + lb.bobSeed) * 1.4;
+    const ly = poolY + Math.sin(driftAngle * 0.6) * (poolH * 0.28) + bob;
+    // fades out ("sinks") over the last 20% of its life instead of
+    // popping out abruptly
+    const alpha = lifeP > 0.8 ? Math.max(0, 1 - (lifeP - 0.8) / 0.2) : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(lxLocal, ly);
+    ctx.rotate(driftAngle * 0.3);
+    ctx.fillStyle = lb.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = `rgba(230,240,225,${(0.18 * alpha).toFixed(3)})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(lxLocal, poolY, 6, 6 * (poolH / poolW), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
 }
 
 // reeds/pond plants scattered around the pool's rim, per direct request
@@ -11819,6 +12028,9 @@ function drawForestScene(camX) {
   drawForestFrogs(camX);
   drawForestDragonflies(camX);
   drawForestSkipStones(camX);
+  drawForestWaterStriders(camX);
+  drawForestLeafPile(camX);
+  drawForestLeafBoats(camX);
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
   drawForestFlightPiece(camX);
@@ -16411,6 +16623,8 @@ function updateForestScene(deltaTime) {
   updateForestFrogs(deltaTime);
   updateForestNewts(deltaTime);
   updateForestSkipStones(deltaTime);
+  updateForestWaterStriders();
+  updateForestLeafBoats();
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
