@@ -10824,6 +10824,56 @@ function drawForestGrassScatter(camX) {
   }
 }
 
+// the duck-log obstacle itself -- a mossy fallen trunk on two low stone
+// supports, drawn as a real physical obstacle (not just a floating
+// bar) so its height off the ground reads honestly against
+// FOREST_DUCK_LOG.clearance. See that constant's own comment and the
+// DUCKING block in updateForestScene for how it's actually collided
+// with.
+function drawForestDuckLog(camX) {
+  const log = FOREST_DUCK_LOG;
+  const lx = log.x - camX;
+  const logBottomY = gy - log.clearance + 14; // underside of the log itself
+  const logH = 16;
+
+  // two squat stone supports holding the log up off the ground
+  ctx.fillStyle = "#5a5850";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 7, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 7, 10, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // the log -- a rounded horizontal trunk, mossy on top
+  ctx.fillStyle = "#5a3d24";
+  roundRect(ctx, lx - log.w / 2 - 8, logBottomY - logH, log.w + 16, logH, 8);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(30,18,8,0.5)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  // end-grain rings on the near end, so it clearly reads as a log and
+  // not just a plank
+  ctx.strokeStyle = "rgba(90,60,32,0.6)";
+  ctx.lineWidth = 1;
+  [3, 5.5].forEach(r => {
+    ctx.beginPath();
+    ctx.ellipse(lx - log.w / 2 - 8, logBottomY - logH / 2, r * 0.4, r, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+  // a mossy cap along the top
+  ctx.fillStyle = "rgba(90,120,60,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(lx, logBottomY - logH, log.w / 2 + 2, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawForestScene(camX) {
   // deep, muted under-canopy sky -- darker and greener than spring's
   // light pastels, no bright horizon glow
@@ -10935,6 +10985,7 @@ function drawForestScene(camX) {
   drawMoleHoleTree(camX);
   drawMoleHoleEntrance(camX);
   drawMoleHoleRootsOverHole(camX); // the roots that reach into the hole draw again here so they land on top of its rim, not hidden under it
+  drawForestDuckLog(camX);
   drawForestRiver(camX);
   drawForestReflectionPool(camX);
   drawForestFlightPiece(camX);
@@ -11015,7 +11066,14 @@ function forestRiverBridgeSlopeAt(worldX) {
    jumping past an unfinished span.
    ------------------------------------------------------ */
 const FOREST_RIVER_LOG_SEGMENTS = 7; // matches the arc's 7 gaps between its 8 support posts
-const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 85; // moved further left into the grass, away from the bank slant
+// moved further left again -- at NEAR_BANK_X-85 it sat right on top of
+// the near-bank reed cluster (that cluster spans roughly NEAR_BANK_X-92
+// to NEAR_BANK_X-50), per direct feedback ("i also dont want the log
+// pile to cover the reeds witht he nice brown tops on the left"). Now
+// sitting in the clear gap between the reeds and the duck-log obstacle
+// (FOREST_DUCK_LOG.x=4150, visual footprint out to about x+32), with a
+// little breathing room on both sides.
+const FOREST_RIVER_LOG_PILE_X = FOREST_RIVER_NEAR_BANK_X - 130;
 const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
 const FOREST_RIVER_STRINGER_ONBEAT_THRESHOLD = -0.55; // deck-press must land while the wobble's sine phase is below this (near its low point) -- a real small timing action, not just "wait then tap"
@@ -11083,6 +11141,31 @@ let forestRiverWadeAmount = 0;
 // shallower, instead of always tinting the same fixed fraction of the
 // sprite regardless of how deep the water actually is here
 let forestRiverWadeDepth = 0.6;
+
+// DUCKING -- first pass at the mechanic brainstormed for the water
+// activity ("i still want ability to duck under the surface at
+// arbitrary points while floating down the general river... i like the
+// idea of needing to duck under a big log or something while floating
+// down the stream"). Deliberately just a separate eased visual amount
+// (0..1), same pattern as forestRiverWadeAmount right above -- NOT a
+// change to player.y itself, which is the shared "landed" signal used
+// by the ground-collision clamp everywhere else in the game (confirmed
+// risky per direct discussion: touching player.y here would get
+// stomped back to 0 by that clamp every frame). This first pass proves
+// the duck out on solid ground against a placeholder log; it isn't
+// wired into an actual floating-downstream current yet -- that's still
+// a separate, not-yet-built system.
+let playerDuckAmount = 0;
+
+// a single placeholder log spanning the riverside path, positioned on
+// the dry ground between the mole hole and the near bank so it's
+// reachable with the game's normal walk controls right now, well
+// before any float-downstream current exists to carry the player past
+// it on its own. Passable either by ducking under it at ground level
+// (playerDuckAmount past DUCK_LOG.duckThreshold) or by jumping clean
+// over its top (player.y past DUCK_LOG.clearance) -- both read as
+// physically reasonable given the log's own height off the ground.
+const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
 
 // shared post-span geometry -- used by both the render side (drawing
 // the posts/segments) and the update side (the wall, collision, and
@@ -12272,12 +12355,30 @@ function drawForestForegroundTrees(camX) {
   const viewX = camX * parallax;
   const firstTile = Math.floor((viewX - 140) / FOREST_TREE_TILE);
   const lastTile = Math.floor((viewX + canvas.width + 140) / FOREST_TREE_TILE);
+  // screen-space danger zone for the duck-log obstacle, computed once
+  // per frame from the CURRENT camera position -- a first attempt at
+  // this used a static world-position margin around the log instead,
+  // which turned out not to work: this layer scrolls at its own 0.8
+  // parallax rather than 1:1 with world objects like the log, so a
+  // tree's screen offset from the log isn't fixed at all -- it drifts
+  // continuously as camX changes, and which specific tile ends up
+  // aligned with the log depends on camX itself (not on how close that
+  // tile's world position is to the log's). A static world-distance
+  // check only ever protects against the alignment that happens to
+  // occur near camX≈0, not the one that actually occurs way out here
+  // (confirmed by testing -- the "horizontal gear" reappeared with a
+  // DIFFERENT, farther-off tile once camX moved). Checking actual
+  // on-screen position every frame instead sidesteps all of that: skip
+  // whichever tree instance would currently render on top of the log,
+  // no matter which tile it is or why the math lined up.
+  const logScreenX = FOREST_DUCK_LOG.x - camX;
   for (let t = firstTile; t <= lastTile; t++) {
     const worldX = t * FOREST_TREE_TILE;
     const seed = t * 91.3 + 4000;
     if (pseudoRandom(seed) < 0.2) continue; // occasional gap so it doesn't read as a picket fence
     const jx = (pseudoRandom(seed + 1) - 0.5) * 130;
     const tx = worldX - viewX + jx;
+    if (Math.abs(tx - logScreenX) < 55) continue; // this instance would currently sit on top of the duck log -- skip it for this frame only
     const trunkH = 128 + pseudoRandom(seed + 2) * 55;
     const trunkW = 14 + pseudoRandom(seed + 3) * 6;
     const lean = (pseudoRandom(seed + 4) - 0.5) * 0.12;
@@ -14846,6 +14947,40 @@ function updateForestScene(deltaTime) {
     forestRiverWadeAmount += ((inShallow ? 1 : 0) - forestRiverWadeAmount) * 0.15;
     if (forestRiverWadeAmount < 0.01) forestRiverWadeAmount = 0;
     forestRiverWadeDepth += (targetDepth - forestRiverWadeDepth) * 0.12;
+  }
+
+  // DUCKING -- eases toward 1 while holding down/ArrowDown, grounded
+  // and not mid-jump (so it can't be used to fake a lower jump apex or
+  // otherwise interfere with jump state), eases back to 0 the instant
+  // either condition drops. See the DUCKING comment by playerDuckAmount's
+  // own declaration for why this stays fully separate from player.y.
+  {
+    const duckTarget = (keys.down && player.y <= 2 && !player.jumping) ? 1 : 0;
+    playerDuckAmount += (duckTarget - playerDuckAmount) * 0.25;
+    if (playerDuckAmount < 0.01) playerDuckAmount = 0;
+    if (playerDuckAmount > 0.999) playerDuckAmount = 1;
+  }
+
+  // the duck log itself -- solid to upright walking, passable ducked
+  // (at ground level) or jumped clean over the top. Same simple
+  // push-back-out-of-the-way collision style as other solid forest
+  // obstacles, just gated on the pass conditions above instead of
+  // being unconditionally solid.
+  {
+    const log = FOREST_DUCK_LOG;
+    const playerCenterX = player.x + player.width / 2;
+    const withinLogX = playerCenterX > log.x - log.w / 2 - player.width / 2 &&
+                        playerCenterX < log.x + log.w / 2 + player.width / 2;
+    const passable = player.y > log.clearance ||
+                      (player.y <= 2 && playerDuckAmount > log.duckThreshold);
+    if (withinLogX && !passable) {
+      if (playerCenterX < log.x) {
+        player.x = log.x - log.w / 2 - player.width / 2 - 1;
+      } else {
+        player.x = log.x + log.w / 2 + player.width / 2 + 1;
+      }
+      player.vx = 0;
+    }
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
@@ -24294,42 +24429,134 @@ function drawMoleholeAlcove(alcove, camX) {
       const TIP_MS = 2600;
       const tipT = sinceTip >= 0 && sinceTip < TIP_MS ? sinceTip / TIP_MS : -1;
       const tipAngle = tipT < 0 ? 0 : Math.abs(Math.sin(tipT * Math.PI * 2)) * 2.7;
+
+      // a small warped wall plaque behind the bottle -- scratched,
+      // illegible marks instead of real letters (nobody down here could
+      // read it anyway). Drawn BEFORE the bottle so it sits behind it,
+      // giving the bottle something to visually pop against besides
+      // just its own liquid color -- per direct feedback ("can we make
+      // it stand out more some other way besides purple water... maybe
+      // there can be like a wall decor or illegible sign behind it that
+      // makes it pop out"). Fixed in place (doesn't tip with the bottle).
+      // Nudged lower and lightened considerably (was a near-opaque dark
+      // brown sitting right behind the neck loops, which are only thin
+      // pale strokes -- even drawn on top, they had almost no contrast
+      // against it) per direct feedback ("make the notice a little
+      // lower and a little lighter so we can actually see the loops").
+      ctx.save();
+      ctx.translate(wx + 1, wy - 9);
+      ctx.rotate(-0.05);
+      ctx.fillStyle = "rgba(120,96,66,0.42)";
+      ctx.fillRect(-9, -7, 18, 14);
+      ctx.strokeStyle = "rgba(60,44,26,0.55)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-9, -7, 18, 14);
+      ctx.strokeStyle = "rgba(224,210,178,0.4)";
+      ctx.lineWidth = 0.9;
+      [[-5, -3, 3, -4], [-4, 0, 4, -1], [-3, 3, 5, 2], [-6, -1.5, -2, -2.5]].forEach(([x1, y1, x2, y2]) => {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      });
+      ctx.restore();
+
       ctx.save();
       ctx.translate(wx, wy + 3);
       ctx.rotate(tipAngle);
       ctx.translate(-wx, -(wy + 3));
-      ctx.fillStyle = "rgba(170,210,225,0.5)";
-      ctx.strokeStyle = "rgba(70,110,130,0.85)";
+
+      // redrawn to actually chase real Klein-bottle topology, the way
+      // the glass sculptures you can buy are shaped -- not just a
+      // loop/handle stuck on TOP of a normal bottle (what this used to
+      // be), but a neck that arcs up and over, then genuinely plunges
+      // down and back INTO the body through its own side wall, per
+      // direct feedback ("they make 3d ones you can buy, so that is
+      // what i am talking about for this. can we make it as close to
+      // klein bottle actual as possible"). Two separate closed shapes:
+      // a proper bottle body (bulb + shoulder + neck, not a plain
+      // ellipse), and a hollow tube loop (traced out-and-back so it
+      // fills as a thin ring, not a solid wedge) whose far end lands
+      // partway down the body's own side rather than up at the neck --
+      // that's the piece that actually reads as "passing through the
+      // glass" instead of "a handle on top." A small dark crescent
+      // right where the tube's end overlaps the body sells the seam.
+      // Glass fill lightened per direct feedback ("make the klien
+      // bottle glass a little lighter it still just blends in way too
+      // much") -- was rgba(170,210,225,0.5), now both brighter and
+      // more opaque so it actually reads as glass against the
+      // molehole's warm brown instead of nearly vanishing into it.
+      ctx.fillStyle = "rgba(214,238,248,0.68)";
+      ctx.strokeStyle = "rgba(80,130,150,0.9)";
       ctx.lineWidth = 1;
+
+      // BODY -- bulb bottom, narrowing shoulders, short open neck
       ctx.beginPath();
-      ctx.ellipse(wx, wy + 3, 6, 7, 0, 0, Math.PI * 2);
+      ctx.moveTo(wx - 4, wy + 10);
+      ctx.quadraticCurveTo(wx - 7, wy + 6, wx - 7, wy);
+      ctx.quadraticCurveTo(wx - 7, wy - 6, wx - 4, wy - 8);
+      ctx.quadraticCurveTo(wx - 2, wy - 10, wx - 2, wy - 12);
+      ctx.lineTo(wx + 2, wy - 12);
+      ctx.quadraticCurveTo(wx + 4, wy - 10, wx + 5, wy - 7);
+      ctx.quadraticCurveTo(wx + 8, wy - 3, wx + 7, wy + 3);
+      ctx.quadraticCurveTo(wx + 7, wy + 8, wx + 4, wy + 10);
+      ctx.quadraticCurveTo(wx, wy + 12, wx - 4, wy + 10);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
+
       // the liquid -- a simple pool sitting in the body's lower half,
       // same wherever the bottle currently is (rights itself just like
       // the glass does) since the whole point is that it never spills
-      // no matter how the bottle's held. Switched from a pale blue (too
-      // close to the glass's own pale blue tint, and to the molehole's
-      // warm-brown backdrop it just read as a dim smudge) to a
-      // saturated magic-potion violet -- reads clearly against both the
-      // cool glass and the warm background now, and leans into
-      // "whimsical/magical" rather than just "water."
+      // no matter how the bottle's held. Clipped to the same bulb
+      // silhouette as the body itself now (was a plain ellipse approx,
+      // close enough visually but this now matches exactly).
       ctx.save();
       ctx.beginPath();
-      ctx.ellipse(wx, wy + 3, 6, 7, 0, 0, Math.PI * 2);
+      ctx.moveTo(wx - 4, wy + 10);
+      ctx.quadraticCurveTo(wx - 7, wy + 6, wx - 7, wy);
+      ctx.quadraticCurveTo(wx - 7, wy - 6, wx - 4, wy - 8);
+      ctx.quadraticCurveTo(wx - 2, wy - 10, wx - 2, wy - 12);
+      ctx.lineTo(wx + 2, wy - 12);
+      ctx.quadraticCurveTo(wx + 4, wy - 10, wx + 5, wy - 7);
+      ctx.quadraticCurveTo(wx + 8, wy - 3, wx + 7, wy + 3);
+      ctx.quadraticCurveTo(wx + 7, wy + 8, wx + 4, wy + 10);
+      ctx.quadraticCurveTo(wx, wy + 12, wx - 4, wy + 10);
+      ctx.closePath();
       ctx.clip();
-      ctx.fillStyle = "rgba(196,104,224,0.82)";
-      ctx.fillRect(wx - 7, wy + 3, 14, 10);
+      ctx.fillStyle = "rgba(40,120,215,0.85)";
+      ctx.fillRect(wx - 7, wy + 2, 15, 11);
       ctx.restore();
+
+      // TUBE -- traced out along the outer edge from the neck's left
+      // lip, up and over in a big arc, down the outside, THEN back
+      // along an inner edge (offset inward) to close as a thin hollow
+      // ring rather than a solid wedge -- same "stroke as a fillable
+      // shape" trick, just closed into one path instead of two
+      // separate open strokes like the old version. The far/lower end
+      // lands at the body's own right side around its widest point
+      // (well below the shoulder), not back up at the neck, so it
+      // genuinely reads as diving down INTO the body rather than
+      // looping back to where it started.
       ctx.beginPath();
-      ctx.moveTo(wx - 1, wy - 3);
-      ctx.bezierCurveTo(wx - 1, wy - 10, wx + 6.5, wy - 12, wx + 6.5, wy - 4);
-      ctx.bezierCurveTo(wx + 6.5, wy + 1.5, wx + 1, wy - 1, wx, wy + 3.5);
+      ctx.moveTo(wx - 2, wy - 12);
+      ctx.bezierCurveTo(wx - 7, wy - 21, wx + 5, wy - 24, wx + 10, wy - 15);
+      ctx.bezierCurveTo(wx + 13, wy - 9, wx + 12, wy - 2, wx + 9, wy + 2);
+      ctx.bezierCurveTo(wx + 8.5, wy + 3.3, wx + 6.7, wy + 3.2, wx + 6.2, wy + 1.8);
+      ctx.bezierCurveTo(wx + 8.6, wy - 2, wx + 9.3, wy - 8, wx + 7.3, wy - 13.5);
+      ctx.bezierCurveTo(wx + 4.5, wy - 19, wx - 1.5, wy - 17, wx + 1, wy - 12);
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
+
+      // the seam -- a small dark crescent right where the tube's lower
+      // end overlaps the body's side, suggesting glass-through-glass
+      // rather than the tube just stopping at the surface
+      ctx.fillStyle = "rgba(20,34,44,0.28)";
       ctx.beginPath();
-      ctx.moveTo(wx + 1, wy - 3);
-      ctx.bezierCurveTo(wx + 1, wy - 9, wx + 4.5, wy - 10.5, wx + 4.5, wy - 4.5);
-      ctx.stroke();
+      ctx.ellipse(wx + 7.5, wy + 1.5, 1.6, 2.4, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.restore();
     } else {
       const rx = 6 + pseudoRandom(seed + 2) * 2, ry = 4 + pseudoRandom(seed + 3) * 1.5;
@@ -32856,6 +33083,19 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     }
   }
 
+  // ducking -- same feet-anchored scale trick as the log-pickup/bridge-
+  // finish squashes above, just held for as long as playerDuckAmount is
+  // up rather than a one-shot animation. Compresses down to 60% height
+  // at full duck (widens slightly to sell it as a genuine crouch rather
+  // than just getting squished).
+  if (typeof playerDuckAmount !== "undefined" && playerDuckAmount > 0.01) {
+    const duckSquash = 1 - playerDuckAmount * 0.4;
+    const feetX = swayCx, feetY = drawPy + player.height;
+    ctx.translate(feetX, feetY);
+    ctx.scale(1 + playerDuckAmount * 0.12, duckSquash);
+    ctx.translate(-feetX, -feetY);
+  }
+
   // body
   ctx.fillStyle = "#7a78b8";
   roundRect(ctx, px, drawPy, player.width, player.height, 8);
@@ -33715,42 +33955,6 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
-
-// TEMPORARY -- drops right at mole hole alcove 2, for testing the klein
-// bottle NPC interaction, instead of the river bridge/reflection pool.
-// Still seeds the bridge/mine-cart/shaft state below too, so forest's
-// river stays fully built and tunnel town stays completed without
-// replaying them if that's still needed. Revert (remove this block)
-// once done testing.
-currentScene = "molehole";
-mineCartEverRidden = true;
-moleholeShaftFixed = true;
-elderTalkedTo = true;
-player.x = MOLEHOLE_ALCOVES[1].x - 40;
-player.y = 0;
-player.vy = 0;
-player.jumping = false;
-player.usedDoubleJump = false;
-cameraX = Math.max(0, player.x - canvas.width * 0.4);
-cameraY = 0;
-// bridge already fully strung AND decked -- backdated placedAt
-// timestamps (rather than performance.now()) so it doesn't play the
-// fade-in/flash/celebration animations on load, it just looks done
-for (let seg = 0; seg < FOREST_RIVER_LOG_SEGMENTS; seg++) {
-  forestRiverStringerPlacedAt[seg] = -100000;
-  forestRiverLogPlacedAt[seg] = -100000;
-}
-forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-// also seed a full stack of real bridgePieces (for testing the
-// auto-unload-into-pile behavior) and a geode (uncracked), for debugging
-// -- through addToInventory (not a raw inventory[x]= assignment) so
-// they actually register in inventoryOrder too, otherwise Tab-cycling
-// (cycleHeldItem, which reads off inventoryOrder) has nothing to find
-for (let i = 0; i < 9; i++) addToInventory("bridgePiece");
-addToInventory("geode");
-geodeCracked = false;
-updateInventoryUI();
 
 update();
 
