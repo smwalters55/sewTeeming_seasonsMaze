@@ -22648,34 +22648,21 @@ function drawOwl(camX) {
 }
 
 function updateOakScene(deltaTime) {
-  // vertical camera -- same follow-once-past-a-comfortable-height
-  // pattern as tunnel town (see updateTunnelTownScene's own cameraY
-  // line for the full rationale). Oak's book-pile jump run climbs well
-  // past that same ~150-250 unit ceiling (the giant capstone pile alone
-  // is 235 tall, before any jump height on top of it), but never got
-  // this same treatment -- so a high jump up there just carried the
-  // player off the top of the fixed-height canvas entirely, with
-  // nothing to bring the view back to them until gravity brought THEM
-  // back down into view a couple seconds later ("player rises off
-  // screen and then falls back down... happened when jump happen high
-  // on highhh book piles").
-  // CONFIRMED BUG FIX: this used to apply everywhere in the scene based
-  // on player.y alone, with no regard for player.x -- but the short and
-  // medium shelves (x=2120/2286, standing height ~130/190) sit well
-  // before the jump run (which only starts at OAK_JUMPRUN_GATE_X=2900)
-  // and are drawn at fixed screen coordinates that never got a +cameraY
-  // term (they're ordinary side platforms, not part of the scrolling
-  // climb). Once player.y crossed ~150 just from standing on/jumping
-  // off the medium shelf, cameraY engaged anyway: the floor (which does
-  // use +cameraY) sank away down-screen while the shelf sprite itself
-  // stayed put, and the player -- whose screen position is gy+cameraY-
-  // player.y, which cancels to a CONSTANT for any player.y>150 -- froze
-  // in place on screen instead of visibly jumping ("floor like
-  // disappears and player floats if too high on the small and medium
-  // bookshelves"). Gating this on the same OAK_JUMPRUN_GATE_X used to
-  // gate the climb's reach/visibility keeps the shelves entirely
-  // camera-locked at 0, exactly like every other ordinary platform.
-  cameraY = player.x >= OAK_JUMPRUN_GATE_X ? Math.max(0, player.y - 150) : 0;
+  // REMOVED per direct request: oak used to get a vertical-follow camera
+  // here (same pattern as tunnel town), added specifically to keep a
+  // very high jump on the book-pile climb from carrying the player off
+  // the top of the fixed-height canvas. It also (after a fix earlier
+  // this session) had to be gated on OAK_JUMPRUN_GATE_X to stop it from
+  // wrongly engaging near the short/medium shelves. Pulled back out
+  // entirely now -- the whole rest of oak was built and tuned around a
+  // fixed camera before this capability existed, and re-introducing a
+  // moving vertical camera into a scene that never expected one caused
+  // more friction than the original "player briefly rises off-screen on
+  // a very tall jump" problem it was solving. cameraY simply stays at
+  // its scene-entry default (0) in oak now, like every scene except
+  // tunnel town. If a fix is wanted for the tall-jump case again later,
+  // it should be scoped tightly to just the book-pile climb rather than
+  // the whole scene -- see git history for the removed block.
 
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
@@ -25131,6 +25118,20 @@ const ratGreetingLines = [
 const ratReturnGreetingLines = [
   ["Good to see you again, feller!"]
 ];
+// CONFIRMED BUG FIX: re-approaching the rat mid-visit after being
+// rejected (wrong item held) or waved off (nothing held) used to do
+// nothing at all -- ratDialogueRestSuppressed gets set true the moment
+// the FIRST conversation of a visit starts, and startRatDialogue bails
+// out early whenever that's set, regardless of whether the rat actually
+// got fed. So switching to the correct item and walking back up looked
+// completely broken, with no way to retry short of leaving and
+// re-entering the whole room. Un-fed encounters now always reopen (see
+// startRatDialogue's own updated guard below), landing on this shorter
+// re-ask instead of repeating the full first-time greeting verbatim.
+const ratStillHungryLines = [
+  ["Still hoping for something nutty, if you happen to have it now!"],
+  ["You wouldn't happen to have anything... nutty on you?", "Small, hard little things -- I'm not picky."]
+];
 const ratFeatherThankLines = [
   ["Oh, thank you for the decoration!", "Feel free to look around a bit more, if you like."]
 ];
@@ -25163,16 +25164,29 @@ function startRatDialogue() {
     ratNPC.talkedTo = true;
     return;
   }
-  if (!(carriedFeather && !featherHung) && ratDialogueRestSuppressed) {
+  // CONFIRMED BUG FIX: only suppress re-approaching for the rest of the
+  // visit once the rat has actually been fed. Before that, the whole
+  // point of walking away and back is usually to retry with the right
+  // item held -- gating that on the same suppression flag as the
+  // "already had a meaningful moment" cases below made every un-fed
+  // retry within a visit silently do nothing.
+  if (!(carriedFeather && !featherHung) && ratDialogueRestSuppressed && ratNPC.fed) {
     return; // nothing new to say this visit -- already had a meaningful moment, skip the redundant greeting
   }
   ratDialogue.active = true;
   ratDialogue.index = 0;
   if (carriedFeather && !featherHung) {
     ratDialogue.lines = ratFeatherLines.slice();
-  } else {
-    ratDialogue.lines = (ratNPC.fed ? ratReturnGreetingLines : ratGreetingLines).slice();
+  } else if (ratNPC.fed) {
+    ratDialogue.lines = ratReturnGreetingLines.slice();
     ratDialogueRestSuppressed = true; // greeted for this visit -- no need to repeat if approached again
+  } else {
+    // un-fed: full greeting only the very first time this rat has ever
+    // been talked to, a shorter re-ask on every retry after that --
+    // deliberately NOT setting ratDialogueRestSuppressed here, so this
+    // stays retriggerable for as many attempts as it takes within the
+    // same visit
+    ratDialogue.lines = (ratNPC.talkedTo ? ratStillHungryLines : ratGreetingLines).slice();
   }
   ratNPC.talkedTo = true;
 }
@@ -37432,19 +37446,28 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request ("put me in oak w a
-// pumpkin and acorn"), so testing the oak shelf-camera fix doesn't
-// require replaying the whole game to reach the shelves with items in
-// hand. Drops the player right between the short and medium shelves
-// with both items already in inventory. Remove this block (see the
-// "debug spawn removed" comment further up in git history for the
-// exact revert pattern) whenever a real fresh-start playtest is next
-// needed.
+// TEMPORARY debug spawn -- per direct request, so testing doesn't
+// require replaying the whole game to reach oak with items in hand.
+// Drops the player right between the short and medium shelves with
+// pumpkin, acorn, and the fully-assembled/worn fall crown already in
+// place. Remove this block (see the "debug spawn removed" comment
+// further up in git history for the exact revert pattern) whenever a
+// real fresh-start playtest is next needed.
 currentScene = "oak";
 player.x = 2150;
 player.y = 0;
 addToInventory("pumpkin");
 addToInventory("acorn");
+// fall crown -- built from 8 leaves (CROWN_LEAVES_NEEDED), same shape
+// the real catch-the-falling-leaves sequence would produce, then marked
+// ready and worn so it shows up immediately with no extra key press.
+crownLeaves = Array.from({ length: CROWN_LEAVES_NEEDED }, (_, i) => ({
+  shape: i % 2 ? "maple" : "round",
+  color: LEAF_COLORS[i % LEAF_COLORS.length]
+}));
+crownState.ready = true;
+crownState.worn = true;
+crownState.promptEverShown = true;
 
 update();
 
