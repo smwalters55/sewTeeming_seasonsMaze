@@ -1066,6 +1066,20 @@ function updateSeasonTransition(deltaTime) {
       if (heldItem === "lamp" && currentScene !== "oak" && currentScene !== "ratroom") {
         heldItem = null;
       }
+      // CONFIRMED CHANGE: same "local to its own home scenes" treatment
+      // as the lamp, per direct request ("take it out of play when you
+      // leave oak... go back auto in play in clouds") -- except the
+      // plane's two homes are oak and clouds (both open-air enough to
+      // actually throw it), not oak/ratroom. Symmetric on purpose: it
+      // auto-equips arriving in EITHER home scene and gets put back
+      // leaving to anywhere else, so it never lingers "in play" out in
+      // scenes it has no function in.
+      if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds") {
+        heldItem = null;
+      }
+      if ((currentScene === "oak" || currentScene === "clouds") && previousScene !== currentScene && inventory.paperAirplane > 0) {
+        heldItem = "paperAirplane";
+      }
       if (currentScene === "ratroom" && previousScene !== "ratroom") {
         ratDialogueRestSuppressed = false; // fresh visit -- a genuine return greeting is fair game again
         ratRoomHighShelves.forEach(s => { if (s.tier > 0) s.unlocked = false; });
@@ -1871,9 +1885,19 @@ const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
   (p) => {
     const ang = p * Math.PI;
     return { dx: Math.sin(ang * 2) * 95, dy: -Math.sin(ang) * 22 };
+  },
+  // 4: skipping bounce -- two quick hops out and back, choppier than
+  // the other four smooth loops/glides
+  (p) => {
+    const ang = p * Math.PI;
+    const bounce = Math.abs(Math.sin(ang * 2)) * 35;
+    return { dx: Math.sin(ang * 2) * 70, dy: -bounce };
   }
 ];
-const PAPER_AIRPLANE_FLIGHT_MS = 1500;
+// CONFIRMED BUG FIX: slowed down further -- per direct feedback, even
+// the real clouds/oak throw (not just the oak teaching moment, which
+// already got its own slower duration) was still too quick to read.
+const PAPER_AIRPLANE_FLIGHT_MS = 2200;
 // CONFIRMED CHANGE: the oak "teach the mechanic" moment is no longer a
 // separate scripted throw that runs after pickup -- per direct
 // feedback, that read as two things happening ("don't add it as 'in
@@ -37997,6 +38021,10 @@ if (currentScene === "autumn") {
   // future scene connections, etc.), not just the one seasonTransition
   // block. The lamp is local to oak/ratroom, full stop, no exceptions.
   if (heldItem === "lamp" && currentScene !== "oak" && currentScene !== "ratroom") {
+    heldItem = null;
+  }
+  // same continuous safety net for the paper airplane's two home scenes
+  if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds") {
     heldItem = null;
   }
 
