@@ -6416,12 +6416,19 @@ const carvedPumpkinDesign = { eyebrowLeft: 0, eyebrowRight: 0, eyeLeft: 0, eyeRi
 
 // small helper -- builds the drawPumpkinFace `extra` object straight
 // from the finalized design, so every finished/in-progress in-world
-// render just calls this instead of repeating the same four fields
-function carvedFaceExtra() {
+// render just calls this instead of repeating the same four fields.
+// noseReveal/eyebrowReveal are optional -- omitted (undefined) for the
+// finished states, where drawPumpkinFace's own fallback (ride mouth's/
+// eyes' reveal) doesn't matter since everything's already at 1 anyway.
+// The carving phase itself passes both explicitly now that each
+// feature cuts in on its own independent timing.
+function carvedFaceExtra(noseReveal, eyebrowReveal) {
   return {
     noseIdx: carvedPumpkinDesign.nose,
     eyebrowLeftIdx: carvedPumpkinDesign.eyebrowLeft,
-    eyebrowRightIdx: carvedPumpkinDesign.eyebrowRight
+    eyebrowRightIdx: carvedPumpkinDesign.eyebrowRight,
+    noseReveal,
+    eyebrowReveal
   };
 }
 
@@ -6460,8 +6467,18 @@ const carvingStation = {
 };
 const CARVING_PLACE_SPARKLE_MS = 900;
 const CARVING_STATION_DURATION_MS = 2600;
-const CARVING_EYES_REVEAL_AT = 0.42; // fraction of the duration when eyes appear
-const CARVING_MOUTH_REVEAL_AT = 0.75; // fraction of the duration when mouth appears
+// CONFIRMED CHANGE: each feature now cuts in on its OWN independent
+// beat -- eyebrows, then eyes, then nose, then mouth, in that order --
+// per direct request ("I want it to carve each part separately like
+// eyebrows separate from eyes etc"), instead of eyebrows riding the
+// eyes' timing and nose riding the mouth's. Small gaps between each
+// window (e.g. eyebrows' cut ends at 0.28, eyes' doesn't start until
+// 0.32) read as a genuine pause between cuts rather than one
+// continuous four-part sweep.
+const CARVING_EYEBROWS_REVEAL_AT = 0.28;
+const CARVING_EYES_REVEAL_AT = 0.50;
+const CARVING_NOSE_REVEAL_AT = 0.72;
+const CARVING_MOUTH_REVEAL_AT = 0.94;
 
 function startCarvingStation() {
   carvingStation.active = true;
@@ -6876,12 +6893,41 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
   if (eyeRightReveal === undefined) eyeRightReveal = 1;
   if (mouthReveal === undefined) mouthReveal = 1;
 
-  // pumpkin body -- round, warm orange, ribbed like a real pumpkin
+  // CONFIRMED CHANGE: pumpkin body made a bit more realistic per direct
+  // request -- a real gourd-shading gradient for actual roundness
+  // (rather than a flat fill), a couple of subtle mottled blotches
+  // (real pumpkins are never one uniform color), a curved/tapered stem
+  // instead of a flat rectangle, and a small blossom-end scar at the
+  // bottom pole. Ribs kept as-is (already contour-following, that part
+  // already read fine).
   const bodyRx = size * 0.55, bodyRy = size * 0.5;
-  ctx.fillStyle = "#c9863a";
+  const bodyGrad = ctx.createRadialGradient(
+    cx - bodyRx * 0.35, cy - bodyRy * 0.4, bodyRx * 0.15,
+    cx, cy, bodyRx * 1.15
+  );
+  bodyGrad.addColorStop(0, "#e0a35a");   // sunlit highlight, upper-left
+  bodyGrad.addColorStop(0.55, "#c9863a"); // original mid-tone
+  bodyGrad.addColorStop(1, "#a1651f");   // shadowed edge
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(cx, cy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // mottled blotches -- a couple of irregular, slightly darker patches,
+  // deterministic from size/cx so they don't shimmer/change frame to
+  // frame, but still look organic rather than a printed pattern
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, bodyRx, bodyRy, 0, 0, Math.PI * 2);
+  ctx.clip();
+  [[0.32, -0.28, 0.22], [-0.4, 0.15, 0.16], [0.05, 0.42, 0.13]].forEach(([mx, my, mr], i) => {
+    ctx.fillStyle = `rgba(150,90,30,${0.10 + (i % 2) * 0.05})`;
+    ctx.beginPath();
+    ctx.ellipse(cx + mx * bodyRx, cy + my * bodyRy, mr * bodyRx, mr * bodyRy * 0.8, mx * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
   ctx.strokeStyle = "rgba(120,60,20,0.4)";
   ctx.lineWidth = 2;
   // each rib follows the ellipse's actual contour -- computed from
@@ -6901,9 +6947,31 @@ function drawPumpkinFace(cx, cy, size, eyeLeftIdx, eyeRightIdx, mouthIdx, eyeLef
     }
     ctx.stroke();
   }
-  // stem
-  ctx.fillStyle = "#5a7a3a";
-  ctx.fillRect(cx - size * 0.06, cy - size * 0.62, size * 0.12, size * 0.16);
+
+  // blossom-end scar -- small dimpled mark at the very bottom pole,
+  // the one detail almost every real pumpkin has that a flat cartoon
+  // rendering usually skips
+  ctx.fillStyle = "rgba(120,60,20,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + bodyRy * 0.93, size * 0.045, size * 0.025, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stem -- gently curved and tapered instead of a flat rectangle,
+  // with a little bark-like ridging
+  ctx.save();
+  ctx.translate(cx, cy - bodyRy * 0.98);
+  ctx.fillStyle = "#6b8a42";
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.055, 0);
+  ctx.quadraticCurveTo(-size * 0.09, -size * 0.1, -size * 0.02, -size * 0.2);
+  ctx.quadraticCurveTo(size * 0.05, -size * 0.24, size * 0.045, -size * 0.16);
+  ctx.quadraticCurveTo(size * 0.03, -size * 0.06, size * 0.055, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(60,80,30,0.5)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
 
   // each feature clips to a rectangle that grows left-to-right as its
   // own reveal progresses, so the shape looks like it's genuinely
@@ -7597,41 +7665,64 @@ function drawCarvingStation(camX) {
   }
 
   if (carvingStation.phase === "carving") {
-    // knife visibly cutting each feature in, reusing the same
-    // eyes-then-mouth staggered timing as before -- nose rides the
-    // mouth's own timing, eyebrows ride the eyes' (see drawPumpkinFace's
-    // own default-fallback comment), so this still reads as a two-beat
-    // cut even with four features now instead of two
+    // four independent cut beats now -- eyebrows, eyes, nose, mouth,
+    // each with its own knife sweep, sparkle, and gap before the next
+    // one starts. See the CARVING_*_REVEAL_AT comment above.
     const progress = carvingStation.carveT / CARVING_CARVE_MS;
-    const eyesRevealed = progress >= CARVING_EYES_REVEAL_AT;
-    const mouthRevealed = progress >= CARVING_MOUTH_REVEAL_AT;
-    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.22)) / 0.22;
-    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.18)) / 0.18;
-    const eyeRevealAmount = eyesRevealed ? 1 : Math.max(0, Math.min(1, eyesCutProgress));
-    const mouthRevealAmount = mouthRevealed ? 1 : Math.max(0, Math.min(1, mouthCutProgress));
+
+    const eyebrowsCutProgress = (progress - (CARVING_EYEBROWS_REVEAL_AT - 0.20)) / 0.20;
+    const eyesCutProgress = (progress - (CARVING_EYES_REVEAL_AT - 0.18)) / 0.18;
+    const noseCutProgress = (progress - (CARVING_NOSE_REVEAL_AT - 0.16)) / 0.16;
+    const mouthCutProgress = (progress - (CARVING_MOUTH_REVEAL_AT - 0.16)) / 0.16;
+
+    const eyebrowRevealAmount = progress >= CARVING_EYEBROWS_REVEAL_AT ? 1 : Math.max(0, Math.min(1, eyebrowsCutProgress));
+    const eyeRevealAmount = progress >= CARVING_EYES_REVEAL_AT ? 1 : Math.max(0, Math.min(1, eyesCutProgress));
+    const noseRevealAmount = progress >= CARVING_NOSE_REVEAL_AT ? 1 : Math.max(0, Math.min(1, noseCutProgress));
+    const mouthRevealAmount = progress >= CARVING_MOUTH_REVEAL_AT ? 1 : Math.max(0, Math.min(1, mouthCutProgress));
+
     drawPumpkinFace(
       sx, sy, 130,
       eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeLeft : null,
       eyeRevealAmount > 0 ? carvedPumpkinDesign.eyeRight : null,
       mouthRevealAmount > 0 ? carvedPumpkinDesign.mouth : null,
       eyeRevealAmount, eyeRevealAmount, mouthRevealAmount,
-      undefined, carvedFaceExtra()
+      undefined, carvedFaceExtra(noseRevealAmount, eyebrowRevealAmount)
     );
+
+    // each beat draws its own knife sweep while cutting, then a
+    // sparkle burst right after it finishes -- same pattern repeated
+    // four times instead of two, at each feature's own screen position
+    if (eyebrowsCutProgress >= 0 && eyebrowsCutProgress <= 1) {
+      const kx = sawPosition(eyebrowsCutProgress, sx - 26, sx + 26, 7);
+      const kAngle = sawPosition(eyebrowsCutProgress, -0.15, 0.15, 7);
+      drawKnife(kx, sy - 42 - 22, kAngle);
+    } else if (progress >= CARVING_EYEBROWS_REVEAL_AT && progress < CARVING_EYEBROWS_REVEAL_AT + 0.12) {
+      const sparkleP = Math.min(1, (progress - CARVING_EYEBROWS_REVEAL_AT) / 0.12);
+      drawSparkleBurst(sx - 26, sy - 42, sparkleP); drawSparkleBurst(sx + 26, sy - 42, sparkleP);
+    }
     if (eyesCutProgress >= 0 && eyesCutProgress <= 1) {
       const kx = sawPosition(eyesCutProgress, sx - 26, sx + 26, 7);
       const kAngle = sawPosition(eyesCutProgress, -0.15, 0.15, 7);
       drawKnife(kx, sy - 16 - 22, kAngle); // shifted up so the tip (22 below origin) lands on the cut line
-    } else if (eyesRevealed) {
+    } else if (progress >= CARVING_EYES_REVEAL_AT && progress < CARVING_EYES_REVEAL_AT + 0.12) {
       const sparkleP = Math.min(1, (progress - CARVING_EYES_REVEAL_AT) / 0.12);
-      if (sparkleP <= 1) { drawSparkleBurst(sx - 26, sy - 16, sparkleP); drawSparkleBurst(sx + 26, sy - 16, sparkleP); }
+      drawSparkleBurst(sx - 26, sy - 16, sparkleP); drawSparkleBurst(sx + 26, sy - 16, sparkleP);
+    }
+    if (noseCutProgress >= 0 && noseCutProgress <= 1) {
+      const kx = sawPosition(noseCutProgress, sx - 14, sx + 14, 6);
+      const kAngle = sawPosition(noseCutProgress, -0.15, 0.15, 6);
+      drawKnife(kx, sy + 4 - 22, kAngle);
+    } else if (progress >= CARVING_NOSE_REVEAL_AT && progress < CARVING_NOSE_REVEAL_AT + 0.12) {
+      const sparkleP = Math.min(1, (progress - CARVING_NOSE_REVEAL_AT) / 0.12);
+      drawSparkleBurst(sx, sy + 4, sparkleP);
     }
     if (mouthCutProgress >= 0 && mouthCutProgress <= 1) {
       const kx = sawPosition(mouthCutProgress, sx - 16, sx + 16, 6);
       const kAngle = sawPosition(mouthCutProgress, -0.15, 0.15, 6);
       drawKnife(kx, sy + 24 - 22, kAngle);
-    } else if (mouthRevealed) {
+    } else if (progress >= CARVING_MOUTH_REVEAL_AT && progress < CARVING_MOUTH_REVEAL_AT + 0.12) {
       const sparkleP = Math.min(1, (progress - CARVING_MOUTH_REVEAL_AT) / 0.12);
-      if (sparkleP <= 1) drawSparkleBurst(sx, sy + 24, sparkleP);
+      drawSparkleBurst(sx, sy + 24, sparkleP);
     }
     return;
   }
@@ -7657,22 +7748,38 @@ function drawCarvingStation(camX) {
     const growY = -(size - 130) * 0.5;
     let glowColor = null;
     if (carvingStation.phase === "done") {
-      // layered sine waves at different frequencies for a natural,
-      // irregular flicker rather than a smooth mechanical pulse
+      // CONFIRMED CHANGE: candle flicker made a bit more realistic per
+      // direct request. The old version was three clean sine waves --
+      // smooth and periodic enough to eventually read as mechanical if
+      // you watched it long enough. Added a fourth, faster non-harmonic
+      // term gated by a slow on/off envelope, so occasional sharper
+      // little flickers punctuate the smooth base wave instead of
+      // everything breathing in and out at the same steady rate -- real
+      // flames have exactly this mix of a slow steady breathing plus
+      // occasional sharper jumps.
       const t = performance.now();
-      const flicker = 0.7 + Math.sin(t * 0.0012) * 0.14 + Math.sin(t * 0.0034 + 1.3) * 0.09 + Math.sin(t * 0.0081 + 2.7) * 0.05;
-      const brightness = Math.max(0.5, Math.min(1, flicker));
+      const flicker = 0.7 + Math.sin(t * 0.0012) * 0.14 + Math.sin(t * 0.0034 + 1.3) * 0.09 + Math.sin(t * 0.0081 + 2.7) * 0.05
+        + Math.sin(t * 0.021 + 4.1) * 0.06 * Math.max(0, Math.sin(t * 0.0006)); // sharper bursts, only some of the time
+      const brightness = Math.max(0.42, Math.min(1, flicker));
+      // warmer/more saturated at high brightness (near-white-hot core),
+      // shifting toward a deeper orange-red at low brightness -- a real
+      // flame's color temperature actually shifts with its intensity,
+      // not just its overall darkness
       const r = Math.round(255 * brightness);
-      const g = Math.round(180 * brightness + 40);
-      const b = Math.round(40 * brightness);
+      const g = Math.round(140 * brightness + 70);
+      const b = Math.round(60 * brightness * brightness); // falls off faster than r/g -- keeps dips warm/red instead of muddy grey
       glowColor = `rgb(${r},${g},${b})`;
-      // soft warm halo behind the pumpkin, flickering along with the candle
-      const haloGrad = ctx.createRadialGradient(sx, sy + growY + bob, size * 0.1, sx, sy + growY + bob, size * 0.75);
-      haloGrad.addColorStop(0, `rgba(255,180,60,${0.28 * brightness})`);
-      haloGrad.addColorStop(1, "rgba(255,180,60,0)");
+      // three-stop halo instead of two -- a near-white-hot core right at
+      // the "flame," warm orange in the middle distance, fading to
+      // nothing at the edge. A single flat-color halo didn't capture
+      // how much whiter real candlelight is right at its source.
+      const haloGrad = ctx.createRadialGradient(sx, sy + growY + bob, size * 0.05, sx, sy + growY + bob, size * 0.8);
+      haloGrad.addColorStop(0, `rgba(255,235,190,${0.36 * brightness})`);
+      haloGrad.addColorStop(0.35, `rgba(255,185,70,${0.26 * brightness})`);
+      haloGrad.addColorStop(1, "rgba(255,150,40,0)");
       ctx.fillStyle = haloGrad;
       ctx.beginPath();
-      ctx.arc(sx, sy + growY + bob, size * 0.75, 0, Math.PI * 2);
+      ctx.arc(sx, sy + growY + bob, size * 0.8, 0, Math.PI * 2);
       ctx.fill();
     }
     drawPumpkinFace(sx, sy + growY + bob, size, carvedPumpkinDesign.eyeLeft, carvedPumpkinDesign.eyeRight, carvedPumpkinDesign.mouth, 1, 1, 1, glowColor, carvedFaceExtra());
@@ -7923,26 +8030,80 @@ function drawDecorativeSquash(cx, cy, size, type) {
       ctx.stroke();
     }
   } else {
-    // wonky lopsided orange pumpkin -- asymmetric, one side bulging more
-    ctx.fillStyle = "#c9863a";
+    // CONFIRMED CHANGE: way more wonky per direct request -- the old
+    // version was just one ellipse, slightly offset and tilted 0.15
+    // rad, which barely read as lopsided at all next to the other
+    // regular squashes. Now built from two distinctly different-sized
+    // overlapping lobes (a big main body plus a smaller growth bulging
+    // off its upper-left) instead of a single shape, so the silhouette
+    // itself is genuinely irregular, not just a normal pumpkin nudged
+    // sideways.
+    // CONFIRMED CHANGE: color and surface texture per direct follow-up
+    // request -- green fading into burnt yellow top-to-bottom (a real
+    // squash-coloring pattern, distinct from every other type here
+    // which are flat single colors), plus a scatter of raised wart-like
+    // "bubbles," another real squash trait none of the others have.
+    const wonkyGrad = ctx.createLinearGradient(0, -size * 0.45, 0, size * 0.48);
+    wonkyGrad.addColorStop(0, "#6f8a3c");   // mossy green up top
+    wonkyGrad.addColorStop(0.55, "#a99248"); // dull olive-tan transition band
+    wonkyGrad.addColorStop(1, "#c07f1e");   // burnt yellow-orange at the bottom
+    ctx.fillStyle = wonkyGrad;
     ctx.beginPath();
-    ctx.ellipse(-size * 0.06, size * 0.02, size * 0.56, size * 0.46, -0.15, 0, Math.PI * 2);
+    ctx.ellipse(size * 0.1, size * 0.08, size * 0.52, size * 0.44, 0.22, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(120,60,20,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.32, -size * 0.14, size * 0.3, size * 0.26, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // small third bump on the lower-right, so the outline reads
+    // irregular all the way around rather than just two clean lobes
+    ctx.beginPath();
+    ctx.ellipse(size * 0.38, size * 0.32, size * 0.16, size * 0.13, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90,70,20,0.4)";
     ctx.lineWidth = 1.5;
+    // ribs bend noticeably more toward the smaller lobe's side than
+    // the bigger one's, echoing the lopsided body instead of running
+    // in straight, evenly-spaced verticals like a normal pumpkin's
     for (let i = -2; i <= 2; i++) {
+      const bend = i < 0 ? 0.32 : 0.16; // exaggerated curve on the small-lobe side
       ctx.beginPath();
-      ctx.moveTo(i * size * 0.15 - size * 0.06, -size * 0.42);
-      ctx.quadraticCurveTo(i * size * 0.2 - size * 0.06, size * 0.02, i * size * 0.15 - size * 0.06, size * 0.44);
+      ctx.moveTo(i * size * 0.16 + size * 0.02, -size * 0.4);
+      ctx.quadraticCurveTo(i * size * bend + size * 0.06, size * 0.04, i * size * 0.14 + size * 0.02, size * 0.42);
       ctx.stroke();
     }
+    // warty surface bubbles -- fixed relative positions (not random per
+    // frame), each a tiny raised bump: a darker crescent shadow on one
+    // side and a small highlight fleck on the other, so they read as
+    // raised rather than just painted-on dots
+    [[0.02, -0.1, 0.09], [0.28, -0.18, 0.07], [-0.1, 0.22, 0.08], [0.32, 0.22, 0.06], [-0.28, -0.05, 0.06], [0.12, 0.36, 0.055]].forEach(([bx, by, br]) => {
+      const wx = bx * size, wy = by * size, wr = br * size;
+      ctx.fillStyle = "rgba(0,0,0,0.16)";
+      ctx.beginPath();
+      ctx.arc(wx + wr * 0.25, wy + wr * 0.3, wr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.beginPath();
+      ctx.arc(wx - wr * 0.2, wy - wr * 0.25, wr * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // stem, positioned relative to each type's own actual top edge --
   // fixes it floating way above the flatter shapes like the pattypan
   const topExtent = SQUASH_TOP_EXTENT[type] || 0.5;
   ctx.fillStyle = "#5a7a3a";
-  ctx.fillRect(-size * 0.05, -size * (topExtent + 0.1), size * 0.1, size * 0.14);
+  if (type === "wonky") {
+    // crooked stem, off-center toward the small lobe and visibly
+    // tilted -- a straight centered stem on top of an already-lopsided
+    // body looked wrong once the body itself actually became irregular
+    ctx.save();
+    ctx.translate(-size * 0.14, -size * (topExtent + 0.02));
+    ctx.rotate(-0.35);
+    ctx.fillRect(-size * 0.05, -size * 0.14, size * 0.1, size * 0.14);
+    ctx.restore();
+  } else {
+    ctx.fillRect(-size * 0.05, -size * (topExtent + 0.1), size * 0.1, size * 0.14);
+  }
 
   ctx.restore();
 }
