@@ -7331,16 +7331,44 @@ function drawDecorativeSquash(cx, cy, size, type) {
   ctx.restore();
 }
 
+// each squash below (except the wonky one, handled separately as
+// SPECIAL_SQUASH) gets ONE fixed, one-off line -- talkedTo flips true the
+// first time the player presses space nearby, then the line just stays
+// visible on approach from then on (same "reveal once, show forever
+// after" pattern the snail already uses). Deliberately not random or
+// repeating jokes -- a small patch of squashes that each say their own
+// single thing reads more like a real little cast than a joke machine.
 const decorativeSquash = [
-  { x: 4505, size: 30, type: "gourd" },
-  { x: 5110, size: 34, type: "white" },
-  { x: 4915, size: 42, type: "hubbard" },
-  { x: 5318, size: 32, type: "wonky" },
-  { x: 5656, size: 28, type: "white" },
-  { x: 5740, size: 30, type: "gourd" },
-  { x: 4265, size: 38, type: "turban" },
-  { x: 5500, size: 36, type: "pattypan" }
+  { x: 4505, size: 30, type: "gourd", talkedTo: false, line: "Too knobby to carve, too pretty to eat. I've made my peace with it." },
+  { x: 5110, size: 34, type: "white", talkedTo: false, line: "Pale on purpose. It's called dramatic contrast." },
+  { x: 4915, size: 42, type: "hubbard", talkedTo: false, line: "Bloated on purpose too. Confidence, mostly." },
+  { x: 5656, size: 28, type: "white", talkedTo: false, line: "..." },
+  { x: 5740, size: 30, type: "gourd", talkedTo: false, line: "Ask the wonky one further down. It talks more than all of us combined." },
+  { x: 4265, size: 38, type: "turban", talkedTo: false, line: "Nice hat, right? Grew it myself." },
+  { x: 5500, size: 36, type: "pattypan", talkedTo: false, line: "Flat's a look. Ask anyone." }
 ];
+
+// the "special" squash -- the wonkiest one, and per direct request,
+// deliberately positioned PAST every other squash in the patch (past the
+// bat's own wander bounds too, at 5850, so it reads as the natural last
+// stop) so it's the one you meet last after working through the smaller
+// one-liners. Its dialogue is staged rather than a single fixed line --
+// talking to it again advances it, and it reacts for real once a pumpkin
+// has actually been carved at the station right next door, tying the
+// whole area together instead of just being one more static joke.
+const SPECIAL_SQUASH = {
+  x: 5820,
+  size: 32,
+  type: "wonky",
+  talkStage: 0, // 0 = never talked, 1 = met once, 2+ = knows you
+  reactedToCarving: false
+};
+const SPECIAL_SQUASH_DIALOGUE = [
+  ["Oh. You're the one that's been going around talking to everyone.", "Fine. Hi. I'm the wonky one. Try not to stare at the shape."],
+  ["Still here. Still wonky.", "They're really not going to pick me for the carving station, are they?"],
+  ["You keep coming back. I don't know how to feel about that.", "Wonky and popular. Never saw that combination coming."]
+];
+const SPECIAL_SQUASH_CARVED_DIALOGUE = ["...they picked someone else.", "I'm fine. Really."];
 
 // each squash type has a different actual vertical extent -- a flat
 // pattypan is much shorter than a round pumpkin -- so a single
@@ -7378,7 +7406,53 @@ function drawDecorativeSquashField(camX) {
     ctx.fill();
     const bottomExtent = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
     drawDecorativeSquash(sx, gy - s.size * bottomExtent, s.size, s.type);
+
+    if (s.talkedTo && isPlayerNear(s.x, 0, 55, 15, 15)) {
+      const bottomExtentForBubble = SQUASH_BOTTOM_EXTENT[s.type] || 0.45;
+      drawFittedSpeechBubble(ctx, sx, gy - s.size * bottomExtentForBubble - s.size * 0.5 - 30, [s.line]);
+    }
   });
+
+  // the special squash draws separately -- same visual, staged dialogue
+  const spx = SPECIAL_SQUASH.x - camX;
+  if (spx > -50 && spx < canvas.width + 50) {
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.beginPath();
+    ctx.ellipse(spx, gy + 3, SPECIAL_SQUASH.size * 0.4, SPECIAL_SQUASH.size * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const bottomExtent = SQUASH_BOTTOM_EXTENT[SPECIAL_SQUASH.type] || 0.45;
+    drawDecorativeSquash(spx, gy - SPECIAL_SQUASH.size * bottomExtent, SPECIAL_SQUASH.size, SPECIAL_SQUASH.type);
+
+    if (SPECIAL_SQUASH.talkStage > 0 && isPlayerNear(SPECIAL_SQUASH.x, 0, 55, 15, 15)) {
+      const lines = (carvingStation.phase === "done" && !SPECIAL_SQUASH.reactedToCarving)
+        ? SPECIAL_SQUASH_CARVED_DIALOGUE
+        : SPECIAL_SQUASH_DIALOGUE[Math.min(SPECIAL_SQUASH.talkStage, SPECIAL_SQUASH_DIALOGUE.length) - 1];
+      drawFittedSpeechBubble(ctx, spx, gy - SPECIAL_SQUASH.size * bottomExtent - SPECIAL_SQUASH.size * 0.5 - 30, lines);
+    }
+  }
+}
+
+function updateSquashChatter() {
+  if (!keys.spaceJustPressed) return;
+
+  for (const s of decorativeSquash) {
+    if (!s.talkedTo && isPlayerNear(s.x, 0, 55, 15, 15)) {
+      s.talkedTo = true;
+      return; // one talk per press, same as every other NPC in this game
+    }
+  }
+
+  if (isPlayerNear(SPECIAL_SQUASH.x, 0, 55, 15, 15)) {
+    // once a pumpkin's actually been carved, the NEXT press gives the
+    // carved-specific reaction instead of continuing the normal staged
+    // lines -- a one-time detour, then talkStage picks back up after
+    if (carvingStation.phase === "done" && !SPECIAL_SQUASH.reactedToCarving) {
+      SPECIAL_SQUASH.reactedToCarving = true;
+      if (SPECIAL_SQUASH.talkStage === 0) SPECIAL_SQUASH.talkStage = 1;
+      return;
+    }
+    SPECIAL_SQUASH.talkStage = Math.min(SPECIAL_SQUASH.talkStage + 1, SPECIAL_SQUASH_DIALOGUE.length);
+  }
 }
 
 // fly nothing like birds: sharp unpredictable direction changes, a
@@ -36056,6 +36130,7 @@ updateVines(deltaTime);
 updateAcorns();
 updateVinePumpkin();
 updateWormRock();
+updateSquashChatter();
 
 // honey falling from the hive, once knocked
 if (honey.falling) {
