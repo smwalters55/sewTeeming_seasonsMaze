@@ -23816,7 +23816,14 @@ const ratRoomArtSpot = { x: 600, y: 75, w: 90, h: 67 };
 // started at x=525, just 10px past that edge, so pressing space to
 // advance rat dialogue while standing anywhere near the boundary could
 // also trigger the jar. Now clear by well over 100px.
-const featherHangSpot = { x: 680, heightAboveGround: 55 };
+// CONFIRMED CHANGE: moved from x=680 -- that put it close enough to the
+// rat (x=460) that the two visually stacked together on screen at
+// once, reading like the jar/feather sat directly above the rat rather
+// than as its own separate spot. Shifted into the open stretch between
+// the last hay pile (x=720) and the right shelf cluster (x=1000),
+// giving real breathing room from the rat while staying well clear of
+// the shelf/snake/marble progression further along.
+const featherHangSpot = { x: 900, heightAboveGround: 55 };
 function drawFeatherHangSpot(camX) {
   // CONFIRMED CHANGE: once the feather's actually been hung, the jar
   // stays dimly visible even with the lamp off/out of range -- a small
@@ -23899,10 +23906,22 @@ function drawFeatherHangSpot(camX) {
   if (featherHung || featherHangAnim.active) {
     ctx.save();
     const settleP = featherHangAnim.active ? Math.min(1, featherHangAnim.t / FEATHER_HANG_MS) : 1;
-    const startY = -40, endY = -9; // ends right at the pot's own rim (rim ellipse is at y=-7), not floating well above it
-    ctx.translate(0, startY + (endY - startY) * settleP);
+    // CONFIRMED CHANGE: bigger (was size 11, a real showpiece deserved
+    // more presence than that), and resting at a fixed lean once
+    // settled instead of standing bolt upright -- reads as casually
+    // propped against the jar's rim rather than rigidly strapped in
+    // place. Anchored a touch left of center so the lean has somewhere
+    // to lean TOWARD (the near rim edge), same idea as the broom
+    // leaning against the shelf elsewhere in this room.
+    const FEATHER_REST_SIZE = 17;
+    const FEATHER_REST_TILT = 0.34;
+    const startX = 0, endX = -4;
+    const startY = -46, endY = -11; // ends close to the pot's own rim (rim ellipse is at y=-7), base tucked just inside it
+    ctx.translate(startX + (endX - startX) * settleP, startY + (endY - startY) * settleP);
     ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
-    drawFeatherShape(ctx, 0, 0, 11, (1 - settleP) * 0.6);
+    const dropTilt = (1 - settleP) * 0.6; // still falls in with the old tumbling tilt...
+    const tilt = dropTilt + FEATHER_REST_TILT * settleP; // ...but eases into the resting lean instead of settling flat upright
+    drawFeatherShape(ctx, 0, 0, FEATHER_REST_SIZE * (0.7 + settleP * 0.3), tilt);
     ctx.restore();
     // re-draw the jar's full body on top, since the feather's actual
     // base extends well below the rim line itself -- a thin ring
@@ -24905,7 +24924,7 @@ function updatePaperAirplane() {
 
 // shiny marble -- the payoff for hopping all the way across the right
 // shelf sequence, past the snake, to the far shelf
-const marbleSpot = { x: 1295, y: 93, collected: false };
+const marbleSpot = { x: 1330, y: 93, collected: false }; // x kept in sync with marbleShelf's x (1330) -- was left at the shelf's old pre-move x (1295) after the shelf itself shifted right, leaving the marble floating over empty space instead of sitting on the shelf
 function drawMarble(camX) {
   if (marbleSpot.collected || !lampLit) return;
   const playerScreenX = player.x + player.width / 2 - camX;
@@ -25387,7 +25406,12 @@ const nestStrings = [
 // to looking first.
 // pushed further right too (was x:600), same reasoning as the jar above
 // -- keeps both well clear of the rat's own dialogue-interact zone
-const ratRoomFeather = { x: 730, y: 30, collected: false };
+// CONFIRMED CHANGE: shifted right alongside featherHangSpot's own move
+// (680->900) so the pickup and the spot you later hang it both still sit
+// close together in the open stretch between the last hay pile (x:720)
+// and the right shelf cluster (x:1000) -- was x:730, now kept ~50 units
+// left of the new hang spot, same gap as before the hang spot moved.
+const ratRoomFeather = { x: 850, y: 30, collected: false };
 // unravel animation -- pressing space starts a slow unwind rather than
 // an instant pickup, so the string-wrapped feather reads as a
 // deliberate discovery rather than something grabbed by accident
