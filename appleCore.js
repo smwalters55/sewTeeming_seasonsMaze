@@ -11212,7 +11212,7 @@ const FOREST_DUCK_LOG = { x: 4150, w: 44, clearance: 48, duckThreshold: 0.6 };
 // art/placement/tuning comes later once the mechanic itself is proven
 // out -- this is scaffolding, not a finished set piece.
 const FOREST_FLOAT_ZONE_START_X = 5700;
-const FOREST_FLOAT_ZONE_END_X = 7700; // stretched again (was 7100, then 7400) -- extra room after the new double-moving-log combo per direct request ("spread out river a bit longer... more reasonable room to test these")
+const FOREST_FLOAT_ZONE_END_X = 8100; // stretched again (was 7100, then 7400, then 7700) -- room for the new double-jump gate near the end, per direct request ("can extend river to right more")
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 const riverFloat = { active: false };
 // eases toward 1 while floating, 0 once out of the zone -- drives the
@@ -11257,21 +11257,41 @@ let floatSubmergeAmount = 0;
 // repeats never look like the exact same copy-pasted rock/log. Real art
 // per direct request ("maybe we should work more on the art of what is
 // some jump obstacles... but more variety than just one or other").
+// double-jump gates -- clearance set from measured jump heights (see
+// the debug pass this was tuned against): a single jump peaks at
+// y=96, a WELL-TIMED double jump (triggered right near the first
+// jump's own peak, not immediately off the ground) reaches ~151. A
+// clearance in between forces an actual double jump, not just a
+// second reflexive tap. Per direct request ("we need a double jump or
+// two"). The second rock (was variant 1, plain) is the spiky one --
+// raised clearance AND, if you don't clear it, you get thrown back
+// toward the left instead of just gently blocked (see the FLOAT ZONE
+// collision block's ob.spiky branch and drawFloatRock's spiky arg).
+// The later gate (variant 2, new) is the gentler introduction --
+// raised clearance but no punishment, just a wall until you clear it.
 const FOREST_FLOAT_OBSTACLES = [
-  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 40, type: "jump", variant: 0 },
+  // clearance raised from 40 -- still clearable with a single jump
+  // (peaks at 96), but now needs a real full jump instead of a tiny
+  // reflexive hop. Per direct request ("make the single jump rocks
+  // higher too so they are harder to clear").
+  { x: FOREST_FLOAT_ZONE_START_X + 160, w: 40, clearance: 72, type: "jump", variant: 0 },
   { x: FOREST_FLOAT_ZONE_START_X + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
   { baseX: FOREST_FLOAT_ZONE_START_X + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
   { x: FOREST_FLOAT_ZONE_START_X + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
-  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 40, type: "jump", variant: 1 },
+  { x: FOREST_FLOAT_ZONE_START_X + 1000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
   { baseX: FOREST_FLOAT_ZONE_START_X + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
   { x: FOREST_FLOAT_ZONE_START_X + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
-  // out-of-phase double moving log -- two logs close enough together
-  // that their swings overlap, but on different speeds/phases (one of
-  // them offset a half-cycle via Math.PI) so there's no single fixed
-  // rhythm that clears both -- each has to be read and timed on its
-  // own. Per direct request ("out of phase double moving logs").
+  // out-of-phase moving log trio -- three logs close enough together
+  // that their swings overlap, but on different speeds/phases (each
+  // offset from the others) so there's no single fixed rhythm that
+  // clears all three -- each has to be read and timed on its own. Per
+  // direct request ("out of phase double moving logs", then "add the
+  // third moving log to right of the two moving logs next to each
+  // other").
   { baseX: FOREST_FLOAT_ZONE_START_X + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 }
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + 1660, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
+  { x: FOREST_FLOAT_ZONE_START_X + 2000, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -11305,13 +11325,22 @@ const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 // rests at heightAboveGround while standing on it, not just a visual.
 const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + 660, width: 56, heightAboveGround: 20 };
 let playerOnFloatLilypad = false;
+// minY (optional) gates a collectible behind actually reaching a
+// specific arc height, not just walking/floating near it at ground
+// level -- rewards a well-timed jump instead of being freely walkable
+// into. Per direct request ("need specific arc height to get the
+// jumping rewards"). The two gated ones sit right at the double-jump
+// gates, just above each one's own clearance, so grabbing one means
+// you cleared that gate at close to its real peak, not just barely.
 const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + 250, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 430, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 600, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 860, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + 1080, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + 1300, collected: false }
+  { x: FOREST_FLOAT_ZONE_START_X + 1300, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + 1000, collected: false, minY: 128 }, // right over the spiky double-jump rock
+  { x: FOREST_FLOAT_ZONE_START_X + 2000, collected: false, minY: 113 }  // right over the plain double-jump gate
 ];
 
 // the duck obstacle's real redesign -- a swamp tree with flared
@@ -11451,7 +11480,7 @@ const FOREST_FLOAT_ROCK_MOSS_LAYOUTS = [
   [[0.2, -0.8], [-0.35, -0.3]],
   [[0, -0.9], [0.3, -0.5], [-0.25, -0.55], [0.1, -0.15]]
 ];
-function drawFloatRock(ox, obBottom, w, variant) {
+function drawFloatRock(ox, obBottom, w, variant, spiky) {
   const v = FOREST_FLOAT_ROCK_VARIANTS[(variant || 0) % FOREST_FLOAT_ROCK_VARIANTS.length];
   const rw = (w / 2) * v.squash;
   const rh = 30;
@@ -11461,9 +11490,14 @@ function drawFloatRock(ox, obBottom, w, variant) {
   ctx.beginPath();
   ctx.ellipse(ox, obBottom + 4, rw + 6, 7, 0, 0, Math.PI * 2);
   ctx.fill();
-  // lumpy body -- three overlapping blobs instead of one clean ellipse
+  // lumpy body -- a submerged base blob (dips well below the waterline,
+  // gets tinted underwater below) plus the three original blobs poking
+  // up above the surface. These are boulders, not floating debris -- the
+  // bulk should visibly continue down into the water, not sit balanced
+  // on top of it. Per direct request ("dont have rock sit on surface of
+  // water, show it submerged... these are suppose to be boulders").
   ctx.fillStyle = "#6b6a5e";
-  [[0, -0.5, 1, 0.62], [-0.35, -0.3, 0.55, 0.4], [0.4, -0.35, 0.5, 0.42]].forEach(([dx, dy, sw, sh]) => {
+  [[0, 0.3, 0.95, 0.55], [0, -0.5, 1, 0.62], [-0.35, -0.3, 0.55, 0.4], [0.4, -0.35, 0.5, 0.42]].forEach(([dx, dy, sw, sh]) => {
     ctx.beginPath();
     ctx.ellipse(ox + dx * rw, obBottom + dy * rh, rw * sw, rh * sh, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -11492,6 +11526,43 @@ function drawFloatRock(ox, obBottom, w, variant) {
     ctx.ellipse(ox + mx * rw, obBottom + my * rh, rw * 0.18, rh * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
   });
+  // spiky -- a fan of jagged points along the top, reading as a real
+  // hazard (raised clearance + the bounce-back-if-you-miss behavior in
+  // the FLOAT ZONE collision block) rather than just another mossy
+  // rock. Per direct request ("raise clearance on a rock and make it
+  // spiky so if you land on it you are thrown off towards the left").
+  if (spiky) {
+    ctx.fillStyle = "#4a4842";
+    const spikeCount = 5;
+    for (let i = 0; i < spikeCount; i++) {
+      const t = i / (spikeCount - 1) - 0.5; // -0.5 .. 0.5
+      const sx = ox + t * rw * 1.6;
+      const baseY = obBottom - rh * 0.75 - Math.abs(t) * rh * 0.1;
+      const spikeH = 17 - Math.abs(t) * 7;
+      ctx.beginPath();
+      ctx.moveTo(sx - 4, baseY);
+      ctx.lineTo(sx, baseY - spikeH);
+      ctx.lineTo(sx + 4, baseY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(20,20,18,0.5)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
+  // underwater tint -- clip to the submerged base blob's footprint and
+  // wash it with the same translucent teal as the water fill, so the
+  // part of the boulder below the surface actually reads as SEEN
+  // THROUGH water rather than dry rock that happens to be low.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ox - rw - 8, obBottom, (rw + 8) * 2, rh);
+  ctx.clip();
+  ctx.fillStyle = "rgba(46,90,98,0.55)";
+  ctx.beginPath();
+  ctx.ellipse(ox, obBottom + 0.3 * rh, rw * 0.95, rh * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
   ctx.restore();
 }
 
@@ -11505,7 +11576,8 @@ const FOREST_FLOAT_LOG_VARIANTS = [
   { lenMul: 1.0, barkTone: "#6b4a2a", knotX: -0.2 },
   { lenMul: 1.15, barkTone: "#5a3f22", knotX: 0.3 },
   { lenMul: 0.9, barkTone: "#755233", knotX: 0.05 },
-  { lenMul: 1.05, barkTone: "#634428", knotX: -0.35 }
+  { lenMul: 1.05, barkTone: "#634428", knotX: -0.35 },
+  { lenMul: 0.95, barkTone: "#6f4d2e", knotX: 0.18 }
 ];
 function drawFloatLog(ox, obBottom, w, variant) {
   const v = FOREST_FLOAT_LOG_VARIANTS[(variant || 0) % FOREST_FLOAT_LOG_VARIANTS.length];
@@ -11744,7 +11816,7 @@ function drawForestFloatZone(camX) {
     } else {
       // still "jump" obstacles -- a mossy rock breaking the surface,
       // see drawFloatRock's own comment
-      drawFloatRock(ox, gy, ob.w, ob.variant);
+      drawFloatRock(ox, gy, ob.w, ob.variant, ob.spiky);
     }
   });
 
@@ -15668,19 +15740,51 @@ function updateForestScene(deltaTime) {
       const passable = ob.type === "duck"
         ? (player.y <= 2 && playerDuckAmount > 0.6 && floatDuckOpenAmount(ob) > FOREST_FLOAT_DUCK_OPEN_THRESHOLD)
         : player.y > ob.clearance;
+      // spiky rocks reset their "already bounced this pass" flag once
+      // the player drifts back out of range, so the NEXT approach can
+      // bounce again too
+      if (ob.spiky && !within) ob.bounced = false;
       if (within && !passable) {
-        if (floatCenterX < obX) {
+        if (ob.spiky && player.y <= 4) {
+          // thrown back toward the left, once per approach (not
+          // re-triggered every single frame while still in range) --
+          // a real punishing knockback instead of the gentle edge-nudge
+          // every other obstacle gives. Per direct request ("if you
+          // land on it you are thrown off towards the left").
+          //
+          // Gated on player.y<=4 (i.e. actually AT/landing on the rock)
+          // -- NOT just "horizontally within it while below clearance".
+          // A genuine double-jump attempt spends real time airborne but
+          // below clearance while horizontally inside this zone (that's
+          // just what climbing toward the gate looks like); bouncing on
+          // every such frame killed vy and threw the player out before
+          // they could ever reach double-jump height, making the gate
+          // impossible to clear even with perfect timing. Now it only
+          // punishes an actual failed landing, matching "if you LAND on
+          // it you're thrown off" -- a real in-progress jump instead
+          // just gets the normal soft horizontal clamp below.
+          if (!ob.bounced) {
+            player.x = obX - ob.w / 2 - player.width - 90;
+            player.vy = 0;
+            ob.bounced = true;
+          }
+        } else if (floatCenterX < obX) {
           player.x = obX - ob.w / 2 - player.width - 1;
+          player.vx = 0;
         } else {
           player.x = obX + ob.w / 2 + 1;
+          player.vx = 0;
         }
-        player.vx = 0;
       }
     });
 
     FOREST_FLOAT_COLLECTIBLES.forEach(c => {
       if (c.collected) return;
-      if (Math.abs(floatCenterX - c.x) < 16 && player.y < 30) {
+      // most collectibles sit near the water, grabbed while low; a few
+      // (c.minY set) instead require actually being up at a specific
+      // arc height -- see FOREST_FLOAT_COLLECTIBLES' own comment
+      const heightOk = c.minY != null ? player.y >= c.minY : player.y < 30;
+      if (Math.abs(floatCenterX - c.x) < 16 && heightOk) {
         c.collected = true;
         addToInventory("driftberry");
       }
