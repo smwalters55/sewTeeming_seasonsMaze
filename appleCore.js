@@ -781,15 +781,26 @@ const connections = [
    hardcoded HTML nodes). Nodes = scenes, edges = connections.
    A scene only appears once you've actually been there.
    ====================================================== */
+// CONFIRMED CHANGE: the main line was pushed down (y:110->150) specifically
+// to give the oak/ratroom branch real vertical breathing room -- ratroom
+// used to sit wedged into a 30px gap between oak's bottom and autumn's top
+// with zero margin on either side, so its box (and label) visibly
+// overlapped oak's. Ratroom now sits centered in a 70px gap with a clean
+// 20px clearance above (from oak) and below (to autumn) -- still the same
+// diagonal-nudge-to-the-right presentation the user liked, just with room
+// to breathe. Mole Hole/Tunnel Town (forest's own branch, straight down
+// rather than diagonal) got the same treatment for consistency: each gap
+// in that chain widened from a cramped 10-40px to a flat 40px, and both
+// nodes shifted down to stay clear of the lowered main line.
 const sceneMapInfo = {
-  autumn: { label: "Autumn", x: 40,  y: 110 },
-  spring: { label: "Spring", x: 220, y: 110 },
-  forest: { label: "Forest", x: 400, y: 110 }, // continues the main line past spring
+  autumn: { label: "Autumn", x: 40,  y: 150 },
+  spring: { label: "Spring", x: 220, y: 150 },
+  forest: { label: "Forest", x: 400, y: 150 }, // continues the main line past spring
   clouds: { label: "Clouds", x: 220, y: 20 },  // above spring, not on the main line -- reached via the swing, a branch off spring
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
-  ratroom: { label: "Ratroom", x: 95, y: 65, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- some overlap with both is unavoidable given how tightly the existing four nodes are packed, but this avoids colliding with clouds/spring at least. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
-  molehole: { label: "Mole Hole", x: 400, y: 180, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node
-  tunneltown: { label: "Tunnel Town", x: 460, y: 250, w: 82, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width
+  ratroom: { label: "Ratroom", x: 95, y: 100, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- was y:65 (touching/overlapping oak's own box), now sits with a clean 20px gap above and below in the widened oak-to-autumn space. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
+  molehole: { label: "Mole Hole", x: 400, y: 250, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node. Was y:180 (only a 10px gap below the old forest row); now a full 40px clear of forest's new position.
+  tunneltown: { label: "Tunnel Town", x: 460, y: 320, w: 82, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width. Was y:250; shifted down to keep the same clean 40px gap below mole hole's new position.
 };
 
 const discoveredScenes = { autumn: true };
