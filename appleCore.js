@@ -3222,10 +3222,40 @@ function drawCrown(camX) {
   if (crownLeaves.length === 0) return;
 
   const fallProgress = fallState.active ? Math.min(fallState.t / fallDurationForMode(fallState.mode), 1) : (fallJustEndedIntoTransition ? 1 : 0);
-  const sinkAmount = fallProgress * (player.height + 20);
+  // CONFIRMED BUG FIX: this used to only account for the fall-through-hole
+  // sink, not the river-wade sink or the floating bob the main player
+  // sprite's own draw position applies (see the real drawPy a few
+  // thousand lines down: `py + sinkAmount + riverWadeSink - floatBob`).
+  // Any time the body was sunk into water or gently bobbing while
+  // floating, the head moved but the crown stayed put at the old,
+  // un-adjusted height -- reported as "the crown flies off up off head."
+  // Matching the exact same three terms here keeps the crown pinned to
+  // the head in every one of those states, not just the fall-through-a-
+  // hole one this originally covered.
+  const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRiverWadeAmount : 0) *
+    (7 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 8);
+  const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
+    Math.sin(performance.now() * 0.0028) * 3;
+  const sinkAmount = fallProgress * (player.height + 20) + riverWadeSink - floatBob;
 
   const px = player.x - camX + player.width / 2;
   const py = gy + cameraY - player.height - player.y + 6 + sinkAmount;
+
+  // the mole hole entrance (forest -> mole hole) plays its own bespoke
+  // sink-and-fade over the hole itself rather than actually moving
+  // player.y (see drawMoleHoleEntrance's own comment) -- so without this,
+  // the crown just sat there fully visible, floating above the darkening
+  // hole, while the rest of the player faded into it. Reported as "the
+  // crown needs to go down mole hole with player." Fading the crown out
+  // in step with that same overlay (same p, same curve) makes it read as
+  // going down and out of view together with the body, instead of being
+  // left behind above the hole.
+  const moleHoleFading = typeof moleHoleEntrance !== "undefined" && moleHoleEntrance.active;
+  const moleHoleSinkFade = moleHoleFading ? 1 - Math.min(1, moleHoleEntrance.t / MOLEHOLE_FALL_MS) : 1;
+  if (moleHoleFading) {
+    ctx.save();
+    ctx.globalAlpha *= moleHoleSinkFade;
+  }
 
   if (crownState.worn) {
     drawCrownOnHead(camX, sinkAmount);
@@ -3238,6 +3268,8 @@ function drawCrown(camX) {
     // read as out of place.
     drawCrownProcedural(ctx, px + 24, py, 13);
   }
+
+  if (moleHoleFading) ctx.restore();
 
   if (crownState.ready && !crownState.worn && !crownState.promptEverShown) {
     drawCarvedWoodPrompt(px, py - 46);
@@ -26181,7 +26213,7 @@ const moleShopTradeLines = [
 ];
 const moleShopNoAcornLines = [["Ehh, no acorn, no timber. That's just business, friend.", "Come back when you're carrying something worth my while."]];
 const moleShopThanksLines = [["Pleasure doing business, as always.", "Don't go telling everyone where you found me now, eh?"]];
-const moleShopAlreadyTradedLines = [["Ahh, I'm all out of timber today.", "Maybe another time, friend."]];
+const moleShopAlreadyTradedLines = [["All out of timber, friend -- that was my last piece.", "Come back if you dig up another acorn, though."]];
 
 /* ------------------------------------------------------
    GEODE BREAKER -- a fourth alcove, past the shopkeeper. A stockier,
