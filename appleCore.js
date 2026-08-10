@@ -10862,7 +10862,15 @@ const skipStoneTargetFlash = [0, 0, 0, 0]; // timestamp of last hit, per target,
 // dir persists after a throw completes (not reset) so the post-throw
 // hit animation can keep computing the right on-screen spot for
 // whichever side that throw actually happened from.
-const thrownSkipStone = { active: false, startTime: 0, distanceFrac: 0, hitTargetIndex: -1, dir: 1 };
+// startXWorld captures exactly where the player was standing (their
+// world-space center) at the moment of release, so the thrown stone's
+// visual path can start from the player's ACTUAL position rather than
+// always assuming they're throwing from the pool's edge -- matters when
+// the player is standing in/near the middle of the pond itself, where
+// "always start at the near edge" would read as the stone coming from
+// an unrelated spot off to one side. See the travel-path draw code in
+// drawForestSkipStones for where this gets used.
+const thrownSkipStone = { active: false, startTime: 0, distanceFrac: 0, hitTargetIndex: -1, dir: 1, startXWorld: 0 };
 
 // converts a 0..1 fraction-of-the-way-across into an actual pool-local
 // x, starting from whichever edge is nearest the thrower (dir=1 means
@@ -10889,6 +10897,11 @@ function throwSkipStone() {
   // actually standing on right now, not a fixed left-to-right assumption
   const playerCenterXWorld = player.x + player.width / 2;
   thrownSkipStone.dir = playerCenterXWorld <= FOREST_REFLECTION_POOL_X ? 1 : -1;
+  // remember exactly where the throw actually left from, in world space,
+  // so the travel animation can originate from the player's real
+  // position instead of snapping to the pool's edge -- see the note on
+  // thrownSkipStone's declaration above
+  thrownSkipStone.startXWorld = playerCenterXWorld;
   let hitIndex = -1;
   FOREST_SKIP_STONE_TARGETS.forEach((frac, i) => {
     if (Math.abs(frac - thrownSkipStone.distanceFrac) < 0.06) hitIndex = i;
@@ -11087,8 +11100,17 @@ function drawForestSkipStones(camX) {
   // little ripple
   if (thrownSkipStone.active) {
     const p = Math.min(1, (performance.now() - thrownSkipStone.startTime) / FOREST_SKIP_STONE_THROW_MS);
-    const traveledFrac = thrownSkipStone.distanceFrac * p;
-    const sx = skipTargetX(poolPx, poolW, thrownSkipStone.dir, traveledFrac);
+    // the stone's on-screen path is a straight lerp from where the
+    // player was actually standing at release (startXWorld) to its
+    // final landing spot (skipTargetX at the full charged distance) --
+    // this replaces always starting from the pool's near edge, which
+    // looked wrong when the player released from the middle of the pond
+    // itself rather than clearly standing on one bank. Per direct
+    // question ("how should we mitigate stone throw positioning when
+    // player in middle of pond").
+    const startXScreen = thrownSkipStone.startXWorld - camX;
+    const landingXScreen = skipTargetX(poolPx, poolW, thrownSkipStone.dir, thrownSkipStone.distanceFrac);
+    const sx = startXScreen + (landingXScreen - startXScreen) * p;
     const bounces = 4;
     const bouncePhase = (p * bounces) % 1;
     const bounceAmp = 7 * (1 - p * 0.7);
@@ -35731,7 +35753,25 @@ if (currentScene === "autumn") {
 } else if (currentScene === "spring") {
   updateSpringScene(deltaTime);
 } else if (currentScene === "forest") {
+  // TEMPORARY diagnostic watchdog -- trying to catch the rare, hard-to-
+  // reproduce "thrown back toward the start of the river" report. Logs
+  // to the console (not visible in normal play) any time a single
+  // forest-scene update frame moves the player more than a real walk
+  // step could account for, along with the key state and player
+  // position at the moment it happens, so the actual trigger can be
+  // identified from what gets printed next time it happens. Safe to
+  // remove once the cause is found -- doesn't change any behavior,
+  // only reads player.x before/after and prints if it jumped.
+  const __watchdogPrevX = player.x;
   updateForestScene(deltaTime);
+  const __watchdogDeltaX = player.x - __watchdogPrevX;
+  if (Math.abs(__watchdogDeltaX) > 60) {
+    console.warn("[teleport-watchdog] forest frame moved player.x by", __watchdogDeltaX.toFixed(1),
+      "from", __watchdogPrevX.toFixed(1), "to", player.x.toFixed(1),
+      "| keys:", { left: keys.left, right: keys.right, up: keys.up, down: keys.down, upJustPressed: keys.upJustPressed },
+      "| player.y:", player.y, "vy:", player.vy, "jumping:", player.jumping, "usedDoubleJump:", player.usedDoubleJump,
+      "| duckBranchX:", FOREST_BREATHER_DUCK_BRANCH.x, "riverSegs:", forestRiverSegmentsStrung, "/", forestRiverSegmentsDecked);
+  }
 } else if (currentScene === "clouds") {
   updateCloudsScene(deltaTime);
 } else if (currentScene === "oak") {
