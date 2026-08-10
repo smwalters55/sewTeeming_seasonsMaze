@@ -10834,43 +10834,72 @@ function drawForestDuckLog(camX) {
   const log = FOREST_DUCK_LOG;
   const lx = log.x - camX;
   const logBottomY = gy - log.clearance + 14; // underside of the log itself
-  const logH = 16;
+  // beefed up considerably -- the original read as a thin flat bar at
+  // a distance/under video compression, which is what made a
+  // background tree crossing behind it look like a broken mechanical
+  // "horizontal gear" rather than a log with a tree behind it (the
+  // occlusion itself was always correct -- see drawForestForegroundTrees'
+  // own note). Fixed at the source instead of fighting the tree layer:
+  // thicker body, a real ground-contact shadow so it doesn't look like
+  // it's floating, a strong dark outline, and bolder bark texture.
+  const logH = 22; // was 16
+
+  // a soft grounding shadow beneath the whole log -- ties it visually
+  // to the ground plane so it doesn't read as a stray bar hovering in
+  // front of whatever's behind it
+  ctx.fillStyle = "rgba(10,10,5,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(lx, gy + 3, log.w / 2 + 14, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // two squat stone supports holding the log up off the ground
-  ctx.fillStyle = "#5a5850";
+  ctx.fillStyle = "#68665e";
   [-1, 1].forEach(side => {
     ctx.beginPath();
-    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 7, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 8, 11, 0, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1.3;
   [-1, 1].forEach(side => {
     ctx.beginPath();
-    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 7, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(lx + side * (log.w / 2 - 4), gy - 6, 8, 11, 0, 0, Math.PI * 2);
     ctx.stroke();
   });
 
-  // the log -- a rounded horizontal trunk, mossy on top
-  ctx.fillStyle = "#5a3d24";
-  roundRect(ctx, lx - log.w / 2 - 8, logBottomY - logH, log.w + 16, logH, 8);
+  // the log itself -- a rounded horizontal trunk, mossy on top. Strong
+  // dark outline (was a thin 0.5-alpha line) so the silhouette holds up
+  // on its own regardless of what's behind it.
+  ctx.fillStyle = "#6b4a2c";
+  roundRect(ctx, lx - log.w / 2 - 8, logBottomY - logH, log.w + 16, logH, 10);
   ctx.fill();
-  ctx.strokeStyle = "rgba(30,18,8,0.5)";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(20,12,5,0.85)";
+  ctx.lineWidth = 2.2;
   ctx.stroke();
+  // bark texture -- a few bold horizontal-ish lines along the body,
+  // not just the end rings, so the whole length reads as bark/wood
+  // grain even from a distance
+  ctx.strokeStyle = "rgba(40,26,12,0.55)";
+  ctx.lineWidth = 1.4;
+  [-0.3, 0.1, 0.5].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(lx - log.w / 2 - 4, logBottomY - logH * 0.75 + f * logH * 0.5);
+    ctx.quadraticCurveTo(lx, logBottomY - logH * 0.6 + f * logH * 0.5, lx + log.w / 2 + 4, logBottomY - logH * 0.75 + f * logH * 0.5);
+    ctx.stroke();
+  });
   // end-grain rings on the near end, so it clearly reads as a log and
   // not just a plank
-  ctx.strokeStyle = "rgba(90,60,32,0.6)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(110,74,40,0.75)";
+  ctx.lineWidth = 1.3;
   [3, 5.5].forEach(r => {
     ctx.beginPath();
     ctx.ellipse(lx - log.w / 2 - 8, logBottomY - logH / 2, r * 0.4, r, 0, 0, Math.PI * 2);
     ctx.stroke();
   });
   // a mossy cap along the top
-  ctx.fillStyle = "rgba(90,120,60,0.7)";
+  ctx.fillStyle = "rgba(100,132,66,0.85)";
   ctx.beginPath();
-  ctx.ellipse(lx, logBottomY - logH, log.w / 2 + 2, 4.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(lx, logBottomY - logH, log.w / 2 + 2, 5.5, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -12355,44 +12384,25 @@ function drawForestForegroundTrees(camX) {
   const viewX = camX * parallax;
   const firstTile = Math.floor((viewX - 140) / FOREST_TREE_TILE);
   const lastTile = Math.floor((viewX + canvas.width + 140) / FOREST_TREE_TILE);
-  // screen-space danger zone for the duck-log obstacle, computed once
-  // per frame from the CURRENT camera position -- a first attempt at
-  // this used a static world-position margin around the log instead,
-  // which turned out not to work: this layer scrolls at its own 0.8
-  // parallax rather than 1:1 with world objects like the log, so a
-  // tree's screen offset from the log isn't fixed at all -- it drifts
-  // continuously as camX changes, and which specific tile ends up
-  // aligned with the log depends on camX itself (not on how close that
-  // tile's world position is to the log's). A static world-distance
-  // check only ever protects against the alignment that happens to
-  // occur near camX≈0, not the one that actually occurs way out here
-  // (confirmed by testing -- the "horizontal gear" reappeared with a
-  // DIFFERENT, farther-off tile once camX moved). Checking actual
-  // on-screen position every frame instead sidesteps all of that: skip
-  // whichever tree instance would currently render on top of the log,
-  // no matter which tile it is or why the math lined up.
-  const logScreenX = FOREST_DUCK_LOG.x - camX;
+  // NOTE: no special-casing for the duck log here anymore (two earlier
+  // attempts -- a static world-distance skip, then a screen-space
+  // fade -- both got reverted). Turned out this was never actually an
+  // occlusion bug: drawForestDuckLog is called AFTER this function in
+  // drawForestScene, so the log already draws on top of any tree
+  // behind it every time, correctly. The "horizontal gear" report was
+  // really a legibility problem with the log's OWN art reading as a
+  // flat bar at small/compressed sizes, not a z-order clash -- fixed
+  // there instead (see drawForestDuckLog's own comment). The fade
+  // attempt just traded one visible artifact (an occasional pop) for a
+  // more constant one (a nearby tree visibly dissolving as you
+  // approach -- direct report: "tree in background fades as get closer
+  // to duck item"), so removing it entirely is the actual fix.
   for (let t = firstTile; t <= lastTile; t++) {
     const worldX = t * FOREST_TREE_TILE;
     const seed = t * 91.3 + 4000;
     if (pseudoRandom(seed) < 0.2) continue; // occasional gap so it doesn't read as a picket fence
     const jx = (pseudoRandom(seed + 1) - 0.5) * 130;
     const tx = worldX - viewX + jx;
-    // faded out smoothly near the duck log rather than a hard on/off
-    // skip -- a flat cutoff sounds fine in principle, but camX drifts
-    // by sub-pixel amounts every frame even while the player stands
-    // still (the camera-follow easing never perfectly settles -- see
-    // its own "perpetual sub-pixel drift" comment), and a tree sitting
-    // right near the cutoff distance would flicker in and out of
-    // existence as that drift nudged it across the boundary frame to
-    // frame. Direct report: "the tree behind the item randomly
-    // flickers disappear when building the bridge" (right where camX
-    // sits nearly still for a while). Fading alpha over a range instead
-    // of a hard toggle means sub-pixel drift just nudges the alpha by a
-    // sub-pixel amount too -- invisible.
-    const logDist = Math.abs(tx - logScreenX);
-    const logFadeAlpha = logDist < 40 ? 0 : logDist > 95 ? 1 : (logDist - 40) / 55;
-    if (logFadeAlpha <= 0) continue; // fully hidden -- skip the (otherwise wasted) draw work
     const trunkH = 128 + pseudoRandom(seed + 2) * 55;
     const trunkW = 14 + pseudoRandom(seed + 3) * 6;
     const lean = (pseudoRandom(seed + 4) - 0.5) * 0.12;
@@ -12405,7 +12415,6 @@ function drawForestForegroundTrees(camX) {
     const canopyHi = warm ? "#3d5726" : "#324a24";
 
     ctx.save();
-    ctx.globalAlpha = logFadeAlpha;
     ctx.translate(tx, gy);
     ctx.rotate(lean);
 
@@ -23495,6 +23504,59 @@ function drawMoleShopAlcove(camX) {
   ctx.lineTo(ax + archR + 3, gy);
   ctx.stroke();
 
+  // a small pinned notice in the left part of this stall's backing --
+  // same "there's something posted here" idea as the two alcoves' own
+  // wall plaques, but deliberately a different object so this richer
+  // stall doesn't just reuse their exact prop, per direct feedback
+  // ("add a notice that looks slightly diff in the left part of the
+  // stall 3 backing"). Those are warped wood plaques with scratched
+  // marks; this is a curled paper scrap with a little wax seal instead
+  // -- pale parchment rather than dark wood, and a torn/lifted corner
+  // instead of a straight rectangle, so it reads as its own thing at a
+  // glance while still speaking the same "illegible posted notice"
+  // language. Fixed in place, off to the left so it stays well clear
+  // of the shopkeeper (centered on ax) and the counter below.
+  ctx.save();
+  ctx.translate(ax - archR + 34, top + 36);
+  ctx.rotate(0.07);
+  ctx.fillStyle = "rgba(224,208,168,0.55)";
+  ctx.beginPath();
+  ctx.moveTo(-8, -7);
+  ctx.lineTo(7, -7);
+  ctx.lineTo(7, 6);
+  ctx.lineTo(2, 8);
+  ctx.lineTo(-8, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(90,70,40,0.45)";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // lifted corner -- a small darker fold at the bottom-right
+  ctx.fillStyle = "rgba(170,150,110,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(2, 8);
+  ctx.lineTo(7, 6);
+  ctx.lineTo(7, 3);
+  ctx.closePath();
+  ctx.fill();
+  // scratchy illegible ink lines, same idea as the alcove plaques but
+  // finer/darker to read as ink-on-paper rather than carved wood
+  ctx.strokeStyle = "rgba(50,36,20,0.5)";
+  ctx.lineWidth = 0.7;
+  [[-5, -4, 4, -4.5], [-5, -1.5, 3, -1], [-5, 1.5, 5, 2], [-5, 4.5, 1, 5]].forEach(([x1, y1, x2, y2]) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+  // small wax seal, the one clearly different accent from the alcoves'
+  // plain plaques
+  ctx.fillStyle = "#8a2a24";
+  ctx.beginPath();
+  ctx.arc(-4.5, -4.5, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   // shopkeeper -- tall, thin, dapper trickster: grey fur, a top hat with
   // a teal band (ties into the shop's own wares palette), one eye mid-
   // wink, a little waistcoat, and a cane. Replaces the original generic
@@ -24270,6 +24332,34 @@ function drawMoleholeAlcove(alcove, camX) {
     ctx.fill();
   }
 
+  // small warped wall plaque -- scratched, illegible marks instead of
+  // real letters (nobody down here could read it anyway). Originally
+  // only sat behind alcove two's klein bottle, positioned off that
+  // item's own counter slot; now drawn for BOTH alcoves, anchored to
+  // each stall's own NPC instead of any particular ware, so it shows
+  // up "same location in ref to the npc in the stall" per direct
+  // feedback ("put stall 2 notice board in stall one same location in
+  // ref to the npc in the stall"). Offset (+38, -3 from bodyTop)
+  // reproduces alcove two's original on-screen position relative to
+  // its own shopkeeper.
+  ctx.save();
+  ctx.translate(ax + 38, bodyTop - 3);
+  ctx.rotate(-0.05);
+  ctx.fillStyle = "rgba(120,96,66,0.42)";
+  ctx.fillRect(-9, -7, 18, 14);
+  ctx.strokeStyle = "rgba(60,44,26,0.55)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-9, -7, 18, 14);
+  ctx.strokeStyle = "rgba(224,210,178,0.4)";
+  ctx.lineWidth = 0.9;
+  [[-5, -3, 3, -4], [-4, 0, 4, -1], [-3, 3, 5, 2], [-6, -1.5, -2, -2.5]].forEach(([x1, y1, x2, y2]) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+  ctx.restore();
+
   // stall counter -- a simple plank, low, across the alcove's mouth
   const counterTop = gy - 22;
   ctx.fillStyle = "#3a2814";
@@ -24459,40 +24549,10 @@ function drawMoleholeAlcove(alcove, camX) {
       const tipT = sinceTip >= 0 && sinceTip < TIP_MS ? sinceTip / TIP_MS : -1;
       const tipAngle = tipT < 0 ? 0 : Math.abs(Math.sin(tipT * Math.PI * 2)) * 2.7;
 
-      // a small warped wall plaque behind the bottle -- scratched,
-      // illegible marks instead of real letters (nobody down here could
-      // read it anyway). Drawn BEFORE the bottle so it sits behind it,
-      // giving the bottle something to visually pop against besides
-      // just its own liquid color -- per direct feedback ("can we make
-      // it stand out more some other way besides purple water... maybe
-      // there can be like a wall decor or illegible sign behind it that
-      // makes it pop out"). Fixed in place (doesn't tip with the bottle).
-      // Nudged lower and lightened considerably (was a near-opaque dark
-      // brown sitting right behind the neck loops, which are only thin
-      // pale strokes -- even drawn on top, they had almost no contrast
-      // against it) per direct feedback ("make the notice a little
-      // lower and a little lighter so we can actually see the loops").
-      ctx.save();
-      ctx.translate(wx + 1, wy - 9);
-      ctx.rotate(-0.05);
-      ctx.fillStyle = "rgba(120,96,66,0.42)";
-      ctx.fillRect(-9, -7, 18, 14);
-      ctx.strokeStyle = "rgba(60,44,26,0.55)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(-9, -7, 18, 14);
-      ctx.strokeStyle = "rgba(224,210,178,0.4)";
-      ctx.lineWidth = 0.9;
-      [[-5, -3, 3, -4], [-4, 0, 4, -1], [-3, 3, 5, 2], [-6, -1.5, -2, -2.5]].forEach(([x1, y1, x2, y2]) => {
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-      });
-      ctx.restore();
-
       ctx.save();
       ctx.translate(wx, wy + 3);
       ctx.rotate(tipAngle);
+      ctx.scale(0.8, 0.8); // sized down a touch -- direct feedback ("make klien botttle a little smaller")
       ctx.translate(-wx, -(wy + 3));
 
       // redrawn to actually chase real Klein-bottle topology, the way
@@ -24510,13 +24570,15 @@ function drawMoleholeAlcove(alcove, camX) {
       // that's the piece that actually reads as "passing through the
       // glass" instead of "a handle on top." A small dark crescent
       // right where the tube's end overlaps the body sells the seam.
-      // Glass fill lightened per direct feedback ("make the klien
-      // bottle glass a little lighter it still just blends in way too
-      // much") -- was rgba(170,210,225,0.5), now both brighter and
-      // more opaque so it actually reads as glass against the
-      // molehole's warm brown instead of nearly vanishing into it.
-      ctx.fillStyle = "rgba(214,238,248,0.68)";
-      ctx.strokeStyle = "rgba(80,130,150,0.9)";
+      // Glass color has swung twice now -- too pale/blending in
+      // (rgba(170,210,225,0.5)), then brightened to fix that
+      // (rgba(214,238,248,0.68)), which then read as too jarring the
+      // other way ("the glass of it actually a little darker so it
+      // doesnt like JUMP out at you"). Settling in between: still
+      // clearly a cool glass tone with real presence against the warm
+      // background, just not a near-white highlight anymore.
+      ctx.fillStyle = "rgba(150,192,208,0.6)";
+      ctx.strokeStyle = "rgba(70,112,130,0.88)";
       ctx.lineWidth = 1;
 
       // BODY -- bulb bottom, narrowing shoulders, short open neck
@@ -24534,12 +24596,22 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.fill();
       ctx.stroke();
 
-      // the liquid -- a simple pool sitting in the body's lower half,
-      // same wherever the bottle currently is (rights itself just like
-      // the glass does) since the whole point is that it never spills
-      // no matter how the bottle's held. Clipped to the same bulb
-      // silhouette as the body itself now (was a plain ellipse approx,
-      // close enough visually but this now matches exactly).
+      // the liquid -- clipped to the same bulb silhouette as the body.
+      // Used to be drawn rigidly in the same rotated frame as the
+      // glass, so as the bottle tipped over it stayed pinned to the
+      // exact same spot near the bulb's bottom -- looked "glued to the
+      // base" instead of behaving like an actual liquid, per direct
+      // feedback ("kleinbottle upside down shouldnt the liquid still
+      // move and not be glued to the base of the bottle"). Fixed by
+      // counter-rotating just this fill (not the clip) around the same
+      // pivot the outer tip transform uses -- since that pivot's
+      // uniform scale commutes with rotation, this exactly cancels the
+      // glass's own rotation and leaves only the scale, so the liquid
+      // stays level in world space (like it's obeying gravity) while
+      // the glass rotates around it, visibly sliding/tilting relative
+      // to the glass as it tips instead of rotating rigidly with it.
+      // Still fully contained (never spills) since it's clipped to the
+      // body shape either way.
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(wx - 4, wy + 10);
@@ -24553,8 +24625,11 @@ function drawMoleholeAlcove(alcove, camX) {
       ctx.quadraticCurveTo(wx, wy + 12, wx - 4, wy + 10);
       ctx.closePath();
       ctx.clip();
+      ctx.translate(wx, wy + 3);
+      ctx.rotate(-tipAngle);
+      ctx.translate(-wx, -(wy + 3));
       ctx.fillStyle = "rgba(40,120,215,0.85)";
-      ctx.fillRect(wx - 7, wy + 2, 15, 11);
+      ctx.fillRect(wx - 20, wy + 2, 40, 30);
       ctx.restore();
 
       // TUBE -- traced out along the outer edge from the neck's left
