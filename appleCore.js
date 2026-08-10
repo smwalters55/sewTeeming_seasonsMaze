@@ -11215,6 +11215,13 @@ const FOREST_FLOAT_ZONE_START_X = 5700;
 const FOREST_FLOAT_ZONE_END_X = 6400;
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 const riverFloat = { active: false };
+// eases toward 1 while floating, 0 once out of the zone -- drives the
+// "actually sitting partly in the water" wash on the player sprite (see
+// the shared player-draw section) so floating reads as being in the
+// water the whole time, not just during a duck. Per direct feedback
+// ("player doesnt actually duck under the duck obstacle in the water...
+// can u put player with the partly underwater thing happening too").
+let floatSubmergeAmount = 0;
 // mix of "jump" (must be airborne above clearance to pass) and "duck"
 // (same pass rule as FOREST_DUCK_LOG) obstacles, so the zone actually
 // exercises both halves of what was asked for ("jump and double jump
@@ -11238,8 +11245,10 @@ function drawForestFloatZone(camX) {
 
   // flat placeholder fill, no shading/reeds/banks like the real river
   // gets yet -- just enough to see the zone and its obstacles while the
-  // mechanic itself is what's actually being tested right now
-  ctx.fillStyle = "#2e5a62";
+  // mechanic itself is what's actually being tested right now. Gently
+  // translucent (was a fully opaque solid fill) per direct feedback
+  // ("make water gently slight transluscent").
+  ctx.fillStyle = "rgba(46,90,98,0.72)";
   ctx.fillRect(zoneStartPx, gy, zoneEndPx - zoneStartPx, canvas.height - gy);
   ctx.strokeStyle = "#ffcc33";
   ctx.lineWidth = 2;
@@ -11254,11 +11263,18 @@ function drawForestFloatZone(camX) {
     const ox = ob.x - camX;
     if (ox < -40 || ox > canvas.width + 40) return;
     const obH = ob.type === "duck" ? 20 : 26;
+    // duck-type hovers a bit above the water surface now (was flush
+    // with it) -- per direct feedback ("duck obstacles will need to be
+    // just a little higher just a lil and then it is like player is
+    // fully ducking under"), leaving real visible gap for the sunk/
+    // ducked player to fit into instead of the log's own bottom edge
+    // sitting right at the same line the player's feet are already at.
+    const obBottom = ob.type === "duck" ? gy - 14 : gy;
     ctx.fillStyle = ob.type === "duck" ? "#7a4a2a" : "#a05a2a";
-    ctx.fillRect(ox - ob.w / 2, gy - obH, ob.w, obH);
+    ctx.fillRect(ox - ob.w / 2, obBottom - obH, ob.w, obH);
     ctx.fillStyle = "#fff";
     ctx.font = "10px monospace";
-    ctx.fillText(ob.type.toUpperCase(), ox - ob.w / 2, gy - obH - 4);
+    ctx.fillText(ob.type.toUpperCase(), ox - ob.w / 2, obBottom - obH - 4);
   });
 
   FOREST_FLOAT_COLLECTIBLES.forEach(c => {
@@ -11269,6 +11285,33 @@ function drawForestFloatZone(camX) {
     ctx.beginPath();
     ctx.arc(cx, gy - 14, 6, 0, Math.PI * 2);
     ctx.fill();
+  });
+}
+
+// redraws just the duck-type float obstacle(s) AGAIN, on top of the
+// player sprite -- same "draw again after the player" trick as the
+// bridge's front rail / molehole's root pillars elsewhere. Without
+// this the log always drew BEHIND the player (scene layer, before the
+// shared player draw), so ducking under it never actually looked like
+// going under anything -- the log just sat there while the player
+// visibly stayed in front the whole time. Per direct feedback ("i want
+// to actually go under the duck obstacle for sure"). Only the duck
+// obstacles get this treatment -- the jump ones are meant to be
+// cleared in the air above them, never overlapping, so there's nothing
+// to occlude there.
+function drawForestFloatDuckOverlay(camX) {
+  if (!riverFloat.active) return;
+  FOREST_FLOAT_OBSTACLES.forEach(ob => {
+    if (ob.type !== "duck") return;
+    const ox = ob.x - camX;
+    if (ox < -40 || ox > canvas.width + 40) return;
+    const obH = 20;
+    const obBottom = gy - 14;
+    ctx.fillStyle = "#7a4a2a";
+    ctx.fillRect(ox - ob.w / 2, obBottom - obH, ob.w, obH);
+    ctx.fillStyle = "#fff";
+    ctx.font = "10px monospace";
+    ctx.fillText("DUCK", ox - ob.w / 2, obBottom - obH - 4);
   });
 }
 
@@ -15113,6 +15156,8 @@ function updateForestScene(deltaTime) {
   // push while inside the zone, plus obstacle blocking and collectible
   // pickup, same simple push-back-out-of-the-way style as the duck log.
   riverFloat.active = player.x > FOREST_FLOAT_ZONE_START_X - 20 && player.x < FOREST_FLOAT_ZONE_END_X;
+  floatSubmergeAmount += ((riverFloat.active ? 1 : 0) - floatSubmergeAmount) * 0.15;
+  if (floatSubmergeAmount < 0.01) floatSubmergeAmount = 0;
   if (riverFloat.active) {
     player.x += FOREST_FLOAT_DRIFT_SPEED;
 
@@ -33281,7 +33326,14 @@ const sinkAmount = fallProgress * (player.height + 20); // how far down the body
 // lower into water to better line up scene and body water line").
 const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRiverWadeAmount : 0) *
   (7 + (typeof forestRiverWadeDepth !== "undefined" ? forestRiverWadeDepth : 0.6) * 8);
-const drawPy = py + sinkAmount + riverWadeSink;
+// gentle up/down bob while actually floating in the test river -- purely
+// visual (added only to the draw position, same pattern as riverWadeSink
+// above), eased in/out by floatSubmergeAmount so it doesn't snap on/off
+// at the zone's edges. Per direct feedback ("in moving river water,
+// lets make the player like bobbing up and down gently").
+const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
+  Math.sin(performance.now() * 0.0028) * 3;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob;
 
 // shadow shrinks along with the body sinking in -- pinned to the
 // visual ground line, which itself scrolls with cameraY in tunnel
@@ -33385,6 +33437,18 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     ctx.translate(-feetX, -feetY);
   }
 
+  // while floating, ducking visually SINKS the player down into the
+  // water on top of the usual crouch-squash above, instead of just
+  // crouching in place at the same height the water line already sits
+  // at -- otherwise ducking never actually read as going under the
+  // surface. Per direct feedback ("player doesnt actually duck under
+  // the duck obstacle in the water"). Draw-only (no change to
+  // player.y/physics), same pattern as forestRiverWadeSink elsewhere.
+  if (typeof riverFloat !== "undefined" && riverFloat.active &&
+      typeof playerDuckAmount !== "undefined" && playerDuckAmount > 0.01) {
+    ctx.translate(0, playerDuckAmount * 11);
+  }
+
   // body
   ctx.fillStyle = "#7a78b8";
   roundRect(ctx, px, drawPy, player.width, player.height, 8);
@@ -33436,6 +33500,45 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     ctx.restore();
   }
 
+  // float-zone submersion -- same translucent-wash technique as the
+  // wading tint above, but for the whole time the player is actually
+  // floating in the test river (not just easing in/out at a shallow
+  // edge), so it reads as genuinely sitting IN the water rather than
+  // standing on top of it. Deeper while ducking (playerDuckAmount),
+  // shallower otherwise, layered on top of the extra downward sink
+  // added above. Per direct feedback ("can u put player with the
+  // partly underwater thing happening too").
+  if (typeof floatSubmergeAmount !== "undefined" && floatSubmergeAmount > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, px, drawPy, player.width, player.height, 8);
+    ctx.clip();
+    const duckT = typeof playerDuckAmount !== "undefined" ? playerDuckAmount : 0;
+    // deeper and much more visible than the first pass -- per direct
+    // feedback ("im not actually partially submerged lower though"),
+    // that version's low alpha (0.42) and pale teal barely read against
+    // the player's own body color. Darker/more saturated tint, higher
+    // alpha, and the line itself sits lower on the body by default
+    // (0.55 instead of 0.62) so more of the sprite genuinely looks wet.
+    const waterLineY = drawPy + player.height * (0.55 - duckT * 0.45); // waist-deep normally, nearly full-depth while ducking
+    const wetGrad = ctx.createLinearGradient(0, waterLineY - 6, 0, waterLineY + 6);
+    wetGrad.addColorStop(0, "rgba(20,55,68,0)");
+    wetGrad.addColorStop(1, `rgba(20,55,68,${0.68 * floatSubmergeAmount})`);
+    ctx.fillStyle = wetGrad;
+    ctx.fillRect(px - 2, waterLineY - 6, player.width + 4, player.height - (waterLineY - 6 - drawPy));
+    const wobbleT2 = performance.now() * 0.004;
+    ctx.strokeStyle = `rgba(200,235,230,${0.75 * floatSubmergeAmount})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const wx = px - 2 + (player.width + 4) * (i / 6);
+      const wy = waterLineY + Math.sin(wobbleT2 + i * 1.1) * 1.3;
+      if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // eyes
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
@@ -33456,6 +33559,7 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 if (currentScene === "forest") {
   drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
   drawForestRiverFrontRail(camX); // the bridge's pale front railing, drawn after the player so it reads as actually in front, not just painted over
+  drawForestFloatDuckOverlay(camX); // redraws the duck-type float obstacle over the player while passing under it -- see that function's own comment
 } else if (currentScene === "molehole") {
   // foreground root pillars, drawn AFTER the player sprite so they sit
   // in front of it -- real depth instead of the player always being
@@ -34245,26 +34349,27 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY -- debug spawn for testing the river bridge build flow from
-// scratch. Direct request: "put me in forest having 9 logs and the
-// geode in my inventory, right in front of the bridge no bridge build
-// yet or pile logs made yet." Deliberately does NOT touch
-// forestRiverSegmentsStrung/Decked or forestRiverLogPile -- those stay
-// at their real defaults (0), unlike the LAST version of this kind of
-// block, which force-marked the bridge as already fully built and
-// ended up silently breaking the real pile/grab-a-log flow for a long
-// stretch before it was caught. Remove this block once done testing.
+// TEMPORARY -- debug spawn, now pointed at testing past the bridge
+// instead of the bridge-build flow itself. Direct request: "for debug
+// place me on right side of already built bridge." Marks the bridge as
+// fully strung AND decked (so the invisible build-edge wall doesn't
+// hold the player back at the near bank -- see the "FLOAT ZONE" and
+// "RIVER BRIDGE BUILDING" comments in updateForestScene for how that
+// wall works) and spawns just past the far bank, ready to walk on
+// toward the reflection pool and the float-zone scaffolding beyond it.
+// Swap back to the previous "9 logs, unbuilt bridge" version (see git
+// history) if the build flow itself needs testing again. Remove this
+// block once done testing.
 currentScene = "forest";
-player.x = FOREST_RIVER_NEAR_BANK_X - 30;
+forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+player.x = FOREST_RIVER_FAR_BANK_X + 20;
 player.y = 0;
 player.vy = 0;
 player.jumping = false;
 player.usedDoubleJump = false;
 cameraX = Math.max(0, player.x - canvas.width * 0.5);
 cameraY = 0;
-for (let i = 0; i < 9; i++) addToInventory("bridgePiece");
-addToInventory("geode");
-geodeCracked = false;
 updateInventoryUI();
 
 update();
