@@ -284,7 +284,19 @@ function selectBoomerangIfAvailable() {
 // Tab cycles through held items — a keyboard-only way to select, since
 // everything else in this game is keyboard-driven except clicking chips
 function cycleHeldItem() {
-  const types = inventoryOrder.filter(t => inventory[t] > 0 && t !== "feather");
+  // CONFIRMED BUG FIX: scene-locked items (lamp/paperAirplane -- see
+  // SCENE_LOCKED_ITEMS) have to be excluded from the cycle outside
+  // their home scenes, not just hidden from the strip. Without this,
+  // Tab could select one, the continuous per-scene safety net would
+  // immediately un-select it again before the next frame rendered, and
+  // since heldItem was back to null, the NEXT Tab press just landed on
+  // the same scene-locked item again (currentIdx always -1) -- Tab
+  // reads as completely dead the moment one of these is anywhere in
+  // the cycle order and you're not in its home scene.
+  const types = inventoryOrder.filter(t =>
+    inventory[t] > 0 && t !== "feather" &&
+    (!SCENE_LOCKED_ITEMS[t] || SCENE_LOCKED_ITEMS[t].includes(currentScene))
+  );
   if (types.length === 0) return;
   const currentIdx = types.indexOf(heldItem);
   const nextIdx = (currentIdx + 1) % types.length;
