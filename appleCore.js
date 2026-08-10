@@ -12378,7 +12378,21 @@ function drawForestForegroundTrees(camX) {
     if (pseudoRandom(seed) < 0.2) continue; // occasional gap so it doesn't read as a picket fence
     const jx = (pseudoRandom(seed + 1) - 0.5) * 130;
     const tx = worldX - viewX + jx;
-    if (Math.abs(tx - logScreenX) < 55) continue; // this instance would currently sit on top of the duck log -- skip it for this frame only
+    // faded out smoothly near the duck log rather than a hard on/off
+    // skip -- a flat cutoff sounds fine in principle, but camX drifts
+    // by sub-pixel amounts every frame even while the player stands
+    // still (the camera-follow easing never perfectly settles -- see
+    // its own "perpetual sub-pixel drift" comment), and a tree sitting
+    // right near the cutoff distance would flicker in and out of
+    // existence as that drift nudged it across the boundary frame to
+    // frame. Direct report: "the tree behind the item randomly
+    // flickers disappear when building the bridge" (right where camX
+    // sits nearly still for a while). Fading alpha over a range instead
+    // of a hard toggle means sub-pixel drift just nudges the alpha by a
+    // sub-pixel amount too -- invisible.
+    const logDist = Math.abs(tx - logScreenX);
+    const logFadeAlpha = logDist < 40 ? 0 : logDist > 95 ? 1 : (logDist - 40) / 55;
+    if (logFadeAlpha <= 0) continue; // fully hidden -- skip the (otherwise wasted) draw work
     const trunkH = 128 + pseudoRandom(seed + 2) * 55;
     const trunkW = 14 + pseudoRandom(seed + 3) * 6;
     const lean = (pseudoRandom(seed + 4) - 0.5) * 0.12;
@@ -12391,6 +12405,7 @@ function drawForestForegroundTrees(camX) {
     const canopyHi = warm ? "#3d5726" : "#324a24";
 
     ctx.save();
+    ctx.globalAlpha = logFadeAlpha;
     ctx.translate(tx, gy);
     ctx.rotate(lean);
 
@@ -14974,10 +14989,24 @@ function updateForestScene(deltaTime) {
     const passable = player.y > log.clearance ||
                       (player.y <= 2 && playerDuckAmount > log.duckThreshold);
     if (withinLogX && !passable) {
+      // push all the way out past the SAME threshold withinLogX itself
+      // checks against (playerCenterX, not player.x) -- the left-side
+      // case used to land player.x only `player.width/2` short of the
+      // log, which put playerCenterX right back inside the zone it was
+      // just pushed out of (off by the other half of the player's own
+      // width), so the very next frame's check saw "still overlapping"
+      // and pushed again -- a real per-frame reset, not just visual
+      // jitter, and it could fully stick a player approaching from the
+      // right (direct feedback: "spazzy bumping... at this exact point
+      // on the left i get stuck and cant just walk further left, prob
+      // bc i am overlapping the duck item when i shouldnt be able to").
+      // Subtracting the FULL player.width here (not half) actually
+      // clears playerCenterX past the threshold, so one push is enough
+      // and walking away in either direction works immediately.
       if (playerCenterX < log.x) {
-        player.x = log.x - log.w / 2 - player.width / 2 - 1;
+        player.x = log.x - log.w / 2 - player.width - 1;
       } else {
-        player.x = log.x + log.w / 2 + player.width / 2 + 1;
+        player.x = log.x + log.w / 2 + 1;
       }
       player.vx = 0;
     }
@@ -33951,10 +33980,32 @@ updateSeasonTransition(deltaTime);
   keys.cJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
-  
+
   requestAnimationFrame(update);
 }
 
+
+// TEMPORARY -- debug spawn for testing the river bridge build flow from
+// scratch. Direct request: "put me in forest having 9 logs and the
+// geode in my inventory, right in front of the bridge no bridge build
+// yet or pile logs made yet." Deliberately does NOT touch
+// forestRiverSegmentsStrung/Decked or forestRiverLogPile -- those stay
+// at their real defaults (0), unlike the LAST version of this kind of
+// block, which force-marked the bridge as already fully built and
+// ended up silently breaking the real pile/grab-a-log flow for a long
+// stretch before it was caught. Remove this block once done testing.
+currentScene = "forest";
+player.x = FOREST_RIVER_NEAR_BANK_X - 30;
+player.y = 0;
+player.vy = 0;
+player.jumping = false;
+player.usedDoubleJump = false;
+cameraX = Math.max(0, player.x - canvas.width * 0.5);
+cameraY = 0;
+for (let i = 0; i < 9; i++) addToInventory("bridgePiece");
+addToInventory("geode");
+geodeCracked = false;
+updateInventoryUI();
 
 update();
 
