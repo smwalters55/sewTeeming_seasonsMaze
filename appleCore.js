@@ -38933,8 +38933,7 @@ const sandboxSlinky = {
   patternIndex: 0,
   runT: 0,
   runDurationMs: SANDBOX_SLINKY_BASE_MS,
-  startX: 0,
-  renderP: 0 // smoothed, continuously-lagging ride progress used only for where the PLAYER is drawn -- see updateSandboxSlinky
+  startX: 0
 };
 
 function drawBlockPile(camX) {
@@ -39027,45 +39026,24 @@ function updateSandboxSlinky(deltaTime) {
     // margin) so the player consistently clears over the top of the
     // coil through the flight, not just during the separate peek bounce.
     const hopHeight = 34 * (1 - p * 0.15); // hops shrink a little near the ground, but stay well above the coil's own arc height
+    // CONFIRMED BUG FIX: "player still doesnt look synched up with the
+    // slinky" -- every previous attempt at this (hard lag floor,
+    // proportional per-hop lag, then a smoothed continuous time-lag)
+    // was still fundamentally an intentional gap between where the
+    // player is DRAWN and where the ride actually is, and any such gap
+    // reads as desync no matter how it's smoothed -- there is no lag
+    // curve that both trails AND looks perfectly synced, those are
+    // opposites. Removed the artificial lag entirely: player.x/y now
+    // track the ride's real progress `p` exactly, every frame, so the
+    // player is always exactly where the coil's own animation says it
+    // should be. Visibility of the coil during the hop is handled
+    // entirely by the (now much taller, see hopHeight above) jump arc
+    // plus the peek bounce below -- both of those are a single hop's
+    // own up-and-down motion, not a timing offset, so they can make the
+    // player rise clear of the coil without ever putting the player's
+    // drawn position out of sync with its actual position.
     s.hopPhase = hopPhase;
-    // CONFIRMED CHANGE: "put player a little more backwards from the
-    // middle. so that human can see the full coil uncoil... player
-    // still covering too much of the slinky" -- the coil is always
-    // drawn in full now (anchor to the next block), but the player's
-    // OWN position tracked the hop's true progress, so it kept landing
-    // right on/around the coil's peak and covering the most dynamic
-    // part of the uncoiling. Render the player a bit BEHIND its true
-    // progress through the hop (lagging toward the anchor side) so the
-    // peak and the forward stretch of the coil stay visible ahead of
-    // it instead of underneath it. This only affects where the player
-    // is DRAWN this hop, not the actual ride timing/duration.
-    // CONFIRMED BUG FIX: "i think there is still an off lag" -- both the
-    // old hard-floor lag AND the proportional lag that replaced it
-    // (hopPhase * 0.78) were computed PER HOP, always starting back at
-    // 0 the instant segIndex ticked over. That means the render never
-    // actually reached hopPhase 1 within a hop (it always topped out
-    // around 0.78-of-the-way), then the very next hop's render started
-    // fresh from 0 at a segStart equal to where the PREVIOUS hop's
-    // segEnd already was -- so both player.x and player.y took a real,
-    // sudden step at every single tier transition: y visibly dropped
-    // the last ~22% of that hop's height in one frame, and x jumped by
-    // the last ~22% of that hop's horizontal drift, at every block on
-    // the way down. That per-hop reset IS the residual "off lag" --
-    // fixed by making the lag a continuous, ride-long delay in TIME
-    // instead of a fraction reset every hop: s.renderP eases toward the
-    // true ride progress `p` every frame (framerate-independent via
-    // deltaTime) and is only ever reset when a brand new ride starts,
-    // so it trails smoothly across every hop boundary with nothing to
-    // snap. The coil itself still anchors to the TRUE current hop
-    // (segStart/segEnd/hopFromX/hopToX below all still come from the
-    // real p), so only the player's own drawn position lags -- exactly
-    // the original intent, just without the per-hop sawtooth.
-    const renderFollow = Math.min(1, deltaTime * 8);
-    s.renderP = Math.min(p, s.renderP + (p - s.renderP) * renderFollow);
-    const renderP = s.renderP;
-    const { segIndex: renderSegIndex, hopPhase: renderHopPhase } = sandboxHopSegAt(renderP);
-    const renderSegStart = hops[renderSegIndex], renderSegEnd = hops[renderSegIndex + 1];
-    const hopArc = Math.sin(renderHopPhase * Math.PI) * hopHeight;
+    const hopArc = Math.sin(hopPhase * Math.PI) * hopHeight;
     // CONFIRMED CHANGE: "what if it sort of bounced player up each
     // movement down, but at the right time, so you could fully see the
     // slinky for each movement down" -- rather than relying only on
@@ -39077,7 +39055,7 @@ function updateSandboxSlinky(deltaTime) {
     // least one clean unobstructed view of the coil every hop,
     // regardless of exact overlap math.
     const peekCenter = 0.6, peekWidth = 0.32, peekHeight = 22;
-    const peekT = (renderHopPhase - peekCenter) / peekWidth;
+    const peekT = (hopPhase - peekCenter) / peekWidth;
     const peekBounce = Math.abs(peekT) > 1 ? 0 : Math.cos(peekT * Math.PI / 2) ** 2 * peekHeight;
     // CONFIRMED BUG FIX: "sometimes the slinky still hops on air" /
     // "when go to right hops on air" -- a flat taper (assuming the pile
@@ -39122,8 +39100,8 @@ function updateSandboxSlinky(deltaTime) {
       const rawX = s.startX + pattern.xOffset(t) * slinkyXTaper(t);
       return Math.max(lo, Math.min(hi, rawX));
     }
-    player.x = slinkyClampedX(renderP) - player.width / 2;
-    player.y = (renderSegStart + (renderSegEnd - renderSegStart) * renderHopPhase) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(renderP) : 0);
+    player.x = slinkyClampedX(p) - player.width / 2;
+    player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(p) : 0);
     // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
     // like with the arcs coming down a set of blocks" -- stash the
     // WORLD x/height of the two blocks this hop is flipping between
@@ -39189,7 +39167,6 @@ function updateSandboxSlinky(deltaTime) {
     s.runDurationMs = SANDBOX_SLINKY_BASE_MS / (1 + s.charge * 0.65);
     s.startX = player.x + player.width / 2;
     s.runT = 0;
-    s.renderP = 0;
     s.running = true;
     player.onSlinky = true;
     player.jumping = true;
