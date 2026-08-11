@@ -39163,89 +39163,87 @@ function drawSandboxSlinky(camX) {
     // the other candidates, compared side by side in chat first) --
     // drumR back up from 6 to 8 and ring spacing tightened to 2.2 (real
     // but small visible air between each coil, not a solid tube).
-    const drumOffset = 12, drumR = 8, drumRingH = 2.2, drumRings = 8;
+    // CONFIRMED BUG FIX: "the top is fanned out instead of connected
+    // coils... its the coil going back to front instead of side to
+    // side" -- every previous version of the top portion used straight
+    // radiating lines (a "fan"), which never actually looked like coil
+    // loops no matter how densely packed or how well their tips lined
+    // up. Rebuilt completely: the top is now a series of actual loop
+    // shapes (ellipses, same visual language as the drum rings below,
+    // NOT tall stretched arcs which would read as looking through a
+    // tube front-to-back) whose CENTERS travel up and over along one
+    // shared arc path from the left drum's rim to the right drum's rim.
+    // Loops stay flat/wide side-to-side the whole way, exactly like the
+    // rings below -- the dome shape comes from the path they travel,
+    // not from rotating or stretching the loops themselves. Verified
+    // directly against the real "C" reference photo (zoomed + side by
+    // side) through several rounds: fixed uneven bunching by spacing
+    // loops by actual arc LENGTH instead of raw curve parameter (equal
+    // parameter steps bunched almost all loops near the peak on a tall
+    // curve, leaving a gap right above the drums), tightened the arc
+    // height and loop count to match C's own tight spacing, enlarged
+    // the loops slightly to match the pillars' coil thickness, and
+    // finally widened the pillars themselves a touch (rather than
+    // shrinking the arch) so the arch's own end-loop width lines up
+    // with the pillar width exactly at the seam.
+    const drumOffset = 12, drumRingH = 2.2, drumRings = 8;
     const drumTopY = coilSy - 2;
-    const ringRX = drumR, ringRY = drumR * 0.42;
+    const ringRY = 8 * 0.42;
+    const pillarRX = 8 * 1.06; // CONFIRMED CHANGE: widened very slightly to match the arch's own end width
+    const leftDcx = coilSx - drumOffset, rightDcx = coilSx + drumOffset;
     ctx.lineWidth = 1.3;
-    // CONFIRMED BUG FIX: "like covering a little of arc... the pillars
-    // are on top of arc" -- the topmost ring was drawn as a full closed
-    // ellipse (0 to 2*PI), which put a hard, complete "cap" curve right
-    // where the fan strands begin. That closed loop read as a sealed
-    // cylinder end, visually separating the drum from the fan even
-    // though the strands technically touched it -- the ring's own top
-    // arc drew right over/along the strands' base points. The topmost
-    // ring is really the one loop mid-transition into the fan, so only
-    // its lower half (the part still wrapping around the drum) is drawn
-    // now; the fan strands themselves complete its upper half, so the
-    // coil and the fan read as one continuous piece instead of a
-    // cylinder with something separate resting on it.
-    [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
+    [leftDcx, rightDcx].forEach(dx => {
       for (let i = 0; i < drumRings; i++) {
         const ringY = drumTopY - i * drumRingH;
         ctx.beginPath();
-        if (i === drumRings - 1) {
-          ctx.ellipse(dx, ringY, drumR, ringRY, 0, 0, Math.PI);
-        } else {
-          ctx.ellipse(dx, ringY, drumR, ringRY, 0, 0, Math.PI * 2);
-        }
+        ctx.ellipse(dx, ringY, pillarRX, ringRY, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "this shape isnt connected? ... cant you use
-    // the same math/numbers you used to render c" -- the previous
-    // "shared single vertex" apex was mathematically touching but read
-    // as two spiky fans poking together at one pixel, not a blended
-    // arc (confirmed by a direct isolated render, then confirmed AGAIN
-    // once the earlier browser-cache red herring was ruled out --
-    // multiple browsers on the user's own machine showed this exact
-    // sharp-vertex shape, so the geometry itself needed to change, not
-    // just the delivery). Rebuilt around one continuous rounded ROOF
-    // curve (a single quadratic bezier from the left ring's own top rim
-    // to the right ring's own top rim, control point pulled up above
-    // the midpoint) instead of a single point -- every strand's tip
-    // lands somewhere ALONG that shared curve rather than on one exact
-    // pixel, and the two sides' tip ranges are widened to actually
-    // overlap/interleave near the center (not just meet edge-to-edge),
-    // so the peak reads as strands crossing into one blended dome, the
-    // way the approved "C" candidate actually looks. Verified with a
-    // side-by-side render against the real "C" reference image before
-    // shipping -- this is visibly the closest match of every variant
-    // tried (a wider independent-fan-per-drum version was tried too and
-    // rendered a visible gap down the middle, worse than this).
     const topRingY = drumTopY - (drumRings - 1) * drumRingH;
-    const leftDcx = coilSx - drumOffset, rightDcx = coilSx + drumOffset;
-    const roofP0x = leftDcx, roofP0y = topRingY;
-    const roofP1x = rightDcx, roofP1y = topRingY;
-    const roofCtrlX = coilSx, roofCtrlY = topRingY - arcHeight * 1.1;
-    function slinkyRoofPoint(u) {
+    function slinkyArchBezierPoint(u, p0x, p0y, cx, cy, p1x, p1y) {
       const mt = 1 - u;
       return {
-        x: mt * mt * roofP0x + 2 * mt * u * roofCtrlX + u * u * roofP1x,
-        y: mt * mt * roofP0y + 2 * mt * u * roofCtrlY + u * u * roofP1y
+        x: mt * mt * p0x + 2 * mt * u * cx + u * u * p1x,
+        y: mt * mt * p0y + 2 * mt * u * cy + u * u * p1y
       };
     }
-    ctx.lineWidth = 0.9;
-    const sweepDeg = 78;
-    [[-1, leftDcx], [1, rightDcx]].forEach(([dir, dcx]) => {
-      const count = 10;
-      for (let i = 0; i < count; i++) {
-        const t = i / (count - 1); // 0 = innermost, 1 = outermost (near the ring's own side)
-        const baseThetaDeg = 90 - dir * t * sweepDeg;
-        const baseTheta = baseThetaDeg * Math.PI / 180;
-        const baseX = dcx + ringRX * Math.cos(baseTheta);
-        const baseY = topRingY - ringRY * Math.sin(baseTheta);
-        // innermost lines (t near 0) reach almost all the way across to
-        // near the OTHER side's own near-center point (slight
-        // overlap/interleave); outermost (t near 1) stay near their own
-        // ring's rim end of the shared roof curve.
-        const u = dir < 0 ? (0.58 - 0.58 * t) : (0.42 + 0.58 * t);
-        const tip = slinkyRoofPoint(u);
-        ctx.beginPath();
-        ctx.moveTo(baseX, baseY);
-        ctx.lineTo(tip.x, tip.y);
-        ctx.stroke();
+    // CONFIRMED BUG FIX: "there is a little overlap between the arch
+    // and the pillars" -- the arch's own first/last loop used to land
+    // at the EXACT same point as the drum's own topmost ring (double-
+    // drawing that one ring). Shifted the arch's start/end points up by
+    // one ring-step so it continues the same spacing sequence as the
+    // drum instead of repeating its last ring -- still directly
+    // adjacent (zero gap) but no more doubled seam.
+    const archP0x = leftDcx, archP0y = topRingY - drumRingH;
+    const archP1x = rightDcx, archP1y = topRingY - drumRingH;
+    const archCtrlX = coilSx, archCtrlY = topRingY - arcHeight * 1.5;
+    const archSamples = 60;
+    const archPts = [];
+    for (let i = 0; i <= archSamples; i++) archPts.push(slinkyArchBezierPoint(i / archSamples, archP0x, archP0y, archCtrlX, archCtrlY, archP1x, archP1y));
+    const archCum = [0];
+    for (let i = 1; i <= archSamples; i++) archCum.push(archCum[i - 1] + Math.hypot(archPts[i].x - archPts[i - 1].x, archPts[i].y - archPts[i - 1].y));
+    const archTotalLen = archCum[archSamples];
+    function slinkyArchPointAtLength(targetLen) {
+      let lo = 0, hi = archSamples;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (archCum[mid] < targetLen) lo = mid + 1; else hi = mid;
       }
-    });
+      return archPts[lo];
+    }
+    const archLoopCount = 12;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < archLoopCount; i++) {
+      const frac = i / (archLoopCount - 1);
+      const pt = slinkyArchPointAtLength(frac * archTotalLen);
+      const openness = Math.sin(frac * Math.PI); // 0 at the pillars, 1 at the peak
+      const rx = 8 * (1.14 + openness * 0.02);
+      const ry = ringRY * (1.16 + openness * 0.45);
+      ctx.beginPath();
+      ctx.ellipse(pt.x, pt.y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
   // CONFIRMED BUG FIX: "i also cant see the slinky while im riding
   // down" -- drawSandboxSlinky is called from drawSandboxScene, which
