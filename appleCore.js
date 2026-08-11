@@ -1893,9 +1893,16 @@ function drawBoomerangThrow(camX) {
 // just un-held while in the air" trick the boomerang uses.
 const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
   // 0: loop-de-loop -- one big vertical circle up and over
+  // CONFIRMED BUG FIX: dy's sign was backwards -- "up and over" was
+  // actually implemented as DOWN by up to 130 from the throw origin,
+  // which (since the plane is usually thrown near ground level) sank
+  // the loop well below the visible ground/camera area instead of
+  // arcing upward like the comment/intent describes. Flipped the sign
+  // so the loop genuinely rises above the origin instead of dropping
+  // below it.
   (p) => {
     const ang = p * Math.PI * 2;
-    return { dx: Math.sin(ang) * 65, dy: -(1 - Math.cos(ang)) * 65 };
+    return { dx: Math.sin(ang) * 65, dy: (1 - Math.cos(ang)) * 65 };
   },
   // 1: lazy figure-8, drifting out and looping back
   (p) => {
@@ -1915,10 +1922,14 @@ const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
   },
   // 4: skipping bounce -- two quick hops out and back, choppier than
   // the other four smooth loops/glides
+  // CONFIRMED BUG FIX: same sign issue as pattern 0 -- "hops" should
+  // rise above the origin, but dy was always <= 0, sinking the plane
+  // slightly below the throw point on every bounce instead of hopping
+  // up off of it.
   (p) => {
     const ang = p * Math.PI;
     const bounce = Math.abs(Math.sin(ang * 2)) * 35;
-    return { dx: Math.sin(ang * 2) * 70, dy: -bounce };
+    return { dx: Math.sin(ang * 2) * 70, dy: bounce };
   }
 ];
 // CONFIRMED BUG FIX: slowed down further -- per direct feedback, even
@@ -1973,10 +1984,23 @@ function updatePaperAirplaneFlight(deltaTime) {
   // it (see GUST_ZONE); fades in/out smoothly via the sin(p*pi)
   // envelope so it never snaps at the start or end of the throw
   // regardless of where the plane happens to be when it lands
+  //
+  // CONFIRMED BUG FIX: per direct feedback, this had no visible effect
+  // even though the amplitude looked comparable to the boomerang's own
+  // gust wobble. The difference is the baseline motion it's layered on
+  // top of -- the boomerang flies a single smooth arc, so a 9-14px
+  // wobble stands out immediately, but the plane's own flight patterns
+  // (loops, corkscrews, figure-8s) already swing 40-95px on their own,
+  // so the same small wobble was getting visually swallowed. Boosted
+  // well past the boomerang's own scale, and added a rotation
+  // wobble too -- a thin plane silhouette visibly getting knocked
+  // around/tilted by wind reads far more clearly than a small position
+  // shift ever will.
   if (currentScene === "clouds" && isInGustZone(f.x)) {
     const wobbleEnvelope = Math.sin(p * Math.PI);
-    f.x += Math.sin(f.t * 0.013 + 2.2) * 10 * wobbleEnvelope;
-    f.y += Math.sin(f.t * 0.021) * 8 * wobbleEnvelope;
+    f.x += Math.sin(f.t * 0.013 + 2.2) * 26 * wobbleEnvelope;
+    f.y += Math.sin(f.t * 0.021) * 20 * wobbleEnvelope;
+    f.rotation += Math.sin(f.t * 0.03 + 0.6) * 0.5 * wobbleEnvelope;
   }
 
   if (p >= 1) {
@@ -20060,8 +20084,142 @@ const cloudsDecor = [
   // that much bigger, it doesn't just sit near the vault cloud, it
   // visually swallows it. Moved well clear of both vault clouds instead
   // of just nudging it a bit.
-  { x: 2050, y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable
+  // CONFIRMED CHANGE: moved from x:2050 -- that sat right next to the
+  // crystal (x:1955), the spot the manta ray now starts tucked into
+  // dormant, and at scale 2.4 (the biggest decor cloud) it would have
+  // visually crowded/competed with it. Pushed further right, clear of
+  // both the crystal and the manta's swimming range.
+  { x: 2500, y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable
 ];
+
+// CONFIRMED CHANGE: the manta ray -- per direct discussion, starts as a
+// still, easy-to-miss shape tucked into the clouds right near the
+// crystal, then wakes and comes to life once the crystal is actually
+// collected. Sequence: dormant (barely visible, idle sway only) ->
+// waking (unfurls in place) -> toward (swims out to find the player --
+// it comes to THEM, not the other way around) -> pass (one close glide-by)
+// -> ambient (settles into a lazy back-and-forth swim for the rest of
+// the scene, so it stays a living presence rather than a one-off event).
+const MANTA_RAY = {
+  x: 1900,               // tucked just behind/left of the crystal (x:1955)
+  y: 205,
+  state: "dormant",      // dormant -> waking -> toward -> pass -> ambient
+  t: 0,
+  wingPhase: 0,
+  passDir: 1,
+  ambientCenterX: 1900,
+  ambientCenterY: 190
+};
+
+function updateMantaRay(deltaTime) {
+  if (currentScene !== "clouds") return;
+  const m = MANTA_RAY;
+  m.wingPhase += deltaTime * (m.state === "dormant" ? 1.1 : 3.2);
+
+  if (m.state === "dormant") {
+    if (crystal.collected) { m.state = "waking"; m.t = 0; }
+    return;
+  }
+
+  m.t += deltaTime * 1000;
+
+  if (m.state === "waking") {
+    // gentle unfurl in place before it actually sets off
+    if (m.t >= 800) { m.state = "toward"; m.t = 0; m.fromX = m.x; m.fromY = m.y; }
+  } else if (m.state === "toward") {
+    // swims out to find the player -- it comes to them, not the other
+    // way around, per direct feedback
+    const dur = 1900;
+    const p = Math.min(m.t / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 2);
+    const targetX = player.x;
+    const targetY = Math.min(player.y + 70, 230);
+    m.x = m.fromX + (targetX - m.fromX) * eased;
+    m.y = m.fromY + (targetY - m.fromY) * eased + Math.sin(m.t * 0.006) * 8;
+    if (p >= 1) {
+      m.state = "pass";
+      m.t = 0;
+      m.passDir = (player.x >= m.x) ? 1 : -1;
+    }
+  } else if (m.state === "pass") {
+    // one real close glide-by, then keeps gliding on past
+    m.x += m.passDir * deltaTime * 230;
+    m.y += Math.sin(m.t * 0.007) * 0.6;
+    if (m.t >= 2400) {
+      m.state = "ambient";
+      m.t = 0;
+      m.ambientCenterX = m.x;
+      m.ambientCenterY = m.y;
+    }
+  } else if (m.state === "ambient") {
+    // lazy, ongoing swim for the rest of the scene -- a living presence,
+    // not a one-time cutscene
+    m.x = m.ambientCenterX + Math.sin(m.t * 0.00035) * 420;
+    m.y = m.ambientCenterY + Math.sin(m.t * 0.0007 + 1.3) * 26;
+  }
+}
+
+function drawMantaRay(camX) {
+  const m = MANTA_RAY;
+  const sx = m.x - camX;
+  const sy = gy - m.y;
+  if (sx < -140 || sx > canvas.width + 140) return;
+
+  const dormant = m.state === "dormant";
+  const flap = Math.sin(m.wingPhase) * (dormant ? 3 : 11);
+  const alpha = dormant ? 0.3 : 0.88; // ghostly and easy to miss until it wakes
+  // faces the direction it's actually moving -- fixed during the swim-out
+  // and one-pass glide, and following the ambient wave's own direction
+  // of travel once it settles into its lazy back-and-forth
+  const facing = m.state === "ambient"
+    ? (Math.cos(m.t * 0.00035) >= 0 ? 1 : -1)
+    : (m.passDir || 1);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(sx, sy);
+  if (facing < 0) ctx.scale(-1, 1);
+
+  // soft glow -- "angelic" reads better with a gentle halo than a hard edge
+  const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, 58);
+  glow.addColorStop(0, "rgba(215,232,255,0.5)");
+  glow.addColorStop(1, "rgba(215,232,255,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 58, 40, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // diamond wing-body, flapping via `flap`
+  const grad = ctx.createLinearGradient(0, -20, 0, 20);
+  grad.addColorStop(0, "#e6f0fb");
+  grad.addColorStop(1, "#a8c2de");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(-46, flap * 0.6);
+  ctx.quadraticCurveTo(-18, -16 - flap, 0, -6);
+  ctx.quadraticCurveTo(18, -16 + flap, 46, -flap * 0.6);
+  ctx.quadraticCurveTo(14, 10, 0, 17);
+  ctx.quadraticCurveTo(-14, 10, -46, flap * 0.6);
+  ctx.closePath();
+  ctx.fill();
+
+  // trailing tail
+  ctx.strokeStyle = "rgba(168,194,222,0.8)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 17);
+  ctx.quadraticCurveTo(6, 32, 3, 48);
+  ctx.stroke();
+
+  // cephalic lobes -- the little front "horns" that read as unmistakably manta
+  ctx.fillStyle = "rgba(150,175,205,0.9)";
+  ctx.beginPath();
+  ctx.ellipse(-7, -5, 3, 6, 0.35, 0, Math.PI * 2);
+  ctx.ellipse(7, -5, 3, 6, -0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
 
 // the way back down — same fall-through mechanic as spring's holes, just
 // leads to a scene switch + floaty descent instead of a same-scene respawn
@@ -37199,35 +37357,50 @@ function drawCloudsAtmosphereOverlay() {
 // wisps rather than a hard-edged box, matching the soft cloud aesthetic
 // everywhere else in this scene.
 function drawGustZone(camX) {
-  // CONFIRMED BUG FIX: the orbiting-arc version (even after the color
-  // fix) still didn't read as wind -- little arcs circling in place
-  // just looked like a cluster of bird wings, which actively competed
-  // with the real crow silhouettes already in this sky. Replaced with
-  // actual horizontal wind-streaks that continuously flow across the
-  // zone and fade in/out at each edge -- the classic "speed line"
-  // language for wind, moving in one general direction instead of
-  // orbiting, so it unmistakably reads as air movement.
+  // CONFIRMED BUG FIX: the flowing-streak version still read wrong --
+  // per direct feedback the color was too dark/heavy for wind, and the
+  // short single-hump quadraticCurveTo shape looked like a row of "mini
+  // arches" rather than actual moving air. Replaced with longer,
+  // multi-segment ribbon-like streaks (real S-curves, built from two
+  // opposing bends instead of one small bump) so each one reads as a
+  // continuous curl of air, and lightened the color toward a pale
+  // near-white blue so it sits closer to the sky itself instead of
+  // reading as a dark line drawn over it.
   const zoneWidth = GUST_ZONE.xMax - GUST_ZONE.xMin;
   const leftScreenX = GUST_ZONE.xMin - camX;
   const t = performance.now() * 0.001;
   ctx.save();
-  const STREAK_COUNT = 10;
+  const STREAK_COUNT = 9;
   for (let i = 0; i < STREAK_COUNT; i++) {
     const seed = i * 13.7;
-    const laneY = gy - 100 + (i % 5) * 22 + Math.sin(t * 1.1 + seed) * 5;
-    const speed = 55 + (i % 3) * 30;
-    const span = zoneWidth + 80;
+    const laneY = gy - 100 + (i % 5) * 22 + Math.sin(t * 1.1 + seed) * 6;
+    const speed = 60 + (i % 3) * 32;
+    const span = zoneWidth + 100;
     const rawX = ((t * speed + seed * 24) % span);
-    const wx = leftScreenX - 40 + rawX;
-    const len = 24 + (i % 3) * 10;
-    // fades in over the first 25px and out over the last 25px of travel
-    const fade = Math.min(rawX / 25, (span - rawX) / 25, 1);
-    ctx.globalAlpha = Math.max(0, 0.55 * fade);
-    ctx.strokeStyle = "rgba(80,110,150,0.9)";
-    ctx.lineWidth = 2.2;
+    const wx = leftScreenX - 50 + rawX;
+    const len = 42 + (i % 3) * 16; // longer than before -- a real ribbon, not a short hump
+    const bow = 9 + (i % 3) * 3;   // how deep the S-curve bends, per streak
+    // fades in over the first 30px and out over the last 30px of travel
+    const fade = Math.min(rawX / 30, (span - rawX) / 30, 1);
+    ctx.globalAlpha = Math.max(0, 0.5 * fade);
+    ctx.strokeStyle = "rgba(210,228,248,0.95)"; // lighter, airier -- was a heavier slate-blue
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(wx - len / 2, laneY);
-    ctx.quadraticCurveTo(wx, laneY - 5, wx + len / 2, laneY);
+    // real S-curve -- one bend up then one bend down, not a single
+    // symmetric hump, so it reads as a curl of moving air rather than
+    // a static little arch
+    ctx.bezierCurveTo(
+      wx - len / 6, laneY - bow,
+      wx - len / 6, laneY - bow,
+      wx, laneY
+    );
+    ctx.bezierCurveTo(
+      wx + len / 6, laneY + bow,
+      wx + len / 6, laneY + bow,
+      wx + len / 2, laneY
+    );
     ctx.stroke();
   }
   ctx.restore();
@@ -37301,6 +37474,7 @@ function drawCloudsScene(camX) {
   }
 
   hopClouds.forEach(c => drawHopCloud(c, camX));
+  drawMantaRay(camX); // drawn before the crystal so it stays tucked behind it while still dormant
   drawCrystalOnCloud(camX);
   drawWaterDrips(camX);
   drawRabbitShuttleCloud(camX);
@@ -37328,6 +37502,7 @@ function updateCloudsScene(deltaTime) {
   vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
   updateElephantSpot(deltaTime);
   updateBalloonNPC(deltaTime);
+  updateMantaRay(deltaTime);
 
   // mount via spacebar — same interact key as everything else, so it
   // stays free for picking things up while riding, not claimed by mounting.
