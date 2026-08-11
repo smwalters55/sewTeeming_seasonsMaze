@@ -37675,40 +37675,42 @@ function updateTunnelTownScene(deltaTime) {
 const sandboxEntranceMound = { x: 3020, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 
-// CONFIRMED CHANGE: this is the "outside" marker -- redrawn as an
-// actual small classic red sandbox (real red box walls, low rim, seen
-// from the front) with disheveled sand filling it, not just a bare
-// sand mound. Per direct feedback ("i said i want the outside to look
-// like an actual red sandbox with disheveled sand in it did you
-// forget"). Uses the same SANDBOX_RED/SANDBOX_RED_DARK as the interior
-// room's own walls and the entrance transition wash, so all three
-// actually match.
+// CONFIRMED CHANGE: this is the "outside" marker -- a small classic
+// red sandbox lying flat on the ground, seen at a slight downward
+// angle so the sand inside is visible, with the red frame going all
+// the way around the sand on all four sides (not just 3) per direct
+// feedback on two rounds: "make the sandbox laying flat on the ground
+// but we are looking inside slightly" and "the red should go all
+// around the rectangle, not only 3 sides." A real rectangle (not the
+// ellipse take that went out first), just short/flat instead of
+// standing tall, with the sand inset leaving an even red margin on
+// every edge. Uses the same SANDBOX_RED/SANDBOX_RED_DARK as the
+// interior room's own walls and the entrance transition wash.
 function drawSandMound(x, camX, label) {
   const cx = x - camX;
-  const boxW = 68, boxH = 26;
+  const boxW = 78, boxH = 24; // short/flat, not tall -- "lying on the ground"
   const bx = cx - boxW / 2, by = gy - boxH;
 
-  // red box walls -- rounded rect, darker toward the bottom for a hint
-  // of depth, same gradient language as the interior wall panels
   const wallGrad = ctx.createLinearGradient(0, by, 0, gy);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
-  roundRect(ctx, bx, by, boxW, boxH, 5);
+  roundRect(ctx, bx, by, boxW, boxH, 6);
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
   ctx.lineWidth = 1.5;
-  roundRect(ctx, bx, by, boxW, boxH, 5);
+  roundRect(ctx, bx, by, boxW, boxH, 6);
   ctx.stroke();
   // top rim highlight, like the interior panels' own top edge
   ctx.fillStyle = "rgba(255,255,255,0.3)";
-  ctx.fillRect(bx + 2, by, boxW - 4, 3);
+  ctx.fillRect(bx + 3, by, boxW - 6, 3);
 
-  // disheveled sand filling the box, inset from the red walls so the
-  // rim actually reads as a box lip around it
-  const sandInset = 6;
-  const sx0 = bx + sandInset, sy0 = by + sandInset;
-  const sw = boxW - sandInset * 2, sh = boxH - sandInset;
+  // disheveled sand filling the box -- inset by a real margin on ALL
+  // FOUR sides (top/bottom included, not just left/right) so the red
+  // frame reads as going all the way around the opening
+  const insetSide = 9, insetTop = 7, insetBottom = 5;
+  const sx0 = bx + insetSide, sy0 = by + insetTop;
+  const sw = boxW - insetSide * 2, sh = boxH - insetTop - insetBottom;
   ctx.save();
   ctx.beginPath();
   roundRect(ctx, sx0, sy0, sw, sh, 3);
@@ -37719,17 +37721,17 @@ function drawSandMound(x, camX, label) {
   // language as the interior sandbox floor
   for (let i = 0; i < 6; i++) {
     const ox = sx0 + pseudoRandom(i * 3.7) * sw;
-    const oy = sy0 + sh * 0.5 + pseudoRandom(i * 6.1 + 1) * sh * 0.5;
+    const oy = sy0 + pseudoRandom(i * 6.1 + 1) * sh;
     ctx.fillStyle = i % 2 === 0 ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.45)";
     ctx.beginPath();
-    ctx.ellipse(ox, oy, 6 + pseudoRandom(i * 2.2) * 5, 2.5 + pseudoRandom(i * 4.4) * 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(ox, oy, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.6, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
   // toy shovel, stuck into the sand at an angle
   ctx.save();
-  ctx.translate(cx + 12, gy - boxH + sandInset + 2);
+  ctx.translate(sx0 + sw - 14, sy0 + 4);
   ctx.rotate(-0.5);
   ctx.fillStyle = "#3f7fd6";
   ctx.fillRect(-1.5, -22, 3, 24);
@@ -39470,7 +39472,10 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // "what is this" reaction to a screenshot). At 0.5 and shifted up,
   // it sits as a proportional hair accessory instead.
   if (player.wigId) {
-    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.5);
+    // 0.5 undershot -- per direct feedback ("wigs too tiny now") --
+    // 0.72 keeps it from ballooning back into the original oversized
+    // blob while still reading as real hair on the head, not a speck
+    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.72);
   }
 
   ctx.restore(); // closes the sway rotation
