@@ -38801,6 +38801,32 @@ const SANDBOX_HOP_HEIGHTS = [...new Set(sandboxBlockSteps.map(s => s.heightAbove
 const SANDBOX_PILE_GROUND_CLEAR_LEFT = Math.min(...sandboxBlockSteps.map(s => s.x)) - 30;
 const SANDBOX_PILE_GROUND_CLEAR_RIGHT = Math.max(...sandboxBlockSteps.map(s => s.x + s.width)) + 30;
 
+// CONFIRMED BUG FIX: "when go to right hops on air" -- the x-drift
+// taper in updateSandboxSlinky assumed the pile narrows evenly around
+// one fixed centerline as you go up, but the real tiers don't -- each
+// tier's own footprint drifts/shrinks unevenly (e.g. tier4's real
+// safe span is only ~1320-1408, while the taper's generic math could
+// still place the player past 1387+ at that same height), so a strong
+// pattern could squeeze past a specific tier's real edge even with the
+// taper in place. This maps each real hop height to the UNION of every
+// block's actual x-span at that height (min left edge to max right
+// edge, including any gaps between separate blocks at the same tier),
+// so the ride can be clamped against the real footprint instead of a
+// generic guess.
+const SANDBOX_HOP_SAFE_X = {};
+SANDBOX_HOP_HEIGHTS.forEach(h => {
+  const stepsAtHeight = sandboxBlockSteps.filter(s => s.heightAboveGround === h);
+  if (stepsAtHeight.length) {
+    SANDBOX_HOP_SAFE_X[h] = {
+      left: Math.min(...stepsAtHeight.map(s => s.x)),
+      right: Math.max(...stepsAtHeight.map(s => s.x + s.width))
+    };
+  } else {
+    // height 0 (the ground) -- safe anywhere outside the pile's own footprint
+    SANDBOX_HOP_SAFE_X[h] = { left: SANDBOX_PILE_GROUND_CLEAR_LEFT, right: SANDBOX_PILE_GROUND_CLEAR_RIGHT };
+  }
+});
+
 // purely decorative background blocks scattered around/behind the
 // climbable pile, at varied sizes/colors/rotations, filling in the
 // silhouette so it reads as a real heap rather than a thin stack of
@@ -38977,20 +39003,46 @@ function updateSandboxSlinky(deltaTime) {
     const renderHopPhase = Math.max(0, hopPhase - 0.22);
     const renderP = (segIndex + renderHopPhase) / numSegs;
     const hopArc = Math.sin(renderHopPhase * Math.PI) * hopHeight;
-    // CONFIRMED BUG FIX: "sometimes the slinky still hops on air" --
-    // the pattern's x drift and the hop's height were computed totally
-    // independently. SANDBOX_HOP_HEIGHTS walks the pile from its narrow
-    // peak down to its wide base, but a pattern's x amplitude (up to
-    // ~±75px) was applied FLAT across every hop -- fine down at the
-    // wide base tier, but well past the real edge of the pile's narrow
-    // upper tiers, so a hop near the top could visibly land past where
-    // any block actually is. Taper the x drift by how far down the
-    // descent already is (little drift allowed near the narrow top,
-    // full amplitude only once down near the wide base) instead of
-    // applying each pattern's full amplitude everywhere.
+    // CONFIRMED CHANGE: "what if it sort of bounced player up each
+    // movement down, but at the right time, so you could fully see the
+    // slinky for each movement down" -- rather than relying only on
+    // position/size tricks to keep the player from covering the coil,
+    // add a distinct extra "peek" bounce on top of the normal hop arc,
+    // timed to peak a little AFTER the coil's own peak (hopPhase ~0.6)
+    // so the player pops up clear of the fully-unwound coil for a
+    // beat, then settles back down for the landing -- guarantees at
+    // least one clean unobstructed view of the coil every hop,
+    // regardless of exact overlap math.
+    const peekCenter = 0.6, peekWidth = 0.32, peekHeight = 22;
+    const peekT = (hopPhase - peekCenter) / peekWidth;
+    const peekBounce = Math.abs(peekT) > 1 ? 0 : Math.cos(peekT * Math.PI / 2) ** 2 * peekHeight;
+    // CONFIRMED BUG FIX: "sometimes the slinky still hops on air" /
+    // "when go to right hops on air" -- a flat taper (assuming the pile
+    // narrows evenly around one fixed centerline) wasn't enough: the
+    // real tiers don't narrow evenly, some drift several px left or
+    // right of the peak's own centerline as they go down, so a strong
+    // pattern could still slip past a specific tier's real edge even
+    // with the taper softening it. Clamp the x drift against the ACTUAL
+    // safe span of whichever tier this hop segment is between (the
+    // overlap of the block-behind's and block-ahead's real footprints,
+    // so the player stays on solid ground at both ends of the hop, not
+    // just roughly in the right neighborhood).
     const slinkyXTaper = t => 0.3 + 0.7 * t;
-    player.x = s.startX + pattern.xOffset(renderP) * slinkyXTaper(renderP) - player.width / 2;
-    player.y = (segStart + (segEnd - segStart) * renderHopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(renderP) : 0);
+    const safeStart = SANDBOX_HOP_SAFE_X[segStart];
+    const safeEnd = SANDBOX_HOP_SAFE_X[segEnd];
+    const safeLeft = Math.max(safeStart.left, safeEnd.left) + player.width / 2;
+    const safeRight = Math.min(safeStart.right, safeEnd.right) - player.width / 2;
+    // if the two tiers genuinely don't overlap (a real gap), fall back
+    // to whichever single tier this moment is closer to rather than an
+    // impossible empty range
+    const clampLo = safeLeft <= safeRight ? safeLeft : (safeEnd.left + safeEnd.right) / 2;
+    const clampHi = safeLeft <= safeRight ? safeRight : clampLo;
+    function slinkyClampedX(t) {
+      const rawX = s.startX + pattern.xOffset(t) * slinkyXTaper(t);
+      return Math.max(clampLo, Math.min(clampHi, rawX));
+    }
+    player.x = slinkyClampedX(renderP) - player.width / 2;
+    player.y = (segStart + (segEnd - segStart) * renderHopPhase) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(renderP) : 0);
     // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
     // like with the arcs coming down a set of blocks" -- stash the
     // WORLD x/height of the two blocks this hop is flipping between
@@ -39001,8 +39053,8 @@ function updateSandboxSlinky(deltaTime) {
     // silhouette as the resting coil, just stretched between two real
     // contact points instead of sitting on one.
     const tSegStart = segIndex / numSegs, tSegEnd = (segIndex + 1) / numSegs;
-    s.hopFromX = s.startX + pattern.xOffset(tSegStart) * slinkyXTaper(tSegStart);
-    s.hopToX = s.startX + pattern.xOffset(tSegEnd) * slinkyXTaper(tSegEnd);
+    s.hopFromX = slinkyClampedX(tSegStart);
+    s.hopToX = slinkyClampedX(tSegEnd);
     s.hopFromH = segStart;
     s.hopToH = segEnd;
     if (p >= 1) {
@@ -39329,9 +39381,26 @@ function drawSandboxSlinkyRider(camX) {
   // still moves along its own hop arc (same physics as before, peaking
   // around the midpoint), so it naturally rides near the TOP of this
   // same arc rather than glued to one specific point on it.
-  const ringRX = 6, ringRY = 2.6, ringGap = 2.0, anchorRings = 5;
+  // CONFIRMED BUG FIX: "player still hiding too much of sllinky" (still
+  // true after the lag fix) -- the player sprite is 40x54, but the
+  // riding coil was drawn at basically the SAME scale as the tiny
+  // resting-pose decoration (rx=6, only 20px of arc height) -- next to
+  // a 40-wide/54-tall player, a coil that small is almost entirely
+  // swallowed by the player's own body no matter where exactly it's
+  // positioned. Scaled the riding coil up noticeably so it's genuinely
+  // bigger than the player and visibly sticks out well past their
+  // silhouette on both sides, instead of the lag trick alone trying to
+  // carry all the weight.
+  // CONFIRMED FOLLOW-UP FIX: "coil is too big going down compared to
+  // its rest size" -- the scale-up above overshot and made the riding
+  // coil noticeably chunkier than the resting-pose drums/arch right
+  // next to it (rest: pillarRX ~8.5, ringRY ~3.36, arcHeight 26). Pulled
+  // the riding coil back down to sit close to those same rest-pose
+  // proportions (slightly larger, not 1.5-2x larger) so it reads as the
+  // same slinky just uncoiling, not a different bigger one.
+  const ringRX = 9, ringRY = 3.8, ringGap = 3.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.2;
   for (let i = 0; i < anchorRings; i++) {
     ctx.beginPath();
     ctx.ellipse(fromX, fromY - i * ringGap, ringRX, ringRY, 0, 0, Math.PI * 2);
@@ -39339,7 +39408,7 @@ function drawSandboxSlinkyRider(camX) {
   }
   const stemTopY = fromY - (anchorRings - 1) * ringGap;
 
-  const arcH = 20;
+  const arcH = 26;
   const p0x = fromX, p0y = stemTopY;
   const p1x = toX, p1y = toY - 2;
   const liftY = Math.min(p0y, p1y) - arcH;
