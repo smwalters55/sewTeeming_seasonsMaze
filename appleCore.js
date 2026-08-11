@@ -161,7 +161,9 @@ const player = {
   vineFlying: false,   // true while mid-flight from a vine release — real horizontal+vertical momentum, checks for grabbing the NEXT vine
   onSeesawBounce: false, // true while airborne from a seesaw jump-pump — uses its own slower gravity instead of standard physics
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
-  cloudLandingImmunity: 0 // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
+  cloudLandingImmunity: 0, // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
+  onFan: false,        // true while hovering above the sandbox's upward fan toy -- position driven entirely by updateSandboxFan, same pattern as swing.mounted/vines
+  wigId: null          // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
 };
 
 /* ======================================================
@@ -1049,6 +1051,7 @@ function startSeasonTransition(targetScene) {
   if (typeof peanutVine !== "undefined") peanutVine.mounted = false;
   seesaw.mounted = false;
   seesaw.playerOnPlank = false;
+  player.onFan = false;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -1209,6 +1212,10 @@ function drawSeasonTransition(ctx) {
     wash.addColorStop(0, "#4a4238");   // cooler, greyer earth -- distinct from molehole's warm soil-orange
     wash.addColorStop(0.55, "#2e2822"); // damp grey-brown
     wash.addColorStop(1, "#100e0c");   // near-black edge
+  } else if (target === "sandbox") {
+    wash.addColorStop(0, "#f0e0b0");   // sand center
+    wash.addColorStop(0.55, "#dcc488"); // deeper sand
+    wash.addColorStop(1, "#c2a465");   // sand edge
   } else {
     wash.addColorStop(0, "#f7f4ee");
     wash.addColorStop(1, "#f7f4ee");
@@ -1235,6 +1242,38 @@ function drawSeasonTransition(ctx) {
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = alpha;
+  }
+
+  // sandbox gets a red wood-panel border framing the whole screen, same
+  // red as the room's own end walls (SANDBOX_RED) -- per direct
+  // request, a sand background with that red as a literal border,
+  // with plank seam lines so it reads as wood, not just a color bar
+  if (target === "sandbox") {
+    const borderW = 34;
+    ctx.fillStyle = SANDBOX_RED;
+    ctx.fillRect(0, 0, canvas.width, borderW); // top
+    ctx.fillRect(0, canvas.height - borderW, canvas.width, borderW); // bottom
+    ctx.fillRect(0, 0, borderW, canvas.height); // left
+    ctx.fillRect(canvas.width - borderW, 0, borderW, canvas.height); // right
+
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 2;
+    for (let px = 16; px < canvas.width; px += 18) {
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, borderW);
+      ctx.moveTo(px, canvas.height - borderW);
+      ctx.lineTo(px, canvas.height);
+      ctx.stroke();
+    }
+    for (let py = 16; py < canvas.height; py += 18) {
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(borderW, py);
+      ctx.moveTo(canvas.width - borderW, py);
+      ctx.lineTo(canvas.width, py);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -2382,6 +2421,10 @@ function applyPhysics(){
 
   // same idea for the rabbit-shuttle — position is driven by updateRabbitShuttle()
   if (rabbitShuttle.mounted) return;
+
+  // same idea for the sandbox's upward fan toy -- position while
+  // hovering is driven entirely by updateSandboxFan()
+  if (player.onFan) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -37672,58 +37715,566 @@ function drawSandMound(x, camX, label) {
   }
 }
 
+// CONFIRMED CHANGE: reskinned entirely, per direct request -- not a
+// "shrink into giant toys" scale gag anymore, but an actual small
+// classic red sandbox: red wood-panel walls bookend a bounded, messy
+// sand pit, with a shovel stuck in it. SANDBOX_RED is shared with the
+// entrance transition wash (drawSeasonTransition) so the color
+// actually matches between the two.
+const SANDBOX_RED = "#c0392b";
+const SANDBOX_RED_DARK = "#8f2a20";
+const SANDBOX_WIDTH = 860; // bounded room -- see the clamp in updateSandboxScene
+
+// a plank of red wood-panel siding, used for both end walls -- vertical
+// seam lines and a lighter top edge sell "wood," not just a flat red block
+function drawSandboxWallPanel(screenX, wallHeight, panelWidth) {
+  const grad = ctx.createLinearGradient(screenX, gy - wallHeight, screenX, gy);
+  grad.addColorStop(0, SANDBOX_RED);
+  grad.addColorStop(1, SANDBOX_RED_DARK);
+  ctx.fillStyle = grad;
+  ctx.fillRect(screenX, gy - wallHeight, panelWidth, wallHeight);
+
+  // plank seams
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = 2;
+  for (let px = screenX + 14; px < screenX + panelWidth; px += 16) {
+    ctx.beginPath();
+    ctx.moveTo(px, gy - wallHeight);
+    ctx.lineTo(px, gy);
+    ctx.stroke();
+  }
+  // top rim highlight
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillRect(screenX, gy - wallHeight, panelWidth, 4);
+}
+
+// a shovel stuck upright in the sand -- reuses the same shovel shape
+// language as the entrance mound's own toy shovel, scaled up a bit
+function drawStuckShovel(worldX, camX) {
+  const sx = worldX - camX;
+  ctx.save();
+  ctx.translate(sx, gy - 6);
+  ctx.rotate(-0.18);
+  ctx.fillStyle = "#3f7fd6";
+  ctx.fillRect(-2.5, -46, 5, 48);
+  ctx.fillStyle = "#e8483a";
+  ctx.beginPath();
+  ctx.moveTo(-11, -46);
+  ctx.lineTo(11, -46);
+  ctx.lineTo(8, -28);
+  ctx.lineTo(-8, -28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  // small disturbed-sand ring at the base, where it's been jammed in
+  ctx.fillStyle = "rgba(140,115,65,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 3, 14, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* ======================================================
+   SANDBOX FAN -- the first "weird toy" per direct request. Jump on it
+   and it throws you up hard, then holds you hovering/bobbing above it
+   with gravity suspended -- until you move far enough horizontally,
+   at which point it lets go and normal gravity resumes right where you
+   are. Position while hovering is driven entirely here, NOT by
+   applyPhysics (see the player.onFan guard added there).
+   ====================================================== */
+const sandboxFan = {
+  x: 300,
+  hoverHeight: 150,
+  launchT: 0,
+  bobPhase: 0,
+  spinPhase: 0
+};
+const SANDBOX_FAN_LAUNCH_MS = 450;
+const SANDBOX_FAN_EXIT_DIST = 55; // how far horizontally from the fan before it releases you
+
+function updateSandboxFan(deltaTime) {
+  const fan = sandboxFan;
+  fan.spinPhase += deltaTime * (player.onFan ? 22 : 6); // spins faster while actually holding someone up
+
+  if (!player.onFan) {
+    // trigger: land on it like any other ground contact, no separate
+    // button -- "jump on it and it throws you up" per direct request
+    const centerX = player.x + player.width / 2;
+    const nearX = Math.abs(centerX - fan.x) < 26;
+    if (nearX && player.y <= 4 && player.vy <= 0) {
+      player.onFan = true;
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      player.vy = 0;
+      player.vx = 0;
+      fan.launchT = 0;
+      fan.bobPhase = 0;
+    }
+    return;
+  }
+
+  fan.launchT += deltaTime * 1000;
+  const centerX = player.x + player.width / 2;
+
+  if (fan.launchT < SANDBOX_FAN_LAUNCH_MS) {
+    // real launch beat -- eased rise up to hover height, not a snap
+    const p = fan.launchT / SANDBOX_FAN_LAUNCH_MS;
+    const eased = 1 - Math.pow(1 - p, 3);
+    player.y = fan.hoverHeight * eased;
+  } else {
+    // holding pattern -- gentle bob, gravity suspended entirely
+    fan.bobPhase += deltaTime * 2.6;
+    player.y = fan.hoverHeight + Math.sin(fan.bobPhase) * 7;
+
+    // release once you've walked far enough away horizontally -- the
+    // fan just lets go, normal gravity resumes right where you are
+    if (Math.abs(centerX - fan.x) > SANDBOX_FAN_EXIT_DIST) {
+      player.onFan = false;
+      player.vy = 1; // tiny residual so the fall reads as "let go," not a dead stop before dropping
+    }
+  }
+}
+
+function drawSandboxFan(camX) {
+  const fan = sandboxFan;
+  const sx = fan.x - camX;
+
+  // housing -- a squat drum sitting flush with the sand
+  ctx.fillStyle = "#8a8f96";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 4, 34, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#adb2b8";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 8, 30, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // spinning blades, viewed from above/slightly angled -- squashed
+  // ellipses rotating around center via spinPhase
+  ctx.save();
+  ctx.translate(sx, gy - 9);
+  ctx.rotate(fan.spinPhase);
+  ctx.fillStyle = "rgba(60,65,72,0.85)";
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i / 4) * Math.PI * 2);
+    ctx.beginPath();
+    ctx.ellipse(16, 0, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  ctx.fillStyle = "#5a5f66";
+  ctx.beginPath();
+  ctx.arc(sx, gy - 9, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // visible upward air lines while actually holding someone up --
+  // otherwise the "wind" is invisible and it just looks like levitation
+  if (player.onFan) {
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const lx = sx + (i - 1) * 14;
+      const t = (fan.spinPhase * 20 + i * 30) % 40;
+      ctx.beginPath();
+      ctx.moveTo(lx, gy - 12 - t);
+      ctx.lineTo(lx, gy - 30 - t);
+      ctx.stroke();
+    }
+  }
+}
+
+/* ======================================================
+   SANDBOX WIG STAND -- second "weird toy" per direct request: a rack
+   of five wigs to try on right at the start of the room, so whichever
+   one you pick sticks with you while you play with everything else in
+   here. Purely cosmetic (player.wigId), drawn onto the player sprite
+   itself in the main draw() body block below.
+   ====================================================== */
+const WIGS = [
+  // pigtail braids, per "a pippy long stockings wig" -- thick auburn
+  // braids sticking straight out to the sides with a little end-loop,
+  // rather than hanging down, is what actually reads as Pippi at this
+  // scale
+  { id: "pippi", name: "Braided Pigtails", color: "#c9531f" },
+  // "a curly orange hair wig" -- a poof of overlapping curl-circles,
+  // no braids/strands, distinct silhouette from pippi's two braids
+  { id: "curlyOrange", name: "Curly Orange", color: "#e8892f" },
+  // "a grey shiny pixie cut style wig" -- short, close to the head,
+  // with a highlight streak for "shiny"
+  { id: "greyPixie", name: "Silver Pixie", color: "#b7b9bd" },
+  // "a blue smooth bob with a long front and short back" -- asymmetric
+  // on purpose: front strands hang past the chin, back stays short
+  { id: "blueBob", name: "Blue Bob", color: "#3f7fd6" },
+  // "a wavy green hair wig that kinda long" -- long, past-shoulder,
+  // real wave curves rather than straight strands
+  { id: "greenWavy", name: "Wavy Green", color: "#4caf6b" }
+];
+
+// Draws whichever wig (by id) centered at (cx, topY) in the CURRENT
+// ctx transform -- caller is responsible for camera/translate/scale,
+// this only ever draws in local head-relative coordinates (0,0 = top-
+// center of the head, +y = down). Used both on the live player sprite
+// and for the small preview thumbnails in the wig UI, so it has to
+// stay coordinate-space agnostic. scale 1 = sized for the real player
+// sprite (player.width 40); UI thumbnails pass a smaller scale.
+function drawWigShape(id, cx, topY, scale) {
+  if (!id) return;
+  const wig = WIGS.find(w => w.id === id);
+  if (!wig) return;
+  ctx.save();
+  ctx.translate(cx, topY);
+  ctx.scale(scale, scale);
+
+  if (id === "pippi") {
+    ctx.fillStyle = wig.color;
+    // cap over the crown, parted slightly off-center
+    ctx.beginPath();
+    ctx.arc(0, 4, 21, Math.PI, 0, false);
+    ctx.fill();
+    // two braids, sticking straight out to the sides then curling
+    // slightly down at the tip with a small loop and a bow
+    [-1, 1].forEach(dir => {
+      ctx.beginPath();
+      ctx.moveTo(dir * 16, 2);
+      ctx.quadraticCurveTo(dir * 34, 4, dir * 36, 16);
+      ctx.quadraticCurveTo(dir * 37, 26, dir * 30, 28);
+      ctx.quadraticCurveTo(dir * 24, 26, dir * 26, 16);
+      ctx.quadraticCurveTo(dir * 24, 6, dir * 12, 6);
+      ctx.closePath();
+      ctx.fill();
+      // braid segment lines
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(dir * (18 + i * 6), 4 + i * 4);
+        ctx.lineTo(dir * (16 + i * 6), 10 + i * 4);
+        ctx.stroke();
+      }
+      // little bow at the tip
+      ctx.fillStyle = "#e0455a";
+      ctx.beginPath();
+      ctx.ellipse(dir * 30, 27, 4, 3, dir * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = wig.color;
+    });
+  } else if (id === "curlyOrange") {
+    ctx.fillStyle = wig.color;
+    // an irregular poof of overlapping curl-circles framing the top
+    // and sides of the head, leaving the face open
+    const curls = [
+      [0, -6, 15], [-14, -2, 11], [14, -2, 11],
+      [-20, 8, 10], [20, 8, 10], [-8, -14, 10], [8, -14, 10],
+      [-18, 18, 8], [18, 18, 8]
+    ];
+    curls.forEach(([dx, dy, r]) => {
+      ctx.beginPath();
+      ctx.arc(dx, dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // a few darker curl outlines on top so it doesn't read as one flat blob
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 1;
+    curls.forEach(([dx, dy, r]) => {
+      ctx.beginPath();
+      ctx.arc(dx, dy, r * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  } else if (id === "greyPixie") {
+    ctx.fillStyle = wig.color;
+    // short cap, close to the head -- ends around ear height, no hair
+    // hanging below it
+    ctx.beginPath();
+    ctx.moveTo(-20, 8);
+    ctx.quadraticCurveTo(-22, -16, 0, -18);
+    ctx.quadraticCurveTo(22, -16, 20, 8);
+    ctx.quadraticCurveTo(10, 2, 0, 4);
+    ctx.quadraticCurveTo(-10, 2, -20, 8);
+    ctx.closePath();
+    ctx.fill();
+    // a couple of short swoopy fringe lines at the front
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-6, -14);
+    ctx.quadraticCurveTo(-10, -4, -14, 2);
+    ctx.moveTo(6, -14);
+    ctx.quadraticCurveTo(10, -4, 14, 2);
+    ctx.stroke();
+    // diagonal shine streak for "shiny"
+    ctx.strokeStyle = "rgba(255,255,255,0.65)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-12, -12);
+    ctx.lineTo(2, -2);
+    ctx.stroke();
+  } else if (id === "blueBob") {
+    ctx.fillStyle = wig.color;
+    // smooth cap over the crown
+    ctx.beginPath();
+    ctx.arc(0, 2, 21, Math.PI, 0, false);
+    ctx.fill();
+    // asymmetric strands: long in front (past the chin), short in back
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.quadraticCurveTo(-24, 20, -17, 34); // long front-left strand
+    ctx.quadraticCurveTo(-13, 22, -14, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(20, 0);
+    ctx.quadraticCurveTo(24, 20, 17, 34); // long front-right strand
+    ctx.quadraticCurveTo(13, 22, 14, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.quadraticCurveTo(-22, 10, -16, 14); // short back-left tuft
+    ctx.lineTo(-14, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(20, 0);
+    ctx.quadraticCurveTo(22, 10, 16, 14); // short back-right tuft
+    ctx.lineTo(14, 4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (id === "greenWavy") {
+    ctx.fillStyle = wig.color;
+    // cap over the crown
+    ctx.beginPath();
+    ctx.arc(0, 2, 21, Math.PI, 0, false);
+    ctx.fill();
+    // long wavy strands past the shoulders on each side, real S-curves
+    // rather than straight hanging tufts
+    [-1, 1].forEach(dir => {
+      ctx.beginPath();
+      ctx.moveTo(dir * 19, 0);
+      ctx.bezierCurveTo(dir * 30, 10, dir * 8, 22, dir * 26, 34);
+      ctx.bezierCurveTo(dir * 34, 40, dir * 14, 46, dir * 22, 52);
+      ctx.lineTo(dir * 12, 50);
+      ctx.bezierCurveTo(dir * 18, 44, dir * 2, 38, dir * 10, 28);
+      ctx.bezierCurveTo(dir * 16, 20, dir * 4, 10, dir * 12, 2);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  ctx.restore();
+}
+
+// the physical prop -- a mannequin head on a stand with the five wigs
+// hung around it, placed right at the start of the room (just past the
+// return mound, before the fan) per "let's do the wigs thing at the
+// start of it." isPlayerNear + space opens the UI, same pattern as
+// every other station in the game.
+const wigStand = { x: 210 };
+
+function drawWigStand(camX) {
+  const sx = wigStand.x - camX;
+  // wooden stand post
+  ctx.fillStyle = "#8a6a42";
+  ctx.fillRect(sx - 3, gy - 58, 6, 58);
+  ctx.fillStyle = "#6a4e2e";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 2, 16, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // mannequin head (bald, blank) atop the post -- currently-worn wig
+  // (if any) shown live on it, otherwise a bare head so the rack reads
+  // as empty/available
+  ctx.fillStyle = "#e8c9a0";
+  ctx.beginPath();
+  ctx.arc(sx, gy - 68, 13, 0, Math.PI * 2);
+  ctx.fill();
+  if (player.wigId) {
+    drawWigShape(player.wigId, sx, gy - 78, 0.62);
+  }
+  // the other four wigs hung on little side pegs around the stand,
+  // just for flavor -- always shown regardless of which one is worn
+  const others = WIGS.filter(w => w.id !== player.wigId).slice(0, 4);
+  const pegSpots = [[-34, -30], [34, -30], [-30, 4], [30, 4]];
+  others.forEach((w, i) => {
+    const [dx, dy] = pegSpots[i];
+    ctx.strokeStyle = "#6a4e2e";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, gy - 46);
+    ctx.lineTo(sx + dx * 0.5, gy - 46 + dy * 0.5);
+    ctx.stroke();
+    drawWigShape(w.id, sx + dx, gy - 46 + dy, 0.34);
+  });
+  ctx.fillStyle = "#5a4a2a";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Wigs", sx, gy - 92);
+  ctx.textAlign = "left";
+}
+
+/* ======================================================
+   WIG UI -- open at the wig stand, cycle left/right through "no wig"
+   plus all five wigs, equipping live so the try-on is visible on the
+   player sprite immediately (not just previewed inside the UI), then
+   close with space to keep whatever's currently on. Same open/close-
+   flourish shape as corkboardReader/carvingUI.
+   ====================================================== */
+const WIG_OPEN_CLOSE_MS = 350;
+const wigUI = { active: false, opening: false, openT: 0, closing: false, closeT: 0, cursorIndex: 0 };
+
+function openWigUI() {
+  wigUI.opening = true;
+  wigUI.openT = 0;
+  // start the cursor on whatever's currently worn (index 0 = "no wig")
+  const idx = WIGS.findIndex(w => w.id === player.wigId);
+  wigUI.cursorIndex = idx === -1 ? 0 : idx + 1;
+}
+
+function updateWigUI(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  if (wigUI.opening) {
+    wigUI.openT += dtMs;
+    if (wigUI.openT >= WIG_OPEN_CLOSE_MS) {
+      wigUI.opening = false;
+      wigUI.active = true;
+    }
+    return;
+  }
+  if (wigUI.closing) {
+    wigUI.closeT += dtMs;
+    if (wigUI.closeT >= WIG_OPEN_CLOSE_MS) {
+      wigUI.closing = false;
+    }
+    return;
+  }
+  if (!wigUI.active) return;
+
+  const count = WIGS.length + 1; // +1 for "no wig"
+  if (keys.rightJustPressed) {
+    wigUI.cursorIndex = (wigUI.cursorIndex + 1) % count;
+    player.wigId = wigUI.cursorIndex === 0 ? null : WIGS[wigUI.cursorIndex - 1].id;
+  } else if (keys.leftJustPressed) {
+    wigUI.cursorIndex = (wigUI.cursorIndex - 1 + count) % count;
+    player.wigId = wigUI.cursorIndex === 0 ? null : WIGS[wigUI.cursorIndex - 1].id;
+  } else if (keys.spaceJustPressed) {
+    wigUI.active = false;
+    wigUI.closing = true;
+    wigUI.closeT = 0;
+  }
+}
+
+function drawWigUI() {
+  const w = canvas.width, h = canvas.height;
+  const t = wigUI.opening ? wigUI.openT / WIG_OPEN_CLOSE_MS
+    : wigUI.closing ? Math.max(0, 1 - wigUI.closeT / WIG_OPEN_CLOSE_MS)
+    : 1;
+  const ease = t * t * (3 - 2 * t);
+
+  ctx.fillStyle = `rgba(20,14,8,${0.75 * ease})`;
+  ctx.fillRect(0, 0, w, h);
+  if (ease <= 0.01) return;
+
+  const cx = w / 2, cy = h / 2 + 15;
+  ctx.save();
+  ctx.globalAlpha = ease;
+  ctx.translate(cx, cy);
+  ctx.scale(0.85 + 0.15 * ease, 0.85 + 0.15 * ease);
+  ctx.translate(-cx, -cy);
+
+  const bw = Math.min(w - 40, 460), bh = 220;
+  const bx = cx - bw / 2, by = cy - bh / 2;
+  ctx.fillStyle = "#fff8ea";
+  roundRect(ctx, bx, by, bw, bh, 12);
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a42";
+  ctx.lineWidth = 4;
+  roundRect(ctx, bx, by, bw, bh, 12);
+  ctx.stroke();
+
+  ctx.fillStyle = "#4a3018";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Try On a Wig", cx, by + 26);
+
+  // the current selection, big, centered -- either "no wig" (bare
+  // mannequin head) or the wig's shape + name
+  const label = wigUI.cursorIndex === 0 ? "No Wig" : WIGS[wigUI.cursorIndex - 1].name;
+  ctx.fillStyle = "#e8c9a0";
+  ctx.beginPath();
+  ctx.arc(cx, cy + 6, 22, 0, Math.PI * 2);
+  ctx.fill();
+  if (wigUI.cursorIndex !== 0) {
+    drawWigShape(WIGS[wigUI.cursorIndex - 1].id, cx, cy - 8, 1.05);
+  }
+
+  ctx.fillStyle = "#4a3018";
+  ctx.font = "13px sans-serif";
+  ctx.fillText(label, cx, by + bh - 46);
+
+  // left/right arrows + a little dot-row so it's clear there are more
+  ctx.font = "18px sans-serif";
+  ctx.fillText("<", bx + 30, cy + 8);
+  ctx.fillText(">", bx + bw - 30, cy + 8);
+  const count = WIGS.length + 1;
+  const dotSpacing = 16;
+  const dotsStartX = cx - ((count - 1) * dotSpacing) / 2;
+  for (let i = 0; i < count; i++) {
+    ctx.fillStyle = i === wigUI.cursorIndex ? "#4a3018" : "rgba(74,48,24,0.3)";
+    ctx.beginPath();
+    ctx.arc(dotsStartX + i * dotSpacing, by + bh - 26, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(74,48,24,0.65)";
+  ctx.font = "10px sans-serif";
+  ctx.fillText("<- -> to try on   ·   space to keep it", cx, by + bh - 10);
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
 function drawSandboxScene(camX) {
-  // warm, slightly hazy daylight -- an ordinary backyard sky, since the
-  // "massive" part of the scale gag is entirely about what's down here
+  // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
+  // over the top of the box's own walls
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
   sky.addColorStop(0, "#bfe3f5");
   sky.addColorStop(1, "#eaf6ff");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // giant looming toys in the background, parallaxing slower than the
-  // foreground -- these sell "you shrank into an actual sandbox" far
-  // more than the sand color alone would
-  const bucketX = 900 - camX * 0.5;
-  ctx.fillStyle = "#3fae5c";
-  ctx.beginPath();
-  ctx.moveTo(bucketX - 110, gy);
-  ctx.lineTo(bucketX - 90, gy - 260);
-  ctx.lineTo(bucketX + 90, gy - 260);
-  ctx.lineTo(bucketX + 110, gy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#2c8a44";
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.ellipse(bucketX, gy - 260, 90, 16, 0, 0, Math.PI * 2);
-  ctx.stroke();
-
-  const ballX = 1500 - camX * 0.5;
-  const ballGrad = ctx.createRadialGradient(ballX - 30, gy - 230, 10, ballX, gy - 190, 130);
-  ballGrad.addColorStop(0, "#fff3b0");
-  ballGrad.addColorStop(0.5, "#ff8f6b");
-  ballGrad.addColorStop(1, "#e14f7a");
-  ctx.fillStyle = ballGrad;
-  ctx.beginPath();
-  ctx.arc(ballX, gy - 190, 130, 0, Math.PI * 2);
-  ctx.fill();
-
-  // sandy ground, continuous like every other scene, with a scattered
-  // grain-texture dot field instead of grass
+  // disheveled sand floor -- base tone, then real dug-up irregularity
+  // (dark divots, lighter kicked-up mounds) instead of a uniform fill,
+  // so it reads as "played in," not freshly raked
   const groundGrad = ctx.createLinearGradient(0, gy, 0, canvas.height);
   groundGrad.addColorStop(0, "#e8d5a3");
   groundGrad.addColorStop(1, "#d6bf85");
   ctx.fillStyle = groundGrad;
   ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
+
+  for (let i = 0; i < 26; i++) {
+    const wx = pseudoRandom(i * 9.3) * (SANDBOX_WIDTH + 80) - 20;
+    const dx = wx - camX;
+    const isDivot = i % 2 === 0;
+    ctx.fillStyle = isDivot ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(dx, gy + 3 + pseudoRandom(i * 4.1) * 10, 10 + pseudoRandom(i * 2.7) * 10, 4 + pseudoRandom(i * 6.6) * 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.fillStyle = "rgba(160,135,80,0.35)";
-  for (let i = 0; i < 220; i++) {
-    const gx = (pseudoRandom(i * 3.7) * 3000 - camX % 3000);
+  for (let i = 0; i < 160; i++) {
+    const gx = pseudoRandom(i * 3.7) * (SANDBOX_WIDTH + 80) - 20 - camX;
     const gyy = gy + 4 + pseudoRandom(i * 5.1 + 1) * (canvas.height - gy - 8);
     ctx.fillRect(gx, gyy, 2, 2);
   }
 
+  drawStuckShovel(SANDBOX_WIDTH * 0.55, camX);
   drawSandMound(sandboxReturnMound.x, camX, "Back to Spring");
+  drawWigStand(camX);
+  drawSandboxFan(camX);
+
+  // red wood-panel end walls -- these are what actually sell "small
+  // classic sandbox," bookending the bounded play area on both sides
+  drawSandboxWallPanel(-120 - camX, 150, 120);
+  drawSandboxWallPanel(SANDBOX_WIDTH - camX, 150, 120);
 
   drawCrows(camX); // same birds, consistent across every zone
 }
@@ -37733,7 +38284,22 @@ function updateSandboxScene(deltaTime) {
     startSeasonTransition("spring");
   }
 
-  if (player.y <= 0) {
+  if (keys.spaceJustPressed && isPlayerNear(wigStand.x, 0, 30, 20, 20) &&
+      !wigUI.active && !wigUI.opening && !wigUI.closing) {
+    openWigUI();
+  }
+
+  updateSandboxFan(deltaTime);
+
+  // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
+  // red end walls are decorative otherwise, so without an actual clamp
+  // the player could just walk straight through/past them into open
+  // empty sand forever.
+  player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
+
+  // guarded on !onFan -- while hovering, updateSandboxFan is the one
+  // driving player.y, this shouldn't stomp it back to ground level
+  if (!player.onFan && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
@@ -38043,6 +38609,8 @@ if (bookReader.active || bookReader.opening || bookReader.closing) {
   drawCorkboardReader();
 } else if (carvingUI.active || carvingUI.opening || carvingUI.closing) {
   drawCarvingUI();
+} else if (wigUI.active || wigUI.opening || wigUI.closing) {
+  drawWigUI();
 } else if (camera.topDown) {
   ctx.fillStyle="rgba(245,245,240,0.94)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -38394,6 +38962,12 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.arc(px + 12, drawPy + 17, 1.5, 0, Math.PI*2);
   ctx.arc(px + 28, drawPy + 17, 1.5, 0, Math.PI*2);
   ctx.fill();
+
+  // sandbox wig -- purely cosmetic, drawn last so it sits on top of the
+  // head/eyes; centered on the head, scale 1 matches this real sprite
+  if (player.wigId) {
+    drawWigShape(player.wigId, px + player.width / 2, drawPy, 1);
+  }
 
   ctx.restore(); // closes the sway rotation
   ctx.restore(); // closes the clip
@@ -39050,6 +39624,17 @@ lastTime = now;
 
   if (carvingUI.active || carvingUI.opening || carvingUI.closing) {
     updateCarvingUI(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
+
+  if (wigUI.active || wigUI.opening || wigUI.closing) {
+    updateWigUI(deltaTime);
     keys.upJustPressed = false;
     keys.leftJustPressed = false;
     keys.rightJustPressed = false;
