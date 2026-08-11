@@ -39438,18 +39438,27 @@ function drawSandboxSlinkyRider(camX) {
   const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : player.y) - 2;
   const toX = (s.hopToX !== undefined ? s.hopToX : player.x + player.width / 2) - camX;
   const toY = gy - (s.hopToH !== undefined ? s.hopToH : player.y) - 2;
-  // CONFIRMED CHANGE: "i basically want to fully see the slinky
-  // movement and still cant... i wanna see it alll" -- the trail used
-  // to grow in gradually with hopPhase (barely anything visible for
-  // most of the hop) and always ended right under the player's own
-  // feet, so the player's body covered exactly the newest/most
-  // dynamic part of the coil. Now the FULL coil -- anchor all the way
-  // to the block ahead -- is drawn every frame of the hop, at its full
-  // height, so the whole shape is visible the entire time instead of
-  // slowly revealing/immediately hiding under the player. The player
-  // still moves along its own hop arc (same physics as before, peaking
-  // around the midpoint), so it naturally rides near the TOP of this
-  // same arc rather than glued to one specific point on it.
+  // CONFIRMED CHANGE (round 1, now superseded): "i basically want to
+  // fully see the slinky movement and still cant" -- switched the trail
+  // from growing with hopPhase to always drawing fully extended, to
+  // stop the player's body from hiding the newest part of the coil.
+  // CONFIRMED CHANGE (this round): "esp for the larger blocks at the
+  // bottom, the player seems to still be lagging... it might hit the
+  // higher step when the slinky is already leaving it" -- drawing the
+  // coil fully extended from hopPhase 0 meant it visually "left" the
+  // anchor step instantly, before the player itself had actually moved
+  // -- there was no gradual departure, just binary compressed/stretched,
+  // which is most noticeable on the wide base blocks where there's more
+  // room for that mismatch to be visible. Back to growing the reveal
+  // with hopPhase (like round 1), but now it's safe to do that: the
+  // player's x is now mathematically locked to this exact same curve
+  // (no more independent wiggle, no more render lag -- see the earlier
+  // fixes above), so the growing tip is always drawn exactly at the
+  // player's own real position rather than trailing behind it. That's
+  // what round 1 was missing -- the reveal now chases a player who is
+  // always exactly on the coil's own path, instead of hiding under a
+  // player who'd wandered off it.
+  const reach = Math.min(1, s.hopPhase * 1.15);
   // CONFIRMED BUG FIX: "player still hiding too much of sllinky" (still
   // true after the lag fix) -- the player sprite is 40x54, but the
   // riding coil was drawn at basically the SAME scale as the tiny
@@ -39497,11 +39506,14 @@ function drawSandboxSlinkyRider(camX) {
     }
     return pts[lo];
   }
-  const loopCount = 16;
+  // loop count also scales with `reach` so the visible portion always
+  // reads as densely coiled (not a few widely-spaced rings stretched
+  // over a short reveal early in the hop)
+  const loopCount = Math.max(3, Math.round(16 * reach));
   ctx.lineWidth = 1;
   for (let i = 0; i < loopCount; i++) {
     const frac = i / (loopCount - 1);
-    const pt = pointAtLength(frac * totalLen);
+    const pt = pointAtLength(frac * totalLen * reach);
     const openness = 0.15 + frac * 0.45;
     ctx.beginPath();
     ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
