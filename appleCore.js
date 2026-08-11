@@ -39167,44 +39167,82 @@ function drawSandboxSlinky(camX) {
     const drumTopY = coilSy - 2;
     const ringRX = drumR, ringRY = drumR * 0.42;
     ctx.lineWidth = 1.3;
+    // CONFIRMED BUG FIX: "like covering a little of arc... the pillars
+    // are on top of arc" -- the topmost ring was drawn as a full closed
+    // ellipse (0 to 2*PI), which put a hard, complete "cap" curve right
+    // where the fan strands begin. That closed loop read as a sealed
+    // cylinder end, visually separating the drum from the fan even
+    // though the strands technically touched it -- the ring's own top
+    // arc drew right over/along the strands' base points. The topmost
+    // ring is really the one loop mid-transition into the fan, so only
+    // its lower half (the part still wrapping around the drum) is drawn
+    // now; the fan strands themselves complete its upper half, so the
+    // coil and the fan read as one continuous piece instead of a
+    // cylinder with something separate resting on it.
     [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
       for (let i = 0; i < drumRings; i++) {
+        const ringY = drumTopY - i * drumRingH;
         ctx.beginPath();
-        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, ringRY, 0, 0, Math.PI * 2);
+        if (i === drumRings - 1) {
+          ctx.ellipse(dx, ringY, drumR, ringRY, 0, 0, Math.PI);
+        } else {
+          ctx.ellipse(dx, ringY, drumR, ringRY, 0, 0, Math.PI * 2);
+        }
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "compare this to c. it is not close to c." --
-    // measured this directly (zoomed 3x render) instead of trusting how
-    // it looked small: the "inward lean" on the innermost lines was
-    // real but nowhere near enough -- each innermost line only drifted
-    // ~5px toward center while the two drums are 24px apart, leaving an
-    // obvious gap between the fans that just wasn't visible at normal
-    // game scale in my own check. Rebuilt so the innermost line's TIP
-    // is an explicit SHARED point (apexX/apexY) that both fans target
-    // directly -- not just angled inward and hoping they meet -- so
-    // they genuinely touch at one shared apex, guaranteed by
-    // construction, with the rest of each fan blending out from there
-    // to its own ring's outer edge.
+    // CONFIRMED BUG FIX: "this shape isnt connected? ... cant you use
+    // the same math/numbers you used to render c" -- the previous
+    // "shared single vertex" apex was mathematically touching but read
+    // as two spiky fans poking together at one pixel, not a blended
+    // arc (confirmed by a direct isolated render, then confirmed AGAIN
+    // once the earlier browser-cache red herring was ruled out --
+    // multiple browsers on the user's own machine showed this exact
+    // sharp-vertex shape, so the geometry itself needed to change, not
+    // just the delivery). Rebuilt around one continuous rounded ROOF
+    // curve (a single quadratic bezier from the left ring's own top rim
+    // to the right ring's own top rim, control point pulled up above
+    // the midpoint) instead of a single point -- every strand's tip
+    // lands somewhere ALONG that shared curve rather than on one exact
+    // pixel, and the two sides' tip ranges are widened to actually
+    // overlap/interleave near the center (not just meet edge-to-edge),
+    // so the peak reads as strands crossing into one blended dome, the
+    // way the approved "C" candidate actually looks. Verified with a
+    // side-by-side render against the real "C" reference image before
+    // shipping -- this is visibly the closest match of every variant
+    // tried (a wider independent-fan-per-drum version was tried too and
+    // rendered a visible gap down the middle, worse than this).
     const topRingY = drumTopY - (drumRings - 1) * drumRingH;
-    ctx.lineWidth = 1;
-    const sweepDeg = 80;
-    const apexX = coilSx, apexY = topRingY - arcHeight;
-    [[-1, coilSx - drumOffset], [1, coilSx + drumOffset]].forEach(([dir, dcx]) => {
-      const count = 9;
+    const leftDcx = coilSx - drumOffset, rightDcx = coilSx + drumOffset;
+    const roofP0x = leftDcx, roofP0y = topRingY;
+    const roofP1x = rightDcx, roofP1y = topRingY;
+    const roofCtrlX = coilSx, roofCtrlY = topRingY - arcHeight * 1.1;
+    function slinkyRoofPoint(u) {
+      const mt = 1 - u;
+      return {
+        x: mt * mt * roofP0x + 2 * mt * u * roofCtrlX + u * u * roofP1x,
+        y: mt * mt * roofP0y + 2 * mt * u * roofCtrlY + u * u * roofP1y
+      };
+    }
+    ctx.lineWidth = 0.9;
+    const sweepDeg = 78;
+    [[-1, leftDcx], [1, rightDcx]].forEach(([dir, dcx]) => {
+      const count = 10;
       for (let i = 0; i < count; i++) {
-        const t = i / (count - 1); // 0 = innermost (meets the shared apex exactly), 1 = outermost (near the ring's own side)
+        const t = i / (count - 1); // 0 = innermost, 1 = outermost (near the ring's own side)
         const baseThetaDeg = 90 - dir * t * sweepDeg;
         const baseTheta = baseThetaDeg * Math.PI / 180;
         const baseX = dcx + ringRX * Math.cos(baseTheta);
         const baseY = topRingY - ringRY * Math.sin(baseTheta);
-        const outerTipX = dcx + dir * (ringRX + 3);
-        const outerTipY = topRingY - arcHeight * 0.22;
-        const tipX = apexX * (1 - t) + outerTipX * t;
-        const tipY = apexY * (1 - t) + outerTipY * t;
+        // innermost lines (t near 0) reach almost all the way across to
+        // near the OTHER side's own near-center point (slight
+        // overlap/interleave); outermost (t near 1) stay near their own
+        // ring's rim end of the shared roof curve.
+        const u = dir < 0 ? (0.58 - 0.58 * t) : (0.42 + 0.58 * t);
+        const tip = slinkyRoofPoint(u);
         ctx.beginPath();
         ctx.moveTo(baseX, baseY);
-        ctx.lineTo(tipX, tipY);
+        ctx.lineTo(tip.x, tip.y);
         ctx.stroke();
       }
     });
