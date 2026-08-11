@@ -20223,7 +20223,8 @@ function updateMantaRay(deltaTime) {
     // CONFIRMED BUG FIX: cruise speed cut roughly in half, same "too
     // fast" feedback -- this was moving close to player run speed,
     // which read as darting rather than gliding.
-    const dx = m.passDir * deltaTime * 100;
+    // CONFIRMED CHANGE: slowed further still, per direct feedback.
+    const dx = m.passDir * deltaTime * 60;
     m.x += dx;
     m.y += Math.sin(m.t * 0.007) * 0.6;
     m.lastDx = dx;
@@ -20240,33 +20241,17 @@ function updateMantaRay(deltaTime) {
     // peak speed here worked out to ~150px/s, not far off actual player
     // run speed, which doesn't read as "lazy" at all. Slowed the swing
     // rate a lot and pulled the range in some too.
-    // CONFIRMED CHANGE: widened and re-centered further left, per direct
-    // request to let it roam further that direction instead of staying
-    // roughly centered on wherever the pass ended.
-    // CONFIRMED CHANGE: pushed the leftward re-center further out (was
-    // -160) so ambient visibly starts to the left of wherever the pass
-    // actually ended, per direct feedback, rather than a smaller shift
-    // that could read as "basically the same spot."
-    // CONFIRMED BUG FIX: the sine formula's own value at m.t=0 didn't
-    // match wherever pass actually ended -- ambientCenterX/Y is the
-    // pass-end position, but the formula's t=0 value is offset from
-    // that by design (-280 on x, -45 on y), so the very first ambient
-    // frame snapped straight to that offset position. Read as "it
-    // disappears in one spot and reappears in another." Fixed by easing
-    // FROM the actual pass-end position INTO the sine path over the
-    // first 1.6s, instead of jumping straight onto it -- continuous
-    // motion the whole way through the transition.
-    // CONFIRMED BUG FIX: the position matched exactly at t=0, but the
-    // ease-OUT curve used to blend into the sine path (1-(1-p)^2) front-
-    // loads its velocity -- it was already moving at ~350px/s on the
-    // very first frame, a hard jerk right after pass's own ~100px/s
-    // cruise. Positions lined up but the sudden speed change still read
-    // as "different," per direct feedback. Switched to ease-IN (p^2,
-    // zero velocity at t=0) so it picks up from a dead stop and only
-    // gradually accelerates into the wider sweep -- genuinely continuous
-    // in both position AND motion through the transition now.
+    // CONFIRMED BUG FIX: per direct feedback, the earlier "-280/-45
+    // recenter" bias was actually causing the exact confusion being
+    // reported -- "it comes back to me after already passing me." Pass
+    // already flies away in a real direction (m.passDir); recentering
+    // ambient with a fixed leftward bias regardless of which way that
+    // was could drag the sweep right back toward the player's side
+    // instead of continuing to roam from wherever it actually stopped.
+    // Removed the bias entirely -- ambient now sweeps symmetrically
+    // around the real stop point, no directional pull back toward you.
     const prevX = m.x;
-    const rawX = (m.ambientCenterX - 280) + Math.sin(m.t * 0.00016) * 440;
+    const rawX = m.ambientCenterX + Math.sin(m.t * 0.00016) * 440;
     // CONFIRMED CHANGE: lowered the center and widened the vertical
     // swing -- per direct request, allow it to come down further instead
     // of staying high the whole time.
@@ -20276,6 +20261,13 @@ function updateMantaRay(deltaTime) {
     m.x = m.ambientCenterX + (rawX - m.ambientCenterX) * settleEased;
     m.y = m.ambientCenterY + (rawY - m.ambientCenterY) * settleEased;
     m.lastDx = m.x - prevX;
+
+    // CONFIRMED BUG FIX: per direct feedback, it should never be allowed
+    // to sit at or near ground level -- when it happens to be there, you
+    // effectively can't see it against the ground/foreground at all.
+    // Hard floor well above the ground plane, regardless of what the
+    // sweep or the rabbit-shuttle cap above would otherwise allow.
+    m.y = Math.max(m.y, 95);
 
     // CONFIRMED CHANGE: kept clear of the rabbit shuttle -- per direct
     // request, it shouldn't overlap that route (x:1600-1860, height
@@ -20545,8 +20537,19 @@ const WIND_SEED_GUST_CREDIT_NEEDED = 20; // how much real wind displacement this
 function drawWindSeedPickup(camX) {
   if (windSeed.collected || windSeed.collecting) return;
   const spin = performance.now() * 0.0015;
-  const bob = Math.sin(performance.now() * 0.003) * 4;
-  const sx = windSeed.x - camX;
+  const t = performance.now();
+  // CONFIRMED CHANGE: gentle idle drift instead of a plain single-axis
+  // bob -- per direct feedback it should read as something actually
+  // caught in moving air, not just floating up and down on a metronome.
+  // Two overlapping sine waves (same "real turbulence, not one
+  // direction" idea used for the player/boomerang gust wobble
+  // elsewhere) on BOTH axes, with the horizontal sway scaled up a
+  // little further by the current wind-o-meter reading so it visibly
+  // stirs more as the gust actually picks up.
+  const windIntensityForBob = Math.min(Math.abs(cumulativeGustDrift) / WIND_SEED_GUST_CREDIT_NEEDED, 1.3);
+  const bob = Math.sin(t * 0.003) * 4 + Math.sin(t * 0.0071 + 1.1) * 2;
+  const sway = (Math.sin(t * 0.0021 + 0.4) * 3 + Math.sin(t * 0.0045 + 2.6) * 1.5) * (1 + windIntensityForBob * 0.6);
+  const sx = windSeed.x + sway - camX;
   const sy = gy - windSeed.heightAboveGround - bob;
 
   // CONFIRMED CHANGE: the glow now doubles as a live "wind-o-meter" --
@@ -20557,14 +20560,37 @@ function drawWindSeedPickup(camX) {
   // through the zone instead of only finding out pass/fail at contact.
   const windIntensity = Math.min(Math.abs(cumulativeGustDrift) / WIND_SEED_GUST_CREDIT_NEEDED, 1.3);
   const pulse = 0.55 + Math.sin(performance.now() * (0.003 + windIntensity * 0.01)) * (0.15 + windIntensity * 0.15);
-  const glowR = 20 + windIntensity * 14;
+  // CONFIRMED BUG FIX: still too easy to miss at rest -- per direct
+  // feedback. Raised the baseline glow floor (was near-invisible at
+  // zero wind) and added a small steady twinkle on top so it reads as
+  // "a thing to notice" even before the wind-o-meter escalation kicks in.
+  const glowR = 26 + windIntensity * 16;
   const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, glowR);
-  glow.addColorStop(0, `rgba(255,250,225,${(0.4 + windIntensity * 0.35) * pulse})`);
+  glow.addColorStop(0, `rgba(255,250,225,${(0.65 + windIntensity * 0.35) * pulse})`);
+  glow.addColorStop(0.5, `rgba(255,240,190,${(0.25 + windIntensity * 0.2) * pulse})`);
   glow.addColorStop(1, "rgba(255,250,225,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
   ctx.fill();
+
+  // small twinkle sparkle -- a quick bright cross-flash that fades in
+  // and out on its own cycle, on top of the steady glow
+  const twinkleP = (performance.now() * 0.0012) % 1;
+  const twinkleAlpha = Math.max(0, 1 - Math.abs(twinkleP - 0.15) * 6) * 0.8;
+  if (twinkleAlpha > 0.02) {
+    ctx.save();
+    ctx.globalAlpha = twinkleAlpha;
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(sx - 10, sy);
+    ctx.lineTo(sx + 10, sy);
+    ctx.moveTo(sx, sy - 10);
+    ctx.lineTo(sx, sy + 10);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // CONFIRMED CHANGE: honest "not enough wind yet" cue -- per direct
   // discussion, having it dodge/whirl away from a real touch risked
