@@ -38794,6 +38794,12 @@ const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAbo
 // ground -- used by updateSandboxSlinky to make the ride visibly touch
 // down on each real block on the way, instead of an arbitrary hop count
 const SANDBOX_HOP_HEIGHTS = [...new Set(sandboxBlockSteps.map(s => s.heightAboveGround))].sort((a, b) => b - a).concat(0);
+// safe ground x just outside the base tier's actual footprint on
+// either side -- used to guarantee the ride always lands somewhere
+// with solid ground and nothing overhead, regardless of how far a
+// pattern's horizontal drift happened to carry it
+const SANDBOX_PILE_GROUND_CLEAR_LEFT = Math.min(...sandboxBlockSteps.map(s => s.x)) - 30;
+const SANDBOX_PILE_GROUND_CLEAR_RIGHT = Math.max(...sandboxBlockSteps.map(s => s.x + s.width)) + 30;
 
 // purely decorative background blocks scattered around/behind the
 // climbable pile, at varied sizes/colors/rotations, filling in the
@@ -38967,6 +38973,18 @@ function updateSandboxSlinky(deltaTime) {
     if (p >= 1) {
       s.running = false;
       player.onSlinky = false;
+      // CONFIRMED BUG FIX: video-verified ("that off shape also affects
+      // how it moves down the blocks") -- the wide left/right-drift
+      // patterns could land the ride's raw endpoint at an x that's
+      // still directly UNDER a block (the pile's footprint isn't a
+      // rectangle), and since this is a teleport-to-ground, not a real
+      // fall, no collision ever ran to catch it -- the player just
+      // appeared clipped halfway into a block. Now the final x is
+      // snapped to whichever side of the pile's actual footprint
+      // (SANDBOX_PILE_GROUND_CLEAR_LEFT/RIGHT below) it ended up
+      // closer to, guaranteeing solid ground with nothing overhead.
+      const rawEndX = s.startX + pattern.xOffset(1);
+      player.x = (rawEndX < sandboxBlockPile.x ? SANDBOX_PILE_GROUND_CLEAR_LEFT : SANDBOX_PILE_GROUND_CLEAR_RIGHT) - player.width / 2;
       player.y = 0;
       player.vy = 0;
       player.jumping = false;
@@ -39116,79 +39134,49 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "theres a filled in arc... make it look like
-    // the more open coil in the reference photo" -- the fan lines were
-    // packed into too narrow a span (drumR*1.6 ≈ 14px) at a uniform
-    // peak height, so 16 near-identical strokes overlapped into one
-    // solid-looking blob instead of visibly separate wires. Spread much
-    // wider (drumSpanW raised a lot), fewer lines so there's real gap
-    // between each one, and each line's peak height now varies by its
-    // position (shorter/flatter near the outer edges, tallest through
-    // the middle) -- an actual radiating fan, like the photo, not a
-    // stack of identical curves.
+    // CONFIRMED BUG FIX: "closer but not it, compare to reference
+    // picture" -- matched the actual photo shape more carefully: it's
+    // not a set of arches that all bow the same way between matching
+    // heights (that reads as a woven basket/net, too "filled"). A real
+    // stretched coil is a continuous helix, so each wire's LEFT
+    // attachment point spirals UP the left drum while its RIGHT
+    // attachment spirals DOWN the right drum (or vice versa) -- the
+    // wires cross each other on the way over, which is exactly the
+    // open, criss-crossed lattice the photo shows, not a stack of
+    // parallel arcs.
     const fanTopY = drumTopY - drumRings * drumRingH;
-    const fanLines = 9, drumSpanW = 36;
+    const leftDrumX = coilSx - drumOffset, rightDrumX = coilSx + drumOffset;
+    const fanLines = 10;
     ctx.lineWidth = 1;
     for (let i = 0; i < fanLines; i++) {
       const t = i / (fanLines - 1);
-      const startX = coilSx - drumOffset - drumSpanW / 2 + t * drumSpanW;
-      const endX = coilSx + drumOffset - drumSpanW / 2 + t * drumSpanW;
-      const peakX = (startX + endX) / 2;
-      const peakHeight = arcHeight * (0.35 + 0.65 * Math.sin(t * Math.PI));
-      const peakY = fanTopY - peakHeight;
-      ctx.beginPath();
-      ctx.moveTo(startX, fanTopY);
-      ctx.quadraticCurveTo(peakX, peakY, endX, fanTopY);
-      ctx.stroke();
-    }
-  } else {
-    // CONFIRMED CHANGE: "i want to see the shape of what a slinky
-    // looks like with the arcs coming down a set of blocks" -- instead
-    // of one coil blob following the player's single point, this now
-    // draws the SAME two-drum+fan silhouette as the resting pose, but
-    // stretched between the two actual blocks this hop is flipping
-    // between (s.hopFromX/hopFromH -> s.hopToX/hopToH, stashed by
-    // updateSandboxSlinky each frame): a small anchored drum sitting on
-    // the block just behind, a small drum on the block just ahead, and
-    // a fan of arced strands bridging them that bulges highest at the
-    // midpoint of the flip (hopPhase ~0.5) and flattens down onto both
-    // blocks at touch-down (hopPhase ~0/1) -- the actual "slinky
-    // walking down stairs" shape, not just a bouncing blob.
-    const hopPhase = s.hopPhase || 0;
-    const bulge = Math.sin(hopPhase * Math.PI); // 0 at touch-down on either block, 1 at the flip's peak
-    const fromX = (s.hopFromX !== undefined ? s.hopFromX : s.startX) - camX;
-    const toX = (s.hopToX !== undefined ? s.hopToX : s.startX) - camX;
-    const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : sandboxBlockPile.topHeight) - 4;
-    const toY = gy - (s.hopToH !== undefined ? s.hopToH : sandboxBlockPile.topHeight) - 4;
-
-    const drumR = 7, drumRings = 2, drumRingH = 3;
-    ctx.lineWidth = 1.4;
-    [[fromX, fromY], [toX, toY]].forEach(([dx, dy]) => {
-      for (let i = 0; i < drumRings; i++) {
-        ctx.beginPath();
-        ctx.ellipse(dx, dy - i * drumRingH, drumR, drumR * 0.4, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    });
-
-    // CONFIRMED BUG FIX: same "filled in arc" problem as the resting
-    // pose -- fanLines packed into a 10px spread all overlapped into a
-    // solid blob. Spread wider, fewer lines, varied bulge height per
-    // line so it reads as separate open wires here too.
-    const ux = toX - fromX, uy = toY - fromY;
-    const fanLines = 8, spanW = 30;
-    const len = Math.hypot(ux, uy) || 1;
-    const nx = -uy / len, ny = ux / len; // unit vector perpendicular to the hop, spreads the fan's width
-    ctx.lineWidth = 1;
-    for (let i = 0; i < fanLines; i++) {
-      const t = i / (fanLines - 1);
-      const spread = (t - 0.5) * spanW;
-      const sx = fromX + nx * spread, sy = fromY - drumRings * drumRingH + ny * spread;
-      const ex = toX + nx * spread, ey = toY - drumRings * drumRingH + ny * spread;
-      const mx = (sx + ex) / 2, my = (sy + ey) / 2 - bulge * 30 * (0.4 + 0.6 * Math.sin(t * Math.PI));
+      const sx = leftDrumX, sy = fanTopY - t * arcHeight;
+      const ex = rightDrumX, ey = fanTopY - (1 - t) * arcHeight;
+      const mx = (sx + ex) / 2, my = (sy + ey) / 2 - 6; // slight bow, not a full symmetric arch
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.stroke();
+    }
+  } else {
+    // CONFIRMED BUG FIX: video-verified -- the previous two-anchor
+    // lattice (spanning from the block behind to the block ahead) drew
+    // fine as a still image, but during actual gameplay speed/scale it
+    // rendered as an unreadable pink smear, and the anchor points
+    // themselves could end up far from where the player visually was.
+    // Simplified to a small, tight coil that always stays directly
+    // under the player's feet (same point drawSandboxFan/Pendulum use
+    // for their own riders) -- a compact stack of rings that squashes
+    // flat on touch-down and stretches tall at each hop's peak, so it
+    // reads clearly at speed and always visibly stays attached.
+    const hopPhase = s.hopPhase || 0;
+    const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at the hop's peak
+    const ringCount = 4;
+    const ringGap = 3 + stretch * 4;
+    ctx.lineWidth = 2.5;
+    for (let i = 0; i < ringCount; i++) {
+      ctx.beginPath();
+      ctx.ellipse(coilSx, coilSy - i * ringGap, 9 - stretch * 2, 4 + stretch * 1.5, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
