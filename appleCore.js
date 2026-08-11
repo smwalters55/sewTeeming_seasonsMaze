@@ -39187,7 +39187,14 @@ function drawSandboxSlinky(camX) {
     // shrinking the arch) so the arch's own end-loop width lines up
     // with the pillar width exactly at the seam.
     const drumOffset = 12, drumRingH = 2.2, drumRings = 8;
-    const drumTopY = coilSy - 2;
+    // CONFIRMED BUG FIX: "just make it attach to the block its sitting
+    // on" -- the bottom-most ring's own bottom edge was landing ~2-3px
+    // above the block's top surface (coilSy-2 plus the ring's own
+    // radius left a visible gap), so the whole coil looked like it was
+    // hovering just above the block instead of resting on it. Nudged
+    // down so the bottom ring overlaps the surface slightly instead of
+    // floating above it.
+    const drumTopY = coilSy + 1;
     const ringRY = 8 * 0.42;
     const pillarRX = 8 * 1.06; // CONFIRMED CHANGE: widened very slightly to match the arch's own end width
     const leftDcx = coilSx - drumOffset, rightDcx = coilSx + drumOffset;
