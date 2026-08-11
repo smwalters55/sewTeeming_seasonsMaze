@@ -38962,8 +38962,21 @@ function updateSandboxSlinky(deltaTime) {
     const hopPhase = hopRaw - segIndex;
     const segStart = hops[segIndex], segEnd = hops[segIndex + 1];
     const hopHeight = 16 * (1 - p * 0.4); // hops shrink a bit near the ground
-    const hopArc = Math.sin(hopPhase * Math.PI) * hopHeight;
     s.hopPhase = hopPhase;
+    // CONFIRMED CHANGE: "put player a little more backwards from the
+    // middle. so that human can see the full coil uncoil... player
+    // still covering too much of the slinky" -- the coil is always
+    // drawn in full now (anchor to the next block), but the player's
+    // OWN position tracked the hop's true progress, so it kept landing
+    // right on/around the coil's peak and covering the most dynamic
+    // part of the uncoiling. Render the player a bit BEHIND its true
+    // progress through the hop (lagging toward the anchor side) so the
+    // peak and the forward stretch of the coil stay visible ahead of
+    // it instead of underneath it. This only affects where the player
+    // is DRAWN this hop, not the actual ride timing/duration.
+    const renderHopPhase = Math.max(0, hopPhase - 0.22);
+    const renderP = (segIndex + renderHopPhase) / numSegs;
+    const hopArc = Math.sin(renderHopPhase * Math.PI) * hopHeight;
     // CONFIRMED BUG FIX: "sometimes the slinky still hops on air" --
     // the pattern's x drift and the hop's height were computed totally
     // independently. SANDBOX_HOP_HEIGHTS walks the pile from its narrow
@@ -38976,8 +38989,8 @@ function updateSandboxSlinky(deltaTime) {
     // full amplitude only once down near the wide base) instead of
     // applying each pattern's full amplitude everywhere.
     const slinkyXTaper = t => 0.3 + 0.7 * t;
-    player.x = s.startX + pattern.xOffset(p) * slinkyXTaper(p) - player.width / 2;
-    player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(p) : 0);
+    player.x = s.startX + pattern.xOffset(renderP) * slinkyXTaper(renderP) - player.width / 2;
+    player.y = (segStart + (segEnd - segStart) * renderHopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(renderP) : 0);
     // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
     // like with the arcs coming down a set of blocks" -- stash the
     // WORLD x/height of the two blocks this hop is flipping between
