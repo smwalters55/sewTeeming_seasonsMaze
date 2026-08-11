@@ -37904,7 +37904,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1400; // CONFIRMED CHANGE: widened again (was 1080) to fit the new block-pile/slinky toy past the pendulum with real breathing room
+const SANDBOX_WIDTH = 1460; // CONFIRMED CHANGE: widened again (was 1400) for the taller/bigger block pile's footprint plus slinky pattern swing clearance
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38752,28 +38752,59 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1250, topHeight: 190 }; // topHeight matches the pendulum's anchorHeight -- same "big toy" scale
-const sandboxBlockSteps = [
-  { x: 1170, width: 75, heightAboveGround: 45 },
-  { x: 1195, width: 68, heightAboveGround: 95 },
-  { x: 1220, width: 62, heightAboveGround: 145 },
-  { x: 1245, width: 55, heightAboveGround: 190 } // the top step -- charge the slinky from here
-];
-const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps[sandboxBlockSteps.length - 1];
+const sandboxBlockPile = { x: 1250, topHeight: 265 }; // CONFIRMED CHANGE: much taller -- "for slinky i want a bigger pile"
 
-// a handful of purely decorative background blocks scattered around/
-// behind the climbable steps, at varied sizes and bright colors -- this
-// is what actually reads as "a giant pile of different size and shaped
-// blocks," since the steps alone are too few/uniform to look like a pile
+// CONFIRMED CHANGE: fully rebuilt -- per direct feedback ("i want a
+// bigger pile idk what this is... no i want pile"), 4 uniform same-
+// width stacked steps read as a plain staircase, not a "pile." This is
+// now a real heap: many more blocks (14, not 4), each a genuinely
+// different size AND a different bright color, most levels have TWO
+// overlapping blocks side by side instead of one clean step, and their
+// x positions jitter a little instead of aligning into a tidy
+// staircase. Per direct request ("make them all jumpable"), every
+// single block here is a real platform in the physics collision list
+// below -- there is no separate decorative-only tier anymore.
+const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d6", "#f2833c", "#3fd6b0", "#e85fa0"];
+const sandboxBlockSteps = [
+  // base tier -- wide, squat blocks forming the pile's foot
+  { x: 1140, width: 70, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1205, width: 58, heightAboveGround: 35, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1258, width: 66, heightAboveGround: 42, color: SANDBOX_PILE_COLORS[2] },
+  // second tier
+  { x: 1155, width: 62, heightAboveGround: 85, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1220, width: 50, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1268, width: 48, heightAboveGround: 82, color: SANDBOX_PILE_COLORS[5] },
+  // third tier
+  { x: 1165, width: 54, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1225, width: 46, heightAboveGround: 140, color: SANDBOX_PILE_COLORS[7] },
+  // fourth tier
+  { x: 1175, width: 48, heightAboveGround: 185, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1230, width: 42, heightAboveGround: 190, color: SANDBOX_PILE_COLORS[0] },
+  // fifth tier
+  { x: 1190, width: 44, heightAboveGround: 232, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1235, width: 38, heightAboveGround: 228, color: SANDBOX_PILE_COLORS[1] },
+  // near-top ledge, then the actual peak
+  { x: 1205, width: 46, heightAboveGround: 250, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1210, width: 40, heightAboveGround: 265, color: SANDBOX_PILE_COLORS[3] } // the peak -- charge the slinky from here
+];
+const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
+
+// purely decorative background blocks scattered around/behind the
+// climbable pile, at varied sizes/colors/rotations -- these are what
+// actually fill the pile out into a real heap silhouette rather than a
+// thin stack of ledges; not collidable (bulk filler behind the real
+// blocks, not anything you'd expect to land on)
 const SANDBOX_PILE_DECOR_BLOCKS = [
-  { dx: -55, dy: 8, w: 34, h: 26, color: "#e8483a", rot: -0.08 },
-  { dx: -30, dy: 30, w: 40, h: 30, color: "#f2b93c", rot: 0.05 },
-  { dx: 8, dy: 20, w: 30, h: 22, color: "#3fa7d6", rot: -0.04 },
-  { dx: 40, dy: 34, w: 36, h: 28, color: "#5fbf5a", rot: 0.09 },
-  { dx: -18, dy: 55, w: 46, h: 24, color: "#c265d6", rot: -0.03 },
-  { dx: 25, dy: 58, w: 38, h: 26, color: "#f2833c", rot: 0.06 },
-  { dx: -48, dy: 62, w: 30, h: 34, color: "#3fd6b0", rot: 0.02 },
-  { dx: 52, dy: 65, w: 28, h: 30, color: "#e85fa0", rot: -0.06 }
+  { dx: -85, dy: 8, w: 30, h: 24, color: "#e8483a", rot: -0.1 },
+  { dx: -95, dy: 32, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
+  { dx: 90, dy: 10, w: 32, h: 26, color: "#3fa7d6", rot: -0.05 },
+  { dx: 98, dy: 34, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
+  { dx: -60, dy: 55, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
+  { dx: 65, dy: 58, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
+  { dx: -20, dy: 4, w: 26, h: 20, color: "#3fd6b0", rot: 0.03 },
+  { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 },
+  { dx: -110, dy: 60, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
+  { dx: 112, dy: 62, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
 ];
 
 // each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
@@ -38820,14 +38851,14 @@ function drawBlockPile(camX) {
     ctx.restore();
   });
 
-  // the real, climbable steps -- each its own bright color so it stays
-  // readable as a distinct block, drawn as a simple front face + top
-  // face pair so they read as solid blocks, not flat rectangles
-  const stepColors = ["#f2b93c", "#3fa7d6", "#5fbf5a", "#e8483a"];
-  sandboxBlockSteps.forEach((s, i) => {
+  // the real, climbable blocks -- each its own size AND bright color
+  // (per direct request: "different size and shaped blocks that are
+  // dif bright colors"), drawn low-to-high so higher blocks layer in
+  // front of the ones below/behind them, same as a real heap would
+  sandboxBlockSteps.forEach(s => {
     const bx = s.x - camX;
     const topY = gy - s.heightAboveGround;
-    ctx.fillStyle = stepColors[i % stepColors.length];
+    ctx.fillStyle = s.color;
     ctx.fillRect(bx, topY, s.width, s.heightAboveGround);
     ctx.fillStyle = "rgba(255,255,255,0.28)";
     ctx.fillRect(bx, topY, s.width, 6);
