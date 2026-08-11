@@ -20203,7 +20203,8 @@ function updateMantaRay(deltaTime) {
     // CONFIRMED BUG FIX: per direct feedback the whole approach read as
     // way too fast -- stretched the duration a lot so it reads as an
     // actual unhurried swim over, not a dash.
-    const dur = 3400;
+    // CONFIRMED CHANGE: stretched further still, per direct feedback.
+    const dur = 5000;
     const p = Math.min(m.t / dur, 1);
     const eased = 1 - Math.pow(1 - p, 2);
     const targetX = player.x;
@@ -20242,12 +20243,25 @@ function updateMantaRay(deltaTime) {
     // -160) so ambient visibly starts to the left of wherever the pass
     // actually ended, per direct feedback, rather than a smaller shift
     // that could read as "basically the same spot."
+    // CONFIRMED BUG FIX: the sine formula's own value at m.t=0 didn't
+    // match wherever pass actually ended -- ambientCenterX/Y is the
+    // pass-end position, but the formula's t=0 value is offset from
+    // that by design (-280 on x, -45 on y), so the very first ambient
+    // frame snapped straight to that offset position. Read as "it
+    // disappears in one spot and reappears in another." Fixed by easing
+    // FROM the actual pass-end position INTO the sine path over the
+    // first 1.6s, instead of jumping straight onto it -- continuous
+    // motion the whole way through the transition.
     const prevX = m.x;
-    m.x = (m.ambientCenterX - 280) + Math.sin(m.t * 0.00016) * 440;
+    const rawX = (m.ambientCenterX - 280) + Math.sin(m.t * 0.00016) * 440;
     // CONFIRMED CHANGE: lowered the center and widened the vertical
     // swing -- per direct request, allow it to come down further instead
     // of staying high the whole time.
-    m.y = (m.ambientCenterY - 45) + Math.sin(m.t * 0.00032 + 1.3) * 42;
+    const rawY = (m.ambientCenterY - 45) + Math.sin(m.t * 0.00032 + 1.3) * 42;
+    const settleP = Math.min(m.t / 1600, 1);
+    const settleEased = 1 - Math.pow(1 - settleP, 2);
+    m.x = m.ambientCenterX + (rawX - m.ambientCenterX) * settleEased;
+    m.y = m.ambientCenterY + (rawY - m.ambientCenterY) * settleEased;
 
     // CONFIRMED CHANGE: kept clear of the rabbit shuttle -- per direct
     // request, it shouldn't overlap that route (x:1600-1860, height
@@ -20481,33 +20495,57 @@ function drawCrystalOnCloud(camX) {
 // CONFIRMED CHANGE: gust-dependent pickup, per direct discussion --
 // turns the gust zone's own unpredictability into the mechanic instead
 // of fighting it. Sits in the gap between the two low-tier hop clouds
-// (x:1610 and x:1860, both height 40) -- that 250px gap is genuinely
-// wider than even a verified double-jump can cross on its own (~120px
-// max), so this is NOT reachable by skill alone. It's positioned at
-// x:1730 (120px from the left cloud, comfortably within a double-jump's
-// own reach) specifically so a normal double-jump gets you MOST of the
-// way there already -- only the last ~10-20px need an assist from
-// whichever way the gust happens to be pushing that attempt, keeping
-// the odds reasonable rather than a rare lucky break.
+// (x:1610 and x:1860, both height 40).
+//
+// CONFIRMED BUG FIX: per direct feedback, this was trivially gettable
+// with one plain jump from ground -- the ground plane in this scene is
+// actually continuous under everything (see drawCloudsScene's ground
+// fillRect), so "it's in a gap wider than a double jump" never actually
+// gated anything: you could just walk to stand directly under it and
+// hop straight up, no wind involved at all, since its height (78) was
+// well within a normal jump's own reach.
+// Real fix: the pickup no longer relies on raw position/geometry at all
+// (too easy to route around by walking underneath) -- it now explicitly
+// requires actual wind displacement to have happened THIS jump (see
+// cumulativeGustDrift in updateCloudsGustZone), checked in
+// updateWindSeedPickup below. That's the only gate that can't be
+// skill-walked around. Height nudged up a bit too, just so it doesn't
+// sit at a trivial head-height regardless.
 const windSeed = {
   x: 1730,
-  heightAboveGround: 78,
+  heightAboveGround: 95,
   collected: false,
   collecting: false
 };
+const WIND_SEED_GUST_CREDIT_NEEDED = 20; // how much real wind displacement this jump must show
 
 function drawWindSeedPickup(camX) {
   if (windSeed.collected || windSeed.collecting) return;
   const spin = performance.now() * 0.0015;
   const bob = Math.sin(performance.now() * 0.003) * 4;
-  drawCollectible(ctx, windSeed.x - camX, gy - windSeed.heightAboveGround - bob, 9, spin, "windSeed");
+  const sx = windSeed.x - camX;
+  const sy = gy - windSeed.heightAboveGround - bob;
+  // CONFIRMED BUG FIX: too invisible -- per direct feedback. Added a
+  // soft glow behind it and bumped its drawn size up so it actually
+  // reads against the sky instead of disappearing into it.
+  const pulse = 0.7 + Math.sin(performance.now() * 0.004) * 0.2;
+  const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, 22);
+  glow.addColorStop(0, `rgba(255,250,225,${0.55 * pulse})`);
+  glow.addColorStop(1, "rgba(255,250,225,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 22, 0, Math.PI * 2);
+  ctx.fill();
+  drawCollectible(ctx, sx, sy, 13, spin, "windSeed");
 }
 
 function updateWindSeedPickup() {
   if (windSeed.collected || windSeed.collecting) return;
-  // auto-catch on contact, mid-air, same pattern as the acorns/vine
-  // pumpkin -- no button press, since just REACHING it via the gust is
-  // already the whole challenge
+  // requires actual wind involvement this jump (see cumulativeGustDrift),
+  // not just proximity -- a plain jump straight up and down under it,
+  // with no meaningful gust push, will not trigger this even if you're
+  // positioned right on top of it
+  if (Math.abs(cumulativeGustDrift) < WIND_SEED_GUST_CREDIT_NEEDED) return;
   const centerX = player.x + player.width / 2;
   const inRange = Math.abs(centerX - windSeed.x) < 22 && Math.abs(player.y - windSeed.heightAboveGround) < 20;
   if (inRange) {
@@ -37643,6 +37681,14 @@ function drawGustZone(camX) {
 // real turbulence instead
 let gustSeed = 0;
 let wasInGustZone = false;
+// CONFIRMED CHANGE: tracks how much real wind displacement has actually
+// been applied during the CURRENT jump -- used to gate the wind seed
+// pickup (see updateWindSeedPickup) so it genuinely requires the gust to
+// have done something meaningful this jump, rather than being reachable
+// by a plain jump that happens to pass through the zone's x-range.
+// Resets whenever you land or leave the zone, so it only ever reflects
+// the jump you're currently in.
+let cumulativeGustDrift = 0;
 function updateCloudsGustZone(deltaTime) {
   if (currentScene !== "clouds") { wasInGustZone = false; return; }
   const centerX = player.x + player.width / 2;
@@ -37656,7 +37702,11 @@ function updateCloudsGustZone(deltaTime) {
     // (9-14px) so jumping through the zone actually feels wonky instead
     // of reading as "nothing happening."
     const t = performance.now() * 0.001 + gustSeed;
-    player.x += Math.sin(t * 2.3) * 6 + Math.sin(t * 5.1 + 1.7) * 3.5;
+    const delta = Math.sin(t * 2.3) * 6 + Math.sin(t * 5.1 + 1.7) * 3.5;
+    player.x += delta;
+    cumulativeGustDrift += delta;
+  } else if (!player.jumping) {
+    cumulativeGustDrift = 0; // grounded -- whatever happened last jump no longer counts
   }
 }
 
