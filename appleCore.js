@@ -39159,39 +39159,49 @@ function drawSandboxSlinky(camX) {
     // longer overlaps the next one (drumRingH is now bigger than the
     // ring's own drawn height), leaving real visible gaps between
     // coils instead of a solid-looking tube.
-    const drumOffset = 12, drumR = 6, drumRingH = 6, drumRings = 6;
+    // CONFIRMED CHANGE: "C is prob closest" (thicker+tighter drum vs
+    // the other candidates, compared side by side in chat first) --
+    // drumR back up from 6 to 8 and ring spacing tightened to 2.2 (real
+    // but small visible air between each coil, not a solid tube).
+    const drumOffset = 12, drumR = 8, drumRingH = 2.2, drumRings = 8;
     const drumTopY = coilSy - 2;
+    const ringRX = drumR, ringRY = drumR * 0.42;
     ctx.lineWidth = 1.3;
     [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
       for (let i = 0; i < drumRings; i++) {
         ctx.beginPath();
-        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, drumR * 0.42, 0, 0, Math.PI * 2);
+        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, ringRY, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "the top half arcs need to fully connect with
-    // the bottom coils. they also need to attach together to form a
-    // true arc" -- two real gaps: (1) fanTopY sat a whole ring-spacing
-    // ABOVE the topmost drawn ring, leaving visible empty space between
-    // the fan and the drums; now aligned exactly to the topmost ring's
-    // own height, no gap. (2) the two fans had separate hubs 8px apart,
-    // leaving a visible notch/valley between them at the very top; now
-    // sharing ONE hub point dead-center, so both fans' innermost lines
-    // start from the exact same spot and the whole thing reads as one
-    // unbroken dome instead of two peaks with a dip between.
-    const fanTopY = drumTopY - (drumRings - 1) * drumRingH;
+    // CONFIRMED BUG FIX: "it stil looks like two drawings stacked on
+    // top of each other versus actually being attached" -- the fan's
+    // lines all started from one floating hub point BETWEEN the two
+    // drums, never actually touching either drum's own rings, which is
+    // exactly why it read as two separate pieces just placed next to
+    // each other. Each fan's lines now originate ON its own topmost
+    // ring's rim (walking around that ellipse from near-vertical to a
+    // sweep toward the ring's outer side) and continue outward along
+    // that same radial direction -- so the wires visibly grow out of
+    // the coil itself. A small inward lean on the innermost lines keeps
+    // the two fans meeting/overlapping at the very top so the whole
+    // thing still reads as one continuous dome, not two separate poofs.
+    const topRingY = drumTopY - (drumRings - 1) * drumRingH;
     ctx.lineWidth = 1;
-    const hubX = coilSx;
-    [-1, 1].forEach(dir => {
-      const count = 9, maxAngleDeg = 85;
+    const sweepDeg = 75, lean = 10;
+    [[-1, coilSx - drumOffset], [1, coilSx + drumOffset]].forEach(([dir, dcx]) => {
+      const count = 9;
       for (let i = 0; i < count; i++) {
         const t = i / (count - 1); // 0 = innermost/near-vertical/tallest, 1 = outermost/near-horizontal/shortest
-        const angle = (t * maxAngleDeg) * Math.PI / 180;
-        const len = arcHeight * (1 - 0.2 * t);
-        const tipX = hubX + dir * Math.sin(angle) * len;
-        const tipY = fanTopY - Math.cos(angle) * len;
+        const thetaDeg = 90 + dir * lean - dir * t * (sweepDeg + lean);
+        const theta = thetaDeg * Math.PI / 180;
+        const baseX = dcx + ringRX * Math.cos(theta);
+        const baseY = topRingY - ringRY * Math.sin(theta);
+        const len = arcHeight * (1 - 0.15 * t);
+        const tipX = baseX + Math.cos(theta) * len;
+        const tipY = baseY - Math.sin(theta) * len;
         ctx.beginPath();
-        ctx.moveTo(hubX, fanTopY);
+        ctx.moveTo(baseX, baseY);
         ctx.lineTo(tipX, tipY);
         ctx.stroke();
       }
@@ -39212,29 +39222,46 @@ function drawSandboxSlinky(camX) {
 function drawSandboxSlinkyRider(camX) {
   const s = sandboxSlinky;
   if (!s.running) return;
+  // CONFIRMED CHANGE: video-verified -- "the player is just behind this
+  // spiral essentially. i want the slinky crawl, like player on top of
+  // slinky as it does its lovely crawls down with each arch occuring to
+  // get down each step." The vertical ring-stack was drawn straight up
+  // from the player's feet and grew tall enough to intersect/hide
+  // behind the player's own body -- it never looked like something the
+  // player was riding ON TOP of. Rebuilt as an actual arch spanning
+  // from the block just behind (s.hopFromX/hopFromH) to the block just
+  // ahead (s.hopToX/hopToH), peaking at the PLAYER's own current
+  // position -- since player.y already follows that same hop arc
+  // (see updateSandboxSlinky), the player always sits right at the
+  // arch's highest point, riding it rather than standing next to it.
+  // Small compressed drum rings at each end read as the coil gathering
+  // on the block it just left / is about to land on.
   const coilSx = player.x + player.width / 2 - camX;
-  const coilSy = gy - player.y - 4;
+  const coilSy = gy - player.y - 2;
+  const fromX = (s.hopFromX !== undefined ? s.hopFromX : player.x + player.width / 2) - camX;
+  const toX = (s.hopToX !== undefined ? s.hopToX : player.x + player.width / 2) - camX;
+  const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : player.y) - 2;
+  const toY = gy - (s.hopToH !== undefined ? s.hopToH : player.y) - 2;
+
   ctx.strokeStyle = "#c0392b";
-  const hopPhase = s.hopPhase || 0;
-  const stretch = Math.sin(hopPhase * Math.PI); // 0 = fully compressed at touch-down, 1 = fully stretched at the hop's peak
-  // CONFIRMED CHANGE: "the main point is to see the visual of how a
-  // slinky moves down a set of steps. that coiling and uncoiling" --
-  // the old range (4 rings, gap 3-7, radius barely changing) was too
-  // subtle to read as coiling/uncoiling at all, just a slightly wobbly
-  // blob. Pushed the range hard: more rings, and gap/radius now swing
-  // between a short squat compressed drum (touch-down) and a tall
-  // narrow stretched spring (hop peak) -- the same squash-and-stretch
-  // language real coil toys actually show when flipping down stairs.
-  const ringCount = 8;
-  const ringGap = 2 + stretch * 11;
-  const radiusX = 10 - stretch * 4.5;
-  const radiusY = 3 + stretch * 1.5;
-  ctx.lineWidth = 2.2;
-  for (let i = 0; i < ringCount; i++) {
+  ctx.lineWidth = 1.3;
+  const strands = 7;
+  for (let i = 0; i < strands; i++) {
+    const t = i / (strands - 1);
+    const spread = (t - 0.5) * 10; // gives the arch some coil "thickness" instead of reading as one bare line
     ctx.beginPath();
-    ctx.ellipse(coilSx, coilSy - i * ringGap, radiusX, radiusY, 0, 0, Math.PI * 2);
+    ctx.moveTo(fromX + spread, fromY);
+    ctx.quadraticCurveTo(coilSx + spread * 0.3, coilSy, toX + spread, toY);
     ctx.stroke();
   }
+  ctx.lineWidth = 1.4;
+  [[fromX, fromY], [toX, toY]].forEach(([dx, dy]) => {
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.ellipse(dx, dy - i * 3, 7, 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
 }
 
 // each slide's hand-drawn illustration, drawn centered at (0,0) inside
