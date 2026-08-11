@@ -39029,7 +39029,19 @@ const sandboxSlinky = {
   rogueVX: 0,
   rogueVY: 0,
   rogueBouncesLeft: 0,
-  dustParticles: []
+  dustParticles: [],
+  // CONFIRMED CHANGE ("resting at bottom before teleportation... rests
+  // kind of sloppily as one coil") -- a fixed random seed captured once
+  // right when a ride ends, so the sloppy resting-on-the-ground pile
+  // (drawn while resetHold counts down) has a stable, non-jittering
+  // shape for that whole hold instead of re-rolling every frame.
+  restSeed: 0,
+  // CONFIRMED CHANGE ("mount the slinky") -- 0..1, eased toward 1 while
+  // standing on the top step (not riding), toward 0 otherwise. Read only
+  // by the draw loop (playerVisualDY) to lift the sprite up onto the
+  // coil's arch -- never touches the real player.y.
+  mountLift: 0,
+  onTopStep: false
 };
 
 function drawBlockPile(camX) {
@@ -39163,11 +39175,14 @@ function finishSandboxSlinkyRide(landX, landHeight) {
   s.landX = landX;
   s.landH = landHeight;
   spawnSandboxDust(landX, landHeight, 12, 1.6);
-  // CONFIRMED CHANGE ("take a beat before teleporting slinky back up
-  // from the ground") -- the resting coil now stays drawn at this actual
-  // landing spot for a beat before snapping back up to the peak; see the
-  // `holding` branch in drawSandboxSlinky.
-  s.resetHold = 650;
+  // CONFIRMED BUG FIX ("waits too long at bottom... before
+  // teleportation") -- 650ms read as a stall, not a beat. Cut down to a
+  // quick 350ms -- still a genuine pause (not an instant snap), just
+  // short enough to feel like a beat instead of a wait.
+  s.resetHold = 350;
+  // stable shape for the sloppy resting pile drawn during this hold --
+  // see drawSandboxSlinky's `holding` branch.
+  s.restSeed = performance.now() % 1000;
 }
 
 function updateSandboxSlinkyRogueBounce(deltaTime) {
@@ -39427,6 +39442,18 @@ function updateSandboxSlinky(deltaTime) {
     player.x + player.width > SANDBOX_SLINKY_TOP_STEP.x &&
     player.x < SANDBOX_SLINKY_TOP_STEP.x + SANDBOX_SLINKY_TOP_STEP.width;
   s.onTopStep = onTopStep; // CONFIRMED CHANGE: exposed for drawSandboxSlinky so the "hold space" prompt/bar can show as soon as you're in position, not only once charge > 0
+  // CONFIRMED CHANGE ("player doesnt mount slinky" -- asked for several
+  // times now): visually lift the player up onto the top of the coil's
+  // own resting arch while standing on the top step (charging or not),
+  // instead of drawing them flat on the block next to/behind the coil.
+  // Draw-only -- eases toward a target lift with mountLift, never
+  // touches player.y/collision, so onTopStep detection above (which
+  // depends on the real player.y matching the block height) can't be
+  // thrown off by this. See playerVisualDY in the main draw() loop for
+  // where this actually gets applied to the sprite.
+  const mountLiftTarget = onTopStep && !s.running ? 1 : 0;
+  s.mountLift += (mountLiftTarget - s.mountLift) * 0.18;
+  if (Math.abs(s.mountLift - mountLiftTarget) < 0.01) s.mountLift = mountLiftTarget;
 
   if (!keys.space) s.armed = true;
   const canCharge = onTopStep && s.armed && !s.running;
@@ -39484,6 +39511,36 @@ function updateSandboxSlinky(deltaTime) {
     s.lastSegIndex = -1;
   }
   s.wasCharging = canCharge && keys.space;
+}
+
+// CONFIRMED CHANGE ("resting at bottom before teleportation... rests
+// kind of sloppily as one coil") -- while the coil is holding at the
+// actual landing spot (see the `holding` branch below), it should NOT
+// use the same neat upright two-drum-and-arch pose that's meant for
+// standing balanced on a step -- a slinky that just landed/bounced on
+// flat ground reads as a single squashed, messy heap instead. Built
+// from a fixed set of overlapping rings scattered around the landing
+// point (seeded once per landing via s.restSeed so it holds still for
+// the whole beat instead of jittering every frame), low and wide rather
+// than tall, with a little random tilt per ring for that "just flopped
+// over" look.
+function drawSandboxSlinkySloppyPile(cx, cy, seed) {
+  ctx.strokeStyle = "#c0392b";
+  ctx.lineWidth = 1.2;
+  const ringCount = 12;
+  for (let i = 0; i < ringCount; i++) {
+    const rA = pseudoRandom(seed + i * 3.7);
+    const rB = pseudoRandom(seed + i * 5.1 + 50);
+    const rC = pseudoRandom(seed + i * 7.3 + 100);
+    const ox = (rA - 0.5) * 30;
+    const oy = -Math.abs(rB) * 7; // stacks low, barely rises above the ground point
+    const rx = 8 + rC * 5;
+    const ry = 2.6 + rA * 2.2;
+    const rot = (rB - 0.5) * 1.1; // random tilt per ring, up to ~30 degrees either way
+    ctx.beginPath();
+    ctx.ellipse(cx + ox, cy + oy, rx, ry, rot, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
 function drawSandboxSlinky(camX) {
@@ -39585,7 +39642,9 @@ function drawSandboxSlinky(camX) {
   ctx.strokeStyle = "#c0392b";
   ctx.fillStyle = "#c0392b";
 
-  if (!s.running) {
+  if (holding) {
+    drawSandboxSlinkySloppyPile(coilSx, coilSy, s.restSeed);
+  } else if (!s.running) {
     // CONFIRMED CHANGE: "make it a tighter coil so it look like a
     // slinky" -- matched against the actual reference photo (a real
     // slinky pushed halfway together): it's not a handful of big loose
@@ -41015,7 +41074,14 @@ const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRive
 // lets make the player like bobbing up and down gently").
 const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
   Math.sin(performance.now() * 0.0028) * 3;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob;
+// CONFIRMED CHANGE ("mount the slinky") -- while standing on the pile's
+// top step (charging or just about to), visually lift the sprite up
+// onto the coil's own resting arch instead of drawing them flat on the
+// block beside/behind it -- draw-only (see sandboxSlinky.mountLift's own
+// easing in updateSandboxSlinky), never touches player.y/collision.
+const sandboxMountLift = (typeof currentScene !== "undefined" && currentScene === "sandbox" &&
+  typeof sandboxSlinky !== "undefined") ? sandboxSlinky.mountLift * 22 : 0;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob - sandboxMountLift;
 
 // the single shared head-anchor offset for this frame -- see
 // playerVisualDX/DY's own declaration up near the crown state for why
