@@ -39069,25 +39069,31 @@ function updateSandboxSlinky(deltaTime) {
     // so the player stays on solid ground at both ends of the hop, not
     // just roughly in the right neighborhood).
     const slinkyXTaper = t => 0.3 + 0.7 * t;
-    // CONFIRMED BUG FIX: "looks really choppy... chops to a new spot"
-    // -- the clamp window used to be computed ONCE per frame from
-    // whichever hop segment the outer scope was currently in, then
-    // reused for every t passed to slinkyClampedX that frame. That's
-    // fine within a single hop, but the moment segIndex ticks over to
-    // the next hop, the ENTIRE clamp window changes to a different
-    // pair of tiers -- so the landing x of hop N (computed with hop
-    // N's clamp window) and the starting x of hop N+1 (computed with
-    // hop N+1's clamp window) could disagree even though they're
-    // conceptually the same point in the ride, producing a visible
-    // snap right at every tier transition. Made slinkyClampedX derive
-    // its OWN segment/local-progress from whatever global t it's given
-    // and interpolate the safe bounds between that segment's two tiers
-    // -- at a hop boundary the "arriving" tier of hop N and the
-    // "departing" tier of hop N+1 are the same tier, so the interpolated
-    // bounds now agree exactly at that instant and the path is
-    // continuous across every step, not just within one.
+    // CONFIRMED BUG FIX: "player is synched up w a wrong part of the
+    // slinky" -- video/math-verified (simulated every SLINKY_PATTERNS
+    // entry against the real pile numerically): the coil is only ever
+    // drawn as a curve between the TWO fixed endpoints of the current
+    // hop (hopFromX/hopToX, evaluated once at each hop's start/end),
+    // but the player's raw x used to evaluate pattern.xOffset
+    // CONTINUOUSLY at the player's own mid-hop t -- for any pattern with
+    // an in-hop wiggle (zigzag, wideS, tightCoil, loop), that let the
+    // player wander tens of pixels away from the straight line the coil
+    // actually spans, so the player visibly detached from its own
+    // slinky and sat over a DIFFERENT block than the one the coil was
+    // drawn against. Fixed by making the player's mid-hop x a pure
+    // function of the hop's own two endpoints only (pattern.xOffset is
+    // now sampled once per hop, at its start and end times, never in
+    // between) and blending between them with the same smoothstep shape
+    // the coil's own bezier traces horizontally (its control points
+    // share an x with their endpoint, so its x(u) is exactly
+    // u*u*(3-2*u) between the two ends) -- so the player and the coil
+    // are now the same function of hopPhase and can't diverge.
+    function slinkyRawEndpointX(t) {
+      return s.startX + pattern.xOffset(t) * slinkyXTaper(t);
+    }
     function slinkyClampedX(t) {
       const { segIndex: localSeg, hopPhase: localFrac } = sandboxHopSegAt(t);
+      const localSegStartT = SANDBOX_HOP_TIME_BOUNDS[localSeg], localSegEndT = SANDBOX_HOP_TIME_BOUNDS[localSeg + 1];
       const safeA = SANDBOX_HOP_SAFE_X[hops[localSeg]];
       const safeB = SANDBOX_HOP_SAFE_X[hops[localSeg + 1]];
       const leftAt = safeA.left + (safeB.left - safeA.left) * localFrac + player.width / 2;
@@ -39097,7 +39103,10 @@ function updateSandboxSlinky(deltaTime) {
       // impossible empty range
       const lo = leftAt <= rightAt ? leftAt : (safeB.left + safeB.right) / 2;
       const hi = leftAt <= rightAt ? rightAt : lo;
-      const rawX = s.startX + pattern.xOffset(t) * slinkyXTaper(t);
+      const rawFrom = slinkyRawEndpointX(localSegStartT);
+      const rawTo = slinkyRawEndpointX(localSegEndT);
+      const eased = localFrac * localFrac * (3 - 2 * localFrac);
+      const rawX = rawFrom + (rawTo - rawFrom) * eased;
       return Math.max(lo, Math.min(hi, rawX));
     }
     player.x = slinkyClampedX(p) - player.width / 2;
