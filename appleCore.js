@@ -38903,30 +38903,24 @@ function slinkyDwellEase(t) {
 // CONFIRMED BUG FIX (earlier round): several of these had a dy taller
 // than any real block covering that x, which floated visibly past the
 // pile's real footprint. Since then the base tier itself got widened
-// (denser pile rebuild below) so these inner ones are now comfortably
+// (denser pile rebuild below) so these inner ones are comfortably
 // inside the real footprint on both sides.
-// CONFIRMED CHANGE: "make it more built up aesthetically... denser" --
-// added a genuine back row at THREE heights (not just low near the
-// ground) straight from the approved "C-dense" mockup: each pair rises
-// a bit above its own tier's real height so it visibly peeks up behind/
-// beside the real blocks (real blocks are drawn after all decor, so any
-// decor covered by a later real block just gets hidden -- no extra
-// z-order bookkeeping needed), giving the pile actual depth instead of
-// reading as one thin front row.
+// CONFIRMED BUG FIX: "blocks floating, slinky not on block" -- the
+// three-height "back row" tried here (per the approved C-dense mockup)
+// assumed each taller decor piece would be mostly covered by a real
+// block above/beside it, but up close in the actual game several of
+// them were only PARTIALLY covered (or not at all -- e.g. one sat
+// entirely in open sky to the right of every real tier), reading as
+// distinct floating rectangles instead of depth filler. Rather than
+// keep hand-tuning fragile numbers a third time, dropped the back rows
+// entirely -- the denser real tiers (rebuilt above, gaps closed) already
+// read as a full, built-up pile on their own without needing a second
+// layer of decor to sell it.
 const SANDBOX_PILE_DECOR_BLOCKS = [
   { dx: -65, dy: 30, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
   { dx: 70, dy: 32, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
   { dx: -20, dy: 4, w: 26, h: 20, color: "#3fd6b0", rot: 0.03 },
-  { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 },
-  // back row 1 -- peeks up behind/beside the base tier
-  { dx: -128, dy: 62, w: 54, h: 58, color: "#c265d6", rot: -0.03 },
-  { dx: 118, dy: 66, w: 50, h: 62, color: "#3fd6b0", rot: 0.03 },
-  // back row 2 -- peeks up behind/beside tier 2
-  { dx: -92, dy: 112, w: 46, h: 72, color: "#e85fa0", rot: -0.03 },
-  { dx: 82, dy: 116, w: 42, h: 76, color: "#3fa7d6", rot: 0.03 },
-  // back row 3 -- peeks up behind/beside tier 3
-  { dx: -60, dy: 158, w: 38, h: 74, color: "#f2b93c", rot: -0.02 },
-  { dx: 50, dy: 160, w: 36, h: 76, color: "#5fbf5a", rot: 0.02 }
+  { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 }
 ];
 
 // each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
@@ -39669,23 +39663,39 @@ function drawSandboxSlinkyLandingPuff(camX) {
   if (s.landPulse <= 0.001) return;
   const lx = s.landX - camX;
   const ly = gy - s.landH;
-  const t = s.landPulse; // 1 -> 0
+  // CONFIRMED BUG FIX (this is the actual "freeze/player disappears"
+  // cause, NOT the mirroring): s.landPulse is 1.6 for a big-hop landing,
+  // but every radius below was written as some_base + (1-t)*shrink,
+  // which assumes t stays within [0,1]. At t=1.6, (1-t) goes negative
+  // enough that "3 + (1-t)*5" lands on ~0 -- and floating point rounding
+  // occasionally pushes that a hair BELOW zero (-4.44e-16), and
+  // ctx.ellipse() throws IndexSizeError on a negative radius. That
+  // uncaught exception is what silently kills the whole draw loop for
+  // the rest of the run -- explains why background stuff (birds) kept
+  // animating while the player/coil just vanished: draw() itself was
+  // throwing every frame from that point on, well before it ever got to
+  // drawing the player. Confirmed by scripting real rides headlessly and
+  // catching the exact exception. Clamped the shrink math's own t to
+  // [0,1], and the "bigger for a big hop" effect is now a separate
+  // multiplier instead of pushing t out of range.
+  const t = Math.min(1, s.landPulse); // drives all the (1-t) shrink math below -- must stay in [0,1]
+  const boost = s.landPulse > 1 ? 1.35 : 1; // extra size for the big-hop landing's flash, applied as a plain multiplier instead
   ctx.save();
-  ctx.globalAlpha = Math.min(1, t);
+  ctx.globalAlpha = Math.min(1, s.landPulse);
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.ellipse(lx, ly, 10 + (1 - t) * 16, 3 + (1 - t) * 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(lx, ly, (10 + (1 - t) * 16) * boost, (3 + (1 - t) * 5) * boost, 0, 0, Math.PI * 2);
   ctx.stroke();
   const puffCount = 5;
   for (let i = 0; i < puffCount; i++) {
     const ang = Math.PI + (i / (puffCount - 1) - 0.5) * Math.PI * 0.9;
-    const dist = (1 - t) * 20 * (0.6 + pseudoRandom(i * 7.3) * 0.6);
+    const dist = (1 - t) * 20 * boost * (0.6 + pseudoRandom(i * 7.3) * 0.6);
     const px = lx + Math.cos(ang) * dist;
     const py = ly - Math.abs(Math.sin(ang)) * dist * 0.5;
     ctx.fillStyle = "rgba(220,200,160,0.85)";
     ctx.beginPath();
-    ctx.arc(px, py, 2 + (1 - t) * 1.5, 0, Math.PI * 2);
+    ctx.arc(px, py, (2 + (1 - t) * 1.5) * boost, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
