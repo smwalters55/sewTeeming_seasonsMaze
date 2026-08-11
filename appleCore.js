@@ -37880,7 +37880,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1650; // CONFIRMED CHANGE: widened again (was 1460) after moving the block pile further right, away from the pendulum
+const SANDBOX_WIDTH = 1750; // CONFIRMED CHANGE: widened again (was 1650) to preserve the same right-side margin after shifting the pile/pendulum right
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38583,7 +38583,7 @@ function drawMicroscopeStation(camX) {
    shape as the fan, but the ride itself is an arc instead of a hover.
    ====================================================== */
 const sandboxPendulum = {
-  x: 950, // CONFIRMED CHANGE: moved further right per "move it more to right" (SANDBOX_WIDTH bumped alongside it for swing clearance)
+  x: 1050, // CONFIRMED CHANGE: moved further right per "move pendulum more to the right"
   anchorHeight: 190,   // height above ground of the pivot point -- raised along with everything else below, per "make the pendulum big"
   armLength: 120,
   angle: 0.9,          // radians from straight-down; swings between -amplitude and +amplitude
@@ -38728,7 +38728,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1400, topHeight: 220 }; // CONFIRMED CHANGE: raised a bit ("make top box a lil higher") from 195 -- still well clear of gy=300's off-screen ceiling
+const sandboxBlockPile = { x: 1500, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 ("slinky block pile more to the right") -- SANDBOX_WIDTH bumped alongside it below to keep the same right-side margin
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -38785,34 +38785,34 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
-  { x: 1229, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1287, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1339, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1389, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1443, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1491, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1329, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1387, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1439, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1489, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1543, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1591, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
-  { x: 1269, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1315, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1359, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1405, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1447, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1369, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1415, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1459, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1505, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1547, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
-  { x: 1302, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1342, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1380, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 1420, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1402, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1442, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1480, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1520, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
-  { x: 1332, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1368, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1402, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1432, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1468, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1502, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 1354, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1386, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1454, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1486, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
-  { x: 1370, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1470, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -39008,7 +39008,28 @@ const sandboxSlinky = {
   landPulse: 0,
   landX: 0,
   landH: 0,
-  bigHopSeg: -1
+  bigHopSeg: -1,
+  // CONFIRMED CHANGE ("take a beat before teleporting slinky back up
+  // from the ground"): counts down in ms from the moment a ride ends;
+  // while > 0, drawSandboxSlinky draws the resting coil at the actual
+  // landing spot instead of snapping straight back up to the peak.
+  resetHold: 0,
+  // CONFIRMED CHANGE ("rogue bounce" hop): rogueSeg is which single hop
+  // segment (if any) this ride's rogue moment happens on -- picked fresh
+  // each ride, mutually exclusive with bigHopSeg so the two showy
+  // moments never stack. Once the ride reaches that segment, it breaks
+  // out of the normal hop path into a real little projectile arc
+  // (rogueX/rogueH position, rogueVX/rogueVY velocity, gravity applied
+  // every frame) that bounces on the ground a few times before settling
+  // -- and settling there ends the ride early, same as a normal finish.
+  rogueSeg: -1,
+  rogueActive: false,
+  rogueX: 0,
+  rogueH: 0,
+  rogueVX: 0,
+  rogueVY: 0,
+  rogueBouncesLeft: 0,
+  dustParticles: []
 };
 
 function drawBlockPile(camX) {
@@ -39069,13 +39090,148 @@ function drawBlockPile(camX) {
   // its own without a text tag.
 }
 
+// CONFIRMED CHANGE ("let's make the dust land better, some actual sand
+// flying up around the slinky and player") -- real little particles
+// instead of just the puff's radius-based rings: each one gets its own
+// position/velocity and real gravity, so they visibly kick up and
+// scatter around the landing spot instead of just an expanding circle.
+// Shared by every kind of landing (normal hop, big hop, ride finish, and
+// the new rogue-bounce touchdowns) via spawnSandboxDust below.
+function spawnSandboxDust(x, h, count, intensity) {
+  const s = sandboxSlinky;
+  for (let i = 0; i < count; i++) {
+    const seed = performance.now() % 1000 + i * 13.7;
+    const ang = Math.PI * (0.15 + pseudoRandom(seed) * 0.7); // mostly upward, spread left/right
+    const speed = (60 + pseudoRandom(seed + 3.1) * 90) * intensity;
+    s.dustParticles.push({
+      x, h,
+      vx: Math.cos(ang) * speed * (pseudoRandom(seed + 5.3) < 0.5 ? -1 : 1),
+      vy: Math.sin(ang) * speed,
+      life: 0.28 + pseudoRandom(seed + 7.9) * 0.24,
+      maxLife: 0.28 + pseudoRandom(seed + 7.9) * 0.24,
+      size: (1.5 + pseudoRandom(seed + 11.3) * 2) * Math.min(1.4, intensity)
+    });
+  }
+  // cap the pool so a chaotic run (lots of landings back to back) can
+  // never accumulate an unbounded array
+  if (s.dustParticles.length > 120) s.dustParticles.splice(0, s.dustParticles.length - 120);
+}
+
+function updateSandboxDustParticles(deltaTime) {
+  const s = sandboxSlinky;
+  if (!s.dustParticles.length) return;
+  const GRAVITY = 620;
+  s.dustParticles = s.dustParticles.filter(pt => {
+    pt.vy -= GRAVITY * deltaTime;
+    pt.x += pt.vx * deltaTime;
+    pt.h += pt.vy * deltaTime;
+    pt.life -= deltaTime;
+    if (pt.h < 0) { pt.h = 0; pt.vy *= -0.3; pt.vx *= 0.6; } // tiny settle-bounce so they don't clip below ground
+    return pt.life > 0;
+  });
+}
+
+function drawSandboxSlinkyDustParticles(camX) {
+  const s = sandboxSlinky;
+  ctx.save();
+  for (const pt of s.dustParticles) {
+    const alpha = Math.max(0, pt.life / pt.maxLife);
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle = pseudoRandom(pt.x + pt.h) < 0.5 ? "rgba(200,175,130,1)" : "rgba(226,205,165,1)";
+    ctx.beginPath();
+    ctx.ellipse(pt.x - camX, gy - pt.h, pt.size, pt.size * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// CONFIRMED CHANGE (shared by normal ride finish AND rogue-bounce
+// finish): both paths end the ride the same way -- reset running/player
+// state, drop the player at the exact spot the ride actually ended, and
+// kick off the finale's bigger dust/flash plus the teleport-delay hold.
+function finishSandboxSlinkyRide(landX, landHeight) {
+  const s = sandboxSlinky;
+  s.running = false;
+  s.rogueActive = false;
+  player.onSlinky = false;
+  player.x = landX - player.width / 2;
+  player.y = landHeight;
+  player.vy = 0;
+  player.jumping = false;
+  player.usedDoubleJump = false;
+  s.landPulse = 2.2; // finale gets the biggest dust/flash of the whole ride
+  s.landX = landX;
+  s.landH = landHeight;
+  spawnSandboxDust(landX, landHeight, 12, 1.6);
+  // CONFIRMED CHANGE ("take a beat before teleporting slinky back up
+  // from the ground") -- the resting coil now stays drawn at this actual
+  // landing spot for a beat before snapping back up to the peak; see the
+  // `holding` branch in drawSandboxSlinky.
+  s.resetHold = 650;
+}
+
+function updateSandboxSlinkyRogueBounce(deltaTime) {
+  const s = sandboxSlinky;
+  const GRAVITY = 1500; // px/s^2 -- a real little projectile arc, not the ride's usual hop-shape math
+  s.rogueVY -= GRAVITY * deltaTime;
+  s.rogueX += s.rogueVX * deltaTime;
+  s.rogueH += s.rogueVY * deltaTime;
+  // CONFIRMED BUG FIX (caught by the automated multi-ride test, one run
+  // landed at x=1778 against a 1750-wide room): the normal
+  // "!player.onSlinky" world-edge clamp in updateSandboxScene is
+  // skipped the whole time onSlinky is true, which stays true through
+  // the entire rogue bounce -- so with nothing else stopping it, a
+  // strong rogue launch could carry the player clean off the edge of
+  // the playable room. Clamped here instead, with a small wall-bounce
+  // (reverse + dampen vx) so hitting an edge mid-flight still reads as
+  // a bounce rather than an invisible wall.
+  const margin = player.width / 2 + 10;
+  if (s.rogueX < margin) { s.rogueX = margin; s.rogueVX = Math.abs(s.rogueVX) * 0.6; }
+  if (s.rogueX > SANDBOX_WIDTH - margin) { s.rogueX = SANDBOX_WIDTH - margin; s.rogueVX = -Math.abs(s.rogueVX) * 0.6; }
+  if (s.rogueH <= 0) {
+    s.rogueH = 0;
+    s.rogueBouncesLeft--;
+    if (s.rogueBouncesLeft <= 0 || Math.abs(s.rogueVY) < 90) {
+      finishSandboxSlinkyRide(s.rogueX, 0);
+      return;
+    }
+    // CONFIRMED: loses energy (restitution) and forward speed (a little
+    // friction) each bounce, and gets its own smaller-each-time dust
+    // puff, so it visibly settles down instead of bouncing forever.
+    s.rogueVY = Math.abs(s.rogueVY) * 0.42;
+    s.rogueVX *= 0.7;
+    s.landPulse = 1.1;
+    s.landX = s.rogueX;
+    s.landH = 0;
+    spawnSandboxDust(s.rogueX, 0, 7, 0.9);
+  }
+  player.x = s.rogueX - player.width / 2;
+  player.y = s.rogueH;
+  player.vy = 0;
+  player.jumping = true;
+  // keeps the coil-drawing code (which spans hopFromX/H -> hopToX/H)
+  // anchored right on the flying player instead of stretching toward a
+  // stale pre-launch hop target
+  s.hopFromX = s.rogueX; s.hopToX = s.rogueX;
+  s.hopFromH = s.rogueH; s.hopToH = s.rogueH;
+}
+
 function updateSandboxSlinky(deltaTime) {
   const s = sandboxSlinky;
+  updateSandboxDustParticles(deltaTime);
 
   // CONFIRMED CHANGE: landing flash always decays, even after the ride
   // ends or if this update runs while not riding at all, so the very
   // last landing's puff/flash finishes playing out instead of freezing.
   s.landPulse = Math.max(0, s.landPulse - (deltaTime * 1000) / 220);
+  // CONFIRMED CHANGE ("take a beat before teleporting slinky back up
+  // from the ground") -- also always decays, same reasoning as landPulse.
+  s.resetHold = Math.max(0, s.resetHold - deltaTime * 1000);
+
+  if (s.running && s.rogueActive) {
+    updateSandboxSlinkyRogueBounce(deltaTime);
+    return;
+  }
 
   if (s.running) {
     s.runT += deltaTime * 1000;
@@ -39222,14 +39378,31 @@ function updateSandboxSlinky(deltaTime) {
     // mid-hop. The flash is bigger if the hop that JUST ended was the
     // showy big hop, so the biggest landing gets the biggest impact.
     if (s.lastSegIndex !== -1 && segIndex !== s.lastSegIndex) {
-      s.landPulse = s.lastSegIndex === s.bigHopSeg ? 1.6 : 1;
+      const wasBig = s.lastSegIndex === s.bigHopSeg;
+      s.landPulse = wasBig ? 1.6 : 1;
       s.landX = s.hopFromX;
       s.landH = s.hopFromH;
+      spawnSandboxDust(s.landX, s.landH, wasBig ? 9 : 6, wasBig ? 1.6 : 1);
     }
     s.lastSegIndex = segIndex;
+    // CONFIRMED CHANGE ("rogue bounce" hop): the instant the ride enters
+    // this ride's designated rogue segment, break out of the normal hop
+    // path entirely -- launch into a real projectile arc instead of
+    // continuing to the next tier. It bounces a few times and settling
+    // ends the ride right there (see updateSandboxSlinkyRogueBounce/
+    // finishSandboxSlinkyRide), same as any other finish.
+    if (s.rogueSeg !== -1 && segIndex === s.rogueSeg && !s.rogueActive) {
+      s.rogueActive = true;
+      s.rogueX = s.hopFromX;
+      s.rogueH = s.hopFromH;
+      const dir = pseudoRandom(performance.now() % 1000 + 61) < 0.5 ? -1 : 1;
+      s.rogueVX = dir * (150 + pseudoRandom(performance.now() % 1000 + 67) * 90);
+      s.rogueVY = 520 + pseudoRandom(performance.now() % 1000 + 89) * 140;
+      s.rogueBouncesLeft = pseudoRandom(performance.now() % 1000 + 71) < 0.5 ? 2 : 3;
+      spawnSandboxDust(s.rogueX, s.rogueH, 10, 1.4);
+      return;
+    }
     if (p >= 1) {
-      s.running = false;
-      player.onSlinky = false;
       // CONFIRMED BUG FIX: "it moves player to some other place on the
       // ground than where the slinky landed" -- this landing step used
       // to recompute an entirely separate raw endpoint and snap it to
@@ -39242,17 +39415,7 @@ function updateSandboxSlinky(deltaTime) {
       // endpoint (t=1) -- guaranteed solid ground (same clamp everything
       // else uses) AND guaranteed to match exactly where the coil
       // visually finished.
-      player.x = slinkyClampedX(1) - player.width / 2;
-      player.y = 0;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      // the final touchdown never trips the segIndex-change check above
-      // (it's still the same last segment, just finishing), so give it
-      // its own landing flash here.
-      s.landPulse = s.lastSegIndex === s.bigHopSeg ? 1.6 : 1;
-      s.landX = player.x + player.width / 2;
-      s.landH = 0;
+      finishSandboxSlinkyRide(slinkyClampedX(1), 0);
     }
     return;
   }
@@ -39296,7 +39459,26 @@ function updateSandboxSlinky(deltaTime) {
     // always the same spot on the pile. lastSegIndex resets to -1 so the
     // very first hop of this ride can't be misread as a landing.
     const numSegs = SANDBOX_HOP_HEIGHTS.length - 1;
-    s.bigHopSeg = pseudoRandom(performance.now() % 1000 + 17) < 0.4
+    // CONFIRMED CHANGE ("rogue bounce" hop): rolled BEFORE bigHopSeg and
+    // mutually exclusive with it, so a ride never tries to be both showy
+    // hop AND rogue launch at once. TESTING VALUE: 0.5 (50% of rides) so
+    // it's easy to get a real feel for it quickly -- dial this down once
+    // it's been played with (the user's own plan, ~10-15% is the
+    // eventual target for a normal ride mix).
+    const ROGUE_BOUNCE_CHANCE = 0.5;
+    s.rogueSeg = pseudoRandom(performance.now() % 1000 + 29) < ROGUE_BOUNCE_CHANCE
+      // excludes the LAST segment (numSegs-1) -- rogue-launching on the
+      // final hop would just be a normal finish with extra steps, no
+      // real "escapes mid-pile" drama
+      ? Math.floor(pseudoRandom(performance.now() % 1000 + 31) * (numSegs - 1)) % (numSegs - 1)
+      : -1;
+    s.rogueActive = false;
+    // CONFIRMED CHANGE: "bigger riskier hops sometimes" -- ~40% of rides
+    // get exactly one showy hop, chosen fresh each ride so it's not
+    // always the same spot on the pile. lastSegIndex resets to -1 so the
+    // very first hop of this ride can't be misread as a landing. Skipped
+    // entirely on rides that already rolled a rogue bounce this run.
+    s.bigHopSeg = (s.rogueSeg === -1 && pseudoRandom(performance.now() % 1000 + 17) < 0.4)
       ? Math.floor(pseudoRandom(performance.now() % 1000 + 43) * numSegs) % numSegs
       : -1;
     s.lastSegIndex = -1;
@@ -39312,7 +39494,15 @@ function drawSandboxSlinky(camX) {
   // read as "hanging in mid air" off to the side of the actual highest
   // block instead of sitting on it.
   const topSx = SANDBOX_SLINKY_TOP_STEP.x - camX + SANDBOX_SLINKY_TOP_STEP.width / 2;
-  const topScreenY = gy - sandboxBlockPile.topHeight;
+  // CONFIRMED BUG FIX: "slinky resting looks like it is sitting below the
+  // surface of top box" -- this used sandboxBlockPile.topHeight (220,
+  // just a stale general reference number) instead of the actual top
+  // step's own heightAboveGround (228 after the pile got taller/denser),
+  // so the coil's resting position was drawn 8px lower than the real
+  // block surface it's supposed to be perched on -- reading as sunken
+  // into the block. Anchored to the real top step's height now, same
+  // fix already applied to its x above.
+  const topScreenY = gy - SANDBOX_SLINKY_TOP_STEP.heightAboveGround;
 
   // CONFIRMED BUG FIX: "where is charge indicator" -- the bar used to
   // only appear once charge>0.001, so if you weren't already holding
@@ -40339,6 +40529,12 @@ function drawSandboxScene(camX) {
     ctx.fillRect(gx, gyy, 2, 2);
   }
 
+  // CONFIRMED BUG FIX: crows used to draw LAST (see below), which put
+  // them in front of everything including the solid block pile --
+  // fixed by drawing them first, right after the ground/sand, so the
+  // pile/pendulum/etc all correctly occlude them like any other
+  // background element.
+  drawCrows(camX); // same birds, consistent across every zone
   drawStuckShovel(SANDBOX_WIDTH * 0.55, camX);
   drawSandMound(sandboxReturnMound.x, camX, "Back to Spring");
   drawWigStand(camX);
@@ -40356,14 +40552,13 @@ function drawSandboxScene(camX) {
   // reintroduces the old "can't see the slinky" bug.
   drawSandboxSlinkyRider(camX);
   drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
+  drawSandboxSlinkyDustParticles(camX); // real scattering sand grains, on top of the puff's rings -- also unconditional, same reasoning
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
   // that") -- the room's edges are still a hard boundary (see the
   // player.x clamp in updateSandboxScene below), just not visually
   // walled off anymore.
-
-  drawCrows(camX); // same birds, consistent across every zone
 }
 
 function updateSandboxScene(deltaTime) {
