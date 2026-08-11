@@ -20159,15 +20159,19 @@ const cloudsDecor = [
 // CONFIRMED BUG FIX: moved well clear of the crystal (x:1955) -- per
 // direct feedback it needed to be further away, not sitting right next
 // to it looking like part of the same little display.
+// CONFIRMED CHANGE: pushed further left again per direct request --
+// x:800 sits clear of the nearby decor clouds (wisp x:950, stack x:1260)
+// and above the low hop-platform cluster around x:690-920 (those top
+// out at height 95, this sits at 175), so it's still an isolated shape.
 const MANTA_RAY = {
-  x: 1700,
-  y: 165,
+  x: 800,
+  y: 175,
   state: "dormant",      // dormant -> waking -> toward -> pass -> ambient
   t: 0,
   wingPhase: 0,
   passDir: 1,
-  ambientCenterX: 1700,
-  ambientCenterY: 165
+  ambientCenterX: 800,
+  ambientCenterY: 175
 };
 
 function updateMantaRay(deltaTime) {
@@ -20234,9 +20238,25 @@ function updateMantaRay(deltaTime) {
     // CONFIRMED CHANGE: widened and re-centered further left, per direct
     // request to let it roam further that direction instead of staying
     // roughly centered on wherever the pass ended.
+    // CONFIRMED CHANGE: pushed the leftward re-center further out (was
+    // -160) so ambient visibly starts to the left of wherever the pass
+    // actually ended, per direct feedback, rather than a smaller shift
+    // that could read as "basically the same spot."
     const prevX = m.x;
-    m.x = (m.ambientCenterX - 160) + Math.sin(m.t * 0.00016) * 440;
-    m.y = m.ambientCenterY + Math.sin(m.t * 0.00032 + 1.3) * 22;
+    m.x = (m.ambientCenterX - 280) + Math.sin(m.t * 0.00016) * 440;
+    // CONFIRMED CHANGE: lowered the center and widened the vertical
+    // swing -- per direct request, allow it to come down further instead
+    // of staying high the whole time.
+    m.y = (m.ambientCenterY - 45) + Math.sin(m.t * 0.00032 + 1.3) * 42;
+
+    // CONFIRMED CHANGE: kept clear of the rabbit shuttle -- per direct
+    // request, it shouldn't overlap that route (x:1600-1860, height
+    // 220-230 while traveling). Whenever the ray's own sweep carries it
+    // into that horizontal band, cap its height below the shuttle's
+    // band entirely rather than letting the sine wave decide.
+    if (m.x > 1560 && m.x < 1900) {
+      m.y = Math.min(m.y, 185);
+    }
 
     // CONFIRMED CHANGE: rideable once ambient -- per direct request.
     // Lands like any other platform (same shape of check as the hay
