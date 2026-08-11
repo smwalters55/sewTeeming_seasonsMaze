@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- the browser auto-requests /favicon.ico on every load with no icon
+       declared, which is the "benign 404" the console kept showing --
+       this empty data-uri icon satisfies that request so it stops -->
+  <link rel="icon" href="data:," />
   <title>Sketch Maze – Base Prototype</title>
   <style>
     :root{
@@ -60,74 +64,7 @@ canvas { display:block; }
   </div>
 
 
-<script src="appleCore.js" defer ></script>
+<script src="appleCore.js?v=20260802104500" defer ></script>
 
 </body>
 </html>
-
----
-
-## Added NPC: Frog Guide (Top Hat)
-
-### Visual Style
-- Hand-drawn sketch aesthetic
-- Slightly oversized head, long limbs
-- Wears a small **top hat**
-- Carries a **walking stick** (later doubles as bass bow reference)
-- Idle animation: gentle sway, occasional blink
-
-### Location
-- Appears in **Path One**, shortly after entering from orchard
-- Stands near a mild obstacle (rock / stump)
-
-### Interaction
-- Mouse click or ↓ + interact range
-- Dialogue appears in sketch-style speech bubble
-
-// ### Dialogue (Initial)
-
-if (orchardChoice === null) {
-  ctx.fillText("Three ways now breathe.", fx - 12, bubbleY + 18);
-  ctx.fillText("Stand where you belong.", fx - 12, bubbleY + 34);
-} 
-else if (orchardChoice === "left") {
-  ctx.fillText("Roots curl deep here.", fx - 12, bubbleY + 18);
-  ctx.fillText("Careful steps remembered.", fx - 12, bubbleY + 34);
-}
-else if (orchardChoice === "center") {
-  ctx.fillText("The old way holds.", fx - 12, bubbleY + 18);
-  ctx.fillText("Balance walks with you.", fx - 12, bubbleY + 34);
-}
-else {
-  ctx.fillText("Light breaks first ahead.", fx - 12, bubbleY + 18);
-  ctx.fillText("Boldness warms the bark.", fx - 12, bubbleY + 34);
-}
-
-
-//> "Ah. You found *the* apple, didn’t you?"
-
-//> "Paths open when things are carried with care."
-
-//> "I seem to have misplaced my bass… perhaps it wandered ahead of me."
-
-### Function
-- Acts as:
-  - Narrative anchor
-  - Soft hint system
-  - Side quest giver
-
-### Side Quest Hook
-- **Quest:** Help Frog find their stand-up bass
-- Bass appears later in maze (different zone)
-- Returning bass unlocks:
-  - New traversal ability OR
-  - Hidden shortcut OR
-  - Decorative musical moment
-
-### Multiplayer-Future Ready
-- Frog dialogue can change depending on:
-  - Which player interacted first
-  - Whether both players are present
-- Frog acknowledges shared progress subtly
-
----

@@ -39347,8 +39347,15 @@ function drawSandboxSlinky(camX) {
   }
 
   // the slinky itself
-  const coilSx = s.running ? player.x + player.width / 2 - camX : topSx;
-  const coilSy = s.running ? gy - player.y - 4 : topScreenY - 4;
+  // CONFIRMED CHANGE ("take a beat before teleporting slinky back up from
+  // the ground"): the coil used to snap straight back to the peak the
+  // instant a ride ended. Now, while resetHold is still counting down (set
+  // to 650ms the moment a ride finishes), the resting coil stays drawn at
+  // the actual landing spot on the ground instead of teleporting -- only
+  // once resetHold reaches 0 does it show back up at the peak.
+  const holding = !s.running && s.resetHold > 0;
+  const coilSx = s.running ? player.x + player.width / 2 - camX : (holding ? s.landX - camX : topSx);
+  const coilSy = s.running ? gy - player.y - 4 : (holding ? gy - s.landH - 4 : topScreenY - 4);
 
   // CONFIRMED CHANGE: "it is not interactive, make it kind of glow
   // subtly, and then twinkly when you press interact" -- a soft
@@ -39357,7 +39364,7 @@ function drawSandboxSlinky(camX) {
   // twinkling sparkles while actually charging, intensifying with the
   // charge level, same spirit as the swing charge bar's own "gentle
   // sparkle once fully charged."
-  if (!s.running) {
+  if (!s.running && !holding) {
     const breathe = 0.55 + Math.sin(performance.now() * 0.003) * 0.35;
     const glowR = 22 + s.charge * 10;
     const glow = ctx.createRadialGradient(coilSx, coilSy - 6, 0, coilSx, coilSy - 6, glowR);
@@ -39721,7 +39728,21 @@ function drawSandboxSlinkyLandingPuff(camX) {
   // [0,1], and the "bigger for a big hop" effect is now a separate
   // multiplier instead of pushing t out of range.
   const t = Math.min(1, s.landPulse); // drives all the (1-t) shrink math below -- must stay in [0,1]
-  const boost = s.landPulse > 1 ? 1.35 : 1; // extra size for the big-hop landing's flash, applied as a plain multiplier instead
+  // CONFIRMED CHANGE ("need better dust finish"): boost now scales
+  // continuously with how far landPulse exceeds 1, instead of a flat
+  // binary bump -- so a mid-ride big-hop landing (landPulse 1.6) reads as
+  // clearly bigger than a normal landing (1), and the ride's actual
+  // finale (landPulse 2.2, set once when p>=1) reads as bigger still.
+  const boost = 1 + Math.max(0, s.landPulse - 1) * 0.5;
+  // ground-hugging dust cloud shadow first, underneath the ring/puffs --
+  // sells "impact settling into the ground" instead of just a ring popping
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, s.landPulse) * 0.5;
+  ctx.fillStyle = "rgba(180,160,120,0.6)";
+  ctx.beginPath();
+  ctx.ellipse(lx, ly + 2, (14 + (1 - t) * 10) * boost, (4 + (1 - t) * 2) * boost, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
   ctx.save();
   ctx.globalAlpha = Math.min(1, s.landPulse);
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
@@ -39729,7 +39750,21 @@ function drawSandboxSlinkyLandingPuff(camX) {
   ctx.beginPath();
   ctx.ellipse(lx, ly, (10 + (1 - t) * 16) * boost, (3 + (1 - t) * 5) * boost, 0, 0, Math.PI * 2);
   ctx.stroke();
-  const puffCount = 5;
+  // a second, fainter/wider flash ring just behind the main one for a
+  // touch more punch on the biggest landings -- fades faster than the
+  // main ring so it doesn't linger
+  if (boost > 1.05) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, s.landPulse) * 0.35 * Math.max(0, 1 - t * 1.4);
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, (14 + (1 - t) * 22) * boost, (4 + (1 - t) * 7) * boost, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // more dust motes for a bigger landing, spread a bit wider too
+  const puffCount = boost > 1.2 ? 8 : 5;
   for (let i = 0; i < puffCount; i++) {
     const ang = Math.PI + (i / (puffCount - 1) - 0.5) * Math.PI * 0.9;
     const dist = (1 - t) * 20 * boost * (0.6 + pseudoRandom(i * 7.3) * 0.6);
