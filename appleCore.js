@@ -39174,32 +39174,34 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "it stil looks like two drawings stacked on
-    // top of each other versus actually being attached" -- the fan's
-    // lines all started from one floating hub point BETWEEN the two
-    // drums, never actually touching either drum's own rings, which is
-    // exactly why it read as two separate pieces just placed next to
-    // each other. Each fan's lines now originate ON its own topmost
-    // ring's rim (walking around that ellipse from near-vertical to a
-    // sweep toward the ring's outer side) and continue outward along
-    // that same radial direction -- so the wires visibly grow out of
-    // the coil itself. A small inward lean on the innermost lines keeps
-    // the two fans meeting/overlapping at the very top so the whole
-    // thing still reads as one continuous dome, not two separate poofs.
+    // CONFIRMED BUG FIX: "compare this to c. it is not close to c." --
+    // measured this directly (zoomed 3x render) instead of trusting how
+    // it looked small: the "inward lean" on the innermost lines was
+    // real but nowhere near enough -- each innermost line only drifted
+    // ~5px toward center while the two drums are 24px apart, leaving an
+    // obvious gap between the fans that just wasn't visible at normal
+    // game scale in my own check. Rebuilt so the innermost line's TIP
+    // is an explicit SHARED point (apexX/apexY) that both fans target
+    // directly -- not just angled inward and hoping they meet -- so
+    // they genuinely touch at one shared apex, guaranteed by
+    // construction, with the rest of each fan blending out from there
+    // to its own ring's outer edge.
     const topRingY = drumTopY - (drumRings - 1) * drumRingH;
     ctx.lineWidth = 1;
-    const sweepDeg = 75, lean = 10;
+    const sweepDeg = 80;
+    const apexX = coilSx, apexY = topRingY - arcHeight;
     [[-1, coilSx - drumOffset], [1, coilSx + drumOffset]].forEach(([dir, dcx]) => {
       const count = 9;
       for (let i = 0; i < count; i++) {
-        const t = i / (count - 1); // 0 = innermost/near-vertical/tallest, 1 = outermost/near-horizontal/shortest
-        const thetaDeg = 90 + dir * lean - dir * t * (sweepDeg + lean);
-        const theta = thetaDeg * Math.PI / 180;
-        const baseX = dcx + ringRX * Math.cos(theta);
-        const baseY = topRingY - ringRY * Math.sin(theta);
-        const len = arcHeight * (1 - 0.15 * t);
-        const tipX = baseX + Math.cos(theta) * len;
-        const tipY = baseY - Math.sin(theta) * len;
+        const t = i / (count - 1); // 0 = innermost (meets the shared apex exactly), 1 = outermost (near the ring's own side)
+        const baseThetaDeg = 90 - dir * t * sweepDeg;
+        const baseTheta = baseThetaDeg * Math.PI / 180;
+        const baseX = dcx + ringRX * Math.cos(baseTheta);
+        const baseY = topRingY - ringRY * Math.sin(baseTheta);
+        const outerTipX = dcx + dir * (ringRX + 3);
+        const outerTipY = topRingY - arcHeight * 0.22;
+        const tipX = apexX * (1 - t) + outerTipX * t;
+        const tipY = apexY * (1 - t) + outerTipY * t;
         ctx.beginPath();
         ctx.moveTo(baseX, baseY);
         ctx.lineTo(tipX, tipY);
