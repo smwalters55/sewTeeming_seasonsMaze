@@ -1260,23 +1260,18 @@ function drawSeasonTransition(ctx) {
   // shaded (flat-shaded 3D faces) rather than wood-paneled -- keeping
   // this border smooth too so the two actually look consistent.
   if (target === "sandbox") {
-    // CONFIRMED BUG FIX: rebuilt as ONE stroked rectangle instead of
-    // four separate fillRect calls -- per direct feedback with a video,
-    // pixel-sampled and confirmed: the bottom fillRect was genuinely
-    // not painting red across the middle of the screen (only the
-    // corners, where the left/right bars happened to reach, showed any
-    // red near the bottom), while top/left/right were fine. No clip
-    // leak or bad math was found in a full code review of this block,
-    // so rather than guess at a fourth root cause, this removes the
-    // possibility entirely: a single strokeRect straddling the canvas
-    // edge (lineWidth = 2x the border width, so half sits outside the
-    // canvas and is naturally clipped) paints all four sides in ONE
-    // draw call -- there is no longer a separate "bottom" call that
-    // could behave differently from the other three.
+    // CONFIRMED CHANGE: reverted back to the four-fillRect version --
+    // per direct request ("revert to how you were doing it before w
+    // the transition screen, I think the color maybe was better
+    // there"). The single-strokeRect version didn't fix the missing-
+    // bottom-border report either, so there was no upside left to
+    // justify keeping it over this one.
     const borderW = 34;
-    ctx.strokeStyle = SANDBOX_RED;
-    ctx.lineWidth = borderW * 2;
-    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = SANDBOX_RED;
+    ctx.fillRect(0, 0, canvas.width, borderW); // top
+    ctx.fillRect(0, canvas.height - borderW, canvas.width, borderW); // bottom
+    ctx.fillRect(0, 0, borderW, canvas.height); // left
+    ctx.fillRect(canvas.width - borderW, 0, borderW, canvas.height); // right
     // a slim inner highlight so the border still reads as a raised
     // frame rather than a flat painted bar
     ctx.strokeStyle = "rgba(255,255,255,0.25)";
@@ -2787,6 +2782,7 @@ function applyPhysics(){
         player.usedDoubleJump = false;
       }
     });
+  } // CONFIRMED BUG FIX: this closing brace for the "if (!keys.down && !overTrapGap)" wrapper was missing, which left the sandbox branch below nested one level too deep (still inside tunneltown's own block) -- since currentScene is never both "tunneltown" and "sandbox" at once, that branch was structurally unreachable, so the block-pile collision silently never ran no matter what. This is the actual cause of "still cannot jump land on this slinky block pile pieces."
 
   } else if (currentScene === "sandbox") {
 
@@ -2812,6 +2808,31 @@ function applyPhysics(){
     }
   });
 
+  } else if (currentScene === "spring") {
+
+  // CONFIRMED CHANGE: the sandbox entrance marker's top face is now a
+  // real jumpable platform -- per direct request ("make it so we can
+  // jump onto center of sandbox"). A flat platform approximating the
+  // top face's middle height (it's actually a slanted parallelogram
+  // visually, but a flat landing zone reads fine for a small prop like
+  // this), spanning the box's on-screen width.
+  {
+    const boxCenterX = sandboxEntranceMound.x;
+    const boxTopHalfSpan = 49; // ~(boxW + depthDX) / 2 from drawSandMound's own geometry
+    const boxTopHeight = 20;   // roughly the middle of the slanted top face's height range (11 front .. 29 back)
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > boxCenterX - boxTopHalfSpan &&
+      player.x < boxCenterX + boxTopHalfSpan &&
+      playerBottom <= boxTopHeight &&
+      playerBottom >= boxTopHeight - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = boxTopHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
   }
 
   } // end currentScene checks
@@ -12096,7 +12117,7 @@ function drawSpringScene(camX) {
   // CONFIRMED CHANGE: hidden until clouds has actually been visited --
   // per direct request, same "stays out of sight until earned" pattern
   // as the squirrel above.
-  if (discoveredScenes.clouds) drawSandMound(sandboxEntranceMound.x, camX, "Sandbox");
+  if (discoveredScenes.clouds) drawSandMound(sandboxEntranceMound.x, camX, null); // CONFIRMED CHANGE: removed the "Sandbox" label text per direct request
 
   ctx.restore();
 }
@@ -37876,7 +37897,7 @@ function drawSandMound(x, camX, label) {
   // toy shovel, stuck into the sand at an angle -- positioned in real
   // screen space (near the front-right corner of the sand patch), not
   // the sheared space, so its own angle stays independent
-  const shovelX = frontRightX - 16, shovelY = frontTopY - 4;
+  const shovelX = frontRightX - 28, shovelY = frontTopY - 12; // CONFIRMED CHANGE: moved higher and further left per direct request
   ctx.save();
   ctx.translate(shovelX, shovelY);
   ctx.rotate(-0.5);
