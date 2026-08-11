@@ -38856,6 +38856,20 @@ function sandboxHopSegAt(t) {
   const rawPhase = hi > lo ? (clamped - lo) / (hi - lo) : 0;
   return { segIndex, hopPhase: Math.min(0.9999, Math.max(0, rawPhase)) };
 }
+// CONFIRMED CHANGE: "should player be synched closer to middle? maybe it
+// hits the higher step when the slinky is already leaving it" -- option 2
+// of the discussed fix. The plain smoothstep committed to leaving the
+// anchor step almost immediately (it's already ~50% of the way to the
+// next step by the midpoint), which reads as leaving early on the wide
+// base-tier blocks especially. This single shared easing curve biases a
+// hop's local phase to dwell near the anchor step longer before committing
+// to the move -- used everywhere a hop's local phase drives a visual
+// (x position, y height, and the coil's own reach) so all three stay
+// locked to the exact same curve and can't drift apart.
+function slinkyDwellEase(t) {
+  const c = Math.max(0, Math.min(1, t));
+  return Math.pow(c, 1.6);
+}
 
 // purely decorative background blocks scattered around/behind the
 // climbable pile, at varied sizes/colors/rotations, filling in the
@@ -39105,12 +39119,12 @@ function updateSandboxSlinky(deltaTime) {
       const hi = leftAt <= rightAt ? rightAt : lo;
       const rawFrom = slinkyRawEndpointX(localSegStartT);
       const rawTo = slinkyRawEndpointX(localSegEndT);
-      const eased = localFrac * localFrac * (3 - 2 * localFrac);
+      const eased = slinkyDwellEase(localFrac);
       const rawX = rawFrom + (rawTo - rawFrom) * eased;
       return Math.max(lo, Math.min(hi, rawX));
     }
     player.x = slinkyClampedX(p) - player.width / 2;
-    player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(p) : 0);
+    player.y = (segStart + (segEnd - segStart) * slinkyDwellEase(hopPhase)) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(p) : 0);
     // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
     // like with the arcs coming down a set of blocks" -- stash the
     // WORLD x/height of the two blocks this hop is flipping between
@@ -39458,7 +39472,12 @@ function drawSandboxSlinkyRider(camX) {
   // what round 1 was missing -- the reveal now chases a player who is
   // always exactly on the coil's own path, instead of hiding under a
   // player who'd wandered off it.
-  const reach = Math.min(1, s.hopPhase * 1.15);
+  // CONFIRMED CHANGE: reach now driven by the same slinkyDwellEase curve
+  // that x/y use (option 2), instead of raw hopPhase, so the coil's
+  // stretch/reveal, the player's x, and the player's y all commit to
+  // leaving the anchor step at exactly the same rate -- none of them can
+  // drift ahead of or behind the others.
+  const reach = Math.min(1, slinkyDwellEase(s.hopPhase) * 1.15);
   // CONFIRMED BUG FIX: "player still hiding too much of sllinky" (still
   // true after the lag fix) -- the player sprite is 40x54, but the
   // riding coil was drawn at basically the SAME scale as the tiny
