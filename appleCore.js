@@ -37696,29 +37696,34 @@ function drawSandMound(x, camX, label) {
   const topH = 16;    // the foreshortened top opening, sitting above the wall
   const bx = cx - boxW / 2;
   const topY = gy - wallH - topH;
-  const wallY = gy - wallH;
+  const r = 7; // corner radius, top corners only
 
-  // front wall -- flush to the ground, full width, square-ish bottom
-  // corners so it plants firmly rather than floating
-  const wallGrad = ctx.createLinearGradient(0, wallY, 0, gy);
+  // CONFIRMED CHANGE: the wall band and top opening used to be two
+  // separately-stroked rectangles, which per direct feedback ("looks
+  // like a one on ground and a one sitting up right on top of it")
+  // read as two stacked boxes instead of one. Fixed by outlining the
+  // WHOLE box as a single continuous path (rounded only at the top-
+  // outer corners, square where it meets the ground) with one fill
+  // and one stroke -- there's no seam anywhere along the outer edge.
+  ctx.beginPath();
+  ctx.moveTo(bx, gy);
+  ctx.lineTo(bx, topY + r);
+  ctx.quadraticCurveTo(bx, topY, bx + r, topY);
+  ctx.lineTo(bx + boxW - r, topY);
+  ctx.quadraticCurveTo(bx + boxW, topY, bx + boxW, topY + r);
+  ctx.lineTo(bx + boxW, gy);
+  ctx.closePath();
+  const wallGrad = ctx.createLinearGradient(0, topY, 0, gy);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
-  ctx.fillRect(bx, wallY, boxW, wallH);
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(bx, wallY, boxW, wallH);
-
-  // top opening -- sits right on top of the wall, rounded corners,
-  // this is the part we're "looking down slightly into"
-  ctx.fillStyle = SANDBOX_RED;
-  roundRect(ctx, bx, topY, boxW, topH, 6);
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
   ctx.lineWidth = 1.5;
-  roundRect(ctx, bx, topY, boxW, topH, 6);
   ctx.stroke();
-  // top rim highlight, like the interior panels' own top edge
+
+  // top rim highlight, like the interior panels' own top edge -- the
+  // only thing marking where the opening is, not a second outline
   ctx.fillStyle = "rgba(255,255,255,0.3)";
   ctx.fillRect(bx + 3, topY, boxW - 6, 3);
 
@@ -38029,29 +38034,34 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.arc(0, 4, 21, Math.PI, 0, false);
     ctx.fill();
     // two braids, sticking straight out to the sides then curling
-    // slightly down at the tip with a small loop and a bow
+    // slightly down at the tip with a small loop and a bow.
+    // CONFIRMED CHANGE: pushed a lot further out from the head -- per
+    // direct feedback ("pippy long stock pigtails are too close to
+    // player head you cant see them"), the old reach barely cleared
+    // the head silhouette at this sprite's scale, so they read as
+    // invisible/absorbed into the head instead of sticking out.
     [-1, 1].forEach(dir => {
       ctx.beginPath();
-      ctx.moveTo(dir * 16, 2);
-      ctx.quadraticCurveTo(dir * 34, 4, dir * 36, 16);
-      ctx.quadraticCurveTo(dir * 37, 26, dir * 30, 28);
-      ctx.quadraticCurveTo(dir * 24, 26, dir * 26, 16);
-      ctx.quadraticCurveTo(dir * 24, 6, dir * 12, 6);
+      ctx.moveTo(dir * 18, 0);
+      ctx.quadraticCurveTo(dir * 46, 2, dir * 50, 18);
+      ctx.quadraticCurveTo(dir * 52, 30, dir * 42, 34);
+      ctx.quadraticCurveTo(dir * 34, 30, dir * 36, 18);
+      ctx.quadraticCurveTo(dir * 34, 6, dir * 16, 4);
       ctx.closePath();
       ctx.fill();
       // braid segment lines
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.lineWidth = 1;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         ctx.beginPath();
-        ctx.moveTo(dir * (18 + i * 6), 4 + i * 4);
-        ctx.lineTo(dir * (16 + i * 6), 10 + i * 4);
+        ctx.moveTo(dir * (22 + i * 7), 2 + i * 7);
+        ctx.lineTo(dir * (18 + i * 7), 10 + i * 7);
         ctx.stroke();
       }
       // little bow at the tip
       ctx.fillStyle = "#e0455a";
       ctx.beginPath();
-      ctx.ellipse(dir * 30, 27, 4, 3, dir * 0.5, 0, Math.PI * 2);
+      ctx.ellipse(dir * 42, 33, 5, 4, dir * 0.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = wig.color;
     });
@@ -38128,53 +38138,68 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.stroke();
   } else if (id === "blueBob") {
     ctx.fillStyle = wig.color;
-    // smooth cap over the crown
+    ctx.strokeStyle = "rgba(0,0,0,0.18)";
+    ctx.lineWidth = 1;
+    // smooth cap over the crown, tightened a bit (was radius 21/chord
+    // at y2 -- bumping the overall wig scale back up per "all the wigs
+    // are too small still" meant this needed to stay snug or it'd
+    // balloon back into one undifferentiated blob, per the earlier
+    // "what is this" complaint)
     ctx.beginPath();
-    ctx.arc(0, 2, 21, Math.PI, 0, false);
+    ctx.arc(0, -1, 17, Math.PI, 0, false);
     ctx.fill();
+    ctx.stroke();
     // asymmetric strands: long in front (past the chin), short in back
     ctx.beginPath();
-    ctx.moveTo(-20, 0);
-    ctx.quadraticCurveTo(-24, 20, -17, 34); // long front-left strand
-    ctx.quadraticCurveTo(-13, 22, -14, 2);
+    ctx.moveTo(-16, -3);
+    ctx.quadraticCurveTo(-21, 18, -15, 33); // long front-left strand
+    ctx.quadraticCurveTo(-11, 20, -12, -1);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(20, 0);
-    ctx.quadraticCurveTo(24, 20, 17, 34); // long front-right strand
-    ctx.quadraticCurveTo(13, 22, 14, 2);
+    ctx.moveTo(16, -3);
+    ctx.quadraticCurveTo(21, 18, 15, 33); // long front-right strand
+    ctx.quadraticCurveTo(11, 20, 12, -1);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-20, 0);
-    ctx.quadraticCurveTo(-22, 10, -16, 14); // short back-left tuft
-    ctx.lineTo(-14, 4);
+    ctx.moveTo(-16, -3);
+    ctx.quadraticCurveTo(-19, 8, -13, 11); // short back-left tuft
+    ctx.lineTo(-12, -1);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(20, 0);
-    ctx.quadraticCurveTo(22, 10, 16, 14); // short back-right tuft
-    ctx.lineTo(14, 4);
+    ctx.moveTo(16, -3);
+    ctx.quadraticCurveTo(19, 8, 13, 11); // short back-right tuft
+    ctx.lineTo(12, -1);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   } else if (id === "greenWavy") {
     ctx.fillStyle = wig.color;
-    // cap over the crown
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 1;
+    // cap over the crown, same tightened radius as blueBob
     ctx.beginPath();
-    ctx.arc(0, 2, 21, Math.PI, 0, false);
+    ctx.arc(0, -1, 17, Math.PI, 0, false);
     ctx.fill();
+    ctx.stroke();
     // long wavy strands past the shoulders on each side, real S-curves
     // rather than straight hanging tufts
     [-1, 1].forEach(dir => {
       ctx.beginPath();
-      ctx.moveTo(dir * 19, 0);
-      ctx.bezierCurveTo(dir * 30, 10, dir * 8, 22, dir * 26, 34);
-      ctx.bezierCurveTo(dir * 34, 40, dir * 14, 46, dir * 22, 52);
-      ctx.lineTo(dir * 12, 50);
-      ctx.bezierCurveTo(dir * 18, 44, dir * 2, 38, dir * 10, 28);
-      ctx.bezierCurveTo(dir * 16, 20, dir * 4, 10, dir * 12, 2);
+      ctx.moveTo(dir * 16, -3);
+      ctx.bezierCurveTo(dir * 26, 7, dir * 6, 19, dir * 23, 31);
+      ctx.bezierCurveTo(dir * 30, 37, dir * 12, 43, dir * 19, 49);
+      ctx.lineTo(dir * 10, 47);
+      ctx.bezierCurveTo(dir * 15, 41, dir * 1, 35, dir * 8, 25);
+      ctx.bezierCurveTo(dir * 14, 17, dir * 3, 7, dir * 10, -1);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
     });
   }
 
@@ -38507,125 +38532,178 @@ const MICROSCOPE_SLIDES = [
         ctx.arc(ox, oy, 1.5 + pseudoRandom(i * 2.9) * 2, 0, Math.PI * 2);
         ctx.fill();
       }
-      // two tardigrades ("those bear things") -- chubby segmented body,
-      // 8 stubby legs, a rounded snout
+      // CONFIRMED CHANGE: rebuilt to actually look like a real
+      // tardigrade under a scope, per direct feedback ("make the bears
+      // look a lot closer to what they actually look like... this is
+      // important!!!") -- one continuous plump, translucent barrel-
+      // shaped body (not 4 separate overlapping lobes, which read as
+      // blocky/segmented toy-like), a rounder head with a small dark
+      // ring for the real buccal/mouth opening, faint internal gut
+      // shading for the translucent-cuticle look, and legs that splay
+      // from the SIDES of the body (not straight down from the belly)
+      // each ending in a little cluster of curled claws -- tardigrades
+      // have multiple claws per leg, not one dot.
       const drawTardigrade = (ox, oy, s, rot) => {
         ctx.save();
         ctx.translate(ox, oy);
         ctx.rotate(rot);
         ctx.scale(s, s);
-        ctx.fillStyle = "#c9a86a";
-        // segmented body -- 4 overlapping rounded lobes
-        for (let i = 0; i < 4; i++) {
-          ctx.beginPath();
-          ctx.ellipse(-15 + i * 10, 0, 9, 11, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // snout
+
+        // one continuous plump body -- wider in the middle, tapering
+        // at the head end, rounded at the rear
+        ctx.fillStyle = "#cdb37c";
         ctx.beginPath();
-        ctx.ellipse(-24, 0, 5, 6, 0, 0, Math.PI * 2);
+        ctx.moveTo(-26, -6);
+        ctx.bezierCurveTo(-22, -13, -4, -13, 8, -10);
+        ctx.bezierCurveTo(18, -8, 20, -3, 20, 0);
+        ctx.bezierCurveTo(20, 3, 18, 8, 8, 10);
+        ctx.bezierCurveTo(-4, 13, -22, 13, -26, 6);
+        ctx.bezierCurveTo(-29, 3, -29, -3, -26, -6);
+        ctx.closePath();
         ctx.fill();
-        // 4 pairs of stubby legs with tiny claws
+        // translucent-cuticle shading -- a soft darker gut-line down
+        // the center and a paler highlight along the top, instead of
+        // one flat solid color
+        ctx.fillStyle = "rgba(120,95,55,0.28)";
+        ctx.beginPath();
+        ctx.ellipse(-4, 1, 20, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,248,225,0.3)";
+        ctx.beginPath();
+        ctx.ellipse(-6, -6, 16, 3, -0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // head -- rounder and more distinct than a plain snout, with
+        // a small dark ring for the mouth opening
+        ctx.fillStyle = "#cdb37c";
+        ctx.beginPath();
+        ctx.ellipse(-27, 0, 6, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(90,65,30,0.6)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(-31, 0, 2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 4 pairs of stubby legs splayed from the SIDES of the body,
+        // each ending in a little cluster of curled claws
         ctx.strokeStyle = "#a8895a";
         ctx.lineWidth = 3;
-        for (let i = 0; i < 4; i++) {
-          const lx = -13 + i * 9;
+        ctx.lineCap = "round";
+        const legAnchors = [-19, -9, 2, 13];
+        legAnchors.forEach(lx => {
           [-1, 1].forEach(dir => {
+            const footX = lx - 3, footY = dir * 15;
             ctx.beginPath();
             ctx.moveTo(lx, dir * 8);
-            ctx.lineTo(lx - 2, dir * 15);
+            ctx.quadraticCurveTo(lx - 4, dir * 12, footX, footY);
             ctx.stroke();
-            ctx.fillStyle = "#8a6f45";
-            ctx.beginPath();
-            ctx.arc(lx - 2, dir * 15, 1.6, 0, Math.PI * 2);
-            ctx.fill();
+            // 3 tiny curled claws per foot, not one dot
+            ctx.strokeStyle = "#7a6038";
+            ctx.lineWidth = 1.1;
+            for (let c = -1; c <= 1; c++) {
+              ctx.beginPath();
+              ctx.moveTo(footX, footY);
+              ctx.quadraticCurveTo(footX + c * 2, footY + dir * 5, footX + c * 3.5, footY + dir * 6.5);
+              ctx.stroke();
+            }
+            ctx.strokeStyle = "#a8895a";
+            ctx.lineWidth = 3;
           });
-        }
-        // segment wrinkle lines
-        ctx.strokeStyle = "rgba(140,110,60,0.5)";
+        });
+        ctx.lineCap = "butt";
+
+        // faint segment creases across the body -- subtle, not hard
+        // dividing lines, since a real tardigrade reads as one soft
+        // wrinkled tube rather than distinct armor plates
+        ctx.strokeStyle = "rgba(140,110,60,0.3)";
         ctx.lineWidth = 1;
-        for (let i = 0; i < 3; i++) {
+        [-18, -8, 3, 14].forEach(lx => {
           ctx.beginPath();
-          ctx.moveTo(-20 + i * 10, -9);
-          ctx.lineTo(-20 + i * 10, 9);
+          ctx.moveTo(lx, -9);
+          ctx.quadraticCurveTo(lx + 1, 0, lx, 9);
           ctx.stroke();
-        }
+        });
         ctx.restore();
       };
-      drawTardigrade(-14, -6, 1, 0.15);
-      drawTardigrade(22, 20, 0.75, -0.4);
+      drawTardigrade(-12, -8, 1.15, 0.12);
+      drawTardigrade(20, 22, 0.85, -0.35);
     }
   },
   {
     id: "insectLeg",
-    name: "Grasshopper Leg",
+    name: "Grasshopper Leg (tibia, zoomed)",
     draw: () => {
       ctx.fillStyle = "#dce8d0";
       ctx.fillRect(-60, -60, 120, 120);
-      // three jointed segments: femur (thick, the big jumping segment),
-      // tibia (long and thin, spiny), tarsus (small foot at the tip)
-      ctx.strokeStyle = "#4a5c2a";
-      ctx.lineWidth = 1.5;
 
-      // femur
-      ctx.fillStyle = "#8fae55";
-      ctx.beginPath();
-      ctx.moveTo(-50, -6);
-      ctx.quadraticCurveTo(-20, -22, 4, -8);
-      ctx.quadraticCurveTo(-20, 14, -50, 10);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // joint
-      ctx.fillStyle = "#5f7a35";
-      ctx.beginPath();
-      ctx.arc(4, 0, 6, 0, Math.PI * 2);
-      ctx.fill();
-
-      // tibia -- long, thin, with a row of small spines along the back edge
+      // CONFIRMED CHANGE: cropped to just the tibia (the long spiny
+      // shin segment), zoomed in a lot closer, per direct feedback
+      // ("do part of the grasshopper leg and more zoomed in so can
+      // see little hairs or something") -- the old version tried to
+      // fit femur+tibia+tarsus all in frame, so nothing was big enough
+      // to show real texture. This fills almost the whole slide with
+      // one segment and adds fine hair-like bristles along both edges
+      // in addition to the bigger spines.
       ctx.save();
-      ctx.translate(4, 0);
-      ctx.rotate(0.55);
+      ctx.rotate(0.08);
+
+      // the tibia shaft itself, running nearly edge to edge
       ctx.fillStyle = "#7a9a48";
       ctx.beginPath();
-      ctx.moveTo(0, -4);
-      ctx.lineTo(52, -1.5);
-      ctx.lineTo(52, 1.5);
-      ctx.lineTo(0, 4);
+      ctx.moveTo(-58, -10);
+      ctx.lineTo(58, -5);
+      ctx.lineTo(58, 6);
+      ctx.lineTo(-58, 11);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = "#4a5c2a";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.strokeStyle = "#3f5020";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < 7; i++) {
-        const lx = 8 + i * 6;
-        ctx.beginPath();
-        ctx.moveTo(lx, -3.5);
-        ctx.lineTo(lx + 4, -9);
-        ctx.stroke();
-      }
-      ctx.restore();
 
-      // tarsus -- small segmented foot at the very tip, with tiny claws
-      const tipX = 4 + Math.cos(0.55) * 52, tipY = Math.sin(0.55) * 52;
-      ctx.save();
-      ctx.translate(tipX, tipY);
-      ctx.rotate(0.55);
-      ctx.fillStyle = "#6a8a3e";
-      for (let i = 0; i < 3; i++) {
+      // surface stipple texture -- cuticle isn't perfectly smooth
+      ctx.fillStyle = "rgba(60,90,30,0.25)";
+      for (let i = 0; i < 40; i++) {
+        const lx = -55 + pseudoRandom(i * 3.3) * 110;
+        const ly = -7 + pseudoRandom(i * 5.7 + 1) * 14;
         ctx.beginPath();
-        ctx.ellipse(i * 6, 0, 4, 2.2, 0, 0, Math.PI * 2);
+        ctx.arc(lx, ly, 0.6 + pseudoRandom(i * 2.1) * 0.6, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // big spines along the back edge, same idea as before but bigger
+      // now that there's room
       ctx.strokeStyle = "#3f5020";
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(18, -1.5);
-      ctx.lineTo(23, -4);
-      ctx.moveTo(18, 1.5);
-      ctx.lineTo(23, 4);
-      ctx.stroke();
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < 8; i++) {
+        const lx = -50 + i * 15;
+        const ly = -9 + (lx + 58) * (5 / 116);
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + 6, ly - 16);
+        ctx.stroke();
+      }
+
+      // fine little hairs (setae) scattered along BOTH edges -- much
+      // thinner and shorter than the spines, this is the actual
+      // "little hairs" texture that wasn't visible before at the
+      // smaller/full-leg scale
+      ctx.strokeStyle = "rgba(45,60,20,0.7)";
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < 22; i++) {
+        const lx = -54 + pseudoRandom(i * 4.4 + 2) * 108;
+        const topY = -8 + (lx + 58) * (5 / 116);
+        const botY = 10 + (lx + 58) * (5 / 116) * -1;
+        const onTop = i % 2 === 0;
+        const hy = onTop ? topY : botY;
+        const dir = onTop ? -1 : 1;
+        const len = 3 + pseudoRandom(i * 1.9) * 3;
+        const ang = (pseudoRandom(i * 2.7) - 0.5) * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(lx, hy);
+        ctx.lineTo(lx + Math.sin(ang) * len, hy + dir * len);
+        ctx.stroke();
+      }
       ctx.restore();
     }
   }
@@ -39491,10 +39569,11 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // "what is this" reaction to a screenshot). At 0.5 and shifted up,
   // it sits as a proportional hair accessory instead.
   if (player.wigId) {
-    // 0.5 undershot -- per direct feedback ("wigs too tiny now") --
-    // 0.72 keeps it from ballooning back into the original oversized
-    // blob while still reading as real hair on the head, not a speck
-    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.72);
+    // 0.5 undershot, then 0.72 was still "too small still" per direct
+    // feedback -- bumped to 0.9. blueBob/greenWavy's own shapes were
+    // tightened up above so this doesn't reproduce the original
+    // oversized-blob complaint at the larger scale.
+    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
   }
 
   ctx.restore(); // closes the sway rotation
