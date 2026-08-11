@@ -38954,7 +38954,22 @@ const SLINKY_PATTERNS = [
   // Trimmed both directional patterns to stay inside the pile's real
   // footprint on either side.
   { name: "rightSide", xOffset: p => p * 120 + Math.sin(p * Math.PI * 3) * 10 },
-  { name: "leftSide", xOffset: p => -p * 65 - Math.sin(p * Math.PI * 3) * 8 }
+  { name: "leftSide", xOffset: p => -p * 65 - Math.sin(p * Math.PI * 3) * 8 },
+  // CONFIRMED CHANGE: "i do want a slinky ride that goes directly
+  // sideways down the right and or left side of tower" -- rightSide/
+  // leftSide above still only DRIFT toward an edge; slinkyClampedX's
+  // safe zone is the OVERLAP of the current and next tier, which is
+  // naturally more central than either tier's own true outer edge, so
+  // even those patterns end up hugging somewhere short of the real
+  // edge most of the way down. These two use a deliberately absurd
+  // constant offset (999) that always exceeds every tier's safe zone in
+  // one direction, so the existing clamp (unchanged, same safety
+  // guarantees as every other pattern) pins the ride to the rightmost/
+  // leftmost currently-safe x on every single hop -- the ride
+  // genuinely tracks straight down whichever real edge the pile's
+  // blocks trace, the whole way down.
+  { name: "hugRight", xOffset: () => 999 },
+  { name: "hugLeft", xOffset: () => -999 }
 ];
 const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
 // CONFIRMED BUG FIX: "slinky way too fast moving.. waaay too fast" --
@@ -39565,7 +39580,22 @@ function drawSandboxSlinkyRider(camX) {
   // stretch/reveal, the player's x, and the player's y all commit to
   // leaving the anchor step at exactly the same rate -- none of them can
   // drift ahead of or behind the others.
-  const reach = Math.min(1, slinkyDwellEase(s.hopPhase) * 1.15);
+  // CONFIRMED BUG FIX: "x of player still way off for larger horiz
+  // deviations" -- reach used to be dwellEase(hopPhase)*1.15 (a 15%
+  // "reveal slightly ahead" boost), and the visible rings were placed by
+  // ARC-LENGTH fraction along the whole up-and-over bezier curve, not by
+  // the same value-based formula player.x actually uses. Arc-length and
+  // x-position are NOT the same thing on a curve that also travels
+  // up/down (a lot of the curve's length near the middle is vertical
+  // travel), so the ring at a given arc-length fraction generally sits
+  // at a different x than rawFrom+(rawTo-rawFrom)*dwellEase(hopPhase)
+  // (player's real formula) -- invisible for small hops, very visible
+  // for wide ones (wideS/rightSide/leftSide can drift 75-120px). Fixed
+  // by dropping the 1.15 boost and, below, overriding each ring's x
+  // directly with the same dwellEase formula player.x uses (only the
+  // curve's Y still comes from the bezier/arc-length sampling, since
+  // that's just the visual up-arc shape and was never the mismatch).
+  const reach = Math.min(1, slinkyDwellEase(s.hopPhase));
   // CONFIRMED BUG FIX: "player still hiding too much of sllinky" (still
   // true after the lag fix) -- the player sprite is 40x54, but the
   // riding coil was drawn at basically the SAME scale as the tiny
@@ -39591,21 +39621,23 @@ function drawSandboxSlinkyRider(camX) {
   // look broken. Instead, mirror the WHOLE drawing horizontally around
   // the anchor's own x as hopPhase goes 0->1 (scaleX: 1 -> 0 -> -1).
   // CONFIRMED BUG FIX: "the mirroring horizontal is what got messed up
-  // also? player fully disappears and slinky freezes" -- the first
-  // version of this did the mirroring with a real ctx.save/translate/
-  // scale/translate/...restore() wrapped around the whole draw. That's
-  // a real suspect for exactly this kind of corruption (a canvas
-  // transform that doesn't get cleanly undone poisons every draw call
-  // after it, including the player sprite drawn right after this
-  // function returns -- which matches "player disappears" while
-  // background elements like the birds keep animating fine). Rewritten
-  // to never touch ctx.save/scale at all: mirror each point's OWN x by
-  // hand (fromX + (x-fromX)*tumbleScaleX) and only ever pass ctx the
-  // already-mirrored coordinates. No global transform, no way for this
-  // to leak into anything drawn afterward.
-  const tumbleScaleX = Math.cos(Math.min(1, Math.max(0, s.hopPhase)) * Math.PI);
-  const tumbleAbsX = Math.max(0.05, Math.abs(tumbleScaleX)); // floor so the ellipse radius never fully collapses to an exact 0-width degenerate shape
-  function mirrorX(x) { return fromX + (x - fromX) * tumbleScaleX; }
+  // also? player fully disappears and slinky freezes" -- turned out the
+  // freeze was actually the landing-puff math (see that function's own
+  // fix), not this. But separately: "something is off about the
+  // mirroring, it needs to be like a twisting the other way rather than
+  // a flip from a mirror" -- correct call. A left-right mirror reverses
+  // the coil's own winding handedness every hop, which reads as
+  // "flipped wrong" rather than "rotating" -- a real slinky tumbling
+  // keeps its winding direction, it just turns to face the other way.
+  // Replaced the horizontal mirror with a per-ring rotation instead:
+  // each ring's own ellipse rotation angle sweeps a half turn over the
+  // hop, so the rings visibly turn/twist in place (foreshortening as
+  // they edge-on at the midpoint, same as before) without ever
+  // reversing left-right or touching x position at all -- also removes
+  // any interaction with the x-position fix above, since nothing here
+  // moves any point horizontally anymore.
+  const twistAngle = s.hopPhase * Math.PI; // 0 -> PI over the hop, one half-turn
+  const twistSquash = Math.max(0.08, Math.abs(Math.cos(twistAngle))); // 1 at the ends, edges-on (thin) at the midpoint
 
   const ringRX = 9, ringRY = 3.8, ringGap = 3.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
@@ -39644,10 +39676,20 @@ function drawSandboxSlinkyRider(camX) {
   ctx.lineWidth = 1;
   for (let i = 0; i < loopCount; i++) {
     const frac = i / (loopCount - 1);
-    const pt = pointAtLength(frac * totalLen * reach);
+    const pt = pointAtLength(frac * totalLen * reach); // Y only -- see the x override right below
     const openness = 0.15 + frac * 0.45;
+    // CONFIRMED BUG FIX: ring x is now pinned directly to the exact same
+    // formula player.x uses (fromX + (toX-fromX)*dwellEase-scaled
+    // progress), instead of trusting the bezier's arc-length-sampled
+    // pt.x -- see the "x of player still way off for larger horiz
+    // deviations" fix above. frac*reach is this ring's own progress
+    // through the same [0, dwellEase(hopPhase)] range player.x moves
+    // through, so the last ring (frac=1) always lands exactly on
+    // player's current x, and every ring before it is a real
+    // in-between point on player's own path, not an approximation.
+    const ringX = fromX + (toX - fromX) * (frac * reach);
     ctx.beginPath();
-    ctx.ellipse(mirrorX(pt.x), pt.y, ringRX * (1 + openness * 0.05) * tumbleAbsX, ringRY * (1 + openness), 0, 0, Math.PI * 2);
+    ctx.ellipse(ringX, pt.y, ringRX * (1 + openness * 0.05) * twistSquash, ringRY * (1 + openness), twistAngle, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
