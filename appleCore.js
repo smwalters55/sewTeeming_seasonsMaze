@@ -37675,24 +37675,61 @@ function updateTunnelTownScene(deltaTime) {
 const sandboxEntranceMound = { x: 3020, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 
+// CONFIRMED CHANGE: this is the "outside" marker -- redrawn as an
+// actual small classic red sandbox (real red box walls, low rim, seen
+// from the front) with disheveled sand filling it, not just a bare
+// sand mound. Per direct feedback ("i said i want the outside to look
+// like an actual red sandbox with disheveled sand in it did you
+// forget"). Uses the same SANDBOX_RED/SANDBOX_RED_DARK as the interior
+// room's own walls and the entrance transition wash, so all three
+// actually match.
 function drawSandMound(x, camX, label) {
   const cx = x - camX;
-  // a little sifted-sand pile with a toy shovel stuck in it -- reads as
-  // "an entrance," not just a random bump in the ground
-  ctx.fillStyle = "#d9c48a";
-  ctx.beginPath();
-  ctx.ellipse(cx, gy - 2, 26, 10, 0, 0, Math.PI * 2);
-  ctx.ellipse(cx - 8, gy - 8, 16, 9, 0, 0, Math.PI * 2);
-  ctx.ellipse(cx + 6, gy - 6, 14, 8, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#c9b070";
-  ctx.beginPath();
-  ctx.ellipse(cx, gy - 10, 12, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  const boxW = 68, boxH = 26;
+  const bx = cx - boxW / 2, by = gy - boxH;
 
-  // toy shovel, stuck in at an angle
+  // red box walls -- rounded rect, darker toward the bottom for a hint
+  // of depth, same gradient language as the interior wall panels
+  const wallGrad = ctx.createLinearGradient(0, by, 0, gy);
+  wallGrad.addColorStop(0, SANDBOX_RED);
+  wallGrad.addColorStop(1, SANDBOX_RED_DARK);
+  ctx.fillStyle = wallGrad;
+  roundRect(ctx, bx, by, boxW, boxH, 5);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bx, by, boxW, boxH, 5);
+  ctx.stroke();
+  // top rim highlight, like the interior panels' own top edge
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  ctx.fillRect(bx + 2, by, boxW - 4, 3);
+
+  // disheveled sand filling the box, inset from the red walls so the
+  // rim actually reads as a box lip around it
+  const sandInset = 6;
+  const sx0 = bx + sandInset, sy0 = by + sandInset;
+  const sw = boxW - sandInset * 2, sh = boxH - sandInset;
   ctx.save();
-  ctx.translate(cx + 10, gy - 14);
+  ctx.beginPath();
+  roundRect(ctx, sx0, sy0, sw, sh, 3);
+  ctx.clip();
+  ctx.fillStyle = "#d9c48a";
+  ctx.fillRect(sx0 - 2, sy0 - 2, sw + 4, sh + 4);
+  // kicked-up mounds and dug-out divots, same disheveled texture
+  // language as the interior sandbox floor
+  for (let i = 0; i < 6; i++) {
+    const ox = sx0 + pseudoRandom(i * 3.7) * sw;
+    const oy = sy0 + sh * 0.5 + pseudoRandom(i * 6.1 + 1) * sh * 0.5;
+    ctx.fillStyle = i % 2 === 0 ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(ox, oy, 6 + pseudoRandom(i * 2.2) * 5, 2.5 + pseudoRandom(i * 4.4) * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // toy shovel, stuck into the sand at an angle
+  ctx.save();
+  ctx.translate(cx + 12, gy - boxH + sandInset + 2);
   ctx.rotate(-0.5);
   ctx.fillStyle = "#3f7fd6";
   ctx.fillRect(-1.5, -22, 3, 24);
@@ -37710,7 +37747,7 @@ function drawSandMound(x, camX, label) {
     ctx.fillStyle = "#5a4a2a";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, cx, gy - 32);
+    ctx.fillText(label, cx, by - 12);
     ctx.textAlign = "left";
   }
 }
@@ -37782,14 +37819,14 @@ function drawStuckShovel(worldX, camX) {
    applyPhysics (see the player.onFan guard added there).
    ====================================================== */
 const sandboxFan = {
-  x: 300,
+  x: 520, // CONFIRMED CHANGE: pushed right, away from the wig stand, for breathing room
   hoverHeight: 150,
   launchT: 0,
   bobPhase: 0,
   spinPhase: 0
 };
 const SANDBOX_FAN_LAUNCH_MS = 450;
-const SANDBOX_FAN_EXIT_DIST = 55; // how far horizontally from the fan before it releases you
+const SANDBOX_FAN_CONE_HALF_WIDTH = 85; // how wide the wind cone is at hover height -- you can drift within this before falling out
 
 function updateSandboxFan(deltaTime) {
   const fan = sandboxFan;
@@ -37821,13 +37858,21 @@ function updateSandboxFan(deltaTime) {
     const eased = 1 - Math.pow(1 - p, 3);
     player.y = fan.hoverHeight * eased;
   } else {
-    // holding pattern -- gentle bob, gravity suspended entirely
-    fan.bobPhase += deltaTime * 2.6;
-    player.y = fan.hoverHeight + Math.sin(fan.bobPhase) * 7;
+    // CONFIRMED CHANGE: the wind is a widening cone, not a fixed
+    // column -- normal left/right movement (handleInput already moves
+    // player.x every frame) drifts you around inside it. Bob pushed a
+    // lot stronger and a bit faster than before (was 7, then 13) --
+    // per direct feedback ("make it go up and down more so when you
+    // move horizontal in it sometimes you go diagonal"), the point is
+    // for the vertical swing to be big enough that drifting sideways
+    // WHILE mid-bob visibly reads as diagonal motion, not just a
+    // gentle float with occasional side-stepping.
+    fan.bobPhase += deltaTime * 3.1;
+    player.y = fan.hoverHeight + Math.sin(fan.bobPhase) * 26;
 
-    // release once you've walked far enough away horizontally -- the
-    // fan just lets go, normal gravity resumes right where you are
-    if (Math.abs(centerX - fan.x) > SANDBOX_FAN_EXIT_DIST) {
+    // release once you've drifted past the cone's edge at this height
+    // -- the fan just lets go, normal gravity resumes right where you are
+    if (Math.abs(centerX - fan.x) > SANDBOX_FAN_CONE_HALF_WIDTH) {
       player.onFan = false;
       player.vy = 1; // tiny residual so the fall reads as "let go," not a dead stop before dropping
     }
@@ -37868,17 +37913,48 @@ function drawSandboxFan(camX) {
   ctx.arc(sx, gy - 9, 5, 0, Math.PI * 2);
   ctx.fill();
 
-  // visible upward air lines while actually holding someone up --
-  // otherwise the "wind" is invisible and it just looks like levitation
+  // CONFIRMED CHANGE: the wind is now a visible widening CONE (narrow
+  // at the fan, flared out to SANDBOX_FAN_CONE_HALF_WIDTH by hover
+  // height) instead of 3 straight parallel lines -- reads as "a column
+  // of air you can drift around inside," matching the actual mechanic
+  // (you can move horizontally while hovering, out to the cone's edge)
   if (player.onFan) {
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    const coneTopY = gy - sandboxFan.hoverHeight - 20;
+    const coneGrad = ctx.createLinearGradient(sx, gy - 10, sx, coneTopY);
+    coneGrad.addColorStop(0, "rgba(255,255,255,0.38)");
+    coneGrad.addColorStop(1, "rgba(255,255,255,0.04)");
+    ctx.fillStyle = coneGrad;
+    ctx.beginPath();
+    ctx.moveTo(sx - 16, gy - 10);
+    ctx.lineTo(sx + 16, gy - 10);
+    ctx.lineTo(sx + SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.lineTo(sx - SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.closePath();
+    ctx.fill();
+
+    // faint cone edge outlines so its shape actually reads, not just a
+    // soft glow
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx - 16, gy - 10);
+    ctx.lineTo(sx - SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.moveTo(sx + 16, gy - 10);
+    ctx.lineTo(sx + SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.stroke();
+
+    // streaming air lines drifting upward through the cone, spread
+    // wider than before to fill it instead of just its narrow base
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
     ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) {
-      const lx = sx + (i - 1) * 14;
-      const t = (fan.spinPhase * 20 + i * 30) % 40;
+    for (let i = 0; i < 5; i++) {
+      const spread = -1 + (i / 2); // -1, -0.5, 0, 0.5, 1
+      const t = (fan.spinPhase * 20 + i * 22) % 60;
+      const travelP = t / 60; // 0 at the fan, 1 near the top -- widen the line's x as it rises, matching the cone
+      const lx = sx + spread * (16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * travelP);
       ctx.beginPath();
-      ctx.moveTo(lx, gy - 12 - t);
-      ctx.lineTo(lx, gy - 30 - t);
+      ctx.moveTo(lx, gy - 12 - t * 2);
+      ctx.lineTo(lx, gy - 26 - t * 2);
       ctx.stroke();
     }
   }
@@ -37904,8 +37980,10 @@ const WIGS = [
   // with a highlight streak for "shiny"
   { id: "greyPixie", name: "Silver Pixie", color: "#b7b9bd" },
   // "a blue smooth bob with a long front and short back" -- asymmetric
-  // on purpose: front strands hang past the chin, back stays short
-  { id: "blueBob", name: "Blue Bob", color: "#3f7fd6" },
+  // on purpose: front strands hang past the chin, back stays short.
+  // Darker navy-blue per direct feedback ("make the blue wig a darker
+  // blue") -- the original was too close to a pale sky blue.
+  { id: "blueBob", name: "Blue Bob", color: "#1f4e94" },
   // "a wavy green hair wig that kinda long" -- long, past-shoulder,
   // real wave curves rather than straight strands
   { id: "greenWavy", name: "Wavy Green", color: "#4caf6b" }
@@ -37982,32 +38060,53 @@ function drawWigShape(id, cx, topY, scale) {
       ctx.stroke();
     });
   } else if (id === "greyPixie") {
+    // CONFIRMED CHANGE: rebuilt to actually read as a pixie cut --
+    // per direct feedback ("make the pixie a lot more like a pixie cut
+    // with strands whisping out, idk what the current thing is"). A
+    // tight, short base (much smaller than the old ear-length cap) with
+    // a ragged, choppy outline instead of one smooth dome, plus real
+    // wispy strands flicking outward at the crown/sides/nape -- that
+    // texture IS the pixie-cut read, not a highlight streak on a blob.
     ctx.fillStyle = wig.color;
-    // short cap, close to the head -- ends around ear height, no hair
-    // hanging below it
     ctx.beginPath();
-    ctx.moveTo(-20, 8);
-    ctx.quadraticCurveTo(-22, -16, 0, -18);
-    ctx.quadraticCurveTo(22, -16, 20, 8);
-    ctx.quadraticCurveTo(10, 2, 0, 4);
-    ctx.quadraticCurveTo(-10, 2, -20, 8);
+    ctx.moveTo(-13, 4);
+    // choppy, slightly jagged top edge -- a few small in/out notches
+    // rather than one clean arc, so it reads as textured short hair
+    ctx.quadraticCurveTo(-15, -6, -9, -10);
+    ctx.quadraticCurveTo(-6, -14, -2, -9);
+    ctx.quadraticCurveTo(2, -15, 6, -9);
+    ctx.quadraticCurveTo(10, -13, 13, -5);
+    ctx.quadraticCurveTo(15, 0, 12, 5);
+    ctx.quadraticCurveTo(5, -1, 0, 1);
+    ctx.quadraticCurveTo(-5, -1, -13, 4);
     ctx.closePath();
     ctx.fill();
-    // a couple of short swoopy fringe lines at the front
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
-    ctx.lineWidth = 1;
+
+    // wispy strands sticking OUT past the cut's own edge -- short,
+    // slightly curved flicks at varied angles, the actual "whisping
+    // out" texture rather than lying flat against the head
+    ctx.strokeStyle = wig.color;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = "round";
+    const wisps = [
+      [-9, -9, -14, -15], [-2, -14, -3, -20], [5, -13, 9, -19],
+      [12, -8, 18, -11], [-13, 2, -19, 3], [13, 3, 19, 5]
+    ];
+    wisps.forEach(([x0, y0, x1, y1]) => {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo((x0 + x1) / 2, y0 - 2, x1, y1);
+      ctx.stroke();
+    });
+    ctx.lineCap = "butt";
+
+    // small shine fleck for "shiny," kept subtle now that the strand
+    // texture is doing most of the work
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(-6, -14);
-    ctx.quadraticCurveTo(-10, -4, -14, 2);
-    ctx.moveTo(6, -14);
-    ctx.quadraticCurveTo(10, -4, 14, 2);
-    ctx.stroke();
-    // diagonal shine streak for "shiny"
-    ctx.strokeStyle = "rgba(255,255,255,0.65)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-12, -12);
-    ctx.lineTo(2, -2);
+    ctx.moveTo(-6, -8);
+    ctx.lineTo(1, -3);
     ctx.stroke();
   } else if (id === "blueBob") {
     ctx.fillStyle = wig.color;
@@ -38069,7 +38168,7 @@ function drawWigShape(id, cx, topY, scale) {
 // return mound, before the fan) per "let's do the wigs thing at the
 // start of it." isPlayerNear + space opens the UI, same pattern as
 // every other station in the game.
-const wigStand = { x: 210 };
+const wigStand = { x: 320 }; // CONFIRMED CHANGE: moved further right for breathing room from the entrance mound
 
 function drawWigStand(camX) {
   const sx = wigStand.x - camX;
@@ -38232,6 +38331,399 @@ function drawWigUI() {
   ctx.restore();
 }
 
+/* ======================================================
+   SANDBOX MICROSCOPE STATION -- third "weird toy" per direct request:
+   interact with it to open a UI (reusing the book/corkboard UI's open/
+   close-flourish + input-gating shape) and flip between four hand-
+   drawn slides: tomato skin, a leaf, pond water (with tardigrades --
+   "those bear things"), and a grasshopper leg. Purely a look-at-things
+   toy, no gameplay effect.
+   ====================================================== */
+const microscopeStation = { x: 780 }; // CONFIRMED CHANGE: moved further right, clear of the fan, for breathing room
+
+function drawMicroscopeStation(camX) {
+  const sx = microscopeStation.x - camX;
+  // base
+  ctx.fillStyle = "#5a5f66";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 2, 22, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // curved arm
+  ctx.strokeStyle = "#7a7f88";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(sx - 6, gy - 4);
+  ctx.quadraticCurveTo(sx - 16, gy - 40, sx - 2, gy - 66);
+  ctx.stroke();
+  // stage (little platform for the slide)
+  ctx.fillStyle = "#3f434a";
+  ctx.fillRect(sx - 14, gy - 34, 24, 5);
+  // tiny slide glass on the stage, catching a highlight
+  ctx.fillStyle = "rgba(200,230,240,0.85)";
+  ctx.fillRect(sx - 10, gy - 37, 16, 4);
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx - 10, gy - 37, 16, 4);
+  // body tube angling up to the eyepiece
+  ctx.fillStyle = "#8a8f96";
+  ctx.save();
+  ctx.translate(sx - 2, gy - 66);
+  ctx.rotate(-0.3);
+  ctx.fillRect(-5, -30, 10, 30);
+  ctx.restore();
+  // eyepiece
+  ctx.fillStyle = "#4a4e56";
+  ctx.beginPath();
+  ctx.arc(sx - 12, gy - 92, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // knob
+  ctx.fillStyle = "#adb2b8";
+  ctx.beginPath();
+  ctx.arc(sx + 10, gy - 46, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#5a4a2a";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Microscope", sx, gy - 100);
+  ctx.textAlign = "left";
+}
+
+// each slide's hand-drawn illustration, drawn centered at (0,0) inside
+// whatever clip/scale the caller has already set up -- keeps these
+// coordinate-space agnostic just like drawWigShape above
+const MICROSCOPE_SLIDES = [
+  {
+    id: "tomatoSkin",
+    name: "Tomato Skin",
+    draw: () => {
+      ctx.fillStyle = "#d8503a";
+      ctx.fillRect(-60, -60, 120, 120);
+      // irregular polygon "brick" cell walls, classic peel-under-a-
+      // scope look, just tomato-red instead of onion-pale
+      ctx.strokeStyle = "rgba(90,20,10,0.55)";
+      ctx.lineWidth = 1.5;
+      for (let row = -2; row <= 2; row++) {
+        for (let col = -2; col <= 2; col++) {
+          const ox = col * 22 + (row % 2 === 0 ? 0 : 11) + (pseudoRandom(row * 3.1 + col) - 0.5) * 4;
+          const oy = row * 20 + (pseudoRandom(row * 5.3 + col * 1.7) - 0.5) * 4;
+          ctx.beginPath();
+          ctx.moveTo(ox - 10, oy - 8);
+          ctx.lineTo(ox + 9, oy - 9);
+          ctx.lineTo(ox + 11, oy + 8);
+          ctx.lineTo(ox - 9, oy + 10);
+          ctx.closePath();
+          ctx.stroke();
+          // a little nucleus dot in most cells
+          if (pseudoRandom(row * 7.1 + col * 2.3) > 0.35) {
+            ctx.fillStyle = "rgba(120,30,15,0.5)";
+            ctx.beginPath();
+            ctx.arc(ox + (pseudoRandom(row + col * 4.4) - 0.5) * 6, oy + (pseudoRandom(row * 2.2 + col) - 0.5) * 6, 2.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+  },
+  {
+    id: "leaf",
+    name: "Leaf",
+    draw: () => {
+      ctx.fillStyle = "#7cb85a";
+      ctx.fillRect(-60, -60, 120, 120);
+      // vein network -- one thicker midrib, thinner branching veins off it
+      ctx.strokeStyle = "rgba(60,100,40,0.7)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-60, 0);
+      ctx.lineTo(60, 0);
+      ctx.stroke();
+      ctx.lineWidth = 1.4;
+      for (let i = -2; i <= 2; i++) {
+        const vy = i * 22;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(30 * Math.sign(i || 1), vy * 0.4, 55, vy);
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-30 * Math.sign(i || 1), vy * 0.4, -55, vy);
+        ctx.stroke();
+      }
+      // cell grid + chloroplast specks, sparser/greener than the tomato skin
+      ctx.strokeStyle = "rgba(50,90,35,0.35)";
+      ctx.lineWidth = 1;
+      for (let row = -2; row <= 2; row++) {
+        for (let col = -2; col <= 2; col++) {
+          const ox = col * 20, oy = row * 20;
+          ctx.strokeRect(ox - 9, oy - 9, 18, 18);
+          ctx.fillStyle = "rgba(30,70,20,0.55)";
+          for (let s = 0; s < 3; s++) {
+            const sxx = ox + (pseudoRandom(row * 3 + col * 5 + s) - 0.5) * 12;
+            const syy = oy + (pseudoRandom(row * 6 + col * 2 + s * 1.3) - 0.5) * 12;
+            ctx.beginPath();
+            ctx.arc(sxx, syy, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      // a couple of stomata (little oval pores) scattered on top
+      ctx.fillStyle = "rgba(40,70,30,0.6)";
+      [[-30, 25], [22, -32], [38, 18]].forEach(([ox, oy]) => {
+        ctx.beginPath();
+        ctx.ellipse(ox, oy, 4, 2, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  },
+  {
+    id: "pondWater",
+    name: "Pond Water",
+    draw: () => {
+      ctx.fillStyle = "#bcd9c8";
+      ctx.fillRect(-60, -60, 120, 120);
+      // drifting algae/debris flecks in the background
+      ctx.fillStyle = "rgba(90,140,110,0.4)";
+      for (let i = 0; i < 14; i++) {
+        const ox = (pseudoRandom(i * 4.1) - 0.5) * 116;
+        const oy = (pseudoRandom(i * 7.3 + 1) - 0.5) * 116;
+        ctx.beginPath();
+        ctx.arc(ox, oy, 1.5 + pseudoRandom(i * 2.9) * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // two tardigrades ("those bear things") -- chubby segmented body,
+      // 8 stubby legs, a rounded snout
+      const drawTardigrade = (ox, oy, s, rot) => {
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(rot);
+        ctx.scale(s, s);
+        ctx.fillStyle = "#c9a86a";
+        // segmented body -- 4 overlapping rounded lobes
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.ellipse(-15 + i * 10, 0, 9, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // snout
+        ctx.beginPath();
+        ctx.ellipse(-24, 0, 5, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // 4 pairs of stubby legs with tiny claws
+        ctx.strokeStyle = "#a8895a";
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 4; i++) {
+          const lx = -13 + i * 9;
+          [-1, 1].forEach(dir => {
+            ctx.beginPath();
+            ctx.moveTo(lx, dir * 8);
+            ctx.lineTo(lx - 2, dir * 15);
+            ctx.stroke();
+            ctx.fillStyle = "#8a6f45";
+            ctx.beginPath();
+            ctx.arc(lx - 2, dir * 15, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+        // segment wrinkle lines
+        ctx.strokeStyle = "rgba(140,110,60,0.5)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(-20 + i * 10, -9);
+          ctx.lineTo(-20 + i * 10, 9);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+      drawTardigrade(-14, -6, 1, 0.15);
+      drawTardigrade(22, 20, 0.75, -0.4);
+    }
+  },
+  {
+    id: "insectLeg",
+    name: "Grasshopper Leg",
+    draw: () => {
+      ctx.fillStyle = "#dce8d0";
+      ctx.fillRect(-60, -60, 120, 120);
+      // three jointed segments: femur (thick, the big jumping segment),
+      // tibia (long and thin, spiny), tarsus (small foot at the tip)
+      ctx.strokeStyle = "#4a5c2a";
+      ctx.lineWidth = 1.5;
+
+      // femur
+      ctx.fillStyle = "#8fae55";
+      ctx.beginPath();
+      ctx.moveTo(-50, -6);
+      ctx.quadraticCurveTo(-20, -22, 4, -8);
+      ctx.quadraticCurveTo(-20, 14, -50, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // joint
+      ctx.fillStyle = "#5f7a35";
+      ctx.beginPath();
+      ctx.arc(4, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // tibia -- long, thin, with a row of small spines along the back edge
+      ctx.save();
+      ctx.translate(4, 0);
+      ctx.rotate(0.55);
+      ctx.fillStyle = "#7a9a48";
+      ctx.beginPath();
+      ctx.moveTo(0, -4);
+      ctx.lineTo(52, -1.5);
+      ctx.lineTo(52, 1.5);
+      ctx.lineTo(0, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#3f5020";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 7; i++) {
+        const lx = 8 + i * 6;
+        ctx.beginPath();
+        ctx.moveTo(lx, -3.5);
+        ctx.lineTo(lx + 4, -9);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // tarsus -- small segmented foot at the very tip, with tiny claws
+      const tipX = 4 + Math.cos(0.55) * 52, tipY = Math.sin(0.55) * 52;
+      ctx.save();
+      ctx.translate(tipX, tipY);
+      ctx.rotate(0.55);
+      ctx.fillStyle = "#6a8a3e";
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(i * 6, 0, 4, 2.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = "#3f5020";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(18, -1.5);
+      ctx.lineTo(23, -4);
+      ctx.moveTo(18, 1.5);
+      ctx.lineTo(23, 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+];
+
+const MICROSCOPE_OPEN_CLOSE_MS = 350;
+const microscopeUI = { active: false, opening: false, openT: 0, closing: false, closeT: 0, slideIndex: 0 };
+
+function openMicroscopeUI() {
+  microscopeUI.opening = true;
+  microscopeUI.openT = 0;
+}
+
+function updateMicroscopeUI(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  if (microscopeUI.opening) {
+    microscopeUI.openT += dtMs;
+    if (microscopeUI.openT >= MICROSCOPE_OPEN_CLOSE_MS) {
+      microscopeUI.opening = false;
+      microscopeUI.active = true;
+    }
+    return;
+  }
+  if (microscopeUI.closing) {
+    microscopeUI.closeT += dtMs;
+    if (microscopeUI.closeT >= MICROSCOPE_OPEN_CLOSE_MS) {
+      microscopeUI.closing = false;
+    }
+    return;
+  }
+  if (!microscopeUI.active) return;
+
+  const count = MICROSCOPE_SLIDES.length;
+  if (keys.rightJustPressed) {
+    microscopeUI.slideIndex = (microscopeUI.slideIndex + 1) % count;
+  } else if (keys.leftJustPressed) {
+    microscopeUI.slideIndex = (microscopeUI.slideIndex - 1 + count) % count;
+  } else if (keys.spaceJustPressed) {
+    microscopeUI.active = false;
+    microscopeUI.closing = true;
+    microscopeUI.closeT = 0;
+  }
+}
+
+function drawMicroscopeUI() {
+  const w = canvas.width, h = canvas.height;
+  const t = microscopeUI.opening ? microscopeUI.openT / MICROSCOPE_OPEN_CLOSE_MS
+    : microscopeUI.closing ? Math.max(0, 1 - microscopeUI.closeT / MICROSCOPE_OPEN_CLOSE_MS)
+    : 1;
+  const ease = t * t * (3 - 2 * t);
+
+  ctx.fillStyle = `rgba(10,10,12,${0.85 * ease})`;
+  ctx.fillRect(0, 0, w, h);
+  if (ease <= 0.01) return;
+
+  const cx = w / 2, cy = h / 2 + 15;
+  ctx.save();
+  ctx.globalAlpha = ease;
+  ctx.translate(cx, cy);
+  ctx.scale(0.85 + 0.15 * ease, 0.85 + 0.15 * ease);
+  ctx.translate(-cx, -cy);
+
+  // dark eyepiece bezel around a circular field of view -- reads as
+  // actually looking down a microscope rather than a plain rectangle
+  const lensR = 95;
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.arc(cx, cy - 10, lensR + 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a3a3a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 10, lensR + 14, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy - 10, lensR, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(cx, cy - 10);
+  MICROSCOPE_SLIDES[microscopeUI.slideIndex].draw();
+  // a soft vignette around the edge of the circular view
+  const vig = ctx.createRadialGradient(0, 0, lensR * 0.6, 0, 0, lensR);
+  vig.addColorStop(0, "rgba(0,0,0,0)");
+  vig.addColorStop(1, "rgba(0,0,0,0.45)");
+  ctx.fillStyle = vig;
+  ctx.fillRect(-lensR, -lensR, lensR * 2, lensR * 2);
+  ctx.restore();
+
+  ctx.fillStyle = "#f0f0f0";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(MICROSCOPE_SLIDES[microscopeUI.slideIndex].name, cx, cy + lensR + 34);
+
+  ctx.font = "18px sans-serif";
+  ctx.fillText("<", cx - lensR - 30, cy - 10);
+  ctx.fillText(">", cx + lensR + 30, cy - 10);
+
+  const count = MICROSCOPE_SLIDES.length;
+  const dotSpacing = 16;
+  const dotsStartX = cx - ((count - 1) * dotSpacing) / 2;
+  for (let i = 0; i < count; i++) {
+    ctx.fillStyle = i === microscopeUI.slideIndex ? "#f0f0f0" : "rgba(240,240,240,0.3)";
+    ctx.beginPath();
+    ctx.arc(dotsStartX + i * dotSpacing, cy + lensR + 50, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(240,240,240,0.7)";
+  ctx.font = "10px sans-serif";
+  ctx.fillText("<- -> to switch slides   ·   space to step away", cx, cy + lensR + 66);
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
@@ -38270,6 +38762,7 @@ function drawSandboxScene(camX) {
   drawSandMound(sandboxReturnMound.x, camX, "Back to Spring");
   drawWigStand(camX);
   drawSandboxFan(camX);
+  drawMicroscopeStation(camX);
 
   // red wood-panel end walls -- these are what actually sell "small
   // classic sandbox," bookending the bounded play area on both sides
@@ -38287,6 +38780,11 @@ function updateSandboxScene(deltaTime) {
   if (keys.spaceJustPressed && isPlayerNear(wigStand.x, 0, 30, 20, 20) &&
       !wigUI.active && !wigUI.opening && !wigUI.closing) {
     openWigUI();
+  }
+
+  if (keys.spaceJustPressed && isPlayerNear(microscopeStation.x, 0, 30, 20, 20) &&
+      !microscopeUI.active && !microscopeUI.opening && !microscopeUI.closing) {
+    openMicroscopeUI();
   }
 
   updateSandboxFan(deltaTime);
@@ -38964,9 +39462,15 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.fill();
 
   // sandbox wig -- purely cosmetic, drawn last so it sits on top of the
-  // head/eyes; centered on the head, scale 1 matches this real sprite
+  // head/eyes; centered on the head. CONFIRMED CHANGE: scale dropped
+  // from 1 to 0.5 and nudged up a few px -- the shapes were sized/
+  // spaced assuming a bigger head than this 40x54 sprite actually has,
+  // so at scale 1 the cap+strands ballooned into one oversized blob
+  // that dwarfed the whole body instead of reading as hair (per direct
+  // "what is this" reaction to a screenshot). At 0.5 and shifted up,
+  // it sits as a proportional hair accessory instead.
   if (player.wigId) {
-    drawWigShape(player.wigId, px + player.width / 2, drawPy, 1);
+    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.5);
   }
 
   ctx.restore(); // closes the sway rotation
