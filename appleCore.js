@@ -37769,6 +37769,11 @@ function drawSandMound(x, camX, label) {
   const backY = groundY - wallH - depthDY + sinkY;
   const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
   const frontTopY = backY + depthDY; // = groundY - wallH + sinkY
+  // CONFIRMED CHANGE: the front-bottom corners now match the back-left
+  // corner's own (shortened) height instead of reaching further down to
+  // the full groundY -- per direct feedback ("the front corners should
+  // prob be same height as the back left corner"). All three bottom
+  // corners share one consistent height now.
   const sideBottomY = groundY - backLeftShorten;
 
   // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
@@ -37782,11 +37787,11 @@ function drawSandMound(x, camX, label) {
   ctx.moveTo(backX, backY);            // back-top-left
   ctx.lineTo(backX + boxW, backY);     // back-top-right
   ctx.lineTo(frontRightX, frontTopY);  // top face's near-right corner
-  ctx.lineTo(frontRightX, groundY);    // front-bottom-right
-  ctx.lineTo(frontLeftX, groundY);     // front-bottom-left
-  ctx.lineTo(backX, sideBottomY);      // side-bottom-left -- shortened per feedback
+  ctx.lineTo(frontRightX, sideBottomY); // front-bottom-right
+  ctx.lineTo(frontLeftX, sideBottomY);  // front-bottom-left
+  ctx.lineTo(backX, sideBottomY);      // side-bottom-left -- all three now match
   ctx.closePath();                     // back up the side's left edge to back-top-left
-  const wallGrad = ctx.createLinearGradient(0, backY, 0, groundY);
+  const wallGrad = ctx.createLinearGradient(0, backY, 0, sideBottomY);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
@@ -37803,15 +37808,15 @@ function drawSandMound(x, camX, label) {
   ctx.beginPath();
   ctx.moveTo(frontLeftX, frontTopY);
   ctx.lineTo(frontRightX, frontTopY);
-  ctx.lineTo(frontRightX, groundY);
-  ctx.lineTo(frontLeftX, groundY);
+  ctx.lineTo(frontRightX, sideBottomY);
+  ctx.lineTo(frontLeftX, sideBottomY);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "rgba(0,0,0,0.09)";
   ctx.beginPath();
   ctx.moveTo(backX, backY);
   ctx.lineTo(frontLeftX, frontTopY);
-  ctx.lineTo(frontLeftX, groundY);
+  ctx.lineTo(frontLeftX, sideBottomY);
   ctx.lineTo(backX, sideBottomY);
   ctx.closePath();
   ctx.fill();
