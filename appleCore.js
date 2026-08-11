@@ -38846,8 +38846,18 @@ const SLINKY_PATTERNS = [
   { name: "straightBounce", xOffset: () => 0, yBounce: p => Math.abs(Math.sin(p * Math.PI * 6)) * 7 },
   { name: "lopsided", xOffset: p => -50 + p * 100 + Math.sin(p * Math.PI * 3) * 16 },
   { name: "loop", xOffset: p => Math.sin(p * Math.PI * 2) * 55 * (1 - p) },
-  { name: "rightSide", xOffset: p => p * 140 + Math.sin(p * Math.PI * 3) * 14 },
-  { name: "leftSide", xOffset: p => -p * 120 - Math.sin(p * Math.PI * 3) * 14 }
+  // CONFIRMED BUG FIX: "for the down the blocks path on the left, in
+  // the bottom half it starts bouncing off air and not the blocks" --
+  // the pile's base tier only spans from the peak's startX out to
+  // about -76px on the left (SANDBOX_PILE_GROUND_CLEAR_LEFT), but
+  // leftSide's old amplitude (-120, plus a ±14 wiggle on top) could
+  // drift the ride to nearly -134px -- well past the base tier's own
+  // left edge, so by the low-height hops near the bottom there was
+  // genuinely no block left under the player at all, just open air.
+  // Trimmed both directional patterns to stay inside the pile's real
+  // footprint on either side.
+  { name: "rightSide", xOffset: p => p * 120 + Math.sin(p * Math.PI * 3) * 10 },
+  { name: "leftSide", xOffset: p => -p * 65 - Math.sin(p * Math.PI * 3) * 8 }
 ];
 const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
 // CONFIRMED BUG FIX: "slinky way too fast moving.. waaay too fast" --
@@ -39124,7 +39134,21 @@ function drawSandboxSlinky(camX) {
     // over between them. Rebuilt to match that shape exactly: a small
     // stack of tight rings at each end (the compressed drum), and a
     // dense fan of thin arced strands bridging the two drums' tops.
-    const drumOffset = 15, drumR = 9, drumRingH = 4, drumRings = 4;
+    // CONFIRMED BUG FIX: "why did you literally just revert to what i
+    // said before was wrong" -- rebuilt this against the ACTUAL
+    // reference photo pixel-by-pixel (measured drum/fan proportions
+    // and rendered candidates side by side against the real image
+    // before shipping, not guessed blind again). The real shape is TWO
+    // separate straight-line fans, one rooted at each drum's inner-top
+    // edge, each fanning outward and up -- NOT a single set of arcs
+    // bridging drum-to-drum (that read as a woven basket) and NOT a
+    // single hub with lines spiraling opposite ways (that made the
+    // sharp bowtie/X). The two fans' innermost, near-vertical lines
+    // sit close together near the center, which is what makes the
+    // silhouette read as one continuous dome. Drums are also taller
+    // now (6 rings) to match the photo's proportions -- they were
+    // noticeably squatter relative to the fan before.
+    const drumOffset = 16, drumR = 9, drumRingH = 3.5, drumRings = 6;
     const drumTopY = coilSy - 2;
     ctx.lineWidth = 1.4;
     [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
@@ -39134,31 +39158,23 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "pls fix" (with a screenshot) -- the
-    // helix-crossing version was a straight-up mistake: lines spiraling
-    // opposite directions on each drum converge into a sharp X/bowtie
-    // point at the top, which reads as a folded piece of fabric, not a
-    // coil -- nothing like the reference photo's rounded, open dome.
-    // Reverted to a fan of arcs that all bow the SAME way (a dome, not
-    // an hourglass), just kept open/thin: fewer lines, real gaps
-    // between them, and each line's own peak height varies (shorter
-    // near the outer edges, taller through the middle) so it reads as
-    // a rounded radiating fan rather than a single filled wedge.
     const fanTopY = drumTopY - drumRings * drumRingH;
-    const fanLines = 9, drumSpanW = 36;
     ctx.lineWidth = 1;
-    for (let i = 0; i < fanLines; i++) {
-      const t = i / (fanLines - 1);
-      const startX = coilSx - drumOffset - drumSpanW / 2 + t * drumSpanW;
-      const endX = coilSx + drumOffset - drumSpanW / 2 + t * drumSpanW;
-      const peakX = (startX + endX) / 2;
-      const peakHeight = arcHeight * (0.35 + 0.65 * Math.sin(t * Math.PI));
-      const peakY = fanTopY - peakHeight;
-      ctx.beginPath();
-      ctx.moveTo(startX, fanTopY);
-      ctx.quadraticCurveTo(peakX, peakY, endX, fanTopY);
-      ctx.stroke();
-    }
+    [-1, 1].forEach(dir => {
+      const hubX = coilSx + dir * 4; // the two fans' bases sit close together near the center, not spread across each drum's whole top
+      const count = 9, maxAngleDeg = 82;
+      for (let i = 0; i < count; i++) {
+        const t = i / (count - 1); // 0 = innermost/near-vertical/tallest, 1 = outermost/near-horizontal/shortest
+        const angle = (t * maxAngleDeg) * Math.PI / 180;
+        const len = arcHeight * (1 - 0.55 * t);
+        const tipX = hubX + dir * Math.sin(angle) * len;
+        const tipY = fanTopY - Math.cos(angle) * len;
+        ctx.beginPath();
+        ctx.moveTo(hubX, fanTopY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+      }
+    });
   }
   // CONFIRMED BUG FIX: "i also cant see the slinky while im riding
   // down" -- drawSandboxSlinky is called from drawSandboxScene, which
