@@ -1686,7 +1686,11 @@ const FOREST_BOOMERANG_HIT_RADIUS = 45; // pulled back way down (was 150 -- that
 // low clouds under the shuttle zone (x:1610-2110 h40-90), clear of
 // every fixed pickup/landmark out there (crystal x:1955, peanut/balloon
 // x:2400+).
-const GUST_ZONE = { xMin: 1650, xMax: 1820 };
+// CONFIRMED BUG FIX: widened and shifted left -- per direct feedback,
+// too narrow/too far right to reliably test by jumping off the low
+// cloud right there (x:1610, height 40). Now starts right at that
+// cloud instead of 40px past it, and covers nearly double the ground.
+const GUST_ZONE = { xMin: 1580, xMax: 1930 };
 function isInGustZone(x) {
   return x >= GUST_ZONE.xMin && x <= GUST_ZONE.xMax;
 }
@@ -1724,10 +1728,16 @@ function updateBoomerangThrow(deltaTime) {
     // while passing through it, same idea as the paper airplane's own
     // gust distortion. Envelope fades in/out with the throw itself
     // (sin(p*pi)) so it never introduces a snap at the start or end.
+    // CONFIRMED BUG FIX: this only ever ran during the "out" leg -- the
+    // "returning" leg below had no matching check at all, so half of
+    // every throw that passed through the zone got no distortion.
+    // Amplitude also bumped up (matches the boost given to the paper
+    // airplane's own gust wobble, same masking issue -- a smooth 90px
+    // arc needs a bigger nudge to visibly read as "caught by wind").
     if (currentScene === "clouds" && isInGustZone(b.x)) {
       const gustEnvelope = Math.sin(p * Math.PI);
-      b.y += Math.sin(b.t * 0.024 + 1.1) * 14 * gustEnvelope;
-      b.x += Math.sin(b.t * 0.017) * 9 * gustEnvelope;
+      b.y += Math.sin(b.t * 0.024 + 1.1) * 26 * gustEnvelope;
+      b.x += Math.sin(b.t * 0.017) * 18 * gustEnvelope;
     }
 
     // hit-checking only counts near the PEAK of the flight (p=0.45-0.55), not
@@ -1854,6 +1864,15 @@ function updateBoomerangThrow(deltaTime) {
     const eased = p * p; // ease-in, accelerating back toward you
     b.x = b.returnFromX + (b.startX - b.returnFromX) * eased;
     b.y = b.returnFromY + (b.startY - b.returnFromY) * eased;
+
+    // CONFIRMED BUG FIX: matches the same gust distortion the outbound
+    // leg gets -- previously missing here entirely, so a throw that
+    // caught wind on the way out went dead calm on the way back.
+    if (currentScene === "clouds" && isInGustZone(b.x)) {
+      const gustEnvelope = Math.sin(p * Math.PI);
+      b.y += Math.sin(b.t * 0.024 + 1.1) * 26 * gustEnvelope;
+      b.x += Math.sin(b.t * 0.017) * 18 * gustEnvelope;
+    }
 
     if (p >= 1) {
       // it was never actually removed from inventory when thrown — just
@@ -20117,7 +20136,15 @@ function updateMantaRay(deltaTime) {
   m.wingPhase += deltaTime * (m.state === "dormant" ? 1.1 : 3.2);
 
   if (m.state === "dormant") {
-    if (crystal.collected) { m.state = "waking"; m.t = 0; }
+    // CONFIRMED BUG FIX: this game's pickups never actually flip
+    // `.collected` -- every other pickup site (peanut, tulip, boomerang,
+    // etc.) only ever sets `.collecting = true` and leaves it there
+    // permanently, using THAT as the de-facto "gone" flag everywhere it's
+    // checked (draw functions all gate on `collected || collecting`).
+    // Gating the wake-up on `.collected` meant it could never fire --
+    // that's why picking up the diamond did nothing. Gate on `.collecting`
+    // instead, matching the flag this codebase actually uses.
+    if (crystal.collecting) { m.state = "waking"; m.t = 0; }
     return;
   }
 
@@ -20167,7 +20194,15 @@ function drawMantaRay(camX) {
 
   const dormant = m.state === "dormant";
   const flap = Math.sin(m.wingPhase) * (dormant ? 3 : 11);
-  const alpha = dormant ? 0.3 : 0.88; // ghostly and easy to miss until it wakes
+  // CONFIRMED BUG FIX: per direct feedback it wasn't findable at all --
+  // 0.3 alpha against this scene's pale sky/cloud palette (the fill
+  // colors below are close to the sky gradient itself) made it
+  // functionally invisible rather than "a subtle thing to notice."
+  // Bumped up and added a real outline stroke below so the shape reads
+  // clearly on its own even before it wakes, while still sitting still
+  // (no swim motion) so it's a "huh, what's that" rather than obviously
+  // already alive.
+  const alpha = dormant ? 0.75 : 0.88;
   // faces the direction it's actually moving -- fixed during the swim-out
   // and one-pass glide, and following the ambient wave's own direction
   // of travel once it settles into its lazy back-and-forth
@@ -20191,8 +20226,8 @@ function drawMantaRay(camX) {
 
   // diamond wing-body, flapping via `flap`
   const grad = ctx.createLinearGradient(0, -20, 0, 20);
-  grad.addColorStop(0, "#e6f0fb");
-  grad.addColorStop(1, "#a8c2de");
+  grad.addColorStop(0, dormant ? "#cfe0f2" : "#e6f0fb");
+  grad.addColorStop(1, dormant ? "#7f9dbd" : "#a8c2de"); // darker bottom stop while dormant -- more contrast against the sky
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.moveTo(-46, flap * 0.6);
@@ -20202,6 +20237,12 @@ function drawMantaRay(camX) {
   ctx.quadraticCurveTo(-14, 10, -46, flap * 0.6);
   ctx.closePath();
   ctx.fill();
+  // real outline -- without this the shape leaned on fill-color contrast
+  // alone against a sky that's a close color match, which is exactly why
+  // it wasn't findable. A visible edge reads regardless of background.
+  ctx.strokeStyle = dormant ? "rgba(90,115,145,0.65)" : "rgba(90,115,145,0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 
   // trailing tail
   ctx.strokeStyle = "rgba(168,194,222,0.8)";
@@ -37373,7 +37414,12 @@ function drawGustZone(camX) {
   const STREAK_COUNT = 9;
   for (let i = 0; i < STREAK_COUNT; i++) {
     const seed = i * 13.7;
-    const laneY = gy - 100 + (i % 5) * 22 + Math.sin(t * 1.1 + seed) * 6;
+    // CONFIRMED BUG FIX: raised the whole band -- per direct feedback,
+    // needed to sit higher so it's actually testable by jumping off the
+    // low cloud right at the zone's edge (x:1610, height 40): a jump off
+    // that cloud reaches roughly height 100-150 above the ground, and
+    // the old band (height ~12-100) sat mostly below that arc.
+    const laneY = gy - 150 + (i % 5) * 22 + Math.sin(t * 1.1 + seed) * 6;
     const speed = 60 + (i % 3) * 32;
     const span = zoneWidth + 100;
     const rawX = ((t * speed + seed * 24) % span);
