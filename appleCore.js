@@ -37746,11 +37746,30 @@ function drawSandMound(x, camX, label) {
   // shorter distance rather than matching the front's full height.
   const backLeftShorten = 8;
 
+  // CONFIRMED CHANGE: the box's own bottom edge now sits BELOW gy, down
+  // in the same band the spring flowers are actually drawn in
+  // (drawSpringFlowers places them at gy+4..gy+14) -- per direct
+  // feedback with a screenshot ("it's kind of floating in the air...
+  // make it look like it's sitting on the grass"). Previously every
+  // bottom point used gy exactly, which is where the PLAYER's feet
+  // line sits, not where the grass/flower foreground band actually
+  // reads visually -- a straight, un-embedded bottom edge sitting
+  // right at that line is exactly what reads as "hovering just above
+  // the ground" once there's a foreground grass/flower band below it.
+  const groundY = gy + 9;
+  // a soft shadow, same technique as drawBush's own ground shadow,
+  // drawn first (underneath everything) so the box visually anchors
+  // into the grass instead of floating over a flat color.
+  ctx.fillStyle = "rgba(60,50,20,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY + 4, boxW / 2 + depthDX * 0.6, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   const backX = cx - boxW / 2 - depthDX / 2;
-  const backY = gy - wallH - depthDY + sinkY;
+  const backY = groundY - wallH - depthDY + sinkY;
   const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
-  const frontTopY = backY + depthDY; // = gy - wallH + sinkY
-  const sideBottomY = gy - backLeftShorten;
+  const frontTopY = backY + depthDY; // = groundY - wallH + sinkY
+  const sideBottomY = groundY - backLeftShorten;
 
   // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
   // ("missing left side of box"), the box only had a top face and a
@@ -37763,11 +37782,11 @@ function drawSandMound(x, camX, label) {
   ctx.moveTo(backX, backY);            // back-top-left
   ctx.lineTo(backX + boxW, backY);     // back-top-right
   ctx.lineTo(frontRightX, frontTopY);  // top face's near-right corner
-  ctx.lineTo(frontRightX, gy);         // front-bottom-right
-  ctx.lineTo(frontLeftX, gy);          // front-bottom-left
+  ctx.lineTo(frontRightX, groundY);    // front-bottom-right
+  ctx.lineTo(frontLeftX, groundY);     // front-bottom-left
   ctx.lineTo(backX, sideBottomY);      // side-bottom-left -- shortened per feedback
   ctx.closePath();                     // back up the side's left edge to back-top-left
-  const wallGrad = ctx.createLinearGradient(0, backY, 0, gy);
+  const wallGrad = ctx.createLinearGradient(0, backY, 0, groundY);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
@@ -37784,15 +37803,15 @@ function drawSandMound(x, camX, label) {
   ctx.beginPath();
   ctx.moveTo(frontLeftX, frontTopY);
   ctx.lineTo(frontRightX, frontTopY);
-  ctx.lineTo(frontRightX, gy);
-  ctx.lineTo(frontLeftX, gy);
+  ctx.lineTo(frontRightX, groundY);
+  ctx.lineTo(frontLeftX, groundY);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "rgba(0,0,0,0.09)";
   ctx.beginPath();
   ctx.moveTo(backX, backY);
   ctx.lineTo(frontLeftX, frontTopY);
-  ctx.lineTo(frontLeftX, gy);
+  ctx.lineTo(frontLeftX, groundY);
   ctx.lineTo(backX, sideBottomY);
   ctx.closePath();
   ctx.fill();
