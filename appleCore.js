@@ -2818,8 +2818,8 @@ function applyPhysics(){
   // this), spanning the box's on-screen width.
   {
     const boxCenterX = sandboxEntranceMound.x;
-    const boxTopHalfSpan = 49; // ~(boxW + depthDX) / 2 from drawSandMound's own geometry
-    const boxTopHeight = 20;   // roughly the middle of the slanted top face's height range (11 front .. 29 back)
+    const boxTopHalfSpan = 44; // CONFIRMED CHANGE: drawSandMound is now a plain flat rectangle (boxW=78, rim +5px inset each side) -- matches that width exactly
+    const boxTopHeight = 20;   // matches drawSandMound's wallH -- the flat front-wall top is the landing surface now
     const playerBottom = player.y;
     if (
       player.x + player.width > boxCenterX - boxTopHalfSpan &&
@@ -37759,147 +37759,95 @@ const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual
 function drawSandMound(x, camX, label) {
   const cx = x - camX;
   const boxW = 78;       // CONFIRMED CHANGE: bumped up from 66 -- "make it a little bigger"
-  const depthDX = 19;    // how far the near edge shifts sideways relative to the far edge -- this IS the angle
-  const depthDY = 18;    // how far the near edge shifts down relative to the far edge -- the top face's "depth"
-  // CONFIRMED BUG FIX: wallH bumped up to 20 (was 11) and the sink is
-  // now folded directly into it, instead of a separate "sinkY" that
-  // shifted the TOP edge down while the bottom stayed pinned at
-  // groundY -- that previously ATE INTO this same wallH from the other
-  // side (front wall height = wallH - sinkY = 11 - 9 = 2px, basically
-  // collapsed), which is exactly what caused the broken/flap-looking
-  // render just reported ("why did u take it away completely"). Now
-  // there's only one number controlling how deep the box reads, and it
-  // can't cancel itself out.
   const wallH = 20;      // front wall height, flush to the ground
+  const topDY = 14;      // how tall the open-top rim band reads as, purely a flat inset -- NOT a skewed/isometric depth offset anymore
 
-  // CONFIRMED CHANGE: the box's own bottom edge sits BELOW gy, down in
-  // the same band the spring flowers are actually drawn in
-  // (drawSpringFlowers places them at gy+4..gy+14) -- per "make it look
-  // like it's sitting on the grass." Every bottom corner below uses
-  // this same groundY.
+  // CONFIRMED BUG FIX (full rebuild): "you removed the left side of the
+  // sandbox again" -- I rendered the previous isometric-shear version
+  // pixel-for-pixel in an isolated test page (not just re-read the
+  // code) and confirmed it: because the front-left corner was only
+  // offset a small diagonal (depthDX,depthDY) IN from the back-left
+  // corner, on a box this size that diagonal nearly collapsed the
+  // whole left side into a thin pinched sliver, while the right side
+  // (offset the same amount but with boxW of extra room to its left)
+  // still read as a full wall -- an inherently lopsided shape, not a
+  // rendering glitch. No amount of tweaking that shear was going to
+  // make both sides look like equal, solid walls at this width.
+  //
+  // Rebuilt as a plain frontal rectangle instead: the front wall is
+  // just one rectangle (boxW wide, wallH tall) sitting flush on
+  // groundY -- there is only ONE pair of front corners, both defined
+  // by the exact same rectangle, so "left wall shorter than right
+  // wall" is now structurally impossible. The open top is a separate,
+  // smaller inset rectangle (no shear, no diagonal) drawn above it to
+  // read as looking down into the box, instead of a fake-3D skewed lid.
   const groundY = gy + 9;
-  // a soft shadow, same technique as drawBush's own ground shadow,
-  // drawn first (underneath everything) so the box visually anchors
-  // into the grass instead of floating over a flat color.
   ctx.fillStyle = "rgba(60,50,20,0.18)";
   ctx.beginPath();
-  ctx.ellipse(cx, groundY + 4, boxW / 2 + depthDX * 0.6, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, groundY + 4, boxW / 2 + 6, 7, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const backX = cx - boxW / 2 - depthDX / 2;
-  const backY = groundY - wallH - depthDY;
-  const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
-  const frontTopY = backY + depthDY; // = groundY - wallH
+  const leftX = cx - boxW / 2, rightX = cx + boxW / 2;
+  const frontTopY = groundY - wallH;
+  const topRimY = frontTopY - topDY;
 
-  // CONFIRMED BUG FIX: measured directly against the code, not just
-  // re-read -- the LEFT edge of the old outline ran straight from
-  // (backX, backY) down to (backX, groundY), a height of wallH+depthDY
-  // (20+18 = 38px), while the RIGHT edge (frontRightX, frontTopY) down
-  // to (frontRightX, groundY) was only wallH (20px) -- a real,
-  // measurable 18px mismatch, exactly the "trapezoid, not equal"
-  // problem being pointed out. That happened because the left edge was
-  // the hexagon's plain CLOSING line, so it silently absorbed BOTH the
-  // wall height AND the top face's depth offset, while the right edge
-  // only ever carried the wall height on its own dedicated segment.
-  //
-  // Fixed by mirroring the right side's own treatment onto the left:
-  // a dedicated front-top-left point (frontLeftX, frontTopY) so the
-  // left vertical (frontLeftX, frontTopY)->(frontLeftX, groundY) is
-  // ALSO exactly wallH, matching the right vertical exactly, with the
-  // depth offset carried by its own diagonal (frontLeftX,frontTopY)->
-  // (backX,backY) -- a mirror image of the existing right-side diagonal
-  // (backX+boxW,backY)->(frontRightX,frontTopY). Front-left, front-
-  // right, back-left, and back-right verticals are now all equal.
-  ctx.beginPath();
-  ctx.moveTo(backX, backY);            // back-top-left
-  ctx.lineTo(backX + boxW, backY);     // back-top-right
-  ctx.lineTo(frontRightX, frontTopY);  // diagonal down to front-top-right
-  ctx.lineTo(frontRightX, groundY);    // front-right vertical -- height wallH
-  ctx.lineTo(frontLeftX, groundY);     // bottom edge
-  ctx.lineTo(frontLeftX, frontTopY);   // front-left vertical -- height wallH, matches front-right exactly
-  ctx.closePath();                     // diagonal back up to back-top-left, mirroring the back-top-right diagonal
-  const wallGrad = ctx.createLinearGradient(0, backY, 0, groundY);
+  // front wall -- a single plain rectangle, left and right verticals
+  // are the SAME rectangle so they are always exactly equal
+  const wallGrad = ctx.createLinearGradient(0, frontTopY, 0, groundY);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
-  ctx.fill();
+  ctx.fillRect(leftX, frontTopY, boxW, wallH);
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
   ctx.lineWidth = 1.5;
-  ctx.stroke();
+  ctx.strokeRect(leftX, frontTopY, boxW, wallH);
 
-  // shade the front face darkest, so the two faces (top/front) read as
-  // one lit 3D box. CONFIRMED CHANGE: dropped the separate "side face"
-  // middle-tone shading entirely -- it was tied to the old, taller
-  // left edge that no longer exists now that front-left/front-right/
-  // back-left/back-right verticals all match. There is no more
-  // distinct receding side wedge to shade -- just a top face and a
-  // front face, which is exactly the simpler, "thinner, not a
-  // trapezoid" box shape that was asked for.
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.beginPath();
-  ctx.moveTo(frontLeftX, frontTopY);
-  ctx.lineTo(frontRightX, frontTopY);
-  ctx.lineTo(frontRightX, groundY);
-  ctx.lineTo(frontLeftX, groundY);
-  ctx.closePath();
-  ctx.fill();
+  // open-top rim -- a slightly inset, slightly narrower band sitting
+  // directly on top of the front wall, reading as the box's lip/rim
+  // rather than a skewed 3D top face
+  const rimInset = 5;
+  ctx.fillStyle = SANDBOX_RED_DARK;
+  ctx.fillRect(leftX - rimInset, topRimY, boxW + rimInset * 2, topDY);
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.strokeRect(leftX - rimInset, topRimY, boxW + rimInset * 2, topDY);
 
-  // seam lines between faces, plus a bright highlight along the top
-  // face's own far edge
+  // seam line + top highlight
   ctx.strokeStyle = "rgba(0,0,0,0.2)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(frontLeftX, frontTopY);
-  ctx.lineTo(frontRightX, frontTopY);
+  ctx.moveTo(leftX, frontTopY);
+  ctx.lineTo(rightX, frontTopY);
   ctx.stroke();
   ctx.strokeStyle = "rgba(255,255,255,0.35)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(backX + 3, backY);
-  ctx.lineTo(backX + boxW - 3, backY);
+  ctx.moveTo(leftX - rimInset + 3, topRimY);
+  ctx.lineTo(rightX + rimInset - 3, topRimY);
   ctx.stroke();
 
-  // sand filling the top face, drawn in a SHEARED coordinate space so
-  // it actually follows the parallelogram's angle -- local (u,v) with
-  // u along the far edge (0..boxW) and v from far edge (0) to near
-  // edge (1), mapped to screen via the same depth vector as the top
-  // face itself
+  // CONFIRMED BUG FIX: sand texture used to be drawn in a sheared
+  // coordinate space to match the old skewed top face -- there's no
+  // skew anymore (the rim is a plain flat rectangle), so this is now
+  // just plain screen-space shapes clipped to the rim's own rectangle.
   ctx.save();
-  ctx.translate(backX, backY);
-  ctx.transform(1, 0, depthDX, depthDY, 0, 0);
-  const insetU = 8 / boxW, insetVFar = 0.22, insetVNear = 0.12;
-  const u0 = insetU, u1 = 1 - insetU, v0 = insetVFar, v1 = 1 - insetVNear;
   ctx.beginPath();
-  ctx.moveTo(u0 * boxW, v0);
-  ctx.lineTo(u1 * boxW, v0);
-  ctx.lineTo(u1 * boxW, v1);
-  ctx.lineTo(u0 * boxW, v1);
-  ctx.closePath();
+  ctx.rect(leftX - rimInset + 4, topRimY + 2, boxW + rimInset * 2 - 8, topDY - 4);
   ctx.clip();
   ctx.fillStyle = "#d9c48a";
-  ctx.fillRect(-4, -0.3, boxW + 8, 1.6);
-  // kicked-up mounds and dug-out divots -- drawn in the same sheared
-  // space so they sit flat on the sand instead of floating at an
-  // unrelated angle. y is a 0..1 fraction here (depth), so keep the
-  // ellipse radii small in that axis.
+  ctx.fillRect(leftX - rimInset, topRimY + 3, boxW + rimInset * 2, 2);
+  // kicked-up mounds and dug-out divots, scattered flat across the rim
   for (let i = 0; i < 6; i++) {
-    const ou = u0 * boxW + pseudoRandom(i * 3.7) * (u1 - u0) * boxW;
-    const ov = v0 + pseudoRandom(i * 6.1 + 1) * (v1 - v0);
-    ctx.save();
-    ctx.translate(ou, ov);
-    ctx.scale(1, 1 / depthDY);
+    const ox = leftX - rimInset + 6 + pseudoRandom(i * 3.7) * (boxW + rimInset * 2 - 12);
+    const oy = topRimY + 3 + pseudoRandom(i * 6.1 + 1) * (topDY - 5);
     ctx.fillStyle = i % 2 === 0 ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.45)";
     ctx.beginPath();
-    ctx.ellipse(0, 0, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(ox, oy, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
   }
   ctx.restore();
 
-  // toy shovel, stuck into the sand at an angle -- positioned in real
-  // screen space (near the front-right corner of the sand patch), not
-  // the sheared space, so its own angle stays independent
-  const shovelX = frontRightX - 28, shovelY = frontTopY - 12; // CONFIRMED CHANGE: moved higher and further left per direct request
+  // toy shovel, stuck into the sand at an angle, near the right end of the rim
+  const shovelX = rightX - 28, shovelY = topRimY - 2; // CONFIRMED CHANGE: moved higher and further left per direct request
   ctx.save();
   ctx.translate(shovelX, shovelY);
   ctx.rotate(-0.5);
@@ -37919,7 +37867,7 @@ function drawSandMound(x, camX, label) {
     ctx.fillStyle = "#5a4a2a";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, backX + boxW / 2, backY - 12);
+    ctx.fillText(label, cx, topRimY - 12);
     ctx.textAlign = "left";
   }
 }
@@ -38842,6 +38790,10 @@ const sandboxBlockSteps = [
   { x: 1345, width: 42, heightAboveGround: 220, restsOn: 198, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
+// every distinct tier height in the pile, peak-first, down to the
+// ground -- used by updateSandboxSlinky to make the ride visibly touch
+// down on each real block on the way, instead of an arbitrary hop count
+const SANDBOX_HOP_HEIGHTS = [...new Set(sandboxBlockSteps.map(s => s.heightAboveGround))].sort((a, b) => b - a).concat(0);
 
 // purely decorative background blocks scattered around/behind the
 // climbable pile, at varied sizes/colors/rotations, filling in the
@@ -38954,11 +38906,9 @@ function drawBlockPile(camX) {
   // things near the peak read as floating off to the side of the real
   // block. Anchored to the true top step now.
   const topStepSx = SANDBOX_SLINKY_TOP_STEP.x - camX;
-  ctx.fillStyle = "#5a4a2a";
-  ctx.font = "11px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Slinky", topStepSx + SANDBOX_SLINKY_TOP_STEP.width / 2, gy - sandboxBlockPile.topHeight - 14);
-  ctx.textAlign = "left";
+  // CONFIRMED CHANGE: "remove the word 'slinky'" label removed -- the
+  // coil prop itself is drawn by drawSandboxSlinky and reads fine on
+  // its own without a text tag.
 }
 
 function updateSandboxSlinky(deltaTime) {
@@ -38968,8 +38918,27 @@ function updateSandboxSlinky(deltaTime) {
     s.runT += deltaTime * 1000;
     const p = Math.min(1, s.runT / s.runDurationMs);
     const pattern = SLINKY_PATTERNS[s.patternIndex];
+    // CONFIRMED CHANGE: "i want to see what a slinky actually does, not
+    // player just moving wavy down" + "let's see it actually hit each
+    // block like it is contacting it before it moves on" -- doesn't
+    // need to obey real physics, just needs to READ as a slinky
+    // flipping end-over-end down the actual pile. SANDBOX_HOP_HEIGHTS
+    // is every real tier height from the peak down to the ground, so
+    // each hop's start/end is pinned exactly to a block surface the
+    // pile already has -- the descent visibly touches down on every
+    // block on the way, one hop per tier, instead of a smooth
+    // hop-count that has nothing to do with the actual pile.
+    const hops = SANDBOX_HOP_HEIGHTS;
+    const numSegs = hops.length - 1;
+    const hopRaw = Math.min(numSegs - 0.0001, p * numSegs);
+    const segIndex = Math.floor(hopRaw);
+    const hopPhase = hopRaw - segIndex;
+    const segStart = hops[segIndex], segEnd = hops[segIndex + 1];
+    const hopHeight = 16 * (1 - p * 0.4); // hops shrink a bit near the ground
+    const hopArc = Math.sin(hopPhase * Math.PI) * hopHeight;
+    s.hopPhase = hopPhase;
     player.x = s.startX + pattern.xOffset(p) - player.width / 2;
-    player.y = sandboxBlockPile.topHeight * (1 - p) + (pattern.yBounce ? pattern.yBounce(p) : 0);
+    player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(p) : 0);
     if (p >= 1) {
       s.running = false;
       player.onSlinky = false;
@@ -39036,9 +39005,17 @@ function drawSandboxSlinky(camX) {
   // standing on the top step (even at zero charge), and the meter
   // itself is bigger and outlined so it's visible against any
   // background, not just once it's partly filled.
+  const arcHeight = 26; // how tall the resting arc-shaped coil stands above the block
+  // CONFIRMED CHANGE: "remove 'hold space'. and lets maybe put the
+  // charging up line to the right of the slinky? character covers it
+  // right now" -- the bar used to be centered directly above the coil,
+  // which put it right behind/under the player's own sprite while
+  // standing there to charge. Moved off to the RIGHT of the coil
+  // instead (out from under the player), and the "HOLD SPACE" text
+  // prompt is gone -- just the outlined bar itself now.
   if (s.onTopStep && !s.running) {
-    const barW = 56, barH = 10;
-    const bx = topSx - barW / 2, by = topScreenY - 26;
+    const barW = 46, barH = 10;
+    const bx = topSx + 24, by = topScreenY - arcHeight - 6;
     ctx.fillStyle = "rgba(0,0,0,0.35)";
     roundRect(ctx, bx, by, barW, barH, 4);
     ctx.fill();
@@ -39050,18 +39027,10 @@ function drawSandboxSlinky(camX) {
       ctx.fillStyle = s.charge > 0.8 ? "#5fbf5a" : "#f2b93c";
       roundRect(ctx, bx + 2, by + 2, (barW - 4) * s.charge, barH - 4, 3);
       ctx.fill();
-    } else {
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 10px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("HOLD SPACE", topSx, by - 5);
-      ctx.textAlign = "left";
     }
   }
 
-  // the slinky itself -- a simple stacked-coil spring, drawn following
-  // the player while riding so it reads as attached underfoot; sits at
-  // rest coiled on the top step otherwise
+  // the slinky itself
   const coilSx = s.running ? player.x + player.width / 2 - camX : topSx;
   const coilSy = s.running ? gy - player.y - 4 : topScreenY - 4;
 
@@ -39100,28 +39069,63 @@ function drawSandboxSlinky(camX) {
     }
   }
 
-  // CONFIRMED BUG FIX: "it doesnt look like we are on slinky at all" --
-  // while riding, the coil now draws BIGGER, wider than the player, and
-  // squashes/stretches with a bounce so it reads as something the
-  // player is actually compressing underfoot, plus a small floating
-  // label so it's unambiguous what's happening.
-  const coilScale = s.running ? 1.6 : 1;
-  const bounce = s.running ? 1 + Math.abs(Math.sin(performance.now() * 0.02)) * 0.3 : 1;
   ctx.strokeStyle = "#c0392b";
-  ctx.lineWidth = s.running ? 4 : 3;
-  const coilCount = s.running ? 6 : 5;
-  for (let i = 0; i < coilCount; i++) {
-    ctx.beginPath();
-    ctx.ellipse(coilSx, coilSy - i * 3 * coilScale, 10 * coilScale * bounce, 4 * coilScale, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+  ctx.fillStyle = "#c0392b";
 
-  if (s.running) {
-    ctx.fillStyle = "#c0392b";
-    ctx.font = "bold 11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Riding Slinky!", coilSx, coilSy - coilCount * 3 * coilScale - 10);
-    ctx.textAlign = "left";
+  if (!s.running) {
+    // CONFIRMED CHANGE: "make it a tighter coil so it look like a
+    // slinky" -- matched against the actual reference photo (a real
+    // slinky pushed halfway together): it's not a handful of big loose
+    // rings, it's two tightly-wound coiled "drums" sitting on the
+    // ground, connected by a fan of many thin wires spreading up and
+    // over between them. Rebuilt to match that shape exactly: a small
+    // stack of tight rings at each end (the compressed drum), and a
+    // dense fan of thin arced strands bridging the two drums' tops.
+    const drumOffset = 15, drumR = 9, drumRingH = 4, drumRings = 4;
+    const drumTopY = coilSy - 2;
+    ctx.lineWidth = 1.4;
+    [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
+      for (let i = 0; i < drumRings; i++) {
+        ctx.beginPath();
+        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, drumR * 0.4, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+    const fanTopY = drumTopY - drumRings * drumRingH;
+    const fanLines = 16, drumSpanW = drumR * 1.6;
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < fanLines; i++) {
+      const t = i / (fanLines - 1);
+      const startX = coilSx - drumOffset - drumSpanW / 2 + t * drumSpanW;
+      const endX = coilSx + drumOffset - drumSpanW / 2 + t * drumSpanW;
+      const peakX = (startX + endX) / 2;
+      const peakY = fanTopY - arcHeight;
+      ctx.beginPath();
+      ctx.moveTo(startX, fanTopY);
+      ctx.quadraticCurveTo(peakX, peakY, endX, fanTopY);
+      ctx.stroke();
+    }
+  } else {
+    // CONFIRMED CHANGE: "i want to see what a slinky actually does...
+    // like it is coming down blocks, not a wavy floating down
+    // animation" -- rather than a smooth vertical stack, the coil
+    // draws as a squash-and-stretch loop synced to updateSandboxSlinky's
+    // per-block hops: compressed flat right as it touches a block
+    // (hopPhase near 0/1), stretched tall at the peak of each hop
+    // (hopPhase near 0.5) -- so it visibly compresses on landing and
+    // springs back up between blocks, like a real slinky flipping
+    // end-over-end down steps.
+    const hopPhase = s.hopPhase || 0;
+    const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at mid-hop peak
+    const loops = 6;
+    const loopSpan = 8 + stretch * 10; // squashed flat on landing, stretched tall mid-hop
+    ctx.lineWidth = 4;
+    for (let i = 0; i < loops; i++) {
+      const t = i / (loops - 1);
+      ctx.beginPath();
+      ctx.ellipse(coilSx, coilSy - (t - 0.5) * loopSpan * 2, 12 - stretch * 3, 5 + stretch * 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }
 
@@ -41378,12 +41382,14 @@ updateSeasonTransition(deltaTime);
 // through spring first. Remove this block (see the "debug spawn
 // removed" comment further up in git history for the exact revert
 // pattern) whenever a real fresh-start playtest is next needed.
-// CONFIRMED CHANGE: repointed at spring, right in front of the sandbox
-// mound, per direct request -- was clouds. discoveredScenes.clouds is
-// still set true below so the mound is actually visible/usable (it's
-// gated on having visited clouds).
-currentScene = "spring";
-player.x = sandboxEntranceMound.x - 40; // just in front of the mound, facing it
+// CONFIRMED CHANGE: repointed directly INTO the sandbox, right in
+// front of the slinky block pile, per direct request ("put me directly
+// in front of slinky blocks when i start the game right now") -- was
+// spring (in front of the entrance mound). discoveredScenes.spring and
+// .clouds are still set true below so nothing UI-gated is broken by
+// skipping straight past them.
+currentScene = "sandbox";
+player.x = sandboxBlockPile.x - 130; // just in front of the pile's base tier, facing it
 player.y = 0;
 addToInventory("shovel");
 touchInventoryOrder("shovel");
