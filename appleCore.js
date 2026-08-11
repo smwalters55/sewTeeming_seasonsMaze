@@ -38827,6 +38827,36 @@ SANDBOX_HOP_HEIGHTS.forEach(h => {
   }
 });
 
+// CONFIRMED CHANGE: "does it move differently depending on how large
+// each drop to each block below is? the whole point is to see the
+// slinky slink down as it does" -- it didn't: every hop used to get
+// an equal SLICE OF TIME regardless of how tall that particular drop
+// actually was (the real tiers drop by very different amounts, e.g.
+// peak-to-next is only 22px while several others are 44px), so short
+// drops crawled and tall drops rushed relative to each other instead
+// of reading as one consistent, deliberate downward slink. Give each
+// hop a slice of the total ride time proportional to its own real
+// drop height instead, so the pacing actually reflects the pile's own
+// geometry. SANDBOX_HOP_SEG_AT below is the single place that maps a
+// global ride-progress value (0-1) to (which hop, how far through
+// it) -- both the main update loop and the x-clamp math funnel through
+// it, so timing and position always agree with each other.
+const SANDBOX_HOP_WEIGHTS = SANDBOX_HOP_HEIGHTS.slice(0, -1).map((h, i) => Math.max(15, h - SANDBOX_HOP_HEIGHTS[i + 1]));
+const SANDBOX_HOP_TOTAL_WEIGHT = SANDBOX_HOP_WEIGHTS.reduce((a, b) => a + b, 0);
+const SANDBOX_HOP_TIME_BOUNDS = [0];
+SANDBOX_HOP_WEIGHTS.forEach(w => SANDBOX_HOP_TIME_BOUNDS.push(SANDBOX_HOP_TIME_BOUNDS[SANDBOX_HOP_TIME_BOUNDS.length - 1] + w / SANDBOX_HOP_TOTAL_WEIGHT));
+function sandboxHopSegAt(t) {
+  const numSegs = SANDBOX_HOP_HEIGHTS.length - 1;
+  const clamped = Math.max(0, Math.min(1, t));
+  let segIndex = numSegs - 1;
+  for (let i = 0; i < numSegs; i++) {
+    if (clamped < SANDBOX_HOP_TIME_BOUNDS[i + 1] || i === numSegs - 1) { segIndex = i; break; }
+  }
+  const lo = SANDBOX_HOP_TIME_BOUNDS[segIndex], hi = SANDBOX_HOP_TIME_BOUNDS[segIndex + 1];
+  const rawPhase = hi > lo ? (clamped - lo) / (hi - lo) : 0;
+  return { segIndex, hopPhase: Math.min(0.9999, Math.max(0, rawPhase)) };
+}
+
 // purely decorative background blocks scattered around/behind the
 // climbable pile, at varied sizes/colors/rotations, filling in the
 // silhouette so it reads as a real heap rather than a thin stack of
@@ -38983,9 +39013,7 @@ function updateSandboxSlinky(deltaTime) {
     // hop-count that has nothing to do with the actual pile.
     const hops = SANDBOX_HOP_HEIGHTS;
     const numSegs = hops.length - 1;
-    const hopRaw = Math.min(numSegs - 0.0001, p * numSegs);
-    const segIndex = Math.floor(hopRaw);
-    const hopPhase = hopRaw - segIndex;
+    const { segIndex, hopPhase } = sandboxHopSegAt(p);
     const segStart = hops[segIndex], segEnd = hops[segIndex + 1];
     const hopHeight = 16 * (1 - p * 0.4); // hops shrink a bit near the ground
     s.hopPhase = hopPhase;
@@ -39001,7 +39029,12 @@ function updateSandboxSlinky(deltaTime) {
     // it instead of underneath it. This only affects where the player
     // is DRAWN this hop, not the actual ride timing/duration.
     const renderHopPhase = Math.max(0, hopPhase - 0.22);
-    const renderP = (segIndex + renderHopPhase) / numSegs;
+    // map the lagged local hop-phase back to a GLOBAL ride-progress
+    // value through the same weighted time bounds every hop now uses
+    // (each hop's slice of [0,1] is sized by its own drop height, not
+    // an even 1/numSegs share) -- this must match sandboxHopSegAt's
+    // own mapping exactly or the lag would drift out of sync hop to hop
+    const renderP = SANDBOX_HOP_TIME_BOUNDS[segIndex] + renderHopPhase * (SANDBOX_HOP_TIME_BOUNDS[segIndex + 1] - SANDBOX_HOP_TIME_BOUNDS[segIndex]);
     const hopArc = Math.sin(renderHopPhase * Math.PI) * hopHeight;
     // CONFIRMED CHANGE: "what if it sort of bounced player up each
     // movement down, but at the right time, so you could fully see the
@@ -39028,18 +39061,36 @@ function updateSandboxSlinky(deltaTime) {
     // so the player stays on solid ground at both ends of the hop, not
     // just roughly in the right neighborhood).
     const slinkyXTaper = t => 0.3 + 0.7 * t;
-    const safeStart = SANDBOX_HOP_SAFE_X[segStart];
-    const safeEnd = SANDBOX_HOP_SAFE_X[segEnd];
-    const safeLeft = Math.max(safeStart.left, safeEnd.left) + player.width / 2;
-    const safeRight = Math.min(safeStart.right, safeEnd.right) - player.width / 2;
-    // if the two tiers genuinely don't overlap (a real gap), fall back
-    // to whichever single tier this moment is closer to rather than an
-    // impossible empty range
-    const clampLo = safeLeft <= safeRight ? safeLeft : (safeEnd.left + safeEnd.right) / 2;
-    const clampHi = safeLeft <= safeRight ? safeRight : clampLo;
+    // CONFIRMED BUG FIX: "looks really choppy... chops to a new spot"
+    // -- the clamp window used to be computed ONCE per frame from
+    // whichever hop segment the outer scope was currently in, then
+    // reused for every t passed to slinkyClampedX that frame. That's
+    // fine within a single hop, but the moment segIndex ticks over to
+    // the next hop, the ENTIRE clamp window changes to a different
+    // pair of tiers -- so the landing x of hop N (computed with hop
+    // N's clamp window) and the starting x of hop N+1 (computed with
+    // hop N+1's clamp window) could disagree even though they're
+    // conceptually the same point in the ride, producing a visible
+    // snap right at every tier transition. Made slinkyClampedX derive
+    // its OWN segment/local-progress from whatever global t it's given
+    // and interpolate the safe bounds between that segment's two tiers
+    // -- at a hop boundary the "arriving" tier of hop N and the
+    // "departing" tier of hop N+1 are the same tier, so the interpolated
+    // bounds now agree exactly at that instant and the path is
+    // continuous across every step, not just within one.
     function slinkyClampedX(t) {
+      const { segIndex: localSeg, hopPhase: localFrac } = sandboxHopSegAt(t);
+      const safeA = SANDBOX_HOP_SAFE_X[hops[localSeg]];
+      const safeB = SANDBOX_HOP_SAFE_X[hops[localSeg + 1]];
+      const leftAt = safeA.left + (safeB.left - safeA.left) * localFrac + player.width / 2;
+      const rightAt = safeA.right + (safeB.right - safeA.right) * localFrac - player.width / 2;
+      // if this segment's two tiers genuinely don't overlap (a real
+      // gap), fall back to the tier being arrived at rather than an
+      // impossible empty range
+      const lo = leftAt <= rightAt ? leftAt : (safeB.left + safeB.right) / 2;
+      const hi = leftAt <= rightAt ? rightAt : lo;
       const rawX = s.startX + pattern.xOffset(t) * slinkyXTaper(t);
-      return Math.max(clampLo, Math.min(clampHi, rawX));
+      return Math.max(lo, Math.min(hi, rawX));
     }
     player.x = slinkyClampedX(renderP) - player.width / 2;
     player.y = (segStart + (segEnd - segStart) * renderHopPhase) + hopArc + peekBounce + (pattern.yBounce ? pattern.yBounce(renderP) : 0);
@@ -39052,7 +39103,7 @@ function updateSandboxSlinky(deltaTime) {
     // left, the other flipping over to the block just ahead, same
     // silhouette as the resting coil, just stretched between two real
     // contact points instead of sitting on one.
-    const tSegStart = segIndex / numSegs, tSegEnd = (segIndex + 1) / numSegs;
+    const tSegStart = SANDBOX_HOP_TIME_BOUNDS[segIndex], tSegEnd = SANDBOX_HOP_TIME_BOUNDS[segIndex + 1];
     s.hopFromX = slinkyClampedX(tSegStart);
     s.hopToX = slinkyClampedX(tSegEnd);
     s.hopFromH = segStart;
@@ -39060,18 +39111,19 @@ function updateSandboxSlinky(deltaTime) {
     if (p >= 1) {
       s.running = false;
       player.onSlinky = false;
-      // CONFIRMED BUG FIX: video-verified ("that off shape also affects
-      // how it moves down the blocks") -- the wide left/right-drift
-      // patterns could land the ride's raw endpoint at an x that's
-      // still directly UNDER a block (the pile's footprint isn't a
-      // rectangle), and since this is a teleport-to-ground, not a real
-      // fall, no collision ever ran to catch it -- the player just
-      // appeared clipped halfway into a block. Now the final x is
-      // snapped to whichever side of the pile's actual footprint
-      // (SANDBOX_PILE_GROUND_CLEAR_LEFT/RIGHT below) it ended up
-      // closer to, guaranteeing solid ground with nothing overhead.
-      const rawEndX = s.startX + pattern.xOffset(1);
-      player.x = (rawEndX < sandboxBlockPile.x ? SANDBOX_PILE_GROUND_CLEAR_LEFT : SANDBOX_PILE_GROUND_CLEAR_RIGHT) - player.width / 2;
+      // CONFIRMED BUG FIX: "it moves player to some other place on the
+      // ground than where the slinky landed" -- this landing step used
+      // to recompute an entirely separate raw endpoint and snap it to
+      // whichever whole-pile ground-clear zone it was nearer to,
+      // completely ignoring the tier-safe clamped path the coil/player
+      // had actually been riding along all the way down. That's why the
+      // final teleport could drop the player somewhere visibly
+      // different from where the coil's last loop was drawn. Now it
+      // just asks slinkyClampedX for the same continuous path's
+      // endpoint (t=1) -- guaranteed solid ground (same clamp everything
+      // else uses) AND guaranteed to match exactly where the coil
+      // visually finished.
+      player.x = slinkyClampedX(1) - player.width / 2;
       player.y = 0;
       player.vy = 0;
       player.jumping = false;
