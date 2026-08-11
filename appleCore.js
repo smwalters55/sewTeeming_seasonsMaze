@@ -163,7 +163,8 @@ const player = {
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
   cloudLandingImmunity: 0, // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
   onFan: false,        // true while hovering above the sandbox's upward fan toy -- position driven entirely by updateSandboxFan, same pattern as swing.mounted/vines
-  wigId: null          // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
+  wigId: null,         // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
+  onPendulum: false    // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
 };
 
 /* ======================================================
@@ -1052,6 +1053,7 @@ function startSeasonTransition(targetScene) {
   seesaw.mounted = false;
   seesaw.playerOnPlank = false;
   player.onFan = false;
+  player.onPendulum = false;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -2420,6 +2422,10 @@ function applyPhysics(){
   // same idea for the sandbox's upward fan toy -- position while
   // hovering is driven entirely by updateSandboxFan()
   if (player.onFan) return;
+
+  // same idea for the sandbox's pendulum toy -- position while riding
+  // is driven entirely by updateSandboxPendulum()
+  if (player.onPendulum) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -37697,10 +37703,24 @@ function drawSandMound(x, camX, label) {
   const depthDY = 18;    // how far the near edge shifts down relative to the far edge -- the top face's "depth"
   const wallH = 11;      // front wall height, flush to the ground
 
+  // CONFIRMED CHANGE: "sinkY" pushes the whole box down further into the
+  // ground line -- per "make it come further down the grass ... so it
+  // looks like it is actually sitting on the grass" -- so less of it
+  // sticks up above the flower patch and it reads as settled/embedded
+  // rather than perched on top of the ground.
+  const sinkY = 9;
+  // CONFIRMED CHANGE: "backLeftShorten" raises just the back-left/side-
+  // bottom corner instead of letting it drop all the way to gy like the
+  // front-right side does -- per "shorten the back left side of it
+  // appropriately", so that corner looks tucked into the grass a
+  // shorter distance rather than matching the front's full height.
+  const backLeftShorten = 8;
+
   const backX = cx - boxW / 2 - depthDX / 2;
-  const backY = gy - wallH - depthDY;
+  const backY = gy - wallH - depthDY + sinkY;
   const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
-  const frontTopY = backY + depthDY; // = gy - wallH
+  const frontTopY = backY + depthDY; // = gy - wallH + sinkY
+  const sideBottomY = gy - backLeftShorten;
 
   // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
   // ("missing left side of box"), the box only had a top face and a
@@ -37715,7 +37735,7 @@ function drawSandMound(x, camX, label) {
   ctx.lineTo(frontRightX, frontTopY);  // top face's near-right corner
   ctx.lineTo(frontRightX, gy);         // front-bottom-right
   ctx.lineTo(frontLeftX, gy);          // front-bottom-left
-  ctx.lineTo(backX, gy);               // side-bottom-left
+  ctx.lineTo(backX, sideBottomY);      // side-bottom-left -- shortened per feedback
   ctx.closePath();                     // back up the side's left edge to back-top-left
   const wallGrad = ctx.createLinearGradient(0, backY, 0, gy);
   wallGrad.addColorStop(0, SANDBOX_RED);
@@ -37743,7 +37763,7 @@ function drawSandMound(x, camX, label) {
   ctx.moveTo(backX, backY);
   ctx.lineTo(frontLeftX, frontTopY);
   ctx.lineTo(frontLeftX, gy);
-  ctx.lineTo(backX, gy);
+  ctx.lineTo(backX, sideBottomY);
   ctx.closePath();
   ctx.fill();
 
@@ -37835,7 +37855,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 860; // bounded room -- see the clamp in updateSandboxScene
+const SANDBOX_WIDTH = 1080; // CONFIRMED CHANGE: widened again (was 1020) after moving the pendulum further right, so its swing still has clearance from the right wall
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -37963,6 +37983,13 @@ function updateSandboxFan(deltaTime) {
       player.justDoubleJumped = false; // consume -- this is OUR kick, not a real double jump
       fan.kickT = 0;
     }
+    // CONFIRMED CHANGE: re-arm the gate every frame while hovering -- per
+    // direct request ("allow that little jump to occur anytime press up
+    // while on fan not just the first time"). Without this, usedDoubleJump
+    // stays true forever after the first kick (nothing else resets it
+    // while airborne on the fan, since you never actually land), so only
+    // one kick was ever possible per fan ride.
+    player.usedDoubleJump = false;
     let kickOffset = 0;
     if (fan.kickT >= 0) {
       fan.kickT += deltaTime * 1000;
@@ -38175,43 +38202,39 @@ function drawWigShape(id, cx, topY, scale) {
       ctx.stroke();
     });
   } else if (id === "greyPixie") {
-    // CONFIRMED CHANGE: rebuilt to actually read as a pixie cut --
-    // per direct feedback ("make the pixie a lot more like a pixie cut
-    // with strands whisping out, idk what the current thing is"). A
-    // tight, short base (much smaller than the old ear-length cap) with
-    // a ragged, choppy outline instead of one smooth dome, plus real
-    // wispy strands flicking outward at the crown/sides/nape -- that
-    // texture IS the pixie-cut read, not a highlight streak on a blob.
-    // CONFIRMED CHANGE: widened and lowered -- per direct feedback
-    // ("grey wig still sits above head and not wide enough"). Scaled
-    // the whole base out to about the same footprint as the other
-    // wigs' caps (was noticeably smaller/narrower) and dropped it down
-    // so its lower edge actually sits ON the head instead of floating
-    // above it with a gap.
+    // CONFIRMED CHANGE: fully rebuilt (4th/5th pass) -- per direct
+    // feedback ("still too small and high up for player head. need to
+    // be lower and wider"). Previous base only reached down to about
+    // y=9 in local space, which at this scale lands barely below the
+    // TOP of the head -- nowhere near ear/eye height (eyes render at
+    // local y~19 relative to this function's topY). Widened to
+    // actually match the head's real width and lowered so the base
+    // edge sits down around ear/eye level, same reference frame now
+    // shared with blueBob/greenWavy below.
     ctx.fillStyle = wig.color;
     ctx.beginPath();
-    ctx.moveTo(-17, 8);
+    ctx.moveTo(-20, 15);
     // choppy, slightly jagged top edge -- a few small in/out notches
     // rather than one clean arc, so it reads as textured short hair
-    ctx.quadraticCurveTo(-19, -5, -12, -10);
-    ctx.quadraticCurveTo(-7, -15, -2, -9);
-    ctx.quadraticCurveTo(3, -16, 8, -9);
-    ctx.quadraticCurveTo(13, -13, 17, -3);
-    ctx.quadraticCurveTo(19, 3, 15, 9);
-    ctx.quadraticCurveTo(6, 2, 0, 4);
-    ctx.quadraticCurveTo(-6, 2, -17, 8);
+    ctx.quadraticCurveTo(-23, -6, -10, -14);
+    ctx.quadraticCurveTo(-4, -19, 2, -13);
+    ctx.quadraticCurveTo(8, -19, 15, -12);
+    ctx.quadraticCurveTo(23, -5, 19, 15);
+    ctx.quadraticCurveTo(10, 10, 0, 13);
+    ctx.quadraticCurveTo(-10, 10, -20, 15);
     ctx.closePath();
     ctx.fill();
 
     // wispy strands sticking OUT past the cut's own edge -- short,
     // slightly curved flicks at varied angles, the actual "whisping
-    // out" texture rather than lying flat against the head
+    // out" texture rather than lying flat against the head. Pushed out
+    // further to match the wider base above.
     ctx.strokeStyle = wig.color;
     ctx.lineWidth = 1.8;
     ctx.lineCap = "round";
     const wisps = [
-      [-12, -8, -18, -15], [-3, -14, -4, -21], [6, -14, 11, -21],
-      [15, -8, 22, -11], [-17, 4, -24, 5], [16, 5, 23, 7]
+      [-14, -10, -21, -18], [-3, -17, -4, -25], [6, -17, 11, -25],
+      [17, -10, 25, -13], [-20, 8, -27, 9], [19, 9, 26, 11]
     ];
     wisps.forEach(([x0, y0, x1, y1]) => {
       ctx.beginPath();
@@ -38226,72 +38249,72 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.strokeStyle = "rgba(255,255,255,0.6)";
     ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(-8, -6);
-    ctx.lineTo(1, 0);
+    ctx.moveTo(-9, -8);
+    ctx.lineTo(1, -1);
     ctx.stroke();
-  } else if (id === "blueBob") {
+  } else if (id === "blueBob" || id === "greenWavy") {
+    // CONFIRMED CHANGE: blueBob and greenWavy fully rebuilt together
+    // (same underlying problem, 4th/5th pass) -- per direct feedback
+    // ("still too small and high up for player head... need to be
+    // lower and wider... looked like ear-flaps with a white gap band
+    // across the forehead"). The old shape was a small flat-bottomed
+    // dome (radius 15, centered almost at the very top of the head)
+    // with thin ribbon strands starting well INSIDE its edge -- the
+    // dome's straight flat bottom edge, sitting high above eye level
+    // with nothing below it but the head color, IS what read as a
+    // hard white "gap band," and the narrow strands read as stiff
+    // flaps rather than hair framing the face.
+    //
+    // Fix: one continuous filled silhouette (crown -> temple -> curved
+    // bang back across the forehead -> mirrored temple -> crown) that
+    // actually spans the head's real width and comes down to eye/ear
+    // level on both sides, with NO straight flat edge anywhere in it.
+    // The hanging strands then start from right at the temple point,
+    // flush with the fill, so there's no seam/gap between cap and hair.
     ctx.fillStyle = wig.color;
     ctx.strokeStyle = "rgba(0,0,0,0.18)";
     ctx.lineWidth = 1;
-    // CONFIRMED CHANGE: rebuilt the hanging strands as fixed-width
-    // stroked ribbons instead of filled bezier blobs -- per direct
-    // feedback on a screenshot ("or rather no wigs do [fit]"), the
-    // filled-blob strands were ballooning outward at their curve's
-    // widest point wide enough to look like green wings/a cape
-    // draping the whole body instead of hair. A stroked ribbon's width
-    // is fixed by lineWidth no matter how the centerline curves, so it
-    // can't balloon like that.
     ctx.beginPath();
-    ctx.arc(0, -1, 15, Math.PI, 0, false);
+    ctx.moveTo(-21, 18);                     // left temple, ~eye level
+    ctx.quadraticCurveTo(-25, -8, 0, -13);    // up and over the crown
+    ctx.quadraticCurveTo(25, -8, 21, 18);     // down to right temple
+    ctx.quadraticCurveTo(0, 9, -21, 18);      // curved bang sweeping back across the forehead -- no straight line
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
     ctx.strokeStyle = wig.color;
-    ctx.lineWidth = 7;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    // long strand hanging past the chin on each side, front
-    ctx.beginPath();
-    ctx.moveTo(-13, -2);
-    ctx.quadraticCurveTo(-17, 14, -13, 30);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(13, -2);
-    ctx.quadraticCurveTo(17, 14, 13, 30);
-    ctx.stroke();
-    // short tuft in back on each side, staying close to the head
-    ctx.beginPath();
-    ctx.moveTo(-13, -2);
-    ctx.quadraticCurveTo(-15, 4, -12, 9);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(13, -2);
-    ctx.quadraticCurveTo(15, 4, 12, 9);
-    ctx.stroke();
-    ctx.lineCap = "butt";
-    ctx.lineJoin = "miter";
-  } else if (id === "greenWavy") {
-    ctx.fillStyle = wig.color;
-    ctx.strokeStyle = "rgba(0,0,0,0.15)";
-    ctx.lineWidth = 1;
-    // cap over the crown, same tightened radius as blueBob
-    ctx.beginPath();
-    ctx.arc(0, -1, 15, Math.PI, 0, false);
-    ctx.fill();
-    ctx.stroke();
-    // CONFIRMED CHANGE: same fixed-width-ribbon fix as blueBob above --
-    // a real gentle wave, but its width can't balloon since it's a
-    // stroke, not a filled blob
-    ctx.strokeStyle = wig.color;
-    ctx.lineWidth = 6.5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    [-1, 1].forEach(dir => {
-      ctx.beginPath();
-      ctx.moveTo(dir * 14, -2);
-      ctx.quadraticCurveTo(dir * 21, 10, dir * 13, 20);
-      ctx.quadraticCurveTo(dir * 7, 29, dir * 16, 38);
-      ctx.stroke();
-    });
+    if (id === "blueBob") {
+      ctx.lineWidth = 7;
+      // long strand hanging past the chin on each side, front
+      [-1, 1].forEach(dir => {
+        ctx.beginPath();
+        ctx.moveTo(dir * 21, 18);
+        ctx.quadraticCurveTo(dir * 26, 32, dir * 20, 46);
+        ctx.stroke();
+        // short tuft in back on each side, staying close to the head
+        ctx.beginPath();
+        ctx.moveTo(dir * 21, 18);
+        ctx.quadraticCurveTo(dir * 24, 25, dir * 19, 29);
+        ctx.stroke();
+      });
+    } else {
+      // greenWavy -- same attachment point as blueBob so it shares the
+      // fix, but a longer, real wave down each side instead of a
+      // straight bob. CONFIRMED CHANGE: fuller/wavier per direct
+      // request ("make this fuller and wavier") -- thicker ribbon plus
+      // a third wave segment so it reads as flowing, not a stiff line.
+      ctx.lineWidth = 7.5;
+      [-1, 1].forEach(dir => {
+        ctx.beginPath();
+        ctx.moveTo(dir * 21, 18);
+        ctx.quadraticCurveTo(dir * 29, 30, dir * 19, 40);
+        ctx.quadraticCurveTo(dir * 11, 50, dir * 23, 58);
+        ctx.stroke();
+      });
+    }
     ctx.lineCap = "butt";
     ctx.lineJoin = "miter";
   }
@@ -38522,6 +38545,147 @@ function drawMicroscopeStation(camX) {
   ctx.font = "11px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("Microscope", sx, gy - 100);
+  ctx.textAlign = "left";
+}
+
+/* ======================================================
+   SANDBOX PENDULUM -- fourth "weird toy" per direct request ("lets
+   add a pendulum to sandbox"). A-frame stand with a ball swinging
+   continuously on a rod. Jump onto the ball while it swings near
+   ground level to grab on and ride the swing; press jump again while
+   riding to let go, launching off in whatever direction the swing was
+   currently carrying you -- same "contact to mount, jump to release"
+   shape as the fan, but the ride itself is an arc instead of a hover.
+   ====================================================== */
+const sandboxPendulum = {
+  x: 950, // CONFIRMED CHANGE: moved further right per "move it more to right" (SANDBOX_WIDTH bumped alongside it for swing clearance)
+  anchorHeight: 190,   // height above ground of the pivot point -- raised along with everything else below, per "make the pendulum big"
+  armLength: 120,
+  angle: 0.9,          // radians from straight-down; swings between -amplitude and +amplitude
+  amplitude: 0.9,
+  angleVel: 0,         // current swing speed -- kept so a rider gets a real tangential launch, not a fixed number
+  t: 0,
+  ballRadius: 34       // CONFIRMED CHANGE: bumped from 18 -- "make the pendulum big... like bigger than player for suree" (player is 40 wide/54 tall, so a 34-radius/68-diameter ball is clearly bigger than the player)
+};
+const SANDBOX_PENDULUM_OMEGA = 1.7; // swing speed
+
+function pendulumBallPos(p) {
+  // ball position relative to the anchor -- standard pendulum geometry
+  return {
+    dx: Math.sin(p.angle) * p.armLength,
+    dy: p.armLength - Math.cos(p.angle) * p.armLength // how far BELOW the anchor the ball hangs (0 at full horizontal swing-out... actually 0 at top, armLength at straight down)
+  };
+}
+
+function updateSandboxPendulum(deltaTime) {
+  const p = sandboxPendulum;
+  const prevAngle = p.angle;
+  p.t += deltaTime;
+  // continuous pendulum swing -- decorative physics (fixed amplitude,
+  // no damping) since this is a toy, not a real simulation. Keeps
+  // swinging identically whether or not someone's riding it.
+  p.angle = p.amplitude * Math.sin(p.t * SANDBOX_PENDULUM_OMEGA);
+  p.angleVel = (p.angle - prevAngle) / Math.max(deltaTime, 0.0001);
+
+  const { dx, dy } = pendulumBallPos(p);
+  const ballWorldX = p.x + dx;
+  const ballHeightAboveGround = gy - (gy - p.anchorHeight + dy); // = p.anchorHeight - dy, kept explicit for clarity
+
+  if (!player.onPendulum) {
+    // trigger: land on the ball like any other ground contact, only
+    // while it's swung down near ground level (catching it mid-air at
+    // head height would look/feel wrong)
+    const centerX = player.x + player.width / 2;
+    const nearX = Math.abs(centerX - ballWorldX) < p.ballRadius + 6;
+    const nearHeight = Math.abs(player.y - ballHeightAboveGround) < p.ballRadius + 4;
+    if (nearX && nearHeight && player.vy <= 0) {
+      player.onPendulum = true;
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      player.vy = 0;
+      player.vx = 0;
+    }
+    return;
+  }
+
+  // riding -- position fully driven by the swing's current geometry
+  player.x = ballWorldX - player.width / 2;
+  player.y = ballHeightAboveGround;
+
+  // jump to let go -- launches with the swing's actual current
+  // tangential velocity, so letting go at the bottom of the arc barely
+  // launches you, but letting go near either peak sends you flying
+  // sideways, same "timing matters" feel as a real playground swing
+  if (keys.upJustPressed) {
+    player.onPendulum = false;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    const tangentialSpeed = p.angleVel * p.armLength; // px/sec, signed by swing direction
+    player.vx = Math.max(-14, Math.min(14, tangentialSpeed * 0.05));
+    player.vy = 10;
+    player.launched = true; // reuse the existing launch-arc physics (gravity + vx drift) instead of driving it manually
+    player.launchPeakHeight = player.y;
+  }
+}
+
+function drawSandboxPendulum(camX) {
+  const p = sandboxPendulum;
+  const sx = p.x - camX;
+  const anchorScreenY = gy - p.anchorHeight;
+
+  // A-frame stand -- two crossed wooden legs, like a simple swing-set
+  // post. CONFIRMED CHANGE: scaled up along with the ball ("make the
+  // pendulum big... bigger than player for suree") so the frame still
+  // looks proportional to the now much bigger ball, not dwarfed by it.
+  ctx.strokeStyle = "#8a6a42";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.moveTo(sx - 48, gy);
+  ctx.lineTo(sx, anchorScreenY);
+  ctx.moveTo(sx + 48, gy);
+  ctx.lineTo(sx, anchorScreenY);
+  ctx.stroke();
+  ctx.strokeStyle = "#6a4e2e";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(sx - 28, gy - 55);
+  ctx.lineTo(sx + 28, gy - 55);
+  ctx.stroke();
+  // pivot cap
+  ctx.fillStyle = "#5a5f66";
+  ctx.beginPath();
+  ctx.arc(sx, anchorScreenY, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  const { dx, dy } = pendulumBallPos(p);
+  const ballScreenX = sx + dx, ballScreenY = anchorScreenY + dy;
+
+  // rod
+  ctx.strokeStyle = "#8a8f96";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(sx, anchorScreenY);
+  ctx.lineTo(ballScreenX, ballScreenY);
+  ctx.stroke();
+
+  // ball -- a heavy-looking wrecking-ball style sphere, clearly bigger
+  // than the player so it reads as "the big toy" from across the room
+  const r = p.ballRadius;
+  const ballGrad = ctx.createRadialGradient(ballScreenX - r * 0.3, ballScreenY - r * 0.3, r * 0.1, ballScreenX, ballScreenY, r);
+  ballGrad.addColorStop(0, "#8a5fd6");
+  ballGrad.addColorStop(1, "#5a3aa0");
+  ctx.fillStyle = ballGrad;
+  ctx.beginPath();
+  ctx.arc(ballScreenX, ballScreenY, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#5a4a2a";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Pendulum", sx, anchorScreenY - 18);
   ctx.textAlign = "left";
 }
 
@@ -38826,16 +38990,25 @@ const MICROSCOPE_SLIDES = [
       // wave so it still fits the frame at that size
       const waveY = xLocal => Math.sin((xLocal + 60) * 0.04) * 7 + Math.cos((xLocal + 60) * 0.018) * 3;
       const halfW = 22;
+      // CONFIRMED CHANGE: jittered edge instead of a perfectly smooth
+      // parallel-curve outline -- per direct feedback ("that just look
+      // like a worm... is it frazzlier or something"), a dead-smooth
+      // tube reads as a worm/tube, not hair. Real hair shafts have a
+      // slightly irregular, rough-edged silhouette even before you add
+      // any flyaway strands, so each edge sample gets a small random
+      // offset (kept tiny so the shaft still reads as one continuous
+      // strand, not a saw blade).
+      const edgeJitter = (i, sign) => (pseudoRandom(i * 4.1 + (sign > 0 ? 0 : 50)) - 0.5) * 3;
 
       ctx.beginPath();
-      for (let i = 0; i <= 24; i++) {
-        const lx = -60 + (i / 24) * 120;
-        const ly = waveY(lx) - halfW;
+      for (let i = 0; i <= 32; i++) {
+        const lx = -60 + (i / 32) * 120;
+        const ly = waveY(lx) - halfW + edgeJitter(i, 1);
         if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
       }
-      for (let i = 24; i >= 0; i--) {
-        const lx = -60 + (i / 24) * 120;
-        const ly = waveY(lx) + halfW;
+      for (let i = 32; i >= 0; i--) {
+        const lx = -60 + (i / 32) * 120;
+        const ly = waveY(lx) + halfW + edgeJitter(i, -1);
         ctx.lineTo(lx, ly);
       }
       ctx.closePath();
@@ -38853,15 +39026,21 @@ const MICROSCOPE_SLIDES = [
 
       // overlapping cuticle scales -- angled, evenly-spaced arcs
       // crossing the shaft, each one slightly overlapping the last
-      // like roof shingles, all tilted the same direction
-      ctx.strokeStyle = "rgba(30,15,5,0.4)";
-      ctx.lineWidth = 1;
+      // like roof shingles, all tilted the same direction.
+      // CONFIRMED CHANGE: uneven line weight/opacity per scale (instead
+      // of one uniform stroke style) plus a slight per-scale wobble --
+      // per "that just look like a worm... frazzlier" -- perfectly
+      // regular shingles were part of what made it read as a smooth
+      // rubbery tube rather than a keratin surface.
       for (let i = -1; i < 26; i++) {
         const lx = -66 + i * 5;
         const ly = waveY(lx);
+        const wobble = (pseudoRandom(i * 7.3) - 0.5) * 2.5;
+        ctx.strokeStyle = `rgba(30,15,5,${0.28 + pseudoRandom(i * 2.9) * 0.28})`;
+        ctx.lineWidth = 0.75 + pseudoRandom(i * 5.5) * 0.9;
         ctx.beginPath();
-        ctx.moveTo(lx - 3, ly - halfW - 2);
-        ctx.quadraticCurveTo(lx + 4, ly, lx - 3, ly + halfW + 2);
+        ctx.moveTo(lx - 3 + wobble, ly - halfW - 2);
+        ctx.quadraticCurveTo(lx + 4, ly, lx - 3 - wobble, ly + halfW + 2);
         ctx.stroke();
       }
       // a thin bright highlight streak down the middle, riding the
@@ -38875,7 +39054,29 @@ const MICROSCOPE_SLIDES = [
         if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
       }
       ctx.stroke();
-      ctx.restore();
+      ctx.restore(); // ends the shaft clip -- flyaways below need to escape it, not be trapped inside
+
+      // CONFIRMED CHANGE: flyaway frizz strands -- a handful of thin
+      // curved hairs sticking OFF the main shaft's edge, tapering to a
+      // point. This is the biggest single fix for the "looks like a
+      // worm" read: worms have a clean unbroken silhouette, hair has
+      // stray fibers escaping the main strand. Drawn AFTER the clip is
+      // released so they actually poke out past the shaft outline
+      // instead of being clipped away.
+      ctx.strokeStyle = "rgba(58,36,18,0.55)";
+      for (let i = 0; i < 7; i++) {
+        const lx = -52 + pseudoRandom(i * 3.3) * 104;
+        const topSide = pseudoRandom(i * 6.6 + 2) > 0.5;
+        const baseY = waveY(lx) + (topSide ? -halfW : halfW);
+        const dir = topSide ? -1 : 1;
+        const len = 9 + pseudoRandom(i * 1.7) * 14;
+        const curl = (pseudoRandom(i * 8.8) - 0.5) * 16;
+        ctx.lineWidth = 0.6 + pseudoRandom(i * 2.2) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(lx, baseY);
+        ctx.quadraticCurveTo(lx + curl, baseY + dir * len * 0.6, lx + curl * 1.4, baseY + dir * len);
+        ctx.stroke();
+      }
     }
   }
 ];
@@ -39054,6 +39255,7 @@ function drawSandboxScene(camX) {
   drawWigStand(camX);
   drawSandboxFan(camX);
   drawMicroscopeStation(camX);
+  drawSandboxPendulum(camX);
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
@@ -39080,6 +39282,7 @@ function updateSandboxScene(deltaTime) {
   }
 
   updateSandboxFan(deltaTime);
+  updateSandboxPendulum(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
@@ -39089,7 +39292,7 @@ function updateSandboxScene(deltaTime) {
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
-  if (!player.onFan && player.y <= 0) {
+  if (!player.onFan && !player.onPendulum && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
