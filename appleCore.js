@@ -39264,49 +39264,83 @@ function drawSandboxSlinky(camX) {
   // and stays visible the whole ride.
 }
 
+function slinkyRiderCubicPoint(u, p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y) {
+  const mt = 1 - u;
+  const a = mt * mt * mt, b = 3 * mt * mt * u, c = 3 * mt * u * u, d = u * u * u;
+  return { x: a * p0x + b * c1x + c * c2x + d * p1x, y: a * p0y + b * c1y + c * c2y + d * p1y };
+}
+
 function drawSandboxSlinkyRider(camX) {
   const s = sandboxSlinky;
   if (!s.running) return;
-  // CONFIRMED CHANGE: video-verified -- "the player is just behind this
-  // spiral essentially. i want the slinky crawl, like player on top of
-  // slinky as it does its lovely crawls down with each arch occuring to
-  // get down each step." The vertical ring-stack was drawn straight up
-  // from the player's feet and grew tall enough to intersect/hide
-  // behind the player's own body -- it never looked like something the
-  // player was riding ON TOP of. Rebuilt as an actual arch spanning
-  // from the block just behind (s.hopFromX/hopFromH) to the block just
-  // ahead (s.hopToX/hopToH), peaking at the PLAYER's own current
-  // position -- since player.y already follows that same hop arc
-  // (see updateSandboxSlinky), the player always sits right at the
-  // arch's highest point, riding it rather than standing next to it.
-  // Small compressed drum rings at each end read as the coil gathering
-  // on the block it just left / is about to land on.
-  const coilSx = player.x + player.width / 2 - camX;
-  const coilSy = gy - player.y - 2;
+  // CONFIRMED CHANGE: "i want the slinky crawl... with each arch
+  // occuring to get down each step" + video-verified against a real
+  // slinky descending stairs head-on -- rebuilt AGAIN using the same
+  // coil-loop language that finally worked for the resting pose
+  // (flat rings, not a fan/basket of straight lines): a small
+  // compressed drum of flat rings stays anchored on the block BEHIND
+  // (where the coil is still "caught"), and a trail of the same flat
+  // loops stretches out and arcs toward the block AHEAD as the hop
+  // progresses, packed tight so it reads as an actual coil unwinding
+  // rather than separate floating circles. It recompresses into a
+  // fresh anchored drum once the next hop starts. The trail leaves the
+  // anchor going straight up first (continuing the drum's own
+  // stacking direction, via a cubic bezier) before curving toward the
+  // target, so it reads as directly attached rather than kinking off
+  // sideways right where it meets the drum.
   const fromX = (s.hopFromX !== undefined ? s.hopFromX : player.x + player.width / 2) - camX;
   const toX = (s.hopToX !== undefined ? s.hopToX : player.x + player.width / 2) - camX;
   const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : player.y) - 2;
   const toY = gy - (s.hopToH !== undefined ? s.hopToH : player.y) - 2;
+  const hopPhase = s.hopPhase !== undefined ? s.hopPhase : 0;
 
+  const ringRX = 6, ringRY = 2.6, ringGap = 2.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
-  ctx.lineWidth = 1.3;
-  const strands = 7;
-  for (let i = 0; i < strands; i++) {
-    const t = i / (strands - 1);
-    const spread = (t - 0.5) * 10; // gives the arch some coil "thickness" instead of reading as one bare line
+  ctx.lineWidth = 1;
+  for (let i = 0; i < anchorRings; i++) {
     ctx.beginPath();
-    ctx.moveTo(fromX + spread, fromY);
-    ctx.quadraticCurveTo(coilSx + spread * 0.3, coilSy, toX + spread, toY);
+    ctx.ellipse(fromX, fromY - i * ringGap, ringRX, ringRY, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  ctx.lineWidth = 1.4;
-  [[fromX, fromY], [toX, toY]].forEach(([dx, dy]) => {
-    for (let i = 0; i < 3; i++) {
+  const stemTopY = fromY - (anchorRings - 1) * ringGap;
+
+  // reach: how far the trail has stretched toward the target so far
+  // this hop -- multiplied up a bit so it visibly starts extending
+  // right away rather than sitting compressed for the first chunk of
+  // the hop
+  const reach = Math.min(1, hopPhase * 1.6);
+  if (reach > 0.03) {
+    const arcH = 14 + hopPhase * 10;
+    const p0x = fromX, p0y = stemTopY;
+    const p1x = toX, p1y = toY - 2;
+    const liftY = Math.min(p0y, p1y) - arcH;
+    const c1x = p0x, c1y = liftY;
+    const c2x = p1x, c2y = liftY;
+    const samples = 24;
+    const pts = [];
+    for (let i = 0; i <= samples; i++) pts.push(slinkyRiderCubicPoint(i / samples, p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y));
+    const cum = [0];
+    for (let i = 1; i <= samples; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    const totalLen = cum[samples] * reach;
+    function pointAtLength(targetLen) {
+      let lo = 0, hi = samples;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cum[mid] < targetLen) lo = mid + 1; else hi = mid;
+      }
+      return pts[lo];
+    }
+    const loopCount = Math.max(4, Math.round(18 * reach));
+    ctx.lineWidth = 1;
+    for (let i = 0; i < loopCount; i++) {
+      const frac = i / (loopCount - 1);
+      const pt = pointAtLength(frac * totalLen);
+      const openness = 0.15 + frac * 0.45;
       ctx.beginPath();
-      ctx.ellipse(dx, dy - i * 3, 7, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-  });
+  }
 }
 
 // each slide's hand-drawn illustration, drawn centered at (0,0) inside
