@@ -20119,15 +20119,18 @@ const cloudsDecor = [
 // it comes to THEM, not the other way around) -> pass (one close glide-by)
 // -> ambient (settles into a lazy back-and-forth swim for the rest of
 // the scene, so it stays a living presence rather than a one-off event).
+// CONFIRMED BUG FIX: moved well clear of the crystal (x:1955) -- per
+// direct feedback it needed to be further away, not sitting right next
+// to it looking like part of the same little display.
 const MANTA_RAY = {
-  x: 1900,               // tucked just behind/left of the crystal (x:1955)
-  y: 205,
+  x: 1700,
+  y: 165,
   state: "dormant",      // dormant -> waking -> toward -> pass -> ambient
   t: 0,
   wingPhase: 0,
   passDir: 1,
-  ambientCenterX: 1900,
-  ambientCenterY: 190
+  ambientCenterX: 1700,
+  ambientCenterY: 165
 };
 
 function updateMantaRay(deltaTime) {
@@ -20156,7 +20159,10 @@ function updateMantaRay(deltaTime) {
   } else if (m.state === "toward") {
     // swims out to find the player -- it comes to them, not the other
     // way around, per direct feedback
-    const dur = 1900;
+    // CONFIRMED BUG FIX: per direct feedback the whole approach read as
+    // way too fast -- stretched the duration a lot so it reads as an
+    // actual unhurried swim over, not a dash.
+    const dur = 3400;
     const p = Math.min(m.t / dur, 1);
     const eased = 1 - Math.pow(1 - p, 2);
     const targetX = player.x;
@@ -20170,7 +20176,10 @@ function updateMantaRay(deltaTime) {
     }
   } else if (m.state === "pass") {
     // one real close glide-by, then keeps gliding on past
-    m.x += m.passDir * deltaTime * 230;
+    // CONFIRMED BUG FIX: cruise speed cut roughly in half, same "too
+    // fast" feedback -- this was moving close to player run speed,
+    // which read as darting rather than gliding.
+    m.x += m.passDir * deltaTime * 100;
     m.y += Math.sin(m.t * 0.007) * 0.6;
     if (m.t >= 2400) {
       m.state = "ambient";
@@ -20181,8 +20190,12 @@ function updateMantaRay(deltaTime) {
   } else if (m.state === "ambient") {
     // lazy, ongoing swim for the rest of the scene -- a living presence,
     // not a one-time cutscene
-    m.x = m.ambientCenterX + Math.sin(m.t * 0.00035) * 420;
-    m.y = m.ambientCenterY + Math.sin(m.t * 0.0007 + 1.3) * 26;
+    // CONFIRMED BUG FIX: this was the likelier "too fast" culprit --
+    // peak speed here worked out to ~150px/s, not far off actual player
+    // run speed, which doesn't read as "lazy" at all. Slowed the swing
+    // rate a lot and pulled the range in some too.
+    m.x = m.ambientCenterX + Math.sin(m.t * 0.00016) * 300;
+    m.y = m.ambientCenterY + Math.sin(m.t * 0.00032 + 1.3) * 22;
   }
 }
 
@@ -20194,15 +20207,14 @@ function drawMantaRay(camX) {
 
   const dormant = m.state === "dormant";
   const flap = Math.sin(m.wingPhase) * (dormant ? 3 : 11);
-  // CONFIRMED BUG FIX: per direct feedback it wasn't findable at all --
-  // 0.3 alpha against this scene's pale sky/cloud palette (the fill
-  // colors below are close to the sky gradient itself) made it
-  // functionally invisible rather than "a subtle thing to notice."
-  // Bumped up and added a real outline stroke below so the shape reads
-  // clearly on its own even before it wakes, while still sitting still
-  // (no swim motion) so it's a "huh, what's that" rather than obviously
-  // already alive.
-  const alpha = dormant ? 0.75 : 0.88;
+  // CONFIRMED CHANGE: findability now comes from PLACEMENT (moved to a
+  // clear patch of sky with no other clouds nearby, so the shape reads
+  // on its own with nothing to blend into) rather than from a loud
+  // color -- per direct feedback the solid gray-blue kite look was too
+  // obvious/too "clearly a game object." Dialed the color back down
+  // toward the sky/cloud palette while keeping just enough of a fill +
+  // outline to read as a real shape once you look at it.
+  const alpha = dormant ? 0.55 : 0.88;
   // faces the direction it's actually moving -- fixed during the swim-out
   // and one-pass glide, and following the ambient wave's own direction
   // of travel once it settles into its lazy back-and-forth
@@ -20215,48 +20227,39 @@ function drawMantaRay(camX) {
   ctx.translate(sx, sy);
   if (facing < 0) ctx.scale(-1, 1);
 
-  // soft glow -- "angelic" reads better with a gentle halo than a hard edge
-  const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, 58);
-  glow.addColorStop(0, "rgba(215,232,255,0.5)");
-  glow.addColorStop(1, "rgba(215,232,255,0)");
-  ctx.fillStyle = glow;
+  // CONFIRMED BUG FIX: rebuilt from overlapping ellipses instead of a
+  // quadraticCurveTo diamond outline -- per direct feedback that read
+  // as too many sharp corners for a manta. Also matched the OTHER
+  // decorative animal clouds' actual style here (whale/alligator/lobster
+  // -- see drawCloudWhaleBg etc.): plain white/near-white fill built
+  // from a few overlapping ellipses, no gradient, no outline stroke at
+  // all. Consistency with those wins over the earlier custom blue look.
+  const wingTilt = flap * 0.02;
+  ctx.fillStyle = `rgba(255,255,255,${dormant ? 0.72 : 0.92})`;
+
+  // body -- one flat central disc
   ctx.beginPath();
-  ctx.ellipse(0, 0, 58, 40, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 22, 10, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // diamond wing-body, flapping via `flap`
-  const grad = ctx.createLinearGradient(0, -20, 0, 20);
-  grad.addColorStop(0, dormant ? "#cfe0f2" : "#e6f0fb");
-  grad.addColorStop(1, dormant ? "#7f9dbd" : "#a8c2de"); // darker bottom stop while dormant -- more contrast against the sky
-  ctx.fillStyle = grad;
+  // wings -- two angled ellipses overlapping the body, curved all the way
+  // around (no straight edges anywhere), tilting a little with the flap
   ctx.beginPath();
-  ctx.moveTo(-46, flap * 0.6);
-  ctx.quadraticCurveTo(-18, -16 - flap, 0, -6);
-  ctx.quadraticCurveTo(18, -16 + flap, 46, -flap * 0.6);
-  ctx.quadraticCurveTo(14, 10, 0, 17);
-  ctx.quadraticCurveTo(-14, 10, -46, flap * 0.6);
-  ctx.closePath();
+  ctx.ellipse(-34, flap * 0.7, 26, 11, -0.32 + wingTilt, 0, Math.PI * 2);
+  ctx.ellipse(34, -flap * 0.7, 26, 11, 0.32 - wingTilt, 0, Math.PI * 2);
   ctx.fill();
-  // real outline -- without this the shape leaned on fill-color contrast
-  // alone against a sky that's a close color match, which is exactly why
-  // it wasn't findable. A visible edge reads regardless of background.
-  ctx.strokeStyle = dormant ? "rgba(90,115,145,0.65)" : "rgba(90,115,145,0.5)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
 
-  // trailing tail
-  ctx.strokeStyle = "rgba(168,194,222,0.8)";
-  ctx.lineWidth = 2;
+  // cephalic lobes -- the small front "horns" that make it unmistakably manta
   ctx.beginPath();
-  ctx.moveTo(0, 17);
-  ctx.quadraticCurveTo(6, 32, 3, 48);
-  ctx.stroke();
+  ctx.ellipse(-7, -9, 3, 7, 0.3, 0, Math.PI * 2);
+  ctx.ellipse(7, -9, 3, 7, -0.3, 0, Math.PI * 2);
+  ctx.fill();
 
-  // cephalic lobes -- the little front "horns" that read as unmistakably manta
-  ctx.fillStyle = "rgba(150,175,205,0.9)";
+  // trailing tail -- a chain of shrinking ellipses instead of a hard stroke line
   ctx.beginPath();
-  ctx.ellipse(-7, -5, 3, 6, 0.35, 0, Math.PI * 2);
-  ctx.ellipse(7, -5, 3, 6, -0.35, 0, Math.PI * 2);
+  ctx.ellipse(2, 14, 4, 7, 0.15, 0, Math.PI * 2);
+  ctx.ellipse(4, 26, 2.5, 6, 0.1, 0, Math.PI * 2);
+  ctx.ellipse(5, 36, 1.6, 5, 0.05, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -20989,8 +20992,15 @@ const WATER_DRIP_INTERVAL_MAX = 11000; // ms — "every 7 seconds or so, maybe l
 const WATER_DRIP_FALL_SPEED = 40;      // height units per second
 
 const waterDrips = [
-  { x: 1990, sourceHeight: 200, dropHeight: null, timer: 3000 + Math.random() * 3000 },  // highest cloud past the jewel area
-  { x: 2150, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000 }   // second-highest, same stretch
+  // CONFIRMED CHANGE: moved from x:1990 into the gust zone (x:1580-1930)
+  // per direct request -- this drip now falls right through the wind,
+  // getting the same turbulence noise as the boomerang's own gust
+  // distortion, so its fall drifts one way then suddenly the other
+  // instead of falling straight down. The second drip below stays
+  // outside the zone, untouched, so there's still a predictable one to
+  // fall back on and a real contrast between the two.
+  { x: 1750, sourceHeight: 190, dropHeight: null, timer: 3000 + Math.random() * 3000, fallT: 0, driftX: 0 },
+  { x: 2150, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000, fallT: 0, driftX: 0 }
 ];
 
 function updateWaterDrips(deltaTime) {
@@ -20999,17 +21009,32 @@ function updateWaterDrips(deltaTime) {
       drip.timer -= deltaTime * 1000;
       if (drip.timer <= 0) {
         drip.dropHeight = drip.sourceHeight;
+        drip.fallT = 0;
+        drip.driftX = 0;
         drip.timer = WATER_DRIP_INTERVAL_MIN + Math.random() * (WATER_DRIP_INTERVAL_MAX - WATER_DRIP_INTERVAL_MIN);
       }
     } else {
       drip.dropHeight -= WATER_DRIP_FALL_SPEED * deltaTime;
+      drip.fallT += deltaTime * 1000;
+
+      // gust zone -- same turbulence noise as the boomerang's own gust
+      // distortion (same 0.017 frequency), fading in/out over the drop's
+      // fall via sin(p*pi) rather than a hard on/off. Missed catches are
+      // expected and fine here -- that's the whole point.
+      if (currentScene === "clouds" && isInGustZone(drip.x)) {
+        const p = 1 - Math.max(0, Math.min(drip.dropHeight / drip.sourceHeight, 1));
+        const gustEnvelope = Math.sin(p * Math.PI);
+        drip.driftX = Math.sin(drip.fallT * 0.017) * 22 * gustEnvelope;
+      } else {
+        drip.driftX = 0;
+      }
 
       // auto-catch: bucket must be actively HELD (clicked/selected), not
       // just sitting uncollected-from in inventory — "in play" means equipped.
       // Position matters, timing doesn't — no button press needed.
       if (heldItem === "bucket" && !bucketFilled) {
         const playerCenterX = player.x + player.width / 2;
-        const nearX = Math.abs(playerCenterX - drip.x) < 40;
+        const nearX = Math.abs(playerCenterX - (drip.x + drip.driftX)) < 40;
         const nearHeight = Math.abs(player.y - drip.dropHeight) < 20;
 
         if (nearX && nearHeight) {
@@ -21034,7 +21059,7 @@ function drawWaterDrips(camX) {
   waterDrips.forEach(drip => {
     if (drip.dropHeight === null) return;
 
-    const dx = drip.x - camX;
+    const dx = (drip.x + drip.driftX) - camX;
     const dy = gy - drip.dropHeight;
 
     ctx.fillStyle = "rgba(120,180,255,0.85)";
