@@ -39134,51 +39134,59 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
-    // CONFIRMED BUG FIX: "closer but not it, compare to reference
-    // picture" -- matched the actual photo shape more carefully: it's
-    // not a set of arches that all bow the same way between matching
-    // heights (that reads as a woven basket/net, too "filled"). A real
-    // stretched coil is a continuous helix, so each wire's LEFT
-    // attachment point spirals UP the left drum while its RIGHT
-    // attachment spirals DOWN the right drum (or vice versa) -- the
-    // wires cross each other on the way over, which is exactly the
-    // open, criss-crossed lattice the photo shows, not a stack of
-    // parallel arcs.
+    // CONFIRMED BUG FIX: "pls fix" (with a screenshot) -- the
+    // helix-crossing version was a straight-up mistake: lines spiraling
+    // opposite directions on each drum converge into a sharp X/bowtie
+    // point at the top, which reads as a folded piece of fabric, not a
+    // coil -- nothing like the reference photo's rounded, open dome.
+    // Reverted to a fan of arcs that all bow the SAME way (a dome, not
+    // an hourglass), just kept open/thin: fewer lines, real gaps
+    // between them, and each line's own peak height varies (shorter
+    // near the outer edges, taller through the middle) so it reads as
+    // a rounded radiating fan rather than a single filled wedge.
     const fanTopY = drumTopY - drumRings * drumRingH;
-    const leftDrumX = coilSx - drumOffset, rightDrumX = coilSx + drumOffset;
-    const fanLines = 10;
+    const fanLines = 9, drumSpanW = 36;
     ctx.lineWidth = 1;
     for (let i = 0; i < fanLines; i++) {
       const t = i / (fanLines - 1);
-      const sx = leftDrumX, sy = fanTopY - t * arcHeight;
-      const ex = rightDrumX, ey = fanTopY - (1 - t) * arcHeight;
-      const mx = (sx + ex) / 2, my = (sy + ey) / 2 - 6; // slight bow, not a full symmetric arch
+      const startX = coilSx - drumOffset - drumSpanW / 2 + t * drumSpanW;
+      const endX = coilSx + drumOffset - drumSpanW / 2 + t * drumSpanW;
+      const peakX = (startX + endX) / 2;
+      const peakHeight = arcHeight * (0.35 + 0.65 * Math.sin(t * Math.PI));
+      const peakY = fanTopY - peakHeight;
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(mx, my, ex, ey);
+      ctx.moveTo(startX, fanTopY);
+      ctx.quadraticCurveTo(peakX, peakY, endX, fanTopY);
       ctx.stroke();
     }
-  } else {
-    // CONFIRMED BUG FIX: video-verified -- the previous two-anchor
-    // lattice (spanning from the block behind to the block ahead) drew
-    // fine as a still image, but during actual gameplay speed/scale it
-    // rendered as an unreadable pink smear, and the anchor points
-    // themselves could end up far from where the player visually was.
-    // Simplified to a small, tight coil that always stays directly
-    // under the player's feet (same point drawSandboxFan/Pendulum use
-    // for their own riders) -- a compact stack of rings that squashes
-    // flat on touch-down and stretches tall at each hop's peak, so it
-    // reads clearly at speed and always visibly stays attached.
-    const hopPhase = s.hopPhase || 0;
-    const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at the hop's peak
-    const ringCount = 4;
-    const ringGap = 3 + stretch * 4;
-    ctx.lineWidth = 2.5;
-    for (let i = 0; i < ringCount; i++) {
-      ctx.beginPath();
-      ctx.ellipse(coilSx, coilSy - i * ringGap, 9 - stretch * 2, 4 + stretch * 1.5, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+  }
+  // CONFIRMED BUG FIX: "i also cant see the slinky while im riding
+  // down" -- drawSandboxSlinky is called from drawSandboxScene, which
+  // runs BEFORE the player sprite is drawn in the main draw() loop, so
+  // the riding coil (drawn right under/around the player's own
+  // position) was being painted over and completely hidden by the
+  // player's body every single frame. The riding coil itself is now
+  // drawn by a separate function, drawSandboxSlinkyRider(), called
+  // AFTER the player sprite in draw() -- see the sandbox branch added
+  // right after the player draw block -- so it actually renders on top
+  // and stays visible the whole ride.
+}
+
+function drawSandboxSlinkyRider(camX) {
+  const s = sandboxSlinky;
+  if (!s.running) return;
+  const coilSx = player.x + player.width / 2 - camX;
+  const coilSy = gy - player.y - 4;
+  ctx.strokeStyle = "#c0392b";
+  const hopPhase = s.hopPhase || 0;
+  const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at the hop's peak
+  const ringCount = 4;
+  const ringGap = 3 + stretch * 4;
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < ringCount; i++) {
+    ctx.beginPath();
+    ctx.ellipse(coilSx, coilSy - i * ringGap, 9 - stretch * 2, 4 + stretch * 1.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -40486,6 +40494,11 @@ if (currentScene === "forest") {
   // the closest thing on screen
   drawMoleholeRootPillar(20, camX);
   drawMoleholeRootPillar(MOLEHOLE_WIDTH - 20, camX);
+} else if (currentScene === "sandbox") {
+  // CONFIRMED BUG FIX: the riding slinky coil has to draw AFTER the
+  // player sprite (see drawSandboxSlinkyRider's own comment) so it
+  // isn't painted over and hidden by the player's body every frame.
+  drawSandboxSlinkyRider(camX);
 }
 
 
