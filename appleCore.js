@@ -37676,41 +37676,57 @@ const sandboxEntranceMound = { x: 3020, width: 40 }; // in SPRING -- walk up, sp
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 
 // CONFIRMED CHANGE: this is the "outside" marker -- a small classic
-// red sandbox lying flat on the ground, seen at a slight downward
-// angle so the sand inside is visible, with the red frame going all
-// the way around the sand on all four sides (not just 3) per direct
-// feedback on two rounds: "make the sandbox laying flat on the ground
-// but we are looking inside slightly" and "the red should go all
-// around the rectangle, not only 3 sides." A real rectangle (not the
-// ellipse take that went out first), just short/flat instead of
-// standing tall, with the sand inset leaving an even red margin on
-// every edge. Uses the same SANDBOX_RED/SANDBOX_RED_DARK as the
-// interior room's own walls and the entrance transition wash.
+// red sandbox sitting flat ON the ground (per direct feedback: "sand
+// box is sitting on its side. make it sit on the ground"). The
+// previous version was one single flat red rectangle with no
+// separation between "wall" and "top," which read as a red card
+// standing up on its edge rather than a box resting on the ground.
+// Fixed by actually splitting it into two bands: a short FRONT WALL
+// flush against the ground (giving it real height/depth so it visibly
+// rests ON the ground, not just painted flat against it), and the
+// TOP opening sitting above that wall, foreshortened/short so it
+// reads as viewed slightly from above, with the sand inset leaving an
+// even red margin on every side of the opening. Uses the same
+// SANDBOX_RED/SANDBOX_RED_DARK as the interior room's own walls and
+// the entrance transition wash.
 function drawSandMound(x, camX, label) {
   const cx = x - camX;
-  const boxW = 78, boxH = 24; // short/flat, not tall -- "lying on the ground"
-  const bx = cx - boxW / 2, by = gy - boxH;
+  const boxW = 78;
+  const wallH = 10;   // the box's own visible depth/height, flush with the ground -- this is what makes it read as "sitting on the ground" instead of a flat side-view slab
+  const topH = 16;    // the foreshortened top opening, sitting above the wall
+  const bx = cx - boxW / 2;
+  const topY = gy - wallH - topH;
+  const wallY = gy - wallH;
 
-  const wallGrad = ctx.createLinearGradient(0, by, 0, gy);
+  // front wall -- flush to the ground, full width, square-ish bottom
+  // corners so it plants firmly rather than floating
+  const wallGrad = ctx.createLinearGradient(0, wallY, 0, gy);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
-  roundRect(ctx, bx, by, boxW, boxH, 6);
+  ctx.fillRect(bx, wallY, boxW, wallH);
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(bx, wallY, boxW, wallH);
+
+  // top opening -- sits right on top of the wall, rounded corners,
+  // this is the part we're "looking down slightly into"
+  ctx.fillStyle = SANDBOX_RED;
+  roundRect(ctx, bx, topY, boxW, topH, 6);
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
   ctx.lineWidth = 1.5;
-  roundRect(ctx, bx, by, boxW, boxH, 6);
+  roundRect(ctx, bx, topY, boxW, topH, 6);
   ctx.stroke();
   // top rim highlight, like the interior panels' own top edge
   ctx.fillStyle = "rgba(255,255,255,0.3)";
-  ctx.fillRect(bx + 3, by, boxW - 6, 3);
+  ctx.fillRect(bx + 3, topY, boxW - 6, 3);
 
-  // disheveled sand filling the box -- inset by a real margin on ALL
-  // FOUR sides (top/bottom included, not just left/right) so the red
-  // frame reads as going all the way around the opening
-  const insetSide = 9, insetTop = 7, insetBottom = 5;
-  const sx0 = bx + insetSide, sy0 = by + insetTop;
-  const sw = boxW - insetSide * 2, sh = boxH - insetTop - insetBottom;
+  // disheveled sand filling the opening -- inset by a real margin on
+  // ALL FOUR sides so the red frame reads as going all the way around
+  const insetSide = 9, insetTop = 7, insetBottom = 4;
+  const sx0 = bx + insetSide, sy0 = topY + insetTop;
+  const sw = boxW - insetSide * 2, sh = topH - insetTop - insetBottom;
   ctx.save();
   ctx.beginPath();
   roundRect(ctx, sx0, sy0, sw, sh, 3);
@@ -37724,14 +37740,14 @@ function drawSandMound(x, camX, label) {
     const oy = sy0 + pseudoRandom(i * 6.1 + 1) * sh;
     ctx.fillStyle = i % 2 === 0 ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.45)";
     ctx.beginPath();
-    ctx.ellipse(ox, oy, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(ox, oy, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
 
   // toy shovel, stuck into the sand at an angle
   ctx.save();
-  ctx.translate(sx0 + sw - 14, sy0 + 4);
+  ctx.translate(sx0 + sw - 14, sy0 + 3);
   ctx.rotate(-0.5);
   ctx.fillStyle = "#3f7fd6";
   ctx.fillRect(-1.5, -22, 3, 24);
@@ -37749,7 +37765,7 @@ function drawSandMound(x, camX, label) {
     ctx.fillStyle = "#5a4a2a";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, cx, by - 12);
+    ctx.fillText(label, cx, topY - 12);
     ctx.textAlign = "left";
   }
 }
@@ -38766,10 +38782,11 @@ function drawSandboxScene(camX) {
   drawSandboxFan(camX);
   drawMicroscopeStation(camX);
 
-  // red wood-panel end walls -- these are what actually sell "small
-  // classic sandbox," bookending the bounded play area on both sides
-  drawSandboxWallPanel(-120 - camX, 150, 120);
-  drawSandboxWallPanel(SANDBOX_WIDTH - camX, 150, 120);
+  // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
+  // direct feedback ("remove the big tall red box thing i dont like
+  // that") -- the room's edges are still a hard boundary (see the
+  // player.x clamp in updateSandboxScene below), just not visually
+  // walled off anymore.
 
   drawCrows(camX); // same birds, consistent across every zone
 }
@@ -39111,6 +39128,8 @@ if (bookReader.active || bookReader.opening || bookReader.closing) {
   drawCarvingUI();
 } else if (wigUI.active || wigUI.opening || wigUI.closing) {
   drawWigUI();
+} else if (microscopeUI.active || microscopeUI.opening || microscopeUI.closing) {
+  drawMicroscopeUI();
 } else if (camera.topDown) {
   ctx.fillStyle="rgba(245,245,240,0.94)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -40144,6 +40163,17 @@ lastTime = now;
 
   if (wigUI.active || wigUI.opening || wigUI.closing) {
     updateWigUI(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
+
+  if (microscopeUI.active || microscopeUI.opening || microscopeUI.closing) {
+    updateMicroscopeUI(deltaTime);
     keys.upJustPressed = false;
     keys.leftJustPressed = false;
     keys.rightJustPressed = false;
