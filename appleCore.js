@@ -1244,36 +1244,27 @@ function drawSeasonTransition(ctx) {
     ctx.globalAlpha = alpha;
   }
 
-  // sandbox gets a red wood-panel border framing the whole screen, same
-  // red as the room's own end walls (SANDBOX_RED) -- per direct
-  // request, a sand background with that red as a literal border,
-  // with plank seam lines so it reads as wood, not just a color bar
+  // sandbox gets a red border framing the whole screen, same red as
+  // the sandbox marker's own box (SANDBOX_RED) -- a sand background
+  // with that red as a literal border. CONFIRMED CHANGE: dropped the
+  // plank-seam lines to match the marker prop, which ended up smooth-
+  // shaded (flat-shaded 3D faces) rather than wood-paneled -- keeping
+  // this border smooth too so the two actually look consistent.
   if (target === "sandbox") {
     const borderW = 34;
-    ctx.fillStyle = SANDBOX_RED;
+    const borderGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    borderGrad.addColorStop(0, SANDBOX_RED);
+    borderGrad.addColorStop(1, SANDBOX_RED_DARK);
+    ctx.fillStyle = borderGrad;
     ctx.fillRect(0, 0, canvas.width, borderW); // top
     ctx.fillRect(0, canvas.height - borderW, canvas.width, borderW); // bottom
     ctx.fillRect(0, 0, borderW, canvas.height); // left
     ctx.fillRect(canvas.width - borderW, 0, borderW, canvas.height); // right
-
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    // a slim inner highlight so the border still reads as a raised
+    // frame rather than a flat painted bar
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
     ctx.lineWidth = 2;
-    for (let px = 16; px < canvas.width; px += 18) {
-      ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, borderW);
-      ctx.moveTo(px, canvas.height - borderW);
-      ctx.lineTo(px, canvas.height);
-      ctx.stroke();
-    }
-    for (let py = 16; py < canvas.height; py += 18) {
-      ctx.beginPath();
-      ctx.moveTo(0, py);
-      ctx.lineTo(borderW, py);
-      ctx.moveTo(canvas.width - borderW, py);
-      ctx.lineTo(canvas.width, py);
-      ctx.stroke();
-    }
+    ctx.strokeRect(borderW - 3, borderW - 3, canvas.width - (borderW - 3) * 2, canvas.height - (borderW - 3) * 2);
   }
 
   ctx.restore();
@@ -37670,50 +37661,59 @@ function updateTunnelTownScene(deltaTime) {
 // direct discussion -- reaching it means you've already gone through
 // spring's own stuff (holes, tulip, grafting, etc.), so it reads as a
 // rest beat after real progress rather than a zero-effort detour right
-// at the start. Forest door itself is at x:3100 (56 wide); this sits
-// just clear of it on the near side.
-const sandboxEntranceMound = { x: 3020, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
+// at the start. Forest door itself is at x:3100 (56 wide). Pulled back
+// further from x:3020 per direct feedback ("make it further away from
+// the door it too close") -- 80px wasn't enough breathing room once
+// the box's own footprint and interact radius are factored in.
+const sandboxEntranceMound = { x: 2860, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 
-// CONFIRMED CHANGE: this is the "outside" marker -- a small classic
-// red sandbox sitting flat ON the ground (per direct feedback: "sand
-// box is sitting on its side. make it sit on the ground"). The
-// previous version was one single flat red rectangle with no
-// separation between "wall" and "top," which read as a red card
-// standing up on its edge rather than a box resting on the ground.
-// Fixed by actually splitting it into two bands: a short FRONT WALL
-// flush against the ground (giving it real height/depth so it visibly
-// rests ON the ground, not just painted flat against it), and the
-// TOP opening sitting above that wall, foreshortened/short so it
-// reads as viewed slightly from above, with the sand inset leaving an
-// even red margin on every side of the opening. Uses the same
-// SANDBOX_RED/SANDBOX_RED_DARK as the interior room's own walls and
-// the entrance transition wash.
+// CONFIRMED CHANGE: rebuilt with an ACTUAL 3/4 angled top face this
+// time, not a flat head-on rectangle -- per direct feedback across
+// several rounds, most recently "instead of looking at this head on,
+// do at an angle, try really try to make this look more normal to be
+// sitting on the ground, this still reads super off." Every earlier
+// version kept the top face a plain axis-aligned rectangle, which is
+// exactly what a head-on view looks like no matter how the front wall
+// was drawn underneath it. This one draws the top face as a real
+// parallelogram (its far edge higher up, its near edge shifted down
+// and to the side), which is what an actual box top looks like when
+// you're standing over it looking down at an angle -- plus a front
+// wall face below that, and both faces + the connecting seam are one
+// continuous outlined shape so it still doesn't read as two stacked
+// boxes. The sand and its texture are drawn in a sheared coordinate
+// space so they sit flush inside the same parallelogram, angle and
+// all, instead of a straight rectangle awkwardly inset into a slanted
+// hole. Uses the same SANDBOX_RED/SANDBOX_RED_DARK as the interior
+// room's own walls and the entrance transition wash.
 function drawSandMound(x, camX, label) {
   const cx = x - camX;
-  const boxW = 78;
-  const wallH = 10;   // the box's own visible depth/height, flush with the ground -- this is what makes it read as "sitting on the ground" instead of a flat side-view slab
-  const topH = 16;    // the foreshortened top opening, sitting above the wall
-  const bx = cx - boxW / 2;
-  const topY = gy - wallH - topH;
-  const r = 7; // corner radius, top corners only
+  const boxW = 78;       // CONFIRMED CHANGE: bumped up from 66 -- "make it a little bigger"
+  const depthDX = 19;    // how far the near edge shifts sideways relative to the far edge -- this IS the angle
+  const depthDY = 18;    // how far the near edge shifts down relative to the far edge -- the top face's "depth"
+  const wallH = 11;      // front wall height, flush to the ground
 
-  // CONFIRMED CHANGE: the wall band and top opening used to be two
-  // separately-stroked rectangles, which per direct feedback ("looks
-  // like a one on ground and a one sitting up right on top of it")
-  // read as two stacked boxes instead of one. Fixed by outlining the
-  // WHOLE box as a single continuous path (rounded only at the top-
-  // outer corners, square where it meets the ground) with one fill
-  // and one stroke -- there's no seam anywhere along the outer edge.
+  const backX = cx - boxW / 2 - depthDX / 2;
+  const backY = gy - wallH - depthDY;
+  const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
+  const frontTopY = backY + depthDY; // = gy - wallH
+
+  // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
+  // ("missing left side of box"), the box only had a top face and a
+  // front face, leaving a gap where the side wall should be (the far-
+  // left top corner had nothing connecting it down to the ground).
+  // The whole silhouette (top + front + left side) is still ONE
+  // continuous outlined hexagon, so it stays one box, not stacked/
+  // separate pieces.
   ctx.beginPath();
-  ctx.moveTo(bx, gy);
-  ctx.lineTo(bx, topY + r);
-  ctx.quadraticCurveTo(bx, topY, bx + r, topY);
-  ctx.lineTo(bx + boxW - r, topY);
-  ctx.quadraticCurveTo(bx + boxW, topY, bx + boxW, topY + r);
-  ctx.lineTo(bx + boxW, gy);
-  ctx.closePath();
-  const wallGrad = ctx.createLinearGradient(0, topY, 0, gy);
+  ctx.moveTo(backX, backY);            // back-top-left
+  ctx.lineTo(backX + boxW, backY);     // back-top-right
+  ctx.lineTo(frontRightX, frontTopY);  // top face's near-right corner
+  ctx.lineTo(frontRightX, gy);         // front-bottom-right
+  ctx.lineTo(frontLeftX, gy);          // front-bottom-left
+  ctx.lineTo(backX, gy);               // side-bottom-left
+  ctx.closePath();                     // back up the side's left edge to back-top-left
+  const wallGrad = ctx.createLinearGradient(0, backY, 0, gy);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
@@ -37722,46 +37722,94 @@ function drawSandMound(x, camX, label) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // top rim highlight, like the interior panels' own top edge -- the
-  // only thing marking where the opening is, not a second outline
-  ctx.fillStyle = "rgba(255,255,255,0.3)";
-  ctx.fillRect(bx + 3, topY, boxW - 6, 3);
-
-  // disheveled sand filling the opening -- inset by a real margin on
-  // ALL FOUR sides so the red frame reads as going all the way around
-  const insetSide = 9, insetTop = 7, insetBottom = 4;
-  const sx0 = bx + insetSide, sy0 = topY + insetTop;
-  const sw = boxW - insetSide * 2, sh = topH - insetTop - insetBottom;
-  ctx.save();
+  // shade the front face darkest and the side face a middle tone, so
+  // the three faces (top/front/side) read as one lit 3D box -- no
+  // wood-panel lines (see the comment above on smooth vs. paneled),
+  // just simple flat-shaded faces
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.beginPath();
-  roundRect(ctx, sx0, sy0, sw, sh, 3);
+  ctx.moveTo(frontLeftX, frontTopY);
+  ctx.lineTo(frontRightX, frontTopY);
+  ctx.lineTo(frontRightX, gy);
+  ctx.lineTo(frontLeftX, gy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.09)";
+  ctx.beginPath();
+  ctx.moveTo(backX, backY);
+  ctx.lineTo(frontLeftX, frontTopY);
+  ctx.lineTo(frontLeftX, gy);
+  ctx.lineTo(backX, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  // seam lines between faces, plus a bright highlight along the top
+  // face's own far edge
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(frontLeftX, frontTopY);
+  ctx.lineTo(frontRightX, frontTopY);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(backX + 3, backY);
+  ctx.lineTo(backX + boxW - 3, backY);
+  ctx.stroke();
+
+  // sand filling the top face, drawn in a SHEARED coordinate space so
+  // it actually follows the parallelogram's angle -- local (u,v) with
+  // u along the far edge (0..boxW) and v from far edge (0) to near
+  // edge (1), mapped to screen via the same depth vector as the top
+  // face itself
+  ctx.save();
+  ctx.translate(backX, backY);
+  ctx.transform(1, 0, depthDX, depthDY, 0, 0);
+  const insetU = 8 / boxW, insetVFar = 0.22, insetVNear = 0.12;
+  const u0 = insetU, u1 = 1 - insetU, v0 = insetVFar, v1 = 1 - insetVNear;
+  ctx.beginPath();
+  ctx.moveTo(u0 * boxW, v0);
+  ctx.lineTo(u1 * boxW, v0);
+  ctx.lineTo(u1 * boxW, v1);
+  ctx.lineTo(u0 * boxW, v1);
+  ctx.closePath();
   ctx.clip();
   ctx.fillStyle = "#d9c48a";
-  ctx.fillRect(sx0 - 2, sy0 - 2, sw + 4, sh + 4);
-  // kicked-up mounds and dug-out divots, same disheveled texture
-  // language as the interior sandbox floor
+  ctx.fillRect(-4, -0.3, boxW + 8, 1.6);
+  // kicked-up mounds and dug-out divots -- drawn in the same sheared
+  // space so they sit flat on the sand instead of floating at an
+  // unrelated angle. y is a 0..1 fraction here (depth), so keep the
+  // ellipse radii small in that axis.
   for (let i = 0; i < 6; i++) {
-    const ox = sx0 + pseudoRandom(i * 3.7) * sw;
-    const oy = sy0 + pseudoRandom(i * 6.1 + 1) * sh;
+    const ou = u0 * boxW + pseudoRandom(i * 3.7) * (u1 - u0) * boxW;
+    const ov = v0 + pseudoRandom(i * 6.1 + 1) * (v1 - v0);
+    ctx.save();
+    ctx.translate(ou, ov);
+    ctx.scale(1, 1 / depthDY);
     ctx.fillStyle = i % 2 === 0 ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.45)";
     ctx.beginPath();
-    ctx.ellipse(ox, oy, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 5 + pseudoRandom(i * 2.2) * 4, 2 + pseudoRandom(i * 4.4) * 1.2, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
   ctx.restore();
 
-  // toy shovel, stuck into the sand at an angle
+  // toy shovel, stuck into the sand at an angle -- positioned in real
+  // screen space (near the front-right corner of the sand patch), not
+  // the sheared space, so its own angle stays independent
+  const shovelX = frontRightX - 16, shovelY = frontTopY - 4;
   ctx.save();
-  ctx.translate(sx0 + sw - 14, sy0 + 3);
+  ctx.translate(shovelX, shovelY);
   ctx.rotate(-0.5);
   ctx.fillStyle = "#3f7fd6";
-  ctx.fillRect(-1.5, -22, 3, 24);
+  ctx.fillRect(-1.5, -20, 3, 22);
   ctx.fillStyle = "#e8483a";
   ctx.beginPath();
-  ctx.moveTo(-6, -22);
-  ctx.lineTo(6, -22);
-  ctx.lineTo(4, -12);
-  ctx.lineTo(-4, -12);
+  ctx.moveTo(-6, -20);
+  ctx.lineTo(6, -20);
+  ctx.lineTo(4, -11);
+  ctx.lineTo(-4, -11);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -37770,7 +37818,7 @@ function drawSandMound(x, camX, label) {
     ctx.fillStyle = "#5a4a2a";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(label, cx, topY - 12);
+    ctx.fillText(label, backX + boxW / 2, backY - 12);
     ctx.textAlign = "left";
   }
 }
@@ -38140,67 +38188,67 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.fillStyle = wig.color;
     ctx.strokeStyle = "rgba(0,0,0,0.18)";
     ctx.lineWidth = 1;
-    // smooth cap over the crown, tightened a bit (was radius 21/chord
-    // at y2 -- bumping the overall wig scale back up per "all the wigs
-    // are too small still" meant this needed to stay snug or it'd
-    // balloon back into one undifferentiated blob, per the earlier
-    // "what is this" complaint)
+    // CONFIRMED CHANGE: rebuilt the hanging strands as fixed-width
+    // stroked ribbons instead of filled bezier blobs -- per direct
+    // feedback on a screenshot ("or rather no wigs do [fit]"), the
+    // filled-blob strands were ballooning outward at their curve's
+    // widest point wide enough to look like green wings/a cape
+    // draping the whole body instead of hair. A stroked ribbon's width
+    // is fixed by lineWidth no matter how the centerline curves, so it
+    // can't balloon like that.
     ctx.beginPath();
-    ctx.arc(0, -1, 17, Math.PI, 0, false);
+    ctx.arc(0, -1, 15, Math.PI, 0, false);
     ctx.fill();
     ctx.stroke();
-    // asymmetric strands: long in front (past the chin), short in back
+    ctx.strokeStyle = wig.color;
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    // long strand hanging past the chin on each side, front
     ctx.beginPath();
-    ctx.moveTo(-16, -3);
-    ctx.quadraticCurveTo(-21, 18, -15, 33); // long front-left strand
-    ctx.quadraticCurveTo(-11, 20, -12, -1);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(-13, -2);
+    ctx.quadraticCurveTo(-17, 14, -13, 30);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(16, -3);
-    ctx.quadraticCurveTo(21, 18, 15, 33); // long front-right strand
-    ctx.quadraticCurveTo(11, 20, 12, -1);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(13, -2);
+    ctx.quadraticCurveTo(17, 14, 13, 30);
+    ctx.stroke();
+    // short tuft in back on each side, staying close to the head
+    ctx.beginPath();
+    ctx.moveTo(-13, -2);
+    ctx.quadraticCurveTo(-15, 4, -12, 9);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-16, -3);
-    ctx.quadraticCurveTo(-19, 8, -13, 11); // short back-left tuft
-    ctx.lineTo(-12, -1);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(13, -2);
+    ctx.quadraticCurveTo(15, 4, 12, 9);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(16, -3);
-    ctx.quadraticCurveTo(19, 8, 13, 11); // short back-right tuft
-    ctx.lineTo(12, -1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
   } else if (id === "greenWavy") {
     ctx.fillStyle = wig.color;
     ctx.strokeStyle = "rgba(0,0,0,0.15)";
     ctx.lineWidth = 1;
     // cap over the crown, same tightened radius as blueBob
     ctx.beginPath();
-    ctx.arc(0, -1, 17, Math.PI, 0, false);
+    ctx.arc(0, -1, 15, Math.PI, 0, false);
     ctx.fill();
     ctx.stroke();
-    // long wavy strands past the shoulders on each side, real S-curves
-    // rather than straight hanging tufts
+    // CONFIRMED CHANGE: same fixed-width-ribbon fix as blueBob above --
+    // a real gentle wave, but its width can't balloon since it's a
+    // stroke, not a filled blob
+    ctx.strokeStyle = wig.color;
+    ctx.lineWidth = 6.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     [-1, 1].forEach(dir => {
       ctx.beginPath();
-      ctx.moveTo(dir * 16, -3);
-      ctx.bezierCurveTo(dir * 26, 7, dir * 6, 19, dir * 23, 31);
-      ctx.bezierCurveTo(dir * 30, 37, dir * 12, 43, dir * 19, 49);
-      ctx.lineTo(dir * 10, 47);
-      ctx.bezierCurveTo(dir * 15, 41, dir * 1, 35, dir * 8, 25);
-      ctx.bezierCurveTo(dir * 14, 17, dir * 3, 7, dir * 10, -1);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(dir * 14, -2);
+      ctx.quadraticCurveTo(dir * 21, 10, dir * 13, 20);
+      ctx.quadraticCurveTo(dir * 7, 29, dir * 16, 38);
       ctx.stroke();
     });
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
   }
 
   ctx.restore();
@@ -38704,6 +38752,81 @@ const MICROSCOPE_SLIDES = [
         ctx.lineTo(lx + Math.sin(ang) * len, hy + dir * len);
         ctx.stroke();
       }
+      ctx.restore();
+    }
+  },
+  {
+    // CONFIRMED CHANGE: new 5th slide, per direct request ("lets add a
+    // brown human hair zoomed in to the microscope slides"). Real hair
+    // under a scope reads as one long cylindrical shaft with an
+    // overlapping shingle-like cuticle scale pattern down its length --
+    // that scale texture IS the signature "this is a hair" read, not
+    // just a brown line.
+    id: "humanHair",
+    name: "Human Hair (shaft, zoomed)",
+    draw: () => {
+      // pale neutral slide background -- hair samples are usually
+      // mounted dry/clear, not on a colored medium like the organic
+      // slides, so this one stays visually distinct from the others
+      ctx.fillStyle = "#eeeae2";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // the shaft runs edge-to-edge with a gentle wave, zoomed in
+      // enough that it's the only thing in frame -- built from two
+      // parallel edges offset by a fixed half-width from the same
+      // wave function, so the width stays consistent along the curve
+      // instead of ballooning
+      const waveY = xLocal => Math.sin((xLocal + 60) * 0.045) * 10 + Math.cos((xLocal + 60) * 0.02) * 4;
+      const halfW = 12;
+
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const lx = -60 + (i / 24) * 120;
+        const ly = waveY(lx) - halfW;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 24; i >= 0; i--) {
+        const lx = -60 + (i / 24) * 120;
+        const ly = waveY(lx) + halfW;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      // cylindrical highlight -- darker brown at the edges, a lighter
+      // streak down the middle, so the shaft reads as round, not flat
+      const shaftGrad = ctx.createLinearGradient(-60, -halfW, -60, halfW);
+      shaftGrad.addColorStop(0, "#4a2f1a");
+      shaftGrad.addColorStop(0.45, "#7a4f2c");
+      shaftGrad.addColorStop(0.55, "#8a5c34");
+      shaftGrad.addColorStop(1, "#42290f");
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = shaftGrad;
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // overlapping cuticle scales -- angled, evenly-spaced arcs
+      // crossing the shaft, each one slightly overlapping the last
+      // like roof shingles, all tilted the same direction
+      ctx.strokeStyle = "rgba(30,15,5,0.4)";
+      ctx.lineWidth = 1;
+      for (let i = -1; i < 26; i++) {
+        const lx = -66 + i * 5;
+        const ly = waveY(lx);
+        ctx.beginPath();
+        ctx.moveTo(lx - 3, ly - halfW - 2);
+        ctx.quadraticCurveTo(lx + 4, ly, lx - 3, ly + halfW + 2);
+        ctx.stroke();
+      }
+      // a thin bright highlight streak down the middle, riding the
+      // same wave as the shaft itself
+      ctx.strokeStyle = "rgba(255,235,200,0.35)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const lx = -60 + (i / 24) * 120;
+        const ly = waveY(lx) - halfW * 0.35;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      ctx.stroke();
       ctx.restore();
     }
   }
