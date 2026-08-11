@@ -20194,7 +20194,10 @@ function updateMantaRay(deltaTime) {
     // peak speed here worked out to ~150px/s, not far off actual player
     // run speed, which doesn't read as "lazy" at all. Slowed the swing
     // rate a lot and pulled the range in some too.
-    m.x = m.ambientCenterX + Math.sin(m.t * 0.00016) * 300;
+    // CONFIRMED CHANGE: widened and re-centered further left, per direct
+    // request to let it roam further that direction instead of staying
+    // roughly centered on wherever the pass ended.
+    m.x = (m.ambientCenterX - 160) + Math.sin(m.t * 0.00016) * 440;
     m.y = m.ambientCenterY + Math.sin(m.t * 0.00032 + 1.3) * 22;
   }
 }
@@ -20227,40 +20230,46 @@ function drawMantaRay(camX) {
   ctx.translate(sx, sy);
   if (facing < 0) ctx.scale(-1, 1);
 
-  // CONFIRMED BUG FIX: rebuilt from overlapping ellipses instead of a
-  // quadraticCurveTo diamond outline -- per direct feedback that read
-  // as too many sharp corners for a manta. Also matched the OTHER
-  // decorative animal clouds' actual style here (whale/alligator/lobster
-  // -- see drawCloudWhaleBg etc.): plain white/near-white fill built
-  // from a few overlapping ellipses, no gradient, no outline stroke at
-  // all. Consistency with those wins over the earlier custom blue look.
-  const wingTilt = flap * 0.02;
-  ctx.fillStyle = `rgba(255,255,255,${dormant ? 0.72 : 0.92})`;
+  // CONFIRMED BUG FIX: the ellipse-cluster version read as exactly what
+  // it was -- a pile of separate overlapping shapes, not one animal.
+  // Rebuilt as ONE continuous filled path (a single beginPath, no
+  // separate fills for body/wings/lobes) so the whole silhouette is
+  // one cohesive outline, same as how a real hand-drawn manta would be
+  // traced. Also lightened toward the alligator cloud's plain white
+  // (per direct request) but with a very slight gradient for a sleeker,
+  // less flat-paper look than that cloud's single solid fill.
+  const bodyGrad = ctx.createLinearGradient(0, -20, 0, 34);
+  bodyGrad.addColorStop(0, "#ffffff");
+  bodyGrad.addColorStop(1, dormant ? "#e2eaf1" : "#eef3f8");
+  ctx.fillStyle = bodyGrad;
+  ctx.globalAlpha = alpha * (dormant ? 0.95 : 1);
 
-  // body -- one flat central disc
+  const wl = -48 - flap * 0.4; // left wingtip
+  const wr = 48 + flap * 0.4;  // right wingtip
+
   ctx.beginPath();
-  ctx.ellipse(0, 0, 22, 10, 0, 0, Math.PI * 2);
+  ctx.moveTo(0, 34); // tail tip
+  ctx.quadraticCurveTo(-4, 20, -9, 13);              // tail up to body, left side
+  ctx.quadraticCurveTo(-26, 9, wl, flap * 0.5);       // trailing edge out to left wingtip
+  ctx.quadraticCurveTo(-30, -8 - flap, -12, -13);     // leading edge in toward the head, left side
+  ctx.quadraticCurveTo(-6, -19, 0, -11);              // left cephalic lobe -- a bump, not a separate piece
+  ctx.quadraticCurveTo(6, -19, 12, -13);              // right cephalic lobe
+  ctx.quadraticCurveTo(30, -8 + flap, wr, -flap * 0.5); // leading edge out to right wingtip
+  ctx.quadraticCurveTo(26, 9, 9, 13);                 // trailing edge back in, right side
+  ctx.quadraticCurveTo(4, 20, 0, 34);                 // back down to the tail tip -- closes the loop
+  ctx.closePath();
   ctx.fill();
 
-  // wings -- two angled ellipses overlapping the body, curved all the way
-  // around (no straight edges anywhere), tilting a little with the flap
+  // thin tapering tail streamer, drawn starting exactly at the tail tip
+  // above so it reads as a continuation of the same body, not a bolted-on piece
   ctx.beginPath();
-  ctx.ellipse(-34, flap * 0.7, 26, 11, -0.32 + wingTilt, 0, Math.PI * 2);
-  ctx.ellipse(34, -flap * 0.7, 26, 11, 0.32 - wingTilt, 0, Math.PI * 2);
-  ctx.fill();
-
-  // cephalic lobes -- the small front "horns" that make it unmistakably manta
-  ctx.beginPath();
-  ctx.ellipse(-7, -9, 3, 7, 0.3, 0, Math.PI * 2);
-  ctx.ellipse(7, -9, 3, 7, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // trailing tail -- a chain of shrinking ellipses instead of a hard stroke line
-  ctx.beginPath();
-  ctx.ellipse(2, 14, 4, 7, 0.15, 0, Math.PI * 2);
-  ctx.ellipse(4, 26, 2.5, 6, 0.1, 0, Math.PI * 2);
-  ctx.ellipse(5, 36, 1.6, 5, 0.05, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(-2, 30);
+  ctx.quadraticCurveTo(3, 42, 1, 54);
+  ctx.quadraticCurveTo(0, 60, 2, 66);
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = dormant ? "rgba(226,234,241,0.9)" : "rgba(238,243,248,0.95)";
+  ctx.lineCap = "round";
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -20999,7 +21008,12 @@ const waterDrips = [
   // instead of falling straight down. The second drip below stays
   // outside the zone, untouched, so there's still a predictable one to
   // fall back on and a real contrast between the two.
-  { x: 1750, sourceHeight: 190, dropHeight: null, timer: 3000 + Math.random() * 3000, fallT: 0, driftX: 0 },
+  // CONFIRMED BUG FIX: x:1750/height:190 wasn't actually under any real
+  // cloud -- it was just falling out of empty air. Snapped to x:1860,
+  // height 220 to match the alligator platform cloud exactly (see
+  // hopClouds), which sits comfortably inside the gust zone (x:1580-1930)
+  // -- so it now visibly drips from underneath a real cloud.
+  { x: 1860, sourceHeight: 220, dropHeight: null, timer: 3000 + Math.random() * 3000, fallT: 0, driftX: 0, driftSeed: Math.random() * 10 },
   { x: 2150, sourceHeight: 170, dropHeight: null, timer: 4000 + Math.random() * 3000, fallT: 0, driftX: 0 }
 ];
 
@@ -21017,14 +21031,24 @@ function updateWaterDrips(deltaTime) {
       drip.dropHeight -= WATER_DRIP_FALL_SPEED * deltaTime;
       drip.fallT += deltaTime * 1000;
 
-      // gust zone -- same turbulence noise as the boomerang's own gust
-      // distortion (same 0.017 frequency), fading in/out over the drop's
-      // fall via sin(p*pi) rather than a hard on/off. Missed catches are
-      // expected and fine here -- that's the whole point.
+      // gust zone -- same turbulence family as the boomerang's own gust
+      // distortion, fading in/out over the drop's fall via sin(p*pi)
+      // rather than a hard on/off. Missed catches are expected and fine
+      // here -- that's the whole point.
+      // CONFIRMED BUG FIX: per direct feedback, a single sine term
+      // reversed direction on too rigid a beat to read as graceful --
+      // it just snapped back and forth. Layered a slow, wide sweep with
+      // a smaller/faster wobble on top (different frequencies, not
+      // harmonics of each other, so the combined path doesn't repeat in
+      // an obvious loop) -- still genuinely unpredictable and covers a
+      // wide horizontal range, but the motion itself flows rather than
+      // ping-ponging.
       if (currentScene === "clouds" && isInGustZone(drip.x)) {
         const p = 1 - Math.max(0, Math.min(drip.dropHeight / drip.sourceHeight, 1));
         const gustEnvelope = Math.sin(p * Math.PI);
-        drip.driftX = Math.sin(drip.fallT * 0.017) * 22 * gustEnvelope;
+        const sweep = Math.sin(drip.fallT * 0.0032 + drip.driftSeed) * 34;
+        const wobble = Math.sin(drip.fallT * 0.011 + drip.driftSeed * 1.7) * 10;
+        drip.driftX = (sweep + wobble) * gustEnvelope;
       } else {
         drip.driftX = 0;
       }
@@ -21062,10 +21086,31 @@ function drawWaterDrips(camX) {
     const dx = (drip.x + drip.driftX) - camX;
     const dy = gy - drip.dropHeight;
 
-    ctx.fillStyle = "rgba(120,180,255,0.85)";
+    // CONFIRMED CHANGE: real teardrop instead of a plain ellipse --
+    // pointed top narrowing where it's "pulling away" from, rounding out
+    // into a full curve at the bottom. Drawn pointing back the way it
+    // came (against driftX) so it visibly leans into the direction of
+    // travel while drifting through the gust.
+    const lean = Math.max(-0.5, Math.min(0.5, -drip.driftX * 0.02));
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(lean);
+    const grad = ctx.createLinearGradient(0, -6, 0, 5);
+    grad.addColorStop(0, "rgba(160,205,255,0.7)");
+    grad.addColorStop(1, "rgba(90,155,235,0.95)");
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.ellipse(dx, dy, 3, 5, 0, 0, Math.PI * 2);
+    ctx.moveTo(0, -6);                          // pointed top
+    ctx.bezierCurveTo(-3.4, -1, -3.6, 3, 0, 5.5);  // round out down the left side
+    ctx.bezierCurveTo(3.6, 3, 3.4, -1, 0, -6);      // back up the right side
+    ctx.closePath();
     ctx.fill();
+    // tiny highlight -- sells it as a wet droplet rather than a flat blob
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(-1.1, 1, 0.9, 1.4, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   });
 }
 
