@@ -20209,8 +20209,10 @@ function updateMantaRay(deltaTime) {
     const eased = 1 - Math.pow(1 - p, 2);
     const targetX = player.x;
     const targetY = Math.min(player.y + 70, 230);
+    const prevX = m.x;
     m.x = m.fromX + (targetX - m.fromX) * eased;
     m.y = m.fromY + (targetY - m.fromY) * eased + Math.sin(m.t * 0.006) * 8;
+    m.lastDx = m.x - prevX; // real per-frame movement -- drives facing continuity, see drawMantaRay
     if (p >= 1) {
       m.state = "pass";
       m.t = 0;
@@ -20221,8 +20223,10 @@ function updateMantaRay(deltaTime) {
     // CONFIRMED BUG FIX: cruise speed cut roughly in half, same "too
     // fast" feedback -- this was moving close to player run speed,
     // which read as darting rather than gliding.
-    m.x += m.passDir * deltaTime * 100;
+    const dx = m.passDir * deltaTime * 100;
+    m.x += dx;
     m.y += Math.sin(m.t * 0.007) * 0.6;
+    m.lastDx = dx;
     if (m.t >= 2400) {
       m.state = "ambient";
       m.t = 0;
@@ -20252,6 +20256,15 @@ function updateMantaRay(deltaTime) {
     // FROM the actual pass-end position INTO the sine path over the
     // first 1.6s, instead of jumping straight onto it -- continuous
     // motion the whole way through the transition.
+    // CONFIRMED BUG FIX: the position matched exactly at t=0, but the
+    // ease-OUT curve used to blend into the sine path (1-(1-p)^2) front-
+    // loads its velocity -- it was already moving at ~350px/s on the
+    // very first frame, a hard jerk right after pass's own ~100px/s
+    // cruise. Positions lined up but the sudden speed change still read
+    // as "different," per direct feedback. Switched to ease-IN (p^2,
+    // zero velocity at t=0) so it picks up from a dead stop and only
+    // gradually accelerates into the wider sweep -- genuinely continuous
+    // in both position AND motion through the transition now.
     const prevX = m.x;
     const rawX = (m.ambientCenterX - 280) + Math.sin(m.t * 0.00016) * 440;
     // CONFIRMED CHANGE: lowered the center and widened the vertical
@@ -20259,9 +20272,10 @@ function updateMantaRay(deltaTime) {
     // of staying high the whole time.
     const rawY = (m.ambientCenterY - 45) + Math.sin(m.t * 0.00032 + 1.3) * 42;
     const settleP = Math.min(m.t / 1600, 1);
-    const settleEased = 1 - Math.pow(1 - settleP, 2);
+    const settleEased = settleP * settleP;
     m.x = m.ambientCenterX + (rawX - m.ambientCenterX) * settleEased;
     m.y = m.ambientCenterY + (rawY - m.ambientCenterY) * settleEased;
+    m.lastDx = m.x - prevX;
 
     // CONFIRMED CHANGE: kept clear of the rabbit shuttle -- per direct
     // request, it shouldn't overlap that route (x:1600-1860, height
@@ -20306,12 +20320,20 @@ function drawMantaRay(camX) {
   // toward the sky/cloud palette while keeping just enough of a fill +
   // outline to read as a real shape once you look at it.
   const alpha = dormant ? 0.55 : 0.88;
-  // faces the direction it's actually moving -- fixed during the swim-out
-  // and one-pass glide, and following the ambient wave's own direction
-  // of travel once it settles into its lazy back-and-forth
-  const facing = m.state === "ambient"
-    ? (Math.cos(m.t * 0.00035) >= 0 ? 1 : -1)
-    : (m.passDir || 1);
+  // CONFIRMED BUG FIX: ambient used to derive facing from a fresh
+  // cosine formula that always evaluates to +1 at m.t=0 (right when the
+  // state switches), regardless of which way pass had actually been
+  // facing -- so even with position matching exactly, a pass ending
+  // mid-left-facing glide could instantly mirror at the exact transition
+  // frame. Read as "a different one appeared" even though the spot was
+  // the same. Derives facing from the ACTUAL per-frame movement
+  // (m.lastDx, set in every branch above) instead, so it's continuous
+  // through every state change, only falling back to a hold value when
+  // real velocity is near zero (e.g. mid-"waking").
+  if (Math.abs(m.lastDx || 0) > 0.02) {
+    m.facingHold = m.lastDx > 0 ? 1 : -1;
+  }
+  const facing = m.facingHold || m.passDir || 1;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -20515,7 +20537,8 @@ const windSeed = {
   x: 1730,
   heightAboveGround: 95,
   collected: false,
-  collecting: false
+  collecting: false,
+  flutterT: 0 // ms remaining on the "touched but not enough wind" cue
 };
 const WIND_SEED_GUST_CREDIT_NEEDED = 20; // how much real wind displacement this jump must show
 
@@ -20525,32 +20548,54 @@ function drawWindSeedPickup(camX) {
   const bob = Math.sin(performance.now() * 0.003) * 4;
   const sx = windSeed.x - camX;
   const sy = gy - windSeed.heightAboveGround - bob;
-  // CONFIRMED BUG FIX: too invisible -- per direct feedback. Added a
-  // soft glow behind it and bumped its drawn size up so it actually
-  // reads against the sky instead of disappearing into it.
-  const pulse = 0.7 + Math.sin(performance.now() * 0.004) * 0.2;
-  const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, 22);
-  glow.addColorStop(0, `rgba(255,250,225,${0.55 * pulse})`);
+
+  // CONFIRMED CHANGE: the glow now doubles as a live "wind-o-meter" --
+  // per direct discussion, the goal is to explain WHY a touch didn't
+  // count rather than just denying it silently. Intensity/pulse speed
+  // both track the actual real-time gust displacement (same value the
+  // pickup check itself uses), so you can watch it building as you fly
+  // through the zone instead of only finding out pass/fail at contact.
+  const windIntensity = Math.min(Math.abs(cumulativeGustDrift) / WIND_SEED_GUST_CREDIT_NEEDED, 1.3);
+  const pulse = 0.55 + Math.sin(performance.now() * (0.003 + windIntensity * 0.01)) * (0.15 + windIntensity * 0.15);
+  const glowR = 20 + windIntensity * 14;
+  const glow = ctx.createRadialGradient(sx, sy, 2, sx, sy, glowR);
+  glow.addColorStop(0, `rgba(255,250,225,${(0.4 + windIntensity * 0.35) * pulse})`);
   glow.addColorStop(1, "rgba(255,250,225,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(sx, sy, 22, 0, Math.PI * 2);
+  ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
   ctx.fill();
-  drawCollectible(ctx, sx, sy, 13, spin, "windSeed");
+
+  // CONFIRMED CHANGE: honest "not enough wind yet" cue -- per direct
+  // discussion, having it dodge/whirl away from a real touch risked
+  // reading as the game taunting the player. Instead the filaments just
+  // ruffle in place for a beat (faster spin, a little jitter) and
+  // settle back, same object, same spot -- reads as "close, needs more
+  // wind" rather than "you failed" or "it evaded you."
+  const flutter = windSeed.flutterT > 0 ? windSeed.flutterT / 450 : 0;
+  const jitterX = flutter > 0 ? Math.sin(performance.now() * 0.06) * 2.5 * flutter : 0;
+  const flutterSpin = spin + (flutter > 0 ? Math.sin(performance.now() * 0.05) * 0.6 * flutter : 0);
+
+  drawCollectible(ctx, sx + jitterX, sy, 13, flutterSpin, "windSeed");
 }
 
-function updateWindSeedPickup() {
-  if (windSeed.collected || windSeed.collecting) return;
+function updateWindSeedPickup(deltaTime) {
+  if (windSeed.collected || windSeed.collecting) { windSeed.flutterT = 0; return; }
+  if (windSeed.flutterT > 0) windSeed.flutterT -= deltaTime * 1000;
+
+  const centerX = player.x + player.width / 2;
+  const inRange = Math.abs(centerX - windSeed.x) < 22 && Math.abs(player.y - windSeed.heightAboveGround) < 20;
+  if (!inRange) return;
+
   // requires actual wind involvement this jump (see cumulativeGustDrift),
   // not just proximity -- a plain jump straight up and down under it,
   // with no meaningful gust push, will not trigger this even if you're
   // positioned right on top of it
-  if (Math.abs(cumulativeGustDrift) < WIND_SEED_GUST_CREDIT_NEEDED) return;
-  const centerX = player.x + player.width / 2;
-  const inRange = Math.abs(centerX - windSeed.x) < 22 && Math.abs(player.y - windSeed.heightAboveGround) < 20;
-  if (inRange) {
+  if (Math.abs(cumulativeGustDrift) >= WIND_SEED_GUST_CREDIT_NEEDED) {
     windSeed.collecting = true;
     startCollectAnimation({ x: windSeed.x, y: gy - windSeed.heightAboveGround, size: 9, rotation: 0 }, "windSeed");
+  } else if (windSeed.flutterT <= 0) {
+    windSeed.flutterT = 450; // fresh flutter cue -- won't re-trigger every single frame while still overlapping
   }
 }
 
@@ -37781,7 +37826,7 @@ function updateCloudsScene(deltaTime) {
   updatePeanutFall(deltaTime);
   updatePeanutPickup();
   updateSimpleCloudPiecePickups();
-  updateWindSeedPickup();
+  updateWindSeedPickup(deltaTime);
   vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
   updateElephantSpot(deltaTime);
   updateBalloonNPC(deltaTime);
