@@ -38773,32 +38773,42 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // (not further) specifically to keep the player's head clear of the
 // screen top while charging on the peak -- see the head-clearance note
 // on SANDBOX_SLINKY_TOP_STEP below.
+// CONFIRMED BUG FIX: "blocks are weird in the back, many floating or
+// half floating" -- the x's above were hand-eyeballed from the mockup
+// and left 2-7px GAPS between same-tier neighbors (e.g. base block 2
+// ended at 1341 but block 3 started at 1343), which read as thin
+// vertical slivers of sky between blocks that were supposed to be
+// sitting flush against each other -- exactly what "half floating"
+// looks like up close. Every block's x is now exactly the previous
+// same-tier block's right edge (x + width), so neighbors are always
+// perfectly flush with zero gap, same principle the original 4-wide
+// base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
   { x: 1229, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1289, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1343, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1393, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1450, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1502, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1287, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1339, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1389, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1443, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1491, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
   { x: 1269, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1318, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1363, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1413, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1458, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1315, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1359, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1405, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1447, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
   { x: 1302, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1347, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1390, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 1436, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1342, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1380, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1420, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
   { x: 1332, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1375, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1416, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1368, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1402, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
   { x: 1354, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1391, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1386, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
@@ -39585,17 +39595,23 @@ function drawSandboxSlinkyRider(camX) {
   // anchor rings (which have to stay glued to the real contact point,
   // same x the player is standing on) away from that point, which would
   // look broken. Instead, mirror the WHOLE drawing horizontally around
-  // the anchor's own x as hopPhase goes 0->1 (scaleX: 1 -> 0 -> -1) --
-  // the anchor rings are symmetric ellipses centered exactly on that
-  // pivot, so mirroring around it leaves them untouched, while the
-  // stretched-out loop trail visibly collapses edge-on at the midpoint
-  // and reappears mirrored, reading as a genuine tumble/flip rather than
-  // a static arc.
-  ctx.save();
-  ctx.translate(fromX, 0);
-  const tumbleScaleX = Math.cos(Math.min(1, s.hopPhase) * Math.PI);
-  ctx.scale(tumbleScaleX === 0 ? 0.001 : tumbleScaleX, 1);
-  ctx.translate(-fromX, 0);
+  // the anchor's own x as hopPhase goes 0->1 (scaleX: 1 -> 0 -> -1).
+  // CONFIRMED BUG FIX: "the mirroring horizontal is what got messed up
+  // also? player fully disappears and slinky freezes" -- the first
+  // version of this did the mirroring with a real ctx.save/translate/
+  // scale/translate/...restore() wrapped around the whole draw. That's
+  // a real suspect for exactly this kind of corruption (a canvas
+  // transform that doesn't get cleanly undone poisons every draw call
+  // after it, including the player sprite drawn right after this
+  // function returns -- which matches "player disappears" while
+  // background elements like the birds keep animating fine). Rewritten
+  // to never touch ctx.save/scale at all: mirror each point's OWN x by
+  // hand (fromX + (x-fromX)*tumbleScaleX) and only ever pass ctx the
+  // already-mirrored coordinates. No global transform, no way for this
+  // to leak into anything drawn afterward.
+  const tumbleScaleX = Math.cos(Math.min(1, Math.max(0, s.hopPhase)) * Math.PI);
+  const tumbleAbsX = Math.max(0.05, Math.abs(tumbleScaleX)); // floor so the ellipse radius never fully collapses to an exact 0-width degenerate shape
+  function mirrorX(x) { return fromX + (x - fromX) * tumbleScaleX; }
 
   const ringRX = 9, ringRY = 3.8, ringGap = 3.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
@@ -39637,10 +39653,9 @@ function drawSandboxSlinkyRider(camX) {
     const pt = pointAtLength(frac * totalLen * reach);
     const openness = 0.15 + frac * 0.45;
     ctx.beginPath();
-    ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
+    ctx.ellipse(mirrorX(pt.x), pt.y, ringRX * (1 + openness * 0.05) * tumbleAbsX, ringRY * (1 + openness), 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  ctx.restore();
 }
 
 // CONFIRMED CHANGE: "landing impact cheap easy" -- a quick dust puff +
