@@ -38765,29 +38765,44 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // block visually sits flush on the thing below it with no gap and no
 // overlap -- what you see IS where the collision surface is.
 // Heights also raised a bit overall per "make top box a lil higher."
+// CONFIRMED CHANGE: "c is the best out of these [mockups]. but can you
+// make it denser sort of. and higher. but not high enough player head go
+// up off screen" -- rebuilt from the "C-dense" mockup (same silhouette
+// concept as before, but more blocks per tier + back-row filler at
+// several heights, not just the base). Peak height only raised 220->228
+// (not further) specifically to keep the player's head clear of the
+// screen top while charging on the peak -- see the head-clearance note
+// on SANDBOX_SLINKY_TOP_STEP below.
 const sandboxBlockSteps = [
-  // base tier -- on the ground, wide footprint
-  { x: 1290, width: 70, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1360, width: 55, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1415, width: 60, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1475, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  // tier 2 -- resting on the base tier
-  { x: 1300, width: 55, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1355, width: 48, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1410, width: 50, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1460, width: 45, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[7] },
-  // tier 3
-  { x: 1310, width: 48, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1365, width: 42, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1415, width: 44, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[1] },
-  // tier 4
-  { x: 1320, width: 42, heightAboveGround: 172, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1370, width: 38, heightAboveGround: 172, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
+  { x: 1229, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1289, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1343, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1393, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1450, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1502, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  // tier 2 -- resting on the base tier, now 5 blocks
+  { x: 1269, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1318, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1363, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1413, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1458, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  // tier 3 -- now 4 blocks
+  { x: 1302, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1347, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1390, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1436, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  // tier 4 -- now 3 blocks
+  { x: 1332, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1375, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1416, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 1335, width: 40, heightAboveGround: 198, restsOn: 172, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1375, width: 36, heightAboveGround: 198, restsOn: 172, color: SANDBOX_PILE_COLORS[4] },
-  // the peak -- charge the slinky from here
-  { x: 1345, width: 42, heightAboveGround: 220, restsOn: 198, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1354, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1391, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
+  // of head clearance left while standing here (gy 300 - player height
+  // 54 - 228 = 18), down from ~26px before, still comfortably clear.
+  { x: 1370, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -38875,25 +38890,33 @@ function slinkyDwellEase(t) {
 // climbable pile, at varied sizes/colors/rotations, filling in the
 // silhouette so it reads as a real heap rather than a thin stack of
 // ledges; not collidable (bulk filler behind the real blocks)
-// CONFIRMED BUG FIX: several of these had a dy (height above ground)
-// taller than any real block actually covering that x -- e.g. dx:122
-// dy:62 sat well to the right of and above the base tier's real right
-// edge, with nothing behind it, which is exactly the "floating blue
-// box on the right" bug. Every decor block's dy is now capped below
-// the base tier's own height (40) so it always sits low, tucked in
-// behind/under the real climbable blocks -- pure background filler,
-// never poking out above the actual pile silhouette.
+// CONFIRMED BUG FIX (earlier round): several of these had a dy taller
+// than any real block covering that x, which floated visibly past the
+// pile's real footprint. Since then the base tier itself got widened
+// (denser pile rebuild below) so these inner ones are now comfortably
+// inside the real footprint on both sides.
+// CONFIRMED CHANGE: "make it more built up aesthetically... denser" --
+// added a genuine back row at THREE heights (not just low near the
+// ground) straight from the approved "C-dense" mockup: each pair rises
+// a bit above its own tier's real height so it visibly peeks up behind/
+// beside the real blocks (real blocks are drawn after all decor, so any
+// decor covered by a later real block just gets hidden -- no extra
+// z-order bookkeeping needed), giving the pile actual depth instead of
+// reading as one thin front row.
 const SANDBOX_PILE_DECOR_BLOCKS = [
-  { dx: -95, dy: 8, w: 30, h: 24, color: "#e8483a", rot: -0.1 },
-  { dx: -105, dy: 22, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
-  { dx: 100, dy: 10, w: 32, h: 26, color: "#3fa7d6", rot: -0.05 },
-  { dx: 108, dy: 24, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
   { dx: -65, dy: 30, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
   { dx: 70, dy: 32, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
   { dx: -20, dy: 4, w: 26, h: 20, color: "#3fd6b0", rot: 0.03 },
   { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 },
-  { dx: -115, dy: 12, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
-  { dx: 118, dy: 14, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
+  // back row 1 -- peeks up behind/beside the base tier
+  { dx: -128, dy: 62, w: 54, h: 58, color: "#c265d6", rot: -0.03 },
+  { dx: 118, dy: 66, w: 50, h: 62, color: "#3fd6b0", rot: 0.03 },
+  // back row 2 -- peeks up behind/beside tier 2
+  { dx: -92, dy: 112, w: 46, h: 72, color: "#e85fa0", rot: -0.03 },
+  { dx: 82, dy: 116, w: 42, h: 76, color: "#3fa7d6", rot: 0.03 },
+  // back row 3 -- peeks up behind/beside tier 3
+  { dx: -60, dy: 158, w: 38, h: 74, color: "#f2b93c", rot: -0.02 },
+  { dx: 50, dy: 160, w: 36, h: 76, color: "#5fbf5a", rot: 0.02 }
 ];
 
 // each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
@@ -38951,7 +38974,22 @@ const sandboxSlinky = {
   patternIndex: 0,
   runT: 0,
   runDurationMs: SANDBOX_SLINKY_BASE_MS,
-  startX: 0
+  startX: 0,
+  // CONFIRMED CHANGE: "landing impact cheap easy" + "bigger riskier hops
+  // sometimes" -- lastSegIndex tracks which hop segment we were in last
+  // frame so a landing (segment advancing) can be detected and given a
+  // little dust-puff/squash flash; landPulse is that flash's current
+  // strength, decaying every frame regardless of running so it finishes
+  // playing out even after the ride ends. bigHopSeg is which single
+  // segment (if any) this ride's designated "showy" hop is -- bigger
+  // arc and more hang time, but still touches down on the exact same
+  // real tier as every other hop, so it can't desync or land somewhere
+  // unsafe.
+  lastSegIndex: -1,
+  landPulse: 0,
+  landX: 0,
+  landH: 0,
+  bigHopSeg: -1
 };
 
 function drawBlockPile(camX) {
@@ -39015,6 +39053,11 @@ function drawBlockPile(camX) {
 function updateSandboxSlinky(deltaTime) {
   const s = sandboxSlinky;
 
+  // CONFIRMED CHANGE: landing flash always decays, even after the ride
+  // ends or if this update runs while not riding at all, so the very
+  // last landing's puff/flash finishes playing out instead of freezing.
+  s.landPulse = Math.max(0, s.landPulse - (deltaTime * 1000) / 220);
+
   if (s.running) {
     s.runT += deltaTime * 1000;
     const p = Math.min(1, s.runT / s.runDurationMs);
@@ -39043,7 +39086,16 @@ function updateSandboxSlinky(deltaTime) {
     // the base hop height well above the coil's own arc height (with
     // margin) so the player consistently clears over the top of the
     // coil through the flight, not just during the separate peek bounce.
-    const hopHeight = 34 * (1 - p * 0.15); // hops shrink a little near the ground, but stay well above the coil's own arc height
+    // CONFIRMED CHANGE: "would love to do the bigger riskier hops
+    // sometimes" -- exactly one hop per ride (s.bigHopSeg, picked when
+    // the ride starts) gets a much bigger arc and a flatter/longer-
+    // hanging peak. It still touches down on the exact same real tier
+    // every other hop does -- only the visual height/hang time of that
+    // one hop is exaggerated, so there's no new landing spot to keep
+    // safe/clamped, just a showier flight on the way there.
+    const isBigHop = segIndex === s.bigHopSeg;
+    const hopHeight = 44 * (1 - p * 0.15) * (isBigHop ? 1.9 : 1); // raised from 34 per "player should hop just a lil higher"; big hop gets an extra boost on top of that
+    const hopShape = isBigHop ? Math.pow(Math.sin(Math.max(0, Math.min(1, hopPhase)) * Math.PI), 0.55) : Math.sin(hopPhase * Math.PI); // flatter power curve = more hang time at the peak, only for the showy hop
     // CONFIRMED BUG FIX: "player still doesnt look synched up with the
     // slinky" -- every previous attempt at this (hard lag floor,
     // proportional per-hop lag, then a smoothed continuous time-lag)
@@ -39061,7 +39113,8 @@ function updateSandboxSlinky(deltaTime) {
     // player rise clear of the coil without ever putting the player's
     // drawn position out of sync with its actual position.
     s.hopPhase = hopPhase;
-    const hopArc = Math.sin(hopPhase * Math.PI) * hopHeight;
+    s.isBigHop = isBigHop;
+    const hopArc = hopShape * hopHeight;
     // CONFIRMED CHANGE: "what if it sort of bounced player up each
     // movement down, but at the right time, so you could fully see the
     // slinky for each movement down" -- rather than relying only on
@@ -39143,6 +39196,18 @@ function updateSandboxSlinky(deltaTime) {
     s.hopToX = slinkyClampedX(tSegEnd);
     s.hopFromH = segStart;
     s.hopToH = segEnd;
+    // CONFIRMED CHANGE: "landing impact cheap easy" -- fire a dust-puff/
+    // squash flash the instant a new hop segment starts (i.e. the
+    // previous hop just touched down). segIndex advances by exactly 1
+    // each landing, so this can only fire once per landing, never
+    // mid-hop. The flash is bigger if the hop that JUST ended was the
+    // showy big hop, so the biggest landing gets the biggest impact.
+    if (s.lastSegIndex !== -1 && segIndex !== s.lastSegIndex) {
+      s.landPulse = s.lastSegIndex === s.bigHopSeg ? 1.6 : 1;
+      s.landX = s.hopFromX;
+      s.landH = s.hopFromH;
+    }
+    s.lastSegIndex = segIndex;
     if (p >= 1) {
       s.running = false;
       player.onSlinky = false;
@@ -39163,6 +39228,12 @@ function updateSandboxSlinky(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      // the final touchdown never trips the segIndex-change check above
+      // (it's still the same last segment, just finishing), so give it
+      // its own landing flash here.
+      s.landPulse = s.lastSegIndex === s.bigHopSeg ? 1.6 : 1;
+      s.landX = player.x + player.width / 2;
+      s.landH = 0;
     }
     return;
   }
@@ -39201,6 +39272,15 @@ function updateSandboxSlinky(deltaTime) {
     player.vy = 0;
     player.vx = 0;
     s.charge = 0;
+    // CONFIRMED CHANGE: "bigger riskier hops sometimes" -- ~40% of rides
+    // get exactly one showy hop, chosen fresh each ride so it's not
+    // always the same spot on the pile. lastSegIndex resets to -1 so the
+    // very first hop of this ride can't be misread as a landing.
+    const numSegs = SANDBOX_HOP_HEIGHTS.length - 1;
+    s.bigHopSeg = pseudoRandom(performance.now() % 1000 + 17) < 0.4
+      ? Math.floor(pseudoRandom(performance.now() % 1000 + 43) * numSegs) % numSegs
+      : -1;
+    s.lastSegIndex = -1;
   }
   s.wasCharging = canCharge && keys.space;
 }
@@ -39499,6 +39579,24 @@ function drawSandboxSlinkyRider(camX) {
   // the riding coil back down to sit close to those same rest-pose
   // proportions (slightly larger, not 1.5-2x larger) so it reads as the
   // same slinky just uncoiling, not a different bigger one.
+  // CONFIRMED CHANGE: "def the tumbling for sure!" -- a real slinky
+  // walking down stairs flips front-drum-over-back-drum each hop, not
+  // just arcs smoothly. Faking a true rotation here would drag the
+  // anchor rings (which have to stay glued to the real contact point,
+  // same x the player is standing on) away from that point, which would
+  // look broken. Instead, mirror the WHOLE drawing horizontally around
+  // the anchor's own x as hopPhase goes 0->1 (scaleX: 1 -> 0 -> -1) --
+  // the anchor rings are symmetric ellipses centered exactly on that
+  // pivot, so mirroring around it leaves them untouched, while the
+  // stretched-out loop trail visibly collapses edge-on at the midpoint
+  // and reappears mirrored, reading as a genuine tumble/flip rather than
+  // a static arc.
+  ctx.save();
+  ctx.translate(fromX, 0);
+  const tumbleScaleX = Math.cos(Math.min(1, s.hopPhase) * Math.PI);
+  ctx.scale(tumbleScaleX === 0 ? 0.001 : tumbleScaleX, 1);
+  ctx.translate(-fromX, 0);
+
   const ringRX = 9, ringRY = 3.8, ringGap = 3.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
   ctx.lineWidth = 1.2;
@@ -39542,6 +39640,40 @@ function drawSandboxSlinkyRider(camX) {
     ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+// CONFIRMED CHANGE: "landing impact cheap easy" -- a quick dust puff +
+// expanding flash ring at the spot the last hop touched down, fading
+// out over ~220ms (s.landPulse, decayed every frame in
+// updateSandboxSlinky regardless of running so the very last landing of
+// a ride still gets to play out after the ride itself has ended).
+// Bigger/brighter when the hop that just ended was the showy big hop.
+function drawSandboxSlinkyLandingPuff(camX) {
+  const s = sandboxSlinky;
+  if (s.landPulse <= 0.001) return;
+  const lx = s.landX - camX;
+  const ly = gy - s.landH;
+  const t = s.landPulse; // 1 -> 0
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, t);
+  ctx.strokeStyle = "rgba(255,255,255,0.8)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(lx, ly, 10 + (1 - t) * 16, 3 + (1 - t) * 5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  const puffCount = 5;
+  for (let i = 0; i < puffCount; i++) {
+    const ang = Math.PI + (i / (puffCount - 1) - 0.5) * Math.PI * 0.9;
+    const dist = (1 - t) * 20 * (0.6 + pseudoRandom(i * 7.3) * 0.6);
+    const px = lx + Math.cos(ang) * dist;
+    const py = ly - Math.abs(Math.sin(ang)) * dist * 0.5;
+    ctx.fillStyle = "rgba(220,200,160,0.85)";
+    ctx.beginPath();
+    ctx.arc(px, py, 2 + (1 - t) * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // each slide's hand-drawn illustration, drawn centered at (0,0) inside
@@ -40121,6 +40253,7 @@ function drawSandboxScene(camX) {
   // drawSandboxSlinkyRider's own comment for why this no longer
   // reintroduces the old "can't see the slinky" bug.
   drawSandboxSlinkyRider(camX);
+  drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
