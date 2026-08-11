@@ -39015,7 +39015,17 @@ function updateSandboxSlinky(deltaTime) {
     const numSegs = hops.length - 1;
     const { segIndex, hopPhase } = sandboxHopSegAt(p);
     const segStart = hops[segIndex], segEnd = hops[segIndex + 1];
-    const hopHeight = 16 * (1 - p * 0.4); // hops shrink a bit near the ground
+    // CONFIRMED BUG FIX: "the hop might need to be higher [than] the
+    // player" -- video-verified: the coil's own resting arc rises ~26px
+    // above the block surface (arcH below), but the player's jump arc
+    // only rose 16px, so the player's own hop peak never even reached
+    // as high as the coil's peak -- it was plowing straight through the
+    // coil for most of the hop, worst right near landing where the sin
+    // arc flattens out and there's almost no lift left at all. Raised
+    // the base hop height well above the coil's own arc height (with
+    // margin) so the player consistently clears over the top of the
+    // coil through the flight, not just during the separate peek bounce.
+    const hopHeight = 34 * (1 - p * 0.15); // hops shrink a little near the ground, but stay well above the coil's own arc height
     s.hopPhase = hopPhase;
     // CONFIRMED CHANGE: "put player a little more backwards from the
     // middle. so that human can see the full coil uncoil... player
@@ -39028,7 +39038,20 @@ function updateSandboxSlinky(deltaTime) {
     // peak and the forward stretch of the coil stay visible ahead of
     // it instead of underneath it. This only affects where the player
     // is DRAWN this hop, not the actual ride timing/duration.
-    const renderHopPhase = Math.max(0, hopPhase - 0.22);
+    // CONFIRMED BUG FIX: "the hop of player is sort of the opposite
+    // horizontal movement" -- the hard Math.max(0, hopPhase - 0.22)
+    // floor meant renderHopPhase (and therefore player.x, since it's
+    // driven by the same lagged value) stayed FROZEN at 0 for the
+    // entire first 22% of every hop's time, then had to "catch up" all
+    // at once right after. With a zigzag/wideS-style pattern that can
+    // already be heading a different direction than the PREVIOUS hop
+    // ended on, that freeze-then-snap read as the player lurching
+    // backward/sideways against the direction of travel right at the
+    // start of each hop. Made the lag proportional instead of a hard
+    // floor -- it still trails behind hopPhase by a similar amount at
+    // the end of the hop, but moves continuously the whole time instead
+    // of sitting still then jumping.
+    const renderHopPhase = hopPhase * 0.78;
     // map the lagged local hop-phase back to a GLOBAL ride-progress
     // value through the same weighted time bounds every hop now uses
     // (each hop's slice of [0,1] is sized by its own drop height, not
