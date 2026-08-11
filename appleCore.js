@@ -38824,13 +38824,24 @@ const SANDBOX_PILE_DECOR_BLOCKS = [
 // offset from the starting x -- the actual descent speed/duration comes
 // from the charge level, completely independent of which pattern gets
 // picked
+// CONFIRMED CHANGE: "i want a slinky run that goes down the right side
+// of the blocks... more variety not always going down the front
+// middle" -- the old amplitudes (max ~42px) all kept the ride hovering
+// over roughly the same narrow middle column of the pile no matter
+// which pattern got picked. Amplitudes widened a lot, and two new
+// strongly directional patterns added (rightSide/leftSide) that
+// deliberately drift most of the way to the pile's actual left/right
+// edges (the base tier spans roughly ±160px from the peak), so
+// different runs now visibly land in different parts of the pile.
 const SLINKY_PATTERNS = [
-  { name: "zigzag", xOffset: p => Math.sin(p * Math.PI * 4) * 24 },
-  { name: "wideS", xOffset: p => Math.sin(p * Math.PI * 1.5) * 42 },
-  { name: "tightCoil", xOffset: p => Math.sin(p * Math.PI * 8) * 11 },
+  { name: "zigzag", xOffset: p => Math.sin(p * Math.PI * 4) * 40 },
+  { name: "wideS", xOffset: p => Math.sin(p * Math.PI * 1.5) * 75 },
+  { name: "tightCoil", xOffset: p => Math.sin(p * Math.PI * 8) * 18 },
   { name: "straightBounce", xOffset: () => 0, yBounce: p => Math.abs(Math.sin(p * Math.PI * 6)) * 7 },
-  { name: "lopsided", xOffset: p => -34 + p * 68 + Math.sin(p * Math.PI * 3) * 12 },
-  { name: "loop", xOffset: p => Math.sin(p * Math.PI * 2) * 32 * (1 - p) }
+  { name: "lopsided", xOffset: p => -50 + p * 100 + Math.sin(p * Math.PI * 3) * 16 },
+  { name: "loop", xOffset: p => Math.sin(p * Math.PI * 2) * 55 * (1 - p) },
+  { name: "rightSide", xOffset: p => p * 140 + Math.sin(p * Math.PI * 3) * 14 },
+  { name: "leftSide", xOffset: p => -p * 120 - Math.sin(p * Math.PI * 3) * 14 }
 ];
 const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
 // CONFIRMED BUG FIX: "slinky way too fast moving.. waaay too fast" --
@@ -38939,6 +38950,20 @@ function updateSandboxSlinky(deltaTime) {
     s.hopPhase = hopPhase;
     player.x = s.startX + pattern.xOffset(p) - player.width / 2;
     player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(p) : 0);
+    // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
+    // like with the arcs coming down a set of blocks" -- stash the
+    // WORLD x/height of the two blocks this hop is flipping between
+    // (not just the player's current single point) so
+    // drawSandboxSlinky can draw the actual two-drum+fan slinky shape
+    // spanning between them -- one end anchored on the block just
+    // left, the other flipping over to the block just ahead, same
+    // silhouette as the resting coil, just stretched between two real
+    // contact points instead of sitting on one.
+    const tSegStart = segIndex / numSegs, tSegEnd = (segIndex + 1) / numSegs;
+    s.hopFromX = s.startX + pattern.xOffset(tSegStart);
+    s.hopToX = s.startX + pattern.xOffset(tSegEnd);
+    s.hopFromH = segStart;
+    s.hopToH = segEnd;
     if (p >= 1) {
       s.running = false;
       player.onSlinky = false;
@@ -39091,39 +39116,79 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
+    // CONFIRMED BUG FIX: "theres a filled in arc... make it look like
+    // the more open coil in the reference photo" -- the fan lines were
+    // packed into too narrow a span (drumR*1.6 ≈ 14px) at a uniform
+    // peak height, so 16 near-identical strokes overlapped into one
+    // solid-looking blob instead of visibly separate wires. Spread much
+    // wider (drumSpanW raised a lot), fewer lines so there's real gap
+    // between each one, and each line's peak height now varies by its
+    // position (shorter/flatter near the outer edges, tallest through
+    // the middle) -- an actual radiating fan, like the photo, not a
+    // stack of identical curves.
     const fanTopY = drumTopY - drumRings * drumRingH;
-    const fanLines = 16, drumSpanW = drumR * 1.6;
-    ctx.lineWidth = 1.1;
+    const fanLines = 9, drumSpanW = 36;
+    ctx.lineWidth = 1;
     for (let i = 0; i < fanLines; i++) {
       const t = i / (fanLines - 1);
       const startX = coilSx - drumOffset - drumSpanW / 2 + t * drumSpanW;
       const endX = coilSx + drumOffset - drumSpanW / 2 + t * drumSpanW;
       const peakX = (startX + endX) / 2;
-      const peakY = fanTopY - arcHeight;
+      const peakHeight = arcHeight * (0.35 + 0.65 * Math.sin(t * Math.PI));
+      const peakY = fanTopY - peakHeight;
       ctx.beginPath();
       ctx.moveTo(startX, fanTopY);
       ctx.quadraticCurveTo(peakX, peakY, endX, fanTopY);
       ctx.stroke();
     }
   } else {
-    // CONFIRMED CHANGE: "i want to see what a slinky actually does...
-    // like it is coming down blocks, not a wavy floating down
-    // animation" -- rather than a smooth vertical stack, the coil
-    // draws as a squash-and-stretch loop synced to updateSandboxSlinky's
-    // per-block hops: compressed flat right as it touches a block
-    // (hopPhase near 0/1), stretched tall at the peak of each hop
-    // (hopPhase near 0.5) -- so it visibly compresses on landing and
-    // springs back up between blocks, like a real slinky flipping
-    // end-over-end down steps.
+    // CONFIRMED CHANGE: "i want to see the shape of what a slinky
+    // looks like with the arcs coming down a set of blocks" -- instead
+    // of one coil blob following the player's single point, this now
+    // draws the SAME two-drum+fan silhouette as the resting pose, but
+    // stretched between the two actual blocks this hop is flipping
+    // between (s.hopFromX/hopFromH -> s.hopToX/hopToH, stashed by
+    // updateSandboxSlinky each frame): a small anchored drum sitting on
+    // the block just behind, a small drum on the block just ahead, and
+    // a fan of arced strands bridging them that bulges highest at the
+    // midpoint of the flip (hopPhase ~0.5) and flattens down onto both
+    // blocks at touch-down (hopPhase ~0/1) -- the actual "slinky
+    // walking down stairs" shape, not just a bouncing blob.
     const hopPhase = s.hopPhase || 0;
-    const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at mid-hop peak
-    const loops = 6;
-    const loopSpan = 8 + stretch * 10; // squashed flat on landing, stretched tall mid-hop
-    ctx.lineWidth = 4;
-    for (let i = 0; i < loops; i++) {
-      const t = i / (loops - 1);
+    const bulge = Math.sin(hopPhase * Math.PI); // 0 at touch-down on either block, 1 at the flip's peak
+    const fromX = (s.hopFromX !== undefined ? s.hopFromX : s.startX) - camX;
+    const toX = (s.hopToX !== undefined ? s.hopToX : s.startX) - camX;
+    const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : sandboxBlockPile.topHeight) - 4;
+    const toY = gy - (s.hopToH !== undefined ? s.hopToH : sandboxBlockPile.topHeight) - 4;
+
+    const drumR = 7, drumRings = 2, drumRingH = 3;
+    ctx.lineWidth = 1.4;
+    [[fromX, fromY], [toX, toY]].forEach(([dx, dy]) => {
+      for (let i = 0; i < drumRings; i++) {
+        ctx.beginPath();
+        ctx.ellipse(dx, dy - i * drumRingH, drumR, drumR * 0.4, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+
+    // CONFIRMED BUG FIX: same "filled in arc" problem as the resting
+    // pose -- fanLines packed into a 10px spread all overlapped into a
+    // solid blob. Spread wider, fewer lines, varied bulge height per
+    // line so it reads as separate open wires here too.
+    const ux = toX - fromX, uy = toY - fromY;
+    const fanLines = 8, spanW = 30;
+    const len = Math.hypot(ux, uy) || 1;
+    const nx = -uy / len, ny = ux / len; // unit vector perpendicular to the hop, spreads the fan's width
+    ctx.lineWidth = 1;
+    for (let i = 0; i < fanLines; i++) {
+      const t = i / (fanLines - 1);
+      const spread = (t - 0.5) * spanW;
+      const sx = fromX + nx * spread, sy = fromY - drumRings * drumRingH + ny * spread;
+      const ex = toX + nx * spread, ey = toY - drumRings * drumRingH + ny * spread;
+      const mx = (sx + ex) / 2, my = (sy + ey) / 2 - bulge * 30 * (0.4 + 0.6 * Math.sin(t * Math.PI));
       ctx.beginPath();
-      ctx.ellipse(coilSx, coilSy - (t - 0.5) * loopSpan * 2, 12 - stretch * 3, 5 + stretch * 2, 0, 0, Math.PI * 2);
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(mx, my, ex, ey);
       ctx.stroke();
     }
   }
