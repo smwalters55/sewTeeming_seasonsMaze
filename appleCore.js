@@ -38937,7 +38937,11 @@ const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same fee
 // max-charge ride now takes a bit over a second, and an uncharged one
 // takes several seconds -- slow enough to actually see the pattern and
 // the coil.
-const SANDBOX_SLINKY_BASE_MS = 3400; // ride duration at zero charge
+// CONFIRMED CHANGE: "slow down the slinky movement, move the whole range
+// to be slower" -- runDurationMs is always BASE_MS / (1 + charge*0.65), so
+// raising BASE_MS alone stretches both ends of the range (uncharged AND
+// max-charge rides) by the same ~1.5x, instead of just the slow end.
+const SANDBOX_SLINKY_BASE_MS = 5100; // ride duration at zero charge
 
 const sandboxSlinky = {
   armed: true,     // must release space once before a new charge can start -- same "armed" gate as skipStoneArmed
