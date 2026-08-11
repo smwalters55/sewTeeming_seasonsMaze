@@ -196,7 +196,8 @@ const ITEM_ICONS = {
   stone: "🪨",
   aragonite: "🟠",
   geode: "🪨",
-  cloudBlossom: "🌸"
+  cloudBlossom: "🌸",
+  windSeed: "🍃"
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -465,6 +466,10 @@ const ITEM_CANVAS_RENDER = {
   cloudBlossom: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCloudBlossomShape(iconCtx, 10, 11, 7, 0);
+  },
+  windSeed: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 8, 0, "windSeed");
   }
   // NOTE: "gnawedStick" is itemType-checked in drawCollectible but is never
   // actually granted anywhere in the game (no addToInventory/hasItem call
@@ -5098,6 +5103,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafBoatShape(ctx, x, y, size, rotation, "#6a7a2f");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
+  } else if (itemType === "windSeed") {
+    drawWindSeedShape(ctx, x, y, size, rotation);
   } else if (itemType === "worm") {
     drawWormShape(ctx, x, y, size, rotation);
   } else if (itemType === "lamp") {
@@ -9832,6 +9839,36 @@ function drawPothos(camX) {
   vines.forEach((v, i) => {
     drawPothosVine(ctx, px + v[0], py + 2, v[1], v[2], i % 2 === 0 ? "#4a823c" : "#589144", v[3], v[5], v[6], v[7]);
   });
+}
+
+// wind seed -- a little dandelion-style tuft, the gust-dependent pickup's
+// icon both in-world and in the inventory chip. Small round pod with
+// wispy radiating filaments, so it visibly reads as "carried by wind"
+// rather than just another generic pickup.
+function drawWindSeedShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  const spokes = 10;
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = size * 0.06;
+  ctx.lineCap = "round";
+  for (let i = 0; i < spokes; i++) {
+    const ang = (i / spokes) * Math.PI * 2;
+    const len = size * (0.58 + (i % 3) * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(ang) * len, -Math.cos(ang) * len);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#d8c896";
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.1, size * 0.14, size * 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function drawFeatherShape(ctx, x, y, size, rotation) {
@@ -20197,8 +20234,25 @@ function updateMantaRay(deltaTime) {
     // CONFIRMED CHANGE: widened and re-centered further left, per direct
     // request to let it roam further that direction instead of staying
     // roughly centered on wherever the pass ended.
+    const prevX = m.x;
     m.x = (m.ambientCenterX - 160) + Math.sin(m.t * 0.00016) * 440;
     m.y = m.ambientCenterY + Math.sin(m.t * 0.00032 + 1.3) * 22;
+
+    // CONFIRMED CHANGE: rideable once ambient -- per direct request.
+    // Lands like any other platform (same shape of check as the hay
+    // bale piles: a landing window just above its back, only while
+    // descending), then carries the player along by its own frame-to-
+    // frame movement delta, same idea as the rabbit shuttle.
+    const platformTop = m.y + 6;
+    const centerX = player.x + player.width / 2;
+    const withinX = Math.abs(centerX - m.x) < 32;
+    const landingWindow = player.y <= platformTop + 6 && player.y >= platformTop - 16;
+    if (withinX && landingWindow && player.vy <= 0) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.x += m.x - prevX; // ride along as it swims
+    }
   }
 }
 
@@ -20402,6 +20456,44 @@ const crystal = {
 function drawCrystalOnCloud(camX) {
   if (crystal.collected || crystal.collecting) return;
   drawCrystalShape(ctx, crystal.x - camX, gy - crystal.heightAboveGround, 11, 0);
+}
+
+// CONFIRMED CHANGE: gust-dependent pickup, per direct discussion --
+// turns the gust zone's own unpredictability into the mechanic instead
+// of fighting it. Sits in the gap between the two low-tier hop clouds
+// (x:1610 and x:1860, both height 40) -- that 250px gap is genuinely
+// wider than even a verified double-jump can cross on its own (~120px
+// max), so this is NOT reachable by skill alone. It's positioned at
+// x:1730 (120px from the left cloud, comfortably within a double-jump's
+// own reach) specifically so a normal double-jump gets you MOST of the
+// way there already -- only the last ~10-20px need an assist from
+// whichever way the gust happens to be pushing that attempt, keeping
+// the odds reasonable rather than a rare lucky break.
+const windSeed = {
+  x: 1730,
+  heightAboveGround: 78,
+  collected: false,
+  collecting: false
+};
+
+function drawWindSeedPickup(camX) {
+  if (windSeed.collected || windSeed.collecting) return;
+  const spin = performance.now() * 0.0015;
+  const bob = Math.sin(performance.now() * 0.003) * 4;
+  drawCollectible(ctx, windSeed.x - camX, gy - windSeed.heightAboveGround - bob, 9, spin, "windSeed");
+}
+
+function updateWindSeedPickup() {
+  if (windSeed.collected || windSeed.collecting) return;
+  // auto-catch on contact, mid-air, same pattern as the acorns/vine
+  // pumpkin -- no button press, since just REACHING it via the gust is
+  // already the whole challenge
+  const centerX = player.x + player.width / 2;
+  const inRange = Math.abs(centerX - windSeed.x) < 22 && Math.abs(player.y - windSeed.heightAboveGround) < 20;
+  if (inRange) {
+    windSeed.collecting = true;
+    startCollectAnimation({ x: windSeed.x, y: gy - windSeed.heightAboveGround, size: 9, rotation: 0 }, "windSeed");
+  }
 }
 
 /* ======================================================
@@ -21058,8 +21150,11 @@ function updateWaterDrips(deltaTime) {
       // Position matters, timing doesn't — no button press needed.
       if (heldItem === "bucket" && !bucketFilled) {
         const playerCenterX = player.x + player.width / 2;
-        const nearX = Math.abs(playerCenterX - (drip.x + drip.driftX)) < 40;
-        const nearHeight = Math.abs(player.y - drip.dropHeight) < 20;
+        // CONFIRMED BUG FIX: catch window was too generous -- per direct
+        // feedback, tightened both radii so actually tracking the drop
+        // (especially the wind-blown one) matters.
+        const nearX = Math.abs(playerCenterX - (drip.x + drip.driftX)) < 26;
+        const nearHeight = Math.abs(player.y - drip.dropHeight) < 14;
 
         if (nearX && nearHeight) {
           bucketDropCount++;
@@ -37592,6 +37687,7 @@ function drawCloudsScene(camX) {
   hopClouds.forEach(c => drawHopCloud(c, camX));
   drawMantaRay(camX); // drawn before the crystal so it stays tucked behind it while still dormant
   drawCrystalOnCloud(camX);
+  drawWindSeedPickup(camX);
   drawWaterDrips(camX);
   drawRabbitShuttleCloud(camX);
   drawSimpleCloudPieces(camX);
@@ -37615,6 +37711,7 @@ function updateCloudsScene(deltaTime) {
   updatePeanutFall(deltaTime);
   updatePeanutPickup();
   updateSimpleCloudPiecePickups();
+  updateWindSeedPickup();
   vaultClouds.forEach((v, i) => updateVaultCloud(v, i, deltaTime));
   updateElephantSpot(deltaTime);
   updateBalloonNPC(deltaTime);
