@@ -20023,7 +20023,11 @@ const cloudsDecor = [
   { x: 60,   y: 100, scale: 1.4, type: "puffy" },
   { x: 280,  y: 60,  scale: 1.0, type: "wisp" },
   { x: 520,  y: 130, scale: 1.6, type: "stack" },
-  { x: 780,  y: 80,  scale: 1.1, type: "puffy" },
+  // CONFIRMED BUG FIX: was x:780 -- close enough to the first vault
+  // cloud (x:1146) that within actual boomerang range of it, this
+  // puffy's own screen position drifted to within ~30px of the vault
+  // cloud's, before crossing behind it. Pulled back further left.
+  { x: 400,  y: 80,  scale: 1.1, type: "puffy" },
   { x: 950,  y: 150, scale: 1.3, type: "wisp" },
   // CONFIRMED CHANGE: nudged from x:1150/y:55 -- that sat almost exactly
   // on top of the first vault cloud (vaultClouds[0], x:1146, screen
@@ -20048,7 +20052,15 @@ const cloudsDecor = [
   // puffy at 1400 instead of sitting right on top of the vault cloud.
   { x: 1550, y: 40,  scale: 1.0, type: "whale" },       // decorative — not walkable
   { x: 1860, y: 160, scale: 0.9, type: "alligator" },   // decorative — not walkable
-  { x: 700,  y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable, separated from the stack cloud at 520
+  // CONFIRMED BUG FIX: this was the actual main culprit behind the
+  // repeated "cloud hides the shaking one" reports -- at x:700 (and
+  // scale 2.4, the single biggest decorative cloud in this scene), its
+  // screen position swings to EXACTLY match the first vault cloud's
+  // (x:1146) right in the middle of normal boomerang range, and being
+  // that much bigger, it doesn't just sit near the vault cloud, it
+  // visually swallows it. Moved well clear of both vault clouds instead
+  // of just nudging it a bit.
+  { x: 2050, y: 140, scale: 2.4, type: "lobster" } // decorative — not walkable
 ];
 
 // the way back down — same fall-through mechanic as spring's holes, just
@@ -37187,29 +37199,35 @@ function drawCloudsAtmosphereOverlay() {
 // wisps rather than a hard-edged box, matching the soft cloud aesthetic
 // everywhere else in this scene.
 function drawGustZone(camX) {
-  // CONFIRMED BUG FIX: pure white wisps at low alpha were nearly
-  // invisible against clouds' own near-white sky gradient -- the
-  // marker existed but had essentially no contrast to actually see.
-  // Switched to a soft slate-blue that reads clearly against the pale
-  // sky, bumped the alpha and line weight, and widened/raised the
-  // orbit spread so the zone reads as a real patch of turbulent air
-  // rather than a tiny cluster easy to miss.
-  const zoneScreenX = (GUST_ZONE.xMin + GUST_ZONE.xMax) / 2 - camX;
+  // CONFIRMED BUG FIX: the orbiting-arc version (even after the color
+  // fix) still didn't read as wind -- little arcs circling in place
+  // just looked like a cluster of bird wings, which actively competed
+  // with the real crow silhouettes already in this sky. Replaced with
+  // actual horizontal wind-streaks that continuously flow across the
+  // zone and fade in/out at each edge -- the classic "speed line"
+  // language for wind, moving in one general direction instead of
+  // orbiting, so it unmistakably reads as air movement.
+  const zoneWidth = GUST_ZONE.xMax - GUST_ZONE.xMin;
+  const leftScreenX = GUST_ZONE.xMin - camX;
   const t = performance.now() * 0.001;
   ctx.save();
-  for (let i = 0; i < 14; i++) {
-    const seed = i * 11.3;
-    const orbitR = 36 + (i % 4) * 28;
-    const speed = 0.6 + (i % 3) * 0.25;
-    const ang = t * speed + seed;
-    const wx = zoneScreenX + Math.cos(ang) * orbitR;
-    const wy = gy - 75 + Math.sin(ang * 1.4) * 48 - (i % 5) * 9;
-    ctx.globalAlpha = 0.45 + Math.sin(t * 2 + seed) * 0.18;
-    ctx.strokeStyle = "rgba(90,120,160,0.85)";
-    ctx.lineWidth = 2;
+  const STREAK_COUNT = 10;
+  for (let i = 0; i < STREAK_COUNT; i++) {
+    const seed = i * 13.7;
+    const laneY = gy - 100 + (i % 5) * 22 + Math.sin(t * 1.1 + seed) * 5;
+    const speed = 55 + (i % 3) * 30;
+    const span = zoneWidth + 80;
+    const rawX = ((t * speed + seed * 24) % span);
+    const wx = leftScreenX - 40 + rawX;
+    const len = 24 + (i % 3) * 10;
+    // fades in over the first 25px and out over the last 25px of travel
+    const fade = Math.min(rawX / 25, (span - rawX) / 25, 1);
+    ctx.globalAlpha = Math.max(0, 0.55 * fade);
+    ctx.strokeStyle = "rgba(80,110,150,0.9)";
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(wx - 12, wy);
-    ctx.quadraticCurveTo(wx, wy - 8, wx + 12, wy);
+    ctx.moveTo(wx - len / 2, laneY);
+    ctx.quadraticCurveTo(wx, laneY - 5, wx + len / 2, laneY);
     ctx.stroke();
   }
   ctx.restore();
@@ -37228,8 +37246,13 @@ function updateCloudsGustZone(deltaTime) {
   if (inZone && !wasInGustZone) gustSeed = Math.random() * 1000; // fresh wobble each time you enter, not the same pattern every visit
   wasInGustZone = inZone;
   if (inZone && player.jumping) {
+    // CONFIRMED BUG FIX: max combined swing here was ~1.7px per frame --
+    // completely imperceptible against normal jump movement. Boosted to
+    // match the scale the boomerang's own gust distortion already uses
+    // (9-14px) so jumping through the zone actually feels wonky instead
+    // of reading as "nothing happening."
     const t = performance.now() * 0.001 + gustSeed;
-    player.x += Math.sin(t * 2.3) * 1.1 + Math.sin(t * 5.1 + 1.7) * 0.6;
+    player.x += Math.sin(t * 2.3) * 6 + Math.sin(t * 5.1 + 1.7) * 3.5;
   }
 }
 
