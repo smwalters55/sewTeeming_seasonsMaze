@@ -39302,25 +39302,20 @@ function drawSandboxSlinkyRider(camX) {
   // sideways right where it meets the drum.
   const fromX = (s.hopFromX !== undefined ? s.hopFromX : player.x + player.width / 2) - camX;
   const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : player.y) - 2;
-  const hopPhase = s.hopPhase !== undefined ? s.hopPhase : 0;
-  // CONFIRMED CHANGE: "can we place player on top of slinky like its
-  // resting on it... like riding it like a slinky horse" -- the trail
-  // used to aim at an independently-computed target point (the block
-  // ahead), which could drift slightly out of sync with the player's
-  // OWN drawn position (different arc math), so the coil read as
-  // running alongside/behind the player rather than something the
-  // player was actually sitting on. Now the trail's live end is always
-  // exactly the player's own current screen position (a couple px
-  // under their feet), so it's physically guaranteed to terminate
-  // right where the player is every frame, and this whole function now
-  // draws BEFORE the player sprite (see the call site) instead of
-  // after -- the player's own body naturally covers the last bit of
-  // coil directly under their feet, exactly like sitting on top of it,
-  // while the rest of the trail (behind, arcing down to the anchor)
-  // stays fully visible around them.
-  const coilSx = player.x + player.width / 2 - camX;
-  const coilSy = gy - player.y - 2;
-
+  const toX = (s.hopToX !== undefined ? s.hopToX : player.x + player.width / 2) - camX;
+  const toY = gy - (s.hopToH !== undefined ? s.hopToH : player.y) - 2;
+  // CONFIRMED CHANGE: "i basically want to fully see the slinky
+  // movement and still cant... i wanna see it alll" -- the trail used
+  // to grow in gradually with hopPhase (barely anything visible for
+  // most of the hop) and always ended right under the player's own
+  // feet, so the player's body covered exactly the newest/most
+  // dynamic part of the coil. Now the FULL coil -- anchor all the way
+  // to the block ahead -- is drawn every frame of the hop, at its full
+  // height, so the whole shape is visible the entire time instead of
+  // slowly revealing/immediately hiding under the player. The player
+  // still moves along its own hop arc (same physics as before, peaking
+  // around the midpoint), so it naturally rides near the TOP of this
+  // same arc rather than glued to one specific point on it.
   const ringRX = 6, ringRY = 2.6, ringGap = 2.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
   ctx.lineWidth = 1;
@@ -39331,37 +39326,35 @@ function drawSandboxSlinkyRider(camX) {
   }
   const stemTopY = fromY - (anchorRings - 1) * ringGap;
 
-  if (hopPhase > 0.03) {
-    const arcH = 14 + hopPhase * 10;
-    const p0x = fromX, p0y = stemTopY;
-    const p1x = coilSx, p1y = coilSy + 3; // a few px below the player's own feet, so the last loop pokes out from under them like a saddle
-    const liftY = Math.min(p0y, p1y) - arcH;
-    const c1x = p0x, c1y = liftY;
-    const c2x = p1x, c2y = liftY;
-    const samples = 24;
-    const pts = [];
-    for (let i = 0; i <= samples; i++) pts.push(slinkyRiderCubicPoint(i / samples, p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y));
-    const cum = [0];
-    for (let i = 1; i <= samples; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
-    const totalLen = cum[samples];
-    function pointAtLength(targetLen) {
-      let lo = 0, hi = samples;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (cum[mid] < targetLen) lo = mid + 1; else hi = mid;
-      }
-      return pts[lo];
+  const arcH = 20;
+  const p0x = fromX, p0y = stemTopY;
+  const p1x = toX, p1y = toY - 2;
+  const liftY = Math.min(p0y, p1y) - arcH;
+  const c1x = p0x, c1y = liftY;
+  const c2x = p1x, c2y = liftY;
+  const samples = 24;
+  const pts = [];
+  for (let i = 0; i <= samples; i++) pts.push(slinkyRiderCubicPoint(i / samples, p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y));
+  const cum = [0];
+  for (let i = 1; i <= samples; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  const totalLen = cum[samples];
+  function pointAtLength(targetLen) {
+    let lo = 0, hi = samples;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < targetLen) lo = mid + 1; else hi = mid;
     }
-    const loopCount = Math.max(4, Math.round(18 * Math.min(1, hopPhase * 1.6)));
-    ctx.lineWidth = 1;
-    for (let i = 0; i < loopCount; i++) {
-      const frac = i / (loopCount - 1);
-      const pt = pointAtLength(frac * totalLen);
-      const openness = 0.15 + frac * 0.45;
-      ctx.beginPath();
-      ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    return pts[lo];
+  }
+  const loopCount = 16;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < loopCount; i++) {
+    const frac = i / (loopCount - 1);
+    const pt = pointAtLength(frac * totalLen);
+    const openness = 0.15 + frac * 0.45;
+    ctx.beginPath();
+    ctx.ellipse(pt.x, pt.y, ringRX * (1 + openness * 0.05), ringRY * (1 + openness), 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
