@@ -1251,11 +1251,15 @@ function drawSeasonTransition(ctx) {
   // shaded (flat-shaded 3D faces) rather than wood-paneled -- keeping
   // this border smooth too so the two actually look consistent.
   if (target === "sandbox") {
+    // CONFIRMED CHANGE: flat SANDBOX_RED on all 4 sides -- the
+    // previous top-to-bottom gradient made the BOTTOM border fade down
+    // into SANDBOX_RED_DARK, which read as "missing" per direct
+    // feedback ("sandbox transition screen missing red border on the
+    // bottom"). It wasn't actually absent, just too dark to read
+    // against the sand wash at that edge. Flat color guarantees all
+    // four sides are equally visible.
     const borderW = 34;
-    const borderGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    borderGrad.addColorStop(0, SANDBOX_RED);
-    borderGrad.addColorStop(1, SANDBOX_RED_DARK);
-    ctx.fillStyle = borderGrad;
+    ctx.fillStyle = SANDBOX_RED;
     ctx.fillRect(0, 0, canvas.width, borderW); // top
     ctx.fillRect(0, canvas.height - borderW, canvas.width, borderW); // bottom
     ctx.fillRect(0, 0, borderW, canvas.height); // left
@@ -37894,10 +37898,13 @@ const sandboxFan = {
   hoverHeight: 150,
   launchT: 0,
   bobPhase: 0,
-  spinPhase: 0
+  spinPhase: 0,
+  kickT: -1 // CONFIRMED CHANGE: -1 = no kick in progress; ticking up while a kick plays out
 };
 const SANDBOX_FAN_LAUNCH_MS = 450;
 const SANDBOX_FAN_CONE_HALF_WIDTH = 85; // how wide the wind cone is at hover height -- you can drift within this before falling out
+const SANDBOX_FAN_KICK_MS = 380;
+const SANDBOX_FAN_KICK_HEIGHT = 55; // extra rise added on top of the hover/bob for one kick
 
 function updateSandboxFan(deltaTime) {
   const fan = sandboxFan;
@@ -37916,6 +37923,7 @@ function updateSandboxFan(deltaTime) {
       player.vx = 0;
       fan.launchT = 0;
       fan.bobPhase = 0;
+      fan.kickT = -1;
     }
     return;
   }
@@ -37939,13 +37947,40 @@ function updateSandboxFan(deltaTime) {
     // WHILE mid-bob visibly reads as diagonal motion, not just a
     // gentle float with occasional side-stepping.
     fan.bobPhase += deltaTime * 3.1;
-    player.y = fan.hoverHeight + Math.sin(fan.bobPhase) * 26;
+
+    // CONFIRMED CHANGE: recognize ONE jump press while hovering -- a
+    // small vertical kick on top of the hover/bob, per direct request
+    // ("thinking of making jump recognized in fan? but only single
+    // jump no double" -> "choice 1" -- a kick that still respects the
+    // hover, not a mechanic that lets you escape/change the cone).
+    // Reuses player.usedDoubleJump as the "already used" gate: it's
+    // reset to false the moment you land on the fan (above), and the
+    // normal jump-handling code in handleInput already flips it to
+    // true on any upJustPressed while airborne (which you always are
+    // here) -- so this naturally allows exactly one kick per landing,
+    // no double, with no extra key-tracking needed.
+    if (player.justDoubleJumped) {
+      player.justDoubleJumped = false; // consume -- this is OUR kick, not a real double jump
+      fan.kickT = 0;
+    }
+    let kickOffset = 0;
+    if (fan.kickT >= 0) {
+      fan.kickT += deltaTime * 1000;
+      if (fan.kickT >= SANDBOX_FAN_KICK_MS) {
+        fan.kickT = -1;
+      } else {
+        const kp = fan.kickT / SANDBOX_FAN_KICK_MS;
+        kickOffset = Math.sin(kp * Math.PI) * SANDBOX_FAN_KICK_HEIGHT; // rises then settles back to 0
+      }
+    }
+    player.y = fan.hoverHeight + Math.sin(fan.bobPhase) * 26 + kickOffset;
 
     // release once you've drifted past the cone's edge at this height
     // -- the fan just lets go, normal gravity resumes right where you are
     if (Math.abs(centerX - fan.x) > SANDBOX_FAN_CONE_HALF_WIDTH) {
       player.onFan = false;
       player.vy = 1; // tiny residual so the fall reads as "let go," not a dead stop before dropping
+      fan.kickT = -1;
     }
   }
 }
@@ -38117,10 +38152,14 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.fillStyle = wig.color;
     // an irregular poof of overlapping curl-circles framing the top
     // and sides of the head, leaving the face open
+    // CONFIRMED CHANGE: side/lower curls pushed further out and up --
+    // per direct feedback ("curcly wig covers eyes a little too much"),
+    // the lower-side curls' inner edges were creeping in over the eye
+    // line.
     const curls = [
-      [0, -6, 15], [-14, -2, 11], [14, -2, 11],
-      [-20, 8, 10], [20, 8, 10], [-8, -14, 10], [8, -14, 10],
-      [-18, 18, 8], [18, 18, 8]
+      [0, -6, 15], [-16, -4, 10], [16, -4, 10],
+      [-24, 4, 9], [24, 4, 9], [-8, -14, 10], [8, -14, 10],
+      [-23, 14, 7], [23, 14, 7]
     ];
     curls.forEach(([dx, dy, r]) => {
       ctx.beginPath();
@@ -38143,18 +38182,24 @@ function drawWigShape(id, cx, topY, scale) {
     // a ragged, choppy outline instead of one smooth dome, plus real
     // wispy strands flicking outward at the crown/sides/nape -- that
     // texture IS the pixie-cut read, not a highlight streak on a blob.
+    // CONFIRMED CHANGE: widened and lowered -- per direct feedback
+    // ("grey wig still sits above head and not wide enough"). Scaled
+    // the whole base out to about the same footprint as the other
+    // wigs' caps (was noticeably smaller/narrower) and dropped it down
+    // so its lower edge actually sits ON the head instead of floating
+    // above it with a gap.
     ctx.fillStyle = wig.color;
     ctx.beginPath();
-    ctx.moveTo(-13, 4);
+    ctx.moveTo(-17, 8);
     // choppy, slightly jagged top edge -- a few small in/out notches
     // rather than one clean arc, so it reads as textured short hair
-    ctx.quadraticCurveTo(-15, -6, -9, -10);
-    ctx.quadraticCurveTo(-6, -14, -2, -9);
-    ctx.quadraticCurveTo(2, -15, 6, -9);
-    ctx.quadraticCurveTo(10, -13, 13, -5);
-    ctx.quadraticCurveTo(15, 0, 12, 5);
-    ctx.quadraticCurveTo(5, -1, 0, 1);
-    ctx.quadraticCurveTo(-5, -1, -13, 4);
+    ctx.quadraticCurveTo(-19, -5, -12, -10);
+    ctx.quadraticCurveTo(-7, -15, -2, -9);
+    ctx.quadraticCurveTo(3, -16, 8, -9);
+    ctx.quadraticCurveTo(13, -13, 17, -3);
+    ctx.quadraticCurveTo(19, 3, 15, 9);
+    ctx.quadraticCurveTo(6, 2, 0, 4);
+    ctx.quadraticCurveTo(-6, 2, -17, 8);
     ctx.closePath();
     ctx.fill();
 
@@ -38162,11 +38207,11 @@ function drawWigShape(id, cx, topY, scale) {
     // slightly curved flicks at varied angles, the actual "whisping
     // out" texture rather than lying flat against the head
     ctx.strokeStyle = wig.color;
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.8;
     ctx.lineCap = "round";
     const wisps = [
-      [-9, -9, -14, -15], [-2, -14, -3, -20], [5, -13, 9, -19],
-      [12, -8, 18, -11], [-13, 2, -19, 3], [13, 3, 19, 5]
+      [-12, -8, -18, -15], [-3, -14, -4, -21], [6, -14, 11, -21],
+      [15, -8, 22, -11], [-17, 4, -24, 5], [16, 5, 23, 7]
     ];
     wisps.forEach(([x0, y0, x1, y1]) => {
       ctx.beginPath();
@@ -38181,8 +38226,8 @@ function drawWigShape(id, cx, topY, scale) {
     ctx.strokeStyle = "rgba(255,255,255,0.6)";
     ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(-6, -8);
-    ctx.lineTo(1, -3);
+    ctx.moveTo(-8, -6);
+    ctx.lineTo(1, 0);
     ctx.stroke();
   } else if (id === "blueBob") {
     ctx.fillStyle = wig.color;
@@ -38776,8 +38821,11 @@ const MICROSCOPE_SLIDES = [
       // parallel edges offset by a fixed half-width from the same
       // wave function, so the width stays consistent along the curve
       // instead of ballooning
-      const waveY = xLocal => Math.sin((xLocal + 60) * 0.045) * 10 + Math.cos((xLocal + 60) * 0.02) * 4;
-      const halfW = 12;
+      // CONFIRMED CHANGE: zoomed in further -- per direct feedback
+      // ("maybe we zoom in a little further") -- wider shaft, gentler
+      // wave so it still fits the frame at that size
+      const waveY = xLocal => Math.sin((xLocal + 60) * 0.04) * 7 + Math.cos((xLocal + 60) * 0.018) * 3;
+      const halfW = 22;
 
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
@@ -38833,7 +38881,11 @@ const MICROSCOPE_SLIDES = [
 ];
 
 const MICROSCOPE_OPEN_CLOSE_MS = 350;
-const microscopeUI = { active: false, opening: false, openT: 0, closing: false, closeT: 0, slideIndex: 0 };
+const microscopeUI = {
+  active: false, opening: false, openT: 0, closing: false, closeT: 0, slideIndex: 0,
+  prevSlideIndex: 0, slideT: 0 // cross-fade between slides -- see SLIDE_FADE_MS
+};
+const SLIDE_FADE_MS = 550; // CONFIRMED CHANGE: slower fade between slides, per direct request ("make transitions between slides slower. fade in fade out like")
 
 function openMicroscopeUI() {
   microscopeUI.opening = true;
@@ -38859,11 +38911,20 @@ function updateMicroscopeUI(deltaTime) {
   }
   if (!microscopeUI.active) return;
 
+  // advance the cross-fade toward the current slide every frame
+  // (capped -- once it reaches SLIDE_FADE_MS the previous slide is
+  // fully faded out and no longer drawn)
+  if (microscopeUI.slideT < SLIDE_FADE_MS) microscopeUI.slideT += dtMs;
+
   const count = MICROSCOPE_SLIDES.length;
   if (keys.rightJustPressed) {
+    microscopeUI.prevSlideIndex = microscopeUI.slideIndex;
     microscopeUI.slideIndex = (microscopeUI.slideIndex + 1) % count;
+    microscopeUI.slideT = 0;
   } else if (keys.leftJustPressed) {
+    microscopeUI.prevSlideIndex = microscopeUI.slideIndex;
     microscopeUI.slideIndex = (microscopeUI.slideIndex - 1 + count) % count;
+    microscopeUI.slideT = 0;
   } else if (keys.spaceJustPressed) {
     microscopeUI.active = false;
     microscopeUI.closing = true;
@@ -38907,7 +38968,18 @@ function drawMicroscopeUI() {
   ctx.arc(cx, cy - 10, lensR, 0, Math.PI * 2);
   ctx.clip();
   ctx.translate(cx, cy - 10);
+  // CONFIRMED CHANGE: cross-fade between slides instead of an instant
+  // swap, per direct request ("make transitions between slides
+  // slower. fade in fade out like"). The outgoing slide fades out
+  // while the incoming one fades in, over SLIDE_FADE_MS.
+  const fadeP = Math.min(1, microscopeUI.slideT / SLIDE_FADE_MS);
+  if (fadeP < 1 && microscopeUI.prevSlideIndex !== microscopeUI.slideIndex) {
+    ctx.globalAlpha = 1 - fadeP;
+    MICROSCOPE_SLIDES[microscopeUI.prevSlideIndex].draw();
+  }
+  ctx.globalAlpha = fadeP < 1 ? fadeP : 1;
   MICROSCOPE_SLIDES[microscopeUI.slideIndex].draw();
+  ctx.globalAlpha = 1;
   // a soft vignette around the edge of the circular view
   const vig = ctx.createRadialGradient(0, 0, lensR * 0.6, 0, 0, lensR);
   vig.addColorStop(0, "rgba(0,0,0,0)");
