@@ -1142,7 +1142,12 @@ function updateSeasonTransition(deltaTime) {
       } else if (currentScene === "molehole" && previousScene === "tunneltown") {
         player.x = tunnelTownEntrance.x; // climb back out right where you fell in, not the generic molehole spawn
       } else if (currentScene === "sandbox" && previousScene === "spring") {
-        player.x = sandboxReturnMound.x + 40; // land just past the mound on this side, not on top of it
+        // TEMPORARY CONFIRMED CHANGE: spawn right at the block pile
+        // instead of the usual return-mound spot, per direct request
+        // ("put me in sandbox near it to test") -- easy to revert back
+        // to sandboxReturnMound.x + 40 once the pile's climbability is
+        // confirmed.
+        player.x = sandboxBlockPile.x - 130;
       } else if (currentScene === "spring" && previousScene === "sandbox") {
         player.x = sandboxEntranceMound.x + 40; // same, landing back out in spring
       } else {
@@ -1255,19 +1260,23 @@ function drawSeasonTransition(ctx) {
   // shaded (flat-shaded 3D faces) rather than wood-paneled -- keeping
   // this border smooth too so the two actually look consistent.
   if (target === "sandbox") {
-    // CONFIRMED CHANGE: flat SANDBOX_RED on all 4 sides -- the
-    // previous top-to-bottom gradient made the BOTTOM border fade down
-    // into SANDBOX_RED_DARK, which read as "missing" per direct
-    // feedback ("sandbox transition screen missing red border on the
-    // bottom"). It wasn't actually absent, just too dark to read
-    // against the sand wash at that edge. Flat color guarantees all
-    // four sides are equally visible.
+    // CONFIRMED BUG FIX: rebuilt as ONE stroked rectangle instead of
+    // four separate fillRect calls -- per direct feedback with a video,
+    // pixel-sampled and confirmed: the bottom fillRect was genuinely
+    // not painting red across the middle of the screen (only the
+    // corners, where the left/right bars happened to reach, showed any
+    // red near the bottom), while top/left/right were fine. No clip
+    // leak or bad math was found in a full code review of this block,
+    // so rather than guess at a fourth root cause, this removes the
+    // possibility entirely: a single strokeRect straddling the canvas
+    // edge (lineWidth = 2x the border width, so half sits outside the
+    // canvas and is naturally clipped) paints all four sides in ONE
+    // draw call -- there is no longer a separate "bottom" call that
+    // could behave differently from the other three.
     const borderW = 34;
-    ctx.fillStyle = SANDBOX_RED;
-    ctx.fillRect(0, 0, canvas.width, borderW); // top
-    ctx.fillRect(0, canvas.height - borderW, canvas.width, borderW); // bottom
-    ctx.fillRect(0, 0, borderW, canvas.height); // left
-    ctx.fillRect(canvas.width - borderW, 0, borderW, canvas.height); // right
+    ctx.strokeStyle = SANDBOX_RED;
+    ctx.lineWidth = borderW * 2;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
     // a slim inner highlight so the border still reads as a raised
     // frame rather than a flat painted bar
     ctx.strokeStyle = "rgba(255,255,255,0.25)";
@@ -37731,31 +37740,22 @@ function drawSandMound(x, camX, label) {
   const boxW = 78;       // CONFIRMED CHANGE: bumped up from 66 -- "make it a little bigger"
   const depthDX = 19;    // how far the near edge shifts sideways relative to the far edge -- this IS the angle
   const depthDY = 18;    // how far the near edge shifts down relative to the far edge -- the top face's "depth"
-  const wallH = 11;      // front wall height, flush to the ground
+  // CONFIRMED BUG FIX: wallH bumped up to 20 (was 11) and the sink is
+  // now folded directly into it, instead of a separate "sinkY" that
+  // shifted the TOP edge down while the bottom stayed pinned at
+  // groundY -- that previously ATE INTO this same wallH from the other
+  // side (front wall height = wallH - sinkY = 11 - 9 = 2px, basically
+  // collapsed), which is exactly what caused the broken/flap-looking
+  // render just reported ("why did u take it away completely"). Now
+  // there's only one number controlling how deep the box reads, and it
+  // can't cancel itself out.
+  const wallH = 20;      // front wall height, flush to the ground
 
-  // CONFIRMED CHANGE: "sinkY" pushes the whole box down further into the
-  // ground line -- per "make it come further down the grass ... so it
-  // looks like it is actually sitting on the grass" -- so less of it
-  // sticks up above the flower patch and it reads as settled/embedded
-  // rather than perched on top of the ground.
-  const sinkY = 9;
-  // CONFIRMED CHANGE: "backLeftShorten" raises just the back-left/side-
-  // bottom corner instead of letting it drop all the way to gy like the
-  // front-right side does -- per "shorten the back left side of it
-  // appropriately", so that corner looks tucked into the grass a
-  // shorter distance rather than matching the front's full height.
-  const backLeftShorten = 8;
-
-  // CONFIRMED CHANGE: the box's own bottom edge now sits BELOW gy, down
-  // in the same band the spring flowers are actually drawn in
-  // (drawSpringFlowers places them at gy+4..gy+14) -- per direct
-  // feedback with a screenshot ("it's kind of floating in the air...
-  // make it look like it's sitting on the grass"). Previously every
-  // bottom point used gy exactly, which is where the PLAYER's feet
-  // line sits, not where the grass/flower foreground band actually
-  // reads visually -- a straight, un-embedded bottom edge sitting
-  // right at that line is exactly what reads as "hovering just above
-  // the ground" once there's a foreground grass/flower band below it.
+  // CONFIRMED CHANGE: the box's own bottom edge sits BELOW gy, down in
+  // the same band the spring flowers are actually drawn in
+  // (drawSpringFlowers places them at gy+4..gy+14) -- per "make it look
+  // like it's sitting on the grass." Every bottom corner below uses
+  // this same groundY.
   const groundY = gy + 9;
   // a soft shadow, same technique as drawBush's own ground shadow,
   // drawn first (underneath everything) so the box visually anchors
@@ -37766,15 +37766,15 @@ function drawSandMound(x, camX, label) {
   ctx.fill();
 
   const backX = cx - boxW / 2 - depthDX / 2;
-  const backY = groundY - wallH - depthDY + sinkY;
+  const backY = groundY - wallH - depthDY;
   const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
-  const frontTopY = backY + depthDY; // = groundY - wallH + sinkY
-  // CONFIRMED CHANGE: the front-bottom corners now match the back-left
-  // corner's own (shortened) height instead of reaching further down to
-  // the full groundY -- per direct feedback ("the front corners should
-  // prob be same height as the back left corner"). All three bottom
-  // corners share one consistent height now.
-  const sideBottomY = groundY - backLeftShorten;
+  const frontTopY = backY + depthDY; // = groundY - wallH
+  // CONFIRMED CHANGE: per direct feedback ("the front corners should
+  // have same exact height length as the back left corner"), all three
+  // bottom corners (front-left, front-right, side-bottom-left) now
+  // share the exact same y -- groundY -- so none of them is shorter
+  // than the others.
+  const sideBottomY = groundY;
 
   // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
   // ("missing left side of box"), the box only had a top face and a
@@ -37909,7 +37909,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1460; // CONFIRMED CHANGE: widened again (was 1400) for the taller/bigger block pile's footprint plus slinky pattern swing clearance
+const SANDBOX_WIDTH = 1650; // CONFIRMED CHANGE: widened again (was 1460) after moving the block pile further right, away from the pendulum
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38757,59 +38757,71 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1250, topHeight: 265 }; // CONFIRMED CHANGE: much taller -- "for slinky i want a bigger pile"
+const sandboxBlockPile = { x: 1400, topHeight: 270 }; // CONFIRMED CHANGE: moved much further right (was 1250) per "slinky pile too close to pendulum," and taller still
 
-// CONFIRMED CHANGE: fully rebuilt -- per direct feedback ("i want a
-// bigger pile idk what this is... no i want pile"), 4 uniform same-
-// width stacked steps read as a plain staircase, not a "pile." This is
-// now a real heap: many more blocks (14, not 4), each a genuinely
-// different size AND a different bright color, most levels have TWO
-// overlapping blocks side by side instead of one clean step, and their
-// x positions jitter a little instead of aligning into a tidy
-// staircase. Per direct request ("make them all jumpable"), every
-// single block here is a real platform in the physics collision list
-// below -- there is no separate decorative-only tier anymore.
+// CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
+// screenshot ("this looks like tower? not actual pile of blocks?").
+// The bug: every block was drawn as fillRect(bx, topY, width,
+// heightAboveGround) -- a bar filling the ENTIRE column from that
+// block's top all the way down to the ground, so neighboring blocks at
+// different heights just looked like a bar chart/skyline, with no
+// visible resting edge anywhere to actually aim a jump at. That's also
+// almost certainly why it read as "not jump on top able" -- there was
+// no visible ledge, just a wall of solid color.
+//
+// Fixed by giving every block a fixed THICKNESS (45) and drawing it as
+// a real slab -- top at heightAboveGround, bottom 45px below that --
+// instead of a bar reaching the ground. Consecutive tiers are spaced
+// exactly one thickness apart (45, 90, 135...) so each slab visually
+// rests flush on the one below with no floating gap, while still
+// reading as distinct stacked blocks, not a fused tower. Also spread
+// into MULTIPLE blocks side by side per tier across a real ~250px-wide
+// footprint (not one file per column), so there's genuine width for
+// the slinky patterns to wander across on the way down, and so there's
+// more than one route up the pile.
+const SANDBOX_PILE_THICKNESS = 45;
 const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d6", "#f2833c", "#3fd6b0", "#e85fa0"];
 const sandboxBlockSteps = [
-  // base tier -- wide, squat blocks forming the pile's foot
-  { x: 1140, width: 70, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1205, width: 58, heightAboveGround: 35, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1258, width: 66, heightAboveGround: 42, color: SANDBOX_PILE_COLORS[2] },
-  // second tier
-  { x: 1155, width: 62, heightAboveGround: 85, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1220, width: 50, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1268, width: 48, heightAboveGround: 82, color: SANDBOX_PILE_COLORS[5] },
-  // third tier
-  { x: 1165, width: 54, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1225, width: 46, heightAboveGround: 140, color: SANDBOX_PILE_COLORS[7] },
-  // fourth tier
-  { x: 1175, width: 48, heightAboveGround: 185, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1230, width: 42, heightAboveGround: 190, color: SANDBOX_PILE_COLORS[0] },
-  // fifth tier
-  { x: 1190, width: 44, heightAboveGround: 232, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1235, width: 38, heightAboveGround: 228, color: SANDBOX_PILE_COLORS[1] },
-  // near-top ledge, then the actual peak
-  { x: 1205, width: 46, heightAboveGround: 250, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1210, width: 40, heightAboveGround: 265, color: SANDBOX_PILE_COLORS[3] } // the peak -- charge the slinky from here
+  // base tier -- on the ground, wide footprint
+  { x: 1290, width: 70, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1360, width: 55, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1415, width: 60, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1475, width: 50, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[3] },
+  // tier 2 -- resting on the base tier
+  { x: 1300, width: 55, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1355, width: 48, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1410, width: 50, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1460, width: 45, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[7] },
+  // tier 3
+  { x: 1310, width: 48, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1365, width: 42, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1415, width: 44, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[1] },
+  // tier 4
+  { x: 1320, width: 42, heightAboveGround: 180, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1370, width: 38, heightAboveGround: 180, color: SANDBOX_PILE_COLORS[3] },
+  // tier 5
+  { x: 1335, width: 40, heightAboveGround: 225, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1375, width: 36, heightAboveGround: 225, color: SANDBOX_PILE_COLORS[4] },
+  // the peak -- charge the slinky from here
+  { x: 1345, width: 42, heightAboveGround: 270, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 
 // purely decorative background blocks scattered around/behind the
-// climbable pile, at varied sizes/colors/rotations -- these are what
-// actually fill the pile out into a real heap silhouette rather than a
-// thin stack of ledges; not collidable (bulk filler behind the real
-// blocks, not anything you'd expect to land on)
+// climbable pile, at varied sizes/colors/rotations, filling in the
+// silhouette so it reads as a real heap rather than a thin stack of
+// ledges; not collidable (bulk filler behind the real blocks)
 const SANDBOX_PILE_DECOR_BLOCKS = [
-  { dx: -85, dy: 8, w: 30, h: 24, color: "#e8483a", rot: -0.1 },
-  { dx: -95, dy: 32, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
-  { dx: 90, dy: 10, w: 32, h: 26, color: "#3fa7d6", rot: -0.05 },
-  { dx: 98, dy: 34, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
-  { dx: -60, dy: 55, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
-  { dx: 65, dy: 58, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
+  { dx: -95, dy: 8, w: 30, h: 24, color: "#e8483a", rot: -0.1 },
+  { dx: -105, dy: 32, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
+  { dx: 100, dy: 10, w: 32, h: 26, color: "#3fa7d6", rot: -0.05 },
+  { dx: 108, dy: 34, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
+  { dx: -65, dy: 55, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
+  { dx: 70, dy: 58, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
   { dx: -20, dy: 4, w: 26, h: 20, color: "#3fd6b0", rot: 0.03 },
   { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 },
-  { dx: -110, dy: 60, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
-  { dx: 112, dy: 62, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
+  { dx: -120, dy: 60, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
+  { dx: 122, dy: 62, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
 ];
 
 // each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
@@ -38859,17 +38871,23 @@ function drawBlockPile(camX) {
   // the real, climbable blocks -- each its own size AND bright color
   // (per direct request: "different size and shaped blocks that are
   // dif bright colors"), drawn low-to-high so higher blocks layer in
-  // front of the ones below/behind them, same as a real heap would
+  // front of the ones below/behind them, same as a real heap would.
+  // CONFIRMED BUG FIX: each block is now a fixed-thickness SLAB resting
+  // at its own height (top at heightAboveGround, bottom one thickness
+  // below that) instead of a bar reaching all the way down to the
+  // ground -- the old full-height bars are exactly why this read as a
+  // skyline/tower instead of a pile, and gave no visible ledge to jump
+  // onto.
   sandboxBlockSteps.forEach(s => {
     const bx = s.x - camX;
     const topY = gy - s.heightAboveGround;
     ctx.fillStyle = s.color;
-    ctx.fillRect(bx, topY, s.width, s.heightAboveGround);
+    ctx.fillRect(bx, topY, s.width, SANDBOX_PILE_THICKNESS);
     ctx.fillStyle = "rgba(255,255,255,0.28)";
     ctx.fillRect(bx, topY, s.width, 6);
     ctx.strokeStyle = "rgba(0,0,0,0.28)";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(bx, topY, s.width, s.heightAboveGround);
+    ctx.strokeRect(bx, topY, s.width, SANDBOX_PILE_THICKNESS);
   });
 
   ctx.fillStyle = "#5a4a2a";
