@@ -974,7 +974,8 @@ const sceneSpawns = {
   oak: { x: 380 }, // arrives via seesaw launch -- moved closer to the actual entrance door (oakReturnDoor at x:294), was landing 370 units away from it despite the door being the visual entry point
   ratroom: { x: 310 }, // arrives via the trap door, lands near the base of the stairs
   molehole: { x: 150 }, // arrives via the ground hole, lands a little in from the entrance
-  tunneltown: { x: 150 } // arrives via the second hole, lands a little in from that entrance
+  tunneltown: { x: 150 }, // arrives via the second hole, lands a little in from that entrance
+  sandbox: { x: 200 } // arrives via the sand mound in spring -- see the special-case landing override too
 };
 
 /* ======================================================
@@ -1133,6 +1134,10 @@ function updateSeasonTransition(deltaTime) {
         player.x = moleHoleEntrance.x; // climb back out right where you fell in, not the generic forest spawn
       } else if (currentScene === "molehole" && previousScene === "tunneltown") {
         player.x = tunnelTownEntrance.x; // climb back out right where you fell in, not the generic molehole spawn
+      } else if (currentScene === "sandbox" && previousScene === "spring") {
+        player.x = sandboxReturnMound.x + 40; // land just past the mound on this side, not on top of it
+      } else if (currentScene === "spring" && previousScene === "sandbox") {
+        player.x = sandboxEntranceMound.x + 40; // same, landing back out in spring
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -12004,6 +12009,8 @@ function drawSpringScene(camX) {
   drawConnectionDoor(ctx, camX, connections[0].doors.spring, connections[0]);
   drawConnectionDoor(ctx, camX, connections[1].doors.spring, connections[1]);
   drawSpringDoorVineTendril(camX);
+
+  drawSandMound(sandboxEntranceMound.x, camX, "Sandbox");
 
   ctx.restore();
 }
@@ -37602,6 +37609,128 @@ function updateTunnelTownScene(deltaTime) {
   }
 }
 
+/* ======================================================
+   SANDBOX -- a small standalone toy room, reached from spring for
+   now (per direct discussion -- may move to its own zone later, and
+   more of these may exist eventually, each with a few weird little
+   toys). The framing is "you shrink down into an actual sandbox" --
+   giant looming toy shapes (bucket, shovel, ball) sell the scale
+   shift. Deliberately empty of mechanics on this first pass; toys get
+   added into this room incrementally whenever there's an idea for one,
+   rather than needing the whole room finished in one sitting.
+   ====================================================== */
+const sandboxEntranceMound = { x: 130, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
+const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
+
+function drawSandMound(x, camX, label) {
+  const cx = x - camX;
+  // a little sifted-sand pile with a toy shovel stuck in it -- reads as
+  // "an entrance," not just a random bump in the ground
+  ctx.fillStyle = "#d9c48a";
+  ctx.beginPath();
+  ctx.ellipse(cx, gy - 2, 26, 10, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx - 8, gy - 8, 16, 9, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 6, gy - 6, 14, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c9b070";
+  ctx.beginPath();
+  ctx.ellipse(cx, gy - 10, 12, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // toy shovel, stuck in at an angle
+  ctx.save();
+  ctx.translate(cx + 10, gy - 14);
+  ctx.rotate(-0.5);
+  ctx.fillStyle = "#3f7fd6";
+  ctx.fillRect(-1.5, -22, 3, 24);
+  ctx.fillStyle = "#e8483a";
+  ctx.beginPath();
+  ctx.moveTo(-6, -22);
+  ctx.lineTo(6, -22);
+  ctx.lineTo(4, -12);
+  ctx.lineTo(-4, -12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  if (label) {
+    ctx.fillStyle = "#5a4a2a";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(label, cx, gy - 32);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawSandboxScene(camX) {
+  // warm, slightly hazy daylight -- an ordinary backyard sky, since the
+  // "massive" part of the scale gag is entirely about what's down here
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#bfe3f5");
+  sky.addColorStop(1, "#eaf6ff");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // giant looming toys in the background, parallaxing slower than the
+  // foreground -- these sell "you shrank into an actual sandbox" far
+  // more than the sand color alone would
+  const bucketX = 900 - camX * 0.5;
+  ctx.fillStyle = "#3fae5c";
+  ctx.beginPath();
+  ctx.moveTo(bucketX - 110, gy);
+  ctx.lineTo(bucketX - 90, gy - 260);
+  ctx.lineTo(bucketX + 90, gy - 260);
+  ctx.lineTo(bucketX + 110, gy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2c8a44";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.ellipse(bucketX, gy - 260, 90, 16, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const ballX = 1500 - camX * 0.5;
+  const ballGrad = ctx.createRadialGradient(ballX - 30, gy - 230, 10, ballX, gy - 190, 130);
+  ballGrad.addColorStop(0, "#fff3b0");
+  ballGrad.addColorStop(0.5, "#ff8f6b");
+  ballGrad.addColorStop(1, "#e14f7a");
+  ctx.fillStyle = ballGrad;
+  ctx.beginPath();
+  ctx.arc(ballX, gy - 190, 130, 0, Math.PI * 2);
+  ctx.fill();
+
+  // sandy ground, continuous like every other scene, with a scattered
+  // grain-texture dot field instead of grass
+  const groundGrad = ctx.createLinearGradient(0, gy, 0, canvas.height);
+  groundGrad.addColorStop(0, "#e8d5a3");
+  groundGrad.addColorStop(1, "#d6bf85");
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
+  ctx.fillStyle = "rgba(160,135,80,0.35)";
+  for (let i = 0; i < 220; i++) {
+    const gx = (pseudoRandom(i * 3.7) * 3000 - camX % 3000);
+    const gyy = gy + 4 + pseudoRandom(i * 5.1 + 1) * (canvas.height - gy - 8);
+    ctx.fillRect(gx, gyy, 2, 2);
+  }
+
+  drawSandMound(sandboxReturnMound.x, camX, "Back to Spring");
+
+  drawCrows(camX); // same birds, consistent across every zone
+}
+
+function updateSandboxScene(deltaTime) {
+  if (keys.spaceJustPressed && isPlayerNear(sandboxReturnMound.x, 0, 26, 15, 15)) {
+    startSeasonTransition("spring");
+  }
+
+  if (player.y <= 0) {
+    player.y = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+  }
+}
+
 // CONFIRMED CHANGE: clouds atmosphere -- a slow, continuous day/dusk/
 // night/dawn drift rather than discrete timed swaps, per direct
 // discussion ("a hard swap would read as mechanical... I'd tie the
@@ -37929,6 +38058,8 @@ if (currentScene === "autumn") {
   drawMoleholeScene(camX);
 } else if (currentScene === "tunneltown") {
   drawTunnelTownScene(camX);
+} else if (currentScene === "sandbox") {
+  drawSandboxScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -38833,6 +38964,11 @@ function updateSpringScene(deltaTime) {
     }
   }
 
+  // SANDBOX ENTRANCE — walk up, space to shrink down into it
+  if (keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 15, 15)) {
+    startSeasonTransition("sandbox");
+  }
+
   // TULIP PICKUP — same shape as boomerang's pickup in autumn
   if (!tulip.collected && !tulip.collecting) {
     if (pressedDownNear(tulip.x, tulip.heightAboveGround, 26, 10, 10)) {
@@ -39046,6 +39182,8 @@ if (currentScene === "autumn") {
   updateMoleholeScene(deltaTime);
 } else if (currentScene === "tunneltown") {
   updateTunnelTownScene(deltaTime);
+} else if (currentScene === "sandbox") {
+  updateSandboxScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
