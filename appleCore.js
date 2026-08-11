@@ -12010,7 +12010,10 @@ function drawSpringScene(camX) {
   drawConnectionDoor(ctx, camX, connections[1].doors.spring, connections[1]);
   drawSpringDoorVineTendril(camX);
 
-  drawSandMound(sandboxEntranceMound.x, camX, "Sandbox");
+  // CONFIRMED CHANGE: hidden until clouds has actually been visited --
+  // per direct request, same "stays out of sight until earned" pattern
+  // as the squirrel above.
+  if (discoveredScenes.clouds) drawSandMound(sandboxEntranceMound.x, camX, "Sandbox");
 
   ctx.restore();
 }
@@ -37619,7 +37622,14 @@ function updateTunnelTownScene(deltaTime) {
    added into this room incrementally whenever there's an idea for one,
    rather than needing the whole room finished in one sitting.
    ====================================================== */
-const sandboxEntranceMound = { x: 130, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
+// CONFIRMED CHANGE: moved from x:130 (right by the autumn-side door,
+// near spring's spawn) to sit near the FOREST-side door instead, per
+// direct discussion -- reaching it means you've already gone through
+// spring's own stuff (holes, tulip, grafting, etc.), so it reads as a
+// rest beat after real progress rather than a zero-effort detour right
+// at the start. Forest door itself is at x:3100 (56 wide); this sits
+// just clear of it on the near side.
+const sandboxEntranceMound = { x: 3020, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 
 function drawSandMound(x, camX, label) {
@@ -38964,8 +38974,10 @@ function updateSpringScene(deltaTime) {
     }
   }
 
-  // SANDBOX ENTRANCE — walk up, space to shrink down into it
-  if (keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 15, 15)) {
+  // SANDBOX ENTRANCE — walk up, space to shrink down into it. Hidden
+  // (and inert) until clouds has been visited, matching the mound's own
+  // draw gate above.
+  if (discoveredScenes.clouds && keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 15, 15)) {
     startSeasonTransition("sandbox");
   }
 
@@ -39319,23 +39331,15 @@ updateSeasonTransition(deltaTime);
 // through spring first. Remove this block (see the "debug spawn
 // removed" comment further up in git history for the exact revert
 // pattern) whenever a real fresh-start playtest is next needed.
-currentScene = "clouds";
-// CONFIRMED BUG FIX: x:300 sits directly over cloudHole (x:300-360) --
-// landing there at ground level (y<=0) immediately triggers the same
-// fall-through-to-spring logic as jumping down the hole on purpose,
-// which is why this was dropping straight back into spring instead of
-// staying in clouds. Moved well clear of the hole, and further out
-// toward the gust zone (x:1650-1820) for direct testing.
-player.x = 1500;
+// CONFIRMED CHANGE: repointed at spring, right in front of the sandbox
+// mound, per direct request -- was clouds. discoveredScenes.clouds is
+// still set true below so the mound is actually visible/usable (it's
+// gated on having visited clouds).
+currentScene = "spring";
+player.x = sandboxEntranceMound.x - 40; // just in front of the mound, facing it
 player.y = 0;
-addToInventory("boomerang");
-touchInventoryOrder("boomerang");
-boomerang.collected = true; // keeps the world copy near the apple tree from also drawing/being collectible again
-addToInventory("bucket");
-touchInventoryOrder("bucket");
-addToInventory("paperAirplane");
-touchInventoryOrder("paperAirplane");
-heldItem = "paperAirplane"; // CONFIRMED CHANGE: in-play by default per direct request
+addToInventory("shovel");
+touchInventoryOrder("shovel");
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 updateMapUI();
