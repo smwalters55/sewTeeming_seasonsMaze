@@ -164,7 +164,8 @@ const player = {
   cloudLandingImmunity: 0, // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
   onFan: false,        // true while hovering above the sandbox's upward fan toy -- position driven entirely by updateSandboxFan, same pattern as swing.mounted/vines
   wigId: null,         // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
-  onPendulum: false    // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
+  onPendulum: false,   // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
+  onSlinky: false      // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
 };
 
 /* ======================================================
@@ -1054,6 +1055,7 @@ function startSeasonTransition(targetScene) {
   seesaw.playerOnPlank = false;
   player.onFan = false;
   player.onPendulum = false;
+  player.onSlinky = false;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -2427,6 +2429,10 @@ function applyPhysics(){
   // is driven entirely by updateSandboxPendulum()
   if (player.onPendulum) return;
 
+  // same idea for the sandbox's slinky toy -- position while riding
+  // down the block pile is driven entirely by updateSandboxSlinky()
+  if (player.onSlinky) return;
+
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
 
@@ -2772,6 +2778,30 @@ function applyPhysics(){
         player.usedDoubleJump = false;
       }
     });
+
+  } else if (currentScene === "sandbox") {
+
+  // CONFIRMED CHANGE: block-pile platform collision -- same landing
+  // pattern as autumn's platforms/clouds' hop-clouds, for the new
+  // slinky toy's climbable pile ("a giant pile of different size and
+  // shaped blocks... player has to go to top to charge slinky"). Plain
+  // ascending steps, reachable with ordinary single/double jumps.
+  sandboxBlockSteps.forEach(p => {
+    const platformTop = p.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
 
   }
 
@@ -37855,7 +37885,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1080; // CONFIRMED CHANGE: widened again (was 1020) after moving the pendulum further right, so its swing still has clearance from the right wall
+const SANDBOX_WIDTH = 1400; // CONFIRMED CHANGE: widened again (was 1080) to fit the new block-pile/slinky toy past the pendulum with real breathing room
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38689,6 +38719,200 @@ function drawSandboxPendulum(camX) {
   ctx.textAlign = "left";
 }
 
+/* ======================================================
+   SANDBOX SLINKY -- fifth "weird toy" per direct request ("we are
+   going to have a giant pile of different size and shaped blocks that
+   are dif bright colors, and player has to go to top to charge slinky").
+   A climbable pile of colorful blocks (real platforms, reached with
+   ordinary jumps -- see the new "sandbox" branch in the platform-
+   collision chain in applyPhysics) leads up to a top step. Standing on
+   the top step and holding space charges a meter (same hold-to-charge/
+   release-to-fire shape as the forest's skipping stones); releasing
+   sends the player down the pile riding a slinky, at a speed set by
+   how charged the release was, along ONE of several possible wiggle
+   patterns chosen at random each run (per direct request: "power
+   determine the speed it traverses the random pattern").
+   ====================================================== */
+const sandboxBlockPile = { x: 1250, topHeight: 190 }; // topHeight matches the pendulum's anchorHeight -- same "big toy" scale
+const sandboxBlockSteps = [
+  { x: 1170, width: 75, heightAboveGround: 45 },
+  { x: 1195, width: 68, heightAboveGround: 95 },
+  { x: 1220, width: 62, heightAboveGround: 145 },
+  { x: 1245, width: 55, heightAboveGround: 190 } // the top step -- charge the slinky from here
+];
+const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps[sandboxBlockSteps.length - 1];
+
+// a handful of purely decorative background blocks scattered around/
+// behind the climbable steps, at varied sizes and bright colors -- this
+// is what actually reads as "a giant pile of different size and shaped
+// blocks," since the steps alone are too few/uniform to look like a pile
+const SANDBOX_PILE_DECOR_BLOCKS = [
+  { dx: -55, dy: 8, w: 34, h: 26, color: "#e8483a", rot: -0.08 },
+  { dx: -30, dy: 30, w: 40, h: 30, color: "#f2b93c", rot: 0.05 },
+  { dx: 8, dy: 20, w: 30, h: 22, color: "#3fa7d6", rot: -0.04 },
+  { dx: 40, dy: 34, w: 36, h: 28, color: "#5fbf5a", rot: 0.09 },
+  { dx: -18, dy: 55, w: 46, h: 24, color: "#c265d6", rot: -0.03 },
+  { dx: 25, dy: 58, w: 38, h: 26, color: "#f2833c", rot: 0.06 },
+  { dx: -48, dy: 62, w: 30, h: 34, color: "#3fd6b0", rot: 0.02 },
+  { dx: 52, dy: 65, w: 28, h: 30, color: "#e85fa0", rot: -0.06 }
+];
+
+// each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
+// offset from the starting x -- the actual descent speed/duration comes
+// from the charge level, completely independent of which pattern gets
+// picked
+const SLINKY_PATTERNS = [
+  { name: "zigzag", xOffset: p => Math.sin(p * Math.PI * 4) * 24 },
+  { name: "wideS", xOffset: p => Math.sin(p * Math.PI * 1.5) * 42 },
+  { name: "tightCoil", xOffset: p => Math.sin(p * Math.PI * 8) * 11 },
+  { name: "straightBounce", xOffset: () => 0, yBounce: p => Math.abs(Math.sin(p * Math.PI * 6)) * 7 },
+  { name: "lopsided", xOffset: p => -34 + p * 68 + Math.sin(p * Math.PI * 3) * 12 },
+  { name: "loop", xOffset: p => Math.sin(p * Math.PI * 2) * 32 * (1 - p) }
+];
+const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
+const SANDBOX_SLINKY_BASE_MS = 1600; // ride duration at zero charge -- fully charged cuts this roughly in half
+
+const sandboxSlinky = {
+  armed: true,     // must release space once before a new charge can start -- same "armed" gate as skipStoneArmed
+  charge: 0,
+  wasCharging: false,
+  running: false,
+  patternIndex: 0,
+  runT: 0,
+  runDurationMs: SANDBOX_SLINKY_BASE_MS,
+  startX: 0
+};
+
+function drawBlockPile(camX) {
+  const sx = sandboxBlockPile.x - camX;
+
+  // decorative background pile -- drawn first so the real climbable
+  // steps sit visually on top of/in front of it
+  SANDBOX_PILE_DECOR_BLOCKS.forEach(b => {
+    ctx.save();
+    ctx.translate(sx + b.dx, gy - b.dy);
+    ctx.rotate(b.rot);
+    ctx.fillStyle = b.color;
+    roundRect(ctx, -b.w / 2, -b.h, b.w, b.h, 4);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // the real, climbable steps -- each its own bright color so it stays
+  // readable as a distinct block, drawn as a simple front face + top
+  // face pair so they read as solid blocks, not flat rectangles
+  const stepColors = ["#f2b93c", "#3fa7d6", "#5fbf5a", "#e8483a"];
+  sandboxBlockSteps.forEach((s, i) => {
+    const bx = s.x - camX;
+    const topY = gy - s.heightAboveGround;
+    ctx.fillStyle = stepColors[i % stepColors.length];
+    ctx.fillRect(bx, topY, s.width, s.heightAboveGround);
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.fillRect(bx, topY, s.width, 6);
+    ctx.strokeStyle = "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx, topY, s.width, s.heightAboveGround);
+  });
+
+  ctx.fillStyle = "#5a4a2a";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Slinky", sx + SANDBOX_SLINKY_TOP_STEP.width / 2, gy - sandboxBlockPile.topHeight - 14);
+  ctx.textAlign = "left";
+}
+
+function updateSandboxSlinky(deltaTime) {
+  const s = sandboxSlinky;
+
+  if (s.running) {
+    s.runT += deltaTime * 1000;
+    const p = Math.min(1, s.runT / s.runDurationMs);
+    const pattern = SLINKY_PATTERNS[s.patternIndex];
+    player.x = s.startX + pattern.xOffset(p) - player.width / 2;
+    player.y = sandboxBlockPile.topHeight * (1 - p) + (pattern.yBounce ? pattern.yBounce(p) : 0);
+    if (p >= 1) {
+      s.running = false;
+      player.onSlinky = false;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    return;
+  }
+
+  // charging -- only while actually standing on the pile's top step,
+  // same hold-space-to-charge/release-to-fire shape as the forest's
+  // skip-stone throw (see updateForestSkipStones)
+  const onTopStep = Math.abs(player.y - SANDBOX_SLINKY_TOP_STEP.heightAboveGround) < 4 &&
+    player.x + player.width > SANDBOX_SLINKY_TOP_STEP.x &&
+    player.x < SANDBOX_SLINKY_TOP_STEP.x + SANDBOX_SLINKY_TOP_STEP.width;
+
+  if (!keys.space) s.armed = true;
+  const canCharge = onTopStep && s.armed && !s.running;
+
+  if (canCharge && keys.space) {
+    s.charge = Math.min(1, s.charge + (deltaTime * 1000) / SANDBOX_SLINKY_CHARGE_MS);
+  } else if (!onTopStep) {
+    s.charge = 0; // walked off the top step mid-charge -- no carrying a charge around
+  }
+
+  // release fires on the falling edge of keys.space, mirroring
+  // updateForestSkipStones' own key-up detection
+  if (s.wasCharging && !keys.space && canCharge) {
+    s.armed = false; // must release+repress space before the NEXT charge can start
+    s.patternIndex = Math.floor(pseudoRandom(performance.now() % 1000) * SLINKY_PATTERNS.length) % SLINKY_PATTERNS.length;
+    // undercharged releases still ride, just slower -- no "too weak,
+    // nothing happens" dead zone, same principle as the skip-stone throw
+    s.runDurationMs = SANDBOX_SLINKY_BASE_MS / (1 + s.charge * 1.4);
+    s.startX = player.x + player.width / 2;
+    s.runT = 0;
+    s.running = true;
+    player.onSlinky = true;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    player.vy = 0;
+    player.vx = 0;
+    s.charge = 0;
+  }
+  s.wasCharging = canCharge && keys.space;
+}
+
+function drawSandboxSlinky(camX) {
+  const s = sandboxSlinky;
+  const topSx = sandboxBlockPile.x - camX + SANDBOX_SLINKY_TOP_STEP.width / 2;
+  const topScreenY = gy - sandboxBlockPile.topHeight;
+
+  // charge meter -- a small filling arc above the top step, same
+  // "orange -> green as it charges" read as the swing's charge bar
+  if (s.charge > 0.001 && !s.running) {
+    const barW = 40, barH = 6;
+    const bx = topSx - barW / 2, by = topScreenY - 16;
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    roundRect(ctx, bx, by, barW, barH, 3);
+    ctx.fill();
+    ctx.fillStyle = s.charge > 0.8 ? "#5fbf5a" : "#f2b93c";
+    roundRect(ctx, bx, by, barW * s.charge, barH, 3);
+    ctx.fill();
+  }
+
+  // the slinky itself -- a simple stacked-coil spring, drawn following
+  // the player while riding so it reads as attached underfoot; sits at
+  // rest coiled on the top step otherwise
+  const coilSx = s.running ? player.x + player.width / 2 - camX : topSx;
+  const coilSy = s.running ? gy - player.y - 4 : topScreenY - 4;
+  ctx.strokeStyle = "#c0392b";
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.ellipse(coilSx, coilSy - i * 3, 10, 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
 // each slide's hand-drawn illustration, drawn centered at (0,0) inside
 // whatever clip/scale the caller has already set up -- keeps these
 // coordinate-space agnostic just like drawWigShape above
@@ -39256,6 +39480,8 @@ function drawSandboxScene(camX) {
   drawSandboxFan(camX);
   drawMicroscopeStation(camX);
   drawSandboxPendulum(camX);
+  drawBlockPile(camX);
+  drawSandboxSlinky(camX);
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
@@ -39283,16 +39509,19 @@ function updateSandboxScene(deltaTime) {
 
   updateSandboxFan(deltaTime);
   updateSandboxPendulum(deltaTime);
+  updateSandboxSlinky(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
   // the player could just walk straight through/past them into open
   // empty sand forever.
-  player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
+  if (!player.onSlinky) {
+    player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
+  }
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
-  if (!player.onFan && !player.onPendulum && player.y <= 0) {
+  if (!player.onFan && !player.onPendulum && !player.onSlinky && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
