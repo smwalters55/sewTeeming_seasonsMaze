@@ -38964,7 +38964,19 @@ function updateSandboxSlinky(deltaTime) {
     const hopHeight = 16 * (1 - p * 0.4); // hops shrink a bit near the ground
     const hopArc = Math.sin(hopPhase * Math.PI) * hopHeight;
     s.hopPhase = hopPhase;
-    player.x = s.startX + pattern.xOffset(p) - player.width / 2;
+    // CONFIRMED BUG FIX: "sometimes the slinky still hops on air" --
+    // the pattern's x drift and the hop's height were computed totally
+    // independently. SANDBOX_HOP_HEIGHTS walks the pile from its narrow
+    // peak down to its wide base, but a pattern's x amplitude (up to
+    // ~±75px) was applied FLAT across every hop -- fine down at the
+    // wide base tier, but well past the real edge of the pile's narrow
+    // upper tiers, so a hop near the top could visibly land past where
+    // any block actually is. Taper the x drift by how far down the
+    // descent already is (little drift allowed near the narrow top,
+    // full amplitude only once down near the wide base) instead of
+    // applying each pattern's full amplitude everywhere.
+    const slinkyXTaper = t => 0.3 + 0.7 * t;
+    player.x = s.startX + pattern.xOffset(p) * slinkyXTaper(p) - player.width / 2;
     player.y = (segStart + (segEnd - segStart) * hopPhase) + hopArc + (pattern.yBounce ? pattern.yBounce(p) : 0);
     // CONFIRMED CHANGE: "i want to see the shape of what a slinky looks
     // like with the arcs coming down a set of blocks" -- stash the
@@ -38976,8 +38988,8 @@ function updateSandboxSlinky(deltaTime) {
     // silhouette as the resting coil, just stretched between two real
     // contact points instead of sitting on one.
     const tSegStart = segIndex / numSegs, tSegEnd = (segIndex + 1) / numSegs;
-    s.hopFromX = s.startX + pattern.xOffset(tSegStart);
-    s.hopToX = s.startX + pattern.xOffset(tSegEnd);
+    s.hopFromX = s.startX + pattern.xOffset(tSegStart) * slinkyXTaper(tSegStart);
+    s.hopToX = s.startX + pattern.xOffset(tSegEnd) * slinkyXTaper(tSegEnd);
     s.hopFromH = segStart;
     s.hopToH = segEnd;
     if (p >= 1) {
@@ -39289,10 +39301,25 @@ function drawSandboxSlinkyRider(camX) {
   // target, so it reads as directly attached rather than kinking off
   // sideways right where it meets the drum.
   const fromX = (s.hopFromX !== undefined ? s.hopFromX : player.x + player.width / 2) - camX;
-  const toX = (s.hopToX !== undefined ? s.hopToX : player.x + player.width / 2) - camX;
   const fromY = gy - (s.hopFromH !== undefined ? s.hopFromH : player.y) - 2;
-  const toY = gy - (s.hopToH !== undefined ? s.hopToH : player.y) - 2;
   const hopPhase = s.hopPhase !== undefined ? s.hopPhase : 0;
+  // CONFIRMED CHANGE: "can we place player on top of slinky like its
+  // resting on it... like riding it like a slinky horse" -- the trail
+  // used to aim at an independently-computed target point (the block
+  // ahead), which could drift slightly out of sync with the player's
+  // OWN drawn position (different arc math), so the coil read as
+  // running alongside/behind the player rather than something the
+  // player was actually sitting on. Now the trail's live end is always
+  // exactly the player's own current screen position (a couple px
+  // under their feet), so it's physically guaranteed to terminate
+  // right where the player is every frame, and this whole function now
+  // draws BEFORE the player sprite (see the call site) instead of
+  // after -- the player's own body naturally covers the last bit of
+  // coil directly under their feet, exactly like sitting on top of it,
+  // while the rest of the trail (behind, arcing down to the anchor)
+  // stays fully visible around them.
+  const coilSx = player.x + player.width / 2 - camX;
+  const coilSy = gy - player.y - 2;
 
   const ringRX = 6, ringRY = 2.6, ringGap = 2.0, anchorRings = 5;
   ctx.strokeStyle = "#c0392b";
@@ -39304,15 +39331,10 @@ function drawSandboxSlinkyRider(camX) {
   }
   const stemTopY = fromY - (anchorRings - 1) * ringGap;
 
-  // reach: how far the trail has stretched toward the target so far
-  // this hop -- multiplied up a bit so it visibly starts extending
-  // right away rather than sitting compressed for the first chunk of
-  // the hop
-  const reach = Math.min(1, hopPhase * 1.6);
-  if (reach > 0.03) {
+  if (hopPhase > 0.03) {
     const arcH = 14 + hopPhase * 10;
     const p0x = fromX, p0y = stemTopY;
-    const p1x = toX, p1y = toY - 2;
+    const p1x = coilSx, p1y = coilSy + 3; // a few px below the player's own feet, so the last loop pokes out from under them like a saddle
     const liftY = Math.min(p0y, p1y) - arcH;
     const c1x = p0x, c1y = liftY;
     const c2x = p1x, c2y = liftY;
@@ -39321,7 +39343,7 @@ function drawSandboxSlinkyRider(camX) {
     for (let i = 0; i <= samples; i++) pts.push(slinkyRiderCubicPoint(i / samples, p0x, p0y, c1x, c1y, c2x, c2y, p1x, p1y));
     const cum = [0];
     for (let i = 1; i <= samples; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
-    const totalLen = cum[samples] * reach;
+    const totalLen = cum[samples];
     function pointAtLength(targetLen) {
       let lo = 0, hi = samples;
       while (lo < hi) {
@@ -39330,7 +39352,7 @@ function drawSandboxSlinkyRider(camX) {
       }
       return pts[lo];
     }
-    const loopCount = Math.max(4, Math.round(18 * reach));
+    const loopCount = Math.max(4, Math.round(18 * Math.min(1, hopPhase * 1.6)));
     ctx.lineWidth = 1;
     for (let i = 0; i < loopCount; i++) {
       const frac = i / (loopCount - 1);
@@ -39912,6 +39934,14 @@ function drawSandboxScene(camX) {
   drawSandboxPendulum(camX);
   drawBlockPile(camX);
   drawSandboxSlinky(camX);
+  // CONFIRMED CHANGE: "place player on top of slinky like its resting
+  // on it... riding it like a slinky horse" -- now drawn BEFORE the
+  // player sprite (moved from the post-player overlay chain) so the
+  // player's own body naturally sits in front of/on top of the coil
+  // instead of the coil drawing over the player. See
+  // drawSandboxSlinkyRider's own comment for why this no longer
+  // reintroduces the old "can't see the slinky" bug.
+  drawSandboxSlinkyRider(camX);
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
@@ -40647,11 +40677,6 @@ if (currentScene === "forest") {
   // the closest thing on screen
   drawMoleholeRootPillar(20, camX);
   drawMoleholeRootPillar(MOLEHOLE_WIDTH - 20, camX);
-} else if (currentScene === "sandbox") {
-  // CONFIRMED BUG FIX: the riding slinky coil has to draw AFTER the
-  // player sprite (see drawSandboxSlinkyRider's own comment) so it
-  // isn't painted over and hidden by the player's body every frame.
-  drawSandboxSlinkyRider(camX);
 }
 
 
