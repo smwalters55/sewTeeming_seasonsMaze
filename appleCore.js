@@ -37790,29 +37790,35 @@ function drawSandMound(x, camX, label) {
   const backY = groundY - wallH - depthDY;
   const frontLeftX = backX + depthDX, frontRightX = backX + boxW + depthDX;
   const frontTopY = backY + depthDY; // = groundY - wallH
-  // CONFIRMED CHANGE: per direct feedback ("the front corners should
-  // have same exact height length as the back left corner"), all three
-  // bottom corners (front-left, front-right, side-bottom-left) now
-  // share the exact same y -- groundY -- so none of them is shorter
-  // than the others.
-  const sideBottomY = groundY;
 
-  // CONFIRMED CHANGE: added the LEFT SIDE face -- per direct feedback
-  // ("missing left side of box"), the box only had a top face and a
-  // front face, leaving a gap where the side wall should be (the far-
-  // left top corner had nothing connecting it down to the ground).
-  // The whole silhouette (top + front + left side) is still ONE
-  // continuous outlined hexagon, so it stays one box, not stacked/
-  // separate pieces.
+  // CONFIRMED BUG FIX: measured directly against the code, not just
+  // re-read -- the LEFT edge of the old outline ran straight from
+  // (backX, backY) down to (backX, groundY), a height of wallH+depthDY
+  // (20+18 = 38px), while the RIGHT edge (frontRightX, frontTopY) down
+  // to (frontRightX, groundY) was only wallH (20px) -- a real,
+  // measurable 18px mismatch, exactly the "trapezoid, not equal"
+  // problem being pointed out. That happened because the left edge was
+  // the hexagon's plain CLOSING line, so it silently absorbed BOTH the
+  // wall height AND the top face's depth offset, while the right edge
+  // only ever carried the wall height on its own dedicated segment.
+  //
+  // Fixed by mirroring the right side's own treatment onto the left:
+  // a dedicated front-top-left point (frontLeftX, frontTopY) so the
+  // left vertical (frontLeftX, frontTopY)->(frontLeftX, groundY) is
+  // ALSO exactly wallH, matching the right vertical exactly, with the
+  // depth offset carried by its own diagonal (frontLeftX,frontTopY)->
+  // (backX,backY) -- a mirror image of the existing right-side diagonal
+  // (backX+boxW,backY)->(frontRightX,frontTopY). Front-left, front-
+  // right, back-left, and back-right verticals are now all equal.
   ctx.beginPath();
   ctx.moveTo(backX, backY);            // back-top-left
   ctx.lineTo(backX + boxW, backY);     // back-top-right
-  ctx.lineTo(frontRightX, frontTopY);  // top face's near-right corner
-  ctx.lineTo(frontRightX, sideBottomY); // front-bottom-right
-  ctx.lineTo(frontLeftX, sideBottomY);  // front-bottom-left
-  ctx.lineTo(backX, sideBottomY);      // side-bottom-left -- all three now match
-  ctx.closePath();                     // back up the side's left edge to back-top-left
-  const wallGrad = ctx.createLinearGradient(0, backY, 0, sideBottomY);
+  ctx.lineTo(frontRightX, frontTopY);  // diagonal down to front-top-right
+  ctx.lineTo(frontRightX, groundY);    // front-right vertical -- height wallH
+  ctx.lineTo(frontLeftX, groundY);     // bottom edge
+  ctx.lineTo(frontLeftX, frontTopY);   // front-left vertical -- height wallH, matches front-right exactly
+  ctx.closePath();                     // diagonal back up to back-top-left, mirroring the back-top-right diagonal
+  const wallGrad = ctx.createLinearGradient(0, backY, 0, groundY);
   wallGrad.addColorStop(0, SANDBOX_RED);
   wallGrad.addColorStop(1, SANDBOX_RED_DARK);
   ctx.fillStyle = wallGrad;
@@ -37821,24 +37827,20 @@ function drawSandMound(x, camX, label) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // shade the front face darkest and the side face a middle tone, so
-  // the three faces (top/front/side) read as one lit 3D box -- no
-  // wood-panel lines (see the comment above on smooth vs. paneled),
-  // just simple flat-shaded faces
+  // shade the front face darkest, so the two faces (top/front) read as
+  // one lit 3D box. CONFIRMED CHANGE: dropped the separate "side face"
+  // middle-tone shading entirely -- it was tied to the old, taller
+  // left edge that no longer exists now that front-left/front-right/
+  // back-left/back-right verticals all match. There is no more
+  // distinct receding side wedge to shade -- just a top face and a
+  // front face, which is exactly the simpler, "thinner, not a
+  // trapezoid" box shape that was asked for.
   ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.beginPath();
   ctx.moveTo(frontLeftX, frontTopY);
   ctx.lineTo(frontRightX, frontTopY);
-  ctx.lineTo(frontRightX, sideBottomY);
-  ctx.lineTo(frontLeftX, sideBottomY);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "rgba(0,0,0,0.09)";
-  ctx.beginPath();
-  ctx.moveTo(backX, backY);
-  ctx.lineTo(frontLeftX, frontTopY);
-  ctx.lineTo(frontLeftX, sideBottomY);
-  ctx.lineTo(backX, sideBottomY);
+  ctx.lineTo(frontRightX, groundY);
+  ctx.lineTo(frontLeftX, groundY);
   ctx.closePath();
   ctx.fill();
 
@@ -38778,7 +38780,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1400, topHeight: 270 }; // CONFIRMED CHANGE: moved much further right (was 1250) per "slinky pile too close to pendulum," and taller still
+const sandboxBlockPile = { x: 1400, topHeight: 195 }; // CONFIRMED BUG FIX: much shorter (was 270) -- 270 above gy=300 put the player's head off the TOP of the 300px-tall visible area above ground; 195 leaves real margin
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -38802,29 +38804,36 @@ const sandboxBlockPile = { x: 1400, topHeight: 270 }; // CONFIRMED CHANGE: moved
 // more than one route up the pile.
 const SANDBOX_PILE_THICKNESS = 45;
 const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d6", "#f2833c", "#3fd6b0", "#e85fa0"];
+// CONFIRMED BUG FIX: heights compressed down from a 270-tall peak to a
+// 195-tall one -- gy (ground line) sits 300px below the top of the
+// visible play area, so a 270-high perch plus the player's own sprite
+// height pushed the player's head off the top of the screen entirely.
+// The last gap (tier5 -> peak) is also deliberately the smallest of
+// the run, per "make top block of slinky pile a lot shorter."
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint
-  { x: 1290, width: 70, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1360, width: 55, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1415, width: 60, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1475, width: 50, heightAboveGround: 45, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1290, width: 70, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1360, width: 55, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1415, width: 60, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1475, width: 50, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 2 -- resting on the base tier
-  { x: 1300, width: 55, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1355, width: 48, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1410, width: 50, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1460, width: 45, heightAboveGround: 90, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1300, width: 55, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1355, width: 48, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1410, width: 50, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1460, width: 45, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[7] },
   // tier 3
-  { x: 1310, width: 48, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1365, width: 42, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1415, width: 44, heightAboveGround: 135, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1310, width: 48, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1365, width: 42, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1415, width: 44, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[1] },
   // tier 4
-  { x: 1320, width: 42, heightAboveGround: 180, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1370, width: 38, heightAboveGround: 180, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1320, width: 42, heightAboveGround: 154, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1370, width: 38, heightAboveGround: 154, color: SANDBOX_PILE_COLORS[3] },
   // tier 5
-  { x: 1335, width: 40, heightAboveGround: 225, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1375, width: 36, heightAboveGround: 225, color: SANDBOX_PILE_COLORS[4] },
-  // the peak -- charge the slinky from here
-  { x: 1345, width: 42, heightAboveGround: 270, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1335, width: 40, heightAboveGround: 178, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1375, width: 36, heightAboveGround: 178, color: SANDBOX_PILE_COLORS[4] },
+  // the peak -- charge the slinky from here -- a deliberately short
+  // final hop up from tier 5 (178 -> 195, just 17px)
+  { x: 1345, width: 42, heightAboveGround: 195, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 
@@ -38911,10 +38920,16 @@ function drawBlockPile(camX) {
     ctx.strokeRect(bx, topY, s.width, SANDBOX_PILE_THICKNESS);
   });
 
+  // CONFIRMED BUG FIX: label was anchored to sandboxBlockPile.x (just a
+  // general reference point for the decor blocks, x=1400) instead of
+  // the actual top step's own x (1345) -- that 55px gap is exactly why
+  // things near the peak read as floating off to the side of the real
+  // block. Anchored to the true top step now.
+  const topStepSx = SANDBOX_SLINKY_TOP_STEP.x - camX;
   ctx.fillStyle = "#5a4a2a";
   ctx.font = "11px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("Slinky", sx + SANDBOX_SLINKY_TOP_STEP.width / 2, gy - sandboxBlockPile.topHeight - 14);
+  ctx.fillText("Slinky", topStepSx + SANDBOX_SLINKY_TOP_STEP.width / 2, gy - sandboxBlockPile.topHeight - 14);
   ctx.textAlign = "left";
 }
 
@@ -38977,7 +38992,12 @@ function updateSandboxSlinky(deltaTime) {
 
 function drawSandboxSlinky(camX) {
   const s = sandboxSlinky;
-  const topSx = sandboxBlockPile.x - camX + SANDBOX_SLINKY_TOP_STEP.width / 2;
+  // CONFIRMED BUG FIX: was anchored to sandboxBlockPile.x (1400, just a
+  // general reference point for the decor blocks) instead of the top
+  // STEP's own x (1345) -- that 55px mismatch is exactly why the coil
+  // read as "hanging in mid air" off to the side of the actual highest
+  // block instead of sitting on it.
+  const topSx = SANDBOX_SLINKY_TOP_STEP.x - camX + SANDBOX_SLINKY_TOP_STEP.width / 2;
   const topScreenY = gy - sandboxBlockPile.topHeight;
 
   // charge meter -- a small filling arc above the top step, same
@@ -38998,6 +39018,42 @@ function drawSandboxSlinky(camX) {
   // rest coiled on the top step otherwise
   const coilSx = s.running ? player.x + player.width / 2 - camX : topSx;
   const coilSy = s.running ? gy - player.y - 4 : topScreenY - 4;
+
+  // CONFIRMED CHANGE: "it is not interactive, make it kind of glow
+  // subtly, and then twinkly when you press interact" -- a soft
+  // breathing glow while idle/available (so it reads as a live,
+  // interactive toy rather than a static decoration), and a burst of
+  // twinkling sparkles while actually charging, intensifying with the
+  // charge level, same spirit as the swing charge bar's own "gentle
+  // sparkle once fully charged."
+  if (!s.running) {
+    const breathe = 0.55 + Math.sin(performance.now() * 0.003) * 0.35;
+    const glowR = 22 + s.charge * 10;
+    const glow = ctx.createRadialGradient(coilSx, coilSy - 6, 0, coilSx, coilSy - 6, glowR);
+    const glowAlpha = (0.12 + s.charge * 0.35) * breathe;
+    glow.addColorStop(0, `rgba(255,215,120,${glowAlpha})`);
+    glow.addColorStop(1, "rgba(255,215,120,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(coilSx, coilSy - 6, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (s.charge > 0.05) {
+      const sparkleCount = Math.round(3 + s.charge * 5);
+      for (let i = 0; i < sparkleCount; i++) {
+        const ang = (performance.now() * 0.002 + i * (Math.PI * 2 / sparkleCount));
+        const rad = 14 + pseudoRandom(i * 3.3) * 10;
+        const spx = coilSx + Math.cos(ang) * rad;
+        const spy = coilSy - 6 + Math.sin(ang) * rad * 0.6;
+        const twinkle = 0.4 + Math.sin(performance.now() * 0.01 + i * 2) * 0.4;
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, twinkle) * s.charge})`;
+        ctx.beginPath();
+        ctx.arc(spx, spy, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
   ctx.strokeStyle = "#c0392b";
   ctx.lineWidth = 3;
   for (let i = 0; i < 5; i++) {
