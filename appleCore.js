@@ -39148,13 +39148,24 @@ function drawSandboxSlinky(camX) {
     // silhouette read as one continuous dome. Drums are also taller
     // now (6 rings) to match the photo's proportions -- they were
     // noticeably squatter relative to the fan before.
-    const drumOffset = 16, drumR = 9, drumRingH = 3.5, drumRings = 6;
+    // CONFIRMED BUG FIX: "the arc slinky doesnt attach well to the
+    // bottom slinky parts... bottom slinky parts need to be a little
+    // less wide... a little more tightly coiled, but still be able to
+    // see some air between each coil" -- the drums were wider (drumR=9)
+    // than the fan's own narrow profile above them, so the fan sat
+    // perched on top like a narrow cone on a fat base instead of
+    // blending in. Narrowed the drums (and pulled them closer together
+    // to match), and switched the ring spacing so each ring's stroke no
+    // longer overlaps the next one (drumRingH is now bigger than the
+    // ring's own drawn height), leaving real visible gaps between
+    // coils instead of a solid-looking tube.
+    const drumOffset = 12, drumR = 6, drumRingH = 6, drumRings = 6;
     const drumTopY = coilSy - 2;
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.3;
     [coilSx - drumOffset, coilSx + drumOffset].forEach(dx => {
       for (let i = 0; i < drumRings; i++) {
         ctx.beginPath();
-        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, drumR * 0.4, 0, 0, Math.PI * 2);
+        ctx.ellipse(dx, drumTopY - i * drumRingH, drumR, drumR * 0.42, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
     });
@@ -39205,13 +39216,23 @@ function drawSandboxSlinkyRider(camX) {
   const coilSy = gy - player.y - 4;
   ctx.strokeStyle = "#c0392b";
   const hopPhase = s.hopPhase || 0;
-  const stretch = Math.sin(hopPhase * Math.PI); // 0 at touch-down, 1 at the hop's peak
-  const ringCount = 4;
-  const ringGap = 3 + stretch * 4;
-  ctx.lineWidth = 2.5;
+  const stretch = Math.sin(hopPhase * Math.PI); // 0 = fully compressed at touch-down, 1 = fully stretched at the hop's peak
+  // CONFIRMED CHANGE: "the main point is to see the visual of how a
+  // slinky moves down a set of steps. that coiling and uncoiling" --
+  // the old range (4 rings, gap 3-7, radius barely changing) was too
+  // subtle to read as coiling/uncoiling at all, just a slightly wobbly
+  // blob. Pushed the range hard: more rings, and gap/radius now swing
+  // between a short squat compressed drum (touch-down) and a tall
+  // narrow stretched spring (hop peak) -- the same squash-and-stretch
+  // language real coil toys actually show when flipping down stairs.
+  const ringCount = 8;
+  const ringGap = 2 + stretch * 11;
+  const radiusX = 10 - stretch * 4.5;
+  const radiusY = 3 + stretch * 1.5;
+  ctx.lineWidth = 2.2;
   for (let i = 0; i < ringCount; i++) {
     ctx.beginPath();
-    ctx.ellipse(coilSx, coilSy - i * ringGap, 9 - stretch * 2, 4 + stretch * 1.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(coilSx, coilSy - i * ringGap, radiusX, radiusY, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
