@@ -38780,7 +38780,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1400, topHeight: 195 }; // CONFIRMED BUG FIX: much shorter (was 270) -- 270 above gy=300 put the player's head off the TOP of the 300px-tall visible area above ground; 195 leaves real margin
+const sandboxBlockPile = { x: 1400, topHeight: 220 }; // CONFIRMED CHANGE: raised a bit ("make top box a lil higher") from 195 -- still well clear of gy=300's off-screen ceiling
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -38802,38 +38802,44 @@ const sandboxBlockPile = { x: 1400, topHeight: 195 }; // CONFIRMED BUG FIX: much
 // footprint (not one file per column), so there's genuine width for
 // the slinky patterns to wander across on the way down, and so there's
 // more than one route up the pile.
-const SANDBOX_PILE_THICKNESS = 45;
 const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d6", "#f2833c", "#3fd6b0", "#e85fa0"];
-// CONFIRMED BUG FIX: heights compressed down from a 270-tall peak to a
-// 195-tall one -- gy (ground line) sits 300px below the top of the
-// visible play area, so a 270-high perch plus the player's own sprite
-// height pushed the player's head off the top of the screen entirely.
-// The last gap (tier5 -> peak) is also deliberately the smallest of
-// the run, per "make top block of slinky pile a lot shorter."
+// CONFIRMED BUG FIX: "the physics and placements really do not make a
+// lot of sense here" -- every block used to be drawn as a flat
+// SANDBOX_PILE_THICKNESS(45)-tall slab regardless of how far it
+// actually was above the tier below it. Real tier-to-tier gaps here
+// are 40/38/38/38/22 -- none of them are 45 -- so a fixed 45 slab
+// either left a visible gap under some blocks (floating, no visible
+// support) or plowed through/overlapped the tier below (a block
+// poking out past where its own collision top actually is). Each
+// block now carries its OWN "restsOn" height (the top of whatever tier
+// it's actually resting on -- 0 for the ground tier), and is drawn as
+// a slab from heightAboveGround down to exactly restsOn, so every
+// block visually sits flush on the thing below it with no gap and no
+// overlap -- what you see IS where the collision surface is.
+// Heights also raised a bit overall per "make top box a lil higher."
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint
-  { x: 1290, width: 70, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1360, width: 55, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1415, width: 60, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1475, width: 50, heightAboveGround: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1290, width: 70, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1360, width: 55, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1415, width: 60, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1475, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
   // tier 2 -- resting on the base tier
-  { x: 1300, width: 55, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1355, width: 48, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1410, width: 50, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1460, width: 45, heightAboveGround: 78, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1300, width: 55, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1355, width: 48, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1410, width: 50, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1460, width: 45, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[7] },
   // tier 3
-  { x: 1310, width: 48, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1365, width: 42, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1415, width: 44, heightAboveGround: 116, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1310, width: 48, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1365, width: 42, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1415, width: 44, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[1] },
   // tier 4
-  { x: 1320, width: 42, heightAboveGround: 154, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1370, width: 38, heightAboveGround: 154, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1320, width: 42, heightAboveGround: 172, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1370, width: 38, heightAboveGround: 172, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
   // tier 5
-  { x: 1335, width: 40, heightAboveGround: 178, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1375, width: 36, heightAboveGround: 178, color: SANDBOX_PILE_COLORS[4] },
-  // the peak -- charge the slinky from here -- a deliberately short
-  // final hop up from tier 5 (178 -> 195, just 17px)
-  { x: 1345, width: 42, heightAboveGround: 195, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1335, width: 40, heightAboveGround: 198, restsOn: 172, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1375, width: 36, heightAboveGround: 198, restsOn: 172, color: SANDBOX_PILE_COLORS[4] },
+  // the peak -- charge the slinky from here
+  { x: 1345, width: 42, heightAboveGround: 220, restsOn: 198, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 
@@ -38841,17 +38847,25 @@ const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAbo
 // climbable pile, at varied sizes/colors/rotations, filling in the
 // silhouette so it reads as a real heap rather than a thin stack of
 // ledges; not collidable (bulk filler behind the real blocks)
+// CONFIRMED BUG FIX: several of these had a dy (height above ground)
+// taller than any real block actually covering that x -- e.g. dx:122
+// dy:62 sat well to the right of and above the base tier's real right
+// edge, with nothing behind it, which is exactly the "floating blue
+// box on the right" bug. Every decor block's dy is now capped below
+// the base tier's own height (40) so it always sits low, tucked in
+// behind/under the real climbable blocks -- pure background filler,
+// never poking out above the actual pile silhouette.
 const SANDBOX_PILE_DECOR_BLOCKS = [
   { dx: -95, dy: 8, w: 30, h: 24, color: "#e8483a", rot: -0.1 },
-  { dx: -105, dy: 32, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
+  { dx: -105, dy: 22, w: 34, h: 26, color: "#f2b93c", rot: 0.06 },
   { dx: 100, dy: 10, w: 32, h: 26, color: "#3fa7d6", rot: -0.05 },
-  { dx: 108, dy: 34, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
-  { dx: -65, dy: 55, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
-  { dx: 70, dy: 58, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
+  { dx: 108, dy: 24, w: 30, h: 24, color: "#5fbf5a", rot: 0.08 },
+  { dx: -65, dy: 30, w: 28, h: 22, color: "#c265d6", rot: -0.04 },
+  { dx: 70, dy: 32, w: 26, h: 22, color: "#f2833c", rot: 0.05 },
   { dx: -20, dy: 4, w: 26, h: 20, color: "#3fd6b0", rot: 0.03 },
   { dx: 22, dy: 6, w: 24, h: 20, color: "#e85fa0", rot: -0.03 },
-  { dx: -120, dy: 60, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
-  { dx: 122, dy: 62, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
+  { dx: -115, dy: 12, w: 24, h: 30, color: "#f2b93c", rot: 0.04 },
+  { dx: 118, dy: 14, w: 26, h: 28, color: "#3fa7d6", rot: -0.06 }
 ];
 
 // each pattern maps ride progress (0 = top, 1 = ground) to a horizontal
@@ -38867,7 +38881,14 @@ const SLINKY_PATTERNS = [
   { name: "loop", xOffset: p => Math.sin(p * Math.PI * 2) * 32 * (1 - p) }
 ];
 const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
-const SANDBOX_SLINKY_BASE_MS = 1600; // ride duration at zero charge -- fully charged cuts this roughly in half
+// CONFIRMED BUG FIX: "slinky way too fast moving.. waaay too fast" --
+// at the old BASE_MS(1600) / (1 + charge*1.4), a full-charge ride down
+// a ~195px pile took roughly 1600/2.4 ≈ 667ms, basically one blink.
+// BASE_MS raised a lot and the charge multiplier softened so even a
+// max-charge ride now takes a bit over a second, and an uncharged one
+// takes several seconds -- slow enough to actually see the pattern and
+// the coil.
+const SANDBOX_SLINKY_BASE_MS = 3400; // ride duration at zero charge
 
 const sandboxSlinky = {
   armed: true,     // must release space once before a new charge can start -- same "armed" gate as skipStoneArmed
@@ -38911,13 +38932,20 @@ function drawBlockPile(camX) {
   sandboxBlockSteps.forEach(s => {
     const bx = s.x - camX;
     const topY = gy - s.heightAboveGround;
+    // CONFIRMED BUG FIX: slab thickness is now heightAboveGround minus
+    // restsOn -- i.e. drawn exactly down to the surface it's actually
+    // resting on (the tier below, or the ground) -- instead of a fixed
+    // 45 that didn't match the real tier gaps, causing floating gaps
+    // and overlaps that made the pile look disconnected from where you
+    // could actually stand.
+    const thickness = s.heightAboveGround - s.restsOn;
     ctx.fillStyle = s.color;
-    ctx.fillRect(bx, topY, s.width, SANDBOX_PILE_THICKNESS);
+    ctx.fillRect(bx, topY, s.width, thickness);
     ctx.fillStyle = "rgba(255,255,255,0.28)";
     ctx.fillRect(bx, topY, s.width, 6);
     ctx.strokeStyle = "rgba(0,0,0,0.28)";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(bx, topY, s.width, SANDBOX_PILE_THICKNESS);
+    ctx.strokeRect(bx, topY, s.width, thickness);
   });
 
   // CONFIRMED BUG FIX: label was anchored to sandboxBlockPile.x (just a
@@ -38959,6 +38987,7 @@ function updateSandboxSlinky(deltaTime) {
   const onTopStep = Math.abs(player.y - SANDBOX_SLINKY_TOP_STEP.heightAboveGround) < 4 &&
     player.x + player.width > SANDBOX_SLINKY_TOP_STEP.x &&
     player.x < SANDBOX_SLINKY_TOP_STEP.x + SANDBOX_SLINKY_TOP_STEP.width;
+  s.onTopStep = onTopStep; // CONFIRMED CHANGE: exposed for drawSandboxSlinky so the "hold space" prompt/bar can show as soon as you're in position, not only once charge > 0
 
   if (!keys.space) s.armed = true;
   const canCharge = onTopStep && s.armed && !s.running;
@@ -38976,7 +39005,7 @@ function updateSandboxSlinky(deltaTime) {
     s.patternIndex = Math.floor(pseudoRandom(performance.now() % 1000) * SLINKY_PATTERNS.length) % SLINKY_PATTERNS.length;
     // undercharged releases still ride, just slower -- no "too weak,
     // nothing happens" dead zone, same principle as the skip-stone throw
-    s.runDurationMs = SANDBOX_SLINKY_BASE_MS / (1 + s.charge * 1.4);
+    s.runDurationMs = SANDBOX_SLINKY_BASE_MS / (1 + s.charge * 0.65);
     s.startX = player.x + player.width / 2;
     s.runT = 0;
     s.running = true;
@@ -39000,17 +39029,34 @@ function drawSandboxSlinky(camX) {
   const topSx = SANDBOX_SLINKY_TOP_STEP.x - camX + SANDBOX_SLINKY_TOP_STEP.width / 2;
   const topScreenY = gy - sandboxBlockPile.topHeight;
 
-  // charge meter -- a small filling arc above the top step, same
-  // "orange -> green as it charges" read as the swing's charge bar
-  if (s.charge > 0.001 && !s.running) {
-    const barW = 40, barH = 6;
-    const bx = topSx - barW / 2, by = topScreenY - 16;
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    roundRect(ctx, bx, by, barW, barH, 3);
+  // CONFIRMED BUG FIX: "where is charge indicator" -- the bar used to
+  // only appear once charge>0.001, so if you weren't already holding
+  // space there was nothing on screen at all telling you this was
+  // interactive. Now: a "HOLD SPACE" prompt shows the instant you're
+  // standing on the top step (even at zero charge), and the meter
+  // itself is bigger and outlined so it's visible against any
+  // background, not just once it's partly filled.
+  if (s.onTopStep && !s.running) {
+    const barW = 56, barH = 10;
+    const bx = topSx - barW / 2, by = topScreenY - 26;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    roundRect(ctx, bx, by, barW, barH, 4);
     ctx.fill();
-    ctx.fillStyle = s.charge > 0.8 ? "#5fbf5a" : "#f2b93c";
-    roundRect(ctx, bx, by, barW * s.charge, barH, 3);
-    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, bx, by, barW, barH, 4);
+    ctx.stroke();
+    if (s.charge > 0.001) {
+      ctx.fillStyle = s.charge > 0.8 ? "#5fbf5a" : "#f2b93c";
+      roundRect(ctx, bx + 2, by + 2, (barW - 4) * s.charge, barH - 4, 3);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("HOLD SPACE", topSx, by - 5);
+      ctx.textAlign = "left";
+    }
   }
 
   // the slinky itself -- a simple stacked-coil spring, drawn following
@@ -39054,12 +39100,28 @@ function drawSandboxSlinky(camX) {
     }
   }
 
+  // CONFIRMED BUG FIX: "it doesnt look like we are on slinky at all" --
+  // while riding, the coil now draws BIGGER, wider than the player, and
+  // squashes/stretches with a bounce so it reads as something the
+  // player is actually compressing underfoot, plus a small floating
+  // label so it's unambiguous what's happening.
+  const coilScale = s.running ? 1.6 : 1;
+  const bounce = s.running ? 1 + Math.abs(Math.sin(performance.now() * 0.02)) * 0.3 : 1;
   ctx.strokeStyle = "#c0392b";
-  ctx.lineWidth = 3;
-  for (let i = 0; i < 5; i++) {
+  ctx.lineWidth = s.running ? 4 : 3;
+  const coilCount = s.running ? 6 : 5;
+  for (let i = 0; i < coilCount; i++) {
     ctx.beginPath();
-    ctx.ellipse(coilSx, coilSy - i * 3, 10, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(coilSx, coilSy - i * 3 * coilScale, 10 * coilScale * bounce, 4 * coilScale, 0, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  if (s.running) {
+    ctx.fillStyle = "#c0392b";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Riding Slinky!", coilSx, coilSy - coilCount * 3 * coilScale - 10);
+    ctx.textAlign = "left";
   }
 }
 
@@ -40935,7 +40997,12 @@ function updateSpringScene(deltaTime) {
   // SANDBOX ENTRANCE — walk up, space to shrink down into it. Hidden
   // (and inert) until clouds has been visited, matching the mound's own
   // draw gate above.
-  if (discoveredScenes.clouds && keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 15, 15)) {
+  // CONFIRMED BUG FIX: radiusYUp bumped 15 -> 26 -- now that the box's
+  // top is a real jumpable platform (~20 above ground), standing on top
+  // of it put player.y past the old 15 tolerance, so interact silently
+  // stopped working the moment you jumped up there. Per direct request
+  // ("when jump on sandbox, interact needs to still work to enter").
+  if (discoveredScenes.clouds && keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 26, 15)) {
     startSeasonTransition("sandbox");
   }
 
