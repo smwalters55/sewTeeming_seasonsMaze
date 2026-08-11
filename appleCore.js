@@ -39158,15 +39158,25 @@ function drawSandboxSlinky(camX) {
         ctx.stroke();
       }
     });
-    const fanTopY = drumTopY - drumRings * drumRingH;
+    // CONFIRMED BUG FIX: "the top half arcs need to fully connect with
+    // the bottom coils. they also need to attach together to form a
+    // true arc" -- two real gaps: (1) fanTopY sat a whole ring-spacing
+    // ABOVE the topmost drawn ring, leaving visible empty space between
+    // the fan and the drums; now aligned exactly to the topmost ring's
+    // own height, no gap. (2) the two fans had separate hubs 8px apart,
+    // leaving a visible notch/valley between them at the very top; now
+    // sharing ONE hub point dead-center, so both fans' innermost lines
+    // start from the exact same spot and the whole thing reads as one
+    // unbroken dome instead of two peaks with a dip between.
+    const fanTopY = drumTopY - (drumRings - 1) * drumRingH;
     ctx.lineWidth = 1;
+    const hubX = coilSx;
     [-1, 1].forEach(dir => {
-      const hubX = coilSx + dir * 4; // the two fans' bases sit close together near the center, not spread across each drum's whole top
-      const count = 9, maxAngleDeg = 82;
+      const count = 9, maxAngleDeg = 85;
       for (let i = 0; i < count; i++) {
         const t = i / (count - 1); // 0 = innermost/near-vertical/tallest, 1 = outermost/near-horizontal/shortest
         const angle = (t * maxAngleDeg) * Math.PI / 180;
-        const len = arcHeight * (1 - 0.55 * t);
+        const len = arcHeight * (1 - 0.2 * t);
         const tipX = hubX + dir * Math.sin(angle) * len;
         const tipY = fanTopY - Math.cos(angle) * len;
         ctx.beginPath();
