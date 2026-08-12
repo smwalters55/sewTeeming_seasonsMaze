@@ -42691,7 +42691,17 @@ const sandboxBalanceBall = {
   butterflyWorldX: 0,
   butterflyDir: 1,
   butterflyHitThisPass: false,
-  butterflySpawnT: 2.5 + Math.random() * 2
+  butterflySpawnT: 2.5 + Math.random() * 2,
+  // CONFIRMED CHANGE ("i also want the butterfly for balance to come
+  // out of a little thing an go into a little thing... two matching...
+  // little mini suns... floating"): two fixed sun-portals sit on either
+  // side of the ball at SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST, always
+  // present (not just while a butterfly's mid-flight) -- the butterfly
+  // now emerges from and returns into whichever one matches its travel
+  // direction each pass. portalPulseLeft/Right are draw-only glow
+  // boosts, flared briefly at the exact moment of emergence/return.
+  portalPulseLeft: 0,
+  portalPulseRight: 0
 };
 // CONFIRMED CHANGE: retuned harder after direct feedback ("make balance
 // ball more difficult its super easy rn") -- the earlier pass (1.3
@@ -42725,10 +42735,20 @@ const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the k
 // from ~0.43s).
 const SANDBOX_BALANCE_JUMP_STRENGTH = 184;
 const SANDBOX_BALANCE_JUMP_GRAVITY = 489;
+// CONFIRMED CHANGE (butterfly sun-portals) -- both the spawn and despawn
+// distance now match this single constant exactly, so the butterfly's
+// flight always starts and ends right at one of the two fixed portals
+// instead of at a slightly different, unrelated offset (was 220 spawn /
+// 260 despawn, neither of which lined up with a drawn object at all).
+const SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST = 230;
 
 function updateSandboxBalanceBall(deltaTime) {
   const b = sandboxBalanceBall;
   b.tAccum += deltaTime;
+  // portal glow pulses always decay, even when nobody's riding, so the
+  // flare from a pass that just ended finishes playing out regardless
+  b.portalPulseLeft = Math.max(0, b.portalPulseLeft - deltaTime * 2.2);
+  b.portalPulseRight = Math.max(0, b.portalPulseRight - deltaTime * 2.2);
 
   if (player.onBalanceBall) {
     const input = keys.left ? -1 : keys.right ? 1 : 0;
@@ -42805,8 +42825,11 @@ function updateSandboxBalanceBall(deltaTime) {
     if (!b.butterflyActive && b.butterflySpawnT <= 0) {
       b.butterflyActive = true;
       b.butterflyDir = Math.random() < 0.5 ? 1 : -1;
-      b.butterflyWorldX = b.x - b.butterflyDir * 220;
+      b.butterflyWorldX = b.x - b.butterflyDir * SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST;
       b.butterflyHitThisPass = false;
+      // flare whichever portal it's emerging from -- the one on the
+      // side it's starting from, i.e. opposite its travel direction
+      if (b.butterflyDir === 1) b.portalPulseLeft = 1; else b.portalPulseRight = 1;
     }
     if (b.butterflyActive) {
       const flySpeed = 100;
@@ -42831,9 +42854,12 @@ function updateSandboxBalanceBall(deltaTime) {
           return;
         }
       }
-      if (dist > 260) {
+      if (dist >= SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST) {
         b.butterflyActive = false;
         b.butterflySpawnT = 2.5 + Math.random() * 2.5;
+        // flare the portal it's returning into -- the one on the side
+        // it's traveling toward, same direction as butterflyDir
+        if (b.butterflyDir === 1) b.portalPulseRight = 1; else b.portalPulseLeft = 1;
       }
     }
   } else if (b.failed) {
@@ -43710,23 +43736,36 @@ function drawAntFarmDiggers(gx, gyTop) {
     drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null, { walkPhase: isWandering ? d.gaitPhase : null });
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
     if (d.digRow !== -1) {
-      // small crumble effect at the dig target -- same visual language
-      // (growing lighter patch + radiating cracks) as the player's own
-      // dig feedback, just scaled down to worker-ant size
+      // erosion effect at the dig target, showing real progress over the
+      // full ANT_FARM_DIGGER_DIG_TIME window. CONFIRMED BUG FIX ("the
+      // digging ants still arent showing the slow digging away per
+      // square"): this existed before but was badly under-tuned for how
+      // slow/subtle it needs to read over a genuinely long (40s) dig --
+      // linear progress meant it stayed at essentially zero opacity
+      // (~0.05) for a good stretch, and even at 100% only reached 0.5
+      // opacity and a 7px radius against dark dirt at ant scale --
+      // functionally invisible. sqrt(t) front-loads visible progress
+      // (a real mark appears early and keeps building, closer to how
+      // real erosion actually reads -- a quick initial crack, then slow
+      // widening -- rather than a flat linear fade-in), and the ceiling
+      // values are raised enough to be genuinely noticeable by the time
+      // the dig completes.
       const target = antFarmCellCenter(d.digRow, d.digCol);
       const tx = gx + target.x, ty = gyTop + target.y;
-      const t = d.progress / ANT_FARM_DIGGER_DIG_TIME;
-      ctx.fillStyle = `rgba(150,110,70,${0.5 * t})`;
+      const rawT = d.progress / ANT_FARM_DIGGER_DIG_TIME;
+      const t = Math.sqrt(rawT);
+      ctx.fillStyle = `rgba(180,140,95,${0.25 + 0.55 * t})`;
       ctx.beginPath();
-      ctx.arc(tx, ty, 3 + t * 4, 0, Math.PI * 2);
+      ctx.arc(tx, ty, 2.5 + t * 7.5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = `rgba(90,65,35,${0.6 * t})`;
-      ctx.lineWidth = 0.6;
-      for (let i = 0; i < 4; i++) {
-        const crackAngle = (i / 4) * Math.PI * 2 + d.digRow * 0.7;
+      ctx.strokeStyle = `rgba(90,65,35,${0.5 + 0.5 * t})`;
+      ctx.lineWidth = 0.5 + t * 0.5;
+      const crackCount = 4 + Math.floor(t * 3);
+      for (let i = 0; i < crackCount; i++) {
+        const crackAngle = (i / crackCount) * Math.PI * 2 + d.digRow * 0.7;
         ctx.beginPath();
         ctx.moveTo(tx, ty);
-        ctx.lineTo(tx + Math.cos(crackAngle) * (2 + t * 5), ty + Math.sin(crackAngle) * (2 + t * 5));
+        ctx.lineTo(tx + Math.cos(crackAngle) * (2 + t * 8), ty + Math.sin(crackAngle) * (2 + t * 8));
         ctx.stroke();
       }
     }
@@ -44868,21 +44907,100 @@ function drawSandboxAntFarm(camX) {
   ctx.fillRect(sx, top, farm.caseWidth * 0.3, farm.caseHeight);
 }
 
+// CONFIRMED CHANGE (butterfly sun-portals, "make it a neat sorta
+// elegant sun... dont have the sun facing human, have them facing where
+// the butterfly is going in and out of, just slightly angled towards
+// human"): a clean geometric sun-disc, drawn edge-on along the
+// butterfly's horizontal travel line (a thin ellipse, not a full circle
+// facing the player) with just enough width to read as a tilted 3D disc
+// rather than a flat line. Rays radiate from the same squished ellipse
+// so they foreshorten consistently with the disc instead of floating
+// off at the wrong angle. Palette is the agreed sandbox-decor set:
+// turquoise face, warm gold rim, a hint of maroon shadow on the near/far
+// edge for real depth, pulseStrength (0-1) flares the glow at the exact
+// moment the butterfly emerges from or returns into this one.
+function drawSandboxBalanceBallSunPortal(x, y, pulseStrength) {
+  const R = 15, squishX = 4.5; // slight face width -- "angled towards human", not a flat sliver
+  ctx.save();
+  ctx.translate(x, y);
+
+  const glowR = R * (1.6 + pulseStrength * 0.5);
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, glowR);
+  glow.addColorStop(0, `rgba(72,224,208,${0.28 + pulseStrength * 0.4})`);
+  glow.addColorStop(1, "rgba(72,224,208,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, squishX * 2.2, glowR, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // clean, evenly-spaced geometric rays -- alternating turquoise/burnt
+  // orange, thin straight lines only (no cartoon squiggle), foreshortened
+  // by the same squishX/R ratio as the disc itself
+  const rayCount = 10;
+  for (let i = 0; i < rayCount; i++) {
+    const ang = (i / rayCount) * Math.PI * 2;
+    const rx = Math.cos(ang) * squishX, ry = Math.sin(ang) * R;
+    const reach = 1 + 0.42 + pulseStrength * 0.18;
+    ctx.strokeStyle = i % 2 === 0
+      ? `rgba(255,166,77,${0.5 + pulseStrength * 0.3})`
+      : `rgba(72,224,208,${0.45 + pulseStrength * 0.3})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    ctx.lineTo(rx * reach, ry * reach);
+    ctx.stroke();
+  }
+
+  // the disc itself -- a thin 3D coin, gradient across its visible face
+  // width so it reads as a rounded edge rather than a flat painted oval:
+  // maroon shadow on one edge, turquoise through the center, warm gold
+  // rim on the near edge
+  const discGrad = ctx.createLinearGradient(-squishX, 0, squishX, 0);
+  discGrad.addColorStop(0, "rgba(110,60,68,0.6)");
+  discGrad.addColorStop(0.55, `rgba(72,224,208,${0.72 + pulseStrength * 0.2})`);
+  discGrad.addColorStop(1, "rgba(255,190,120,0.75)");
+  ctx.fillStyle = discGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, squishX, R, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(255,214,150,${0.7 + pulseStrength * 0.3})`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // the balance ball's butterfly obstacle -- a small monarch-style flutter
 // crossing at ankle height, drawn with simple flapping wings rather than
 // anything elaborate (this is a reflex layer on top of the existing
-// balance toy, not a new ride)
+// balance toy, not a new ride). CONFIRMED CHANGE: the two sun-portals
+// are always drawn (real ambient scenery either side of the ball, not
+// just a spawn effect), and the butterfly now scales in/out of whichever
+// one it's currently near instead of popping into existence at full size.
 function drawSandboxBalanceBallButterfly(camX) {
   const b = sandboxBalanceBall;
+  const leftX = b.x - camX - SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST;
+  const rightX = b.x - camX + SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST;
+  const portalY = gy - b.radius * 1.6;
+  drawSandboxBalanceBallSunPortal(leftX, portalY, b.portalPulseLeft);
+  drawSandboxBalanceBallSunPortal(rightX, portalY, b.portalPulseRight);
+
   if (!b.butterflyActive) return;
   const bx = b.butterflyWorldX - camX;
   const flyHeight = b.radius * 1.6; // roughly ankle-level against the rider's normal standing height
   const now = performance.now();
   const by = gy - flyHeight - Math.sin(now * 0.006) * 4;
   const flap = 0.3 + Math.abs(Math.sin(now * 0.02)) * 0.7;
+  // scales 0->1 emerging from its start portal, back to 0->... 0
+  // approaching its end portal -- same formula naturally covers both
+  // ends since it's just distance-from-center based
+  const distFromCenter = Math.abs(b.butterflyWorldX - b.x);
+  const scale = Math.max(0, Math.min(1, (SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST - distFromCenter) / 40));
+  if (scale <= 0) return;
 
   ctx.save();
   ctx.translate(bx, by);
+  ctx.scale(scale, scale);
   [-1, 1].forEach(dir => {
     ctx.save();
     ctx.scale(dir, 1);
@@ -44912,6 +45030,156 @@ function drawSandboxBalanceBallButterfly(camX) {
   ctx.restore();
 }
 
+/* ======================================================
+   SANDBOX SKY DECOR -- "abstract futuristic looking... kinda futuristic
+   old school slightly", drifting 3D-ish translucent geometric shapes as
+   the primary decor plus a handful of small orbiting motes as a lighter
+   accent. Palette agreed via direct discussion: turquoise + lavender-
+   purple as the cool primaries, burnt orange + dusty coral as warm
+   accents, maroon reserved for a shadow/depth note on the warm shapes'
+   far facet only -- never a shape's own dominant color (by design: it
+   read as autumnal/muddy rather than futuristic when tried as a
+   primary).
+   ====================================================== */
+const SANDBOX_SKY_SHAPE_PALETTES = [
+  { face: "rgba(72,196,196,0.32)", edge: "rgba(72,196,196,0.55)", shade: "rgba(90,60,90,0.26)" },   // turquoise, cool
+  { face: "rgba(150,120,200,0.30)", edge: "rgba(150,120,200,0.5)", shade: "rgba(90,60,90,0.26)" },  // lavender-purple, cool
+  { face: "rgba(230,140,80,0.30)", edge: "rgba(230,140,80,0.55)", shade: "rgba(110,60,68,0.32)" }   // burnt orange, warm -- maroon shade on its far facet
+];
+// generated once, spread across the whole case width so shapes are
+// always somewhere on screen no matter where the camera currently is,
+// each with its own slow rotation/bob/parallax so they read as
+// independently drifting rather than a single repeating pattern
+const SANDBOX_SKY_SHAPES = Array.from({ length: 9 }, (_, i) => ({
+  worldX: pseudoRandom(i * 7.3) * (SANDBOX_WIDTH + 200) - 100,
+  y: 18 + pseudoRandom(i * 4.1 + 2) * 90,
+  // CONFIRMED CHANGE ("i want one of the shapes to be a toroid"): index 4
+  // is always the toroid, sized up a bit from the base range since a
+  // ring reads thinner/smaller than a filled polygon at the same radius
+  size: (i === 4 ? 16 : 10) + pseudoRandom(i * 9.7 + 5) * 10,
+  sides: i === 4 ? "toroid" : (pseudoRandom(i * 3.3) < 0.5 ? 3 : 6), // triangle or hexagon facets, or the one toroid
+  rotSpeed: 0.08 + pseudoRandom(i * 2.9 + 1) * 0.14,
+  rotOffset: pseudoRandom(i * 5.5) * Math.PI * 2,
+  bobPhase: pseudoRandom(i * 6.6) * Math.PI * 2,
+  bobAmp: 6 + pseudoRandom(i * 1.7) * 6,
+  parallax: 0.35 + pseudoRandom(i * 8.8) * 0.3, // < 1 so they drift slower than the foreground -- real sense of distance
+  palette: SANDBOX_SKY_SHAPE_PALETTES[i % SANDBOX_SKY_SHAPE_PALETTES.length]
+}));
+const SANDBOX_SKY_MOTES = Array.from({ length: 8 }, (_, i) => ({
+  worldX: pseudoRandom(i * 11.3 + 50) * (SANDBOX_WIDTH + 200) - 100,
+  y: 15 + pseudoRandom(i * 6.9 + 3) * 100,
+  orbitR: 10 + pseudoRandom(i * 3.4) * 14,
+  orbitSpeed: 0.4 + pseudoRandom(i * 2.1) * 0.5,
+  phase: pseudoRandom(i * 7.7) * Math.PI * 2,
+  parallax: 0.5 + pseudoRandom(i * 4.4) * 0.3,
+  warm: pseudoRandom(i * 9.9) < 0.5 // dusty coral vs turquoise accent
+}));
+
+// a single drifting shape, drawn as alternating lit/shaded triangular
+// facets from center to each edge (light assumed from the upper-left)
+// rather than one flat translucent fill -- reads as a rotating faceted
+// solid, not a sticker
+function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette) {
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(rotation);
+  const pts = [];
+  for (let i = 0; i <= sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    pts.push([Math.cos(a) * size, Math.sin(a) * size]);
+  }
+  for (let i = 0; i < sides; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+    const midAngle = (i / sides) * Math.PI * 2 + Math.PI / sides;
+    const lit = Math.cos(midAngle - Math.PI * 0.75) > 0;
+    ctx.fillStyle = lit ? palette.face : palette.shade;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = palette.edge;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  ctx.stroke();
+  ctx.restore();
+}
+
+// the one toroid among the sky shapes -- a squished ring (tilted like the
+// balance-ball sun portals, same "seen from a slight angle" convention)
+// rather than a flat painted donut. Reuses the sun-portal's diagonal
+// edge/face/shade gradient sweep instead of the lit/shaded-wedge trick the
+// polygons use, since slicing a ring into radial wedges doesn't read as a
+// tube the way it reads as facets on a solid -- the gradient sells the
+// curved cross-section in one smooth pass instead.
+function drawSandboxSkyToroid(sx, sy, size, rotation, palette) {
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(rotation * 0.4); // gentler tumble than the polygons -- a ring's silhouette barely changes with rotation, so a fast spin just looks like jitter
+  const outerRx = size, outerRy = size * 0.62;
+  const innerRx = size * 0.52, innerRy = size * 0.32;
+  const grad = ctx.createLinearGradient(-outerRx, -outerRy, outerRx, outerRy);
+  grad.addColorStop(0, palette.edge);
+  grad.addColorStop(0.5, palette.face);
+  grad.addColorStop(1, palette.shade);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2, true); // reverse winding punches the hole via the evenodd fill below
+  ctx.fill("evenodd");
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = palette.edge;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 0.75;
+  ctx.strokeStyle = palette.shade;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSandboxSkyDecor(camX) {
+  const now = performance.now() * 0.001;
+  SANDBOX_SKY_SHAPES.forEach(s => {
+    const sx = s.worldX - camX * s.parallax;
+    if (sx < -60 || sx > canvas.width + 60) return;
+    const sy = s.y + Math.sin(now * 0.5 + s.bobPhase) * s.bobAmp;
+    const rotation = s.rotOffset + now * s.rotSpeed;
+    if (s.sides === "toroid") {
+      drawSandboxSkyToroid(sx, sy, s.size, rotation, s.palette);
+    } else {
+      drawSandboxSkyShape(sx, sy, s.size, s.sides, rotation, s.palette);
+    }
+  });
+  SANDBOX_SKY_MOTES.forEach(m => {
+    const orbitAngle = now * m.orbitSpeed + m.phase;
+    const sx = m.worldX - camX * m.parallax + Math.cos(orbitAngle) * m.orbitR;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    const sy = m.y + Math.sin(orbitAngle) * m.orbitR * 0.5;
+    const color = m.warm ? "230,140,110" : "140,220,220";
+    // a short faint trail hinting at the orbit motion, drawn before the
+    // mote itself so the mote's own dot sits on top
+    const trailAngle = orbitAngle - 0.4;
+    const tx = m.worldX - camX * m.parallax + Math.cos(trailAngle) * m.orbitR;
+    const ty = m.y + Math.sin(trailAngle) * m.orbitR * 0.5;
+    ctx.strokeStyle = `rgba(${color},0.22)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${color},0.6)`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
@@ -44920,6 +45188,8 @@ function drawSandboxScene(camX) {
   sky.addColorStop(1, "#eaf6ff");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawSandboxSkyDecor(camX);
 
   // disheveled sand floor -- base tone, then dense granular texture,
   // then real dug-out holes (not just tinted smudges) -- so it reads as
