@@ -43891,12 +43891,76 @@ const SANDBOX_ANT_FARM_ANTS = [
 // digging, slowly" only means something if it's not happening
 // entirely off-screen between visits.
 const ANT_FARM_DIGGER_DIG_TIME = 40; // seconds per cell -- a real slow, watchable excavation
-const ANT_FARM_MAX_AUTO_DIGS = 14; // caps total new tunnel added over the whole game so the maze doesn't dissolve into an open room
+// CONFIRMED CHANGE (path-diversity workshop -- "the exact same two ants
+// digging their same tunnel each the whole time"): bumped from 14 to
+// 21 (roughly one more digger's worth) now that a third digger exists
+// below, so all three keep getting real work instead of the shared
+// budget running dry sooner just because there's an extra worker.
+const ANT_FARM_MAX_AUTO_DIGS = 21; // caps total new tunnel added over the whole game so the maze doesn't dissolve into an open room
 let antFarmAutoDigCount = 0;
+// CONFIRMED CHANGE (path-diversity workshop, "i like the less
+// programmed behavior on this generally... so its generally uncertain
+// each time"): the chance, after ANY digger finishes a cell, that it
+// abandons its current pocket and walks off (through already-open
+// tunnels) to some other open cell on the map before resuming normal
+// digging there -- doesn't have to fully clear out one area first, and
+// can land anywhere, including somewhere it's already been. ~0.35
+// means a digger averages about 2-3 cells dug before wandering off,
+// per direct request.
+const ANT_FARM_DIGGER_RELOCATE_CHANCE = 0.35;
 const SANDBOX_ANT_FARM_DIGGERS = [
   { row: 5, col: 0, digRow: -1, digCol: -1, progress: 0, angle: 0, gaitPhase: 0 },
-  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI, gaitPhase: 0 }
+  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI, gaitPhase: 0 },
+  // CONFIRMED CHANGE (path-diversity workshop -- "i want to open up the
+  // area to left of entry vertical tunnel soon... i dont want it
+  // wandering off before doing that"): spawns on the top-left corridor
+  // (matches where Sam's mini-me was standing when this was discussed),
+  // then IMMEDIATELY relocates -- before ever picking a normal dig
+  // target -- to (2,6), the open cell directly adjacent to the solid
+  // wall at (2,7) that sits right next to the entrance's own vertical
+  // shaft (col 8). That guarantees its first real digging happens
+  // exactly there, opening a shortcut from the entrance straight down
+  // into the whole left side of the maze, before the general random
+  // relocation chance above ever gets a chance to send it elsewhere.
+  { row: 2, col: 3, digRow: -1, digCol: -1, progress: 0, angle: 0, gaitPhase: 0,
+    relocating: true, relocateTargetRow: 2, relocateTargetCol: 6 }
 ];
+
+// CONFIRMED CHANGE (path-diversity workshop): shared by both the
+// guaranteed initial walk (new 3rd digger, above) and the general
+// random relocation (any digger, see updateAntFarmDiggers) -- queues
+// exactly one real step of a multi-step walk toward (targetRow,
+// targetCol) via the same shortest-path-over-open-cells approach the
+// forager colony already uses for its own return trips, reusing the
+// existing single-step wander/animation fields (wanderFromRow etc.,
+// moveT) so this needed no new movement/drawing code at all.
+function antFarmDiggerStepToward(d, targetRow, targetCol) {
+  const field = getAntFarmDistanceFieldFrom(targetRow, targetCol);
+  const neighbors = antFarmOpenNeighbors(d.row, d.col);
+  if (!neighbors.length) { d.relocating = false; return; } // shouldn't happen, bail safely rather than get stuck
+  const next = neighbors.reduce((best, n) => (field[n.row][n.col] < field[best.row][best.col] ? n : best), neighbors[0]);
+  d.wanderFromRow = d.row;
+  d.wanderFromCol = d.col;
+  d.wanderToRow = next.row;
+  d.wanderToCol = next.col;
+  d.angle = Math.atan2(next.row - d.row, next.col - d.col);
+  d.moveT = 0;
+}
+
+// all currently-open cells on the map -- used to pick a random
+// relocation destination. Recomputed fresh each time a relocation
+// actually triggers (rare -- only after a 40s dig completes, and only
+// ~35% of the time even then), so there's no need to cache this the
+// way the shortest-path fields are cached.
+function antFarmAllOpenCells() {
+  const out = [];
+  for (let r = 0; r < ANT_FARM_ROWS; r++) {
+    for (let c = 0; c < ANT_FARM_COLS; c++) {
+      if (antFarmCellOpen(r, c)) out.push({ row: r, col: c });
+    }
+  }
+  return out;
+}
 
 // picks a solid neighbor of (row,col) to start digging, preferring one
 // not already claimed by another digger this frame. Returns null once
@@ -43922,6 +43986,29 @@ function antFarmPickDigTarget(row, col) {
 const ANT_FARM_DIGGER_WANDER_DURATION = 0.9; // seconds -- an actual walk between cells while boxed in, not an instant snap
 function updateAntFarmDiggers(deltaTime) {
   SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    // CONFIRMED CHANGE (path-diversity workshop -- digger relocation):
+    // handled before anything else, using the SAME single-step wander
+    // fields/animation as the "boxed in" case below -- just repeatedly
+    // queuing the next step (via antFarmDiggerStepToward) until the
+    // digger actually reaches its relocation target, instead of only
+    // ever taking one step. Covers both the new 3rd digger's guaranteed
+    // initial walk (relocating set true at spawn, no moveT yet) and any
+    // digger's later random mid-walk relocation.
+    if (d.relocating) {
+      if (d.moveT === undefined || d.moveT >= 1) {
+        if (d.moveT !== undefined) { d.row = d.wanderToRow; d.col = d.wanderToCol; }
+        if (d.row === d.relocateTargetRow && d.col === d.relocateTargetCol) {
+          d.relocating = false; // arrived -- fall through below to pick a normal dig target from here
+        } else {
+          antFarmDiggerStepToward(d, d.relocateTargetRow, d.relocateTargetCol);
+          return; // first/next step just queued -- animate it over the coming frames
+        }
+      } else {
+        d.moveT = Math.min(1, d.moveT + deltaTime / ANT_FARM_DIGGER_WANDER_DURATION);
+        d.gaitPhase = (d.gaitPhase + deltaTime * (1 / ANT_FARM_DIGGER_WANDER_DURATION) * ANT_GAIT_RATE) % (Math.PI * 2);
+        return;
+      }
+    }
     // CONFIRMED BUG FIX ("when an ant digs a new area, there is usually
     // some spaz out of the ant going flashing everywhere... gated in
     // one area for a time") -- root cause: the "boxed in, wander to a
@@ -44015,6 +44102,21 @@ function updateAntFarmDiggers(deltaTime) {
       d.digRow = -1;
       d.digCol = -1;
       d.progress = 0;
+
+      // CONFIRMED CHANGE (path-diversity workshop, "i like the less
+      // programmed behavior on this generally... uncertain each time"):
+      // a real chance to abandon this pocket and relocate somewhere
+      // else on the map before picking the next dig target -- see
+      // ANT_FARM_DIGGER_RELOCATE_CHANCE above for the reasoning.
+      if (pseudoRandom(performance.now() * 0.00023 + d.row * 5.9 + d.col * 3.3) < ANT_FARM_DIGGER_RELOCATE_CHANCE) {
+        const openCells = antFarmAllOpenCells();
+        if (openCells.length) {
+          const target = openCells[Math.floor(pseudoRandom(performance.now() * 0.00029 + d.col * 7.1 + d.row * 4.4) * openCells.length) % openCells.length];
+          d.relocating = true;
+          d.relocateTargetRow = target.row;
+          d.relocateTargetCol = target.col;
+        }
+      }
     }
   });
 }
@@ -44271,20 +44373,37 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
    (real ants don't have that, they'd also lay a-- weaker outbound
    trail and rely on gradient-following both ways) rather than a
    second pheromone-only mechanism; only the LOADED return trip lays
-   trail. Food sources never run out -- they're "the colony's foraging
-   spots", not a countable resource -- so foraging just runs forever
-   as ambient life in the case, which is what "watch them find food"
-   actually wants to look at.
+   trail.
+   CONFIRMED CHANGE (path-diversity workshop, "the idea that the food
+   slowly starts running out so the pheromone pattern has to change"):
+   the line above USED to say food sources never run out -- that's no
+   longer true. Each source now has finite supply (see ANT_FARM_FOOD_
+   SUPPLY_MAX below) that drains with every pickup and slowly regens
+   on its own once it's not being visited. This is what actually
+   solves "the ants only ever go to one source" better than any amount
+   of pheromone-curve tuning could: once a busy source runs dry,
+   foragers arriving there just pass through empty-handed, nothing
+   reinforces that trail anymore, it decays via the existing pheromone
+   evaporation like any unused trail, and the colony organically drifts
+   to whichever source still has supply (or has quietly regenerated
+   since) -- the exact "pattern has to change" Sam asked for, built
+   entirely out of systems that already existed rather than a new one.
    ====================================================== */
+const ANT_FARM_FOOD_SUPPLY_MAX = 6; // pickups a source can sustain before running dry
+const ANT_FARM_FOOD_REGEN_PER_SEC = ANT_FARM_FOOD_SUPPLY_MAX / 180; // full regen from empty takes ~3 real minutes
 const ANT_FARM_FOOD_SOURCES = [
-  { row: 2, col: 16 },
-  { row: 12, col: 0 },
-  { row: 9, col: 10 }
+  { row: 2, col: 16, supply: ANT_FARM_FOOD_SUPPLY_MAX },
+  { row: 12, col: 0, supply: ANT_FARM_FOOD_SUPPLY_MAX },
+  { row: 9, col: 10, supply: ANT_FARM_FOOD_SUPPLY_MAX }
 ];
 const ANT_FARM_PHEROMONE = Array.from({ length: ANT_FARM_ROWS }, () => new Array(ANT_FARM_COLS).fill(0));
 const ANT_FARM_PHEROMONE_MAX = 14;
 const ANT_FARM_PHEROMONE_DEPOSIT = 3;
 let antFarmFoodCollected = 0;
+
+function antFarmFindFoodSource(row, col) {
+  return ANT_FARM_FOOD_SOURCES.find(f => f.row === row && f.col === col) || null;
+}
 
 // CONFIRMED CHANGE (ant farm food-unlock workshop -- "lets have a food
 // source one of the digging ants unlocks after maybe idk 5 min or
@@ -44312,7 +44431,7 @@ function antFarmMaybeUnlockNewFood(row, col) {
   if (antFarmFirstSeenAt === null) return;
   if (performance.now() - antFarmFirstSeenAt < ANT_FARM_FOOD_UNLOCK_DELAY_MS) return;
   antFarmFoodUnlocked = true;
-  ANT_FARM_FOOD_SOURCES.push({ row, col });
+  ANT_FARM_FOOD_SOURCES.push({ row, col, supply: ANT_FARM_FOOD_SUPPLY_MAX });
   antFarmFoodUnlockFlashT = performance.now();
   antFarmFoodUnlockCell = { row, col };
   // the 5th forager (see SANDBOX_ANT_FARM_FORAGERS below) sits dormant
@@ -44435,7 +44554,13 @@ function antFarmOpenNeighbors(row, col) {
 }
 
 function antFarmIsFoodCell(row, col) {
-  return ANT_FARM_FOOD_SOURCES.some(f => f.row === row && f.col === col);
+  // CONFIRMED CHANGE (food depletion): a source with supply drained to
+  // 0 no longer counts as food -- an ant arriving there just passes
+  // through empty-handed, exactly like walking through any other open
+  // cell, until it regenerates (see the regen tick in
+  // updateAntFarmForagers) back above 0.
+  const f = antFarmFindFoodSource(row, col);
+  return !!f && f.supply > 0;
 }
 
 // four foragers, starting spread out near the entrance shaft so they
@@ -44488,6 +44613,11 @@ function antFarmForagerPickNext(f) {
   if (!f.carrying && antFarmIsFoodCell(f.row, f.col)) {
     f.carrying = true;
     f.sourceFood = { row: f.row, col: f.col };
+    // CONFIRMED CHANGE (food depletion): draining supply here, not on
+    // drop-off -- the pickup itself is what should make the source
+    // read as "getting picked over", not the eventual delivery.
+    const src = antFarmFindFoodSource(f.row, f.col);
+    if (src) src.supply = Math.max(0, src.supply - 1);
   }
   // arriving home with food -- drop it off
   if (f.carrying && f.row === ANT_FARM_ENTRANCE.row && f.col === ANT_FARM_ENTRANCE.col) {
@@ -44574,6 +44704,17 @@ function updateAntFarmForagers(deltaTime) {
       if (ANT_FARM_PHEROMONE[r][c] > 0) ANT_FARM_PHEROMONE[r][c] *= decay;
     }
   }
+
+  // CONFIRMED CHANGE (food depletion): every source slowly refills on
+  // its own, whether or not it's currently being visited -- a busy
+  // source still drains faster than this regen rate, so it'll still
+  // run dry under real pressure, but an abandoned one is never gone
+  // forever.
+  ANT_FARM_FOOD_SOURCES.forEach(src => {
+    if (src.supply < ANT_FARM_FOOD_SUPPLY_MAX) {
+      src.supply = Math.min(ANT_FARM_FOOD_SUPPLY_MAX, src.supply + deltaTime * ANT_FARM_FOOD_REGEN_PER_SEC);
+    }
+  });
 
   SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
     // CONFIRMED CHANGE (ant farm food-unlock workshop): the 5th forager
@@ -44699,11 +44840,16 @@ function drawAntFarmGreetSparkle(x, y, obj) {
 }
 
 function drawAntFarmForagers(gx, gyTop) {
-  // food sources -- small clustered crumbs, permanent (never depleted,
-  // see this system's own top comment)
+  // food sources -- small clustered crumbs. CONFIRMED CHANGE (food
+  // depletion): the visible crumb count now tracks real supply (0-3
+  // dots for 0-100% of ANT_FARM_FOOD_SUPPLY_MAX) so a picked-over
+  // source visibly thins out to nothing, then slowly reappears as it
+  // regenerates -- real visual feedback for "this one's running dry."
   ANT_FARM_FOOD_SOURCES.forEach((food, fi) => {
     const c = antFarmCellCenter(food.row, food.col);
-    [[-2, -1], [2, 0], [-1, 2]].forEach(([dx, dy], i) => {
+    const supplyFrac = food.supply / ANT_FARM_FOOD_SUPPLY_MAX;
+    const visibleDots = Math.ceil(supplyFrac * 3);
+    [[-2, -1], [2, 0], [-1, 2]].slice(0, visibleDots).forEach(([dx, dy], i) => {
       ctx.fillStyle = "#e8d068";
       ctx.beginPath();
       ctx.arc(gx + c.x + dx, gyTop + c.y + dy, 1.6, 0, Math.PI * 2);
