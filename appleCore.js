@@ -39646,7 +39646,48 @@ const SLINKY_PATTERNS = [
   // genuinely tracks straight down whichever real edge the pile's
   // blocks trace, the whole way down.
   { name: "hugRight", xOffset: () => 999 },
-  { name: "hugLeft", xOffset: () => -999 }
+  { name: "hugLeft", xOffset: () => -999 },
+  // CONFIRMED CHANGE ("i also want 2 that have a stronger diagonal move
+  // like a wider movement like second or 3rd movement and or halfway
+  // down the slinky pile"): both of these ride mostly mild/normal, then
+  // punch out a much wider diagonal specifically across the pile's
+  // second/third hops down from the peak AND the hop right around the
+  // halfway point of the descent -- segIndex 1-3 out of the 6 real hops
+  // (peak->200->168->128->84->40->ground) covers "second or 3rd
+  // movement" (segIndex 1, 2) straight through "halfway down" (segIndex
+  // 2-3, since 128 sits almost exactly at half of the peak's 228
+  // height). Uses the shared sandboxHopSegAt (same function the main
+  // ride loop and the x-clamp both already funnel through) so "which
+  // hop is this" always agrees with the real pile, same safety
+  // guarantee every other pattern gets from the existing tier clamp.
+  {
+    name: "midSwingWide", xOffset: p => {
+      const { segIndex } = sandboxHopSegAt(p);
+      const inBoostZone = segIndex >= 1 && segIndex <= 3;
+      return Math.sin(p * Math.PI * 4) * (inBoostZone ? 95 : 24);
+    }
+  },
+  {
+    name: "midDiagonalWide", xOffset: p => {
+      const { segIndex } = sandboxHopSegAt(p);
+      const inBoostZone = segIndex >= 1 && segIndex <= 3;
+      const drift = -20 + p * 40; // gentle lopsided drift outside the boost zone
+      return inBoostZone ? drift + Math.sin(p * Math.PI * 2) * 80 : drift;
+    }
+  },
+  // CONFIRMED CHANGE ("and maybe one with a wider last step movement"):
+  // stays close to a normal mild zigzag the whole way down, then the
+  // very last hop (segIndex === numSegs - 1 -- the drop from the base
+  // tier onto the ground, the last real "step" of the ride) gets a big
+  // diagonal kick instead of the same small wiggle every other hop got.
+  {
+    name: "lateStepWide", xOffset: p => {
+      const { segIndex } = sandboxHopSegAt(p);
+      const numSegs = SANDBOX_HOP_HEIGHTS.length - 1;
+      const isLastStep = segIndex === numSegs - 1;
+      return Math.sin(p * Math.PI * 3) * (isLastStep ? 90 : 20);
+    }
+  }
 ];
 const SANDBOX_SLINKY_CHARGE_MS = 900; // full charge if held this long, same feel as the forest's skip-stone charge
 // CONFIRMED BUG FIX: "slinky way too fast moving.. waaay too fast" --
@@ -43520,8 +43561,8 @@ const ANT_FARM_DIGGER_DIG_TIME = 40; // seconds per cell -- a real slow, watchab
 const ANT_FARM_MAX_AUTO_DIGS = 14; // caps total new tunnel added over the whole game so the maze doesn't dissolve into an open room
 let antFarmAutoDigCount = 0;
 const SANDBOX_ANT_FARM_DIGGERS = [
-  { row: 5, col: 0, digRow: -1, digCol: -1, progress: 0, angle: 0 },
-  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI }
+  { row: 5, col: 0, digRow: -1, digCol: -1, progress: 0, angle: 0, gaitPhase: 0 },
+  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI, gaitPhase: 0 }
 ];
 
 // picks a solid neighbor of (row,col) to start digging, preferring one
@@ -43567,6 +43608,11 @@ function updateAntFarmDiggers(deltaTime) {
     // matching interpolated draw position.
     if (d.moveT !== undefined && d.moveT < 1) {
       d.moveT = Math.min(1, d.moveT + deltaTime / ANT_FARM_DIGGER_WANDER_DURATION);
+      // CONFIRMED CHANGE ("add the ant leg/antennae movement"): only
+      // advances while actually mid-wander -- frozen the rest of the
+      // time (idle between wanders, or stationary while digging) so
+      // legs don't animate when the digger isn't really moving.
+      d.gaitPhase = (d.gaitPhase + deltaTime * (1 / ANT_FARM_DIGGER_WANDER_DURATION) * ANT_GAIT_RATE) % (Math.PI * 2);
       if (d.moveT >= 1) {
         d.row = d.wanderToRow;
         d.col = d.wanderToCol;
@@ -43627,7 +43673,8 @@ function drawAntFarmDiggers(gx, gyTop) {
     } else {
       pos = antFarmCellCenter(d.row, d.col);
     }
-    drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15);
+    const isWandering = d.moveT !== undefined && d.moveT < 1;
+    drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null, { walkPhase: isWandering ? d.gaitPhase : null });
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
     if (d.digRow !== -1) {
       // small crumble effect at the dig target -- same visual language
@@ -43671,11 +43718,41 @@ function antFarmPathPosition(pathDef, t) {
   return { x, y, angle };
 }
 
+// how fast legs/antennae cycle per unit of an ant's own movement speed --
+// shared by every ant type (decorative walkers, diggers, foragers) so a
+// "cells/sec"-ish speed value always reads at the same walking cadence
+// regardless of which system it came from
+const ANT_GAIT_RATE = 7;
+// tap rate used only during an antennation pause (see drawAntCreature's
+// tapPhase branch below and the antennation pass in updateAntFarmForagers)
+// -- deliberately much faster than the walking swish so the tap reads as
+// a distinct, different motion, not just "still walking in place"
+const ANT_TAP_RATE = 24;
+
 // a small, real ant silhouette (head/thorax/abdomen, six thin legs,
 // two antennae) rather than a plain oval -- drawn pointing along
 // `angle`. scale ~1 reads at about a real ant's size against the
 // grid's cell size.
-function drawAntCreature(cx, cy, angle, scale, color) {
+//
+// CONFIRMED CHANGE ("add the ant leg/antennae movement" -- Argentine
+// ants specifically referenced as the behavior model): legs and
+// antennae are no longer static lines that just translate along with
+// the body. `motion` (optional) carries:
+//   walkPhase -- a continuously-advancing phase the CALLER tracks (tied
+//     to that specific ant's own real movement speed, not wall-clock),
+//     or null/undefined while genuinely not moving. Drives a tripod
+//     gait: legs split into two alternating groups of three, swinging
+//     forward/back opposite each other, same idea as a real hexapod
+//     walk simplified down to a 2D top-down silhouette. Antennae get a
+//     gentler swish tied to the same phase while walking.
+//   tapPhase -- set only during an antennation pause (two ants meeting,
+//     see updateAntFarmForagers), overrides the antennae into a fast
+//     nose-forward "tapping together" motion instead of the walk swish.
+// With neither set (standing still, not tapping), antennae fall back to
+// a slow ambient idle twitch off performance.now() -- legs stay planted.
+function drawAntCreature(cx, cy, angle, scale, color, motion) {
+  const walkPhase = motion && motion.walkPhase != null ? motion.walkPhase : null;
+  const tapPhase = motion && motion.tapPhase != null ? motion.tapPhase : null;
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
@@ -43692,12 +43769,16 @@ function drawAntCreature(cx, cy, angle, scale, color) {
   ctx.fillStyle = bodyColor;
   ctx.strokeStyle = bodyColor;
   ctx.lineWidth = 0.6 * scale;
-  // legs first, underneath the body
-  [-1, 1].forEach(side => {
-    [-2, 0, 2].forEach(lx => {
+  // legs first, underneath the body -- alternating tripod groups (three
+  // legs swing forward while the other three swing back, then swap) so
+  // the walk actually reads as stepping rather than just sliding
+  [-1, 1].forEach((side, sIdx) => {
+    [-2, 0, 2].forEach((lx, lIdx) => {
+      const group = (sIdx + lIdx) % 2;
+      const swing = walkPhase != null ? Math.sin(walkPhase + (group === 0 ? 0 : Math.PI)) * 1.6 * scale : 0;
       ctx.beginPath();
       ctx.moveTo(lx * scale, 0);
-      ctx.lineTo(lx * scale + 1.5 * scale, side * 3 * scale);
+      ctx.lineTo(lx * scale + 1.5 * scale + swing, side * 3 * scale);
       ctx.stroke();
     });
   });
@@ -43712,12 +43793,25 @@ function drawAntCreature(cx, cy, angle, scale, color) {
     ctx.fill();
     ctx.stroke();
   });
-  // antennae
+  // antennae -- three distinct modes: fast nose-forward tap (antennation
+  // pause), gentle swish tied to the walk cycle (actually moving), or a
+  // slow ambient idle twitch (just standing there, still "alive")
   ctx.lineWidth = 0.5 * scale;
   [-1, 1].forEach(side => {
+    let spreadMul = 1, reach = 5.2 * scale;
+    if (tapPhase != null) {
+      // both antennae converge sharply toward the centerline and back,
+      // fast -- reads as tapping together rather than idly swaying
+      spreadMul = 0.5 + 0.5 * Math.cos(tapPhase * ANT_TAP_RATE);
+      reach = (5.2 + 0.9 * (1 - spreadMul)) * scale;
+    } else if (walkPhase != null) {
+      spreadMul = 1 + Math.sin(walkPhase * 2 + side) * 0.18;
+    } else {
+      spreadMul = 1 + Math.sin(performance.now() * 0.0022 + side * 1.3) * 0.1;
+    }
     ctx.beginPath();
     ctx.moveTo(3.6 * scale, 0);
-    ctx.quadraticCurveTo(4.6 * scale, side * 1.8 * scale, 5.2 * scale, side * 2.4 * scale);
+    ctx.quadraticCurveTo(4.6 * scale, side * 1.8 * scale * spreadMul, reach, side * 2.4 * scale * spreadMul);
     ctx.stroke();
   });
   ctx.restore();
@@ -43795,6 +43889,51 @@ function getAntFarmDistanceField() {
   return antFarmDistanceField;
 }
 
+// CONFIRMED CHANGE (antennation w/ real effect, see updateAntFarmForagers):
+// same BFS shortest-path idea as computeAntFarmDistanceField/
+// getAntFarmDistanceField above, but from an arbitrary cell instead of
+// always the entrance -- lets a recruited forager walk a real shortest
+// route to a SPECIFIC food source another ant just pointed it toward,
+// rather than only ever being able to path home. Only ever called with
+// one of the 3 fixed food sources in practice, so caching a handful of
+// these (keyed by cell, invalidated the same way as the entrance field
+// whenever the grid actually changes) is cheap.
+const antFarmSourceDistanceFields = {};
+function getAntFarmDistanceFieldFrom(row, col) {
+  const key = row + "," + col;
+  const cached = antFarmSourceDistanceFields[key];
+  if (cached && cached.version === antFarmGridVersion) return cached.field;
+  const field = Array.from({ length: ANT_FARM_ROWS }, () => new Array(ANT_FARM_COLS).fill(Infinity));
+  field[row][col] = 0;
+  const queue = [[row, col]];
+  let qi = 0;
+  while (qi < queue.length) {
+    const [r, c] = queue[qi++];
+    const d = field[r][c];
+    [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
+      const nr = r + dr, nc = c + dc;
+      if (antFarmCellOpen(nr, nc) && field[nr][nc] === Infinity) {
+        field[nr][nc] = d + 1;
+        queue.push([nr, nc]);
+      }
+    });
+  }
+  antFarmSourceDistanceFields[key] = { version: antFarmGridVersion, field };
+  return field;
+}
+
+// CONFIRMED CHANGE (antennation w/ real effect, "when ant with food
+// interact with other ant, should be a visual difference" + "should
+// actually do something"): tuning knobs for the pause+tap+recruit
+// moment between a food-carrying forager and a non-carrying one.
+// Deliberately conservative per direct request ("i dont want it to be
+// tooo clustered... watch how fast the behavior changes") -- a real but
+// LIMITED nudge, not an instant full-colony convergence.
+const ANT_FARM_ANTENNATION_RADIUS_SQ = 9 * 9; // how close two foragers need to be to notice each other, roughly half a cell
+const ANT_FARM_ANTENNATION_PAUSE_MS = 600;    // how long both ants freeze for the antenna-tap beat
+const ANT_FARM_ANTENNATION_COOLDOWN_MS = 5000; // neither ant can trigger/be triggered into another antennation until this expires -- keeps the same pair from immediately re-antennating and keeps recruitment spreading gradually rather than chain-reacting instantly
+const ANT_FARM_RECRUIT_STEPS = 4; // how many real steps a recruited ant follows the lead toward the pointed-to food source before reverting to normal pheromone-weighted wandering
+
 function antFarmOpenNeighbors(row, col) {
   const out = [];
   [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
@@ -43820,15 +43959,30 @@ const SANDBOX_ANT_FARM_FORAGERS = [0, 1, 2, 3].map(i => ({
   targetCol: ANT_FARM_ENTRANCE.col,
   moveT: 1, // 1 = "already arrived, ready to pick a new target this frame"
   carrying: false,
-  speed: 1.1 + pseudoRandom(i * 3.1) * 0.6 // cells/sec, slight variety
+  speed: 1.1 + pseudoRandom(i * 3.1) * 0.6, // cells/sec, slight variety
+  gaitPhase: 0, // CONFIRMED CHANGE ("add the ant leg/antennae movement") -- per-ant walk-cycle accumulator, see updateAntFarmForagers
+  // CONFIRMED CHANGE (antennation w/ real effect) -- see the antennation
+  // pass in updateAntFarmForagers for what each of these actually does
+  sourceFood: null,     // which food cell this ant most recently picked up from, while carrying
+  paused: false,        // frozen in place for an antennation beat
+  pauseT: 0,
+  tapping: false,       // draw-only flag, true while paused from an antennation (not every pause would need to be one, but right now that's the only kind of pause)
+  guidedStepsLeft: 0,   // real steps left following a recruited lead before reverting to normal wandering
+  guidedTarget: null,   // {row, col} of the food source a recruiting ant pointed this one toward
+  antennationCooldownMs: 0 // this ant won't trigger or be triggered into another antennation until this hits 0
 }));
 
 function antFarmForagerPickNext(f) {
   const dist = getAntFarmDistanceField();
 
-  // arriving at food, empty-handed -- pick it up
+  // arriving at food, empty-handed -- pick it up. CONFIRMED CHANGE
+  // (antennation w/ real effect): remembers exactly which food cell this
+  // was, so if this ant later antennates with another one, it has a
+  // specific real place to point the other ant toward instead of just
+  // "food is somewhere".
   if (!f.carrying && antFarmIsFoodCell(f.row, f.col)) {
     f.carrying = true;
+    f.sourceFood = { row: f.row, col: f.col };
   }
   // arriving home with food -- drop it off
   if (f.carrying && f.row === ANT_FARM_ENTRANCE.row && f.col === ANT_FARM_ENTRANCE.col) {
@@ -43846,6 +44000,20 @@ function antFarmForagerPickNext(f) {
     // other foragers can pick up on later
     ANT_FARM_PHEROMONE[f.row][f.col] = Math.min(ANT_FARM_PHEROMONE_MAX, ANT_FARM_PHEROMONE[f.row][f.col] + ANT_FARM_PHEROMONE_DEPOSIT);
     next = neighbors.reduce((best, n) => (dist[n.row][n.col] < dist[best.row][best.col] ? n : best), neighbors[0]);
+  } else if (f.guidedStepsLeft > 0 && f.guidedTarget) {
+    // CONFIRMED CHANGE (antennation w/ real effect, "when ant with food
+    // interact with other ant... should actually do something"): a
+    // recruited ant follows a real shortest-path lead toward the
+    // specific food source it was just pointed to, same mechanism as
+    // the carrying trip home (just aimed at food instead of the nest).
+    // Only for a limited number of real steps (ANT_FARM_RECRUIT_STEPS,
+    // decremented below) before reverting to normal wandering -- a
+    // nudge, not a permanent behavior override, per direct request to
+    // keep this from clustering the whole colony too fast.
+    const targetField = getAntFarmDistanceFieldFrom(f.guidedTarget.row, f.guidedTarget.col);
+    next = neighbors.reduce((best, n) => (targetField[n.row][n.col] < targetField[best.row][best.col] ? n : best), neighbors[0]);
+    f.guidedStepsLeft--;
+    if (f.guidedStepsLeft <= 0) f.guidedTarget = null;
   } else {
     // searching -- weighted random step, biased toward whichever
     // neighbor carries the strongest pheromone scent (this is the
@@ -43883,13 +44051,54 @@ function updateAntFarmForagers(deltaTime) {
   }
 
   SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    f.antennationCooldownMs = Math.max(0, (f.antennationCooldownMs || 0) - deltaTime * 1000);
+    if (f.paused) {
+      // frozen for the antenna-tap beat -- no movement, no gait, just
+      // the tap animation (driven off pauseT in drawAntFarmForagers)
+      f.pauseT += deltaTime * 1000;
+      if (f.pauseT >= ANT_FARM_ANTENNATION_PAUSE_MS) {
+        f.paused = false;
+        f.tapping = false;
+        f.pauseT = 0;
+      }
+      return;
+    }
     if (f.moveT >= 1) {
       f.row = f.targetRow;
       f.col = f.targetCol;
       antFarmForagerPickNext(f);
     }
     f.moveT = Math.min(1, f.moveT + f.speed * deltaTime);
+    f.gaitPhase = ((f.gaitPhase || 0) + deltaTime * f.speed * ANT_GAIT_RATE) % (Math.PI * 2);
   });
+
+  // CONFIRMED CHANGE (antennation w/ real effect) -- see the big comment
+  // on ANT_FARM_ANTENNATION_RADIUS_SQ etc. above for the full reasoning.
+  // Only a carrying ant can initiate (one-directional per direct
+  // request, "i think for now at least only carrying"), and each side
+  // gets a cooldown afterward so the same pair can't immediately
+  // re-trigger -- keeps recruitment spreading one ant at a time instead
+  // of the whole colony snapping onto one trail in a single frame.
+  for (let i = 0; i < SANDBOX_ANT_FARM_FORAGERS.length; i++) {
+    const a = SANDBOX_ANT_FARM_FORAGERS[i];
+    if (!a.carrying || a.paused || a.antennationCooldownMs > 0) continue;
+    const aPos = antFarmForagerPos(a);
+    for (let j = 0; j < SANDBOX_ANT_FARM_FORAGERS.length; j++) {
+      if (i === j) continue;
+      const b = SANDBOX_ANT_FARM_FORAGERS[j];
+      if (b.carrying || b.paused || b.antennationCooldownMs > 0) continue;
+      const bPos = antFarmForagerPos(b);
+      const dx = aPos.x - bPos.x, dy = aPos.y - bPos.y;
+      if (dx * dx + dy * dy > ANT_FARM_ANTENNATION_RADIUS_SQ) continue;
+      a.paused = true; a.pauseT = 0; a.tapping = true;
+      b.paused = true; b.pauseT = 0; b.tapping = true;
+      a.antennationCooldownMs = ANT_FARM_ANTENNATION_COOLDOWN_MS;
+      b.antennationCooldownMs = ANT_FARM_ANTENNATION_COOLDOWN_MS;
+      b.guidedStepsLeft = ANT_FARM_RECRUIT_STEPS;
+      b.guidedTarget = a.sourceFood ? { row: a.sourceFood.row, col: a.sourceFood.col } : null;
+      break; // this carrier's already spoken for this frame -- on to the next one
+    }
+  }
 }
 
 // shared position helper for the foragers -- used by both the draw
@@ -43983,7 +44192,10 @@ function drawAntFarmForagers(gx, gyTop) {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     // amber/gold rather than the decorative residents' rust-brown, so
     // the colony reads as a distinct "these are doing something" set
-    drawAntCreature(gx + x, gyTop + y, angle, 1.1, "#d9a028");
+    const motion = f.tapping
+      ? { tapPhase: f.pauseT / 1000 }
+      : { walkPhase: f.paused ? null : f.gaitPhase };
+    drawAntCreature(gx + x, gyTop + y, angle, 1.1, "#d9a028", motion);
     drawAntFarmGreetSparkle(gx + x, gyTop + y, f);
     if (f.carrying) {
       // a tiny crumb riding along on its back, visible proof it's
@@ -44411,7 +44623,11 @@ function drawSandboxAntFarm(camX) {
   const t = performance.now() * 0.001;
   SANDBOX_ANT_FARM_ANTS.forEach(a => {
     const pos = antFarmPathPosition(a, t);
-    drawAntCreature(gx + pos.x, gyTop + pos.y, pos.angle, 1.15);
+    // decorative walkers are always in motion (pure ping-pong along a
+    // fixed path, no idle state) -- phase derived straight from the
+    // same clock+speed driving their position, so legs/antennae stay
+    // in lockstep with the actual walk regardless of that ant's speed
+    drawAntCreature(gx + pos.x, gyTop + pos.y, pos.angle, 1.15, null, { walkPhase: t * a.speed * ANT_GAIT_RATE });
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, a);
   });
 
