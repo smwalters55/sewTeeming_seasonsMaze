@@ -1133,6 +1133,15 @@ function updateSeasonTransition(deltaTime) {
       if (heldItem === "paperAirplane" && (currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox" || player.inAntFarm || player.inBallPit)) {
         heldItem = null;
       }
+      // CONFIRMED BUG FIX ("wig needs to stay in sandbox only. cant
+      // cross out to other zones") -- same "local to its own home
+      // scene" treatment as the lamp/paper airplane above: a worn wig
+      // is purely a sandbox cosmetic (set at the wig stand) and was
+      // never being cleared on exit, so it was carrying over into every
+      // other scene. Cleared here on any transition away from sandbox.
+      if (player.wigId && currentScene !== "sandbox") {
+        player.wigId = null;
+      }
       // CONFIRMED CHANGE ("put airplane default in play for this
       // push") -- entering the sandbox specifically now grants one for
       // free if you don't already have one, rather than only
@@ -38979,6 +38988,16 @@ function spawnSandboxBubble() {
 function updateSandboxBubbles(deltaTime) {
   const dtMs = deltaTime * 1000;
   const blowing = pressedDownNear(sandboxBubbleWand.x, 0, 26, 18, 18);
+  // CONFIRMED CHANGE ("make like one bubble pop out with just a quick
+  // spacebar hit too") -- the hold-based stream below only spawns once
+  // the held timer crosses SANDBOX_BUBBLE_SPAWN_INTERVAL_MS, so a quick
+  // tap-and-release never accumulated enough time to produce anything.
+  // A justPressed edge near the wand now always spawns one bubble
+  // immediately, independent of the hold timer, so a single tap works
+  // too.
+  if (keys.spaceJustPressed && isPlayerNear(sandboxBubbleWand.x, 0, 26, 18, 18)) {
+    spawnSandboxBubble();
+  }
   if (blowing) {
     sandboxBubbleSpawnT += dtMs;
     if (sandboxBubbleSpawnT >= SANDBOX_BUBBLE_SPAWN_INTERVAL_MS) {
@@ -43301,7 +43320,7 @@ const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
 // add more wiggle room height wise"): how close to pit.rimHeight counts
 // as "reached the top" -- see the onBallPitLadder branch in
 // updateSandboxBallPit for the full story.
-const SANDBOX_BALL_PIT_RIM_TOLERANCE = 14;
+const SANDBOX_BALL_PIT_RIM_TOLERANCE = 26; // CONFIRMED CHANGE ("make the wiggle room for getting into the ball pit at the top more easy"): widened again (was 14)
 
 // a fixed scatter of balls filling the interior -- generated once so
 // they don't re-shuffle every frame, split into "back" (drawn behind
@@ -43388,25 +43407,20 @@ function updateSandboxBallPitBallPhysics(deltaTime) {
 }
 
 // CONFIRMED BUG FIX ("with wig on at least, head goes outside of ball
-// pit wall") -- the ladder-mount x and the swim-area clamp both only
-// ever accounted for player.width (the plain body), never for how far
-// a worn wig's own silhouette reaches sideways past that body. Some
-// wigs (pippi's braids especially, reaching ~52 local units before the
-// 0.9 draw scale) stick out FAR past the body's own half-width, so
-// even though the body itself was correctly kept clear of the pit's
-// 14px-wide side walls, the wig riding along on top of it wasn't --
-// it visually punched straight through the wall art into the sky/sand
-// outside, or floated into the tank's interior past the wall while
-// still on the ladder. Rough max local half-extent per wig (measured
-// from drawWigShape's own geometry, pre the 0.9 scale it's drawn at
-// on the live sprite) so any current or future wig gets real
-// clearance instead of just the ones caught by eye.
-const WIG_HALF_WIDTH = { pippi: 52, curlyOrange: 33, greyPixie: 25, blueBob: 26, greenWavy: 29 };
-function getWigSideOverhang() {
-  if (!player.wigId) return 0;
-  const reach = (WIG_HALF_WIDTH[player.wigId] || 20) * 0.9; // matches drawWigShape's live-sprite scale
-  return Math.max(0, reach - player.width / 2);
-}
+// pit wall") -- ORIGINAL approach (superseded): shift the ladder-mount
+// x and the swim-area clamp over by how far a worn wig's own silhouette
+// reaches past the plain body, so the wig itself stayed clear of the
+// pit's walls. This worked for the wall side, but per later direct
+// testing ("wig still pokes out the side... mid ladder, bottom of the
+// ladder, swimming sideways") it just relocated the exact same overhang
+// to the OPEN side instead, reading as a detached floating blob rather
+// than hair. Replaced with a plain screen-space clip established up
+// front in the player draw (see "pitClipRight/pitClipTop" right after
+// the ground-level clip) that contains the wig against the pit's real
+// boundaries without ever moving the body -- see that comment for the
+// full reasoning. Body position in both the ladder and swim branches
+// below is back to plain player.width-only math, matching every other
+// clamp in this function.
 
 function updateSandboxBallPit(deltaTime) {
   const pit = sandboxBallPit;
@@ -43416,10 +43430,20 @@ function updateSandboxBallPit(deltaTime) {
   if (player.onBallPitLadder) {
     const vertical = keys.up ? 1 : keys.down ? -1 : 0;
     player.y += vertical * SANDBOX_BALL_PIT_CLIMB_SPEED * deltaTime;
-    // shifted further left (away from the pit) by any wig's side
-    // overhang -- see getWigSideOverhang -- so a wide wig stays clear
-    // of the wall/interior instead of poking through it while climbing
-    player.x = ladderX - player.width / 2 - getWigSideOverhang();
+    // CONFIRMED BUG FIX ("wig still pokes out the side... mid ladder,
+    // bottom of the ladder, and swimming sideways") -- this used to
+    // shift the whole body further left by the wig's own side overhang
+    // (see getWigSideOverhang) to keep the wig clear of the wall on the
+    // pit side. That solved wall-clipping but just relocated the exact
+    // same overhang to the OPEN side instead -- the wig ends up poking
+    // out into empty space over there, reading as a detached floating
+    // blob rather than hair, which is the actual "pokes out the side"
+    // report. Body position is no longer shifted for the wig at all;
+    // any wall-side clipping is instead handled at draw time by
+    // clipping the wig itself to the pit's interior (see the wig draw
+    // block below), so the body stays at its normal ladder position in
+    // every case.
+    player.x = ladderX - player.width / 2;
     player.vy = 0;
     player.jumping = true;
     // CONFIRMED BUG FIX ("just nothing happens [at the top]... you just
@@ -43485,11 +43509,17 @@ function updateSandboxBallPit(deltaTime) {
     // and reaching the very top just holds you at the rim's underside
     // rather than popping back out (climbing OUT is its own deliberate
     // action below, not an accidental byproduct of swimming up)
-    // CONFIRMED BUG FIX: inset widened by any wig's side overhang (see
-    // getWigSideOverhang) so a wide wig's silhouette -- not just the
-    // body underneath it -- stays clear of the side walls while swimming
-    const wigOverhang = getWigSideOverhang();
-    player.x = Math.max(pit.x + 10 + wigOverhang, Math.min(pit.x + pit.width - 10 - player.width - wigOverhang, player.x));
+    // CONFIRMED BUG FIX ("wig still pokes out the side... while
+    // swimming sideways in the ball pit") -- same reasoning as the
+    // ladder branch above: widening this inset by the wig's overhang
+    // used to keep the wig off the wall on one side, but shoved the
+    // body (and the wig riding along on it) further in from the OTHER
+    // side too, so the wig ends up poking out into open water away
+    // from the wall instead -- still reads as "poking out the side."
+    // Swim bounds are back to plain player.width-only, matching every
+    // other clamp in this function; wall-side wig clipping is handled
+    // at draw time instead (see the wig draw block).
+    player.x = Math.max(pit.x + 10, Math.min(pit.x + pit.width - 10 - player.width, player.x));
     player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
     player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
 
@@ -43594,7 +43624,9 @@ function updateSandboxBallPit(deltaTime) {
   // to this being a findability problem, not a logic one: standing
   // anywhere near the ladder's general vicinity in real play would
   // often miss the check by a handful of pixels. Widened generously.
-  if (keys.spaceJustPressed && isPlayerNear(ladderX, 0, 45, 20, 20)) {
+  // CONFIRMED CHANGE ("widen the radius for it"): widened again (was
+  // 45/20/20) alongside the rim tolerance bump above, same request.
+  if (keys.spaceJustPressed && isPlayerNear(ladderX, 0, 65, 30, 30)) {
     player.onBallPitLadder = true;
     player.jumping = true;
     player.vy = 0;
@@ -46899,6 +46931,42 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.rect(px - 24, 0, player.width + 48, gy); // only the region above ground level is visible
   ctx.clip();
 
+  // CONFIRMED BUG FIX ("wig still pokes out the side... mid ladder,
+  // bottom of the ladder, swimming sideways... the top of the wig, when
+  // sideways, goes past the border of ball pit") -- a worn wig can
+  // reach past the pit's own walls/interior ceiling in these states, and
+  // the different transforms active in each one (upright, counter-
+  // rotated while lying down to swim, etc.) made it too fragile to keep
+  // computing a "safe" wig draw position by hand for every case -- the
+  // swim lying-tilt rotation in particular moves the sprite's own
+  // footprint on screen in a way a fixed per-wig offset can't predict.
+  // Clipping here instead, BEFORE the sway/tilt rotation below is ever
+  // applied, is airtight regardless: this clip is established in plain
+  // screen space, so it stays pinned to the pit's actual on-screen
+  // boundary no matter how the sprite (and the wig riding on top of it)
+  // gets rotated afterward for the swim pose.
+  //
+  // The right-wall constraint applies on the ladder/rim too (the ladder
+  // sits right against that same wall), but the TOP constraint only
+  // applies while actually swimming INSIDE the tank (inBallPit) -- on
+  // the ladder or standing on the rim, the whole point is the player is
+  // OUTSIDE/ABOVE the tank's interior, so their head (wig or not)
+  // legitimately rises above the interior's ceiling; clipping to it
+  // there would erase the player entirely (caught by testing this fix,
+  // not an actual report -- but worth noting since it's an easy trap).
+  if (player.wigId && typeof sandboxBallPit !== "undefined" &&
+      (player.onBallPitLadder || player.onBallPitRim || player.inBallPit)) {
+    const pit = sandboxBallPit;
+    const pitClipRight = pit.x - camX + pit.width - 14;
+    // interior ceiling -- matches drawSandboxBallPitBalls' own clip
+    // rect exactly (gy - pit.rimHeight), so the wig is held to the same
+    // boundary the balls themselves are drawn within.
+    const pitClipTop = player.inBallPit ? (gy - pit.rimHeight) : 0;
+    ctx.beginPath(); // separate path from the ground-clip rect above, so clip() intersects the two rather than unioning them
+    ctx.rect(0, pitClipTop, pitClipRight, canvas.height - pitClipTop);
+    ctx.clip();
+  }
+
   // woozy sway -- a gentle wobble on the body itself while stunned
   // from a hard fall, nested inside the clip so the clip region
   // itself stays axis-aligned and only the sprite tilts. Also carries
@@ -47118,7 +47186,45 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     // feedback -- bumped to 0.9. blueBob/greenWavy's own shapes were
     // tightened up above so this doesn't reproduce the original
     // oversized-blob complaint at the larger scale.
-    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
+    // CONFIRMED BUG FIX ("wig still pokes out the side within ball
+    // pit") -- the wig is drawn inside the same sway/tilt rotation as
+    // the body (see totalTilt/ctx.rotate above), which is correct for
+    // the woozy wobble/mine-cart tip/etc, but the ball pit's own
+    // lying-down swim tilt rotates the WHOLE sprite up to 90 degrees
+    // around its CENTER. The wig sits well above that pivot (drawn near
+    // the top of the head) and its longest strands hang even further
+    // from it, so a swim tilt that reads as a subtle lean on the body
+    // swings the wig's hanging strands out into a big sideways arc --
+    // exactly the "big blob poking out the side" reported while
+    // swimming. Counter-rotating the wig by the swim-tilt component
+    // only (leaving woozy/mine-cart/etc tilt untouched) keeps it
+    // visually upright and attached-looking while the body lies flat.
+    // CONFIRMED BUG FIX ("mid ladder... bottom of the ladder... the top
+    // of the wig, when sideways, goes past the border of ball pit") --
+    // beyond the rotation swing above, a worn wig can also simply reach
+    // past the pit's own solid boundaries (its right wall, its rim lid
+    // on top) in every one of these states, and each one puts the
+    // sprite through a different transform (upright, mid-rotation while
+    // swimming, etc.), which made trying to hand-compute a "safe" wig
+    // position for every case too fragile to keep chasing case by case.
+    // The real containment now happens once, up front, as a plain
+    // screen-space clip established before any of this rotation math
+    // even runs -- see the "pitClipRight/pitClipTop" clip right after
+    // this function's very first (ground-level) clip above. That clip
+    // is airtight regardless of whatever transform the wig ends up
+    // drawn under, so nothing further is needed here beyond the
+    // counter-rotation itself.
+    const wigSwimCounter = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
+    if (wigSwimCounter !== 0) {
+      ctx.save();
+      ctx.translate(swayCx, swayCy);
+      ctx.rotate(-wigSwimCounter);
+      ctx.translate(-swayCx, -swayCy);
+      drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
+      ctx.restore();
+    } else {
+      drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
+    }
   }
 
   ctx.restore(); // closes the sway rotation
@@ -48181,23 +48287,24 @@ updateSeasonTransition(deltaTime);
 // granted/equipped by hand below instead so it still matches what a
 // real transition would leave you with, even though we're not IN the
 // sandbox this time.
-currentScene = "spring";
-player.x = 2200; // ~660px left of the sandbox entrance mound (x:2860) -- well outside view on load
-player.y = 0;
+// TEMPORARY ("spawn me in ball pit temporarily pls") -- repointed
+// straight into the ball pit, swimming, with a wig already on, purely
+// to test the wig/pit-boundary clip fix live. Revert back to the
+// spring spawn above (see git history) once that's confirmed.
+currentScene = "sandbox";
+player.wigId = "blueBob";
+player.inBallPit = true;
+player.onBallPitLadder = false;
+player.onBallPitRim = false;
+player.x = sandboxBallPit.x + 40;
+player.y = 60;
 addToInventory("shovel");
 touchInventoryOrder("shovel");
 addToInventory("paperAirplane");
 touchInventoryOrder("paperAirplane");
-// CONFIRMED CHANGE ("make sure no not airplane is held... but that it
-// will be avail once i enter sandbox... which i think is already true
-// anyway i just want to make sure"): confirmed -- the existing
-// heldItem==="paperAirplane" cleanup (see the update loop, fires every
-// frame outside oak/clouds/sandbox) unsets it the instant this loads
-// in spring regardless, and the existing ambient re-equip rule picks
-// it back up automatically the moment currentScene actually becomes
-// "sandbox" for real. So it's just left in inventory, unheld, here.
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
+discoveredScenes.sandbox = true;
 updateMapUI();
 updateInventoryUI();
 
