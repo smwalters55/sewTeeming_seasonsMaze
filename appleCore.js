@@ -40637,264 +40637,95 @@ const MICROSCOPE_SLIDES = [
     }
   },
 {
-    id: "pondWater",
-    name: "Pond Water",
+    // new slide, per direct request ("lets add slime mold... to
+    // microscope slides"). Physarum-style slime mold is one of the most
+    // striking things to actually watch move under a scope: a branching
+    // network of tube-like veins radiating from a couple of denser
+    // plasmodial hubs, with visible "shuttle streaming" -- blobs of
+    // brighter protoplasm shuttling back and forth along each vein
+    // rather than flowing one direction, which is the real, slightly
+    // eerie signature of how it actually feeds. A fifth movement slide.
+    id: "slimeMold",
+    name: "Slime Mold (Physarum)",
     draw: () => {
-      ctx.fillStyle = "#bcd9c8";
+      // CONFIRMED CHANGE ("make more contrast for slime mold") -- the
+      // pale cream background against muted gold veins/hubs (all in the
+      // same mid-brightness range) read as washed out next to the
+      // scope's higher-contrast slides. Dropped to a near-black backing
+      // and brightened every organism color on top of it so the network
+      // actually glows against the dark field instead of blending into
+      // a flat tan.
+      ctx.fillStyle = "#181206";
       ctx.fillRect(-60, -60, 120, 120);
-      const t = microscopeAnimClock * 0.001; // seconds, for all the motion below
-      // drifting algae/debris flecks in the background -- CONFIRMED CHANGE:
-      // now actually drift (slow individual circular wander) instead of
-      // sitting frozen, per "add some motion... and some other small life"
-      ctx.fillStyle = "rgba(90,140,110,0.4)";
-      for (let i = 0; i < 14; i++) {
-        const baseX = (pseudoRandom(i * 4.1) - 0.5) * 108;
-        const baseY = (pseudoRandom(i * 7.3 + 1) - 0.5) * 108;
-        const driftR = 2.5 + pseudoRandom(i * 6.2) * 3;
-        const ox = baseX + Math.cos(t * 0.3 + i * 1.7) * driftR;
-        const oy = baseY + Math.sin(t * 0.25 + i * 2.1) * driftR;
-        ctx.beginPath();
-        ctx.arc(ox, oy, 1.5 + pseudoRandom(i * 2.9) * 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // diatoms -- tiny rigid glassy ovals with a fine cross-hatch of
-      // striations, slowly tumbling and gliding across the field. Real
-      // diatoms have a hard silica shell so they read as crisp and
-      // geometric next to the soft blobby algae flecks and the fleshy
-      // tardigrades -- that contrast is the whole point of adding them.
-      for (let i = 0; i < 5; i++) {
-        const dcx = (pseudoRandom(i * 5.5 + 30) - 0.5) * 90 + Math.sin(t * 0.15 + i * 3.1) * 14;
-        const dcy = (pseudoRandom(i * 8.8 + 31) - 0.5) * 90 + Math.cos(t * 0.12 + i * 2.4) * 10;
-        const drot = t * 0.4 + i * 1.4;
-        ctx.save();
-        ctx.translate(dcx, dcy);
-        ctx.rotate(drot);
-        ctx.fillStyle = "rgba(200,225,210,0.75)";
-        ctx.strokeStyle = "rgba(110,140,120,0.6)";
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 6, 2.6, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(0, -2.6); ctx.lineTo(0, 2.6);
-        ctx.stroke();
-        for (let s = -4; s <= 4; s += 2) {
-          ctx.beginPath();
-          ctx.moveTo(s, -1.8); ctx.lineTo(s, 1.8);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-      // rotifers -- small pear-shaped bodies with a "wheel organ" of
-      // cilia at the head end; the cilia don't actually beat individually
-      // at this scale, they read as a soft spinning blur, so it's drawn
-      // as a ring of short radiating strokes rotating steadily -- the
-      // classic "corona" look that makes rotifers instantly recognizable.
-      const drawRotifer = (ox, oy, s, bob) => {
-        ctx.save();
-        ctx.translate(ox, oy + Math.sin(t * 1.6 + bob) * 2.5);
-        ctx.scale(s, s);
-        ctx.fillStyle = "#e8c9a0";
-        ctx.beginPath();
-        ctx.moveTo(-3, -8);
-        ctx.bezierCurveTo(6, -8, 9, -2, 8, 6);
-        ctx.bezierCurveTo(7, 12, -2, 14, -6, 10);
-        ctx.bezierCurveTo(-10, 6, -9, -6, -3, -8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(150,110,60,0.5)";
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-        // the spinning corona -- short strokes radiating from the head,
-        // rotation angle driven straight off the shared clock
-        const spin = t * 6;
-        ctx.strokeStyle = "rgba(255,250,230,0.85)";
-        ctx.lineWidth = 1;
-        for (let c = 0; c < 10; c++) {
-          const ang = spin + (c / 10) * Math.PI * 2;
-          const rIn = 3, rOut = 6.5;
-          ctx.beginPath();
-          ctx.moveTo(-2 + Math.cos(ang) * rIn, -7 + Math.sin(ang) * rIn * 0.6);
-          ctx.lineTo(-2 + Math.cos(ang) * rOut, -7 + Math.sin(ang) * rOut * 0.6);
-          ctx.stroke();
-        }
-        // a dark eyespot and the tapered "foot" at the tail end
-        ctx.fillStyle = "rgba(90,50,20,0.7)";
-        ctx.beginPath();
-        ctx.arc(-1, -5, 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#c9a276";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-4, 10);
-        ctx.lineTo(-2, 15);
-        ctx.stroke();
-        ctx.restore();
-      };
-      drawRotifer(30, -25, 0.9, 0);
-      drawRotifer(-32, 8, 0.7, 2.1);
-      // CONFIRMED CHANGE: rebuilt to actually look like a real
-      // tardigrade under a scope, per direct feedback ("make the bears
-      // look a lot closer to what they actually look like... this is
-      // important!!!") -- one continuous plump, translucent barrel-
-      // shaped body (not 4 separate overlapping lobes, which read as
-      // blocky/segmented toy-like), a rounder head with a small dark
-      // ring for the real buccal/mouth opening, faint internal gut
-      // shading for the translucent-cuticle look, and legs that splay
-      // from the SIDES of the body (not straight down from the belly)
-      // each ending in a little cluster of curled claws -- tardigrades
-      // have multiple claws per leg, not one dot.
-      // CONFIRMED CHANGE: real motion added, per direct request ("add some
-      // motion to the tardigrades") -- a slow, lumbering crawl drift along
-      // the facing direction, a gentle body-length undulation as it moves,
-      // and legs that actually cycle through a stepping swing instead of
-      // holding one static splayed pose the whole time.
-      const drawTardigrade = (ox, oy, s, rot, phaseOffset) => {
-        const crawl = t * 3 + phaseOffset;
-        const driftX = ox + Math.cos(rot) * Math.sin(crawl * 0.3) * 10;
-        const driftY = oy + Math.sin(rot) * Math.sin(crawl * 0.3) * 10;
-        const undulate = Math.sin(crawl * 1.4) * 0.04;
-        ctx.save();
-        ctx.translate(driftX, driftY);
-        ctx.rotate(rot + Math.sin(crawl * 0.3) * 0.05);
-        ctx.scale(s * (1 + undulate), s * (1 - undulate));
+      const t = microscopeAnimClock * 0.001;
 
-        // one continuous plump body -- wider in the middle, tapering
-        // at the head end, rounded at the rear
-        ctx.fillStyle = "#cdb37c";
-        ctx.beginPath();
-        ctx.moveTo(-26, -6);
-        ctx.bezierCurveTo(-22, -13, -4, -13, 8, -10);
-        ctx.bezierCurveTo(18, -8, 20, -3, 20, 0);
-        ctx.bezierCurveTo(20, 3, 18, 8, 8, 10);
-        ctx.bezierCurveTo(-4, 13, -22, 13, -26, 6);
-        ctx.bezierCurveTo(-29, 3, -29, -3, -26, -6);
-        ctx.closePath();
-        ctx.fill();
-        // translucent-cuticle shading -- a soft darker gut-line down
-        // the center and a paler highlight along the top, instead of
-        // one flat solid color
-        ctx.fillStyle = "rgba(120,95,55,0.28)";
-        ctx.beginPath();
-        ctx.ellipse(-4, 1, 20, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "rgba(255,248,225,0.3)";
-        ctx.beginPath();
-        ctx.ellipse(-6, -6, 16, 3, -0.15, 0, Math.PI * 2);
-        ctx.fill();
+      const hubs = [
+        { x: -20, y: -10, r: 13 },
+        { x: 18, y: 16, r: 10 }
+      ];
+      // each vein connects two points -- the two hubs themselves, plus
+      // branches fanning out from each hub to a tapering dead end
+      const veins = [
+        { x1: -20, y1: -10, x2: 18, y2: 16, w: 5 },
+        { x1: -20, y1: -10, x2: -46, y2: -26, w: 3 },
+        { x1: -20, y1: -10, x2: -42, y2: 6, w: 2.6 },
+        { x1: -20, y1: -10, x2: -8, y2: -38, w: 2 },
+        { x1: 18, y1: 16, x2: 42, y2: 6, w: 3 },
+        { x1: 18, y1: 16, x2: 36, y2: 32, w: 2.6 },
+        { x1: 18, y1: 16, x2: 4, y2: 42, w: 2 },
+        { x1: -46, y1: -26, x2: -56, y2: -38, w: 1.4 },
+        { x1: -42, y1: 6, x2: -56, y2: 16, w: 1.4 },
+        { x1: 42, y1: 6, x2: 53, y2: -8, w: 1.4 },
+        { x1: 36, y1: 32, x2: 46, y2: 46, w: 1.4 }
+      ];
 
-        // CONFIRMED CHANGE: extra realism pass, per direct request ("can
-        // we make the tardigrades look a lil more realistic") -- a
-        // mottled speckled cuticle texture (real tardigrade cuticle is
-        // never one flat smooth color, it's got a granular mottled
-        // look), plus 4 subtle dorsal armor-plate bands (the segment
-        // creases below were faint outlines only; these add real
-        // highlight/shadow pairs so the plates read as actual overlapping
-        // armor, not just scratches).
-        for (let sp = 0; sp < 22; sp++) {
-          const spx = -24 + pseudoRandom(sp * 3.7 + phaseOffset) * 42;
-          const spy = (pseudoRandom(sp * 5.1 + 2) - 0.5) * 16;
-          ctx.fillStyle = pseudoRandom(sp * 2.3) > 0.5 ? "rgba(90,68,32,0.18)" : "rgba(230,210,160,0.22)";
-          ctx.beginPath();
-          ctx.arc(spx, spy, 0.8 + pseudoRandom(sp * 1.7) * 0.9, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        [-19, -9, 2, 13].forEach((plx, pi) => {
-          ctx.strokeStyle = "rgba(255,245,210,0.22)";
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(plx - 3, -10 + Math.abs(plx) * 0.05);
-          ctx.quadraticCurveTo(plx - 1, 0, plx - 3, 10 - Math.abs(plx) * 0.05);
-          ctx.stroke();
-          ctx.strokeStyle = "rgba(80,58,26,0.22)";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(plx + 1, -9);
-          ctx.quadraticCurveTo(plx + 3, 0, plx + 1, 9);
-          ctx.stroke();
-        });
-
-        // head -- CONFIRMED CHANGE: tapered into a real short conical
-        // snout instead of a plain oval, with the mouth as a small dark
-        // pore right at the tip (ringed by faint peribuccal lamellae
-        // lines) -- the actual real tardigrade "face" read, rather than
-        // a rounded blob with a circle drawn on it.
-        ctx.fillStyle = "#cdb37c";
-        ctx.beginPath();
-        ctx.moveTo(-20, -6);
-        ctx.quadraticCurveTo(-29, -5, -33, -1);
-        ctx.quadraticCurveTo(-35, 0, -33, 1);
-        ctx.quadraticCurveTo(-29, 5, -20, 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(90,65,30,0.35)";
-        ctx.lineWidth = 0.8;
-        for (let lam = -1; lam <= 1; lam++) {
-          ctx.beginPath();
-          ctx.arc(-33, lam * 0.5, 1.6, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.fillStyle = "rgba(60,42,18,0.75)";
-        ctx.beginPath();
-        ctx.arc(-33.5, 0, 1.4, 0, Math.PI * 2);
-        ctx.fill();
-        // two tiny dark eyespots just behind the snout, a real (if
-        // subtle) tardigrade feature that's easy to miss without them
-        ctx.fillStyle = "rgba(40,25,10,0.6)";
-        [-1, 1].forEach(dir => {
-          ctx.beginPath();
-          ctx.arc(-24, dir * 3, 1, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        // 4 pairs of stubby legs splayed from the SIDES of the body,
-        // each ending in a little cluster of curled claws
-        ctx.strokeStyle = "#a8895a";
-        ctx.lineWidth = 3;
+      // the veins themselves -- translucent tapered-looking tubes (real
+      // width variation would need a proper tapered stroke; a flat
+      // width reads fine at this scale)
+      veins.forEach(v => {
+        ctx.strokeStyle = "rgba(255,205,70,0.85)";
+        ctx.lineWidth = v.w;
         ctx.lineCap = "round";
-        const legAnchors = [-19, -9, 2, 13];
-        legAnchors.forEach((lx, li) => {
-          // alternating stepping swing -- legs on opposite sides/segments
-          // are out of phase so it reads as a walking gait, not everything
-          // twitching in unison
-          const swing = Math.sin(crawl * 2 + li * 1.6) * 3;
-          [-1, 1].forEach(dir => {
-            const footX = lx - 3 + swing, footY = dir * 15;
-            ctx.beginPath();
-            ctx.moveTo(lx, dir * 8);
-            ctx.quadraticCurveTo(lx - 4 + swing * 0.5, dir * 12, footX, footY);
-            ctx.stroke();
-            // 3 tiny curled claws per foot, not one dot
-            ctx.strokeStyle = "#7a6038";
-            ctx.lineWidth = 1.1;
-            for (let c = -1; c <= 1; c++) {
-              ctx.beginPath();
-              ctx.moveTo(footX, footY);
-              ctx.quadraticCurveTo(footX + c * 2, footY + dir * 5, footX + c * 3.5, footY + dir * 6.5);
-              ctx.stroke();
-            }
-            ctx.strokeStyle = "#a8895a";
-            ctx.lineWidth = 3;
-          });
-        });
-        ctx.lineCap = "butt";
+        ctx.beginPath();
+        ctx.moveTo(v.x1, v.y1);
+        ctx.lineTo(v.x2, v.y2);
+        ctx.stroke();
+      });
 
-        // faint segment creases across the body -- subtle, not hard
-        // dividing lines, since a real tardigrade reads as one soft
-        // wrinkled tube rather than distinct armor plates
-        ctx.strokeStyle = "rgba(140,110,60,0.3)";
+      // shuttle streaming -- a brighter blob oscillating back and forth
+      // along each vein's own length (not flowing one direction), each
+      // at its own speed/phase so the network doesn't pulse in lockstep
+      veins.forEach((v, vi) => {
+        const shuttle = (Math.sin(t * (0.5 + pseudoRandom(vi * 3.3) * 0.4) + vi * 1.7) + 1) / 2;
+        const sx = v.x1 + (v.x2 - v.x1) * shuttle;
+        const sy = v.y1 + (v.y2 - v.y1) * shuttle;
+        ctx.fillStyle = "rgba(255,245,200,0.95)";
+        ctx.beginPath();
+        ctx.arc(sx, sy, v.w * 0.85, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // the plasmodial hubs -- denser fan-shaped masses, gently
+      // breathing in size rather than perfectly static
+      hubs.forEach((hub, hi) => {
+        const breathe = 1 + Math.sin(t * 0.5 + hi * 2) * 0.06;
+        organicBlobPath(ctx, hub.x, hub.y, hub.r * breathe, hub.r * breathe * 0.85, hi * 11 + 5, 9);
+        ctx.fillStyle = "rgba(240,190,70,0.9)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,225,130,0.85)";
         ctx.lineWidth = 1;
-        [-18, -8, 3, 14].forEach(lx => {
+        ctx.stroke();
+        // fine internal vein texture inside the hub itself
+        ctx.strokeStyle = "rgba(255,225,130,0.45)";
+        ctx.lineWidth = 0.6;
+        for (let i = 0; i < 5; i++) {
+          const ang = (i / 5) * Math.PI * 2 + hi * 0.7;
           ctx.beginPath();
-          ctx.moveTo(lx, -9);
-          ctx.quadraticCurveTo(lx + 1, 0, lx, 9);
+          ctx.moveTo(hub.x, hub.y);
+          ctx.lineTo(hub.x + Math.cos(ang) * hub.r * 0.8, hub.y + Math.sin(ang) * hub.r * 0.8);
           ctx.stroke();
-        });
-        ctx.restore();
-      };
-      drawTardigrade(-12, -8, 1.15, 0.12, 0);
-      drawTardigrade(20, 22, 0.85, -0.35, 4.2);
+        }
+      });
     }
   },
 {
@@ -41558,88 +41389,264 @@ const MICROSCOPE_SLIDES = [
     }
   },
 {
-    // new slide, per direct request ("lets add slime mold... to
-    // microscope slides"). Physarum-style slime mold is one of the most
-    // striking things to actually watch move under a scope: a branching
-    // network of tube-like veins radiating from a couple of denser
-    // plasmodial hubs, with visible "shuttle streaming" -- blobs of
-    // brighter protoplasm shuttling back and forth along each vein
-    // rather than flowing one direction, which is the real, slightly
-    // eerie signature of how it actually feeds. A fifth movement slide.
-    id: "slimeMold",
-    name: "Slime Mold (Physarum)",
+    id: "pondWater",
+    name: "Pond Water",
     draw: () => {
-      ctx.fillStyle = "#e2dcc4";
+      ctx.fillStyle = "#bcd9c8";
       ctx.fillRect(-60, -60, 120, 120);
-      const t = microscopeAnimClock * 0.001;
-
-      const hubs = [
-        { x: -20, y: -10, r: 13 },
-        { x: 18, y: 16, r: 10 }
-      ];
-      // each vein connects two points -- the two hubs themselves, plus
-      // branches fanning out from each hub to a tapering dead end
-      const veins = [
-        { x1: -20, y1: -10, x2: 18, y2: 16, w: 5 },
-        { x1: -20, y1: -10, x2: -46, y2: -26, w: 3 },
-        { x1: -20, y1: -10, x2: -42, y2: 6, w: 2.6 },
-        { x1: -20, y1: -10, x2: -8, y2: -38, w: 2 },
-        { x1: 18, y1: 16, x2: 42, y2: 6, w: 3 },
-        { x1: 18, y1: 16, x2: 36, y2: 32, w: 2.6 },
-        { x1: 18, y1: 16, x2: 4, y2: 42, w: 2 },
-        { x1: -46, y1: -26, x2: -56, y2: -38, w: 1.4 },
-        { x1: -42, y1: 6, x2: -56, y2: 16, w: 1.4 },
-        { x1: 42, y1: 6, x2: 53, y2: -8, w: 1.4 },
-        { x1: 36, y1: 32, x2: 46, y2: 46, w: 1.4 }
-      ];
-
-      // the veins themselves -- translucent tapered-looking tubes (real
-      // width variation would need a proper tapered stroke; a flat
-      // width reads fine at this scale)
-      veins.forEach(v => {
-        ctx.strokeStyle = "rgba(200,150,40,0.5)";
-        ctx.lineWidth = v.w;
-        ctx.lineCap = "round";
+      const t = microscopeAnimClock * 0.001; // seconds, for all the motion below
+      // drifting algae/debris flecks in the background -- CONFIRMED CHANGE:
+      // now actually drift (slow individual circular wander) instead of
+      // sitting frozen, per "add some motion... and some other small life"
+      ctx.fillStyle = "rgba(90,140,110,0.4)";
+      for (let i = 0; i < 14; i++) {
+        const baseX = (pseudoRandom(i * 4.1) - 0.5) * 108;
+        const baseY = (pseudoRandom(i * 7.3 + 1) - 0.5) * 108;
+        const driftR = 2.5 + pseudoRandom(i * 6.2) * 3;
+        const ox = baseX + Math.cos(t * 0.3 + i * 1.7) * driftR;
+        const oy = baseY + Math.sin(t * 0.25 + i * 2.1) * driftR;
         ctx.beginPath();
-        ctx.moveTo(v.x1, v.y1);
-        ctx.lineTo(v.x2, v.y2);
-        ctx.stroke();
-      });
-
-      // shuttle streaming -- a brighter blob oscillating back and forth
-      // along each vein's own length (not flowing one direction), each
-      // at its own speed/phase so the network doesn't pulse in lockstep
-      veins.forEach((v, vi) => {
-        const shuttle = (Math.sin(t * (0.5 + pseudoRandom(vi * 3.3) * 0.4) + vi * 1.7) + 1) / 2;
-        const sx = v.x1 + (v.x2 - v.x1) * shuttle;
-        const sy = v.y1 + (v.y2 - v.y1) * shuttle;
-        ctx.fillStyle = "rgba(255,220,110,0.85)";
+        ctx.arc(ox, oy, 1.5 + pseudoRandom(i * 2.9) * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // diatoms -- tiny rigid glassy ovals with a fine cross-hatch of
+      // striations, slowly tumbling and gliding across the field. Real
+      // diatoms have a hard silica shell so they read as crisp and
+      // geometric next to the soft blobby algae flecks and the fleshy
+      // tardigrades -- that contrast is the whole point of adding them.
+      for (let i = 0; i < 5; i++) {
+        const dcx = (pseudoRandom(i * 5.5 + 30) - 0.5) * 90 + Math.sin(t * 0.15 + i * 3.1) * 14;
+        const dcy = (pseudoRandom(i * 8.8 + 31) - 0.5) * 90 + Math.cos(t * 0.12 + i * 2.4) * 10;
+        const drot = t * 0.4 + i * 1.4;
+        ctx.save();
+        ctx.translate(dcx, dcy);
+        ctx.rotate(drot);
+        ctx.fillStyle = "rgba(200,225,210,0.75)";
+        ctx.strokeStyle = "rgba(110,140,120,0.6)";
+        ctx.lineWidth = 0.8;
         ctx.beginPath();
-        ctx.arc(sx, sy, v.w * 0.85, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, 6, 2.6, 0, 0, Math.PI * 2);
         ctx.fill();
-      });
-
-      // the plasmodial hubs -- denser fan-shaped masses, gently
-      // breathing in size rather than perfectly static
-      hubs.forEach((hub, hi) => {
-        const breathe = 1 + Math.sin(t * 0.5 + hi * 2) * 0.06;
-        organicBlobPath(ctx, hub.x, hub.y, hub.r * breathe, hub.r * breathe * 0.85, hi * 11 + 5, 9);
-        ctx.fillStyle = "rgba(215,165,50,0.65)";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(140,100,25,0.6)";
-        ctx.lineWidth = 1;
         ctx.stroke();
-        // fine internal vein texture inside the hub itself
-        ctx.strokeStyle = "rgba(140,100,25,0.3)";
-        ctx.lineWidth = 0.6;
-        for (let i = 0; i < 5; i++) {
-          const ang = (i / 5) * Math.PI * 2 + hi * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(0, -2.6); ctx.lineTo(0, 2.6);
+        ctx.stroke();
+        for (let s = -4; s <= 4; s += 2) {
           ctx.beginPath();
-          ctx.moveTo(hub.x, hub.y);
-          ctx.lineTo(hub.x + Math.cos(ang) * hub.r * 0.8, hub.y + Math.sin(ang) * hub.r * 0.8);
+          ctx.moveTo(s, -1.8); ctx.lineTo(s, 1.8);
           ctx.stroke();
         }
-      });
+        ctx.restore();
+      }
+      // rotifers -- small pear-shaped bodies with a "wheel organ" of
+      // cilia at the head end; the cilia don't actually beat individually
+      // at this scale, they read as a soft spinning blur, so it's drawn
+      // as a ring of short radiating strokes rotating steadily -- the
+      // classic "corona" look that makes rotifers instantly recognizable.
+      const drawRotifer = (ox, oy, s, bob) => {
+        ctx.save();
+        ctx.translate(ox, oy + Math.sin(t * 1.6 + bob) * 2.5);
+        ctx.scale(s, s);
+        ctx.fillStyle = "#e8c9a0";
+        ctx.beginPath();
+        ctx.moveTo(-3, -8);
+        ctx.bezierCurveTo(6, -8, 9, -2, 8, 6);
+        ctx.bezierCurveTo(7, 12, -2, 14, -6, 10);
+        ctx.bezierCurveTo(-10, 6, -9, -6, -3, -8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(150,110,60,0.5)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+        // the spinning corona -- short strokes radiating from the head,
+        // rotation angle driven straight off the shared clock
+        const spin = t * 6;
+        ctx.strokeStyle = "rgba(255,250,230,0.85)";
+        ctx.lineWidth = 1;
+        for (let c = 0; c < 10; c++) {
+          const ang = spin + (c / 10) * Math.PI * 2;
+          const rIn = 3, rOut = 6.5;
+          ctx.beginPath();
+          ctx.moveTo(-2 + Math.cos(ang) * rIn, -7 + Math.sin(ang) * rIn * 0.6);
+          ctx.lineTo(-2 + Math.cos(ang) * rOut, -7 + Math.sin(ang) * rOut * 0.6);
+          ctx.stroke();
+        }
+        // a dark eyespot and the tapered "foot" at the tail end
+        ctx.fillStyle = "rgba(90,50,20,0.7)";
+        ctx.beginPath();
+        ctx.arc(-1, -5, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#c9a276";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-4, 10);
+        ctx.lineTo(-2, 15);
+        ctx.stroke();
+        ctx.restore();
+      };
+      drawRotifer(30, -25, 0.9, 0);
+      drawRotifer(-32, 8, 0.7, 2.1);
+      // CONFIRMED CHANGE: rebuilt to actually look like a real
+      // tardigrade under a scope, per direct feedback ("make the bears
+      // look a lot closer to what they actually look like... this is
+      // important!!!") -- one continuous plump, translucent barrel-
+      // shaped body (not 4 separate overlapping lobes, which read as
+      // blocky/segmented toy-like), a rounder head with a small dark
+      // ring for the real buccal/mouth opening, faint internal gut
+      // shading for the translucent-cuticle look, and legs that splay
+      // from the SIDES of the body (not straight down from the belly)
+      // each ending in a little cluster of curled claws -- tardigrades
+      // have multiple claws per leg, not one dot.
+      // CONFIRMED CHANGE: real motion added, per direct request ("add some
+      // motion to the tardigrades") -- a slow, lumbering crawl drift along
+      // the facing direction, a gentle body-length undulation as it moves,
+      // and legs that actually cycle through a stepping swing instead of
+      // holding one static splayed pose the whole time.
+      const drawTardigrade = (ox, oy, s, rot, phaseOffset) => {
+        const crawl = t * 3 + phaseOffset;
+        const driftX = ox + Math.cos(rot) * Math.sin(crawl * 0.3) * 10;
+        const driftY = oy + Math.sin(rot) * Math.sin(crawl * 0.3) * 10;
+        const undulate = Math.sin(crawl * 1.4) * 0.04;
+        ctx.save();
+        ctx.translate(driftX, driftY);
+        ctx.rotate(rot + Math.sin(crawl * 0.3) * 0.05);
+        ctx.scale(s * (1 + undulate), s * (1 - undulate));
+
+        // one continuous plump body -- wider in the middle, tapering
+        // at the head end, rounded at the rear
+        ctx.fillStyle = "#cdb37c";
+        ctx.beginPath();
+        ctx.moveTo(-26, -6);
+        ctx.bezierCurveTo(-22, -13, -4, -13, 8, -10);
+        ctx.bezierCurveTo(18, -8, 20, -3, 20, 0);
+        ctx.bezierCurveTo(20, 3, 18, 8, 8, 10);
+        ctx.bezierCurveTo(-4, 13, -22, 13, -26, 6);
+        ctx.bezierCurveTo(-29, 3, -29, -3, -26, -6);
+        ctx.closePath();
+        ctx.fill();
+        // translucent-cuticle shading -- a soft darker gut-line down
+        // the center and a paler highlight along the top, instead of
+        // one flat solid color
+        ctx.fillStyle = "rgba(120,95,55,0.28)";
+        ctx.beginPath();
+        ctx.ellipse(-4, 1, 20, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,248,225,0.3)";
+        ctx.beginPath();
+        ctx.ellipse(-6, -6, 16, 3, -0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // CONFIRMED CHANGE: extra realism pass, per direct request ("can
+        // we make the tardigrades look a lil more realistic") -- a
+        // mottled speckled cuticle texture (real tardigrade cuticle is
+        // never one flat smooth color, it's got a granular mottled
+        // look), plus 4 subtle dorsal armor-plate bands (the segment
+        // creases below were faint outlines only; these add real
+        // highlight/shadow pairs so the plates read as actual overlapping
+        // armor, not just scratches).
+        for (let sp = 0; sp < 22; sp++) {
+          const spx = -24 + pseudoRandom(sp * 3.7 + phaseOffset) * 42;
+          const spy = (pseudoRandom(sp * 5.1 + 2) - 0.5) * 16;
+          ctx.fillStyle = pseudoRandom(sp * 2.3) > 0.5 ? "rgba(90,68,32,0.18)" : "rgba(230,210,160,0.22)";
+          ctx.beginPath();
+          ctx.arc(spx, spy, 0.8 + pseudoRandom(sp * 1.7) * 0.9, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        [-19, -9, 2, 13].forEach((plx, pi) => {
+          ctx.strokeStyle = "rgba(255,245,210,0.22)";
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(plx - 3, -10 + Math.abs(plx) * 0.05);
+          ctx.quadraticCurveTo(plx - 1, 0, plx - 3, 10 - Math.abs(plx) * 0.05);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(80,58,26,0.22)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(plx + 1, -9);
+          ctx.quadraticCurveTo(plx + 3, 0, plx + 1, 9);
+          ctx.stroke();
+        });
+
+        // head -- CONFIRMED CHANGE: tapered into a real short conical
+        // snout instead of a plain oval, with the mouth as a small dark
+        // pore right at the tip (ringed by faint peribuccal lamellae
+        // lines) -- the actual real tardigrade "face" read, rather than
+        // a rounded blob with a circle drawn on it.
+        ctx.fillStyle = "#cdb37c";
+        ctx.beginPath();
+        ctx.moveTo(-20, -6);
+        ctx.quadraticCurveTo(-29, -5, -33, -1);
+        ctx.quadraticCurveTo(-35, 0, -33, 1);
+        ctx.quadraticCurveTo(-29, 5, -20, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(90,65,30,0.35)";
+        ctx.lineWidth = 0.8;
+        for (let lam = -1; lam <= 1; lam++) {
+          ctx.beginPath();
+          ctx.arc(-33, lam * 0.5, 1.6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.fillStyle = "rgba(60,42,18,0.75)";
+        ctx.beginPath();
+        ctx.arc(-33.5, 0, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+        // two tiny dark eyespots just behind the snout, a real (if
+        // subtle) tardigrade feature that's easy to miss without them
+        ctx.fillStyle = "rgba(40,25,10,0.6)";
+        [-1, 1].forEach(dir => {
+          ctx.beginPath();
+          ctx.arc(-24, dir * 3, 1, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // 4 pairs of stubby legs splayed from the SIDES of the body,
+        // each ending in a little cluster of curled claws
+        ctx.strokeStyle = "#a8895a";
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        const legAnchors = [-19, -9, 2, 13];
+        legAnchors.forEach((lx, li) => {
+          // alternating stepping swing -- legs on opposite sides/segments
+          // are out of phase so it reads as a walking gait, not everything
+          // twitching in unison
+          const swing = Math.sin(crawl * 2 + li * 1.6) * 3;
+          [-1, 1].forEach(dir => {
+            const footX = lx - 3 + swing, footY = dir * 15;
+            ctx.beginPath();
+            ctx.moveTo(lx, dir * 8);
+            ctx.quadraticCurveTo(lx - 4 + swing * 0.5, dir * 12, footX, footY);
+            ctx.stroke();
+            // 3 tiny curled claws per foot, not one dot
+            ctx.strokeStyle = "#7a6038";
+            ctx.lineWidth = 1.1;
+            for (let c = -1; c <= 1; c++) {
+              ctx.beginPath();
+              ctx.moveTo(footX, footY);
+              ctx.quadraticCurveTo(footX + c * 2, footY + dir * 5, footX + c * 3.5, footY + dir * 6.5);
+              ctx.stroke();
+            }
+            ctx.strokeStyle = "#a8895a";
+            ctx.lineWidth = 3;
+          });
+        });
+        ctx.lineCap = "butt";
+
+        // faint segment creases across the body -- subtle, not hard
+        // dividing lines, since a real tardigrade reads as one soft
+        // wrinkled tube rather than distinct armor plates
+        ctx.strokeStyle = "rgba(140,110,60,0.3)";
+        ctx.lineWidth = 1;
+        [-18, -8, 3, 14].forEach(lx => {
+          ctx.beginPath();
+          ctx.moveTo(lx, -9);
+          ctx.quadraticCurveTo(lx + 1, 0, lx, 9);
+          ctx.stroke();
+        });
+        ctx.restore();
+      };
+      drawTardigrade(-12, -8, 1.15, 0.12, 0);
+      drawTardigrade(20, 22, 0.85, -0.35, 4.2);
     }
   },
 {
@@ -41749,89 +41756,9 @@ const MICROSCOPE_SLIDES = [
     }
   },
 {
-    // new slide, per direct request ("do dif debris and micro orgs in
-    // the dew / rain"). Dew forms overnight ON a leaf/grass surface, so
-    // unlike a scooped water sample it reads as a shallow, mostly-clear
-    // droplet with fine dust and pollen settled at its bottom, plus the
-    // faint parallel lines of the leaf surface it's sitting on showing
-    // through underneath -- that leaf-vein backdrop is what makes dew
-    // visually distinct from rain/pond/ocean water.
-    id: "dewDrop",
-    name: "Morning Dew (on a leaf)",
-    draw: () => {
-      ctx.fillStyle = "#dcecd8";
-      ctx.fillRect(-60, -60, 120, 120);
-      const t = microscopeAnimClock * 0.001;
-
-      // the leaf surface underneath, showing through the shallow water --
-      // parallel veins plus a faint cell grid, much fainter than the
-      // dedicated leaf slide since it's out-of-focus background here
-      ctx.strokeStyle = "rgba(90,140,80,0.3)";
-      ctx.lineWidth = 1.2;
-      for (let i = -2; i <= 2; i++) {
-        ctx.beginPath();
-        ctx.moveTo(-60, i * 20);
-        ctx.lineTo(60, i * 20 + 10);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = "rgba(90,140,80,0.15)";
-      ctx.lineWidth = 0.6;
-      for (let i = -3; i <= 3; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * 18, -60);
-        ctx.lineTo(i * 18, 60);
-        ctx.stroke();
-      }
-
-      // the water itself -- a soft round highlight gradient standing in
-      // for the droplet's own curved surface catching the light. Its
-      // center slowly drifts in a small loop, per direct follow-up
-      // ("werent we going to add movement to... morning dew") -- a real
-      // droplet's surface highlight shifts as the water settles/breathes
-      // very slightly, which is a much more visible motion cue than the
-      // settled debris drifting alone.
-      const shimmerX = -8 + Math.cos(t * 0.35) * 6;
-      const shimmerY = -10 + Math.sin(t * 0.28) * 5;
-      const dewGrad = ctx.createRadialGradient(shimmerX, shimmerY, 4, 0, 0, 65);
-      dewGrad.addColorStop(0, "rgba(255,255,255,0.4)");
-      dewGrad.addColorStop(0.4, "rgba(220,240,225,0.12)");
-      dewGrad.addColorStop(1, "rgba(200,225,205,0.05)");
-      ctx.fillStyle = dewGrad;
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // fine settled dust and pollen grains at the bottom of the droplet
-      // -- pollen as small round bumpy grains, dust as tiny dark flecks.
-      // CONFIRMED CHANGE: drift amplitude bumped up (was 1.5, nearly
-      // imperceptible) so the motion actually reads clearly, per the
-      // same follow-up.
-      for (let i = 0; i < 8; i++) {
-        const px = (pseudoRandom(i * 5.5) - 0.5) * 100 + Math.sin(t * 0.15 + i) * 4;
-        const py = (pseudoRandom(i * 8.1 + 1) - 0.5) * 100 + Math.cos(t * 0.13 + i) * 4;
-        ctx.fillStyle = "rgba(230,190,90,0.7)";
-        ctx.beginPath();
-        ctx.arc(px, py, 2.2, 0, Math.PI * 2);
-        ctx.fill();
-        // bumpy pollen texture -- small pits around the edge
-        ctx.strokeStyle = "rgba(160,120,40,0.5)";
-        ctx.lineWidth = 0.5;
-        for (let b = 0; b < 5; b++) {
-          const bang = (b / 5) * Math.PI * 2;
-          ctx.beginPath();
-          ctx.arc(px + Math.cos(bang) * 1.6, py + Math.sin(bang) * 1.6, 0.5, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-      ctx.fillStyle = "rgba(90,80,70,0.55)";
-      for (let i = 0; i < 16; i++) {
-        const gx = (pseudoRandom(i * 6.6 + 40) - 0.5) * 108;
-        const gy2 = (pseudoRandom(i * 9.2 + 41) - 0.5) * 108;
-        ctx.beginPath();
-        ctx.arc(gx, gy2, 0.6 + pseudoRandom(i * 3.1) * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  },
-{
+    // CONFIRMED CHANGE ("remove the morning dew") -- the dew-on-a-leaf
+    // slide (id "dewDrop") has been removed per direct request. See git
+    // history for the full original draw() if it's ever wanted back.
     // new slide, per direct request ("or a spiderweb!"). Under a scope,
     // spider silk shows its real defining feature: tiny beaded droplets
     // of glue strung along the capture-line threads (very different from
@@ -42103,6 +42030,36 @@ const MICROSCOPE_SLIDES = [
       ctx.fillStyle = "#2a2018";
       ctx.fillRect(-60, -60, 120, 120);
 
+      // CONFIRMED CHANGE ("make monarch wing better?") -- the shingled
+      // scale field alone read a little flat/uniform next to the
+      // scope's other slides. Added the wing's own structural vein --
+      // real monarch wings have bold black veins branching out under
+      // the scale cover, visible at the membrane seams between scale
+      // rows -- plus a faint iridescent sheen, since monarch scales do
+      // catch a subtle blue-violet structural shimmer at high zoom, not
+      // just flat pigment color.
+      ctx.strokeStyle = "rgba(15,10,5,0.75)";
+      ctx.lineCap = "round";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(-60, -60);
+      ctx.lineTo(-10, 6);
+      ctx.stroke();
+      ctx.lineWidth = 2.6;
+      [[-10, 6, 30, -18], [-10, 6, 20, 40], [-10, 6, -30, 42]].forEach(([x0, y0, x1, y1]) => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      });
+      ctx.lineWidth = 1.4;
+      [[30, -18, 48, -34], [20, 40, 46, 50], [-30, 42, -48, 30]].forEach(([x0, y0, x1, y1]) => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      });
+
       const drawScale = (ox, oy, ang, len, wid, color) => {
         ctx.save();
         ctx.translate(ox, oy);
@@ -42151,6 +42108,18 @@ const MICROSCOPE_SLIDES = [
         const ang = pseudoRandom(i * 3.3 + 502) * Math.PI * 2;
         drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f");
       }
+
+      // faint iridescent structural sheen sweeping across the top of
+      // everything -- real monarch scales catch a subtle blue-violet
+      // shimmer at this zoom on top of the pigment color, not just flat
+      // orange/black/white
+      const sheen = ctx.createLinearGradient(-60, -60, 60, 60);
+      sheen.addColorStop(0, "rgba(140,170,230,0)");
+      sheen.addColorStop(0.45, "rgba(160,180,235,0.1)");
+      sheen.addColorStop(0.55, "rgba(200,190,240,0.16)");
+      sheen.addColorStop(1, "rgba(140,170,230,0)");
+      ctx.fillStyle = sheen;
+      ctx.fillRect(-60, -60, 120, 120);
     }
   },
 {
@@ -42896,9 +42865,20 @@ const SANDBOX_BALL_PIT_BALL_COLORS = ["#ff5a5a", "#ffb23f", "#ffe64a", "#6ee66e"
 // size increase, so density stays roughly the same (the old 90 in the
 // smaller 240x190 interior was already a good "surrounded by balls"
 // density -- just scaling the count with the new bigger 320x230 area).
-const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 170 }, (_, i) => ({
+// CONFIRMED CHANGE ("add more balls to ball pit" again): bumped again,
+// 170 -> 260, per direct follow-up request -- no size change alongside
+// it this time, so the pit now reads noticeably denser/more packed
+// than before.
+// CONFIRMED BUG FIX: the y-margin was asymmetric (14px inset from the
+// top, only 8px from the bottom, against a max ball radius of 12) --
+// harmless with the original smaller sample count by luck, but scaling
+// up to 260 balls surfaced an actual out-of-bounds ball (y+r a few px
+// past rimHeight, poking below the sand floor) caught by the existing
+// bounds-check test. Margin evened out to 12px on both sides -- exactly
+// the max radius -- so no ball can ever poke past either edge.
+const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 260 }, (_, i) => ({
   x: 16 + pseudoRandom(i * 5.3 + 1) * (sandboxBallPit.width - 32),
-  y: 14 + pseudoRandom(i * 7.1 + 2) * (sandboxBallPit.rimHeight - 22),
+  y: 12 + pseudoRandom(i * 7.1 + 2) * (sandboxBallPit.rimHeight - 24),
   r: 7 + pseudoRandom(i * 3.7 + 3) * 5,
   color: SANDBOX_BALL_PIT_BALL_COLORS[i % SANDBOX_BALL_PIT_BALL_COLORS.length],
   front: pseudoRandom(i * 9.9 + 4) > 0.82, // ~18% drawn in front of the player
@@ -42936,14 +42916,40 @@ function updateSandboxBallPitBallPhysics(deltaTime) {
     const dx = ballWorldX - playerCenterX;
     const dy = ballHeight - playerCenterH;
     const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
-    const pushRadius = b.r + player.width * 0.5 + 8;
+    // CONFIRMED CHANGE ("make them move more when player makes contact")
+    // -- radius widened a bit (8 -> 14) so balls start reacting slightly
+    // before full contact, and the push multiplier more than doubled
+    // (100 -> 230) so a close pass visibly shoves balls out of the way
+    // instead of just nudging them.
+    const pushRadius = b.r + player.width * 0.5 + 14;
     if (dist < pushRadius) {
       const overlap = (pushRadius - dist) / pushRadius;
-      const pushAmount = overlap * 100 * deltaTime;
+      const pushAmount = overlap * 230 * deltaTime;
       b.offsetX += (dx / dist) * pushAmount;
       b.offsetY += (dy / dist) * pushAmount;
     }
   });
+}
+
+// CONFIRMED BUG FIX ("with wig on at least, head goes outside of ball
+// pit wall") -- the ladder-mount x and the swim-area clamp both only
+// ever accounted for player.width (the plain body), never for how far
+// a worn wig's own silhouette reaches sideways past that body. Some
+// wigs (pippi's braids especially, reaching ~52 local units before the
+// 0.9 draw scale) stick out FAR past the body's own half-width, so
+// even though the body itself was correctly kept clear of the pit's
+// 14px-wide side walls, the wig riding along on top of it wasn't --
+// it visually punched straight through the wall art into the sky/sand
+// outside, or floated into the tank's interior past the wall while
+// still on the ladder. Rough max local half-extent per wig (measured
+// from drawWigShape's own geometry, pre the 0.9 scale it's drawn at
+// on the live sprite) so any current or future wig gets real
+// clearance instead of just the ones caught by eye.
+const WIG_HALF_WIDTH = { pippi: 52, curlyOrange: 33, greyPixie: 25, blueBob: 26, greenWavy: 29 };
+function getWigSideOverhang() {
+  if (!player.wigId) return 0;
+  const reach = (WIG_HALF_WIDTH[player.wigId] || 20) * 0.9; // matches drawWigShape's live-sprite scale
+  return Math.max(0, reach - player.width / 2);
 }
 
 function updateSandboxBallPit(deltaTime) {
@@ -42954,7 +42960,10 @@ function updateSandboxBallPit(deltaTime) {
   if (player.onBallPitLadder) {
     const vertical = keys.up ? 1 : keys.down ? -1 : 0;
     player.y += vertical * SANDBOX_BALL_PIT_CLIMB_SPEED * deltaTime;
-    player.x = ladderX - player.width / 2;
+    // shifted further left (away from the pit) by any wig's side
+    // overhang -- see getWigSideOverhang -- so a wide wig stays clear
+    // of the wall/interior instead of poking through it while climbing
+    player.x = ladderX - player.width / 2 - getWigSideOverhang();
     player.vy = 0;
     player.jumping = true;
     if (player.y >= pit.rimHeight) {
@@ -43006,7 +43015,11 @@ function updateSandboxBallPit(deltaTime) {
     // and reaching the very top just holds you at the rim's underside
     // rather than popping back out (climbing OUT is its own deliberate
     // action below, not an accidental byproduct of swimming up)
-    player.x = Math.max(pit.x + 10, Math.min(pit.x + pit.width - 10 - player.width, player.x));
+    // CONFIRMED BUG FIX: inset widened by any wig's side overhang (see
+    // getWigSideOverhang) so a wide wig's silhouette -- not just the
+    // body underneath it -- stays clear of the side walls while swimming
+    const wigOverhang = getWigSideOverhang();
+    player.x = Math.max(pit.x + 10 + wigOverhang, Math.min(pit.x + pit.width - 10 - player.width - wigOverhang, player.x));
     player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
     player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
 
@@ -43282,14 +43295,121 @@ function antFarmCellCenter(row, col) {
 // completely different layout) -- the old paths were hardcoded against
 // the v2 grid's coordinates and would've walked straight into solid
 // dirt on the new one. Regenerated from confirmed contiguous open runs.
+// CONFIRMED CHANGE ("i want more ants") -- four more decorative walkers
+// added on top of the original six, on freshly-verified straight open
+// runs from the current v3 grid (found programmatically the same way
+// the original six were, not eyeballed).
 const SANDBOX_ANT_FARM_ANTS = [
   { path: [[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[2,6]], speed: 0.55, phase: 0 },
   { path: [[4,0],[4,1],[4,2],[4,3],[4,4],[4,5],[4,6]], speed: 0.7, phase: 1.4 },
   { path: [[8,2],[8,3],[8,4],[8,5],[8,6],[8,7],[8,8]], speed: 0.5, phase: 3.1 },
   { path: [[12,4],[12,5],[12,6],[12,7],[12,8],[12,9],[12,10]], speed: 0.6, phase: 4.7 },
   { path: [[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0]], speed: 0.45, phase: 2.0 },
-  { path: [[2,16],[3,16],[4,16],[5,16],[6,16],[7,16],[8,16]], speed: 0.5, phase: 5.6 }
+  { path: [[2,16],[3,16],[4,16],[5,16],[6,16],[7,16],[8,16]], speed: 0.5, phase: 5.6 },
+  { path: [[6,0],[6,1],[6,2],[6,3],[6,4],[6,5],[6,6],[6,7],[6,8]], speed: 0.5, phase: 0.8 },
+  { path: [[6,4],[7,4],[8,4],[9,4],[10,4],[11,4],[12,4]], speed: 0.55, phase: 2.5 },
+  { path: [[4,8],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8]], speed: 0.6, phase: 1.1 },
+  { path: [[12,10],[12,11],[12,12],[12,13],[12,14],[12,15],[12,16]], speed: 0.5, phase: 3.9 }
 ];
+
+// CONFIRMED CHANGE ("i want to see ants slowerly dig their own new
+// tunnels") -- a handful of "worker" ants that actually mutate
+// ANT_FARM_GRID over time, separate from the fast stateless decorative
+// walkers above (those are pure animation, no real position to carry
+// dig progress). Each worker sits at a real grid cell, picks an
+// adjacent SOLID cell to excavate, spends ANT_FARM_DIGGER_DIG_TIME
+// slowly working at it (with its own small crumble visual, same
+// language as the player's own dig feedback), then the cell opens for
+// good and the worker steps into it and picks its next wall to start
+// on -- so returning to the case later shows genuinely new tunnels
+// that weren't there before, not just the same fixed maze forever.
+// row>0 respected here too -- workers never touch the single surface
+// entrance.
+const ANT_FARM_DIGGER_DIG_TIME = 6; // seconds -- deliberately slow, "watch it happen" pace
+const SANDBOX_ANT_FARM_DIGGERS = [
+  { row: 5, col: 0, digRow: -1, digCol: -1, progress: 0, angle: 0 },
+  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI },
+  { row: 9, col: 8, digRow: -1, digCol: -1, progress: 0, angle: Math.PI / 2 }
+];
+
+// picks a solid neighbor of (row,col) to start digging, preferring one
+// not already claimed by another digger this frame
+function antFarmPickDigTarget(row, col) {
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  const options = [];
+  dirs.forEach(([dr, dc]) => {
+    const r = row + dr, c = col + dc;
+    if (r <= 0 || r >= ANT_FARM_ROWS || c < 0 || c >= ANT_FARM_COLS) return;
+    if (ANT_FARM_GRID[r][c] === 0) {
+      const claimed = SANDBOX_ANT_FARM_DIGGERS.some(d => d.digRow === r && d.digCol === c);
+      if (!claimed) options.push({ r, c });
+    }
+  });
+  if (!options.length) return null;
+  return options[Math.floor(pseudoRandom(row * 31 + col * 7 + performance.now() * 0.00001) * options.length) % options.length];
+}
+
+function updateAntFarmDiggers(deltaTime) {
+  SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    if (d.digRow === -1) {
+      const target = antFarmPickDigTarget(d.row, d.col);
+      if (target) {
+        d.digRow = target.r;
+        d.digCol = target.c;
+        d.progress = 0;
+        d.angle = Math.atan2(target.r - d.row, target.c - d.col);
+      } else {
+        // boxed in by open cells on every side right now -- shuffle to
+        // a random open neighbor instead of sitting idle forever, so it
+        // eventually wanders somewhere with a fresh wall to work on
+        const openDirs = [[-1,0],[1,0],[0,-1],[0,1]].filter(([dr,dc]) => antFarmCellOpen(d.row + dr, d.col + dc) && (d.row + dr) > 0);
+        if (openDirs.length) {
+          const [dr, dc] = openDirs[Math.floor(pseudoRandom(performance.now() * 0.0001 + d.row) * openDirs.length) % openDirs.length];
+          d.row += dr;
+          d.col += dc;
+        }
+      }
+      return;
+    }
+    d.progress += deltaTime;
+    if (d.progress >= ANT_FARM_DIGGER_DIG_TIME) {
+      ANT_FARM_GRID[d.digRow][d.digCol] = 1;
+      d.row = d.digRow;
+      d.col = d.digCol;
+      d.digRow = -1;
+      d.digCol = -1;
+      d.progress = 0;
+    }
+  });
+}
+
+function drawAntFarmDiggers(gx, gyTop) {
+  SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    const pos = antFarmCellCenter(d.row, d.col);
+    drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15);
+    if (d.digRow !== -1) {
+      // small crumble effect at the dig target -- same visual language
+      // (growing lighter patch + radiating cracks) as the player's own
+      // dig feedback, just scaled down to worker-ant size
+      const target = antFarmCellCenter(d.digRow, d.digCol);
+      const tx = gx + target.x, ty = gyTop + target.y;
+      const t = d.progress / ANT_FARM_DIGGER_DIG_TIME;
+      ctx.fillStyle = `rgba(150,110,70,${0.5 * t})`;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 3 + t * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(90,65,35,${0.6 * t})`;
+      ctx.lineWidth = 0.6;
+      for (let i = 0; i < 4; i++) {
+        const crackAngle = (i / 4) * Math.PI * 2 + d.digRow * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(tx + Math.cos(crackAngle) * (2 + t * 5), ty + Math.sin(crackAngle) * (2 + t * 5));
+        ctx.stroke();
+      }
+    }
+  });
+}
 
 // walks a ping-pong cycle along a path of [row,col] cells and returns
 // the current interpolated local-pixel position + facing angle
@@ -43359,6 +43479,12 @@ function drawAntCreature(cx, cy, angle, scale) {
 function updateSandboxAntFarm(deltaTime) {
   const farm = sandboxAntFarm;
   const entranceWorldX = farm.x + ANT_FARM_MARGIN + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+
+  // worker ants dig on their own clock regardless of whether you're
+  // actually shrunk down watching them right now -- runs unconditionally
+  // while in the sandbox at all, so the tunnels have genuinely moved on
+  // by the time you check back in, not just while you're staring at them
+  updateAntFarmDiggers(deltaTime);
 
   if (player.inAntFarm) {
     const speed = 46;
@@ -43560,6 +43686,10 @@ function drawSandboxAntFarm(camX) {
     drawAntCreature(gx + pos.x, gyTop + pos.y, pos.angle, 1.15);
   });
 
+  // worker ants slowly digging new tunnels of their own -- see
+  // updateAntFarmDiggers/drawAntFarmDiggers
+  drawAntFarmDiggers(gx, gyTop);
+
   // the shrunk player icon, only while actually inside -- a real
   // "mini me" (rounded body + two eye dots, the player's own body
   // color) rather than a plain colored dot, per direct feedback
@@ -43574,18 +43704,71 @@ function drawSandboxAntFarm(camX) {
     ctx.arcTo(ix - 5, iy - 6, ix + 5, iy - 6, 2);
     ctx.closePath();
     ctx.fill();
-    // CONFIRMED BUG FIX: at 0.9px radius these were small enough that
-    // canvas anti-aliasing rendered them as blocky squares rather than
-    // round dots ("what are the two squares on player in ant farm") --
-    // bumped the radius up so they actually render as circles.
-    ctx.fillStyle = "#1a1a1a";
+    // CONFIRMED BUG FIX (round 2 -- "what are the two dark blue squares
+    // on micro player"): bumping the radius alone (0.9 -> 1.3) wasn't
+    // enough on its own -- a solid dark dot drawn directly on top of the
+    // blue-purple body with no base underneath still anti-aliases into
+    // a blocky, color-blended smear at this tiny a size, which is
+    // exactly what read as "dark blue squares" rather than clean black
+    // eyes. Matches the real player sprite's own eye treatment now: a
+    // small white sclera circle first, THEN the dark pupil on top of
+    // that -- the white base gives the pupil something to anti-alias
+    // against besides the body color, and the two-layer circle reads
+    // properly round even shrunk down to ant-size.
     const eyeDir = farm.facingDir;
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1.3, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1.9, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1.9, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#1a1a1a";
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1.3, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1, 0, Math.PI * 2);
     ctx.fill();
+
+    // CONFIRMED CHANGE ("if player wearing a wig or the autumn crown,
+    // bring that with them as super mini into the ant farm") -- whatever
+    // headwear is currently equipped up top rides along on the mini-me
+    // too, at ant-sized scale, using the exact same draw functions the
+    // real player uses (both are already coordinate/scale-agnostic) so
+    // there's no separate mini art to keep in sync by hand.
+    if (player.wigId) {
+      drawWigShape(player.wigId, ix, iy - 6, 0.11);
+    }
+    if (typeof crownState !== "undefined" && crownState.worn) {
+      drawCrownProcedural(ctx, ix, iy - 7, 3.4);
+    }
+
+    // and the shovel itself, held up near the mini-me's side -- purely
+    // so it's visibly clear the dig tool is equipped and on-hand, since
+    // the full-size floating held-item icon is hidden while in here
+    // (see the `!player.inAntFarm` gate on that block) and its absence
+    // was read as "the shovel got left behind" ("shovel get separated
+    // from player and then nothing can happen to grab it and start
+    // digging") when actually nothing needs to be "grabbed" at all --
+    // just push into a wall with it equipped.
+    if (heldItem === "shovel") {
+      const shx = ix + eyeDir * 6, shy = iy + 3;
+      ctx.save();
+      ctx.translate(shx, shy);
+      ctx.rotate(eyeDir * -0.5);
+      ctx.strokeStyle = "#8a6a42";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -5);
+      ctx.stroke();
+      ctx.fillStyle = "#b8b8b8";
+      ctx.beginPath();
+      ctx.moveTo(-1.6, -5);
+      ctx.lineTo(1.6, -5);
+      ctx.lineTo(1.2, -7.4);
+      ctx.lineTo(-1.2, -7.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   // glass shine, drawn last so it sits over everything inside the case
@@ -44584,7 +44767,16 @@ if (currentScene === "molehole") {
 // already shows the shovel being swung down at the hole, so keeping a
 // second copy floating above the player's head at the same time just
 // read as cluttered/confusing.
-if (heldItem && !fallState.active && !activeDig) {
+// CONFIRMED BUG FIX ("why is shovel separate from player once in ant
+// farm") -- this floats above the REAL player's world position, which
+// stays parked (and visually hidden off-canvas, see the `px` override
+// above) at the mount spot the whole time you're shrunk down inside
+// the ant farm. With the body itself hidden but this held-item icon
+// never gated on inAntFarm, the shovel kept floating there on its own
+// with no body under it -- looking completely disconnected from the
+// mini-me actually moving around inside the case. Hidden here the same
+// way the body is.
+if (heldItem && !fallState.active && !activeDig && !player.inAntFarm) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
     drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 8);
@@ -44603,7 +44795,7 @@ if (heldItem && !fallState.active && !activeDig) {
 
 // carried book — same floating-above-head treatment as a held item,
 // small closed-book icon matching each book's established color coding
-if (carriedBook && !fallState.active) {
+if (carriedBook && !fallState.active && !player.inAntFarm) {
   const bookPos = getHeldItemWorldPos();
   const bx = bookPos.x - camX, by = bookPos.y;
   const isManual = carriedBook === "manual";
