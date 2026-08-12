@@ -2173,18 +2173,23 @@ function handleInput(){
   // digging in one place while continuing to walk away from it, and far
   // enough that the newly-dug platform's own landing/snap logic no
   // longer has any position left to catch them at.
-  // CONFIRMED BUG FIX: none of the ball pit's own states (ladder,
-  // standing on the rim, swimming) were ever in this exclusion list, so
-  // this generic per-frame walk (a flat, non-deltaTime-scaled
-  // player.speed nudge, ~180px/s worth at 60fps) kept running underneath
-  // the ball pit's own deltaTime-scaled movement the whole time, adding
-  // on top of it. The ladder/rim overwrite player.x outright every
-  // frame so it was invisible there, but inBallPit's swim only ADDS a
-  // delta -- so holding an arrow while swimming was quietly getting
-  // both a fast flat walk AND the swim speed at once, which is exactly
-  // what "horiz movement is waaay too fast" was describing. This was
-  // never really about the swim constant being tuned too high.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim) {
+  // CONFIRMED BUG FIX: the ladder and swimming states (which both
+  // overwrite player.x themselves every frame) needed to be excluded
+  // here so this generic per-frame walk (a flat, non-deltaTime-scaled
+  // player.speed nudge, ~180px/s worth at 60fps) didn't keep running
+  // underneath their own deltaTime-scaled movement and adding on top of
+  // it -- that's what caused "horiz movement is waaay too fast" while
+  // swimming. CONFIRMED BUG FIX: onBallPitRim was mistakenly added to
+  // that same exclusion list, but standing on the rim has no movement
+  // code of its own (unlike the ladder/swim states) -- it only pins
+  // player.y and watches for space/walking off the edges. Excluding it
+  // here left NOTHING driving player.x at all while on the rim, which
+  // is exactly the "player stuck here and frozen no movment alloed"
+  // report: standing at the top of the ladder froze you in place with
+  // no way to walk to either edge. Rim now allowed through so ordinary
+  // walking works there; ladder/swim stay excluded since those two
+  // still drive their own position every frame.
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -38019,7 +38024,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 3920; // CONFIRMED CHANGE: widened again (was 3820) alongside the ant farm's move further right for more breathing room past the ball pit
+const SANDBOX_WIDTH = 4060; // CONFIRMED CHANGE: widened again (was 3920) for the ant farm's v3 size increase (case grew to 342px wide)
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -43206,22 +43211,35 @@ function drawSandboxBallPit(camX) {
 // visit-every-cell DFS which would've opened the entire grid) and
 // checked for full single-component connectivity from one single
 // surface opening before being hardcoded here.
-const ANT_FARM_COLS = 11;
-const ANT_FARM_ROWS = 9;
-const ANT_FARM_CELL = 20;
+// CONFIRMED CHANGE ("lets make it bigger... make more complex maze")
+// -- v3 pass. Grew again to 17x13 (119 open cells, was 41), and this
+// time the carve also added 10 extra "loop" connections on top of the
+// base tree maze (each one a wall cell sitting directly between two
+// already-open cells, opened up to create an alternate route) so it's
+// not just a pure dead-end-heavy tree anymore -- real loops to circle
+// around through. Same connectivity verification as before, plus a
+// check that every loop-opened cell didn't touch the single-entrance
+// invariant.
+const ANT_FARM_COLS = 17;
+const ANT_FARM_ROWS = 13;
+const ANT_FARM_CELL = 18;
 const ANT_FARM_MARGIN = 18;
 const ANT_FARM_GRID = [
-  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-  [0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0],
-  [0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0],
-  [0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0],
-  [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
-  [0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0],
-  [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
-  [0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0]
+  [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+  [1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+  [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1],
+  [1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
+  [1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 ];
-const ANT_FARM_ENTRANCE = { row: 0, col: 5 };
+const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
   x: 3660, // CONFIRMED CHANGE: pushed further right (was 3560) for more breathing room past the ball pit's right wall, per direct feedback
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
@@ -43230,8 +43248,18 @@ const sandboxAntFarm = {
   // while player.inAntFarm -- (0,0) is the grid's top-left corner
   localX: 0,
   localY: 0,
-  facingDir: 1 // last horizontal direction moved, for the mini-me icon's eye placement
+  facingDir: 1, // last horizontal direction moved, for the mini-me icon's eye placement
+  // CONFIRMED CHANGE ("lets make it diggable now") -- digging a solid
+  // cell open takes sustained effort (see ANT_FARM_DIG_TIME), not one
+  // instant hit, so it reads as real excavation rather than a wall
+  // just vanishing. digRow/digCol track which cell is currently being
+  // worked; progress resets the moment you stop pushing into that
+  // specific cell.
+  digRow: -1,
+  digCol: -1,
+  digProgress: 0
 };
+const ANT_FARM_DIG_TIME = 0.8; // seconds of sustained pushing to dig a cell open
 
 function antFarmCellOpen(row, col) {
   if (row < 0 || row >= ANT_FARM_ROWS || col < 0 || col >= ANT_FARM_COLS) return false;
@@ -43250,13 +43278,17 @@ function antFarmCellCenter(row, col) {
 // dirt. Fully time-derived (no per-frame state to update) via a
 // ping-pong index into its own path, same "stateless, performance.now()
 // driven" pattern the rest of the sandbox's ambient decor already uses.
+// CONFIRMED CHANGE: paths re-verified against the v3 grid (much bigger,
+// completely different layout) -- the old paths were hardcoded against
+// the v2 grid's coordinates and would've walked straight into solid
+// dirt on the new one. Regenerated from confirmed contiguous open runs.
 const SANDBOX_ANT_FARM_ANTS = [
-  { path: [[0,5],[1,5],[2,5],[3,5],[4,5]], speed: 0.55, phase: 0 },
-  { path: [[2,1],[2,2],[2,3]], speed: 0.9, phase: 1.4 },
-  { path: [[4,5],[4,6],[4,7],[4,8],[4,9]], speed: 0.5, phase: 3.1 },
-  { path: [[2,7],[2,8],[2,9]], speed: 1.1, phase: 4.7 },
-  { path: [[2,1],[3,1],[4,1],[5,1],[6,1],[7,1],[8,1]], speed: 0.42, phase: 2.0 },
-  { path: [[8,3],[8,4],[8,5],[8,6],[8,7],[8,8],[8,9]], speed: 0.5, phase: 5.6 }
+  { path: [[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[2,6]], speed: 0.55, phase: 0 },
+  { path: [[4,0],[4,1],[4,2],[4,3],[4,4],[4,5],[4,6]], speed: 0.7, phase: 1.4 },
+  { path: [[8,2],[8,3],[8,4],[8,5],[8,6],[8,7],[8,8]], speed: 0.5, phase: 3.1 },
+  { path: [[12,4],[12,5],[12,6],[12,7],[12,8],[12,9],[12,10]], speed: 0.6, phase: 4.7 },
+  { path: [[4,0],[5,0],[6,0],[7,0],[8,0],[9,0],[10,0]], speed: 0.45, phase: 2.0 },
+  { path: [[2,16],[3,16],[4,16],[5,16],[6,16],[7,16],[8,16]], speed: 0.5, phase: 5.6 }
 ];
 
 // walks a ping-pong cycle along a path of [row,col] cells and returns
@@ -43341,21 +43373,57 @@ function updateSandboxAntFarm(deltaTime) {
     // a wider box), so sliding along a corridor wall in one direction
     // doesn't also get blocked by the other axis
     const antHalf = 4;
+    let blockedTarget = null;
     if (dx !== 0) {
       farm.facingDir = dx;
       const tryX = farm.localX + dx * speed * deltaTime;
       const col = Math.floor((tryX + (dx > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
       const row = Math.floor(farm.localY / ANT_FARM_CELL);
       if (antFarmCellOpen(row, col)) farm.localX = tryX;
+      else blockedTarget = { row, col };
     }
     if (dy !== 0) {
       const tryY = farm.localY + dy * speed * deltaTime;
       const row = Math.floor((tryY + (dy > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
       const col = Math.floor(farm.localX / ANT_FARM_CELL);
       if (antFarmCellOpen(row, col)) farm.localY = tryY;
+      else if (!blockedTarget) blockedTarget = { row, col };
     }
     farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL - 1, farm.localX));
     farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL - 1, farm.localY));
+
+    // CONFIRMED CHANGE ("lets make it diggable now") -- pushing
+    // sustained against a solid cell (row>0 only -- the single surface
+    // opening at row 0 stays the one clean entrance, not something
+    // that gets randomly perforated) digs it open after
+    // ANT_FARM_DIG_TIME seconds of continuous effort. Switching to a
+    // DIFFERENT blocked cell (or letting go of the direction key
+    // entirely) resets progress -- no banking partial progress across
+    // unrelated cells. CONFIRMED CHANGE ("put shovel in my inventory so
+    // i can dig") -- gated on heldItem==="shovel", matching every other
+    // dig-style interaction elsewhere in the game (the tunnel town wall,
+    // the dig site) rather than being a free action anyone can do just
+    // by walking in.
+    if (heldItem === "shovel" && blockedTarget && blockedTarget.row > 0 && blockedTarget.row < ANT_FARM_ROWS &&
+        blockedTarget.col >= 0 && blockedTarget.col < ANT_FARM_COLS) {
+      if (farm.digRow === blockedTarget.row && farm.digCol === blockedTarget.col) {
+        farm.digProgress += deltaTime;
+      } else {
+        farm.digRow = blockedTarget.row;
+        farm.digCol = blockedTarget.col;
+        farm.digProgress = deltaTime;
+      }
+      if (farm.digProgress >= ANT_FARM_DIG_TIME) {
+        ANT_FARM_GRID[farm.digRow][farm.digCol] = 1;
+        farm.digProgress = 0;
+        farm.digRow = -1;
+        farm.digCol = -1;
+      }
+    } else {
+      farm.digRow = -1;
+      farm.digCol = -1;
+      farm.digProgress = 0;
+    }
 
     // exit -- only from the entrance cell, same "walk up, interact"
     // convention as everywhere else, this time walking back UP to the
@@ -43459,6 +43527,31 @@ function drawSandboxAntFarm(camX) {
   ctx.beginPath();
   ctx.ellipse(entX, gyTop, ANT_FARM_CELL * 0.45, 5, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // CONFIRMED CHANGE ("lets make it diggable now") -- visible feedback
+  // while a cell is being dug: a growing lighter crack patch scaling
+  // with progress, so pushing into a wall visibly does something well
+  // before the cell actually gives way at ANT_FARM_DIG_TIME.
+  if (farm.digRow >= 0) {
+    const digFrac = Math.min(1, farm.digProgress / ANT_FARM_DIG_TIME);
+    const dc = antFarmCellCenter(farm.digRow, farm.digCol);
+    ctx.fillStyle = `rgba(150,110,70,${0.15 + digFrac * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(gx + dc.x, gyTop + dc.y, ANT_FARM_CELL * 0.15 + digFrac * ANT_FARM_CELL * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // a few crack lines radiating out, more of them as progress builds
+    ctx.strokeStyle = `rgba(20,12,5,${0.4 + digFrac * 0.4})`;
+    ctx.lineWidth = 0.8;
+    const crackCount = 2 + Math.floor(digFrac * 4);
+    for (let i = 0; i < crackCount; i++) {
+      const ang = (i / crackCount) * Math.PI * 2 + farm.digRow * 0.7 + farm.digCol * 1.3;
+      const len = ANT_FARM_CELL * (0.2 + digFrac * 0.25);
+      ctx.beginPath();
+      ctx.moveTo(gx + dc.x, gyTop + dc.y);
+      ctx.lineTo(gx + dc.x + Math.cos(ang) * len, gyTop + dc.y + Math.sin(ang) * len);
+      ctx.stroke();
+    }
+  }
 
   // real ant residents, stepping along actual tunnel cells
   const t = performance.now() * 0.001;
@@ -45402,6 +45495,13 @@ player.x = sandboxBlockPile.x - 130; // just in front of the pile's base tier, f
 player.y = 0;
 addToInventory("shovel");
 touchInventoryOrder("shovel");
+// CONFIRMED CHANGE ("put shovel in my inventory so i can dig") -- the
+// shovel was already being granted here, but heldItem defaults to null
+// and only changes via Tab-cycling, so without pressing Tab first it
+// sat in inventory unused and the ant farm's dig-gated-on-shovel check
+// (see updateSandboxAntFarm) would never fire. Equipped directly so
+// digging works immediately on load, no Tab press required.
+heldItem = "shovel";
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 updateMapUI();
