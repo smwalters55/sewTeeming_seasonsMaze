@@ -169,7 +169,8 @@ const player = {
   onBalanceBall: false, // CONFIRMED CHANGE: true while riding the sandbox's balance ball -- position driven entirely by updateSandboxBalanceBall, same pattern as onFan/onPendulum/onSlinky
   onBallPitLadder: false, // CONFIRMED CHANGE: true while climbing the sandbox ball pit's outer ladder -- position driven entirely by updateSandboxBallPit
   onBallPitRim: false,    // CONFIRMED BUG FIX: true while standing at the top of the ladder, protected from gravity until a deliberate drop-in or walk-off -- see applyPhysics' guard chain
-  inBallPit: false        // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
+  inBallPit: false,       // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
+  inAntFarm: false        // CONFIRMED CHANGE: true while shrunk down navigating the sandbox ant farm's tunnel maze -- unlike the ball pit, the real player.x/y stay parked at the mount spot the whole visit; only a small drawn icon moves, tracked by sandboxAntFarm.localX/localY
 };
 
 /* ======================================================
@@ -2172,7 +2173,7 @@ function handleInput(){
   // digging in one place while continuing to walk away from it, and far
   // enough that the newly-dug platform's own landing/snap logic no
   // longer has any position left to catch them at.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2477,6 +2478,12 @@ function applyPhysics(){
   // all, so ordinary gravity resumed the instant the player reached the
   // top of the ladder, yanking them back down before they could react.
   if (player.onBallPitLadder || player.inBallPit || player.onBallPitRim) return;
+
+  // the ant farm keeps the real player parked at the mount spot the
+  // whole visit (only a small drawn icon moves inside the case), but
+  // still guarded here so no leftover vy/gravity does anything strange
+  // to that parked position while a visit is in progress
+  if (player.inAntFarm) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -38001,7 +38008,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 3650; // CONFIRMED CHANGE: widened again (was 3150) to make room for the new ball pit toy, placed past the balance ball with its own clear space
+const SANDBOX_WIDTH = 3820; // CONFIRMED CHANGE: widened again (was 3650) to make room for the new ant farm toy, placed just past the ball pit with a clear gap between them
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -43084,6 +43091,176 @@ function drawSandboxBallPit(camX) {
   }
 }
 
+/* ======================================================
+   SANDBOX ANT FARM -- per direct brainstorm: shrink down and navigate
+   a small cross-section tunnel maze dug through dirt, ant-sized. v1
+   scope is deliberately just "navigate a small connected maze" (same
+   "get the core mechanic working first" approach the ball pit's
+   swim-only v1 took) -- no digging, no collectibles yet.
+
+   Unlike the ball pit (a real ride that repositions the world player),
+   this is a contained diorama the same way the wig stand/microscope
+   are: walking up and pressing space opens an in-place interaction
+   rather than moving the actual world player around, so the camera
+   never needs to follow a tiny ant-sized icon through the case. Only
+   a small drawn icon moves, tracked by its own local grid-relative
+   coordinates; the real player.x/y stay parked at the mount spot for
+   the whole visit and only resume once you exit.
+   ====================================================== */
+const ANT_FARM_COLS = 6;
+const ANT_FARM_ROWS = 5;
+const ANT_FARM_CELL = 24;
+const ANT_FARM_MARGIN = 16;
+// 1 = tunnel (dug out, walkable), 0 = solid dirt. Hand-laid and checked
+// for full connectivity from the entrance (row 0's only open cell) --
+// every other open cell is reachable from it. A little branching (the
+// row3/row4 pockets on both sides) without being a real labyrinth,
+// matching the "small maze, navigate only" scope.
+const ANT_FARM_GRID = [
+  [0, 0, 1, 0, 0, 0],
+  [0, 0, 1, 1, 1, 0],
+  [0, 1, 1, 0, 1, 0],
+  [1, 1, 0, 0, 1, 1],
+  [1, 0, 0, 1, 1, 0]
+];
+const ANT_FARM_ENTRANCE = { row: 0, col: 2 };
+const sandboxAntFarm = {
+  x: 3560, // world x of the case's left edge
+  caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
+  caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
+  // local pixel position within the grid interior, only meaningful
+  // while player.inAntFarm -- (0,0) is the grid's top-left corner
+  localX: 0,
+  localY: 0
+};
+// a few purely decorative ants wandering back and forth along short
+// stretches of tunnel -- non-interactive, just gives the case some
+// life the way the microscope's live-yeast slide does
+const SANDBOX_ANT_FARM_DECOR_ANTS = [
+  { row: 1, col: 3, axis: "x", span: 20, speed: 1.3, seed: 0.7 },
+  { row: 3, col: 4, axis: "y", span: 16, speed: 1.7, seed: 2.1 },
+  { row: 2, col: 1, axis: "y", span: 14, speed: 1.1, seed: 4.4 }
+];
+
+function antFarmCellOpen(row, col) {
+  if (row < 0 || row >= ANT_FARM_ROWS || col < 0 || col >= ANT_FARM_COLS) return false;
+  return ANT_FARM_GRID[row][col] === 1;
+}
+
+function updateSandboxAntFarm(deltaTime) {
+  const farm = sandboxAntFarm;
+  const entranceWorldX = farm.x + ANT_FARM_MARGIN + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+
+  if (player.inAntFarm) {
+    const speed = 46;
+    let dx = 0, dy = 0;
+    if (keys.left) dx = -1;
+    if (keys.right) dx = 1;
+    if (keys.up) dy = -1; // up moves toward the surface -- smaller localY
+    if (keys.down) dy = 1;
+
+    // classic tile-collision: resolve each axis separately against a
+    // small point-sized hitbox (the ant icon is tiny, no real need for
+    // a wider box), so sliding along a corridor wall in one direction
+    // doesn't also get blocked by the other axis
+    const antHalf = 4;
+    if (dx !== 0) {
+      const tryX = farm.localX + dx * speed * deltaTime;
+      const col = Math.floor((tryX + (dx > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
+      const row = Math.floor(farm.localY / ANT_FARM_CELL);
+      if (antFarmCellOpen(row, col)) farm.localX = tryX;
+    }
+    if (dy !== 0) {
+      const tryY = farm.localY + dy * speed * deltaTime;
+      const row = Math.floor((tryY + (dy > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
+      const col = Math.floor(farm.localX / ANT_FARM_CELL);
+      if (antFarmCellOpen(row, col)) farm.localY = tryY;
+    }
+    farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL - 1, farm.localX));
+    farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL - 1, farm.localY));
+
+    // exit -- only from the entrance cell, same "walk up, interact"
+    // convention as everywhere else, this time walking back UP to the
+    // surface opening rather than to a fixed spot
+    const curRow = Math.floor(farm.localY / ANT_FARM_CELL);
+    const curCol = Math.floor(farm.localX / ANT_FARM_CELL);
+    if (keys.spaceJustPressed && curRow === ANT_FARM_ENTRANCE.row && curCol === ANT_FARM_ENTRANCE.col) {
+      player.inAntFarm = false;
+      player.x = entranceWorldX - player.width / 2;
+      player.y = 0;
+      player.jumping = false;
+      player.vy = 0;
+    }
+    return;
+  }
+
+  // shrink down and enter -- walk up to the case and press space
+  if (keys.spaceJustPressed && isPlayerNear(entranceWorldX, 0, 30, 20, 20)) {
+    player.inAntFarm = true;
+    sandboxAntFarm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+    sandboxAntFarm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL + 2;
+  }
+}
+
+function drawSandboxAntFarm(camX) {
+  const farm = sandboxAntFarm;
+  const sx = farm.x - camX;
+  const top = gy - farm.caseHeight;
+
+  // wooden case frame
+  ctx.fillStyle = "#8a6a42";
+  ctx.fillRect(sx - 6, top - 6, farm.caseWidth + 12, farm.caseHeight + 12);
+  // glass front over dirt fill
+  ctx.fillStyle = "#4a3420";
+  ctx.fillRect(sx, top, farm.caseWidth, farm.caseHeight);
+
+  // carve the tunnels out of the dirt -- lighter, hollow-looking cells
+  const gx = sx + ANT_FARM_MARGIN, gyTop = top + ANT_FARM_MARGIN;
+  for (let row = 0; row < ANT_FARM_ROWS; row++) {
+    for (let col = 0; col < ANT_FARM_COLS; col++) {
+      if (!antFarmCellOpen(row, col)) continue;
+      const cx = gx + col * ANT_FARM_CELL, cy = gyTop + row * ANT_FARM_CELL;
+      ctx.fillStyle = "#1f150d";
+      ctx.fillRect(cx + 1, cy + 1, ANT_FARM_CELL - 2, ANT_FARM_CELL - 2);
+    }
+  }
+  // the surface opening -- a lighter patch right at the entrance so it
+  // reads as "this is where you go in", matching the ball pit ladder's
+  // visual affordance
+  const entX = gx + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+  ctx.fillStyle = "rgba(255,240,200,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(entX, gyTop, ANT_FARM_CELL * 0.4, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a few decorative wandering ants, purely ambient
+  const t = performance.now() * 0.001;
+  SANDBOX_ANT_FARM_DECOR_ANTS.forEach(a => {
+    const wobble = Math.sin(t * a.speed + a.seed) * a.span;
+    const baseX = gx + (a.col + 0.5) * ANT_FARM_CELL;
+    const baseY = gyTop + (a.row + 0.5) * ANT_FARM_CELL;
+    const ax = a.axis === "x" ? baseX + wobble : baseX;
+    const ay = a.axis === "y" ? baseY + wobble : baseY;
+    ctx.fillStyle = "#2a1a10";
+    ctx.beginPath();
+    ctx.ellipse(ax, ay, 3, 1.8, a.axis === "x" ? 0 : Math.PI / 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // the shrunk player icon, only while actually inside
+  if (player.inAntFarm) {
+    const px = gx + farm.localX, py = gyTop + farm.localY;
+    ctx.fillStyle = "#7a78b8"; // the player's own body color, ant-sized
+    ctx.beginPath();
+    ctx.ellipse(px, py, 5, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // glass shine, drawn last so it sits over everything inside the case
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fillRect(sx, top, farm.caseWidth * 0.3, farm.caseHeight);
+}
+
 // the balance ball's butterfly obstacle -- a small monarch-style flutter
 // crossing at ankle height, drawn with simple flapping wings rather than
 // anything elaborate (this is a reflex layer on top of the existing
@@ -43253,6 +43430,7 @@ function drawSandboxScene(camX) {
   drawSandboxBalanceBall(camX);
   drawSandboxBalanceBallButterfly(camX);
   drawSandboxBallPit(camX);
+  drawSandboxAntFarm(camX);
   drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
@@ -43298,6 +43476,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxBubbles(deltaTime);
   updateSandboxBalanceBall(deltaTime);
   updateSandboxBallPit(deltaTime);
+  updateSandboxAntFarm(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
@@ -43702,7 +43881,14 @@ drawPaperAirplaneFlight(camX); // the paper airplane, mid-throw (real or the oak
 // player.x/player.y used by physics/collision.
 const pileWobble = (currentScene === "oak" && player.lastPileX === GIANT_PILE_X)
   ? giantPileWobbleOffset() : { x: 0, y: 0, rot: 0 };
-const px = player.x - camX + pileWobble.x;
+// CONFIRMED CHANGE: while shrunk down inside the ant farm, the real
+// player.x/y stay parked at the mount spot (so physics/collision have
+// something sane to resume from on exit) -- but drawing the full-size
+// sprite there too read as "two of you" standing right next to the
+// tiny icon inside the case. Pushed the VISUAL position off-canvas
+// only; nothing else (physics, camera target, mount/exit checks) reads
+// px, so this is purely cosmetic.
+const px = player.inAntFarm ? -9999 : (player.x - camX + pileWobble.x);
 // cameraY is ADDED here (not subtracted): as the player climbs past the
 // follow threshold in tunnel town, cameraY grows to offset player.y 1:1,
 // pinning the sprite's on-screen height instead of letting it keep
