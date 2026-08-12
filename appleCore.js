@@ -38671,6 +38671,173 @@ function drawMicroscopeStation(camX) {
 }
 
 /* ======================================================
+   SANDBOX BUBBLE WAND -- per direct request ("omg yeah i actually was
+   thinking of bubble wand"). Hold space near the wand to blow a
+   continuous stream of bubbles that drift up and away with a gentle
+   wobble; walk (or jump) into one to pop it for a little sparkle burst.
+   Purely a charm toy, no gameplay effect -- reuses the same lightweight
+   particle-pool pattern as the slinky's sand-dust effect.
+   ====================================================== */
+const sandboxBubbleWand = { x: 960 }; // between the microscope and the pendulum, clear of both
+const SANDBOX_BUBBLE_SPAWN_INTERVAL_MS = 220;
+const SANDBOX_BUBBLE_POP_RADIUS = 16; // how close the player has to get to pop one
+const SANDBOX_BUBBLE_MAX_AGE_MS = 4200; // bubbles that drift this long without popping just fade out on their own
+let sandboxBubbleSpawnT = 0;
+const sandboxBubbles = []; // { x, height, vx, wobbleSeed, ageMs, r, popped, popAgeMs }
+
+function spawnSandboxBubble() {
+  const seed = performance.now() % 10000;
+  sandboxBubbles.push({
+    x: sandboxBubbleWand.x + (pseudoRandom(seed) - 0.5) * 6,
+    height: 30 + pseudoRandom(seed + 1) * 6, // starts right at the wand's loop
+    vx: (pseudoRandom(seed + 2) - 0.5) * 0.3,
+    riseSpeed: 0.9 + pseudoRandom(seed + 3) * 0.5,
+    wobbleSeed: seed,
+    ageMs: 0,
+    r: 5 + pseudoRandom(seed + 4) * 5,
+    popped: false,
+    popAgeMs: 0
+  });
+  // capped pool, same reasoning as the slinky dust particles -- an
+  // unbounded array from continuous holding would otherwise just grow
+  // forever
+  if (sandboxBubbles.length > 60) sandboxBubbles.shift();
+}
+
+function updateSandboxBubbles(deltaTime) {
+  const dtMs = deltaTime * 1000;
+  const blowing = pressedDownNear(sandboxBubbleWand.x, 0, 26, 18, 18);
+  if (blowing) {
+    sandboxBubbleSpawnT += dtMs;
+    if (sandboxBubbleSpawnT >= SANDBOX_BUBBLE_SPAWN_INTERVAL_MS) {
+      sandboxBubbleSpawnT = 0;
+      spawnSandboxBubble();
+    }
+  } else {
+    sandboxBubbleSpawnT = 0;
+  }
+
+  for (let i = sandboxBubbles.length - 1; i >= 0; i--) {
+    const b = sandboxBubbles[i];
+    if (b.popped) {
+      b.popAgeMs += dtMs;
+      if (b.popAgeMs > 350) sandboxBubbles.splice(i, 1);
+      continue;
+    }
+    b.ageMs += dtMs;
+    b.height += b.riseSpeed * (dtMs / 16.7);
+    b.x += (b.vx + Math.sin(b.ageMs * 0.002 + b.wobbleSeed) * 0.4) * (dtMs / 16.7);
+
+    // pop on player contact -- simple distance check against the
+    // player's center, same idea as the pendulum goal-radius check
+    const px = player.x + player.width / 2;
+    const dx = px - b.x;
+    const dy = player.y - b.height;
+    if (Math.sqrt(dx * dx + dy * dy) < SANDBOX_BUBBLE_POP_RADIUS + b.r) {
+      b.popped = true;
+      b.popAgeMs = 0;
+      continue;
+    }
+
+    // fades out near the top of its life or if it drifts too high,
+    // rather than just vanishing abruptly
+    if (b.ageMs > SANDBOX_BUBBLE_MAX_AGE_MS || b.height > 260) {
+      sandboxBubbles.splice(i, 1);
+    }
+  }
+}
+
+function drawSandboxBubbleWand(camX) {
+  const sx = sandboxBubbleWand.x - camX;
+  const baseY = gy;
+  // little wand handle stuck upright in the sand
+  ctx.strokeStyle = "#c98a4a";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, baseY - 2);
+  ctx.lineTo(sx + 2, baseY - 34);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  // the wand's loop at the top, with a faint soap film catching a
+  // rainbow sheen inside it
+  const loopY = baseY - 40;
+  ctx.strokeStyle = "#a8763a";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(sx + 3, loopY, 9, 9, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  const filmGrad = ctx.createRadialGradient(sx, loopY - 3, 1, sx + 3, loopY, 9);
+  filmGrad.addColorStop(0, "rgba(255,255,255,0.5)");
+  filmGrad.addColorStop(0.5, "rgba(180,220,255,0.15)");
+  filmGrad.addColorStop(1, "rgba(255,200,230,0.12)");
+  ctx.fillStyle = filmGrad;
+  ctx.beginPath();
+  ctx.ellipse(sx + 3, loopY, 8, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSandboxBubbles(camX) {
+  sandboxBubbles.forEach(b => {
+    const bx = b.x - camX;
+    const by = gy - b.height;
+    if (b.popped) {
+      // quick sparkle-burst pop -- a handful of tiny fading dots flying
+      // outward, same shape as the pendulum goal's hit sparkle
+      const p = b.popAgeMs / 350;
+      const alpha = 1 - p;
+      for (let s = 0; s < 6; s++) {
+        const ang = (s / 6) * Math.PI * 2 + b.wobbleSeed;
+        const sr = b.r * (0.6 + p * 1.8);
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(bx + Math.cos(ang) * sr, by + Math.sin(ang) * sr, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    }
+    // fade in for the first moment of life and fade out near the end,
+    // rather than popping into existence at full opacity or vanishing
+    // with a hard cutoff
+    const fadeIn = Math.min(1, b.ageMs / 200);
+    const fadeOut = Math.min(1, Math.max(0, (SANDBOX_BUBBLE_MAX_AGE_MS - b.ageMs) / 400));
+    const alpha = fadeIn * fadeOut;
+
+    // CONFIRMED CHANGE: boosted overall visibility a bit -- the first
+    // pass matched real soap-bubble faintness a little too well and
+    // read as barely-there against the sky.
+    ctx.fillStyle = `rgba(210,235,250,${0.2 * alpha})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    // soap-film sheen -- a thin rainbow-ish arc along the rim rather
+    // than a flat outline, since a real bubble's edge catches color,
+    // not just a plain stroke
+    ctx.strokeStyle = `rgba(255,255,255,${0.55 * alpha})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,190,220,${0.42 * alpha})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r * 0.92, -0.6, 0.6);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(180,220,255,${0.42 * alpha})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r * 0.92, Math.PI - 0.6, Math.PI + 0.6);
+    ctx.stroke();
+    // small bright highlight fleck, off-center like a real curved
+    // reflective surface
+    ctx.fillStyle = `rgba(255,255,255,${0.55 * alpha})`;
+    ctx.beginPath();
+    ctx.arc(bx - b.r * 0.35, by - b.r * 0.35, b.r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+/* ======================================================
    SANDBOX PENDULUM -- fourth "weird toy" per direct request ("lets
    add a pendulum to sandbox"). A-frame stand with a ball swinging
    continuously on a rod. Jump onto the ball while it swings near
@@ -42125,6 +42292,7 @@ function drawSandboxScene(camX) {
   drawWigStand(camX);
   drawSandboxFan(camX);
   drawMicroscopeStation(camX);
+  drawSandboxBubbleWand(camX);
   drawSandboxPendulum(camX);
   drawBlockPile(camX);
   drawSandboxSlinky(camX);
@@ -42138,6 +42306,7 @@ function drawSandboxScene(camX) {
   drawSandboxSlinkyRider(camX);
   drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
   drawSandboxSlinkyDustParticles(camX); // real scattering sand grains, on top of the puff's rings -- also unconditional, same reasoning
+  drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
@@ -42164,6 +42333,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxFan(deltaTime);
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
+  updateSandboxBubbles(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
