@@ -47187,44 +47187,33 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     // tightened up above so this doesn't reproduce the original
     // oversized-blob complaint at the larger scale.
     // CONFIRMED BUG FIX ("wig still pokes out the side within ball
-    // pit") -- the wig is drawn inside the same sway/tilt rotation as
-    // the body (see totalTilt/ctx.rotate above), which is correct for
-    // the woozy wobble/mine-cart tip/etc, but the ball pit's own
-    // lying-down swim tilt rotates the WHOLE sprite up to 90 degrees
-    // around its CENTER. The wig sits well above that pivot (drawn near
-    // the top of the head) and its longest strands hang even further
-    // from it, so a swim tilt that reads as a subtle lean on the body
-    // swings the wig's hanging strands out into a big sideways arc --
-    // exactly the "big blob poking out the side" reported while
-    // swimming. Counter-rotating the wig by the swim-tilt component
-    // only (leaving woozy/mine-cart/etc tilt untouched) keeps it
-    // visually upright and attached-looking while the body lies flat.
+    // pit") -- ORIGINAL approach for the swim-tilt swing (superseded):
+    // counter-rotate the wig by the swim-tilt component so it stays
+    // upright while the body lies flat. That fixed the sideways swing,
+    // but per later direct testing ("now wig doesnt move with player
+    // body position") it introduced a worse problem -- the counter-
+    // rotated wig's anchor point ends up at the position the UPRIGHT
+    // head would occupy, which is a genuinely different screen position
+    // than where the actual (rotated) body/head visually is once
+    // there's real tilt. It reads as the wig not tracking the player at
+    // all rather than as attached hair. Removed: the wig is now drawn
+    // as a completely normal part of the sprite, rotating rigidly
+    // together with the body like every other worn/held item does, so
+    // it always stays visually attached no matter the tilt.
+    //
     // CONFIRMED BUG FIX ("mid ladder... bottom of the ladder... the top
     // of the wig, when sideways, goes past the border of ball pit") --
-    // beyond the rotation swing above, a worn wig can also simply reach
-    // past the pit's own solid boundaries (its right wall, its rim lid
-    // on top) in every one of these states, and each one puts the
-    // sprite through a different transform (upright, mid-rotation while
-    // swimming, etc.), which made trying to hand-compute a "safe" wig
-    // position for every case too fragile to keep chasing case by case.
-    // The real containment now happens once, up front, as a plain
-    // screen-space clip established before any of this rotation math
-    // even runs -- see the "pitClipRight/pitClipTop" clip right after
-    // this function's very first (ground-level) clip above. That clip
-    // is airtight regardless of whatever transform the wig ends up
-    // drawn under, so nothing further is needed here beyond the
-    // counter-rotation itself.
-    const wigSwimCounter = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
-    if (wigSwimCounter !== 0) {
-      ctx.save();
-      ctx.translate(swayCx, swayCy);
-      ctx.rotate(-wigSwimCounter);
-      ctx.translate(-swayCx, -swayCy);
-      drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
-      ctx.restore();
-    } else {
-      drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
-    }
+    // a worn wig can still reach past the pit's own solid boundaries
+    // (its right wall, its interior ceiling) in any of these states,
+    // including now while genuinely rotated for the swim pose. That
+    // containment happens once, up front, as a plain screen-space clip
+    // established before any rotation math runs at all -- see the
+    // "pitClipRight/pitClipTop" clip right after this function's very
+    // first (ground-level) clip above. That clip is airtight regardless
+    // of whatever transform the now-fully-attached wig ends up drawn
+    // under, including full swim rotation, so nothing further is needed
+    // here.
+    drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
   }
 
   ctx.restore(); // closes the sway rotation
