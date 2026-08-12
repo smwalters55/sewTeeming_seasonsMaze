@@ -163,6 +163,7 @@ const player = {
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
   cloudLandingImmunity: 0, // ms — brief grace period after landing from a cloud-hole, prevents an instant re-trigger of the goal-cloud hit check
   onFan: false,        // true while hovering above the sandbox's upward fan toy -- position driven entirely by updateSandboxFan, same pattern as swing.mounted/vines
+  onFan2: false,       // CONFIRMED CHANGE ("put a fan in between ball pit and ant farm") -- same idea, second fan between the ball pit and the ant farm case
   wigId: null,         // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
   onPendulum: false,   // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
   onSlinky: false,     // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
@@ -1063,6 +1064,7 @@ function startSeasonTransition(targetScene) {
   seesaw.mounted = false;
   seesaw.playerOnPlank = false;
   player.onFan = false;
+  player.onFan2 = false;
   player.onPendulum = false;
   player.onSlinky = false;
 }
@@ -1130,6 +1132,16 @@ function updateSeasonTransition(deltaTime) {
       // cleared here too, not just when currentScene itself changes.
       if (heldItem === "paperAirplane" && (currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox" || player.inAntFarm || player.inBallPit)) {
         heldItem = null;
+      }
+      // CONFIRMED CHANGE ("put airplane default in play for this
+      // push") -- entering the sandbox specifically now grants one for
+      // free if you don't already have one, rather than only
+      // auto-equipping an existing pickup. oak/clouds are unchanged
+      // (still require having actually picked one up first).
+      if (currentScene === "sandbox" && previousScene !== currentScene && !(inventory.paperAirplane > 0)) {
+        inventory.paperAirplane = 1;
+        touchInventoryOrder("paperAirplane");
+        updateInventoryUI();
       }
       if ((currentScene === "oak" || currentScene === "clouds" || currentScene === "sandbox") && previousScene !== currentScene && inventory.paperAirplane > 0) {
         heldItem = "paperAirplane";
@@ -2046,6 +2058,10 @@ const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
 // the real clouds/oak throw (not just the oak teaching moment, which
 // already got its own slower duration) was still too quick to read.
 const PAPER_AIRPLANE_FLIGHT_MS = 2200;
+// CONFIRMED CHANGE ("i want the airplane ride to be affected by the
+// fans on the ground") -- how strongly a sandbox fan's updraft lifts
+// the flying plane when its path crosses through the fan's cone.
+const SANDBOX_FAN_AIRPLANE_LIFT = 90; // px/s upward, strongest right at the fan's base
 // CONFIRMED CHANGE: the oak "teach the mechanic" moment is no longer a
 // separate scripted throw that runs after pickup -- per direct
 // feedback, that read as two things happening ("don't add it as 'in
@@ -2111,6 +2127,26 @@ function updatePaperAirplaneFlight(deltaTime) {
     f.x += Math.sin(f.t * 0.013 + 2.2) * 26 * wobbleEnvelope;
     f.y += Math.sin(f.t * 0.021) * 20 * wobbleEnvelope;
     f.rotation += Math.sin(f.t * 0.03 + 0.6) * 0.5 * wobbleEnvelope;
+  }
+
+  // CONFIRMED CHANGE ("i want the airplane ride to be affected by the
+  // fans on the ground") -- if the plane's current path crosses through
+  // either sandbox fan's wind cone (same widening-triangle shape the
+  // fan itself draws/uses for the player), it gets an upward boost,
+  // strongest low near the fan's base and tapering off by hover height.
+  // Independent of whether anyone is actually riding the fan right now
+  // -- it's a running fan, blowing air, whether or not you're on it.
+  if (currentScene === "sandbox" && typeof sandboxFan !== "undefined") {
+    [sandboxFan, sandboxFan2].forEach(fan => {
+      if (!fan) return;
+      const heightFrac = Math.max(0, Math.min(1, f.y / fan.hoverHeight));
+      const coneHalfWidthAtHeight = 16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * heightFrac;
+      if (f.y >= -10 && Math.abs(f.x - fan.x) <= coneHalfWidthAtHeight) {
+        const strength = 1 - heightFrac * 0.6; // still some lift near hover height, strongest low down
+        f.y += SANDBOX_FAN_AIRPLANE_LIFT * strength * deltaTime;
+        f.rotation += Math.sin(f.t * 0.02) * 0.05; // subtle extra wobble while caught in the updraft
+      }
+    });
   }
 
   if (p >= 1) {
@@ -2483,6 +2519,8 @@ function applyPhysics(){
   // same idea for the sandbox's upward fan toy -- position while
   // hovering is driven entirely by updateSandboxFan()
   if (player.onFan) return;
+  // same idea for the second fan, between the ball pit and ant farm
+  if (player.onFan2) return;
 
   // same idea for the sandbox's pendulum toy -- position while riding
   // is driven entirely by updateSandboxPendulum()
@@ -38099,22 +38137,38 @@ const sandboxFan = {
   spinPhase: 0,
   kickT: -1 // CONFIRMED CHANGE: -1 = no kick in progress; ticking up while a kick plays out
 };
+// CONFIRMED CHANGE ("lets put a fan in between ball pit and ant farm")
+// -- second fan, same toy, placed in the gap between the ball pit's
+// right wall (3260+320=3580) and the ant farm case's left edge (3760),
+// centered at 3670 for even breathing room on both sides.
+const sandboxFan2 = {
+  x: 3670,
+  hoverHeight: 150,
+  launchT: 0,
+  bobPhase: 0,
+  spinPhase: 0,
+  kickT: -1
+};
 const SANDBOX_FAN_LAUNCH_MS = 450;
 const SANDBOX_FAN_CONE_HALF_WIDTH = 85; // how wide the wind cone is at hover height -- you can drift within this before falling out
 const SANDBOX_FAN_KICK_MS = 380;
 const SANDBOX_FAN_KICK_HEIGHT = 55; // extra rise added on top of the hover/bob for one kick
 
-function updateSandboxFan(deltaTime) {
-  const fan = sandboxFan;
-  fan.spinPhase += deltaTime * (player.onFan ? 22 : 6); // spins faster while actually holding someone up
+// CONFIRMED CHANGE ("lets put a fan in between ball pit and ant farm")
+// -- generalized so a second fan can reuse the exact same launch/hover/
+// kick/release logic instead of a hand-copied duplicate. fan is the
+// instance's own state object, onFanKey is which player flag ("onFan"
+// or "onFan2") this instance drives.
+function updateSandboxFanInstance(fan, onFanKey, deltaTime) {
+  fan.spinPhase += deltaTime * (player[onFanKey] ? 22 : 6); // spins faster while actually holding someone up
 
-  if (!player.onFan) {
+  if (!player[onFanKey]) {
     // trigger: land on it like any other ground contact, no separate
     // button -- "jump on it and it throws you up" per direct request
     const centerX = player.x + player.width / 2;
     const nearX = Math.abs(centerX - fan.x) < 26;
-    if (nearX && player.y <= 4 && player.vy <= 0) {
-      player.onFan = true;
+    if (nearX && player.y <= 4 && player.vy <= 0 && !player.onFan && !player.onFan2) {
+      player[onFanKey] = true;
       player.jumping = true;
       player.usedDoubleJump = false;
       player.vy = 0;
@@ -38183,15 +38237,29 @@ function updateSandboxFan(deltaTime) {
     // release once you've drifted past the cone's edge at this height
     // -- the fan just lets go, normal gravity resumes right where you are
     if (Math.abs(centerX - fan.x) > SANDBOX_FAN_CONE_HALF_WIDTH) {
-      player.onFan = false;
+      player[onFanKey] = false;
       player.vy = 1; // tiny residual so the fall reads as "let go," not a dead stop before dropping
       fan.kickT = -1;
     }
   }
 }
 
-function drawSandboxFan(camX) {
-  const fan = sandboxFan;
+function updateSandboxFan(deltaTime) {
+  updateSandboxFanInstance(sandboxFan, "onFan", deltaTime);
+}
+function updateSandboxFan2(deltaTime) {
+  updateSandboxFanInstance(sandboxFan2, "onFan2", deltaTime);
+}
+
+// CONFIRMED CHANGE ("lets put a fan in between ball pit and ant farm")
+// -- generalized the same way as updateSandboxFanInstance, so the
+// second fan renders identically without a hand-copied duplicate.
+// showCone controls whether the wind-cone visual draws: shows whenever
+// someone's riding it (existing behavior) OR, now that the fan affects
+// the flying paper airplane too, briefly whenever the plane is passing
+// through it -- otherwise the plane would visibly get lifted by an
+// invisible draft with no cone shown at all.
+function drawSandboxFanInstance(fan, onFanKey, camX) {
   const sx = fan.x - camX;
 
   // housing -- a squat drum sitting flush with the sand
@@ -38229,8 +38297,11 @@ function drawSandboxFan(camX) {
   // height) instead of 3 straight parallel lines -- reads as "a column
   // of air you can drift around inside," matching the actual mechanic
   // (you can move horizontally while hovering, out to the cone's edge)
-  if (player.onFan) {
-    const coneTopY = gy - sandboxFan.hoverHeight - 20;
+  const planeInCone = paperAirplaneFlight && currentScene === "sandbox" &&
+    Math.abs(paperAirplaneFlight.x - fan.x) <= (16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * Math.max(0, Math.min(1, paperAirplaneFlight.y / fan.hoverHeight))) &&
+    paperAirplaneFlight.y >= -10;
+  if (player[onFanKey] || planeInCone) {
+    const coneTopY = gy - fan.hoverHeight - 20;
     const coneGrad = ctx.createLinearGradient(sx, gy - 10, sx, coneTopY);
     coneGrad.addColorStop(0, "rgba(255,255,255,0.38)");
     coneGrad.addColorStop(1, "rgba(255,255,255,0.04)");
@@ -38269,6 +38340,13 @@ function drawSandboxFan(camX) {
       ctx.stroke();
     }
   }
+}
+
+function drawSandboxFan(camX) {
+  drawSandboxFanInstance(sandboxFan, "onFan", camX);
+}
+function drawSandboxFan2(camX) {
+  drawSandboxFanInstance(sandboxFan2, "onFan2", camX);
 }
 
 /* ======================================================
@@ -42743,6 +42821,25 @@ function updateSandboxBalanceBall(deltaTime) {
 // for the first chunk of the recovery window, then eases back upright
 // for the rest of it. Feeds into the shared player-sway tilt in draw()
 // the same way the game's other "stunned"/tilted states already do.
+// CONFIRMED BUG FIX ("i shouldnt be able to be sideways on top the ball
+// pit edge") -- getSandboxBalanceBallFallTilt applies its knocked-over
+// lie-flat tilt for the whole SANDBOX_BALANCE_FAIL_RECOVER_MS window
+// (900ms) purely off the balance ball's own b.failed timer, with no
+// check that the player is still anywhere near the balance ball. Fall
+// off it and dash straight over to the ball pit ladder within that
+// window (the two toys sit right next to each other) and the leftover
+// tilt was still being added into the player's total draw rotation,
+// making them appear lying sideways while standing on the completely
+// unrelated ball pit rim. Called at every ball-pit mount point (ladder,
+// rim, dropping in) to clear it immediately rather than waiting it out.
+function clearSandboxBalanceBallFallState() {
+  const b = sandboxBalanceBall;
+  if (!b) return;
+  b.failed = false;
+  b.tiltAngle = 0;
+  b.tiltVel = 0;
+}
+
 function getSandboxBalanceBallFallTilt() {
   const b = sandboxBalanceBall;
   if (!b.failed) return 0;
@@ -42856,7 +42953,7 @@ const SANDBOX_BALL_PIT_LADDER_OFFSET = -16; // ladder sits just outside the left
 // feel like slowly wading through a pit of balls -- cut well back.
 // Vertical (climbing toward the surface to get out, or diving deeper)
 // stays at the original feel.
-const SANDBOX_BALL_PIT_SWIM_SPEED_X = 26;   // px/s
+const SANDBOX_BALL_PIT_SWIM_SPEED_X = 30;   // px/s -- CONFIRMED CHANGE ("make sideways movement in ball pit just a littttle faster"): nudged up from 26
 const SANDBOX_BALL_PIT_SWIM_SPEED_Y = 60;   // px/s
 const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
 
@@ -43001,6 +43098,7 @@ function updateSandboxBallPit(deltaTime) {
       player.onBallPitRim = true;
       player.y = pit.rimHeight;
       player.jumping = false;
+      clearSandboxBalanceBallFallState();
     } else if (vertical < 0 && player.y <= 0) {
       // CONFIRMED BUG FIX: this used to fire on ANY frame where
       // player.y<=0, including the very first frame right after
@@ -43070,6 +43168,7 @@ function updateSandboxBallPit(deltaTime) {
       player.y = pit.rimHeight;
       player.jumping = false;
       player.vy = 0;
+      clearSandboxBalanceBallFallState();
     }
     return;
   }
@@ -43095,6 +43194,7 @@ function updateSandboxBallPit(deltaTime) {
       player.onBallPitRim = false;
       player.inBallPit = true;
       player.y = pit.rimHeight - 14;
+      clearSandboxBalanceBallFallState();
       return;
     }
 
@@ -43124,6 +43224,7 @@ function updateSandboxBallPit(deltaTime) {
     player.onBallPitLadder = true;
     player.jumping = true;
     player.vy = 0;
+    clearSandboxBalanceBallFallState();
     return;
   }
 }
@@ -44438,11 +44539,42 @@ function drawSandboxAntFarm(camX) {
     // regardless of any individual wig's own shape quirks.
     if (player.wigId || (typeof crownState !== "undefined" && crownState.worn)) {
       ctx.save();
+      // CONFIRMED BUG FIX ("wig still doesnt look like it should look
+      // in the ant farm, we just see like the very top head part sort
+      // of") -- the original clip was one single rectangle that stopped
+      // just above the eye line ACROSS THE FULL WIDTH, but most wigs'
+      // actual bulk (side braids, puffs, the sweep of hair down toward
+      // ear level) sits well below that same height off to the sides --
+      // none of which ever gets anywhere near the eyes, which only
+      // occupy a narrow column right in the center. Clipping the whole
+      // width that tight cut away nearly all of it, leaving just a
+      // sliver of the very top visible. Now a 3-piece clip instead: the
+      // two side columns are allowed down to jaw/ear level same as a
+      // real wig would sit, and only the narrow center column (where
+      // the eyes actually are) stops right above the eye line.
+      // CONFIRMED BUG FIX (round 2, same screenshot/report) -- the side
+      // columns' own outer edge was still the original ix+-8 bound,
+      // which is narrower than pippi's braids actually reach at this
+      // scale (~9-10px out from center) -- their tips were getting cut
+      // by that outer edge too, on top of the vertical clipping,
+      // leaving barely a sliver visible. Widened the side columns'
+      // outer reach to ix+-14 so bushier wigs have real room.
       ctx.beginPath();
-      ctx.rect(ix - 8, iy - 15, 16, (eyeY - 1.6) - (iy - 15));
+      ctx.rect(ix - 14, iy - 15, 11.8, 18);
+      ctx.rect(ix + 2.2, iy - 15, 11.8, 18);
+      ctx.rect(ix - 2.2, iy - 15, 4.4, (eyeY - 1.9) - (iy - 15));
       ctx.clip();
       if (player.wigId) {
-        drawWigShape(player.wigId, ix, iy - 6, 0.11);
+        // CONFIRMED BUG FIX (round 3, same report) -- 0.11 was way too
+        // small a scale: it's roughly HALF what it should be relative
+        // to the mini-me's own body size (the real player draws wigs
+        // at 0.9 scale against a 40px-wide body; the mini-me's body is
+        // only ~10px wide, so the proportionate scale is ~0.9*10/40 =
+        // 0.225, not 0.11). At 0.11 the whole wig -- braids, cap, all
+        // of it -- rendered smaller than the clip region itself, so
+        // widening the clip earlier did nothing; there was barely
+        // anything there to reveal. This is the actual fix.
+        drawWigShape(player.wigId, ix, iy - 6, 0.22);
       }
       if (typeof crownState !== "undefined" && crownState.worn) {
         drawCrownProcedural(ctx, ix, iy - 7, 3.4);
@@ -44643,6 +44775,7 @@ function drawSandboxScene(camX) {
   drawSandMound(sandboxReturnMound.x, camX, null); // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") -- "Back to Spring" label removed, same as the entrance mound's own label removal above
   drawWigStand(camX);
   drawSandboxFan(camX);
+  drawSandboxFan2(camX);
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
   drawSandboxPendulum(camX);
@@ -44702,6 +44835,7 @@ function updateSandboxScene(deltaTime) {
   }
 
   updateSandboxFan(deltaTime);
+  updateSandboxFan2(deltaTime);
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
@@ -44719,7 +44853,7 @@ function updateSandboxScene(deltaTime) {
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
-  if (!player.onFan && !player.onPendulum && !player.onSlinky && !player.onBalanceBall &&
+  if (!player.onFan && !player.onFan2 && !player.onPendulum && !player.onSlinky && !player.onBalanceBall &&
       !player.onBallPitLadder && !player.inBallPit && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
@@ -46301,7 +46435,22 @@ if (currentScene === "autumn") {
   // room you actually pick the plane up in), and now sandbox as well
   // per direct request ("allow for paper airplane flying here") -- it's
   // open and roomy enough to fly it around the same as clouds/oak.
-  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !player.inAntFarm && !player.inBallPit && !paperAirplaneFlight) {
+  //
+  // CONFIRMED BUG FIX ("i cant get in the ball pit again"): once the
+  // plane became the sandbox default-held item, this check had no
+  // exclusion for the ball pit's ladder/rim sub-states -- only
+  // inBallPit/inAntFarm were excluded. So the SAME spacebar press used
+  // to mount the ladder, or pressed again while still climbing (before
+  // actually reaching the rim), satisfied this condition too and threw
+  // the plane instead, burning heldItem/the keypress. Diagnostic test
+  // (ballpit_ladder_diagnostic_test.js) confirmed: mounting the ladder
+  // fired throwPaperAirplane() the same frame, and heldItem being
+  // restored to "paperAirplane" mid-climb meant a not-quite-at-the-rim
+  // space press threw the plane again rather than doing nothing. Real
+  // ladder/rim mount-drop presses are handled entirely inside
+  // updateSandboxBallPit (called earlier, same frame) and don't need
+  // this trigger at all, so excluding these states here is safe.
+  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim && !paperAirplaneFlight) {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
