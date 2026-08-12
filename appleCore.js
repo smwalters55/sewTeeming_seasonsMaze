@@ -13367,7 +13367,7 @@ function drawForestFrogs(camX) {
 // of both flanking the same pool.
 const FOREST_NEWT_SPOTS = [
   { x: FOREST_REFLECTION_POOL_X - 175, offsetY: 0, dir: 1 },
-  { x: 5980, offsetY: 2, dir: -1 } // FOREST_BREATHER_DUCK_BRANCH.x (5900) + 80 -- can't reference that constant directly here, it's declared further down the file
+  { x: 6130, offsetY: 2, dir: -1 } // FOREST_BREATHER_DUCK_BRANCH.x (6050) + 80 -- can't reference that constant directly here, it's declared further down the file
 ];
 const forestNewts = FOREST_NEWT_SPOTS.map((spot, i) => ({
   x: spot.x,
@@ -13732,6 +13732,49 @@ function drawForestBreatherDuckBranch(camX) {
   });
 }
 
+// the zen sand rake patch -- a modest raked-sand mound sitting in the
+// breather gap, closer to the pool side (see FOREST_ZEN_SAND_PATCH's
+// own comment). Just a decorative ground patch with the rake prop
+// planted in it; the actual raking happens in the diorama inset
+// (drawZenRakeUI), not out here in the world.
+function drawForestZenSandPatch(camX) {
+  const patch = FOREST_ZEN_SAND_PATCH;
+  const px = patch.x - camX;
+
+  ctx.fillStyle = "#d8c090";
+  ctx.beginPath();
+  ctx.ellipse(px + patch.width / 2, gy + 4, patch.width / 2, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a few faint raked-groove lines baked into the ground art itself,
+  // just for flavor -- separate from the interactive grid inside the UI
+  ctx.strokeStyle = "#c2a878";
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 4; i++) {
+    const gxx = px + 14 + i * (patch.width - 28) / 3;
+    ctx.beginPath();
+    ctx.moveTo(gxx, gy - 3);
+    ctx.quadraticCurveTo(gxx + 10, gy + 4, gxx, gy + 10);
+    ctx.stroke();
+  }
+
+  // the rake prop itself, planted upright in the sand
+  const rx = FOREST_ZEN_RAKE_X - camX;
+  ctx.strokeStyle = "#6a4a2e";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(rx, gy - 2);
+  ctx.lineTo(rx + 6, gy - 46);
+  ctx.stroke();
+  ctx.fillStyle = "#7a5a3a";
+  ctx.fillRect(rx - 8, gy - 52, 20, 6);
+  for (let t = 0; t < 5; t++) {
+    ctx.beginPath();
+    ctx.moveTo(rx - 6 + t * 4, gy - 46);
+    ctx.lineTo(rx - 6 + t * 4, gy - 40);
+    ctx.stroke();
+  }
+}
+
 function drawForestScene(camX) {
   // deep, muted under-canopy sky -- darker and greener than spring's
   // light pastels, no bright horizon glow
@@ -13854,6 +13897,7 @@ function drawForestScene(camX) {
   drawForestDragonflies(camX);
   drawForestSkipStones(camX);
   drawForestWaterStriders(camX);
+  drawForestZenSandPatch(camX);
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
@@ -14041,7 +14085,170 @@ let playerDuckAmount = 0;
 // duckThreshold than the float zone's own duck obstacles) so the
 // player has already tried it once before the real duck gates further
 // downstream actually require good timing.
-const FOREST_BREATHER_DUCK_BRANCH = { x: 5900, w: 46, clearance: 58, duckThreshold: 0.4 };
+// shifted from 5900 -> 6050 ("we also need to add more space there
+// with breathing room") to make room for the new zen sand rake patch
+// (see FOREST_ZEN_SAND_PATCH below), which sits closer to the pool
+// side of this same breather gap -- keeps clear separation between the
+// two features instead of the branch hanging right over the sand.
+const FOREST_BREATHER_DUCK_BRANCH = { x: 6050, w: 46, clearance: 58, duckThreshold: 0.4 };
+
+// ZEN SAND RAKE -- "well i meant since its in forest where there is
+// actual sand at the banks... play-sandbox with making shapes and
+// towers out of sand" evolved into a smaller, calmer zen-garden take
+// ("yeah i think zen garden could be good in forest near river banks"),
+// placed in this same breather gap between the reflection pool
+// (5400) and the float zone/"Rushing River" (now starting 6900),
+// closer to the pool side per direct choice. A self-contained
+// decorative "patch" prop (there's no existing dedicated sand-texture
+// drawing function to hook into), comfortably clear of the pool's own
+// 140px isPlayerNear radius (pool interactions end around x=5540) and
+// well short of the (now-shifted) duck branch at 6050. How far the
+// sand ultimately extends toward the float zone is still undecided
+// ("but also might have that be start of sand going to edge of
+// rushing rive idk") -- this is deliberately a modest, easily-widened
+// starting patch rather than a guess at the final extent.
+const FOREST_ZEN_SAND_PATCH = { x: 5560, width: 190 }; // world-space sand patch span
+const FOREST_ZEN_RAKE_X = 5620; // the rake prop itself, sitting within the patch
+
+// V1 build is diorama-style (matching the ant farm / wig stand pattern)
+// per direct confirmation ("we could start it in diarama view first
+// since thats already done, and then i can decide if i actually want
+// top down"), NOT a full top-down camera treatment of the world yet.
+// Local patch-space grid the rake cursor moves through inside the
+// diorama inset -- arrow keys move the cursor continuously, and any
+// cell it passes over gets marked "raked" with the direction of
+// travel, so moving back over a raked cell re-grooves it instead of
+// needing a separate explicit clear action.
+const ZEN_RAKE_GRID_COLS = 14;
+const ZEN_RAKE_GRID_ROWS = 8;
+const ZEN_RAKE_OPEN_CLOSE_MS = 350; // matches WIG_OPEN_CLOSE_MS's flourish timing
+const zenRakeUI = {
+  active: false,
+  opening: false,
+  openT: 0,
+  closing: false,
+  closeT: 0,
+  cursorX: 6.5, // float grid-space position (0..ZEN_RAKE_GRID_COLS), moved continuously by deltaTime
+  cursorY: 3.5, // float grid-space position (0..ZEN_RAKE_GRID_ROWS)
+  cells: [] // {raked: bool, angle: number} per grid cell, lazily initialized in openZenRakeUI
+};
+const ZEN_RAKE_CURSOR_SPEED = 0.006; // grid cells per ms -- continuous drag, not discrete step-per-press
+
+function openZenRakeUI() {
+  zenRakeUI.active = true;
+  zenRakeUI.opening = true;
+  zenRakeUI.openT = 0;
+  zenRakeUI.closing = false;
+  zenRakeUI.closeT = 0;
+  zenRakeUI.cursorX = ZEN_RAKE_GRID_COLS / 2;
+  zenRakeUI.cursorY = ZEN_RAKE_GRID_ROWS / 2;
+  if (zenRakeUI.cells.length !== ZEN_RAKE_GRID_COLS * ZEN_RAKE_GRID_ROWS) {
+    zenRakeUI.cells = new Array(ZEN_RAKE_GRID_COLS * ZEN_RAKE_GRID_ROWS).fill(null).map(() => ({ raked: false, angle: 0 }));
+  }
+}
+
+function closeZenRakeUI() {
+  zenRakeUI.closing = true;
+  zenRakeUI.closeT = 0;
+}
+
+function updateZenRakeUI(deltaTime) {
+  const dtMs = deltaTime * 1000; // deltaTime arrives in seconds (see the `const deltaTime = (now-lastTime)/1000` in update()); every other open/close-flourish UI (wigUI, carvingUI, bookReader, ...) converts to ms the same way before comparing against its *_OPEN_CLOSE_MS constant
+  if (zenRakeUI.opening) {
+    zenRakeUI.openT += dtMs;
+    if (zenRakeUI.openT >= ZEN_RAKE_OPEN_CLOSE_MS) {
+      zenRakeUI.openT = ZEN_RAKE_OPEN_CLOSE_MS;
+      zenRakeUI.opening = false;
+    }
+  }
+  if (zenRakeUI.closing) {
+    zenRakeUI.closeT += dtMs;
+    if (zenRakeUI.closeT >= ZEN_RAKE_OPEN_CLOSE_MS) {
+      zenRakeUI.closing = false;
+      zenRakeUI.active = false;
+      zenRakeUI.closeT = 0;
+      zenRakeUI.openT = 0;
+      return;
+    }
+  }
+  if (!zenRakeUI.active || zenRakeUI.opening || zenRakeUI.closing) return;
+
+  if (keys.spaceJustPressed) {
+    closeZenRakeUI();
+    return;
+  }
+
+  let dx = 0, dy = 0, angle = null;
+  if (keys.left) { dx = -1; angle = Math.PI; }
+  if (keys.right) { dx += 1; angle = 0; }
+  if (keys.up) { dy = -1; angle = -Math.PI / 2; }
+  if (keys.down) { dy += 1; angle = Math.PI / 2; }
+
+  if (dx !== 0 || dy !== 0) {
+    const step = ZEN_RAKE_CURSOR_SPEED * dtMs;
+    zenRakeUI.cursorX = Math.max(0, Math.min(ZEN_RAKE_GRID_COLS - 0.001, zenRakeUI.cursorX + dx * step));
+    zenRakeUI.cursorY = Math.max(0, Math.min(ZEN_RAKE_GRID_ROWS - 0.001, zenRakeUI.cursorY + dy * step));
+    const col = Math.floor(zenRakeUI.cursorX);
+    const row = Math.floor(zenRakeUI.cursorY);
+    const cell = zenRakeUI.cells[row * ZEN_RAKE_GRID_COLS + col];
+    if (cell) { cell.raked = true; cell.angle = angle; }
+  }
+}
+
+function drawZenRakeUI() {
+  const ease = zenRakeUI.opening
+    ? zenRakeUI.openT / ZEN_RAKE_OPEN_CLOSE_MS
+    : zenRakeUI.closing
+      ? 1 - (zenRakeUI.closeT / ZEN_RAKE_OPEN_CLOSE_MS)
+      : 1;
+  ctx.save();
+  ctx.fillStyle = `rgba(20,14,8,${0.75 * ease})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const boxW = 480, boxH = 300;
+  const scale = 0.85 + 0.15 * ease;
+  const boxX = canvas.width / 2 - (boxW * scale) / 2;
+  const boxY = canvas.height / 2 - (boxH * scale) / 2;
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(scale, scale);
+  ctx.translate(-canvas.width / 2, -canvas.height / 2);
+
+  ctx.fillStyle = "#e8d3a8";
+  roundRect(ctx, boxX, boxY, boxW, boxH, 14);
+  ctx.fill();
+  ctx.fillStyle = "#5a4a30";
+  ctx.font = "16px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Zen Sand Rake", canvas.width / 2, boxY + 28);
+
+  const gridX = boxX + 30, gridY = boxY + 46, gridW = boxW - 60, gridH = boxH - 96;
+  const cellW = gridW / ZEN_RAKE_GRID_COLS, cellH = gridH / ZEN_RAKE_GRID_ROWS;
+  ctx.fillStyle = "#d8c090";
+  ctx.fillRect(gridX, gridY, gridW, gridH);
+  for (let r = 0; r < ZEN_RAKE_GRID_ROWS; r++) {
+    for (let c = 0; c < ZEN_RAKE_GRID_COLS; c++) {
+      const cell = zenRakeUI.cells[r * ZEN_RAKE_GRID_COLS + c];
+      if (!cell || !cell.raked) continue;
+      const cx = gridX + c * cellW + cellW / 2;
+      const cy = gridY + r * cellH + cellH / 2;
+      ctx.strokeStyle = "#a88855";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - Math.cos(cell.angle) * cellW * 0.45, cy - Math.sin(cell.angle) * cellH * 0.45);
+      ctx.lineTo(cx + Math.cos(cell.angle) * cellW * 0.45, cy + Math.sin(cell.angle) * cellH * 0.45);
+      ctx.stroke();
+    }
+  }
+  // rake cursor
+  ctx.fillStyle = "#7a5030";
+  ctx.fillRect(gridX + Math.floor(zenRakeUI.cursorX) * cellW + 2, gridY + Math.floor(zenRakeUI.cursorY) * cellH + 2, cellW - 4, cellH - 4);
+
+  ctx.fillStyle = "#5a4a30";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("arrow keys to rake · space to leave", canvas.width / 2, boxY + boxH - 16);
+  ctx.textAlign = "left";
+  ctx.restore();
+}
 
 // TEST-ONLY river float zone -- a plain, deliberately unpolished stretch
 // of "river" further out past everything else built so far (past even
@@ -14056,8 +14263,13 @@ const FOREST_BREATHER_DUCK_BRANCH = { x: 5900, w: 46, clearance: 58, duckThresho
 // between the reflection pool/skip-stones spot and the float zone for
 // future between-beats content, and width (END - START) kept the same
 // so none of the internal obstacle spacing needed to change.
-const FOREST_FLOAT_ZONE_START_X = 6600;
-const FOREST_FLOAT_ZONE_END_X = 9300; // pushed out another 300 to match FOREST_FLOAT_CALM_LEAD below, so the trailing gap after the last obstacle stays the same size it was before the calmer entrance was added
+// both pushed out another 300 (6600->6900, 9300->9600) per direct
+// request to add breathing room in the pool/float-zone gap for the new
+// zen sand rake feature ("we also need to add more space there with
+// breathing room") -- width (END - START) kept the same so none of the
+// internal obstacle spacing needed to change.
+const FOREST_FLOAT_ZONE_START_X = 6900;
+const FOREST_FLOAT_ZONE_END_X = 9600; // pushed out another 300 to match FOREST_FLOAT_CALM_LEAD below, so the trailing gap after the last obstacle stays the same size it was before the calmer entrance was added
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 // extra calm distance prepended before the obstacle course actually
 // starts -- the current (and the leaf/bark boat launch pile) still
@@ -18863,6 +19075,13 @@ function updateForestScene(deltaTime) {
   updateForestRiverBoats();
   updateForestRiverFrog();
   updateForestRiverBoatPileNotice(deltaTime);
+
+  // ZEN SAND RAKE -- diorama-style open, same trigger pattern as the
+  // sandbox wig stand: walk up, press space, open the contained inset.
+  if (keys.spaceJustPressed && isPlayerNear(FOREST_ZEN_RAKE_X, 0, 30, 20, 20) && !zenRakeUI.active && !zenRakeUI.opening && !zenRakeUI.closing) {
+    openZenRakeUI();
+  }
+
   // re-scatter the near riverbank's pebbles occasionally as the player
   // moves around near the bank, not on every step -- two earlier passes
   // (first: every frame; then: every 18px, still ~10x/sec at
@@ -46784,6 +47003,8 @@ if (bookReader.active || bookReader.opening || bookReader.closing) {
   drawWigUI();
 } else if (microscopeUI.active || microscopeUI.opening || microscopeUI.closing) {
   drawMicroscopeUI();
+} else if (zenRakeUI.active || zenRakeUI.opening || zenRakeUI.closing) {
+  drawZenRakeUI();
 } else if (camera.topDown) {
   ctx.fillStyle="rgba(245,245,240,0.94)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -47970,6 +48191,17 @@ lastTime = now;
 
   if (microscopeUI.active || microscopeUI.opening || microscopeUI.closing) {
     updateMicroscopeUI(deltaTime);
+    keys.upJustPressed = false;
+    keys.leftJustPressed = false;
+    keys.rightJustPressed = false;
+    keys.spaceJustPressed = false;
+    requestAnimationFrame(update);
+    draw();
+    return;
+  }
+
+  if (zenRakeUI.active || zenRakeUI.opening || zenRakeUI.closing) {
+    updateZenRakeUI(deltaTime);
     keys.upJustPressed = false;
     keys.leftJustPressed = false;
     keys.rightJustPressed = false;
