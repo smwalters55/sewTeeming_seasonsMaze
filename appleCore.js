@@ -1484,6 +1484,31 @@ function pseudoRandom(n) {
   return x - Math.floor(x);
 }
 
+// shared organic-blob outline helper (same smooth-blob trick used for the
+// sandbox's dug-out sand holes): jitter both angle spacing AND radius per
+// point, then connect with quadraticCurveTo through each edge's midpoint so
+// there are no straight edges or hard corners -- reused by the microscope
+// slides below for cell walls / mold spots / crystal grain edges etc.
+function organicBlobPath(ctx, cx, cy, rx, ry, seedBase, pointCount) {
+  const pts = [];
+  for (let p = 0; p < pointCount; p++) {
+    const angJitter = (pseudoRandom(seedBase + p * 4.4) - 0.5) * (Math.PI * 2 / pointCount) * 0.7;
+    const ang = (p / pointCount) * Math.PI * 2 + angJitter;
+    const rJitter = 0.55 + pseudoRandom(seedBase + p * 7.7 + 3) * 0.6;
+    pts.push({ x: cx + Math.cos(ang) * rx * rJitter, y: cy + Math.sin(ang) * ry * rJitter });
+  }
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const start = mid(pts[pointCount - 1], pts[0]);
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  for (let p = 0; p < pointCount; p++) {
+    const cur = pts[p], next = pts[(p + 1) % pointCount];
+    const m = mid(cur, next);
+    ctx.quadraticCurveTo(cur.x, cur.y, m.x, m.y);
+  }
+  ctx.closePath();
+}
+
 // generic hex-color shader (+amt lightens, -amt darkens each channel) --
 // shared utility so any draw function can get a highlight/shadow variant
 // of a base color without hand-picking a second hex value
@@ -40246,15 +40271,98 @@ const MICROSCOPE_SLIDES = [
     draw: () => {
       ctx.fillStyle = "#bcd9c8";
       ctx.fillRect(-60, -60, 120, 120);
-      // drifting algae/debris flecks in the background
+      const t = microscopeAnimClock * 0.001; // seconds, for all the motion below
+      // drifting algae/debris flecks in the background -- CONFIRMED CHANGE:
+      // now actually drift (slow individual circular wander) instead of
+      // sitting frozen, per "add some motion... and some other small life"
       ctx.fillStyle = "rgba(90,140,110,0.4)";
       for (let i = 0; i < 14; i++) {
-        const ox = (pseudoRandom(i * 4.1) - 0.5) * 116;
-        const oy = (pseudoRandom(i * 7.3 + 1) - 0.5) * 116;
+        const baseX = (pseudoRandom(i * 4.1) - 0.5) * 108;
+        const baseY = (pseudoRandom(i * 7.3 + 1) - 0.5) * 108;
+        const driftR = 2.5 + pseudoRandom(i * 6.2) * 3;
+        const ox = baseX + Math.cos(t * 0.3 + i * 1.7) * driftR;
+        const oy = baseY + Math.sin(t * 0.25 + i * 2.1) * driftR;
         ctx.beginPath();
         ctx.arc(ox, oy, 1.5 + pseudoRandom(i * 2.9) * 2, 0, Math.PI * 2);
         ctx.fill();
       }
+      // diatoms -- tiny rigid glassy ovals with a fine cross-hatch of
+      // striations, slowly tumbling and gliding across the field. Real
+      // diatoms have a hard silica shell so they read as crisp and
+      // geometric next to the soft blobby algae flecks and the fleshy
+      // tardigrades -- that contrast is the whole point of adding them.
+      for (let i = 0; i < 5; i++) {
+        const dcx = (pseudoRandom(i * 5.5 + 30) - 0.5) * 90 + Math.sin(t * 0.15 + i * 3.1) * 14;
+        const dcy = (pseudoRandom(i * 8.8 + 31) - 0.5) * 90 + Math.cos(t * 0.12 + i * 2.4) * 10;
+        const drot = t * 0.4 + i * 1.4;
+        ctx.save();
+        ctx.translate(dcx, dcy);
+        ctx.rotate(drot);
+        ctx.fillStyle = "rgba(200,225,210,0.75)";
+        ctx.strokeStyle = "rgba(110,140,120,0.6)";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 6, 2.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, -2.6); ctx.lineTo(0, 2.6);
+        ctx.stroke();
+        for (let s = -4; s <= 4; s += 2) {
+          ctx.beginPath();
+          ctx.moveTo(s, -1.8); ctx.lineTo(s, 1.8);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      // rotifers -- small pear-shaped bodies with a "wheel organ" of
+      // cilia at the head end; the cilia don't actually beat individually
+      // at this scale, they read as a soft spinning blur, so it's drawn
+      // as a ring of short radiating strokes rotating steadily -- the
+      // classic "corona" look that makes rotifers instantly recognizable.
+      const drawRotifer = (ox, oy, s, bob) => {
+        ctx.save();
+        ctx.translate(ox, oy + Math.sin(t * 1.6 + bob) * 2.5);
+        ctx.scale(s, s);
+        ctx.fillStyle = "#e8c9a0";
+        ctx.beginPath();
+        ctx.moveTo(-3, -8);
+        ctx.bezierCurveTo(6, -8, 9, -2, 8, 6);
+        ctx.bezierCurveTo(7, 12, -2, 14, -6, 10);
+        ctx.bezierCurveTo(-10, 6, -9, -6, -3, -8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(150,110,60,0.5)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+        // the spinning corona -- short strokes radiating from the head,
+        // rotation angle driven straight off the shared clock
+        const spin = t * 6;
+        ctx.strokeStyle = "rgba(255,250,230,0.85)";
+        ctx.lineWidth = 1;
+        for (let c = 0; c < 10; c++) {
+          const ang = spin + (c / 10) * Math.PI * 2;
+          const rIn = 3, rOut = 6.5;
+          ctx.beginPath();
+          ctx.moveTo(-2 + Math.cos(ang) * rIn, -7 + Math.sin(ang) * rIn * 0.6);
+          ctx.lineTo(-2 + Math.cos(ang) * rOut, -7 + Math.sin(ang) * rOut * 0.6);
+          ctx.stroke();
+        }
+        // a dark eyespot and the tapered "foot" at the tail end
+        ctx.fillStyle = "rgba(90,50,20,0.7)";
+        ctx.beginPath();
+        ctx.arc(-1, -5, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#c9a276";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-4, 10);
+        ctx.lineTo(-2, 15);
+        ctx.stroke();
+        ctx.restore();
+      };
+      drawRotifer(30, -25, 0.9, 0);
+      drawRotifer(-32, 8, 0.7, 2.1);
       // CONFIRMED CHANGE: rebuilt to actually look like a real
       // tardigrade under a scope, per direct feedback ("make the bears
       // look a lot closer to what they actually look like... this is
@@ -40266,11 +40374,20 @@ const MICROSCOPE_SLIDES = [
       // from the SIDES of the body (not straight down from the belly)
       // each ending in a little cluster of curled claws -- tardigrades
       // have multiple claws per leg, not one dot.
-      const drawTardigrade = (ox, oy, s, rot) => {
+      // CONFIRMED CHANGE: real motion added, per direct request ("add some
+      // motion to the tardigrades") -- a slow, lumbering crawl drift along
+      // the facing direction, a gentle body-length undulation as it moves,
+      // and legs that actually cycle through a stepping swing instead of
+      // holding one static splayed pose the whole time.
+      const drawTardigrade = (ox, oy, s, rot, phaseOffset) => {
+        const crawl = t * 3 + phaseOffset;
+        const driftX = ox + Math.cos(rot) * Math.sin(crawl * 0.3) * 10;
+        const driftY = oy + Math.sin(rot) * Math.sin(crawl * 0.3) * 10;
+        const undulate = Math.sin(crawl * 1.4) * 0.04;
         ctx.save();
-        ctx.translate(ox, oy);
-        ctx.rotate(rot);
-        ctx.scale(s, s);
+        ctx.translate(driftX, driftY);
+        ctx.rotate(rot + Math.sin(crawl * 0.3) * 0.05);
+        ctx.scale(s * (1 + undulate), s * (1 - undulate));
 
         // one continuous plump body -- wider in the middle, tapering
         // at the head end, rounded at the rear
@@ -40314,12 +40431,16 @@ const MICROSCOPE_SLIDES = [
         ctx.lineWidth = 3;
         ctx.lineCap = "round";
         const legAnchors = [-19, -9, 2, 13];
-        legAnchors.forEach(lx => {
+        legAnchors.forEach((lx, li) => {
+          // alternating stepping swing -- legs on opposite sides/segments
+          // are out of phase so it reads as a walking gait, not everything
+          // twitching in unison
+          const swing = Math.sin(crawl * 2 + li * 1.6) * 3;
           [-1, 1].forEach(dir => {
-            const footX = lx - 3, footY = dir * 15;
+            const footX = lx - 3 + swing, footY = dir * 15;
             ctx.beginPath();
             ctx.moveTo(lx, dir * 8);
-            ctx.quadraticCurveTo(lx - 4, dir * 12, footX, footY);
+            ctx.quadraticCurveTo(lx - 4 + swing * 0.5, dir * 12, footX, footY);
             ctx.stroke();
             // 3 tiny curled claws per foot, not one dot
             ctx.strokeStyle = "#7a6038";
@@ -40349,8 +40470,8 @@ const MICROSCOPE_SLIDES = [
         });
         ctx.restore();
       };
-      drawTardigrade(-12, -8, 1.15, 0.12);
-      drawTardigrade(20, 22, 0.85, -0.35);
+      drawTardigrade(-12, -8, 1.15, 0.12, 0);
+      drawTardigrade(20, 22, 0.85, -0.35, 4.2);
     }
   },
   {
@@ -40431,14 +40552,17 @@ const MICROSCOPE_SLIDES = [
     }
   },
   {
-    // CONFIRMED CHANGE: new 5th slide, per direct request ("lets add a
-    // brown human hair zoomed in to the microscope slides"). Real hair
-    // under a scope reads as one long cylindrical shaft with an
-    // overlapping shingle-like cuticle scale pattern down its length --
-    // that scale texture IS the signature "this is a hair" read, not
-    // just a brown line.
-    id: "humanHair",
-    name: "Human Hair (shaft, zoomed)",
+    // CONFIRMED CHANGE: swapped from a generic human hair to a giraffe
+    // hair, per direct request ("what if we did a dif animal hair, like,
+    // a giraffe" -- acknowledged it reads similar under a scope either
+    // way, just "a lot more whimsy"). Keeps the same proven shaft/cuticle
+    // construction as before, but the pigment itself now runs in a wide
+    // dark patch-band partway down the shaft against a pale cream base --
+    // giraffe guard hairs pulled from the edge of one of their coat
+    // patches genuinely show this kind of banded pigmentation, so it's
+    // both the whimsical choice AND a legitimate little detail.
+    id: "giraffeHair",
+    name: "Giraffe Hair (shaft, zoomed)",
     draw: () => {
       // pale neutral slide background -- hair samples are usually
       // mounted dry/clear, not on a colored medium like the organic
@@ -40478,31 +40602,76 @@ const MICROSCOPE_SLIDES = [
         ctx.lineTo(lx, ly);
       }
       ctx.closePath();
-      // cylindrical highlight -- darker brown at the edges, a lighter
-      // streak down the middle, so the shaft reads as round, not flat
+      // cream base tone -- lighter/warmer than the old plain-brown human
+      // hair gradient, since most of the shaft is the pale base coat color
       const shaftGrad = ctx.createLinearGradient(-60, -halfW, -60, halfW);
-      shaftGrad.addColorStop(0, "#4a2f1a");
-      shaftGrad.addColorStop(0.45, "#7a4f2c");
-      shaftGrad.addColorStop(0.55, "#8a5c34");
-      shaftGrad.addColorStop(1, "#42290f");
+      shaftGrad.addColorStop(0, "#c9a86a");
+      shaftGrad.addColorStop(0.45, "#e6c98f");
+      shaftGrad.addColorStop(0.55, "#ecd39c");
+      shaftGrad.addColorStop(1, "#bf9c5e");
       ctx.save();
       ctx.clip();
       ctx.fillStyle = shaftGrad;
       ctx.fillRect(-60, -60, 120, 120);
 
+      // CONFIRMED CHANGE: the giraffe-specific detail -- a wide, ragged-
+      // edged dark patch band crossing the shaft partway along its length,
+      // the classic reticulated blotch coloring, instead of one uniform
+      // pigment tone the whole way down.
+      const patchCenter = -8;
+      const patchHalfW = 24;
+      ctx.fillStyle = "#5a3a1a";
+      ctx.beginPath();
+      for (let i = 0; i <= 14; i++) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
+        const ly = waveY(lx) - halfW + jag;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 14; i >= 0; i--) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
+        const ly = waveY(lx) + halfW + jag;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      ctx.fill();
+      // a softer mid-brown halo just outside the dark patch, so the
+      // pigment fades rather than cutting off in a hard line
+      ctx.fillStyle = "rgba(120,80,35,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(patchCenter, waveY(patchCenter), patchHalfW + 8, halfW + 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a1a";
+      ctx.beginPath();
+      for (let i = 0; i <= 14; i++) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
+        const ly = waveY(lx) - halfW + jag;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 14; i >= 0; i--) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
+        const ly = waveY(lx) + halfW + jag;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      ctx.fill();
+
       // overlapping cuticle scales -- angled, evenly-spaced arcs
       // crossing the shaft, each one slightly overlapping the last
-      // like roof shingles, all tilted the same direction.
-      // CONFIRMED CHANGE: uneven line weight/opacity per scale (instead
-      // of one uniform stroke style) plus a slight per-scale wobble --
-      // per "that just look like a worm... frazzlier" -- perfectly
-      // regular shingles were part of what made it read as a smooth
-      // rubbery tube rather than a keratin surface.
+      // like roof shingles, all tilted the same direction. Same jittered
+      // weight/opacity/wobble as before so it still reads as keratin
+      // texture rather than a smooth rubbery tube.
       for (let i = -1; i < 26; i++) {
         const lx = -66 + i * 5;
         const ly = waveY(lx);
         const wobble = (pseudoRandom(i * 7.3) - 0.5) * 2.5;
-        ctx.strokeStyle = `rgba(30,15,5,${0.28 + pseudoRandom(i * 2.9) * 0.28})`;
+        const onPatch = Math.abs(lx - patchCenter) < patchHalfW + 4;
+        ctx.strokeStyle = onPatch
+          ? `rgba(20,10,2,${0.3 + pseudoRandom(i * 2.9) * 0.28})`
+          : `rgba(90,55,20,${0.22 + pseudoRandom(i * 2.9) * 0.22})`;
         ctx.lineWidth = 0.75 + pseudoRandom(i * 5.5) * 0.9;
         ctx.beginPath();
         ctx.moveTo(lx - 3 + wobble, ly - halfW - 2);
@@ -40511,7 +40680,7 @@ const MICROSCOPE_SLIDES = [
       }
       // a thin bright highlight streak down the middle, riding the
       // same wave as the shaft itself
-      ctx.strokeStyle = "rgba(255,235,200,0.35)";
+      ctx.strokeStyle = "rgba(255,245,220,0.4)";
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
@@ -40522,14 +40691,10 @@ const MICROSCOPE_SLIDES = [
       ctx.stroke();
       ctx.restore(); // ends the shaft clip -- flyaways below need to escape it, not be trapped inside
 
-      // CONFIRMED CHANGE: flyaway frizz strands -- a handful of thin
-      // curved hairs sticking OFF the main shaft's edge, tapering to a
-      // point. This is the biggest single fix for the "looks like a
-      // worm" read: worms have a clean unbroken silhouette, hair has
-      // stray fibers escaping the main strand. Drawn AFTER the clip is
-      // released so they actually poke out past the shaft outline
-      // instead of being clipped away.
-      ctx.strokeStyle = "rgba(58,36,18,0.55)";
+      // flyaway frizz strands -- a handful of thin curved hairs sticking
+      // OFF the main shaft's edge, tapering to a point, drawn after the
+      // clip is released so they actually poke out past the outline
+      ctx.strokeStyle = "rgba(90,58,22,0.55)";
       for (let i = 0; i < 7; i++) {
         const lx = -52 + pseudoRandom(i * 3.3) * 104;
         const topSide = pseudoRandom(i * 6.6 + 2) > 0.5;
@@ -40544,6 +40709,387 @@ const MICROSCOPE_SLIDES = [
         ctx.stroke();
       }
     }
+  },
+  {
+    // new slide, per direct request ("i was thinkin blood smear"). Real
+    // stained blood smears (Wright/Giemsa stain, the classroom-standard
+    // look) read as a pale pink-lavender field packed with small pink
+    // biconcave red cells (a donut-like paler center from the dip in the
+    // middle of the disc), one much larger purple-nucleus white cell with
+    // a lobed nucleus, and tiny dark platelet flecks scattered between.
+    id: "bloodSmear",
+    name: "Blood Smear (stained)",
+    draw: () => {
+      ctx.fillStyle = "#f3dde4";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // dense field of red blood cells -- small pink discs with a lighter
+      // "dimple" in the middle from the biconcave shape, packed close
+      // together but not perfectly on a grid (real smears clump/overlap)
+      for (let i = 0; i < 46; i++) {
+        const ox = (pseudoRandom(i * 3.7) - 0.5) * 118;
+        const oy = (pseudoRandom(i * 6.1 + 1) - 0.5) * 118;
+        const r = 4.5 + pseudoRandom(i * 2.3) * 1.2;
+        const rGrad = ctx.createRadialGradient(ox, oy, r * 0.15, ox, oy, r);
+        rGrad.addColorStop(0, "rgba(230,150,165,0.85)");
+        rGrad.addColorStop(0.55, "rgba(215,110,135,0.9)");
+        rGrad.addColorStop(1, "rgba(180,70,100,0.9)");
+        ctx.fillStyle = rGrad;
+        ctx.beginPath();
+        ctx.arc(ox, oy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // one large white blood cell -- much bigger than the red cells,
+      // with a dark purple-stained lobed nucleus and a thin pale-blue
+      // cytoplasm ring around it, the classic look next to a red-cell
+      // field
+      const wx = 8, wy = -14;
+      ctx.fillStyle = "rgba(200,220,225,0.5)";
+      ctx.beginPath();
+      ctx.arc(wx, wy, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a72";
+      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
+      ctx.fill();
+      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
+      ctx.fill();
+      ctx.fillStyle = "rgba(70,40,90,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + 1, 12, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a72";
+      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
+      ctx.fill();
+      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
+      ctx.fill();
+
+      // scattered dark platelet flecks -- much smaller and darker than
+      // the red cells, no internal shading
+      ctx.fillStyle = "rgba(60,30,40,0.7)";
+      for (let i = 0; i < 16; i++) {
+        const ox = (pseudoRandom(i * 5.9 + 60) - 0.5) * 118;
+        const oy = (pseudoRandom(i * 8.4 + 61) - 0.5) * 118;
+        ctx.beginPath();
+        ctx.arc(ox, oy, 0.9 + pseudoRandom(i * 3.1) * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("yesss salt crystals!"). Table salt
+    // (NaCl) crystallizes in sharp cubes -- the whole point of this slide
+    // is being visually the ODD ONE OUT next to all the soft organic
+    // blobs elsewhere: hard straight edges, geometric facets, and a cool
+    // dark background so the crystal edges catch light like glass/ice.
+    id: "saltCrystals",
+    name: "Salt Crystals (NaCl)",
+    draw: () => {
+      ctx.fillStyle = "#1c2430";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // a scatter of cube crystals of varying size, each drawn as a
+      // simple 3-visible-face isometric cube so it reads as a solid
+      // block rather than a flat square
+      const drawCube = (cx, cy, size, seed) => {
+        const topA = { x: cx - size, y: cy - size * 0.4 };
+        const topB = { x: cx, y: cy - size * 0.75 };
+        const topC = { x: cx + size, y: cy - size * 0.4 };
+        const topD = { x: cx, y: cy - size * 0.05 };
+        const botC = { x: cx + size, y: cy + size * 0.55 };
+        const botD = { x: cx, y: cy + size * 0.9 };
+        const botA = { x: cx - size, y: cy + size * 0.55 };
+
+        // top face -- brightest, catches the most light
+        ctx.fillStyle = `rgba(225,235,245,${0.85 + pseudoRandom(seed) * 0.1})`;
+        ctx.beginPath();
+        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topB.x, topB.y);
+        ctx.lineTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
+        ctx.closePath(); ctx.fill();
+        // right face -- mid tone
+        ctx.fillStyle = "rgba(160,180,200,0.8)";
+        ctx.beginPath();
+        ctx.moveTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
+        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botC.x, botC.y);
+        ctx.closePath(); ctx.fill();
+        // left face -- darkest, in shadow
+        ctx.fillStyle = "rgba(100,120,145,0.75)";
+        ctx.beginPath();
+        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topD.x, topD.y);
+        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botA.x, botA.y);
+        ctx.closePath(); ctx.fill();
+        // crisp bright edge lines -- this is what actually sells "hard
+        // crystal facet" instead of a soft painted shape
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.lineWidth = 0.8;
+        [[topA, topB], [topB, topC], [topA, topD], [topC, topD], [topD, botD]].forEach(([p1, p2]) => {
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        });
+      };
+
+      const cubes = [
+        [-30, -20, 16, 1], [18, -30, 12, 2], [32, 10, 20, 3],
+        [-14, 20, 14, 4], [-40, 22, 10, 5], [6, -4, 9, 6]
+      ];
+      // sort back-to-front by y so overlapping cubes stack believably
+      cubes.sort((a, b) => a[1] - b[1]);
+      cubes.forEach(([cx, cy, size, seed]) => drawCube(cx, cy, size, seed));
+
+      // fine crystalline glints scattered across the background --
+      // little cross-shaped sparkles, the classic "catching light" mark
+      ctx.strokeStyle = "rgba(210,225,240,0.4)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 10; i++) {
+        const gx = (pseudoRandom(i * 7.7 + 20) - 0.5) * 116;
+        const gy = (pseudoRandom(i * 4.4 + 21) - 0.5) * 116;
+        const gr = 1.5 + pseudoRandom(i * 2.1) * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(gx - gr, gy); ctx.lineTo(gx + gr, gy);
+        ctx.moveTo(gx, gy - gr); ctx.lineTo(gx, gy + gr);
+        ctx.stroke();
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("and onion skin for sure"). The
+    // absolute classic first microscope slide -- a single translucent
+    // epidermis layer of large, thick-walled brick-like cells, each with
+    // one clearly visible round nucleus, no chlorophyll color at all
+    // (onion skin is colorless, unlike the green leaf slide).
+    id: "onionSkin",
+    name: "Onion Skin (epidermis)",
+    draw: () => {
+      ctx.fillStyle = "#e8e2c8";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // large brick-pattern cell walls -- bigger and more rectangular
+      // than the tomato skin's cells, with thick double-line walls (the
+      // signature "thick cellulose wall" look onion cells are known for)
+      ctx.strokeStyle = "rgba(150,140,90,0.7)";
+      for (let row = -3; row <= 3; row++) {
+        for (let col = -2; col <= 2; col++) {
+          const ox = col * 26 + (row % 2 === 0 ? 0 : 13) + (pseudoRandom(row * 4.1 + col) - 0.5) * 3;
+          const oy = row * 18 + (pseudoRandom(row * 2.7 + col * 1.3) - 0.5) * 3;
+          ctx.lineWidth = 2.2;
+          ctx.strokeRect(ox - 13, oy - 8, 26, 16);
+          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = "rgba(180,170,120,0.5)";
+          ctx.strokeRect(ox - 11, oy - 6.5, 22, 13);
+          ctx.strokeStyle = "rgba(150,140,90,0.7)";
+
+          // faint translucent cell fill so the wall pattern doesn't sit
+          // on a flat blank background
+          ctx.fillStyle = `rgba(210,200,150,${0.12 + pseudoRandom(row * 5 + col * 2) * 0.1})`;
+          ctx.fillRect(ox - 11, oy - 6.5, 22, 13);
+
+          // one round nucleus per cell, pushed slightly off-center like
+          // a real cell rather than dead-centered every time
+          ctx.fillStyle = "rgba(120,100,50,0.4)";
+          ctx.beginPath();
+          const nx = ox + (pseudoRandom(row * 6.3 + col * 1.9) - 0.5) * 8;
+          const ny = oy + (pseudoRandom(row * 1.7 + col * 4.4) - 0.5) * 5;
+          ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("omg i would love to do butterfly
+    // wing scales of a monarch"). Butterfly wings under a scope are
+    // covered edge-to-edge in tiny overlapping scales, laid down like
+    // roof shingles in neat rows -- each individual scale is a tapered
+    // oval with fine parallel ridge striations. Monarch coloring gives
+    // an obvious, recognizable palette: bands of orange, black, and a
+    // scattering of white dot-scales.
+    id: "butterflyWing",
+    name: "Monarch Wing Scales (zoomed)",
+    draw: () => {
+      ctx.fillStyle = "#2a2018";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      const drawScale = (ox, oy, ang, len, wid, color) => {
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(ang);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-len * 0.5, 0);
+        ctx.quadraticCurveTo(-len * 0.1, -wid * 0.5, len * 0.5, 0);
+        ctx.quadraticCurveTo(-len * 0.1, wid * 0.5, -len * 0.5, 0);
+        ctx.closePath();
+        ctx.fill();
+        // fine parallel ridge striations running the length of the scale
+        ctx.strokeStyle = "rgba(0,0,0,0.18)";
+        ctx.lineWidth = 0.5;
+        for (let s = -1; s <= 1; s++) {
+          ctx.beginPath();
+          ctx.moveTo(-len * 0.45, s * wid * 0.28);
+          ctx.lineTo(len * 0.42, s * wid * 0.22);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      // overlapping shingled rows -- alternating color bands (orange,
+      // black, orange, with a thin white band) so it reads unmistakably
+      // as monarch coloring rather than generic scales
+      const rowColors = ["#e0781f", "#e0781f", "#231b12", "#e0781f", "#f0ead8", "#e0781f", "#231b12"];
+      for (let row = -3; row <= 3; row++) {
+        const baseColor = rowColors[row + 3];
+        const oy = row * 15;
+        for (let col = -5; col <= 5; col++) {
+          const ox = col * 13 + (row % 2 === 0 ? 0 : 6.5);
+          const jx = ox + (pseudoRandom(row * 7 + col * 3.1) - 0.5) * 3;
+          const jy = oy + (pseudoRandom(row * 2.2 + col * 5.5) - 0.5) * 3;
+          const shade = pseudoRandom(row * 4.4 + col * 1.7) * 0.18 - 0.09;
+          const c = shadeColor(baseColor, shade * 255);
+          drawScale(jx, jy, 0.25 + (pseudoRandom(row * 3.3 + col) - 0.5) * 0.3, 15, 7, c);
+        }
+      }
+      // a few stray individual scales that have lifted/detached, drifting
+      // at odd angles on top of the shingled field -- keeps it from
+      // reading as one flat printed pattern
+      for (let i = 0; i < 6; i++) {
+        const ox = (pseudoRandom(i * 9.9 + 500) - 0.5) * 100;
+        const oy = (pseudoRandom(i * 6.6 + 501) - 0.5) * 100;
+        const ang = pseudoRandom(i * 3.3 + 502) * Math.PI * 2;
+        drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f");
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("and bread mold"). Rhizopus (common
+    // black bread mold) reads as a hazy tangle of thin translucent hyphae
+    // threads with round dark sporangia (spore capsules) held up on thin
+    // stalks -- the sporangia are the unmistakable "mold under a scope"
+    // signature shape.
+    id: "breadMold",
+    name: "Bread Mold (Rhizopus)",
+    draw: () => {
+      ctx.fillStyle = "#e4ded0";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // tangled hyphae threads -- long wandering translucent lines
+      // crossing every which way across the whole slide
+      ctx.strokeStyle = "rgba(210,205,195,0.55)";
+      for (let i = 0; i < 18; i++) {
+        const startX = (pseudoRandom(i * 5.5) - 0.5) * 130;
+        const startY = (pseudoRandom(i * 7.7 + 1) - 0.5) * 130;
+        ctx.lineWidth = 0.8 + pseudoRandom(i * 2.2) * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        let px = startX, py = startY;
+        for (let s = 0; s < 5; s++) {
+          const nx = px + (pseudoRandom(i * 3.1 + s * 9.9) - 0.5) * 45;
+          const ny = py + (pseudoRandom(i * 4.4 + s * 6.6) - 0.5) * 45;
+          ctx.quadraticCurveTo(px + (nx - px) * 0.5, py + (ny - py) * 0.5 + 5, nx, ny);
+          px = nx; py = ny;
+        }
+        ctx.stroke();
+      }
+
+      // sporangiophores -- thin upright stalks each topped with a dark
+      // round sporangium, scattered across the field
+      const stalks = [
+        [-32, -22, 1], [12, -34, 2], [30, -6, 3], [-8, 18, 4],
+        [38, 26, 5], [-40, 20, 6], [4, -8, 7]
+      ];
+      stalks.forEach(([sx, sy, seed]) => {
+        const h = 14 + pseudoRandom(seed) * 8;
+        ctx.strokeStyle = "rgba(160,150,130,0.7)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + h);
+        ctx.lineTo(sx + (pseudoRandom(seed * 1.7) - 0.5) * 4, sy);
+        ctx.stroke();
+        const r = 4.5 + pseudoRandom(seed * 3.3) * 2;
+        const sGrad = ctx.createRadialGradient(sx, sy - r * 0.3, 0.5, sx, sy, r);
+        sGrad.addColorStop(0, "rgba(80,70,60,0.85)");
+        sGrad.addColorStop(0.6, "rgba(40,32,24,0.9)");
+        sGrad.addColorStop(1, "rgba(15,10,6,0.95)");
+        ctx.fillStyle = sGrad;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+        // tiny highlight so the sporangium reads as a round capsule,
+        // not a flat black dot
+        ctx.fillStyle = "rgba(200,190,180,0.3)";
+        ctx.beginPath();
+        ctx.arc(sx - r * 0.3, sy - r * 0.3, r * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  },
+  {
+    // new slide, per direct request ("and for feather lets do a flamingo
+    // feather"). The unmistakable microscope-feather signature is the
+    // barb structure: a central shaft (rachis) with rows of thin barbs
+    // branching off at an angle on both sides, each barb itself lined
+    // with even finer barbules -- done here in flamingo pink/coral so
+    // it's instantly a different bird than a generic gray/brown feather.
+    id: "flamingoFeather",
+    name: "Flamingo Feather (barbs, zoomed)",
+    draw: () => {
+      ctx.fillStyle = "#f7e6ea";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // the rachis (central shaft) running diagonally across the frame
+      const shaftAng = 0.3;
+      ctx.save();
+      ctx.rotate(shaftAng);
+      const shaftGrad = ctx.createLinearGradient(0, -3, 0, 3);
+      shaftGrad.addColorStop(0, "#e8b8c2");
+      shaftGrad.addColorStop(0.5, "#f5dde3");
+      shaftGrad.addColorStop(1, "#d99aa8");
+      ctx.fillStyle = shaftGrad;
+      ctx.fillRect(-85, -3, 170, 6);
+      ctx.strokeStyle = "rgba(180,110,125,0.5)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(-85, -3, 170, 6);
+
+      // barbs branching off both sides at a consistent angle, each one
+      // itself fringed with tiny barbules (the fine hair-like fringe
+      // along each barb) -- this double layer of branching IS the
+      // signature "feather under a scope" texture
+      for (let i = -14; i <= 14; i++) {
+        const bx = i * 6;
+        [-1, 1].forEach(dir => {
+          const barbAng = dir * 0.9;
+          const barbLen = 26 - Math.abs(i) * 0.5;
+          const tipX = bx + Math.cos(barbAng) * barbLen;
+          const tipY = dir * 3 + Math.sin(barbAng) * barbLen * dir;
+          ctx.strokeStyle = "rgba(224,140,155,0.75)";
+          ctx.lineWidth = 1.3;
+          ctx.beginPath();
+          ctx.moveTo(bx, dir * 3);
+          ctx.lineTo(tipX, tipY);
+          ctx.stroke();
+          // fine barbules -- short strokes fringing the barb, angled
+          // forward toward the feather tip
+          ctx.strokeStyle = "rgba(200,110,130,0.55)";
+          ctx.lineWidth = 0.5;
+          for (let b = 0.15; b < 0.95; b += 0.18) {
+            const fx = bx + (tipX - bx) * b;
+            const fy = dir * 3 + (tipY - dir * 3) * b;
+            const flen = 4.5 * (1 - b * 0.4);
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(fx + Math.cos(barbAng + dir * 0.9) * flen, fy + Math.sin(barbAng + dir * 0.9) * flen * dir);
+            ctx.stroke();
+          }
+        });
+      }
+      ctx.restore();
+
+      // a soft pink translucency wash overall, since flamingo feathers
+      // get their color from carotenoid pigments and read slightly
+      // glassy/translucent under backlight rather than opaque
+      ctx.fillStyle = "rgba(240,170,185,0.08)";
+      ctx.fillRect(-60, -60, 120, 120);
+    }
   }
 ];
 
@@ -40553,6 +41099,11 @@ const microscopeUI = {
   prevSlideIndex: 0, slideT: 0 // cross-fade between slides -- see SLIDE_FADE_MS
 };
 const SLIDE_FADE_MS = 550; // CONFIRMED CHANGE: slower fade between slides, per direct request ("make transitions between slides slower. fade in fade out like")
+// shared animation clock for anything that moves inside a slide (tardigrade
+// crawl cycle, rotifer cilia spin, drifting algae) -- just keeps ticking
+// while the microscope is open/opening/closing, since that's the only time
+// any slide.draw() actually runs.
+let microscopeAnimClock = 0;
 
 function openMicroscopeUI() {
   microscopeUI.opening = true;
@@ -40561,6 +41112,7 @@ function openMicroscopeUI() {
 
 function updateMicroscopeUI(deltaTime) {
   const dtMs = deltaTime * 1000;
+  microscopeAnimClock += dtMs;
   if (microscopeUI.opening) {
     microscopeUI.openT += dtMs;
     if (microscopeUI.openT >= MICROSCOPE_OPEN_CLOSE_MS) {
