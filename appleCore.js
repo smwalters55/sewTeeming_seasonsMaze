@@ -14130,6 +14130,7 @@ const zenRakeUI = {
   closeT: 0,
   cursorX: 6.5, // float grid-space position (0..ZEN_RAKE_GRID_COLS), moved continuously by deltaTime
   cursorY: 3.5, // float grid-space position (0..ZEN_RAKE_GRID_ROWS)
+  lastAngle: -Math.PI / 2, // direction the rake head is currently facing (radians) -- drives the cursor's rake icon orientation, see drawZenRakeUI
   cells: [] // {raked: bool, angle: number} per grid cell, lazily initialized in openZenRakeUI
 };
 const ZEN_RAKE_CURSOR_SPEED = 0.006; // grid cells per ms -- continuous drag, not discrete step-per-press
@@ -14192,6 +14193,7 @@ function updateZenRakeUI(deltaTime) {
     const row = Math.floor(zenRakeUI.cursorY);
     const cell = zenRakeUI.cells[row * ZEN_RAKE_GRID_COLS + col];
     if (cell) { cell.raked = true; cell.angle = angle; }
+    zenRakeUI.lastAngle = angle;
   }
 }
 
@@ -14225,23 +14227,84 @@ function drawZenRakeUI() {
   const cellW = gridW / ZEN_RAKE_GRID_COLS, cellH = gridH / ZEN_RAKE_GRID_ROWS;
   ctx.fillStyle = "#d8c090";
   ctx.fillRect(gridX, gridY, gridW, gridH);
+  // real zen-garden rake marks are several parallel tine-grooves per
+  // pass, not one single line -- draw a little fan of 3 grooves per
+  // raked cell (matching the rake head's ~5 tines), each with a gentle
+  // hand-raked waver instead of a perfectly straight/dashed-looking
+  // segment ("what the rake patterns look like for these zen gardens").
+  const ZEN_RAKE_GROOVE_OFFSETS = [-0.3, 0, 0.3];
   for (let r = 0; r < ZEN_RAKE_GRID_ROWS; r++) {
     for (let c = 0; c < ZEN_RAKE_GRID_COLS; c++) {
       const cell = zenRakeUI.cells[r * ZEN_RAKE_GRID_COLS + c];
       if (!cell || !cell.raked) continue;
       const cx = gridX + c * cellW + cellW / 2;
       const cy = gridY + r * cellH + cellH / 2;
-      ctx.strokeStyle = "#a88855";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - Math.cos(cell.angle) * cellW * 0.45, cy - Math.sin(cell.angle) * cellH * 0.45);
-      ctx.lineTo(cx + Math.cos(cell.angle) * cellW * 0.45, cy + Math.sin(cell.angle) * cellH * 0.45);
-      ctx.stroke();
+      const dirX = Math.cos(cell.angle), dirY = Math.sin(cell.angle);
+      const perpX = -dirY, perpY = dirX;
+      const halfLen = Math.min(cellW, cellH) * 0.42;
+      const seed = r * ZEN_RAKE_GRID_COLS + c;
+      ZEN_RAKE_GROOVE_OFFSETS.forEach((off, gi) => {
+        const ox = perpX * off * Math.min(cellW, cellH);
+        const oy = perpY * off * Math.min(cellW, cellH);
+        const waver = Math.sin(seed * 1.7 + gi * 2.1) * halfLen * 0.12;
+        const startX = cx + ox - dirX * halfLen;
+        const startY = cy + oy - dirY * halfLen;
+        const endX = cx + ox + dirX * halfLen;
+        const endY = cy + oy + dirY * halfLen;
+        const midX = cx + ox + perpX * waver;
+        const midY = cy + oy + perpY * waver;
+        ctx.strokeStyle = gi === 1 ? "#a88855" : "#b09262";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.quadraticCurveTo(midX, midY, endX, endY);
+        ctx.stroke();
+      });
     }
   }
-  // rake cursor
-  ctx.fillStyle = "#7a5030";
-  ctx.fillRect(gridX + Math.floor(zenRakeUI.cursorX) * cellW + 2, gridY + Math.floor(zenRakeUI.cursorY) * cellH + 2, cellW - 4, cellH - 4);
+  // rake cursor -- an actual little rake head (crossbar + tines) on a
+  // short handle, rotated to trail behind whichever direction it was
+  // last dragged in, instead of the plain brown square this used to be
+  // ("lets make the rate in zen garden actually look like a rake, not
+  // a brown rectangle"). Head leads, handle trails, matching how you'd
+  // actually drag a rake across sand.
+  {
+    const rcx = gridX + Math.floor(zenRakeUI.cursorX) * cellW + cellW / 2;
+    const rcy = gridY + Math.floor(zenRakeUI.cursorY) * cellH + cellH / 2;
+    const headDist = Math.min(cellW, cellH) * 0.32;
+    const headLen = Math.min(cellW, cellH) * 0.6;
+    const dirAngle = zenRakeUI.lastAngle;
+    ctx.save();
+    ctx.translate(rcx, rcy);
+    ctx.rotate(dirAngle);
+    // handle, trailing behind the head
+    ctx.strokeStyle = "#5a4020";
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-headDist * 1.6, 0);
+    ctx.lineTo(-headDist * 0.4, 0);
+    ctx.stroke();
+    // crossbar of the rake head, perpendicular to the drag direction
+    ctx.strokeStyle = "#8a5a30";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(headDist * 0.3, -headLen / 2);
+    ctx.lineTo(headDist * 0.3, headLen / 2);
+    ctx.stroke();
+    // tines, fanning out ahead of the crossbar
+    ctx.strokeStyle = "#6a4020";
+    ctx.lineWidth = 1.6;
+    const tineCount = 5;
+    for (let i = 0; i < tineCount; i++) {
+      const t = (i / (tineCount - 1) - 0.5) * headLen;
+      ctx.beginPath();
+      ctx.moveTo(headDist * 0.3, t);
+      ctx.lineTo(headDist * 1.05, t * 0.75);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   ctx.fillStyle = "#5a4a30";
   ctx.font = "12px sans-serif";
