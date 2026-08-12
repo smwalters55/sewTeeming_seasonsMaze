@@ -39036,11 +39036,6 @@ const sandboxSlinky = {
   // (drawn while resetHold counts down) has a stable, non-jittering
   // shape for that whole hold instead of re-rolling every frame.
   restSeed: 0,
-  // CONFIRMED CHANGE ("mount the slinky") -- 0..1, eased toward 1 while
-  // standing on the top step (not riding), toward 0 otherwise. Read only
-  // by the draw loop (playerVisualDY) to lift the sprite up onto the
-  // coil's arch -- never touches the real player.y.
-  mountLift: 0,
   onTopStep: false
 };
 
@@ -39442,18 +39437,6 @@ function updateSandboxSlinky(deltaTime) {
     player.x + player.width > SANDBOX_SLINKY_TOP_STEP.x &&
     player.x < SANDBOX_SLINKY_TOP_STEP.x + SANDBOX_SLINKY_TOP_STEP.width;
   s.onTopStep = onTopStep; // CONFIRMED CHANGE: exposed for drawSandboxSlinky so the "hold space" prompt/bar can show as soon as you're in position, not only once charge > 0
-  // CONFIRMED CHANGE ("player doesnt mount slinky" -- asked for several
-  // times now): visually lift the player up onto the top of the coil's
-  // own resting arch while standing on the top step (charging or not),
-  // instead of drawing them flat on the block next to/behind the coil.
-  // Draw-only -- eases toward a target lift with mountLift, never
-  // touches player.y/collision, so onTopStep detection above (which
-  // depends on the real player.y matching the block height) can't be
-  // thrown off by this. See playerVisualDY in the main draw() loop for
-  // where this actually gets applied to the sprite.
-  const mountLiftTarget = onTopStep && !s.running ? 1 : 0;
-  s.mountLift += (mountLiftTarget - s.mountLift) * 0.18;
-  if (Math.abs(s.mountLift - mountLiftTarget) < 0.01) s.mountLift = mountLiftTarget;
 
   if (!keys.space) s.armed = true;
   const canCharge = onTopStep && s.armed && !s.running;
@@ -41074,14 +41057,7 @@ const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRive
 // lets make the player like bobbing up and down gently").
 const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
   Math.sin(performance.now() * 0.0028) * 3;
-// CONFIRMED CHANGE ("mount the slinky") -- while standing on the pile's
-// top step (charging or just about to), visually lift the sprite up
-// onto the coil's own resting arch instead of drawing them flat on the
-// block beside/behind it -- draw-only (see sandboxSlinky.mountLift's own
-// easing in updateSandboxSlinky), never touches player.y/collision.
-const sandboxMountLift = (typeof currentScene !== "undefined" && currentScene === "sandbox" &&
-  typeof sandboxSlinky !== "undefined") ? sandboxSlinky.mountLift * 22 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob - sandboxMountLift;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob;
 
 // the single shared head-anchor offset for this frame -- see
 // playerVisualDX/DY's own declaration up near the crown state for why
