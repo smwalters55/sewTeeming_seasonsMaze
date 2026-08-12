@@ -46933,39 +46933,21 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
 
   // CONFIRMED BUG FIX ("wig still pokes out the side... mid ladder,
   // bottom of the ladder, swimming sideways... the top of the wig, when
-  // sideways, goes past the border of ball pit") -- a worn wig can
-  // reach past the pit's own walls/interior ceiling in these states, and
-  // the different transforms active in each one (upright, counter-
-  // rotated while lying down to swim, etc.) made it too fragile to keep
-  // computing a "safe" wig draw position by hand for every case -- the
-  // swim lying-tilt rotation in particular moves the sprite's own
-  // footprint on screen in a way a fixed per-wig offset can't predict.
-  // Clipping here instead, BEFORE the sway/tilt rotation below is ever
-  // applied, is airtight regardless: this clip is established in plain
-  // screen space, so it stays pinned to the pit's actual on-screen
-  // boundary no matter how the sprite (and the wig riding on top of it)
-  // gets rotated afterward for the swim pose.
-  //
-  // The right-wall constraint applies on the ladder/rim too (the ladder
-  // sits right against that same wall), but the TOP constraint only
-  // applies while actually swimming INSIDE the tank (inBallPit) -- on
-  // the ladder or standing on the rim, the whole point is the player is
-  // OUTSIDE/ABOVE the tank's interior, so their head (wig or not)
-  // legitimately rises above the interior's ceiling; clipping to it
-  // there would erase the player entirely (caught by testing this fix,
-  // not an actual report -- but worth noting since it's an easy trap).
-  if (player.wigId && typeof sandboxBallPit !== "undefined" &&
-      (player.onBallPitLadder || player.onBallPitRim || player.inBallPit)) {
-    const pit = sandboxBallPit;
-    const pitClipRight = pit.x - camX + pit.width - 14;
-    // interior ceiling -- matches drawSandboxBallPitBalls' own clip
-    // rect exactly (gy - pit.rimHeight), so the wig is held to the same
-    // boundary the balls themselves are drawn within.
-    const pitClipTop = player.inBallPit ? (gy - pit.rimHeight) : 0;
-    ctx.beginPath(); // separate path from the ground-clip rect above, so clip() intersects the two rather than unioning them
-    ctx.rect(0, pitClipTop, pitClipRight, canvas.height - pitClipTop);
-    ctx.clip();
-  }
+  // sideways, goes past the border of ball pit") -- ORIGINAL approach
+  // for this containment (superseded): apply the pit-boundary clip up
+  // here, before the sway/tilt rotation, so it stays pinned to the
+  // pit's actual screen position regardless of rotation. That clip
+  // wrapped the ENTIRE rest of this player-draw block though -- body,
+  // eyes, everything -- not just the wig, and per later direct testing
+  // ("disappears going to top of ball pit still swimming") it was
+  // silently eating the whole player: swimming near the top of the tank
+  // legitimately puts a normal-height character's HEAD well above the
+  // water surface (only the feet are height-clamped, the head is a full
+  // player.height taller), same as swimming with your head out of the
+  // water in real life -- that's correct, not a bug, and clipping to
+  // the interior's ceiling erased it. The wig-only clip is now scoped
+  // tightly around just the wig draw call below instead, so the body
+  // always renders normally and only the wig itself is ever contained.
 
   // woozy sway -- a gentle wobble on the body itself while stunned
   // from a hard fall, nested inside the clip so the clip region
@@ -47204,16 +47186,64 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
     // CONFIRMED BUG FIX ("mid ladder... bottom of the ladder... the top
     // of the wig, when sideways, goes past the border of ball pit") --
     // a worn wig can still reach past the pit's own solid boundaries
-    // (its right wall, its interior ceiling) in any of these states,
-    // including now while genuinely rotated for the swim pose. That
-    // containment happens once, up front, as a plain screen-space clip
-    // established before any rotation math runs at all -- see the
-    // "pitClipRight/pitClipTop" clip right after this function's very
-    // first (ground-level) clip above. That clip is airtight regardless
-    // of whatever transform the now-fully-attached wig ends up drawn
-    // under, including full swim rotation, so nothing further is needed
-    // here.
+    // (its right wall; its interior ceiling, but ONLY while actually
+    // swimming inside -- see the pitClipTop note below) in these states.
+    // ORIGINAL approach (superseded, see the big comment above the
+    // ground-level clip): this clip used to be applied up at the top of
+    // the whole player-draw block, before the sway rotation, so it'd
+    // stay pinned to the pit's real screen position -- but that also
+    // silently clipped the BODY, not just the wig, erasing the player
+    // any time swimming near the top legitimately put their head above
+    // the water line. Scoped tightly to just this wig draw instead: the
+    // clip is established here in a briefly-reset (unrotated) context so
+    // it's still pinned to true screen coordinates, then the exact same
+    // rotation the body is already under is reapplied before actually
+    // drawing the wig, so it still renders attached/rotated normally --
+    // just also clipped, without touching anything else in the sprite.
+    const pit = (typeof sandboxBallPit !== "undefined") ? sandboxBallPit : null;
+    const clipToPit = pit && (player.onBallPitLadder || player.onBallPitRim || player.inBallPit);
+    if (clipToPit) {
+      ctx.save();
+      ctx.resetTransform();
+      const pitClipRight = pit.x - camX + pit.width - 14;
+      // CONFIRMED BUG FIX ("the left wall was also still messed up") --
+      // only the right wall was ever constrained (it's the one the
+      // ladder sits against, which is what the original ladder/bottom-
+      // of-ladder reports were about), but the interior has a real LEFT
+      // wall too (matches drawSandboxBallPitBalls' own interior clip,
+      // pit.x+14) that a wig can just as easily poke through while
+      // actually swimming over near that side. Only relevant while
+      // genuinely inBallPit -- on the ladder/rim the player stands
+      // OUTSIDE/left of the pit on purpose (that's the open sand side,
+      // not a wall), so no left constraint there.
+      const pitClipLeft = player.inBallPit ? (pit.x - camX + 14) : 0;
+      // CONFIRMED BUG FIX ("disappears going to top of ball pit still
+      // swimming") -- round 1 used the INTERIOR's ceiling (gy -
+      // rimHeight), round 2 tried the rim lid's own top edge (gy -
+      // rimHeight - 8) instead -- but plain upright swimming near the
+      // top ALSO legitimately lifts a normal-height character's whole
+      // head (and the wig riding on it) well above either line, same as
+      // swimming with your head out of the water, and the body itself
+      // is never clipped there at all -- so holding just the wig to
+      // either boundary made it vanish before the body ever would,
+      // which is exactly what broke here. The ACTUAL reported case was
+      // specifically "when sideways" -- the swim lying-tilt rotation --
+      // where the sprite's rotated footprint is a different shape than
+      // upright, and that's the one case a top constraint is genuinely
+      // needed (see the original wall-punch-through report). So the top
+      // clip now only engages once there's real swim tilt rotation
+      // active; plain upright swimming near the rim is left alone,
+      // matching how the un-clipped body already behaves there.
+      const pitClipTop = Math.abs(totalTilt) > 0.15 ? (gy - pit.rimHeight - 8) : -100000;
+      ctx.beginPath();
+      ctx.rect(pitClipLeft, pitClipTop, pitClipRight - pitClipLeft, canvas.height - pitClipTop);
+      ctx.clip();
+      ctx.translate(swayCx, swayCy);
+      ctx.rotate(totalTilt);
+      ctx.translate(-swayCx, -swayCy);
+    }
     drawWigShape(player.wigId, px + player.width / 2, drawPy - 3, 0.9);
+    if (clipToPit) ctx.restore();
   }
 
   ctx.restore(); // closes the sway rotation
