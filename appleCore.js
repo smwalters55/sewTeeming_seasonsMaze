@@ -43754,7 +43754,17 @@ function updateAntFarmDiggers(deltaTime) {
         d.digRow = target.r;
         d.digCol = target.c;
         d.progress = 0;
+        d.digPhase = 0;
         d.angle = Math.atan2(target.r - d.row, target.c - d.col);
+        // CONFIRMED BUG FIX ("dont have two ants breaking through a hole
+        // dig at the exact same time"): both diggers start at the same
+        // progress/duration and immediately re-target on completion, so
+        // with a fixed dig time they stay in permanent lockstep -- same
+        // finish frame forever, reading as a scripted/synchronized event
+        // rather than two independent workers. Randomizing each individual
+        // dig's actual required time (75%-125% of the base) means they
+        // drift apart the very first time this fires and never realign.
+        d.digTimeTarget = ANT_FARM_DIGGER_DIG_TIME * (0.75 + pseudoRandom(performance.now() * 0.00003 + target.r * 3.1 + target.c * 7.7) * 0.5);
       } else {
         d.wanderCooldown = (d.wanderCooldown || 0) - deltaTime;
         if (d.wanderCooldown > 0) return;
@@ -43776,7 +43786,13 @@ function updateAntFarmDiggers(deltaTime) {
       return;
     }
     d.progress += deltaTime;
-    if (d.progress >= ANT_FARM_DIGGER_DIG_TIME) {
+    // CONFIRMED CHANGE ("i want to actively see the digging ant DIGGING
+    // like legs and head moving a little"): a real scrabbling phase
+    // while actively digging, separate from the walk-cycle gaitPhase
+    // (which is only for actual locomotion between cells) -- drives the
+    // front-leg scrape + head-nod motion in drawAntCreature.
+    d.digPhase = (d.digPhase || 0) + deltaTime * 3;
+    if (d.progress >= (d.digTimeTarget || ANT_FARM_DIGGER_DIG_TIME)) {
       ANT_FARM_GRID[d.digRow][d.digCol] = 1;
       antFarmGridVersion++; // invalidates the cached forager shortest-path field
       antFarmAutoDigCount++;
@@ -43803,40 +43819,42 @@ function drawAntFarmDiggers(gx, gyTop) {
       pos = antFarmCellCenter(d.row, d.col);
     }
     const isWandering = d.moveT !== undefined && d.moveT < 1;
-    drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null, { walkPhase: isWandering ? d.gaitPhase : null });
+    const isDigging = !isWandering && d.digRow !== -1;
+    drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null,
+      isWandering ? { walkPhase: d.gaitPhase } : (isDigging ? { digPhase: d.digPhase } : null));
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
     if (d.digRow !== -1) {
-      // erosion effect at the dig target, showing real progress over the
-      // full ANT_FARM_DIGGER_DIG_TIME window. CONFIRMED BUG FIX ("the
-      // digging ants still arent showing the slow digging away per
-      // square"): this existed before but was badly under-tuned for how
-      // slow/subtle it needs to read over a genuinely long (40s) dig --
-      // linear progress meant it stayed at essentially zero opacity
-      // (~0.05) for a good stretch, and even at 100% only reached 0.5
-      // opacity and a 7px radius against dark dirt at ant scale --
-      // functionally invisible. sqrt(t) front-loads visible progress
-      // (a real mark appears early and keeps building, closer to how
-      // real erosion actually reads -- a quick initial crack, then slow
-      // widening -- rather than a flat linear fade-in), and the ceiling
-      // values are raised enough to be genuinely noticeable by the time
-      // the dig completes.
+      // CONFIRMED CHANGE ("i dont like this visual at all-- this isnt
+      // what i said... i want to see it get dug in real time"): swapped
+      // the abstract crack-pattern effect for the ACTUAL tunnel shape
+      // growing in at the target cell -- the exact same organic-blob +
+      // connecting-line style real finished tunnels use a few dozen
+      // lines up in drawSandboxAntFarm (same seed formula too, so the
+      // preview shape lines up exactly with the permanent one it turns
+      // into at 100%, no pop/mismatch at the handoff), just scaled from
+      // nothing up to full size as progress advances. Reads as watching
+      // the passage itself get carved out in real time, not a
+      // decorative sticker on an otherwise-untouched wall.
+      const origin = antFarmCellCenter(d.row, d.col);
       const target = antFarmCellCenter(d.digRow, d.digCol);
+      const ox = gx + origin.x, oy = gyTop + origin.y;
       const tx = gx + target.x, ty = gyTop + target.y;
-      const rawT = d.progress / ANT_FARM_DIGGER_DIG_TIME;
-      const t = Math.sqrt(rawT);
-      ctx.fillStyle = `rgba(180,140,95,${0.25 + 0.55 * t})`;
+      const rawT = d.progress / (d.digTimeTarget || ANT_FARM_DIGGER_DIG_TIME);
+      const t = Math.sqrt(rawT); // quick initial mark, then slow widening, same easing as before -- just driving the real tunnel shape now instead of a crack decal
+      const tunnelColor = "#1c1207";
+      ctx.strokeStyle = tunnelColor;
+      ctx.lineWidth = ANT_FARM_CELL_H * 0.62 * t;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.arc(tx, ty, 2.5 + t * 7.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = `rgba(90,65,35,${0.5 + 0.5 * t})`;
-      ctx.lineWidth = 0.5 + t * 0.5;
-      const crackCount = 4 + Math.floor(t * 3);
-      for (let i = 0; i < crackCount; i++) {
-        const crackAngle = (i / crackCount) * Math.PI * 2 + d.digRow * 0.7;
-        ctx.beginPath();
-        ctx.moveTo(tx, ty);
-        ctx.lineTo(tx + Math.cos(crackAngle) * (2 + t * 8), ty + Math.sin(crackAngle) * (2 + t * 8));
-        ctx.stroke();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ox + (tx - ox) * t, oy + (ty - oy) * t);
+      ctx.stroke();
+      if (t > 0.05) {
+        ctx.globalAlpha = Math.min(1, t * 1.4);
+        ctx.fillStyle = tunnelColor;
+        organicBlobPath(ctx, tx, ty, ANT_FARM_CELL_W * 0.52 * t, ANT_FARM_CELL_H * 0.52 * t, d.digRow * 31 + d.digCol * 7, 7);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
     }
   });
@@ -43895,6 +43913,13 @@ const ANT_TAP_RATE = 24;
 function drawAntCreature(cx, cy, angle, scale, color, motion) {
   const walkPhase = motion && motion.walkPhase != null ? motion.walkPhase : null;
   const tapPhase = motion && motion.tapPhase != null ? motion.tapPhase : null;
+  // CONFIRMED CHANGE ("i want to actively see the digging ant DIGGING
+  // like legs and head moving a little"): set only while a digger is
+  // actively working a target cell (see drawAntFarmDiggers) -- drives a
+  // front-leg scrabbling reach/rake, a small back-leg brace twitch, and
+  // a forward-down head nod, distinct from the walk-cycle gait since the
+  // ant isn't actually moving anywhere while digging.
+  const digPhase = motion && motion.digPhase != null ? motion.digPhase : null;
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
@@ -43916,8 +43941,20 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
   // the walk actually reads as stepping rather than just sliding
   [-1, 1].forEach((side, sIdx) => {
     [-2, 0, 2].forEach((lx, lIdx) => {
-      const group = (sIdx + lIdx) % 2;
-      const swing = walkPhase != null ? Math.sin(walkPhase + (group === 0 ? 0 : Math.PI)) * 1.6 * scale : 0;
+      let swing;
+      if (digPhase != null && lIdx === 2) {
+        // front pair scrabbles at the wall -- a bigger, faster reach-
+        // forward/rake-back than the walk swing, staggered per side so
+        // it reads as alternating scoops rather than both arms as one
+        swing = Math.sin(digPhase * 2.2 + side * 1.1) * 2.6 * scale;
+      } else if (digPhase != null) {
+        // mid/back legs stay mostly planted, bracing against the dig,
+        // just a small twitch rather than a full walk swing
+        swing = Math.sin(digPhase * 2.2 + Math.PI) * 0.5 * scale;
+      } else {
+        const group = (sIdx + lIdx) % 2;
+        swing = walkPhase != null ? Math.sin(walkPhase + (group === 0 ? 0 : Math.PI)) * 1.6 * scale : 0;
+      }
       ctx.beginPath();
       ctx.moveTo(lx * scale, 0);
       ctx.lineTo(lx * scale + 1.5 * scale + swing, side * 3 * scale);
@@ -43926,15 +43963,23 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
   });
   // abdomen (rear), thorax (mid), head (front) -- three overlapping
   // ellipses, each with a thin dark outline so the body reads as
-  // segmented rather than one blobby shape
+  // segmented rather than one blobby shape. The head gets a small
+  // forward-down nod while digging, same phase as the front legs, so it
+  // reads as actually pawing/headbutting at the dirt in front of it.
   ctx.lineWidth = 0.35 * scale;
   ctx.strokeStyle = "rgba(40,20,8,0.7)";
-  [[-3.2, 2.4, 1.6], [0, 1.6, 1.3], [2.6, 1.3, 1.1]].forEach(([ex, erx, ery]) => {
+  [[-3.2, 2.4, 1.6], [0, 1.6, 1.3]].forEach(([ex, erx, ery]) => {
     ctx.beginPath();
     ctx.ellipse(ex * scale, 0, erx * scale, ery * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   });
+  const headNodX = digPhase != null ? Math.sin(digPhase * 2.2) * 0.4 * scale : 0;
+  const headNodY = digPhase != null ? Math.abs(Math.sin(digPhase * 2.2)) * 0.3 * scale : 0;
+  ctx.beginPath();
+  ctx.ellipse(2.6 * scale + headNodX, headNodY, 1.3 * scale, 1.1 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
   // antennae -- three distinct modes: fast nose-forward tap (antennation
   // pause), gentle swish tied to the walk cycle (actually moving), or a
   // slow ambient idle twitch (just standing there, still "alive")
@@ -43946,6 +43991,10 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
       // fast -- reads as tapping together rather than idly swaying
       spreadMul = 0.5 + 0.5 * Math.cos(tapPhase * ANT_TAP_RATE);
       reach = (5.2 + 0.9 * (1 - spreadMul)) * scale;
+    } else if (digPhase != null) {
+      // dip forward with the same reach/rake rhythm as the front legs,
+      // like it's using them to feel out the dirt while pawing at it
+      spreadMul = 1 + Math.sin(digPhase * 2.2 + side * 0.6) * 0.22;
     } else if (walkPhase != null) {
       spreadMul = 1 + Math.sin(walkPhase * 2 + side) * 0.18;
     } else {
@@ -45145,16 +45194,28 @@ const SANDBOX_SKY_SHAPE_PALETTES = [
 const SANDBOX_SKY_SHAPES = Array.from({ length: 9 }, (_, i) => ({
   worldX: pseudoRandom(i * 7.3) * (SANDBOX_WIDTH + 200) - 100,
   y: 18 + pseudoRandom(i * 4.1 + 2) * 90,
-  // CONFIRMED CHANGE ("i want one of the shapes to be a toroid"): index 4
-  // is always the toroid, sized up a bit from the base range since a
-  // ring reads thinner/smaller than a filled polygon at the same radius
-  size: (i === 4 ? 16 : 10) + pseudoRandom(i * 9.7 + 5) * 10,
-  sides: i === 4 ? "toroid" : (pseudoRandom(i * 3.3) < 0.5 ? 3 : 6), // triangle or hexagon facets, or the one toroid
+  // CONFIRMED CHANGE ("a bit larger, less polished looking overall"):
+  // base range bumped way up (was 10-20, toroid 16-26) -- reads as
+  // bigger, rougher-looking shapes now instead of small tidy ones
+  size: (i === 4 ? 26 : 18) + pseudoRandom(i * 9.7 + 5) * 14,
+  // CONFIRMED CHANGE ("i like the shapes still. maybe more blobs"):
+  // three-way pool now (triangle / hexagon / irregular organic blob)
+  // instead of just triangle-or-hexagon, plus the one forced toroid
+  sides: i === 4 ? "toroid" : (() => {
+    const r = pseudoRandom(i * 3.3);
+    return r < 0.33 ? 3 : r < 0.66 ? 6 : "blob";
+  })(),
   rotSpeed: 0.08 + pseudoRandom(i * 2.9 + 1) * 0.14,
   rotOffset: pseudoRandom(i * 5.5) * Math.PI * 2,
   bobPhase: pseudoRandom(i * 6.6) * Math.PI * 2,
   bobAmp: 6 + pseudoRandom(i * 1.7) * 6,
   parallax: 0.35 + pseudoRandom(i * 8.8) * 0.3, // < 1 so they drift slower than the foreground -- real sense of distance
+  // CONFIRMED CHANGE ("less polished looking overall"): fixed per-shape
+  // seed driving the hand-drawn vertex/outline jitter in the draw
+  // functions below -- stable frame to frame (same wobble every time,
+  // it just rotates/bobs/drifts like before), not a fresh random wobble
+  // each frame, which would've read as flickering rather than hand-drawn
+  seed: i * 37.1 + 11,
   palette: SANDBOX_SKY_SHAPE_PALETTES[i % SANDBOX_SKY_SHAPE_PALETTES.length]
 }));
 const SANDBOX_SKY_MOTES = Array.from({ length: 8 }, (_, i) => ({
@@ -45170,15 +45231,28 @@ const SANDBOX_SKY_MOTES = Array.from({ length: 8 }, (_, i) => ({
 // a single drifting shape, drawn as alternating lit/shaded triangular
 // facets from center to each edge (light assumed from the upper-left)
 // rather than one flat translucent fill -- reads as a rotating faceted
-// solid, not a sticker
-function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette) {
+// solid, not a sticker.
+//
+// CONFIRMED CHANGE ("more blobs. but a bit larger, less polished looking
+// overall"): each vertex now gets a fixed (per-shape seed, NOT re-rolled
+// every frame -- same wobble every time so it doesn't crawl/flicker,
+// just rotates/bobs/drifts like before) nudge to both its angle and its
+// radius, so the polygon reads as a rough hand-drawn attempt at a
+// triangle/hexagon instead of a precise geometric one. The outline is
+// now a loose double-line too -- a fainter second pass traced slightly
+// outside the first, like a pen retracing a line that didn't quite land
+// the same place twice.
+function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette, seed) {
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(rotation);
   const pts = [];
   for (let i = 0; i <= sides; i++) {
-    const a = (i / sides) * Math.PI * 2;
-    pts.push([Math.cos(a) * size, Math.sin(a) * size]);
+    const idx = i % sides;
+    const a = (idx / sides) * Math.PI * 2;
+    const angJitter = (pseudoRandom(seed + idx * 3.3) - 0.5) * 0.35;
+    const radJitter = 0.82 + pseudoRandom(seed + idx * 5.1 + 1) * 0.36;
+    pts.push([Math.cos(a + angJitter) * size * radJitter, Math.sin(a + angJitter) * size * radJitter]);
   }
   for (let i = 0; i < sides; i++) {
     const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
@@ -45195,24 +45269,74 @@ function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette) {
   ctx.strokeStyle = palette.edge;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+  pts.forEach(([x, y], i) => { if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
   ctx.stroke();
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => {
+    const wobble = 1.05 + pseudoRandom(seed + i * 9.1) * 0.09;
+    if (i === 0) ctx.moveTo(x * wobble, y * wobble); else ctx.lineTo(x * wobble, y * wobble);
+  });
+  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
-// the one toroid among the sky shapes -- a squished ring (tilted like the
-// balance-ball sun portals, same "seen from a slight angle" convention)
-// rather than a flat painted donut. Reuses the sun-portal's diagonal
-// edge/face/shade gradient sweep instead of the lit/shaded-wedge trick the
-// polygons use, since slicing a ring into radial wedges doesn't read as a
-// tube the way it reads as facets on a solid -- the gradient sells the
-// curved cross-section in one smooth pass instead.
-function drawSandboxSkyToroid(sx, sy, size, rotation, palette) {
+// CONFIRMED CHANGE ("i like the shapes still. maybe more blobs"): an
+// irregular organic blob, same lit/shaded-half convention as the
+// polygons but via a clipped shading pass instead of radial wedges
+// (a blob's outline doesn't have clean vertices to slice wedges from).
+// Same loose double-outline sketchiness as the polygons.
+function drawSandboxSkyBlob(sx, sy, size, rotation, palette, seed) {
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(rotation * 0.5);
+  organicBlobPath(ctx, 0, 0, size, size * 0.85, seed, 8);
+  ctx.fillStyle = palette.face;
+  ctx.fill();
+  ctx.save();
+  organicBlobPath(ctx, 0, 0, size, size * 0.85, seed, 8);
+  ctx.clip();
+  ctx.fillStyle = palette.shade;
+  ctx.beginPath();
+  ctx.ellipse(size * 0.32, size * 0.28, size * 0.8, size * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = palette.edge;
+  ctx.lineWidth = 1;
+  organicBlobPath(ctx, 0, 0, size, size * 0.85, seed, 8);
+  ctx.stroke();
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 0.6;
+  organicBlobPath(ctx, 0, 0, size * 1.06, size * 0.9, seed + 3, 8);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// the one toroid among the sky shapes -- a ring tilted like the
+// balance-ball sun portals, same "seen from a slight angle" convention.
+// Reuses the sun-portal's diagonal edge/face/shade gradient sweep for the
+// tube's front surface instead of the lit/shaded-wedge trick the polygons
+// use, since slicing a ring into radial wedges doesn't read as a tube.
+//
+// CONFIRMED CHANGE ("i want the toroid to be able to see through to the
+// back of it, slightly angled, i want to really be able to see the
+// shape"): the original was squished nearly edge-on (a thin lens), which
+// hid the hole almost completely. Opened the squish up a lot so it reads
+// as a real ring at a shallow angle, and added a dark radial "throat"
+// gradient filling the hole itself -- brightest near the rim, fading to
+// near-black toward the far side -- so there's an actual sense of
+// looking partway INTO the tube's far inner wall, not just a hole
+// punched through a flat painted disc. Same loose sketchy outline as the
+// other shapes.
+function drawSandboxSkyToroid(sx, sy, size, rotation, palette, seed) {
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(rotation * 0.4); // gentler tumble than the polygons -- a ring's silhouette barely changes with rotation, so a fast spin just looks like jitter
-  const outerRx = size, outerRy = size * 0.62;
-  const innerRx = size * 0.52, innerRy = size * 0.32;
+  const outerRx = size, outerRy = size * 0.82;
+  const innerRx = size * 0.58, innerRy = size * 0.5; // thinner band, bigger hole -- the hole is the point, it needs to read as open
   const grad = ctx.createLinearGradient(-outerRx, -outerRy, outerRx, outerRy);
   grad.addColorStop(0, palette.edge);
   grad.addColorStop(0.5, palette.face);
@@ -45222,6 +45346,17 @@ function drawSandboxSkyToroid(sx, sy, size, rotation, palette) {
   ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
   ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2, true); // reverse winding punches the hole via the evenodd fill below
   ctx.fill("evenodd");
+  // the hole itself stays basically clear -- we're not filling it with an opaque disc,
+  // just hinting at the far inner wall of the tube with a faint arc so it doesn't look
+  // like flat empty space, while the sky stays visibly readable straight through it
+  const throatGrad = ctx.createLinearGradient(-innerRx, -innerRy, innerRx, innerRy);
+  throatGrad.addColorStop(0, "rgba(255,255,255,0)");
+  throatGrad.addColorStop(0.55, "rgba(255,255,255,0)");
+  throatGrad.addColorStop(1, "rgba(20,15,25,0.16)");
+  ctx.fillStyle = throatGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.lineWidth = 1;
   ctx.strokeStyle = palette.edge;
   ctx.beginPath();
@@ -45232,6 +45367,12 @@ function drawSandboxSkyToroid(sx, sy, size, rotation, palette) {
   ctx.beginPath();
   ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.globalAlpha = 0.4;
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, outerRx * 1.05, outerRy * 1.07, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -45243,9 +45384,11 @@ function drawSandboxSkyDecor(camX) {
     const sy = s.y + Math.sin(now * 0.5 + s.bobPhase) * s.bobAmp;
     const rotation = s.rotOffset + now * s.rotSpeed;
     if (s.sides === "toroid") {
-      drawSandboxSkyToroid(sx, sy, s.size, rotation, s.palette);
+      drawSandboxSkyToroid(sx, sy, s.size, rotation, s.palette, s.seed);
+    } else if (s.sides === "blob") {
+      drawSandboxSkyBlob(sx, sy, s.size, rotation, s.palette, s.seed);
     } else {
-      drawSandboxSkyShape(sx, sy, s.size, s.sides, rotation, s.palette);
+      drawSandboxSkyShape(sx, sy, s.size, s.sides, rotation, s.palette, s.seed);
     }
   });
   SANDBOX_SKY_MOTES.forEach(m => {
@@ -46178,17 +46321,22 @@ if (currentScene === "forest") {
   // handful of balls sit in front of the sprite, which is what actually
   // sells "surrounded by balls"/"in front of the pit" instead of
   // "standing in front of a ball-patterned wall".
-  // CONFIRMED BUG FIX ("i dont like that the 'front balls'... only
-  // appear once player is in ball pit"): used to be gated on
-  // player.inBallPit, so the front layer was invisible the entire time
-  // you're just standing on the ladder/rim near the pit, or anywhere
-  // else in the sandbox -- only popping in the instant you actually
-  // dropped into the water. drawSandboxBallPitBalls already clips its
-  // own drawing to the pit's real footprint (see its own clip a few
-  // lines into that function), so drawing it unconditionally here is
-  // safe -- it simply has nothing to draw unless the pit is actually
-  // on screen, same as before, just no longer tied to being submerged.
-  drawSandboxBallPitBalls(camX, true);
+  // CONFIRMED BUG FIX ("when not in ball pit, dont draw balls on top of
+  // player"): drawing this unconditionally (removed the inBallPit gate
+  // a push ago, to fix a DIFFERENT complaint about the front layer never
+  // showing at all) went too far the other way -- since the pit's clip
+  // region is a fixed footprint on screen, standing on the ladder/rim
+  // (which sits right at that footprint's edge) got balls drawn right
+  // over the player's face even though they're standing outside the
+  // pit, not submerged in it. Only actually being IN the water puts the
+  // player visually among the balls; back to gating on player.inBallPit,
+  // but the regular (non-front) ball field elsewhere in the draw order
+  // is still unconditional, so the pit still reads as full of balls
+  // while just standing nearby -- only the over-the-player layer is
+  // restricted.
+  if (player.inBallPit) {
+    drawSandboxBallPitBalls(camX, true);
+  }
 }
 
 
@@ -47035,6 +47183,22 @@ if (currentScene === "autumn") {
   // Cleared here too now, same as any other scene it doesn't belong in.
   if (heldItem === "paperAirplane" && (currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox" || player.inAntFarm || player.inBallPit)) {
     heldItem = null;
+  }
+  // CONFIRMED BUG FIX ("i think my paper airplane got lost in the ball
+  // pit... oh, or i guess rn at least you have to re-put the airplane in
+  // play after ballpit"): the clear above has no matching comeback --
+  // leaving the ant farm or ball pit stays inside the same "sandbox"
+  // currentScene value the whole time, so the scene-ENTRY auto-equip
+  // (gated on previousScene !== currentScene, a few hundred lines up)
+  // never fires either, leaving the plane sitting unequipped in
+  // inventory (not actually lost, just not back in-hand) until manually
+  // reselected. Mirrors the same "it's just always in hand in its home
+  // territory" rule the lamp already gets in ratroom -- once you're
+  // actually back on plain sandbox ground with nothing else held, and
+  // you own one, it's in your hand again, no manual reselect needed.
+  if (heldItem === null && currentScene === "sandbox" && !player.inAntFarm && !player.inBallPit &&
+      !player.onBallPitLadder && !player.onBallPitRim && inventory.paperAirplane > 0) {
+    heldItem = "paperAirplane";
   }
   // refreshes the inventory strip's scene-locked filtering (SCENE_LOCKED_ITEMS)
   // the moment currentScene actually changes, regardless of which of the
