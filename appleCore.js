@@ -37950,7 +37950,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1850; // CONFIRMED CHANGE: widened again (was 1750) to preserve the same right-side margin after shifting the pile/pendulum right once more
+const SANDBOX_WIDTH = 1950; // CONFIRMED CHANGE: widened again (was 1750) to preserve the same right-side margin after shifting the pile/pendulum right once more
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38204,9 +38204,11 @@ const WIGS = [
   // "a curly orange hair wig" -- a poof of overlapping curl-circles,
   // no braids/strands, distinct silhouette from pippi's two braids
   { id: "curlyOrange", name: "Curly Orange", color: "#e8892f" },
-  // "a grey shiny pixie cut style wig" -- short, close to the head,
-  // with a highlight streak for "shiny"
-  { id: "greyPixie", name: "Silver Pixie", color: "#b7b9bd" },
+  // CONFIRMED CHANGE: redesigned from a shiny pixie cut into a pinned-
+  // up grey bun with two knitting needles through it, per direct
+  // request ("lets make the old lady grey wig be a pinned up hair with
+  // two knitting needles") -- name updated to match, id kept as-is.
+  { id: "greyPixie", name: "Pinned-Up Bun", color: "#b7b9bd" },
   // "a blue smooth bob with a long front and short back" -- asymmetric
   // on purpose: front strands hang past the chin, back stays short.
   // Darker navy-blue per direct feedback ("make the blue wig a darker
@@ -38297,41 +38299,34 @@ function drawWigShape(id, cx, topY, scale) {
       ctx.stroke();
     });
   } else if (id === "greyPixie") {
-    // CONFIRMED CHANGE: fully rebuilt (4th/5th pass) -- per direct
-    // feedback ("still too small and high up for player head. need to
-    // be lower and wider"). Previous base only reached down to about
-    // y=9 in local space, which at this scale lands barely below the
-    // TOP of the head -- nowhere near ear/eye height (eyes render at
-    // local y~19 relative to this function's topY). Widened to
-    // actually match the head's real width and lowered so the base
-    // edge sits down around ear/eye level, same reference frame now
-    // shared with blueBob/greenWavy below.
+    // CONFIRMED CHANGE: fully redesigned from a shiny pixie cut into a
+    // pinned-up grey bun with two knitting needles crossed through it,
+    // per direct request ("lets make the old lady grey wig be a pinned
+    // up hair with two knitting needles"). Base hair still covers the
+    // head like the other wigs (pulled-back part + a bit of coverage
+    // down to ear level), but it's swept UP and back into a coiled bun
+    // sitting on top, with the two needles as the signature read.
     ctx.fillStyle = wig.color;
     ctx.beginPath();
-    ctx.moveTo(-20, 15);
-    // choppy, slightly jagged top edge -- a few small in/out notches
-    // rather than one clean arc, so it reads as textured short hair
-    ctx.quadraticCurveTo(-23, -6, -10, -14);
-    ctx.quadraticCurveTo(-4, -19, 2, -13);
-    ctx.quadraticCurveTo(8, -19, 15, -12);
-    ctx.quadraticCurveTo(23, -5, 19, 15);
-    ctx.quadraticCurveTo(10, 10, 0, 13);
-    ctx.quadraticCurveTo(-10, 10, -20, 15);
+    ctx.moveTo(-20, 16);
+    // hair swept back off the face and up toward the crown, rather
+    // than a full loose cut -- pulled-back-and-up is what makes "pinned
+    // up" read correctly instead of just "short hair"
+    ctx.quadraticCurveTo(-24, 0, -14, -10);
+    ctx.quadraticCurveTo(-6, -16, 0, -15);
+    ctx.quadraticCurveTo(6, -16, 14, -10);
+    ctx.quadraticCurveTo(24, 0, 20, 16);
+    ctx.quadraticCurveTo(10, 11, 0, 13);
+    ctx.quadraticCurveTo(-10, 11, -20, 16);
     ctx.closePath();
     ctx.fill();
 
-    // wispy strands sticking OUT past the cut's own edge -- short,
-    // slightly curved flicks at varied angles, the actual "whisping
-    // out" texture rather than lying flat against the head. Pushed out
-    // further to match the wider base above.
+    // a few loose wisps escaping near the temples/ears, same soft
+    // "not perfectly neat" texture the other wigs use
     ctx.strokeStyle = wig.color;
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 1.6;
     ctx.lineCap = "round";
-    const wisps = [
-      [-14, -10, -21, -18], [-3, -17, -4, -25], [6, -17, 11, -25],
-      [17, -10, 25, -13], [-20, 8, -27, 9], [19, 9, 26, 11]
-    ];
-    wisps.forEach(([x0, y0, x1, y1]) => {
+    [[-19, 10, -25, 14], [19, 10, 25, 14], [-16, -6, -21, -9]].forEach(([x0, y0, x1, y1]) => {
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       ctx.quadraticCurveTo((x0 + x1) / 2, y0 - 2, x1, y1);
@@ -38339,14 +38334,52 @@ function drawWigShape(id, cx, topY, scale) {
     });
     ctx.lineCap = "butt";
 
-    // small shine fleck for "shiny," kept subtle now that the strand
-    // texture is doing most of the work
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth = 1.3;
+    // the bun itself -- a rounded coiled knot pinned at the crown,
+    // built from a spiral of overlapping strokes so it reads as wound
+    // hair rather than a plain flat circle
+    const bunCx = 0, bunCy = -20, bunR = 11;
+    ctx.fillStyle = wig.color;
     ctx.beginPath();
-    ctx.moveTo(-9, -8);
-    ctx.lineTo(1, -1);
+    ctx.ellipse(bunCx, bunCy, bunR, bunR * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,122,128,0.55)";
+    ctx.lineWidth = 1.1;
+    for (let ring = 0; ring < 3; ring++) {
+      const rr = bunR * (0.35 + ring * 0.25);
+      ctx.beginPath();
+      ctx.ellipse(bunCx, bunCy, rr, rr * 0.85, 0.3, 0.2, Math.PI * 1.7);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(bunCx - 3, bunCy - 4, bunR * 0.4, bunR * 0.3, -0.3, 0, Math.PI * 2);
     ctx.stroke();
+
+    // the two knitting needles -- long thin crossed rods through the
+    // bun, each with a small rounded knob at the tip, angled apart so
+    // they clearly cross rather than lying parallel
+    [-1, 1].forEach(dir => {
+      const len = 32;
+      // each needle starts low on ONE side of the bun and exits out the
+      // top on the OPPOSITE side, so the two together form a real X
+      // crossing through the bun rather than two parallel pins
+      const startX = bunCx + dir * 6, startY = bunCy + 4;
+      const endX = bunCx - dir * 13, endY = bunCy - len * 0.85;
+      ctx.strokeStyle = "#cbb98a";
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      // rounded knob tip
+      ctx.fillStyle = "#e8dcb8";
+      ctx.beginPath();
+      ctx.arc(endX, endY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
   } else if (id === "blueBob" || id === "greenWavy") {
     // CONFIRMED CHANGE: blueBob and greenWavy fully rebuilt together
     // (same underlying problem, 4th/5th pass) -- per direct feedback
@@ -38733,13 +38766,29 @@ function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
 // landing clears onPendulum/launched.
 function drawSandboxPendulumGoals(camX) {
   const showLive = player.onPendulum || player.launched;
-  const groundY = gy + 2;
+  // CONFIRMED BUG FIX ("they look like they may be coming up off the
+  // horizon line") -- these ellipses were centered almost exactly ON gy
+  // (the sky/sand horizon), so their top half poked up above ground
+  // into the sky/background instead of lying flat on the sand. Pushed
+  // down so the whole ring (including the hit-animation's larger ring,
+  // which grows past the idle ring's radius) sits below the line.
+  const groundY = gy + 12;
   SANDBOX_PENDULUM_GOALS_X.forEach((worldX, i) => {
     const gx = worldX - camX;
     if (drawSandboxPendulumGoalHitAnim(gx, groundY, i)) return;
     if (!showLive) return;
-    ctx.strokeStyle = "rgba(230,240,225,0.35)";
-    ctx.lineWidth = 1.4;
+    // CONFIRMED BUG FIX ("so light they blend into the sand almost
+    // completely") -- a soft dark under-stroke first for contrast on
+    // any sand tone, then a brighter, more opaque warm gold ring on top
+    // (instead of the old pale near-white 0.35-alpha line that barely
+    // showed against tan sand).
+    ctx.strokeStyle = "rgba(40,30,15,0.35)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(gx, groundY, SANDBOX_PENDULUM_GOAL_RADIUS, SANDBOX_PENDULUM_GOAL_RADIUS * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,220,140,0.75)";
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.ellipse(gx, groundY, SANDBOX_PENDULUM_GOAL_RADIUS, SANDBOX_PENDULUM_GOAL_RADIUS * 0.35, 0, 0, Math.PI * 2);
     ctx.stroke();
@@ -38921,7 +38970,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1600, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 again, alongside the pendulum's own move, to keep the same pendulum-to-pile throw distance -- SANDBOX_WIDTH bumped alongside it below
+const sandboxBlockPile = { x: 1700, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 again, alongside the pendulum's own move, to keep the same pendulum-to-pile throw distance -- SANDBOX_WIDTH bumped alongside it below
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -38978,34 +39027,34 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
-  { x: 1429, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1487, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1539, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1589, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1643, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1691, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1529, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1587, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1639, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1689, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1743, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1791, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
-  { x: 1469, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1515, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1559, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1605, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1647, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1569, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1615, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1659, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1705, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1747, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
-  { x: 1502, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1542, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1580, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 1620, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1602, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1642, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1680, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1720, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
-  { x: 1532, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1568, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1602, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1632, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1668, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1702, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 1554, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1586, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1654, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1686, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
-  { x: 1570, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1670, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -39664,11 +39713,11 @@ function updateSandboxSlinky(deltaTime) {
     const numSegs = SANDBOX_HOP_HEIGHTS.length - 1;
     // CONFIRMED CHANGE ("rogue bounce" hop): rolled BEFORE bigHopSeg and
     // mutually exclusive with it, so a ride never tries to be both showy
-    // hop AND rogue launch at once. TESTING VALUE: 0.5 (50% of rides) so
-    // it's easy to get a real feel for it quickly -- dial this down once
-    // it's been played with (the user's own plan, ~10-15% is the
-    // eventual target for a normal ride mix).
-    const ROGUE_BOUNCE_CHANCE = 0.5;
+    // hop AND rogue launch at once. Dialed down from the 0.5 testing
+    // value, per direct request ("lets also drop down the percentage
+    // rogue slinky runs now"), to the ~10-15% target for a normal ride
+    // mix that was always the plan once it'd been played with.
+    const ROGUE_BOUNCE_CHANCE = 0.15;
     s.rogueSeg = pseudoRandom(performance.now() % 1000 + 29) < ROGUE_BOUNCE_CHANCE
       // excludes the LAST segment (numSegs-1) -- rogue-launching on the
       // final hop would just be a normal finish with extra steps, no
@@ -40289,458 +40338,6 @@ const MICROSCOPE_SLIDES = [
     }
   },
   {
-    id: "insectLeg",
-    name: "Grasshopper Leg (tibia, zoomed)",
-    draw: () => {
-      ctx.fillStyle = "#dce8d0";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // CONFIRMED CHANGE: cropped to just the tibia (the long spiny
-      // shin segment), zoomed in a lot closer, per direct feedback
-      // ("do part of the grasshopper leg and more zoomed in so can
-      // see little hairs or something") -- the old version tried to
-      // fit femur+tibia+tarsus all in frame, so nothing was big enough
-      // to show real texture. This fills almost the whole slide with
-      // one segment and adds fine hair-like bristles along both edges
-      // in addition to the bigger spines.
-      ctx.save();
-      ctx.rotate(0.08);
-
-      // the tibia shaft itself, running nearly edge to edge
-      ctx.fillStyle = "#7a9a48";
-      ctx.beginPath();
-      ctx.moveTo(-58, -10);
-      ctx.lineTo(58, -5);
-      ctx.lineTo(58, 6);
-      ctx.lineTo(-58, 11);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = "#4a5c2a";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // surface stipple texture -- cuticle isn't perfectly smooth
-      ctx.fillStyle = "rgba(60,90,30,0.25)";
-      for (let i = 0; i < 40; i++) {
-        const lx = -55 + pseudoRandom(i * 3.3) * 110;
-        const ly = -7 + pseudoRandom(i * 5.7 + 1) * 14;
-        ctx.beginPath();
-        ctx.arc(lx, ly, 0.6 + pseudoRandom(i * 2.1) * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // big spines along the back edge, same idea as before but bigger
-      // now that there's room
-      ctx.strokeStyle = "#3f5020";
-      ctx.lineWidth = 1.6;
-      for (let i = 0; i < 8; i++) {
-        const lx = -50 + i * 15;
-        const ly = -9 + (lx + 58) * (5 / 116);
-        ctx.beginPath();
-        ctx.moveTo(lx, ly);
-        ctx.lineTo(lx + 6, ly - 16);
-        ctx.stroke();
-      }
-
-      // fine little hairs (setae) scattered along BOTH edges -- much
-      // thinner and shorter than the spines, this is the actual
-      // "little hairs" texture that wasn't visible before at the
-      // smaller/full-leg scale
-      ctx.strokeStyle = "rgba(45,60,20,0.7)";
-      ctx.lineWidth = 0.7;
-      for (let i = 0; i < 22; i++) {
-        const lx = -54 + pseudoRandom(i * 4.4 + 2) * 108;
-        const topY = -8 + (lx + 58) * (5 / 116);
-        const botY = 10 + (lx + 58) * (5 / 116) * -1;
-        const onTop = i % 2 === 0;
-        const hy = onTop ? topY : botY;
-        const dir = onTop ? -1 : 1;
-        const len = 3 + pseudoRandom(i * 1.9) * 3;
-        const ang = (pseudoRandom(i * 2.7) - 0.5) * 0.6;
-        ctx.beginPath();
-        ctx.moveTo(lx, hy);
-        ctx.lineTo(lx + Math.sin(ang) * len, hy + dir * len);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-  },
-  {
-    // CONFIRMED CHANGE: swapped from a generic human hair to a giraffe
-    // hair, per direct request ("what if we did a dif animal hair, like,
-    // a giraffe" -- acknowledged it reads similar under a scope either
-    // way, just "a lot more whimsy"). Keeps the same proven shaft/cuticle
-    // construction as before, but the pigment itself now runs in a wide
-    // dark patch-band partway down the shaft against a pale cream base --
-    // giraffe guard hairs pulled from the edge of one of their coat
-    // patches genuinely show this kind of banded pigmentation, so it's
-    // both the whimsical choice AND a legitimate little detail.
-    id: "giraffeHair",
-    name: "Giraffe Hair (shaft, zoomed)",
-    draw: () => {
-      // pale neutral slide background -- hair samples are usually
-      // mounted dry/clear, not on a colored medium like the organic
-      // slides, so this one stays visually distinct from the others
-      ctx.fillStyle = "#eeeae2";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // the shaft runs edge-to-edge with a gentle wave, zoomed in
-      // enough that it's the only thing in frame -- built from two
-      // parallel edges offset by a fixed half-width from the same
-      // wave function, so the width stays consistent along the curve
-      // instead of ballooning
-      // CONFIRMED CHANGE: zoomed in further -- per direct feedback
-      // ("maybe we zoom in a little further") -- wider shaft, gentler
-      // wave so it still fits the frame at that size
-      const waveY = xLocal => Math.sin((xLocal + 60) * 0.04) * 7 + Math.cos((xLocal + 60) * 0.018) * 3;
-      const halfW = 22;
-      // CONFIRMED CHANGE: jittered edge instead of a perfectly smooth
-      // parallel-curve outline -- per direct feedback ("that just look
-      // like a worm... is it frazzlier or something"), a dead-smooth
-      // tube reads as a worm/tube, not hair. Real hair shafts have a
-      // slightly irregular, rough-edged silhouette even before you add
-      // any flyaway strands, so each edge sample gets a small random
-      // offset (kept tiny so the shaft still reads as one continuous
-      // strand, not a saw blade).
-      const edgeJitter = (i, sign) => (pseudoRandom(i * 4.1 + (sign > 0 ? 0 : 50)) - 0.5) * 3;
-
-      ctx.beginPath();
-      for (let i = 0; i <= 32; i++) {
-        const lx = -60 + (i / 32) * 120;
-        const ly = waveY(lx) - halfW + edgeJitter(i, 1);
-        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
-      }
-      for (let i = 32; i >= 0; i--) {
-        const lx = -60 + (i / 32) * 120;
-        const ly = waveY(lx) + halfW + edgeJitter(i, -1);
-        ctx.lineTo(lx, ly);
-      }
-      ctx.closePath();
-      // cream base tone -- lighter/warmer than the old plain-brown human
-      // hair gradient, since most of the shaft is the pale base coat color
-      const shaftGrad = ctx.createLinearGradient(-60, -halfW, -60, halfW);
-      shaftGrad.addColorStop(0, "#c9a86a");
-      shaftGrad.addColorStop(0.45, "#e6c98f");
-      shaftGrad.addColorStop(0.55, "#ecd39c");
-      shaftGrad.addColorStop(1, "#bf9c5e");
-      ctx.save();
-      ctx.clip();
-      ctx.fillStyle = shaftGrad;
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // CONFIRMED CHANGE: the giraffe-specific detail -- a wide, ragged-
-      // edged dark patch band crossing the shaft partway along its length,
-      // the classic reticulated blotch coloring, instead of one uniform
-      // pigment tone the whole way down.
-      const patchCenter = -8;
-      const patchHalfW = 24;
-      ctx.fillStyle = "#5a3a1a";
-      ctx.beginPath();
-      for (let i = 0; i <= 14; i++) {
-        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
-        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
-        const ly = waveY(lx) - halfW + jag;
-        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
-      }
-      for (let i = 14; i >= 0; i--) {
-        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
-        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
-        const ly = waveY(lx) + halfW + jag;
-        ctx.lineTo(lx, ly);
-      }
-      ctx.closePath();
-      ctx.fill();
-      // a softer mid-brown halo just outside the dark patch, so the
-      // pigment fades rather than cutting off in a hard line
-      ctx.fillStyle = "rgba(120,80,35,0.4)";
-      ctx.beginPath();
-      ctx.ellipse(patchCenter, waveY(patchCenter), patchHalfW + 8, halfW + 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#5a3a1a";
-      ctx.beginPath();
-      for (let i = 0; i <= 14; i++) {
-        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
-        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
-        const ly = waveY(lx) - halfW + jag;
-        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
-      }
-      for (let i = 14; i >= 0; i--) {
-        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
-        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
-        const ly = waveY(lx) + halfW + jag;
-        ctx.lineTo(lx, ly);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      // overlapping cuticle scales -- angled, evenly-spaced arcs
-      // crossing the shaft, each one slightly overlapping the last
-      // like roof shingles, all tilted the same direction. Same jittered
-      // weight/opacity/wobble as before so it still reads as keratin
-      // texture rather than a smooth rubbery tube.
-      for (let i = -1; i < 26; i++) {
-        const lx = -66 + i * 5;
-        const ly = waveY(lx);
-        const wobble = (pseudoRandom(i * 7.3) - 0.5) * 2.5;
-        const onPatch = Math.abs(lx - patchCenter) < patchHalfW + 4;
-        ctx.strokeStyle = onPatch
-          ? `rgba(20,10,2,${0.3 + pseudoRandom(i * 2.9) * 0.28})`
-          : `rgba(90,55,20,${0.22 + pseudoRandom(i * 2.9) * 0.22})`;
-        ctx.lineWidth = 0.75 + pseudoRandom(i * 5.5) * 0.9;
-        ctx.beginPath();
-        ctx.moveTo(lx - 3 + wobble, ly - halfW - 2);
-        ctx.quadraticCurveTo(lx + 4, ly, lx - 3 - wobble, ly + halfW + 2);
-        ctx.stroke();
-      }
-      // a thin bright highlight streak down the middle, riding the
-      // same wave as the shaft itself
-      ctx.strokeStyle = "rgba(255,245,220,0.4)";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      for (let i = 0; i <= 24; i++) {
-        const lx = -60 + (i / 24) * 120;
-        const ly = waveY(lx) - halfW * 0.35;
-        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
-      }
-      ctx.stroke();
-      ctx.restore(); // ends the shaft clip -- flyaways below need to escape it, not be trapped inside
-
-      // flyaway frizz strands -- a handful of thin curved hairs sticking
-      // OFF the main shaft's edge, tapering to a point, drawn after the
-      // clip is released so they actually poke out past the outline
-      ctx.strokeStyle = "rgba(90,58,22,0.55)";
-      for (let i = 0; i < 7; i++) {
-        const lx = -52 + pseudoRandom(i * 3.3) * 104;
-        const topSide = pseudoRandom(i * 6.6 + 2) > 0.5;
-        const baseY = waveY(lx) + (topSide ? -halfW : halfW);
-        const dir = topSide ? -1 : 1;
-        const len = 9 + pseudoRandom(i * 1.7) * 14;
-        const curl = (pseudoRandom(i * 8.8) - 0.5) * 16;
-        ctx.lineWidth = 0.6 + pseudoRandom(i * 2.2) * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(lx, baseY);
-        ctx.quadraticCurveTo(lx + curl, baseY + dir * len * 0.6, lx + curl * 1.4, baseY + dir * len);
-        ctx.stroke();
-      }
-    }
-  },
-  {
-    // new slide, per direct request ("i was thinkin blood smear"). Real
-    // stained blood smears (Wright/Giemsa stain, the classroom-standard
-    // look) read as a pale pink-lavender field packed with small pink
-    // biconcave red cells (a donut-like paler center from the dip in the
-    // middle of the disc), one much larger purple-nucleus white cell with
-    // a lobed nucleus, and tiny dark platelet flecks scattered between.
-    id: "bloodSmear",
-    name: "Blood Smear (stained)",
-    draw: () => {
-      ctx.fillStyle = "#f3dde4";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // dense field of red blood cells -- small pink discs with a lighter
-      // "dimple" in the middle from the biconcave shape, packed close
-      // together but not perfectly on a grid (real smears clump/overlap)
-      for (let i = 0; i < 46; i++) {
-        const ox = (pseudoRandom(i * 3.7) - 0.5) * 118;
-        const oy = (pseudoRandom(i * 6.1 + 1) - 0.5) * 118;
-        const r = 4.5 + pseudoRandom(i * 2.3) * 1.2;
-        const rGrad = ctx.createRadialGradient(ox, oy, r * 0.15, ox, oy, r);
-        rGrad.addColorStop(0, "rgba(230,150,165,0.85)");
-        rGrad.addColorStop(0.55, "rgba(215,110,135,0.9)");
-        rGrad.addColorStop(1, "rgba(180,70,100,0.9)");
-        ctx.fillStyle = rGrad;
-        ctx.beginPath();
-        ctx.arc(ox, oy, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // one large white blood cell -- much bigger than the red cells,
-      // with a dark purple-stained lobed nucleus and a thin pale-blue
-      // cytoplasm ring around it, the classic look next to a red-cell
-      // field
-      const wx = 8, wy = -14;
-      ctx.fillStyle = "rgba(200,220,225,0.5)";
-      ctx.beginPath();
-      ctx.arc(wx, wy, 15, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#5a3a72";
-      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
-      ctx.fill();
-      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
-      ctx.fill();
-      ctx.fillStyle = "rgba(70,40,90,0.55)";
-      ctx.beginPath();
-      ctx.ellipse(wx, wy + 1, 12, 11, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#5a3a72";
-      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
-      ctx.fill();
-      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
-      ctx.fill();
-
-      // scattered dark platelet flecks -- much smaller and darker than
-      // the red cells, no internal shading
-      ctx.fillStyle = "rgba(60,30,40,0.7)";
-      for (let i = 0; i < 16; i++) {
-        const ox = (pseudoRandom(i * 5.9 + 60) - 0.5) * 118;
-        const oy = (pseudoRandom(i * 8.4 + 61) - 0.5) * 118;
-        ctx.beginPath();
-        ctx.arc(ox, oy, 0.9 + pseudoRandom(i * 3.1) * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  },
-  {
-    // new slide, per direct request ("yesss salt crystals!"). Table salt
-    // (NaCl) crystallizes in sharp cubes -- the whole point of this slide
-    // is being visually the ODD ONE OUT next to all the soft organic
-    // blobs elsewhere: hard straight edges, geometric facets, and a cool
-    // dark background so the crystal edges catch light like glass/ice.
-    id: "saltCrystals",
-    name: "Salt Crystals (NaCl)",
-    draw: () => {
-      ctx.fillStyle = "#1c2430";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // CONFIRMED CHANGE: made genuinely translucent, per direct question
-      // ("are they partially translucent or no") -- yes, real pure NaCl
-      // crystals are actually clear/glassy like ice, not opaque chalky
-      // white. Rewrote each face with low fill alpha so the dark
-      // background shows through, added the far BACK edges of the cube
-      // (visible faintly through the near faces, the way you can see
-      // through a real glass cube's front to its back corner), and a
-      // small bright specular glint on each top face for the "catching
-      // light" glassy read.
-      const drawCube = (cx, cy, size, seed) => {
-        const topA = { x: cx - size, y: cy - size * 0.4 };
-        const topB = { x: cx, y: cy - size * 0.75 };
-        const topC = { x: cx + size, y: cy - size * 0.4 };
-        const topD = { x: cx, y: cy - size * 0.05 };
-        const botC = { x: cx + size, y: cy + size * 0.55 };
-        const botD = { x: cx, y: cy + size * 0.9 };
-        const botA = { x: cx - size, y: cy + size * 0.55 };
-        // the hidden back-bottom corner, directly opposite topD -- seeing
-        // its edges faintly through the front faces is what sells "glass"
-        // instead of "solid opaque block"
-        const backBot = { x: cx, y: cy + size * 0.2 };
-
-        // faint back-edge lines showing through the translucent faces,
-        // drawn FIRST so the front faces glaze over them softly
-        ctx.strokeStyle = "rgba(180,205,225,0.25)";
-        ctx.lineWidth = 0.6;
-        [[topA, backBot], [topC, backBot], [botA, backBot], [botC, backBot]].forEach(([p1, p2]) => {
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        });
-
-        // top face -- brightest, catches the most light, but still lets
-        // the background glow through rather than reading as solid paint
-        ctx.fillStyle = `rgba(210,230,245,${0.38 + pseudoRandom(seed) * 0.12})`;
-        ctx.beginPath();
-        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topB.x, topB.y);
-        ctx.lineTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
-        ctx.closePath(); ctx.fill();
-        // right face -- mid tone, noticeably more see-through
-        ctx.fillStyle = "rgba(140,175,205,0.32)";
-        ctx.beginPath();
-        ctx.moveTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
-        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botC.x, botC.y);
-        ctx.closePath(); ctx.fill();
-        // left face -- darkest, in shadow, but still translucent
-        ctx.fillStyle = "rgba(90,115,145,0.3)";
-        ctx.beginPath();
-        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topD.x, topD.y);
-        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botA.x, botA.y);
-        ctx.closePath(); ctx.fill();
-        // crisp bright edge lines -- this is what actually sells "hard
-        // crystal facet" instead of a soft painted shape; kept fully
-        // opaque even though the faces are translucent, since real glass
-        // edges catch and hold a hard line of light
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
-        ctx.lineWidth = 0.8;
-        [[topA, topB], [topB, topC], [topA, topD], [topC, topD], [topD, botD]].forEach(([p1, p2]) => {
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        });
-        // small bright specular glint on the top face -- the one fully-
-        // opaque bright spot per cube, since a real glassy facet has one
-        // sharp highlight even while the rest of it is see-through
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.beginPath();
-        ctx.ellipse(topB.x - size * 0.25, topB.y + size * 0.25, size * 0.12, size * 0.06, -0.4, 0, Math.PI * 2);
-        ctx.fill();
-      };
-
-      const cubes = [
-        [-30, -20, 16, 1], [18, -30, 12, 2], [32, 10, 20, 3],
-        [-14, 20, 14, 4], [-40, 22, 10, 5], [6, -4, 9, 6]
-      ];
-      // sort back-to-front by y so overlapping cubes stack believably
-      cubes.sort((a, b) => a[1] - b[1]);
-      cubes.forEach(([cx, cy, size, seed]) => drawCube(cx, cy, size, seed));
-
-      // fine crystalline glints scattered across the background --
-      // little cross-shaped sparkles, the classic "catching light" mark
-      ctx.strokeStyle = "rgba(210,225,240,0.4)";
-      ctx.lineWidth = 0.8;
-      for (let i = 0; i < 10; i++) {
-        const gx = (pseudoRandom(i * 7.7 + 20) - 0.5) * 116;
-        const gy = (pseudoRandom(i * 4.4 + 21) - 0.5) * 116;
-        const gr = 1.5 + pseudoRandom(i * 2.1) * 1.5;
-        ctx.beginPath();
-        ctx.moveTo(gx - gr, gy); ctx.lineTo(gx + gr, gy);
-        ctx.moveTo(gx, gy - gr); ctx.lineTo(gx, gy + gr);
-        ctx.stroke();
-      }
-    }
-  },
-  {
-    // new slide, per direct request ("and onion skin for sure"). The
-    // absolute classic first microscope slide -- a single translucent
-    // epidermis layer of large, thick-walled brick-like cells, each with
-    // one clearly visible round nucleus, no chlorophyll color at all
-    // (onion skin is colorless, unlike the green leaf slide).
-    id: "onionSkin",
-    name: "Onion Skin (epidermis)",
-    draw: () => {
-      ctx.fillStyle = "#e8e2c8";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // large brick-pattern cell walls -- bigger and more rectangular
-      // than the tomato skin's cells, with thick double-line walls (the
-      // signature "thick cellulose wall" look onion cells are known for)
-      ctx.strokeStyle = "rgba(150,140,90,0.7)";
-      for (let row = -3; row <= 3; row++) {
-        for (let col = -2; col <= 2; col++) {
-          const ox = col * 26 + (row % 2 === 0 ? 0 : 13) + (pseudoRandom(row * 4.1 + col) - 0.5) * 3;
-          const oy = row * 18 + (pseudoRandom(row * 2.7 + col * 1.3) - 0.5) * 3;
-          ctx.lineWidth = 2.2;
-          ctx.strokeRect(ox - 13, oy - 8, 26, 16);
-          ctx.lineWidth = 0.8;
-          ctx.strokeStyle = "rgba(180,170,120,0.5)";
-          ctx.strokeRect(ox - 11, oy - 6.5, 22, 13);
-          ctx.strokeStyle = "rgba(150,140,90,0.7)";
-
-          // faint translucent cell fill so the wall pattern doesn't sit
-          // on a flat blank background
-          ctx.fillStyle = `rgba(210,200,150,${0.12 + pseudoRandom(row * 5 + col * 2) * 0.1})`;
-          ctx.fillRect(ox - 11, oy - 6.5, 22, 13);
-
-          // one round nucleus per cell, pushed slightly off-center like
-          // a real cell rather than dead-centered every time
-          ctx.fillStyle = "rgba(120,100,50,0.4)";
-          ctx.beginPath();
-          const nx = ox + (pseudoRandom(row * 6.3 + col * 1.9) - 0.5) * 8;
-          const ny = oy + (pseudoRandom(row * 1.7 + col * 4.4) - 0.5) * 5;
-          ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-  },
-  {
     id: "pondWater",
     name: "Pond Water",
     draw: () => {
@@ -41002,203 +40599,239 @@ const MICROSCOPE_SLIDES = [
     }
   },
   {
-    // new slide, per direct request ("omg i would love to do butterfly
-    // wing scales of a monarch"). Butterfly wings under a scope are
-    // covered edge-to-edge in tiny overlapping scales, laid down like
-    // roof shingles in neat rows -- each individual scale is a tapered
-    // oval with fine parallel ridge striations. Monarch coloring gives
-    // an obvious, recognizable palette: bands of orange, black, and a
-    // scattering of white dot-scales.
-    id: "butterflyWing",
-    name: "Monarch Wing Scales (zoomed)",
+    id: "insectLeg",
+    name: "Grasshopper Leg (tibia, zoomed)",
     draw: () => {
-      ctx.fillStyle = "#2a2018";
+      ctx.fillStyle = "#dce8d0";
       ctx.fillRect(-60, -60, 120, 120);
 
-      const drawScale = (ox, oy, ang, len, wid, color) => {
-        ctx.save();
-        ctx.translate(ox, oy);
-        ctx.rotate(ang);
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(-len * 0.5, 0);
-        ctx.quadraticCurveTo(-len * 0.1, -wid * 0.5, len * 0.5, 0);
-        ctx.quadraticCurveTo(-len * 0.1, wid * 0.5, -len * 0.5, 0);
-        ctx.closePath();
-        ctx.fill();
-        // fine parallel ridge striations running the length of the scale
-        ctx.strokeStyle = "rgba(0,0,0,0.18)";
-        ctx.lineWidth = 0.5;
-        for (let s = -1; s <= 1; s++) {
-          ctx.beginPath();
-          ctx.moveTo(-len * 0.45, s * wid * 0.28);
-          ctx.lineTo(len * 0.42, s * wid * 0.22);
-          ctx.stroke();
-        }
-        ctx.restore();
-      };
-
-      // overlapping shingled rows -- alternating color bands (orange,
-      // black, orange, with a thin white band) so it reads unmistakably
-      // as monarch coloring rather than generic scales
-      const rowColors = ["#e0781f", "#e0781f", "#231b12", "#e0781f", "#f0ead8", "#e0781f", "#231b12"];
-      for (let row = -3; row <= 3; row++) {
-        const baseColor = rowColors[row + 3];
-        const oy = row * 15;
-        for (let col = -5; col <= 5; col++) {
-          const ox = col * 13 + (row % 2 === 0 ? 0 : 6.5);
-          const jx = ox + (pseudoRandom(row * 7 + col * 3.1) - 0.5) * 3;
-          const jy = oy + (pseudoRandom(row * 2.2 + col * 5.5) - 0.5) * 3;
-          const shade = pseudoRandom(row * 4.4 + col * 1.7) * 0.18 - 0.09;
-          const c = shadeColor(baseColor, shade * 255);
-          drawScale(jx, jy, 0.25 + (pseudoRandom(row * 3.3 + col) - 0.5) * 0.3, 15, 7, c);
-        }
-      }
-      // a few stray individual scales that have lifted/detached, drifting
-      // at odd angles on top of the shingled field -- keeps it from
-      // reading as one flat printed pattern
-      for (let i = 0; i < 6; i++) {
-        const ox = (pseudoRandom(i * 9.9 + 500) - 0.5) * 100;
-        const oy = (pseudoRandom(i * 6.6 + 501) - 0.5) * 100;
-        const ang = pseudoRandom(i * 3.3 + 502) * Math.PI * 2;
-        drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f");
-      }
-    }
-  },
-  {
-    // new slide, per direct request ("and bread mold"). Rhizopus (common
-    // black bread mold) reads as a hazy tangle of thin translucent hyphae
-    // threads with round dark sporangia (spore capsules) held up on thin
-    // stalks -- the sporangia are the unmistakable "mold under a scope"
-    // signature shape.
-    id: "breadMold",
-    name: "Bread Mold (Rhizopus)",
-    draw: () => {
-      ctx.fillStyle = "#e4ded0";
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // tangled hyphae threads -- long wandering translucent lines
-      // crossing every which way across the whole slide
-      ctx.strokeStyle = "rgba(210,205,195,0.55)";
-      for (let i = 0; i < 18; i++) {
-        const startX = (pseudoRandom(i * 5.5) - 0.5) * 130;
-        const startY = (pseudoRandom(i * 7.7 + 1) - 0.5) * 130;
-        ctx.lineWidth = 0.8 + pseudoRandom(i * 2.2) * 0.6;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        let px = startX, py = startY;
-        for (let s = 0; s < 5; s++) {
-          const nx = px + (pseudoRandom(i * 3.1 + s * 9.9) - 0.5) * 45;
-          const ny = py + (pseudoRandom(i * 4.4 + s * 6.6) - 0.5) * 45;
-          ctx.quadraticCurveTo(px + (nx - px) * 0.5, py + (ny - py) * 0.5 + 5, nx, ny);
-          px = nx; py = ny;
-        }
-        ctx.stroke();
-      }
-
-      // sporangiophores -- thin upright stalks each topped with a dark
-      // round sporangium, scattered across the field
-      const stalks = [
-        [-32, -22, 1], [12, -34, 2], [30, -6, 3], [-8, 18, 4],
-        [38, 26, 5], [-40, 20, 6], [4, -8, 7]
-      ];
-      stalks.forEach(([sx, sy, seed]) => {
-        const h = 14 + pseudoRandom(seed) * 8;
-        ctx.strokeStyle = "rgba(160,150,130,0.7)";
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy + h);
-        ctx.lineTo(sx + (pseudoRandom(seed * 1.7) - 0.5) * 4, sy);
-        ctx.stroke();
-        const r = 4.5 + pseudoRandom(seed * 3.3) * 2;
-        const sGrad = ctx.createRadialGradient(sx, sy - r * 0.3, 0.5, sx, sy, r);
-        sGrad.addColorStop(0, "rgba(80,70,60,0.85)");
-        sGrad.addColorStop(0.6, "rgba(40,32,24,0.9)");
-        sGrad.addColorStop(1, "rgba(15,10,6,0.95)");
-        ctx.fillStyle = sGrad;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
-        // tiny highlight so the sporangium reads as a round capsule,
-        // not a flat black dot
-        ctx.fillStyle = "rgba(200,190,180,0.3)";
-        ctx.beginPath();
-        ctx.arc(sx - r * 0.3, sy - r * 0.3, r * 0.3, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    }
-  },
-  {
-    // new slide, per direct request ("and for feather lets do a flamingo
-    // feather"). The unmistakable microscope-feather signature is the
-    // barb structure: a central shaft (rachis) with rows of thin barbs
-    // branching off at an angle on both sides, each barb itself lined
-    // with even finer barbules -- done here in flamingo pink/coral so
-    // it's instantly a different bird than a generic gray/brown feather.
-    id: "flamingoFeather",
-    name: "Flamingo Feather (barbs, zoomed)",
-    draw: () => {
-      // CONFIRMED CHANGE: much deeper background + brighter, more
-      // saturated barb color, per direct feedback ("i want more contrast
-      // of flamingo w the background") -- the original pale-pink-on-pale-
-      // pink read as almost one flat color at this size. Same dark-field
-      // approach as the salt crystal slide (deep background, bright
-      // saturated subject) instead of the light pastel wash.
-      const bgGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, 85);
-      bgGrad.addColorStop(0, "#4a2530");
-      bgGrad.addColorStop(1, "#2a1218");
-      ctx.fillStyle = bgGrad;
-      ctx.fillRect(-60, -60, 120, 120);
-
-      // the rachis (central shaft) running diagonally across the frame
-      const shaftAng = 0.3;
+      // CONFIRMED CHANGE: cropped to just the tibia (the long spiny
+      // shin segment), zoomed in a lot closer, per direct feedback
+      // ("do part of the grasshopper leg and more zoomed in so can
+      // see little hairs or something") -- the old version tried to
+      // fit femur+tibia+tarsus all in frame, so nothing was big enough
+      // to show real texture. This fills almost the whole slide with
+      // one segment and adds fine hair-like bristles along both edges
+      // in addition to the bigger spines.
       ctx.save();
-      ctx.rotate(shaftAng);
-      const shaftGrad = ctx.createLinearGradient(0, -3, 0, 3);
-      shaftGrad.addColorStop(0, "#ff8fa8");
-      shaftGrad.addColorStop(0.5, "#ffc4d2");
-      shaftGrad.addColorStop(1, "#e05878");
-      ctx.fillStyle = shaftGrad;
-      ctx.fillRect(-85, -3, 170, 6);
-      ctx.strokeStyle = "rgba(255,150,175,0.7)";
-      ctx.lineWidth = 0.8;
-      ctx.strokeRect(-85, -3, 170, 6);
+      ctx.rotate(0.08);
 
-      // barbs branching off both sides at a consistent angle, each one
-      // itself fringed with tiny barbules (the fine hair-like fringe
-      // along each barb) -- this double layer of branching IS the
-      // signature "feather under a scope" texture. Colors bumped much
-      // brighter/more saturated (and more opaque) so they pop hard
-      // against the now-dark background instead of blending into it.
-      for (let i = -14; i <= 14; i++) {
-        const bx = i * 6;
-        [-1, 1].forEach(dir => {
-          const barbAng = dir * 0.9;
-          const barbLen = 26 - Math.abs(i) * 0.5;
-          const tipX = bx + Math.cos(barbAng) * barbLen;
-          const tipY = dir * 3 + Math.sin(barbAng) * barbLen * dir;
-          ctx.strokeStyle = "rgba(255,110,145,0.95)";
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(bx, dir * 3);
-          ctx.lineTo(tipX, tipY);
-          ctx.stroke();
-          // fine barbules -- short strokes fringing the barb, angled
-          // forward toward the feather tip
-          ctx.strokeStyle = "rgba(255,170,190,0.75)";
-          ctx.lineWidth = 0.6;
-          for (let b = 0.15; b < 0.95; b += 0.18) {
-            const fx = bx + (tipX - bx) * b;
-            const fy = dir * 3 + (tipY - dir * 3) * b;
-            const flen = 4.5 * (1 - b * 0.4);
-            ctx.beginPath();
-            ctx.moveTo(fx, fy);
-            ctx.lineTo(fx + Math.cos(barbAng + dir * 0.9) * flen, fy + Math.sin(barbAng + dir * 0.9) * flen * dir);
-            ctx.stroke();
-          }
-        });
+      // the tibia shaft itself, running nearly edge to edge
+      ctx.fillStyle = "#7a9a48";
+      ctx.beginPath();
+      ctx.moveTo(-58, -10);
+      ctx.lineTo(58, -5);
+      ctx.lineTo(58, 6);
+      ctx.lineTo(-58, 11);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#4a5c2a";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // surface stipple texture -- cuticle isn't perfectly smooth
+      ctx.fillStyle = "rgba(60,90,30,0.25)";
+      for (let i = 0; i < 40; i++) {
+        const lx = -55 + pseudoRandom(i * 3.3) * 110;
+        const ly = -7 + pseudoRandom(i * 5.7 + 1) * 14;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 0.6 + pseudoRandom(i * 2.1) * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // big spines along the back edge, same idea as before but bigger
+      // now that there's room
+      ctx.strokeStyle = "#3f5020";
+      ctx.lineWidth = 1.6;
+      for (let i = 0; i < 8; i++) {
+        const lx = -50 + i * 15;
+        const ly = -9 + (lx + 58) * (5 / 116);
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + 6, ly - 16);
+        ctx.stroke();
+      }
+
+      // fine little hairs (setae) scattered along BOTH edges -- much
+      // thinner and shorter than the spines, this is the actual
+      // "little hairs" texture that wasn't visible before at the
+      // smaller/full-leg scale
+      ctx.strokeStyle = "rgba(45,60,20,0.7)";
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < 22; i++) {
+        const lx = -54 + pseudoRandom(i * 4.4 + 2) * 108;
+        const topY = -8 + (lx + 58) * (5 / 116);
+        const botY = 10 + (lx + 58) * (5 / 116) * -1;
+        const onTop = i % 2 === 0;
+        const hy = onTop ? topY : botY;
+        const dir = onTop ? -1 : 1;
+        const len = 3 + pseudoRandom(i * 1.9) * 3;
+        const ang = (pseudoRandom(i * 2.7) - 0.5) * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(lx, hy);
+        ctx.lineTo(lx + Math.sin(ang) * len, hy + dir * len);
+        ctx.stroke();
       }
       ctx.restore();
+    }
+  },
+  {
+    // CONFIRMED CHANGE: swapped from a generic human hair to a giraffe
+    // hair, per direct request ("what if we did a dif animal hair, like,
+    // a giraffe" -- acknowledged it reads similar under a scope either
+    // way, just "a lot more whimsy"). Keeps the same proven shaft/cuticle
+    // construction as before, but the pigment itself now runs in a wide
+    // dark patch-band partway down the shaft against a pale cream base --
+    // giraffe guard hairs pulled from the edge of one of their coat
+    // patches genuinely show this kind of banded pigmentation, so it's
+    // both the whimsical choice AND a legitimate little detail.
+    id: "giraffeHair",
+    name: "Giraffe Hair (shaft, zoomed)",
+    draw: () => {
+      // pale neutral slide background -- hair samples are usually
+      // mounted dry/clear, not on a colored medium like the organic
+      // slides, so this one stays visually distinct from the others
+      ctx.fillStyle = "#eeeae2";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // the shaft runs edge-to-edge with a gentle wave, zoomed in
+      // enough that it's the only thing in frame -- built from two
+      // parallel edges offset by a fixed half-width from the same
+      // wave function, so the width stays consistent along the curve
+      // instead of ballooning
+      // CONFIRMED CHANGE: zoomed in further -- per direct feedback
+      // ("maybe we zoom in a little further") -- wider shaft, gentler
+      // wave so it still fits the frame at that size
+      const waveY = xLocal => Math.sin((xLocal + 60) * 0.04) * 7 + Math.cos((xLocal + 60) * 0.018) * 3;
+      const halfW = 22;
+      // CONFIRMED CHANGE: jittered edge instead of a perfectly smooth
+      // parallel-curve outline -- per direct feedback ("that just look
+      // like a worm... is it frazzlier or something"), a dead-smooth
+      // tube reads as a worm/tube, not hair. Real hair shafts have a
+      // slightly irregular, rough-edged silhouette even before you add
+      // any flyaway strands, so each edge sample gets a small random
+      // offset (kept tiny so the shaft still reads as one continuous
+      // strand, not a saw blade).
+      const edgeJitter = (i, sign) => (pseudoRandom(i * 4.1 + (sign > 0 ? 0 : 50)) - 0.5) * 3;
+
+      ctx.beginPath();
+      for (let i = 0; i <= 32; i++) {
+        const lx = -60 + (i / 32) * 120;
+        const ly = waveY(lx) - halfW + edgeJitter(i, 1);
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 32; i >= 0; i--) {
+        const lx = -60 + (i / 32) * 120;
+        const ly = waveY(lx) + halfW + edgeJitter(i, -1);
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      // cream base tone -- lighter/warmer than the old plain-brown human
+      // hair gradient, since most of the shaft is the pale base coat color
+      const shaftGrad = ctx.createLinearGradient(-60, -halfW, -60, halfW);
+      shaftGrad.addColorStop(0, "#c9a86a");
+      shaftGrad.addColorStop(0.45, "#e6c98f");
+      shaftGrad.addColorStop(0.55, "#ecd39c");
+      shaftGrad.addColorStop(1, "#bf9c5e");
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = shaftGrad;
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // CONFIRMED CHANGE: the giraffe-specific detail -- a wide, ragged-
+      // edged dark patch band crossing the shaft partway along its length,
+      // the classic reticulated blotch coloring, instead of one uniform
+      // pigment tone the whole way down.
+      const patchCenter = -8;
+      const patchHalfW = 24;
+      ctx.fillStyle = "#5a3a1a";
+      ctx.beginPath();
+      for (let i = 0; i <= 14; i++) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
+        const ly = waveY(lx) - halfW + jag;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 14; i >= 0; i--) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
+        const ly = waveY(lx) + halfW + jag;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      ctx.fill();
+      // a softer mid-brown halo just outside the dark patch, so the
+      // pigment fades rather than cutting off in a hard line
+      ctx.fillStyle = "rgba(120,80,35,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(patchCenter, waveY(patchCenter), patchHalfW + 8, halfW + 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a1a";
+      ctx.beginPath();
+      for (let i = 0; i <= 14; i++) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 6.6) - 0.5) * 6;
+        const ly = waveY(lx) - halfW + jag;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      for (let i = 14; i >= 0; i--) {
+        const lx = patchCenter - patchHalfW + (i / 14) * (patchHalfW * 2);
+        const jag = (pseudoRandom(i * 8.1 + 40) - 0.5) * 6;
+        const ly = waveY(lx) + halfW + jag;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // overlapping cuticle scales -- angled, evenly-spaced arcs
+      // crossing the shaft, each one slightly overlapping the last
+      // like roof shingles, all tilted the same direction. Same jittered
+      // weight/opacity/wobble as before so it still reads as keratin
+      // texture rather than a smooth rubbery tube.
+      for (let i = -1; i < 26; i++) {
+        const lx = -66 + i * 5;
+        const ly = waveY(lx);
+        const wobble = (pseudoRandom(i * 7.3) - 0.5) * 2.5;
+        const onPatch = Math.abs(lx - patchCenter) < patchHalfW + 4;
+        ctx.strokeStyle = onPatch
+          ? `rgba(20,10,2,${0.3 + pseudoRandom(i * 2.9) * 0.28})`
+          : `rgba(90,55,20,${0.22 + pseudoRandom(i * 2.9) * 0.22})`;
+        ctx.lineWidth = 0.75 + pseudoRandom(i * 5.5) * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(lx - 3 + wobble, ly - halfW - 2);
+        ctx.quadraticCurveTo(lx + 4, ly, lx - 3 - wobble, ly + halfW + 2);
+        ctx.stroke();
+      }
+      // a thin bright highlight streak down the middle, riding the
+      // same wave as the shaft itself
+      ctx.strokeStyle = "rgba(255,245,220,0.4)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const lx = -60 + (i / 24) * 120;
+        const ly = waveY(lx) - halfW * 0.35;
+        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+      }
+      ctx.stroke();
+      ctx.restore(); // ends the shaft clip -- flyaways below need to escape it, not be trapped inside
+
+      // flyaway frizz strands -- a handful of thin curved hairs sticking
+      // OFF the main shaft's edge, tapering to a point, drawn after the
+      // clip is released so they actually poke out past the outline
+      ctx.strokeStyle = "rgba(90,58,22,0.55)";
+      for (let i = 0; i < 7; i++) {
+        const lx = -52 + pseudoRandom(i * 3.3) * 104;
+        const topSide = pseudoRandom(i * 6.6 + 2) > 0.5;
+        const baseY = waveY(lx) + (topSide ? -halfW : halfW);
+        const dir = topSide ? -1 : 1;
+        const len = 9 + pseudoRandom(i * 1.7) * 14;
+        const curl = (pseudoRandom(i * 8.8) - 0.5) * 16;
+        ctx.lineWidth = 0.6 + pseudoRandom(i * 2.2) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(lx, baseY);
+        ctx.quadraticCurveTo(lx + curl, baseY + dir * len * 0.6, lx + curl * 1.4, baseY + dir * len);
+        ctx.stroke();
+      }
     }
   },
   {
@@ -41333,6 +40966,178 @@ const MICROSCOPE_SLIDES = [
     }
   },
   {
+    // new slide, per direct request ("i was thinkin blood smear"). Real
+    // stained blood smears (Wright/Giemsa stain, the classroom-standard
+    // look) read as a pale pink-lavender field packed with small pink
+    // biconcave red cells (a donut-like paler center from the dip in the
+    // middle of the disc), one much larger purple-nucleus white cell with
+    // a lobed nucleus, and tiny dark platelet flecks scattered between.
+    id: "bloodSmear",
+    name: "Blood Smear (stained)",
+    draw: () => {
+      ctx.fillStyle = "#f3dde4";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // dense field of red blood cells -- small pink discs with a lighter
+      // "dimple" in the middle from the biconcave shape, packed close
+      // together but not perfectly on a grid (real smears clump/overlap)
+      for (let i = 0; i < 46; i++) {
+        const ox = (pseudoRandom(i * 3.7) - 0.5) * 118;
+        const oy = (pseudoRandom(i * 6.1 + 1) - 0.5) * 118;
+        const r = 4.5 + pseudoRandom(i * 2.3) * 1.2;
+        const rGrad = ctx.createRadialGradient(ox, oy, r * 0.15, ox, oy, r);
+        rGrad.addColorStop(0, "rgba(230,150,165,0.85)");
+        rGrad.addColorStop(0.55, "rgba(215,110,135,0.9)");
+        rGrad.addColorStop(1, "rgba(180,70,100,0.9)");
+        ctx.fillStyle = rGrad;
+        ctx.beginPath();
+        ctx.arc(ox, oy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // one large white blood cell -- much bigger than the red cells,
+      // with a dark purple-stained lobed nucleus and a thin pale-blue
+      // cytoplasm ring around it, the classic look next to a red-cell
+      // field
+      const wx = 8, wy = -14;
+      ctx.fillStyle = "rgba(200,220,225,0.5)";
+      ctx.beginPath();
+      ctx.arc(wx, wy, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a72";
+      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
+      ctx.fill();
+      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
+      ctx.fill();
+      ctx.fillStyle = "rgba(70,40,90,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(wx, wy + 1, 12, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#5a3a72";
+      organicBlobPath(ctx, wx - 4, wy - 3, 6, 5.5, 900, 8);
+      ctx.fill();
+      organicBlobPath(ctx, wx + 5, wy + 4, 5.5, 5, 910, 8);
+      ctx.fill();
+
+      // scattered dark platelet flecks -- much smaller and darker than
+      // the red cells, no internal shading
+      ctx.fillStyle = "rgba(60,30,40,0.7)";
+      for (let i = 0; i < 16; i++) {
+        const ox = (pseudoRandom(i * 5.9 + 60) - 0.5) * 118;
+        const oy = (pseudoRandom(i * 8.4 + 61) - 0.5) * 118;
+        ctx.beginPath();
+        ctx.arc(ox, oy, 0.9 + pseudoRandom(i * 3.1) * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("yesss salt crystals!"). Table salt
+    // (NaCl) crystallizes in sharp cubes -- the whole point of this slide
+    // is being visually the ODD ONE OUT next to all the soft organic
+    // blobs elsewhere: hard straight edges, geometric facets, and a cool
+    // dark background so the crystal edges catch light like glass/ice.
+    id: "saltCrystals",
+    name: "Salt Crystals (NaCl)",
+    draw: () => {
+      ctx.fillStyle = "#1c2430";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // CONFIRMED CHANGE: made genuinely translucent, per direct question
+      // ("are they partially translucent or no") -- yes, real pure NaCl
+      // crystals are actually clear/glassy like ice, not opaque chalky
+      // white. Rewrote each face with low fill alpha so the dark
+      // background shows through, added the far BACK edges of the cube
+      // (visible faintly through the near faces, the way you can see
+      // through a real glass cube's front to its back corner), and a
+      // small bright specular glint on each top face for the "catching
+      // light" glassy read.
+      const drawCube = (cx, cy, size, seed) => {
+        const topA = { x: cx - size, y: cy - size * 0.4 };
+        const topB = { x: cx, y: cy - size * 0.75 };
+        const topC = { x: cx + size, y: cy - size * 0.4 };
+        const topD = { x: cx, y: cy - size * 0.05 };
+        const botC = { x: cx + size, y: cy + size * 0.55 };
+        const botD = { x: cx, y: cy + size * 0.9 };
+        const botA = { x: cx - size, y: cy + size * 0.55 };
+        // the hidden back-bottom corner, directly opposite topD -- seeing
+        // its edges faintly through the front faces is what sells "glass"
+        // instead of "solid opaque block"
+        const backBot = { x: cx, y: cy + size * 0.2 };
+
+        // faint back-edge lines showing through the translucent faces,
+        // drawn FIRST so the front faces glaze over them softly
+        ctx.strokeStyle = "rgba(180,205,225,0.25)";
+        ctx.lineWidth = 0.6;
+        [[topA, backBot], [topC, backBot], [botA, backBot], [botC, backBot]].forEach(([p1, p2]) => {
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        });
+
+        // top face -- brightest, catches the most light, but still lets
+        // the background glow through rather than reading as solid paint
+        ctx.fillStyle = `rgba(210,230,245,${0.38 + pseudoRandom(seed) * 0.12})`;
+        ctx.beginPath();
+        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topB.x, topB.y);
+        ctx.lineTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
+        ctx.closePath(); ctx.fill();
+        // right face -- mid tone, noticeably more see-through
+        ctx.fillStyle = "rgba(140,175,205,0.32)";
+        ctx.beginPath();
+        ctx.moveTo(topC.x, topC.y); ctx.lineTo(topD.x, topD.y);
+        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botC.x, botC.y);
+        ctx.closePath(); ctx.fill();
+        // left face -- darkest, in shadow, but still translucent
+        ctx.fillStyle = "rgba(90,115,145,0.3)";
+        ctx.beginPath();
+        ctx.moveTo(topA.x, topA.y); ctx.lineTo(topD.x, topD.y);
+        ctx.lineTo(botD.x, botD.y); ctx.lineTo(botA.x, botA.y);
+        ctx.closePath(); ctx.fill();
+        // crisp bright edge lines -- this is what actually sells "hard
+        // crystal facet" instead of a soft painted shape; kept fully
+        // opaque even though the faces are translucent, since real glass
+        // edges catch and hold a hard line of light
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.lineWidth = 0.8;
+        [[topA, topB], [topB, topC], [topA, topD], [topC, topD], [topD, botD]].forEach(([p1, p2]) => {
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        });
+        // small bright specular glint on the top face -- the one fully-
+        // opaque bright spot per cube, since a real glassy facet has one
+        // sharp highlight even while the rest of it is see-through
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.ellipse(topB.x - size * 0.25, topB.y + size * 0.25, size * 0.12, size * 0.06, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      const cubes = [
+        [-30, -20, 16, 1], [18, -30, 12, 2], [32, 10, 20, 3],
+        [-14, 20, 14, 4], [-40, 22, 10, 5], [6, -4, 9, 6]
+      ];
+      // sort back-to-front by y so overlapping cubes stack believably
+      cubes.sort((a, b) => a[1] - b[1]);
+      cubes.forEach(([cx, cy, size, seed]) => drawCube(cx, cy, size, seed));
+
+      // fine crystalline glints scattered across the background --
+      // little cross-shaped sparkles, the classic "catching light" mark
+      ctx.strokeStyle = "rgba(210,225,240,0.4)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 10; i++) {
+        const gx = (pseudoRandom(i * 7.7 + 20) - 0.5) * 116;
+        const gy = (pseudoRandom(i * 4.4 + 21) - 0.5) * 116;
+        const gr = 1.5 + pseudoRandom(i * 2.1) * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(gx - gr, gy); ctx.lineTo(gx + gr, gy);
+        ctx.moveTo(gx, gy - gr); ctx.lineTo(gx, gy + gr);
+        ctx.stroke();
+      }
+    }
+  },
+  {
     // new slide, per direct request ("or a spiderweb!"). Under a scope,
     // spider silk shows its real defining feature: tiny beaded droplets
     // of glue strung along the capture-line threads (very different from
@@ -41342,13 +41147,21 @@ const MICROSCOPE_SLIDES = [
     id: "spiderweb",
     name: "Spider Silk (capture threads)",
     draw: () => {
-      ctx.fillStyle = "#dfe6e2";
+      // CONFIRMED CHANGE: much darker background + brighter, more
+      // opaque silk, per direct feedback ("lets make spider silk more
+      // contrasting") -- same dark-field move as the flamingo feather
+      // and salt crystal slides, since pale-on-pale was this slide's
+      // problem too.
+      const bgGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, 85);
+      bgGrad.addColorStop(0, "#1c2624");
+      bgGrad.addColorStop(1, "#0a1210");
+      ctx.fillStyle = bgGrad;
       ctx.fillRect(-60, -60, 120, 120);
       const t = microscopeAnimClock * 0.001;
 
       // a few smooth non-sticky frame/radial threads crossing the frame,
       // for contrast against the beaded capture threads
-      ctx.strokeStyle = "rgba(140,150,145,0.55)";
+      ctx.strokeStyle = "rgba(190,215,205,0.5)";
       ctx.lineWidth = 1;
       [[-60, -50, 60, 40], [-60, 20, 60, -30]].forEach(([x1, y1, x2, y2]) => {
         ctx.beginPath();
@@ -41359,14 +41172,16 @@ const MICROSCOPE_SLIDES = [
 
       // the capture threads -- gently sagging strands (a slight catenary
       // curve, not ruler-straight) each strung with a row of small glue
-      // droplets ("beads on a string" is THE signature capture-silk look)
+      // droplets ("beads on a string" is THE signature capture-silk look).
+      // Both the thread line and the droplets bumped much brighter/more
+      // opaque so they read clearly against the now-dark background.
       const threads = [
         { y0: -22, sag: 10, seed: 1 }, { y0: -4, sag: 14, seed: 2 },
         { y0: 16, sag: 9, seed: 3 }, { y0: 34, sag: 12, seed: 4 }
       ];
       threads.forEach(th => {
-        ctx.strokeStyle = "rgba(120,130,125,0.4)";
-        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = "rgba(220,235,228,0.85)";
+        ctx.lineWidth = 0.9;
         ctx.beginPath();
         for (let i = 0; i <= 24; i++) {
           const lx = -60 + (i / 24) * 120;
@@ -41385,25 +41200,677 @@ const MICROSCOPE_SLIDES = [
           const lx = -56 + frac * 112;
           const ly = th.y0 + Math.sin(frac * Math.PI) * th.sag;
           const r = 2 + pseudoRandom(th.seed * 3.3 + d * 1.7) * 1.3;
-          ctx.fillStyle = "rgba(210,220,215,0.55)";
+          ctx.fillStyle = "rgba(225,240,232,0.9)";
           ctx.beginPath();
           ctx.arc(lx, ly, r, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = "rgba(150,165,158,0.5)";
-          ctx.lineWidth = 0.5;
+          ctx.strokeStyle = "rgba(255,255,255,0.6)";
+          ctx.lineWidth = 0.6;
           ctx.stroke();
           // the glint -- brightness pulses over time with a per-droplet
           // phase offset, so the sparkle travels down the thread rather
           // than all beads flashing in unison
           const glintPhase = (t * 0.6 + frac * 2 + th.seed) % 1;
-          const glintA = Math.max(0, Math.sin(glintPhase * Math.PI * 2)) * 0.9;
+          const glintA = Math.max(0, Math.sin(glintPhase * Math.PI * 2)) * 0.95;
           if (glintA > 0.05) {
             ctx.fillStyle = `rgba(255,255,255,${glintA})`;
             ctx.beginPath();
-            ctx.arc(lx - r * 0.3, ly - r * 0.3, r * 0.4, 0, Math.PI * 2);
+            ctx.arc(lx - r * 0.3, ly - r * 0.3, r * 0.45, 0, Math.PI * 2);
             ctx.fill();
           }
         }
+      });
+    }
+  },
+  {
+    // new slide, per direct request ("and onion skin for sure"). The
+    // absolute classic first microscope slide -- a single translucent
+    // epidermis layer of large, thick-walled brick-like cells, each with
+    // one clearly visible round nucleus, no chlorophyll color at all
+    // (onion skin is colorless, unlike the green leaf slide).
+    id: "onionSkin",
+    name: "Onion Skin (epidermis)",
+    draw: () => {
+      ctx.fillStyle = "#e8e2c8";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // large brick-pattern cell walls -- bigger and more rectangular
+      // than the tomato skin's cells, with thick double-line walls (the
+      // signature "thick cellulose wall" look onion cells are known for)
+      ctx.strokeStyle = "rgba(150,140,90,0.7)";
+      for (let row = -3; row <= 3; row++) {
+        for (let col = -2; col <= 2; col++) {
+          const ox = col * 26 + (row % 2 === 0 ? 0 : 13) + (pseudoRandom(row * 4.1 + col) - 0.5) * 3;
+          const oy = row * 18 + (pseudoRandom(row * 2.7 + col * 1.3) - 0.5) * 3;
+          ctx.lineWidth = 2.2;
+          ctx.strokeRect(ox - 13, oy - 8, 26, 16);
+          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = "rgba(180,170,120,0.5)";
+          ctx.strokeRect(ox - 11, oy - 6.5, 22, 13);
+          ctx.strokeStyle = "rgba(150,140,90,0.7)";
+
+          // faint translucent cell fill so the wall pattern doesn't sit
+          // on a flat blank background
+          ctx.fillStyle = `rgba(210,200,150,${0.12 + pseudoRandom(row * 5 + col * 2) * 0.1})`;
+          ctx.fillRect(ox - 11, oy - 6.5, 22, 13);
+
+          // one round nucleus per cell, pushed slightly off-center like
+          // a real cell rather than dead-centered every time
+          ctx.fillStyle = "rgba(120,100,50,0.4)";
+          ctx.beginPath();
+          const nx = ox + (pseudoRandom(row * 6.3 + col * 1.9) - 0.5) * 8;
+          const ny = oy + (pseudoRandom(row * 1.7 + col * 4.4) - 0.5) * 5;
+          ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("omg i would love to do butterfly
+    // wing scales of a monarch"). Butterfly wings under a scope are
+    // covered edge-to-edge in tiny overlapping scales, laid down like
+    // roof shingles in neat rows -- each individual scale is a tapered
+    // oval with fine parallel ridge striations. Monarch coloring gives
+    // an obvious, recognizable palette: bands of orange, black, and a
+    // scattering of white dot-scales.
+    id: "butterflyWing",
+    name: "Monarch Wing Scales (zoomed)",
+    draw: () => {
+      ctx.fillStyle = "#2a2018";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      const drawScale = (ox, oy, ang, len, wid, color) => {
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(ang);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(-len * 0.5, 0);
+        ctx.quadraticCurveTo(-len * 0.1, -wid * 0.5, len * 0.5, 0);
+        ctx.quadraticCurveTo(-len * 0.1, wid * 0.5, -len * 0.5, 0);
+        ctx.closePath();
+        ctx.fill();
+        // fine parallel ridge striations running the length of the scale
+        ctx.strokeStyle = "rgba(0,0,0,0.18)";
+        ctx.lineWidth = 0.5;
+        for (let s = -1; s <= 1; s++) {
+          ctx.beginPath();
+          ctx.moveTo(-len * 0.45, s * wid * 0.28);
+          ctx.lineTo(len * 0.42, s * wid * 0.22);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      // overlapping shingled rows -- alternating color bands (orange,
+      // black, orange, with a thin white band) so it reads unmistakably
+      // as monarch coloring rather than generic scales
+      const rowColors = ["#e0781f", "#e0781f", "#231b12", "#e0781f", "#f0ead8", "#e0781f", "#231b12"];
+      for (let row = -3; row <= 3; row++) {
+        const baseColor = rowColors[row + 3];
+        const oy = row * 15;
+        for (let col = -5; col <= 5; col++) {
+          const ox = col * 13 + (row % 2 === 0 ? 0 : 6.5);
+          const jx = ox + (pseudoRandom(row * 7 + col * 3.1) - 0.5) * 3;
+          const jy = oy + (pseudoRandom(row * 2.2 + col * 5.5) - 0.5) * 3;
+          const shade = pseudoRandom(row * 4.4 + col * 1.7) * 0.18 - 0.09;
+          const c = shadeColor(baseColor, shade * 255);
+          drawScale(jx, jy, 0.25 + (pseudoRandom(row * 3.3 + col) - 0.5) * 0.3, 15, 7, c);
+        }
+      }
+      // a few stray individual scales that have lifted/detached, drifting
+      // at odd angles on top of the shingled field -- keeps it from
+      // reading as one flat printed pattern
+      for (let i = 0; i < 6; i++) {
+        const ox = (pseudoRandom(i * 9.9 + 500) - 0.5) * 100;
+        const oy = (pseudoRandom(i * 6.6 + 501) - 0.5) * 100;
+        const ang = pseudoRandom(i * 3.3 + 502) * Math.PI * 2;
+        drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f");
+      }
+    }
+  },
+  {
+    // new slide, per direct request ("orrrrr ocean water!!"). The
+    // signature ocean-water read is plankton -- both phytoplankton
+    // (tiny geometric diatoms/dinoflagellates) and a bit of visible
+    // salt crystal residue, plus the water itself carries a cooler
+    // blue-green tint than fresh water. A small copepod (a common,
+    // very recognizable planktonic crustacean) given real swimming
+    // motion makes this a third "movement slide."
+    id: "oceanWater",
+    name: "Ocean Water (plankton)",
+    draw: () => {
+      const bgGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, 85);
+      bgGrad.addColorStop(0, "#1f4a52");
+      bgGrad.addColorStop(1, "#0d2830");
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(-60, -60, 120, 120);
+      const t = microscopeAnimClock * 0.001;
+
+      // phytoplankton -- small spiky/spined diatoms and star-shaped
+      // dinoflagellates scattered through the field, slowly tumbling
+      for (let i = 0; i < 9; i++) {
+        const px = (pseudoRandom(i * 5.1 + 20) - 0.5) * 106 + Math.sin(t * 0.12 + i) * 6;
+        const py = (pseudoRandom(i * 8.4 + 21) - 0.5) * 106 + Math.cos(t * 0.1 + i * 1.3) * 6;
+        const prot = t * 0.3 + i * 2;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(prot);
+        const spiky = pseudoRandom(i * 3.3) > 0.5;
+        ctx.fillStyle = "rgba(180,230,215,0.7)";
+        ctx.strokeStyle = "rgba(120,190,175,0.6)";
+        ctx.lineWidth = 0.6;
+        if (spiky) {
+          // a round diatom body with fine radiating spines
+          ctx.beginPath();
+          ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          for (let s = 0; s < 8; s++) {
+            const sang = (s / 8) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(sang) * 3.2, Math.sin(sang) * 3.2);
+            ctx.lineTo(Math.cos(sang) * 7, Math.sin(sang) * 7);
+            ctx.stroke();
+          }
+        } else {
+          // a small star/triangular dinoflagellate silhouette
+          ctx.beginPath();
+          for (let s = 0; s < 3; s++) {
+            const sang = (s / 3) * Math.PI * 2;
+            const px2 = Math.cos(sang) * 5, py2 = Math.sin(sang) * 5;
+            if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // fine salt-residue sparkle specks, much sparser than the
+      // dedicated salt crystal slide, just enough to say "this is
+      // saltwater, not fresh"
+      ctx.strokeStyle = "rgba(210,230,225,0.4)";
+      ctx.lineWidth = 0.6;
+      for (let i = 0; i < 8; i++) {
+        const gx = (pseudoRandom(i * 7.7 + 50) - 0.5) * 112;
+        const gy2 = (pseudoRandom(i * 4.4 + 51) - 0.5) * 112;
+        ctx.beginPath();
+        ctx.moveTo(gx - 1.2, gy2); ctx.lineTo(gx + 1.2, gy2);
+        ctx.moveTo(gx, gy2 - 1.2); ctx.lineTo(gx, gy2 + 1.2);
+        ctx.stroke();
+      }
+
+      // a copepod -- small elongated crustacean body, a pair of long
+      // feathery antennae, and a cluster of trailing swimming legs,
+      // given real darting swim motion (short bursts + glide, the real
+      // way copepods move, rather than a smooth constant drift)
+      const burst = Math.sin(t * 2.2) > 0.3 ? 1 : 0.15;
+      const cx = -4 + Math.sin(t * 0.5) * 20;
+      const cy = 8 + Math.cos(t * 0.4) * 14;
+      const crot = Math.atan2(Math.cos(t * 0.4) * -0.4 * 14, Math.cos(t * 0.5) * 0.5 * 20);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(crot);
+      ctx.fillStyle = "rgba(235,225,200,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 9, 3.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(40,30,20,0.6)";
+      ctx.beginPath();
+      ctx.arc(-8, 0, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      // long feathery antennae swept back from the head
+      ctx.strokeStyle = "rgba(220,210,185,0.7)";
+      ctx.lineWidth = 0.6;
+      [-1, 1].forEach(dir => {
+        ctx.beginPath();
+        ctx.moveTo(-8, dir * 1.5);
+        ctx.quadraticCurveTo(-16, dir * 4, -22, dir * 3);
+        ctx.stroke();
+      });
+      // trailing swimming legs/tail fan, drawn extended or tucked
+      // depending on the current burst-vs-glide phase
+      ctx.strokeStyle = "rgba(210,200,175,0.65)";
+      ctx.lineWidth = 0.8;
+      for (let l = 0; l < 4; l++) {
+        const lag = l * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(6 + l, 0);
+        ctx.lineTo(6 + l + lag * burst, (l % 2 === 0 ? 1 : -1) * 3 * burst);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  },
+  {
+    // new slide, per direct request ("and bread mold"). Rhizopus (common
+    // black bread mold) reads as a hazy tangle of thin translucent hyphae
+    // threads with round dark sporangia (spore capsules) held up on thin
+    // stalks -- the sporangia are the unmistakable "mold under a scope"
+    // signature shape.
+    id: "breadMold",
+    name: "Bread Mold (Rhizopus)",
+    draw: () => {
+      ctx.fillStyle = "#e4ded0";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // tangled hyphae threads -- long wandering translucent lines
+      // crossing every which way across the whole slide
+      ctx.strokeStyle = "rgba(210,205,195,0.55)";
+      for (let i = 0; i < 18; i++) {
+        const startX = (pseudoRandom(i * 5.5) - 0.5) * 130;
+        const startY = (pseudoRandom(i * 7.7 + 1) - 0.5) * 130;
+        ctx.lineWidth = 0.8 + pseudoRandom(i * 2.2) * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        let px = startX, py = startY;
+        for (let s = 0; s < 5; s++) {
+          const nx = px + (pseudoRandom(i * 3.1 + s * 9.9) - 0.5) * 45;
+          const ny = py + (pseudoRandom(i * 4.4 + s * 6.6) - 0.5) * 45;
+          ctx.quadraticCurveTo(px + (nx - px) * 0.5, py + (ny - py) * 0.5 + 5, nx, ny);
+          px = nx; py = ny;
+        }
+        ctx.stroke();
+      }
+
+      // sporangiophores -- thin upright stalks each topped with a dark
+      // round sporangium, scattered across the field
+      const stalks = [
+        [-32, -22, 1], [12, -34, 2], [30, -6, 3], [-8, 18, 4],
+        [38, 26, 5], [-40, 20, 6], [4, -8, 7]
+      ];
+      stalks.forEach(([sx, sy, seed]) => {
+        const h = 14 + pseudoRandom(seed) * 8;
+        ctx.strokeStyle = "rgba(160,150,130,0.7)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy + h);
+        ctx.lineTo(sx + (pseudoRandom(seed * 1.7) - 0.5) * 4, sy);
+        ctx.stroke();
+        const r = 4.5 + pseudoRandom(seed * 3.3) * 2;
+        const sGrad = ctx.createRadialGradient(sx, sy - r * 0.3, 0.5, sx, sy, r);
+        sGrad.addColorStop(0, "rgba(80,70,60,0.85)");
+        sGrad.addColorStop(0.6, "rgba(40,32,24,0.9)");
+        sGrad.addColorStop(1, "rgba(15,10,6,0.95)");
+        ctx.fillStyle = sGrad;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+        // tiny highlight so the sporangium reads as a round capsule,
+        // not a flat black dot
+        ctx.fillStyle = "rgba(200,190,180,0.3)";
+        ctx.beginPath();
+        ctx.arc(sx - r * 0.3, sy - r * 0.3, r * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  },
+  {
+    // new slide, per direct request ("and for feather lets do a flamingo
+    // feather"). The unmistakable microscope-feather signature is the
+    // barb structure: a central shaft (rachis) with rows of thin barbs
+    // branching off at an angle on both sides, each barb itself lined
+    // with even finer barbules -- done here in flamingo pink/coral so
+    // it's instantly a different bird than a generic gray/brown feather.
+    id: "flamingoFeather",
+    name: "Flamingo Feather (barbs, zoomed)",
+    draw: () => {
+      // CONFIRMED CHANGE: much deeper background + brighter, more
+      // saturated barb color, per direct feedback ("i want more contrast
+      // of flamingo w the background") -- the original pale-pink-on-pale-
+      // pink read as almost one flat color at this size. Same dark-field
+      // approach as the salt crystal slide (deep background, bright
+      // saturated subject) instead of the light pastel wash.
+      const bgGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, 85);
+      bgGrad.addColorStop(0, "#4a2530");
+      bgGrad.addColorStop(1, "#2a1218");
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // the rachis (central shaft) running diagonally across the frame
+      // CONFIRMED CHANGE: zoomed in further, per direct request ("maybe
+      // lets zoom in to flamingo feather more to see neater stuff") --
+      // scaled the whole barb/barbule geometry up and trimmed the row
+      // count to match, so each barb (and its own fine barbule fringe)
+      // is bigger and more detailed instead of just more of them at the
+      // same small size.
+      const shaftAng = 0.3;
+      ctx.save();
+      ctx.rotate(shaftAng);
+      ctx.scale(1.7, 1.7);
+      const shaftGrad = ctx.createLinearGradient(0, -3, 0, 3);
+      shaftGrad.addColorStop(0, "#ff8fa8");
+      shaftGrad.addColorStop(0.5, "#ffc4d2");
+      shaftGrad.addColorStop(1, "#e05878");
+      ctx.fillStyle = shaftGrad;
+      ctx.fillRect(-85, -3, 170, 6);
+      ctx.strokeStyle = "rgba(255,150,175,0.7)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(-85, -3, 170, 6);
+
+      // barbs branching off both sides at a consistent angle, each one
+      // itself fringed with tiny barbules (the fine hair-like fringe
+      // along each barb) -- this double layer of branching IS the
+      // signature "feather under a scope" texture. Colors bumped much
+      // brighter/more saturated (and more opaque) so they pop hard
+      // against the now-dark background instead of blending into it.
+      for (let i = -8; i <= 8; i++) {
+        const bx = i * 6;
+        [-1, 1].forEach(dir => {
+          const barbAng = dir * 0.9;
+          const barbLen = 26 - Math.abs(i) * 0.5;
+          const tipX = bx + Math.cos(barbAng) * barbLen;
+          const tipY = dir * 3 + Math.sin(barbAng) * barbLen * dir;
+          ctx.strokeStyle = "rgba(255,110,145,0.95)";
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(bx, dir * 3);
+          ctx.lineTo(tipX, tipY);
+          ctx.stroke();
+          // fine barbules -- short strokes fringing the barb, angled
+          // forward toward the feather tip -- a couple more per barb now
+          // that they're bigger and worth showing in more detail
+          ctx.strokeStyle = "rgba(255,170,190,0.75)";
+          ctx.lineWidth = 0.6;
+          for (let b = 0.12; b < 0.95; b += 0.14) {
+            const fx = bx + (tipX - bx) * b;
+            const fy = dir * 3 + (tipY - dir * 3) * b;
+            const flen = 4.5 * (1 - b * 0.4);
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(fx + Math.cos(barbAng + dir * 0.9) * flen, fy + Math.sin(barbAng + dir * 0.9) * flen * dir);
+            ctx.stroke();
+          }
+        });
+      }
+      ctx.restore();
+    }
+  },
+  {
+    // new slide, per direct request ("or isnt yeast alive like that
+    // could move right"). Yes -- live yeast cells under a scope
+    // genuinely bud (a smaller daughter cell balloons out from the
+    // side of a parent) and jostle from real Brownian motion, so this
+    // is a fourth movement slide. Cells are simple ovals (yeast has no
+    // complex internal structure visible at this zoom besides a
+    // vacuole), some solo, some mid-budding, some in short chained
+    // clusters from repeated budding at the same site.
+    id: "liveYeast",
+    name: "Live Yeast (budding)",
+    draw: () => {
+      ctx.fillStyle = "#e8dcc0";
+      ctx.fillRect(-60, -60, 120, 120);
+      const t = microscopeAnimClock * 0.001;
+
+      const cellSeeds = [
+        { x: -30, y: -20, r: 8, seed: 1, budPhase: 0 },
+        { x: 10, y: -30, r: 7, seed: 2, budPhase: 1.5 },
+        { x: 30, y: 5, r: 9, seed: 3, budPhase: 3 },
+        { x: -15, y: 20, r: 8, seed: 4, budPhase: 4.5 },
+        { x: 5, y: 35, r: 7, seed: 5, budPhase: 0.8 },
+        { x: -35, y: 10, r: 6, seed: 6, budPhase: 2.2 }
+      ];
+
+      cellSeeds.forEach(cell => {
+        // gentle Brownian jostle -- small fast jitter, not a directed drift
+        const jx = cell.x + (pseudoRandom(cell.seed * 3.3 + Math.floor(t * 4)) - 0.5) * 2.5;
+        const jy = cell.y + (pseudoRandom(cell.seed * 5.5 + Math.floor(t * 4) + 1) - 0.5) * 2.5;
+
+        // budding cycle -- a daughter bud grows from 0 up to about 55%
+        // of the parent's size, then the cycle resets (in reality it
+        // would pinch off and separate; looping the growth reads clearly
+        // enough at this scale without needing to animate a full split)
+        const budCycle = (t * 0.15 + cell.budPhase) % 1;
+        const budSize = Math.sin(budCycle * Math.PI) * cell.r * 0.55;
+        const budAng = cell.seed * 1.7;
+
+        if (budSize > 0.5) {
+          const bx = jx + Math.cos(budAng) * (cell.r + budSize * 0.6);
+          const by = jy + Math.sin(budAng) * (cell.r + budSize * 0.6);
+          ctx.fillStyle = "rgba(225,205,160,0.85)";
+          ctx.beginPath();
+          ctx.arc(bx, by, budSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(160,130,80,0.5)";
+          ctx.lineWidth = 0.7;
+          ctx.stroke();
+        }
+
+        // the parent cell -- a simple oval with a faint vacuole and a
+        // soft highlight for translucency
+        ctx.fillStyle = "rgba(230,212,170,0.9)";
+        ctx.beginPath();
+        ctx.ellipse(jx, jy, cell.r, cell.r * 0.9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(160,130,80,0.55)";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(190,160,110,0.35)";
+        ctx.beginPath();
+        ctx.arc(jx + cell.r * 0.15, jy + cell.r * 0.1, cell.r * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,250,235,0.35)";
+        ctx.beginPath();
+        ctx.arc(jx - cell.r * 0.3, jy - cell.r * 0.3, cell.r * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  },
+  {
+    // new slide, per direct request ("do dif debris and micro orgs in
+    // the dew / rain"). Dew forms overnight ON a leaf/grass surface, so
+    // unlike a scooped water sample it reads as a shallow, mostly-clear
+    // droplet with fine dust and pollen settled at its bottom, plus the
+    // faint parallel lines of the leaf surface it's sitting on showing
+    // through underneath -- that leaf-vein backdrop is what makes dew
+    // visually distinct from rain/pond/ocean water.
+    id: "dewDrop",
+    name: "Morning Dew (on a leaf)",
+    draw: () => {
+      ctx.fillStyle = "#dcecd8";
+      ctx.fillRect(-60, -60, 120, 120);
+      const t = microscopeAnimClock * 0.001;
+
+      // the leaf surface underneath, showing through the shallow water --
+      // parallel veins plus a faint cell grid, much fainter than the
+      // dedicated leaf slide since it's out-of-focus background here
+      ctx.strokeStyle = "rgba(90,140,80,0.3)";
+      ctx.lineWidth = 1.2;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-60, i * 20);
+        ctx.lineTo(60, i * 20 + 10);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "rgba(90,140,80,0.15)";
+      ctx.lineWidth = 0.6;
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 18, -60);
+        ctx.lineTo(i * 18, 60);
+        ctx.stroke();
+      }
+
+      // the water itself -- a soft round highlight gradient standing in
+      // for the droplet's own curved surface catching the light
+      const dewGrad = ctx.createRadialGradient(-8, -10, 4, 0, 0, 65);
+      dewGrad.addColorStop(0, "rgba(255,255,255,0.35)");
+      dewGrad.addColorStop(0.4, "rgba(220,240,225,0.12)");
+      dewGrad.addColorStop(1, "rgba(200,225,205,0.05)");
+      ctx.fillStyle = dewGrad;
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // fine settled dust and pollen grains at the bottom of the droplet
+      // -- pollen as small round bumpy grains, dust as tiny dark flecks,
+      // both drifting only very slightly (dew is mostly still, unlike
+      // flowing water)
+      for (let i = 0; i < 8; i++) {
+        const px = (pseudoRandom(i * 5.5) - 0.5) * 100 + Math.sin(t * 0.08 + i) * 1.5;
+        const py = (pseudoRandom(i * 8.1 + 1) - 0.5) * 100 + Math.cos(t * 0.07 + i) * 1.5;
+        ctx.fillStyle = "rgba(230,190,90,0.7)";
+        ctx.beginPath();
+        ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        // bumpy pollen texture -- small pits around the edge
+        ctx.strokeStyle = "rgba(160,120,40,0.5)";
+        ctx.lineWidth = 0.5;
+        for (let b = 0; b < 5; b++) {
+          const bang = (b / 5) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.arc(px + Math.cos(bang) * 1.6, py + Math.sin(bang) * 1.6, 0.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = "rgba(90,80,70,0.55)";
+      for (let i = 0; i < 16; i++) {
+        const gx = (pseudoRandom(i * 6.6 + 40) - 0.5) * 108;
+        const gy2 = (pseudoRandom(i * 9.2 + 41) - 0.5) * 108;
+        ctx.beginPath();
+        ctx.arc(gx, gy2, 0.6 + pseudoRandom(i * 3.1) * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  },
+  {
+    // new slide, per the same request -- rain water sampled straight
+    // from a puddle/gutter reads very differently from dew: no leaf
+    // backdrop, mostly airborne dust/soot and a few tiny air bubbles
+    // trapped in the water instead of settled pollen, and a slightly
+    // grimy grey-brown tint from street grit.
+    id: "rainWater",
+    name: "Rain Water (puddle sample)",
+    draw: () => {
+      ctx.fillStyle = "#c9d4d2";
+      ctx.fillRect(-60, -60, 120, 120);
+      const t = microscopeAnimClock * 0.001;
+
+      // trapped air bubbles -- crisp bright rings (very different from
+      // soft debris), a couple slowly drifting upward like they're
+      // working loose from the sample
+      for (let i = 0; i < 6; i++) {
+        const bx = (pseudoRandom(i * 4.4 + 10) - 0.5) * 100;
+        const by = ((pseudoRandom(i * 7.7 + 11) - 0.5) * 100 - t * 4 * (0.5 + pseudoRandom(i * 2.2))) % 116 - 58;
+        const br = 2 + pseudoRandom(i * 3.3) * 2.5;
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.beginPath();
+        ctx.arc(bx - br * 0.3, by - br * 0.3, br * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // grimy soot/grit specks -- irregular dark flecks, much dirtier-
+      // looking than dew's clean pollen/dust, since this came off
+      // pavement rather than a leaf
+      ctx.fillStyle = "rgba(60,55,50,0.55)";
+      for (let i = 0; i < 20; i++) {
+        const gx = (pseudoRandom(i * 6.2 + 60) - 0.5) * 112;
+        const gyy = (pseudoRandom(i * 9.9 + 61) - 0.5) * 112;
+        ctx.beginPath();
+        ctx.arc(gx, gyy, 0.8 + pseudoRandom(i * 3.1) * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // a couple bigger soft-edged grit clumps
+      for (let i = 0; i < 4; i++) {
+        const gx = (pseudoRandom(i * 11.1 + 90) - 0.5) * 90;
+        const gyy = (pseudoRandom(i * 13.3 + 91) - 0.5) * 90;
+        ctx.fillStyle = "rgba(80,72,64,0.4)";
+        organicBlobPath(ctx, gx, gyy, 4 + pseudoRandom(i * 2.2) * 3, 3 + pseudoRandom(i * 3.3) * 2, i * 15.5, 7);
+        ctx.fill();
+      }
+      // a faint fiber or two, since gutter runoff often carries a bit
+      // of textile lint along with the grit
+      ctx.strokeStyle = "rgba(90,95,100,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-30, 20);
+      ctx.quadraticCurveTo(-10, 10, 15, 25);
+      ctx.stroke();
+    }
+  },
+  {
+    // new slide, per direct request ("do... wet moss too"). Moss leaf
+    // tissue is famously thin and translucent -- under a scope you see
+    // straight through a single layer of small rectangular cells, each
+    // packed with visible round chloroplasts, with the moss leaf's own
+    // toothed edge and central costa (midrib) visible at the frame's
+    // edge, and a film of surface water beading on top.
+    id: "wetMoss",
+    name: "Wet Moss (leaf cells)",
+    draw: () => {
+      ctx.fillStyle = "#9ec97e";
+      ctx.fillRect(-60, -60, 120, 120);
+
+      // the costa (midrib) running down one side, with the leaf's
+      // toothed margin just past it -- establishes this as a single
+      // moss leaf, not a generic green cell grid
+      ctx.fillStyle = "rgba(80,140,60,0.5)";
+      ctx.beginPath();
+      ctx.moveTo(-60, -60);
+      ctx.lineTo(-44, -60);
+      ctx.lineTo(-40, 60);
+      ctx.lineTo(-60, 60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(60,110,45,0.5)";
+      ctx.lineWidth = 1;
+      for (let i = -5; i <= 5; i++) {
+        const ty = i * 20;
+        ctx.beginPath();
+        ctx.moveTo(-44, ty - 6);
+        ctx.lineTo(-38, ty);
+        ctx.lineTo(-44, ty + 6);
+        ctx.stroke();
+      }
+
+      // one thin layer of small rectangular cells, each with a cluster
+      // of round chloroplasts -- the actual "wow you can see straight
+      // through it" moss-leaf read
+      for (let row = -3; row <= 3; row++) {
+        for (let col = -1; col <= 3; col++) {
+          const ox = -30 + col * 22 + (row % 2 === 0 ? 0 : 11);
+          const oy = row * 17 + (pseudoRandom(row * 3.1 + col) - 0.5) * 3;
+          ctx.strokeStyle = "rgba(60,110,45,0.55)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(ox - 10, oy - 8, 20, 16);
+          ctx.fillStyle = "rgba(180,220,150,0.25)";
+          ctx.fillRect(ox - 9, oy - 7, 18, 14);
+          // chloroplasts -- small round dots clustered per cell, denser
+          // than the leaf slide's sparser chloroplast specks since moss
+          // cells are famously packed with them
+          for (let c = 0; c < 6; c++) {
+            const cx2 = ox + (pseudoRandom(row * 4 + col * 6 + c) - 0.5) * 14;
+            const cy2 = oy + (pseudoRandom(row * 2 + col * 3 + c * 1.7) - 0.5) * 10;
+            ctx.fillStyle = "rgba(50,120,35,0.75)";
+            ctx.beginPath();
+            ctx.arc(cx2, cy2, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // beaded surface water droplets sitting on top -- the "wet" part,
+      // each a small round highlight+shadow pair
+      [[10, -30, 6], [30, 10, 8], [-4, 35, 5], [22, 42, 5]].forEach(([dx, dy, r]) => {
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.beginPath();
+        ctx.arc(dx, dy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.beginPath();
+        ctx.arc(dx - r * 0.3, dy - r * 0.3, r * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(40,80,30,0.3)";
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.arc(dx, dy, r, 0, Math.PI * 2);
+        ctx.stroke();
       });
     }
   }
