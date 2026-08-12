@@ -42925,7 +42925,14 @@ function updateSandboxBallPit(deltaTime) {
   // ball. CONFIRMED BUG FIX: this used to require holding the up arrow,
   // inconsistent with every other sandbox toy's space-to-interact
   // convention (and easy to miss entirely, per direct feedback).
-  if (keys.spaceJustPressed && isPlayerNear(ladderX, 0, 20, 14, 14)) {
+  // CONFIRMED BUG FIX: the ladder itself is a thin visual target and a
+  // radiusX of 20 was noticeably tighter than every other sandbox toy's
+  // interact zone (wig stand/microscope both use 30) -- direct feedback
+  // ("still cant actually get inside") after the space-key fix pointed
+  // to this being a findability problem, not a logic one: standing
+  // anywhere near the ladder's general vicinity in real play would
+  // often miss the check by a handful of pixels. Widened generously.
+  if (keys.spaceJustPressed && isPlayerNear(ladderX, 0, 45, 20, 20)) {
     player.onBallPitLadder = true;
     player.jumping = true;
     player.vy = 0;
