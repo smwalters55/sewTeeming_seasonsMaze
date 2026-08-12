@@ -44000,6 +44000,16 @@ function updateAntFarmDiggers(deltaTime) {
       ANT_FARM_GRID[d.digRow][d.digCol] = 1;
       antFarmGridVersion++; // invalidates the cached forager shortest-path field
       antFarmAutoDigCount++;
+      // CONFIRMED CHANGE (ant farm food-unlock workshop -- "lets have a
+      // food source one of the digging ants unlocks after maybe idk 5
+      // min or something... this timer would start once ant farm is in
+      // few and placed appropriately in distance from digging ant"):
+      // the newly-opened cell is exactly "appropriately placed" -- it's
+      // wherever a digger's own work naturally uncovers next -- so once
+      // the real-time delay has elapsed since the player's first visit,
+      // the very next cell a digger breaks through becomes the new food
+      // source, rather than picking some arbitrary preset spot.
+      antFarmMaybeUnlockNewFood(d.digRow, d.digCol);
       d.row = d.digRow;
       d.col = d.digCol;
       d.digRow = -1;
@@ -44276,6 +44286,51 @@ const ANT_FARM_PHEROMONE_MAX = 14;
 const ANT_FARM_PHEROMONE_DEPOSIT = 3;
 let antFarmFoodCollected = 0;
 
+// CONFIRMED CHANGE (ant farm food-unlock workshop -- "lets have a food
+// source one of the digging ants unlocks after maybe idk 5 min or
+// something... this timer would start once ant farm is in few" +
+// "start timer only once player first sees ant farm. but i like the
+// idea that you can do other things and come back and see how it has
+// all changed"): antFarmFirstSeenAt is a real performance.now() wall-
+// clock timestamp, not a deltaTime accumulator -- deliberately, so the
+// countdown keeps advancing even while the player is off doing
+// something else entirely and updateAntFarmForagers/updateAntFarmDiggers
+// aren't ticking at all. The unlock itself only actually fires from
+// antFarmMaybeUnlockNewFood, called at the moment a digger naturally
+// breaks through a new cell (see updateAntFarmDiggers) -- so coming
+// back after the delay has elapsed doesn't instantly change anything,
+// it just means the very next natural dig-completion becomes the
+// reveal instead of one more ordinary tunnel.
+let antFarmFirstSeenAt = null;
+const ANT_FARM_FOOD_UNLOCK_DELAY_MS = 6 * 60 * 1000; // 6 minutes real time -- middle of Sam's 5-8min range
+let antFarmFoodUnlocked = false;
+let antFarmFoodUnlockFlashT = -1e9; // performance.now() timestamp of the unlock moment, for a brief reveal glow -- see drawAntFarmForagers
+let antFarmFoodUnlockCell = null; // {row, col} of the newly-opened food source, for the flourish above
+
+function antFarmMaybeUnlockNewFood(row, col) {
+  if (antFarmFoodUnlocked) return;
+  if (antFarmFirstSeenAt === null) return;
+  if (performance.now() - antFarmFirstSeenAt < ANT_FARM_FOOD_UNLOCK_DELAY_MS) return;
+  antFarmFoodUnlocked = true;
+  ANT_FARM_FOOD_SOURCES.push({ row, col });
+  antFarmFoodUnlockFlashT = performance.now();
+  antFarmFoodUnlockCell = { row, col };
+  // the 5th forager (see SANDBOX_ANT_FARM_FORAGERS below) sits dormant
+  // until exactly this moment, then spawns fresh from the entrance so
+  // the colony visibly grows at the same beat the new food appears.
+  const newForager = SANDBOX_ANT_FARM_FORAGERS[4];
+  newForager.row = ANT_FARM_ENTRANCE.row + 1;
+  newForager.col = ANT_FARM_ENTRANCE.col;
+  newForager.fromRow = ANT_FARM_ENTRANCE.row;
+  newForager.fromCol = ANT_FARM_ENTRANCE.col;
+  newForager.targetRow = ANT_FARM_ENTRANCE.row + 1;
+  newForager.targetCol = ANT_FARM_ENTRANCE.col;
+  newForager.moveT = 1;
+  newForager.carrying = false;
+  newForager.sourceFood = null;
+  newForager.active = true;
+}
+
 // bumped any time ANT_FARM_GRID actually changes (a cell dug open, by
 // the player or by a worker digger) so the cached shortest-path field
 // below knows to recompute instead of guiding foragers through walls
@@ -44362,6 +44417,14 @@ const ANT_FARM_ANTENNATION_PAUSE_MS = 600;    // how long both ants freeze for t
 const ANT_FARM_ANTENNATION_COOLDOWN_MS = 5000; // neither ant can trigger/be triggered into another antennation until this expires -- keeps the same pair from immediately re-antennating and keeps recruitment spreading gradually rather than chain-reacting instantly
 const ANT_FARM_RECRUIT_STEPS = 4; // how many real steps a recruited ant follows the lead toward the pointed-to food source before reverting to normal pheromone-weighted wandering
 
+// CONFIRMED CHANGE (path-diversity workshop, "not structural at least
+// not yet" -- see antFarmForagerPickNext for the full reasoning):
+// sqrt() based weight so a maxed-out trail is strong but not
+// overwhelming, plus a flat chance to ignore pheromone entirely at any
+// given fork so every food source keeps getting rediscovered over time.
+const ANT_FARM_PHEROMONE_WEIGHT_SCALE = 2.0;
+const ANT_FARM_EXPLORATION_CHANCE = 0.22;
+
 function antFarmOpenNeighbors(row, col) {
   const out = [];
   [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
@@ -44377,8 +44440,14 @@ function antFarmIsFoodCell(row, col) {
 
 // four foragers, starting spread out near the entrance shaft so they
 // fan out into the maze independently rather than all setting off in
-// a single-file line
-const SANDBOX_ANT_FARM_FORAGERS = [0, 1, 2, 3].map(i => ({
+// a single-file line. CONFIRMED CHANGE (ant farm food-unlock workshop --
+// "then we should prob add another food grabbing ant too"): a 5th entry
+// exists from the start but sits dormant (active:false, never updated or
+// drawn) until the timed new-food-source unlock actually fires -- see
+// antFarmMaybeUnlockNewFood below -- so the colony visibly grows at the
+// same moment the new food source appears, instead of always having 5
+// from the very first visit.
+const SANDBOX_ANT_FARM_FORAGERS = [0, 1, 2, 3, 4].map(i => ({
   row: ANT_FARM_ENTRANCE.row + 1,
   col: ANT_FARM_ENTRANCE.col,
   fromRow: ANT_FARM_ENTRANCE.row,
@@ -44397,7 +44466,15 @@ const SANDBOX_ANT_FARM_FORAGERS = [0, 1, 2, 3].map(i => ({
   tapping: false,       // draw-only flag, true while paused from an antennation (not every pause would need to be one, but right now that's the only kind of pause)
   guidedStepsLeft: 0,   // real steps left following a recruited lead before reverting to normal wandering
   guidedTarget: null,   // {row, col} of the food source a recruiting ant pointed this one toward
-  antennationCooldownMs: 0 // this ant won't trigger or be triggered into another antennation until this hits 0
+  antennationCooldownMs: 0, // this ant won't trigger or be triggered into another antennation until this hits 0
+  active: i < 4, // the 5th (i === 4) starts dormant, see comment above
+  // CONFIRMED CHANGE (path-diversity workshop, "adding a little noise to
+  // collector ant movement at potential pivot points"): a fixed per-ant
+  // seed for a purely cosmetic sideways wobble drawn in only at each
+  // cell-to-cell decision point (see drawAntFarmForagers) -- draw-only,
+  // never touches f.row/f.col/moveT/pathing, so it can't affect any real
+  // logic (antennation proximity, food pickup, pheromone laying, etc.).
+  noiseSeed: i * 17.3 + 4.1
 }));
 
 function antFarmForagerPickNext(f) {
@@ -44450,7 +44527,27 @@ function antFarmForagerPickNext(f) {
     // that's the only option (a dead end).
     let options = neighbors.filter(n => !(n.row === f.fromRow && n.col === f.fromCol));
     if (!options.length) options = neighbors;
-    const weights = options.map(n => 1 + ANT_FARM_PHEROMONE[n.row][n.col] * 2.2);
+
+    // CONFIRMED CHANGE (path-diversity workshop -- "the 4 getting food
+    // ants basically stay in the same area and only go to one food
+    // source, the first one accessible... lets adjust so there is
+    // reason to go to others"): the OLD weight (1 + strength*2.2) was
+    // linear and effectively unbounded -- once any one trail got
+    // reinforced near max strength (14) it was ~32x more attractive
+    // than an unmarked path at every single fork, so whichever source
+    // got a head start just kept winning forever. Two independent,
+    // non-structural fixes (explicitly NOT touching the maze layout or
+    // the entrance/drop-off, per "not structural at least not yet"):
+    //   1. sqrt() gives diminishing returns -- still zero at zero,
+    //      still monotonic, but a maxed-out trail (~1+3.74*4.5=17.8) is
+    //      noticeably less dominant than before, so a fresh trail can
+    //      still occasionally win out even against an established one.
+    //   2. a flat chance to ignore pheromone entirely this fork and
+    //      pick uniformly at random -- guarantees every source keeps
+    //      getting rediscovered over time no matter how strong any one
+    //      trail gets, which sqrt() alone can't promise on its own.
+    const exploring = pseudoRandom(f.row * 9.1 + f.col * 4.7 + performance.now() * 0.00019) < ANT_FARM_EXPLORATION_CHANCE;
+    const weights = options.map(n => exploring ? 1 : 1 + Math.sqrt(ANT_FARM_PHEROMONE[n.row][n.col]) * ANT_FARM_PHEROMONE_WEIGHT_SCALE);
     const totalWeight = weights.reduce((a, b) => a + b, 0);
     let roll = pseudoRandom(f.row * 13.7 + f.col * 5.3 + performance.now() * 0.0001) * totalWeight;
     next = options[options.length - 1];
@@ -44479,6 +44576,10 @@ function updateAntFarmForagers(deltaTime) {
   }
 
   SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    // CONFIRMED CHANGE (ant farm food-unlock workshop): the 5th forager
+    // starts dormant and skips all movement/antennation logic entirely
+    // until antFarmMaybeUnlockNewFood flips active true.
+    if (!f.active) return;
     f.antennationCooldownMs = Math.max(0, (f.antennationCooldownMs || 0) - deltaTime * 1000);
     if (f.paused) {
       // frozen for the antenna-tap beat -- no movement, no gait, just
@@ -44509,12 +44610,12 @@ function updateAntFarmForagers(deltaTime) {
   // of the whole colony snapping onto one trail in a single frame.
   for (let i = 0; i < SANDBOX_ANT_FARM_FORAGERS.length; i++) {
     const a = SANDBOX_ANT_FARM_FORAGERS[i];
-    if (!a.carrying || a.paused || a.antennationCooldownMs > 0) continue;
+    if (!a.active || !a.carrying || a.paused || a.antennationCooldownMs > 0) continue;
     const aPos = antFarmForagerPos(a);
     for (let j = 0; j < SANDBOX_ANT_FARM_FORAGERS.length; j++) {
       if (i === j) continue;
       const b = SANDBOX_ANT_FARM_FORAGERS[j];
-      if (b.carrying || b.paused || b.antennationCooldownMs > 0) continue;
+      if (!b.active || b.carrying || b.paused || b.antennationCooldownMs > 0) continue;
       const bPos = antFarmForagerPos(b);
       const dx = aPos.x - bPos.x, dy = aPos.y - bPos.y;
       if (dx * dx + dy * dy > ANT_FARM_ANTENNATION_RADIUS_SQ) continue;
@@ -44613,24 +44714,67 @@ function drawAntFarmForagers(gx, gyTop) {
     });
   });
 
+  // CONFIRMED CHANGE (ant farm food-unlock workshop): a brief warm glow
+  // ring on the freshly-unlocked food cell, fading out over a couple
+  // seconds -- the only flourish marking "something just changed here"
+  // moment, since the new crumbs/forager above already read fine as
+  // permanent fixtures without it once the flash finishes.
+  if (antFarmFoodUnlockCell) {
+    const flashT = (performance.now() - antFarmFoodUnlockFlashT) / 1000;
+    if (flashT < 2.2) {
+      const fade = 1 - flashT / 2.2;
+      const c = antFarmCellCenter(antFarmFoodUnlockCell.row, antFarmFoodUnlockCell.col);
+      const r = ANT_FARM_CELL_AVG * (0.5 + flashT * 0.9);
+      const glow = ctx.createRadialGradient(gx + c.x, gyTop + c.y, 0, gx + c.x, gyTop + c.y, r);
+      glow.addColorStop(0, `rgba(255,235,150,${fade * 0.55})`);
+      glow.addColorStop(1, "rgba(255,235,150,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(gx + c.x, gyTop + c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      antFarmFoodUnlockCell = null; // flourish fully done, stop checking every frame
+    }
+  }
+
   SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    if (!f.active) return; // dormant 5th forager, not yet unlocked -- see antFarmMaybeUnlockNewFood
     const from = antFarmCellCenter(f.fromRow, f.fromCol);
     const to = antFarmCellCenter(f.targetRow, f.targetCol);
     const { x, y } = antFarmForagerPos(f);
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+    // CONFIRMED CHANGE (path-diversity workshop, "adding a little noise
+    // to collector ant movement at potential pivot points"): draw-only
+    // sideways wobble, peaking right as the ant arrives at/departs a
+    // cell (moveT near 0 or 1 -- the actual decision points, see
+    // antFarmForagerPickNext) and fading to nothing mid-straight
+    // (moveT near 0.5), so it reads as a little hesitation/re-aim at
+    // each fork rather than a constant jitter along straight corridors.
+    // Purely cosmetic -- f.row/f.col/moveT and every real position used
+    // for pathing, antennation proximity, and food pickup are untouched.
+    let wx = x, wy = y;
+    if (!f.paused) {
+      const pivotProximity = Math.abs(0.5 - f.moveT) * 2;
+      const wobble = Math.sin(performance.now() * 0.009 + f.noiseSeed) * 1.6 * pivotProximity;
+      const perp = angle + Math.PI / 2;
+      wx = x + Math.cos(perp) * wobble;
+      wy = y + Math.sin(perp) * wobble;
+    }
+
     // amber/gold rather than the decorative residents' rust-brown, so
     // the colony reads as a distinct "these are doing something" set
     const motion = f.tapping
       ? { tapPhase: f.pauseT / 1000 }
       : { walkPhase: f.paused ? null : f.gaitPhase };
-    drawAntCreature(gx + x, gyTop + y, angle, 1.1, "#d9a028", motion);
-    drawAntFarmGreetSparkle(gx + x, gyTop + y, f);
+    drawAntCreature(gx + wx, gyTop + wy, angle, 1.1, "#d9a028", motion);
+    drawAntFarmGreetSparkle(gx + wx, gyTop + wy, f);
     if (f.carrying) {
       // a tiny crumb riding along on its back, visible proof it's
       // actually carrying something home rather than just wandering
       ctx.fillStyle = "#e8d068";
       ctx.beginPath();
-      ctx.arc(gx + x - Math.cos(angle) * 3, gyTop + y - Math.sin(angle) * 3, 1.3, 0, Math.PI * 2);
+      ctx.arc(gx + wx - Math.cos(angle) * 3, gyTop + wy - Math.sin(angle) * 3, 1.3, 0, Math.PI * 2);
       ctx.fill();
     }
   });
@@ -44672,6 +44816,13 @@ function updateSandboxAntFarm(deltaTime) {
         farm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL_W;
         farm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL_H + 2;
         farm.enterAnim = 0; // kicks off the existing shrink-in visual, now acting as the "landing" half of the teleport
+        // CONFIRMED CHANGE (ant farm food-unlock workshop -- "start timer
+        // only once player first sees ant farm"): only ever set once,
+        // the very first time the player actually lands inside -- later
+        // re-entries don't reset it, so the real-world countdown just
+        // keeps running from that first visit regardless of how many
+        // times the player pops in and out afterward.
+        if (antFarmFirstSeenAt === null) antFarmFirstSeenAt = performance.now();
       }
       farm.teleportMode = null;
     }
