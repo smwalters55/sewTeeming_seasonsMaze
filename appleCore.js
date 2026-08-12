@@ -14100,15 +14100,19 @@ const FOREST_BREATHER_DUCK_BRANCH = { x: 6050, w: 46, clearance: 58, duckThresho
 // (5400) and the float zone/"Rushing River" (now starting 6900),
 // closer to the pool side per direct choice. A self-contained
 // decorative "patch" prop (there's no existing dedicated sand-texture
-// drawing function to hook into), comfortably clear of the pool's own
-// 140px isPlayerNear radius (pool interactions end around x=5540) and
-// well short of the (now-shifted) duck branch at 6050. How far the
-// sand ultimately extends toward the float zone is still undecided
-// ("but also might have that be start of sand going to edge of
-// rushing rive idk") -- this is deliberately a modest, easily-widened
-// starting patch rather than a guess at the final extent.
-const FOREST_ZEN_SAND_PATCH = { x: 5560, width: 190 }; // world-space sand patch span
-const FOREST_ZEN_RAKE_X = 5620; // the rake prop itself, sitting within the patch
+// drawing function to hook into). Shifted further right from its first
+// placement (x=5560 -> 5700) per direct feedback that it read as
+// crowding the pool ("move this further to the right for sure its
+// like adjacent to pond rn. breathing room") -- now sits ~160px clear
+// of the pool's own 140px isPlayerNear radius (pool interactions end
+// around x=5540) on one side, and ~160px clear of the duck branch at
+// 6050 on the other. How far the sand ultimately extends toward the
+// float zone is still undecided ("but also might have that be start
+// of sand going to edge of rushing rive idk") -- this is deliberately
+// a modest, easily-widened starting patch rather than a guess at the
+// final extent.
+const FOREST_ZEN_SAND_PATCH = { x: 5700, width: 190 }; // world-space sand patch span
+const FOREST_ZEN_RAKE_X = 5760; // the rake prop itself, sitting within the patch
 
 // V1 build is diorama-style (matching the ant farm / wig stand pattern)
 // per direct confirmation ("we could start it in diarama view first
@@ -14131,9 +14135,24 @@ const zenRakeUI = {
   cursorX: 6.5, // float grid-space position (0..ZEN_RAKE_GRID_COLS), moved continuously by deltaTime
   cursorY: 3.5, // float grid-space position (0..ZEN_RAKE_GRID_ROWS)
   lastAngle: -Math.PI / 2, // direction the rake head is currently facing (radians) -- drives the cursor's rake icon orientation, see drawZenRakeUI
-  cells: [] // {raked: bool, angle: number} per grid cell, lazily initialized in openZenRakeUI
+  // continuous trail of every grid-space point the cursor has actually
+  // passed through, persisted across opens (like the old cells array
+  // was). Replaced the old fixed-angle-per-grid-cell model per direct
+  // feedback ("lets have the changing direction not have perpendicular
+  // angles but curves") -- rendering the grooves as offset curves
+  // FOLLOWING this real path is what makes direction changes read as a
+  // smooth arc instead of a hard 90-degree corner, since real points
+  // sampled along an actual turn are naturally curved, not snapped to
+  // a grid cell's single stored angle.
+  path: []
 };
-const ZEN_RAKE_CURSOR_SPEED = 0.006; // grid cells per ms -- continuous drag, not discrete step-per-press
+const ZEN_RAKE_PATH_MAX_POINTS = 4000; // trimmed from the oldest end once exceeded, so a long session doesn't grow this unbounded
+const ZEN_RAKE_PATH_MIN_STEP = 0.06; // grid units -- only append a new path point once the cursor has actually moved this far, so slow movement doesn't spam thousands of near-duplicate points
+// slowed way down ("slow down the rake movement a lot") -- was 0.006,
+// which crossed the whole 14-wide grid in under a second. This is
+// meant to feel like actually dragging a rake through sand, not
+// darting a cursor around.
+const ZEN_RAKE_CURSOR_SPEED = 0.0013; // grid cells per ms -- continuous drag, not discrete step-per-press
 
 function openZenRakeUI() {
   zenRakeUI.active = true;
@@ -14143,9 +14162,6 @@ function openZenRakeUI() {
   zenRakeUI.closeT = 0;
   zenRakeUI.cursorX = ZEN_RAKE_GRID_COLS / 2;
   zenRakeUI.cursorY = ZEN_RAKE_GRID_ROWS / 2;
-  if (zenRakeUI.cells.length !== ZEN_RAKE_GRID_COLS * ZEN_RAKE_GRID_ROWS) {
-    zenRakeUI.cells = new Array(ZEN_RAKE_GRID_COLS * ZEN_RAKE_GRID_ROWS).fill(null).map(() => ({ raked: false, angle: 0 }));
-  }
 }
 
 function closeZenRakeUI() {
@@ -14189,11 +14205,13 @@ function updateZenRakeUI(deltaTime) {
     const step = ZEN_RAKE_CURSOR_SPEED * dtMs;
     zenRakeUI.cursorX = Math.max(0, Math.min(ZEN_RAKE_GRID_COLS - 0.001, zenRakeUI.cursorX + dx * step));
     zenRakeUI.cursorY = Math.max(0, Math.min(ZEN_RAKE_GRID_ROWS - 0.001, zenRakeUI.cursorY + dy * step));
-    const col = Math.floor(zenRakeUI.cursorX);
-    const row = Math.floor(zenRakeUI.cursorY);
-    const cell = zenRakeUI.cells[row * ZEN_RAKE_GRID_COLS + col];
-    if (cell) { cell.raked = true; cell.angle = angle; }
     zenRakeUI.lastAngle = angle;
+
+    const last = zenRakeUI.path[zenRakeUI.path.length - 1];
+    if (!last || Math.hypot(zenRakeUI.cursorX - last.x, zenRakeUI.cursorY - last.y) >= ZEN_RAKE_PATH_MIN_STEP) {
+      zenRakeUI.path.push({ x: zenRakeUI.cursorX, y: zenRakeUI.cursorY });
+      if (zenRakeUI.path.length > ZEN_RAKE_PATH_MAX_POINTS) zenRakeUI.path.shift();
+    }
   }
 }
 
@@ -14227,80 +14245,96 @@ function drawZenRakeUI() {
   const cellW = gridW / ZEN_RAKE_GRID_COLS, cellH = gridH / ZEN_RAKE_GRID_ROWS;
   ctx.fillStyle = "#d8c090";
   ctx.fillRect(gridX, gridY, gridW, gridH);
-  // real zen-garden rake marks are several parallel tine-grooves per
-  // pass, not one single line -- draw a little fan of 3 grooves per
-  // raked cell (matching the rake head's ~5 tines), each with a gentle
-  // hand-raked waver instead of a perfectly straight/dashed-looking
-  // segment ("what the rake patterns look like for these zen gardens").
-  const ZEN_RAKE_GROOVE_OFFSETS = [-0.3, 0, 0.3];
-  for (let r = 0; r < ZEN_RAKE_GRID_ROWS; r++) {
-    for (let c = 0; c < ZEN_RAKE_GRID_COLS; c++) {
-      const cell = zenRakeUI.cells[r * ZEN_RAKE_GRID_COLS + c];
-      if (!cell || !cell.raked) continue;
-      const cx = gridX + c * cellW + cellW / 2;
-      const cy = gridY + r * cellH + cellH / 2;
-      const dirX = Math.cos(cell.angle), dirY = Math.sin(cell.angle);
-      const perpX = -dirY, perpY = dirX;
-      const halfLen = Math.min(cellW, cellH) * 0.42;
-      const seed = r * ZEN_RAKE_GRID_COLS + c;
-      ZEN_RAKE_GROOVE_OFFSETS.forEach((off, gi) => {
-        const ox = perpX * off * Math.min(cellW, cellH);
-        const oy = perpY * off * Math.min(cellW, cellH);
-        const waver = Math.sin(seed * 1.7 + gi * 2.1) * halfLen * 0.12;
-        const startX = cx + ox - dirX * halfLen;
-        const startY = cy + oy - dirY * halfLen;
-        const endX = cx + ox + dirX * halfLen;
-        const endY = cy + oy + dirY * halfLen;
-        const midX = cx + ox + perpX * waver;
-        const midY = cy + oy + perpY * waver;
-        ctx.strokeStyle = gi === 1 ? "#a88855" : "#b09262";
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.quadraticCurveTo(midX, midY, endX, endY);
-        ctx.stroke();
-      });
-    }
+  // real zen-garden rake marks are several parallel tine-grooves that
+  // follow the ACTUAL path the rake was dragged along, curving smoothly
+  // through turns rather than snapping to a fixed angle per grid cell
+  // ("lets have the changing direction not have perpendicular angles
+  // but curves"). Convert the recorded grid-space path to pixel space,
+  // then stroke it 5 times with small perpendicular offsets (one per
+  // tine) computed from each point's local tangent -- offsetting a
+  // dense, curved polyline this way keeps the parallel lines curving
+  // together through a turn instead of meeting at a hard corner.
+  if (zenRakeUI.path.length >= 2) {
+    const pxPoints = zenRakeUI.path.map(p => ({
+      x: gridX + p.x * cellW,
+      y: gridY + p.y * cellH
+    }));
+    // finer comb -- 5 tine-lines instead of 3 (matching the rake head's
+    // actual 5 tines), spaced tighter so the overall groove width stays
+    // about the same as before, just denser/finer ("maybe have it a
+    // lil more finer combed... what do you think" -- yes, this reads
+    // more like real close-set rake tines than a single thick brushstroke).
+    const tineStepPx = Math.min(cellW, cellH) * 0.11;
+    const ZEN_RAKE_GROOVE_OFFSETS = [-2, -1, 0, 1, 2].map(m => m * tineStepPx);
+    ZEN_RAKE_GROOVE_OFFSETS.forEach((off, gi) => {
+      ctx.strokeStyle = gi === 2 ? "#a88855" : "#b09262";
+      ctx.lineWidth = 1.1;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      for (let i = 0; i < pxPoints.length; i++) {
+        const prev = pxPoints[Math.max(0, i - 1)];
+        const next = pxPoints[Math.min(pxPoints.length - 1, i + 1)];
+        const tdx = next.x - prev.x, tdy = next.y - prev.y;
+        const tlen = Math.hypot(tdx, tdy) || 1;
+        const perpX = -tdy / tlen, perpY = tdx / tlen;
+        const px = pxPoints[i].x + perpX * off;
+        const py = pxPoints[i].y + perpY * off;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    });
   }
   // rake cursor -- an actual little rake head (crossbar + tines) on a
   // short handle, rotated to trail behind whichever direction it was
   // last dragged in, instead of the plain brown square this used to be
   // ("lets make the rate in zen garden actually look like a rake, not
-  // a brown rectangle"). Head leads, handle trails, matching how you'd
-  // actually drag a rake across sand.
+  // a brown rectangle"). Uses the exact (non-floored) cursor position --
+  // it was floored to the containing grid cell before, which visibly
+  // drifted away from the actual groove line the path draws at the true
+  // continuous position ("rake visual also not aligned with the lines
+  // its making").
   {
-    const rcx = gridX + Math.floor(zenRakeUI.cursorX) * cellW + cellW / 2;
-    const rcy = gridY + Math.floor(zenRakeUI.cursorY) * cellH + cellH / 2;
+    const rcx = gridX + zenRakeUI.cursorX * cellW;
+    const rcy = gridY + zenRakeUI.cursorY * cellH;
     const headDist = Math.min(cellW, cellH) * 0.32;
     const headLen = Math.min(cellW, cellH) * 0.6;
     const dirAngle = zenRakeUI.lastAngle;
     ctx.save();
     ctx.translate(rcx, rcy);
     ctx.rotate(dirAngle);
-    // handle, trailing behind the head
+    // handle now LEADS in the direction of travel -- you pull a rake
+    // toward you, so the hand/handle end is out in front (where you're
+    // headed) and the tines drag along behind, combing the ground
+    // that's already been passed over. Previously the tine head led and
+    // the handle trailed, which read as the rake plowing INTO new sand
+    // ahead of it rather than pulling sand behind it ("i want the rake
+    // to look like its pulling the sand behind it, not forcing it in
+    // front of rake").
     ctx.strokeStyle = "#5a4020";
     ctx.lineWidth = 2.6;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-headDist * 1.6, 0);
-    ctx.lineTo(-headDist * 0.4, 0);
+    ctx.moveTo(headDist * 1.6, 0);
+    ctx.lineTo(headDist * 0.4, 0);
     ctx.stroke();
     // crossbar of the rake head, perpendicular to the drag direction
     ctx.strokeStyle = "#8a5a30";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(headDist * 0.3, -headLen / 2);
-    ctx.lineTo(headDist * 0.3, headLen / 2);
+    ctx.moveTo(-headDist * 0.3, -headLen / 2);
+    ctx.lineTo(-headDist * 0.3, headLen / 2);
     ctx.stroke();
-    // tines, fanning out ahead of the crossbar
+    // tines, fanning out behind the crossbar (trailing over the
+    // already-raked ground)
     ctx.strokeStyle = "#6a4020";
     ctx.lineWidth = 1.6;
     const tineCount = 5;
     for (let i = 0; i < tineCount; i++) {
       const t = (i / (tineCount - 1) - 0.5) * headLen;
       ctx.beginPath();
-      ctx.moveTo(headDist * 0.3, t);
-      ctx.lineTo(headDist * 1.05, t * 0.75);
+      ctx.moveTo(-headDist * 0.3, t);
+      ctx.lineTo(-headDist * 1.05, t * 0.75);
       ctx.stroke();
     }
     ctx.restore();
