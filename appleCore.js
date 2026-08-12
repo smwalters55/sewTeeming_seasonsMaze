@@ -37981,7 +37981,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 2650; // CONFIRMED CHANGE: widened again (was 2250) to make room for the pendulum's own move further right and its new left-side goal circles
+const SANDBOX_WIDTH = 3150; // CONFIRMED CHANGE: widened again (was 2750) alongside the pendulum's move further right
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38842,33 +38842,76 @@ function drawSandboxBubbles(camX) {
     const fadeOut = Math.min(1, Math.max(0, (SANDBOX_BUBBLE_MAX_AGE_MS - b.ageMs) / 400));
     const alpha = fadeIn * fadeOut;
 
-    // CONFIRMED CHANGE: much stronger rainbow sheen, per direct
-    // feedback ("give the bubbles a lot more rainbow reflection you
-    // almost cant see them against the sky") -- real soap-film
-    // iridescence is a full ring of shifting oily color bands, not just
-    // two faint pink/blue slivers, so this now sweeps a full-circle
-    // rainbow (red -> orange -> yellow -> green -> blue -> violet)
-    // around the rim at real opacity instead of a near-invisible tint.
-    ctx.fillStyle = `rgba(220,240,252,${0.22 * alpha})`;
+    // CONFIRMED CHANGE ("bubbls look better,, but now look like randow
+    // loops... can you mayke these look a lot more realistic with the
+    // randbow sheen thing looking like it going around the spehere, not
+    // just loopened around it in one circle?") -- a stroked ring at a
+    // single radius always reads as a flat loop laid ON TOP of the
+    // bubble, since it's a 1D line. Real soap-film iridescence is a
+    // swirling pattern that covers the CURVED SURFACE itself. Two
+    // overlapping conic gradients (angle-based color sweeps from the
+    // bubble's own center, each slowly rotating at a different rate)
+    // fill the whole disc instead of just the rim -- since the sweep is
+    // genuinely angular around the center, it reads as color wrapping
+    // around the sphere's curvature rather than a ring sitting on it.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.clip();
+
+    // base glassy fill
+    ctx.fillStyle = `rgba(220,240,252,${0.18 * alpha})`;
     ctx.beginPath();
     ctx.arc(bx, by, b.r, 0, Math.PI * 2);
     ctx.fill();
 
-    const rainbow = ["#ff5a5a", "#ff9d3f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9"];
-    const spin = b.wobbleSeed * 0.001; // each bubble's band pattern starts at a different rotation, so they don't all look identical
-    ctx.lineWidth = 2.4;
-    rainbow.forEach((color, ci) => {
-      const a0 = spin + (ci / rainbow.length) * Math.PI * 2;
-      const a1 = spin + ((ci + 1.05) / rainbow.length) * Math.PI * 2;
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.75 * alpha;
-      ctx.beginPath();
-      ctx.arc(bx, by, b.r * 0.95, a0, a1);
-      ctx.stroke();
-    });
+    const rainbow = ["#ff5a5a", "#ff9d3f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9", "#ff5a5a"];
+    // each bubble's own seed offsets its rotation so they don't all look
+    // identical; the slow performance.now() term makes the swirl
+    // actually creep around over the bubble's lifetime instead of
+    // sitting frozen in one pose
+    const spin1 = b.wobbleSeed * 0.0011 + performance.now() * 0.00006;
+    const spin2 = b.wobbleSeed * 0.0007 - performance.now() * 0.00004;
+
+    // CONFIRMED BUG FIX: "lighter" (additive) compositing against the
+    // pale sky backdrop just pushed everything toward washed-out white
+    // instead of showing real color -- ordinary source-over alpha
+    // blending at a real opacity actually tints the disc.
+    const g1 = ctx.createConicGradient(spin1, bx, by);
+    rainbow.forEach((c, i) => g1.addColorStop(i / (rainbow.length - 1), c));
+    ctx.globalAlpha = 0.55 * alpha;
+    ctx.fillStyle = g1;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    const g2 = ctx.createConicGradient(spin2, bx - b.r * 0.15, by + b.r * 0.1);
+    rainbow.forEach((c, i) => g2.addColorStop(i / (rainbow.length - 1), c));
+    ctx.globalAlpha = 0.35 * alpha;
+    ctx.fillStyle = g2;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.globalAlpha = 1;
-    // crisp bright rim on top of the color bands, so the edge still
-    // reads as a clean sphere outline rather than just a colored smear
+
+    // real bubbles show color mostly across the curved mid-surface, with
+    // the dead center reading a bit closer to clear glass -- a light,
+    // small fade toward the middle instead of the heavier wash that was
+    // drowning the color out entirely before
+    const centerFade = ctx.createRadialGradient(bx, by, 0, bx, by, b.r);
+    centerFade.addColorStop(0, `rgba(235,245,255,${0.22 * alpha})`);
+    centerFade.addColorStop(0.4, `rgba(235,245,255,${0.03 * alpha})`);
+    centerFade.addColorStop(1, "rgba(235,245,255,0)");
+    ctx.fillStyle = centerFade;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore(); // release the clip before the rim/highlight below
+
+    // crisp bright rim on top, so the edge still reads as a clean
+    // sphere outline rather than just a colored smear
     ctx.strokeStyle = `rgba(255,255,255,${0.6 * alpha})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -38893,7 +38936,7 @@ function drawSandboxBubbles(camX) {
    shape as the fan, but the ride itself is an arc instead of a hover.
    ====================================================== */
 const sandboxPendulum = {
-  x: 1500, // CONFIRMED CHANGE: moved further right again (was 1050, then 1150) -- per "give pendulum a lot more room," now that it has goal circles on BOTH sides instead of just toward the pile, it needs real clearance from the bubble wand on its left too, not just the pile on its right
+  x: 1900, // CONFIRMED CHANGE: moved further right again (was 1050, then 1150, then 1500) -- per direct report of actually landing ON the microscope station while thrown left ("also push both further right cus i am landing on the microscope rn"). A real-release sweep only sampled out to ~-534 offset, but real play clearly reaches further than that; rather than keep chasing the exact ceiling, this gives a much bigger safety margin (540px clear of the bubble wand even at the modeled max-left throw) instead of a tight fit.
   anchorHeight: 190,   // height above ground of the pivot point -- raised along with everything else below, per "make the pendulum big"
   armLength: 120,
   angle: 0.9,          // radians from straight-down; swings between -amplitude and +amplitude
@@ -38921,11 +38964,20 @@ const SANDBOX_PENDULUM_OMEGA = 1.7; // swing speed
 // the far ones demand a genuinely well-timed release, not just "throw
 // hard." Same four distances/radii mirrored on both sides for a
 // symmetric difficulty curve either direction.
+// CONFIRMED CHANGE: widened all four distances after a real-release
+// headless sweep (letting the swing run naturally and releasing at ~15
+// different real moments across the cycle, not a hand-guessed range) --
+// per direct feedback ("are the pendulum goals actually reasonable? i
+// shoot a lot further than they are"). Actual landings ranged roughly
+// +-20 (weak releases right near the peak) out to +-435 (strong,
+// well-timed ones), so the old farthest ring at 320 was well short of
+// what a good throw actually covers. Retuned to 100/190/290/400 so the
+// spread now matches real reachable distances.
 const SANDBOX_PENDULUM_GOAL_OFFSETS = [
-  { dist: 110, radius: 28 },
-  { dist: 180, radius: 24 },
-  { dist: 250, radius: 19 },
-  { dist: 320, radius: 15 }
+  { dist: 100, radius: 28 },
+  { dist: 190, radius: 24 },
+  { dist: 290, radius: 19 },
+  { dist: 400, radius: 15 }
 ];
 const SANDBOX_PENDULUM_GOALS = [
   ...SANDBOX_PENDULUM_GOAL_OFFSETS.map(g => ({ x: sandboxPendulum.x - g.dist, radius: g.radius, side: "left" })),
@@ -39203,7 +39255,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 2100, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +400 again, alongside the pendulum's own bigger move, to clear the pendulum's new far-right goal circle -- SANDBOX_WIDTH bumped alongside it below
+const sandboxBlockPile = { x: 2600, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +400 again, alongside the pendulum's own move further right -- SANDBOX_WIDTH bumped alongside it below
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -39260,34 +39312,34 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
-  { x: 1929, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1987, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 2039, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 2089, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 2143, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 2191, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 2429, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 2487, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2539, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 2589, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 2643, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2691, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
-  { x: 1969, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 2015, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 2059, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 2105, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 2147, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 2469, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 2515, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2559, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 2605, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2647, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
-  { x: 2002, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 2042, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 2080, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 2120, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2502, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 2542, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2580, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 2620, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
-  { x: 2032, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 2068, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 2102, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 2532, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2568, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 2602, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 2054, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 2086, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2554, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2586, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
-  { x: 2070, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
+  { x: 2570, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -42294,7 +42346,7 @@ function drawMicroscopeUI() {
    out remounting before you can hop back on.
    ====================================================== */
 const sandboxBalanceBall = {
-  x: 2420, // CONFIRMED CHANGE: shifted right +400 alongside the block pile's own move (pendulum rework), preserving the same clearance from the pile's edge
+  x: 2920, // CONFIRMED CHANGE: shifted right +400 again alongside the block pile's own move, preserving the same clearance from the pile's edge
   radius: 27,
   tiltAngle: 0,   // 0 = perfectly balanced upright; +/- = leaning that way
   tiltVel: 0,
