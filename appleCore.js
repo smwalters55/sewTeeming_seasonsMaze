@@ -44852,21 +44852,37 @@ function drawSandboxAntFarm(camX) {
   // CONFIRMED CHANGE ("lets talk ant visual" -> pheromone trail visibility,
   // "vvv subtle. scales yes. i want trueth"): a literal read-out of the
   // real ANT_FARM_PHEROMONE array already driving forager wander weighting
-  // -- not a separate decorative trail effect. Opacity is a direct LINEAR
-  // scale of each cell's actual current strength (0 -> invisible, capped
-  // low even at full strength per "vvv subtle"), so what's visible is
-  // always exactly true to what's steering the ants right now, never
-  // eased/boosted for legibility the way the digger crumble effect was.
-  // Drawn on top of the tunnel floor, under the ants themselves.
-  const PHEROMONE_GLOW_MAX_ALPHA = 0.16;
+  // -- not a separate decorative trail effect. Both alpha AND radius are
+  // a direct LINEAR scale of each cell's actual current strength (0 ->
+  // invisible, capped low even at full strength per "vvv subtle"), so
+  // what's visible is always exactly true to what's steering the ants
+  // right now, never eased/boosted for legibility.
+  // CONFIRMED CHANGE ("i want to see the pheromone grade more
+  // specifically. like, which area in the tunel has more... a sphere
+  // kind of thing, not like which whole slice"): the old version filled
+  // almost the entire tunnel blob at every cell that had ANY pheromone,
+  // varying only opacity -- a weak trace and a strong hotspot took up
+  // the exact same footprint, reading as "this whole room is lit" rather
+  // than "here specifically is where it's concentrated." Replaced the
+  // fixed-size blob with a small radial glow whose RADIUS also scales
+  // with strength (tiny pinprick when faint, a real glowing orb at the
+  // exact deposit point when strong), sitting right on the tunnel line
+  // at that cell instead of washing over its whole shape.
   for (let row = 0; row < ANT_FARM_ROWS; row++) {
     for (let col = 0; col < ANT_FARM_COLS; col++) {
       const strength = ANT_FARM_PHEROMONE[row][col];
       if (strength <= 0) continue;
+      const t = Math.min(1, strength / ANT_FARM_PHEROMONE_MAX);
       const c0 = antFarmCellCenter(row, col);
-      const alpha = Math.min(1, strength / ANT_FARM_PHEROMONE_MAX) * PHEROMONE_GLOW_MAX_ALPHA;
-      ctx.fillStyle = `rgba(255,195,90,${alpha})`;
-      organicBlobPath(ctx, gx + c0.x, gyTop + c0.y, ANT_FARM_CELL_W * 0.44, ANT_FARM_CELL_H * 0.44, row * 31 + col * 7 + 500, 7);
+      const cx = gx + c0.x, cy = gyTop + c0.y;
+      const r = ANT_FARM_CELL_AVG * (0.1 + t * 0.32);
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      glow.addColorStop(0, `rgba(255,200,100,${t * 0.6})`);
+      glow.addColorStop(0.6, `rgba(255,195,90,${t * 0.3})`);
+      glow.addColorStop(1, "rgba(255,190,80,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
