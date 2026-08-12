@@ -38387,11 +38387,9 @@ function drawWigStand(camX) {
     ctx.stroke();
     drawWigShape(w.id, sx + dx, gy - 46 + dy, 0.34);
   });
-  ctx.fillStyle = "#5a4a2a";
-  ctx.font = "11px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Wigs", sx, gy - 92);
-  ctx.textAlign = "left";
+  // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") --
+  // the floating "Wigs" label removed; the stand itself still reads
+  // fine without it.
 }
 
 /* ======================================================
@@ -38565,12 +38563,8 @@ function drawMicroscopeStation(camX) {
   ctx.beginPath();
   ctx.arc(sx + 10, gy - 46, 4, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = "#5a4a2a";
-  ctx.font = "11px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Microscope", sx, gy - 100);
-  ctx.textAlign = "left";
+  // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") --
+  // the floating "Microscope" label removed.
 }
 
 /* ======================================================
@@ -38706,12 +38700,8 @@ function drawSandboxPendulum(camX) {
   ctx.strokeStyle = "rgba(0,0,0,0.25)";
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  ctx.fillStyle = "#5a4a2a";
-  ctx.font = "11px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Pendulum", sx, anchorScreenY - 18);
-  ctx.textAlign = "left";
+  // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") --
+  // the floating "Pendulum" label removed.
 }
 
 /* ======================================================
@@ -40546,29 +40536,91 @@ function drawSandboxScene(camX) {
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // disheveled sand floor -- base tone, then real dug-up irregularity
-  // (dark divots, lighter kicked-up mounds) instead of a uniform fill,
-  // so it reads as "played in," not freshly raked
+  // disheveled sand floor -- base tone, then dense granular texture,
+  // then real dug-out holes (not just tinted smudges) -- so it reads as
+  // actually played-in sand, not a flat floor with a few shadows on it.
   const groundGrad = ctx.createLinearGradient(0, gy, 0, canvas.height);
   groundGrad.addColorStop(0, "#e8d5a3");
   groundGrad.addColorStop(1, "#d6bf85");
   ctx.fillStyle = groundGrad;
   ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
 
-  for (let i = 0; i < 26; i++) {
-    const wx = pseudoRandom(i * 9.3) * (SANDBOX_WIDTH + 80) - 20;
-    const dx = wx - camX;
-    const isDivot = i % 2 === 0;
-    ctx.fillStyle = isDivot ? "rgba(120,98,55,0.3)" : "rgba(255,248,220,0.35)";
+  // CONFIRMED CHANGE ("give the whole thing more texture like sand") --
+  // two more texture layers across the ENTIRE floor width (not just a
+  // handful of scattered spots): coarser soft clumps first, then a
+  // dense field of tiny individual grains on top of those, each varying
+  // in size/tone so it reads as real granular sand instead of a flat
+  // tinted fill.
+  ctx.fillStyle = "rgba(150,125,75,0.22)";
+  for (let i = 0; i < 70; i++) {
+    const gx = pseudoRandom(i * 11.3 + 200) * (SANDBOX_WIDTH + 80) - 20 - camX;
+    const gyy = gy + 2 + pseudoRandom(i * 6.7 + 201) * (canvas.height - gy - 4);
+    const r = 3 + pseudoRandom(i * 3.1 + 202) * 5;
     ctx.beginPath();
-    ctx.ellipse(dx, gy + 3 + pseudoRandom(i * 4.1) * 10, 10 + pseudoRandom(i * 2.7) * 10, 4 + pseudoRandom(i * 6.6) * 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(gx, gyy, r, r * 0.55, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.fillStyle = "rgba(160,135,80,0.35)";
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 260; i++) {
     const gx = pseudoRandom(i * 3.7) * (SANDBOX_WIDTH + 80) - 20 - camX;
-    const gyy = gy + 4 + pseudoRandom(i * 5.1 + 1) * (canvas.height - gy - 8);
-    ctx.fillRect(gx, gyy, 2, 2);
+    const gyy = gy + 3 + pseudoRandom(i * 5.1 + 1) * (canvas.height - gy - 8);
+    const light = pseudoRandom(i * 2.2 + 9) < 0.5;
+    ctx.fillStyle = light ? "rgba(255,248,222,0.4)" : "rgba(150,120,70,0.32)";
+    const gsize = 1 + pseudoRandom(i * 8.8) * 1.6;
+    ctx.fillRect(gx, gyy, gsize, gsize);
+  }
+
+  // CONFIRMED BUG FIX ("the holes look like hexagon shapes... make them
+  // look like organic holes") -- straight lines between jittered points
+  // is exactly what reads as a hexagon/polygon no matter how much the
+  // radius per point varies, since the corners stay sharp and evenly
+  // spaced. Switched to the standard smooth-blob trick: jitter BOTH the
+  // angle spacing (not just the radius) so points never land in a
+  // regular ring, then connect them with quadratic curves through each
+  // edge's midpoint (each raw point becomes a curve control point, not
+  // a corner) -- the outline comes out as a soft, lumpy, organic blob
+  // with no straight edges or sharp corners anywhere.
+  function organicBlobPath(cx, cy, rx, ry, seedBase, pointCount) {
+    const pts = [];
+    for (let p = 0; p < pointCount; p++) {
+      const angJitter = (pseudoRandom(seedBase + p * 4.4) - 0.5) * (Math.PI * 2 / pointCount) * 0.7;
+      const ang = (p / pointCount) * Math.PI * 2 + angJitter;
+      const rJitter = 0.55 + pseudoRandom(seedBase + p * 7.7 + 3) * 0.6;
+      pts.push({ x: cx + Math.cos(ang) * rx * rJitter, y: cy + Math.sin(ang) * ry * rJitter });
+    }
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const start = mid(pts[pointCount - 1], pts[0]);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    for (let p = 0; p < pointCount; p++) {
+      const cur = pts[p], next = pts[(p + 1) % pointCount];
+      const m = mid(cur, next);
+      ctx.quadraticCurveTo(cur.x, cur.y, m.x, m.y);
+    }
+    ctx.closePath();
+  }
+
+  // each spot is a genuinely irregular organic pit, a darker rim sliver
+  // along its far edge for a little depth, and a small ragged mound of
+  // kicked-out sand piled just to one side -- reads as an actual dug-out
+  // hole with its own spoil pile, not a shadow (or a hexagon) painted
+  // onto the sand.
+  for (let i = 0; i < 22; i++) {
+    const wx = pseudoRandom(i * 9.3) * (SANDBOX_WIDTH + 80) - 20;
+    const dx = wx - camX;
+    const dy = gy + 4 + pseudoRandom(i * 4.1) * 12;
+    const baseR = 7 + pseudoRandom(i * 2.7) * 7;
+    ctx.fillStyle = "rgba(95,76,45,0.5)";
+    organicBlobPath(dx, dy, baseR, baseR * 0.42, i * 31.7, 11);
+    ctx.fill();
+    ctx.fillStyle = "rgba(70,55,32,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(dx, dy + baseR * 0.18, baseR * 0.75, baseR * 0.22, 0, 0, Math.PI);
+    ctx.fill();
+    const mSide = pseudoRandom(i * 6.6) < 0.5 ? -1 : 1;
+    const mx = dx + mSide * (baseR * 1.1);
+    ctx.fillStyle = "rgba(255,248,222,0.45)";
+    organicBlobPath(mx, dy, baseR * 0.4, baseR * 0.22, i * 47.3 + 500, 8);
+    ctx.fill();
   }
 
   // CONFIRMED BUG FIX: crows used to draw LAST (see below), which put
@@ -40578,7 +40630,7 @@ function drawSandboxScene(camX) {
   // background element.
   drawCrows(camX); // same birds, consistent across every zone
   drawStuckShovel(SANDBOX_WIDTH * 0.55, camX);
-  drawSandMound(sandboxReturnMound.x, camX, "Back to Spring");
+  drawSandMound(sandboxReturnMound.x, camX, null); // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") -- "Back to Spring" label removed, same as the entrance mound's own label removal above
   drawWigStand(camX);
   drawSandboxFan(camX);
   drawMicroscopeStation(camX);
