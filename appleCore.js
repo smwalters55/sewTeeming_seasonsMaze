@@ -45391,7 +45391,31 @@ function drawSandboxSkyToroid(sx, sy, size, rotation, palette, seed) {
   ctx.restore();
 }
 
+// CONFIRMED CHANGE ("lets talk 3 as well and sky color" -> picked "aurora
+// ribbon drifts through hues" to solve both at once): a soft gradient band
+// across the upper sky that slowly cycles hue over real time -- this is
+// the never-built "#3" option from the original decor brainstorm, and its
+// slow drift doubles as the sky-color change Sam asked about without
+// repainting the whole base sky. Fixed to screen (not parallaxed to
+// world-space) since it's meant to read as distant atmosphere, not a
+// scene object.
+function drawSandboxSkyAurora() {
+  const t = performance.now() * 0.00005;
+  const hueA = (205 + Math.sin(t) * 45 + 360) % 360;
+  const hueB = (hueA + 55 + Math.sin(t * 1.4 + 2) * 20 + 360) % 360;
+  const bandTop = 0, bandHeight = 130;
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, bandTop, canvas.width, bandTop + bandHeight);
+  grad.addColorStop(0, `hsla(${hueA},65%,78%,0.11)`);
+  grad.addColorStop(0.5, `hsla(${(hueA + hueB) / 2},70%,82%,0.17)`);
+  grad.addColorStop(1, `hsla(${hueB},65%,78%,0.11)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, bandTop, canvas.width, bandHeight);
+  ctx.restore();
+}
+
 function drawSandboxSkyDecor(camX) {
+  drawSandboxSkyAurora();
   const now = performance.now() * 0.001;
   SANDBOX_SKY_SHAPES.forEach(s => {
     const sx = s.worldX - camX * s.parallax;
@@ -45406,26 +45430,44 @@ function drawSandboxSkyDecor(camX) {
       drawSandboxSkyShape(sx, sy, s.size, s.sides, rotation, s.palette, s.seed);
     }
   });
+  // CONFIRMED BUG FIX ("oh i didnt notice any motes or satlalites at all
+  // yet"): at 1.6px radius / 0.6 alpha these were technically drawing but
+  // functionally invisible against the sky. Bumped size/opacity way up
+  // and added a soft glow halo + gentle twinkle so each one actually
+  // reads as a small satellite/spark, not a rendering no-op.
   SANDBOX_SKY_MOTES.forEach(m => {
     const orbitAngle = now * m.orbitSpeed + m.phase;
     const sx = m.worldX - camX * m.parallax + Math.cos(orbitAngle) * m.orbitR;
     if (sx < -20 || sx > canvas.width + 20) return;
     const sy = m.y + Math.sin(orbitAngle) * m.orbitR * 0.5;
     const color = m.warm ? "230,140,110" : "140,220,220";
-    // a short faint trail hinting at the orbit motion, drawn before the
-    // mote itself so the mote's own dot sits on top
-    const trailAngle = orbitAngle - 0.4;
+    const twinkle = 0.75 + Math.sin(now * 3 + m.phase * 4) * 0.25;
+    // a short trail hinting at the orbit motion, drawn before the mote
+    // itself so the mote's own dot sits on top
+    const trailAngle = orbitAngle - 0.45;
     const tx = m.worldX - camX * m.parallax + Math.cos(trailAngle) * m.orbitR;
     const ty = m.y + Math.sin(trailAngle) * m.orbitR * 0.5;
-    ctx.strokeStyle = `rgba(${color},0.22)`;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = `rgba(${color},0.4)`;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(sx, sy);
     ctx.lineTo(tx, ty);
     ctx.stroke();
-    ctx.fillStyle = `rgba(${color},0.6)`;
+    // soft glow halo so it reads at a glance, not just as a hard dot
+    const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, 7);
+    glow.addColorStop(0, `rgba(${color},${0.5 * twinkle})`);
+    glow.addColorStop(1, `rgba(${color},0)`);
+    ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(sx, sy, 1.6, 0, Math.PI * 2);
+    ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(${color},${0.95 * twinkle})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,255,255,${0.7 * twinkle})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.1, 0, Math.PI * 2);
     ctx.fill();
   });
 }
