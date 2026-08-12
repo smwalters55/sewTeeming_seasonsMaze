@@ -2173,7 +2173,18 @@ function handleInput(){
   // digging in one place while continuing to walk away from it, and far
   // enough that the newly-dug platform's own landing/snap logic no
   // longer has any position left to catch them at.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm) {
+  // CONFIRMED BUG FIX: none of the ball pit's own states (ladder,
+  // standing on the rim, swimming) were ever in this exclusion list, so
+  // this generic per-frame walk (a flat, non-deltaTime-scaled
+  // player.speed nudge, ~180px/s worth at 60fps) kept running underneath
+  // the ball pit's own deltaTime-scaled movement the whole time, adding
+  // on top of it. The ladder/rim overwrite player.x outright every
+  // frame so it was invisible there, but inBallPit's swim only ADDS a
+  // delta -- so holding an arrow while swimming was quietly getting
+  // both a fast flat walk AND the swim speed at once, which is exactly
+  // what "horiz movement is waaay too fast" was describing. This was
+  // never really about the swim constant being tuned too high.
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -38008,7 +38019,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 3820; // CONFIRMED CHANGE: widened again (was 3650) to make room for the new ant farm toy, placed just past the ball pit with a clear gap between them
+const SANDBOX_WIDTH = 3920; // CONFIRMED CHANGE: widened again (was 3820) alongside the ant farm's move further right for more breathing room past the ball pit
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -42761,6 +42772,15 @@ function getSandboxBalanceBallFallTilt() {
   return lieAngle * (1 - riseP) * (1 - riseP);
 }
 
+// the ball pit's own lying-down swim tilt -- same rotation convention
+// as getSandboxBalanceBallFallTilt (positive angle = tipped toward
+// facing-right), just driven by swim direction instead of a fall.
+// Gated on player.inBallPit so a leftover angle from the moment you
+// climbed out doesn't linger into the shared tilt sum.
+function getSandboxBallPitSwimTilt() {
+  return player.inBallPit ? sandboxBallPit.swimTiltAngle : 0;
+}
+
 function drawSandboxBalanceBall(camX) {
   const b = sandboxBalanceBall;
   const sx = b.x - camX;
@@ -42840,10 +42860,17 @@ const sandboxBallPit = {
   x: 3260,       // world x of the pit's left wall
   width: 240,
   rimHeight: 190, // how tall the walls stand -- also the full swimmable Y range once inside
-  bobSeed: 12.3
+  bobSeed: 12.3,
+  swimTiltAngle: 0 // CONFIRMED CHANGE: eased toward a flat lying-down tilt while actually moving sideways, back to upright otherwise -- see updateSandboxBallPit/getSandboxBallPitSwimTilt
 };
 const SANDBOX_BALL_PIT_LADDER_OFFSET = -16; // ladder sits just outside the left wall
-const SANDBOX_BALL_PIT_SWIM_SPEED = 60;     // px/s -- deliberately slow, "swim," not "run"
+// CONFIRMED BUG FIX: horizontal swim speed used the same constant as
+// vertical (60px/s) and read as "waaay too fast" for something meant to
+// feel like slowly wading through a pit of balls -- cut well back.
+// Vertical (climbing toward the surface to get out, or diving deeper)
+// stays at the original feel.
+const SANDBOX_BALL_PIT_SWIM_SPEED_X = 26;   // px/s
+const SANDBOX_BALL_PIT_SWIM_SPEED_Y = 60;   // px/s
 const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
 
 // a fixed scatter of balls filling the interior -- generated once so
@@ -42922,8 +42949,8 @@ function updateSandboxBallPit(deltaTime) {
     if (keys.right) vx = 1;
     if (keys.up) vy = 1;
     if (keys.down) vy = -1;
-    player.x += vx * SANDBOX_BALL_PIT_SWIM_SPEED * deltaTime;
-    player.y += vy * SANDBOX_BALL_PIT_SWIM_SPEED * deltaTime;
+    player.x += vx * SANDBOX_BALL_PIT_SWIM_SPEED_X * deltaTime;
+    player.y += vy * SANDBOX_BALL_PIT_SWIM_SPEED_Y * deltaTime;
     // clamped to the interior -- can't swim out through the walls/floor,
     // and reaching the very top just holds you at the rim's underside
     // rather than popping back out (climbing OUT is its own deliberate
@@ -42931,6 +42958,17 @@ function updateSandboxBallPit(deltaTime) {
     player.x = Math.max(pit.x + 10, Math.min(pit.x + pit.width - 10 - player.width, player.x));
     player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
     player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
+
+    // CONFIRMED CHANGE ("i want player to be in a laying down pose"
+    // while swimming sideways, "head bee in the direction of where it
+    // ids going") -- eased toward a flat lie (rotated so the head leads
+    // whichever way you're actually moving horizontally right now), and
+    // eased back to upright the moment horizontal movement stops (pure
+    // vertical swimming or holding still stays upright). See
+    // getSandboxBallPitSwimTilt for how this feeds into the shared
+    // player-tilt system every other sandbox toy also uses.
+    const swimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : 0;
+    pit.swimTiltAngle += (swimTiltTarget - pit.swimTiltAngle) * Math.min(1, deltaTime * 8);
 
     // climb out -- swim up near the rim and press space. CONFIRMED BUG
     // FIX: this originally required both a distance-to-ladder check
@@ -43125,7 +43163,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 2 };
 const sandboxAntFarm = {
-  x: 3560, // world x of the case's left edge
+  x: 3660, // CONFIRMED CHANGE: pushed further right (was 3560) for more breathing room past the ball pit's right wall, per direct feedback
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
   // local pixel position within the grid interior, only meaningful
@@ -43981,8 +44019,10 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // the sandbox balance ball's own knocked-over lie-down/rise-up beat --
   // see getSandboxBalanceBallFallTilt's own comment for the shape of it
   const balanceBallFallTilt = (typeof sandboxBalanceBall !== "undefined") ? getSandboxBalanceBallFallTilt() : 0;
+  // the ball pit's own lying-down swim tilt -- see getSandboxBallPitSwimTilt's own comment
+  const ballPitSwimTilt = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
