@@ -42555,7 +42555,18 @@ const sandboxBalanceBall = {
   tAccum: 0,
   spinAngle: 0,   // CONFIRMED CHANGE: separate from tiltAngle -- the ball's own visible roll, so it reads as a real rolling ball rather than only ever wobbling a few degrees
   jumpOffset: 0,  // CONFIRMED CHANGE: real hop-while-balancing support
-  jumpVel: 0
+  jumpVel: 0,
+  // CONFIRMED CHANGE ("what if something like, a butterfly maybe flew
+  // under you and you have to jump over those") -- a reflex layer on
+  // top of the balance itself, not a new ride: a butterfly periodically
+  // flutters across at ankle height while you're riding, and you have
+  // to actually jump (the hop already added above) right as it passes
+  // or it knocks you off, same fail/recovery as toppling from a bad tilt.
+  butterflyActive: false,
+  butterflyWorldX: 0,
+  butterflyDir: 1,
+  butterflyHitThisPass: false,
+  butterflySpawnT: 2.5 + Math.random() * 2
 };
 // CONFIRMED CHANGE: retuned harder after direct feedback ("make balance
 // ball more difficult its super easy rn") -- the earlier pass (1.3
@@ -42651,6 +42662,47 @@ function updateSandboxBalanceBall(deltaTime) {
       player.jumping = true;
       player.vy = 1.2;
       player.vx = b.fallDir * 2.5;
+      return;
+    }
+
+    // the butterfly obstacle -- spawns from a random side, flutters
+    // across at ankle height, and needs an actual well-timed jump to
+    // clear. Checked after the tilt-fail above so a butterfly hit and a
+    // bad-tilt topple can't both fire the same frame.
+    b.butterflySpawnT -= deltaTime;
+    if (!b.butterflyActive && b.butterflySpawnT <= 0) {
+      b.butterflyActive = true;
+      b.butterflyDir = Math.random() < 0.5 ? 1 : -1;
+      b.butterflyWorldX = b.x - b.butterflyDir * 220;
+      b.butterflyHitThisPass = false;
+    }
+    if (b.butterflyActive) {
+      const flySpeed = 100;
+      b.butterflyWorldX += b.butterflyDir * flySpeed * deltaTime;
+      const dist = Math.abs(b.butterflyWorldX - b.x);
+      // CONFIRMED CHANGE: jumpOffset > 14 counts as "cleared it" -- well
+      // under the jump's own ~35px peak, so a decently-timed jump (not
+      // just a frame-perfect one) is enough to clear it
+      if (dist < 22 && !b.butterflyHitThisPass) {
+        b.butterflyHitThisPass = true;
+        if (b.jumpOffset < 14) {
+          player.onBalanceBall = false;
+          b.failed = true;
+          b.failT = 0;
+          b.fallDir = b.butterflyDir;
+          b.jumpOffset = 0;
+          b.jumpVel = 0;
+          if (b.surviveMs > b.bestMs) b.bestMs = b.surviveMs;
+          player.jumping = true;
+          player.vy = 1.2;
+          player.vx = b.fallDir * 2.5;
+          return;
+        }
+      }
+      if (dist > 260) {
+        b.butterflyActive = false;
+        b.butterflySpawnT = 2.5 + Math.random() * 2.5;
+      }
     }
   } else if (b.failed) {
     b.failT += deltaTime * 1000;
@@ -42660,11 +42712,14 @@ function updateSandboxBalanceBall(deltaTime) {
       b.tiltVel = 0;
       b.surviveMs = 0;
     }
+    b.butterflyActive = false;
   } else {
     // idle settle when nobody's on it
     b.tiltAngle *= 0.9;
     b.tiltVel *= 0.9;
     b.spinAngle *= 0.95;
+    b.butterflyActive = false;
+    b.butterflySpawnT = Math.max(b.butterflySpawnT, 2); // fresh-ish spawn delay next time someone mounts
   }
 }
 
@@ -42782,9 +42837,17 @@ const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
 // which is what actually sells "surrounded" rather than "standing in
 // front of a ball-patterned wall")
 const SANDBOX_BALL_PIT_BALL_COLORS = ["#ff5a5a", "#ffb23f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9"];
+// CONFIRMED BUG FIX ("not all balls are in the pit"): x/y used to span
+// the FULL 0..width / 0..rimHeight range with no margin, so any ball
+// generated near an edge (radius up to 12) poked straight through the
+// walls, which are only 14px thick and sit right at that same edge --
+// a ball centered at x=0 pokes out to x=-12, clean past the wall's own
+// outer edge. Margined well inside the walls now (an inset roughly
+// equal to the biggest possible ball radius), plus an explicit clip in
+// the draw function below as a second line of defense regardless.
 const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 90 }, (_, i) => ({
-  x: pseudoRandom(i * 5.3 + 1) * sandboxBallPit.width,
-  y: pseudoRandom(i * 7.1 + 2) * sandboxBallPit.rimHeight,
+  x: 16 + pseudoRandom(i * 5.3 + 1) * (sandboxBallPit.width - 32),
+  y: 14 + pseudoRandom(i * 7.1 + 2) * (sandboxBallPit.rimHeight - 22),
   r: 7 + pseudoRandom(i * 3.7 + 3) * 5,
   color: SANDBOX_BALL_PIT_BALL_COLORS[i % SANDBOX_BALL_PIT_BALL_COLORS.length],
   front: pseudoRandom(i * 9.9 + 4) > 0.82, // ~18% drawn in front of the player
@@ -42806,8 +42869,14 @@ function updateSandboxBallPit(deltaTime) {
       player.onBallPitLadder = false;
       player.y = pit.rimHeight;
       player.jumping = false;
-    } else if (player.y <= 0) {
-      // climbed back down to the sand -- steps off, ordinary ground catch takes it from here
+    } else if (vertical < 0 && player.y <= 0) {
+      // CONFIRMED BUG FIX: this used to fire on ANY frame where
+      // player.y<=0, including the very first frame right after
+      // mounting (mount happens at y=0 with no vertical input yet) --
+      // so pressing space at the ladder mounted for one frame and was
+      // immediately kicked back off before a real keyboard press could
+      // even register as held. Only the deliberate act of climbing
+      // DOWN past the bottom should step back off onto the sand.
       player.onBallPitLadder = false;
       player.y = 0;
       player.jumping = false;
@@ -42831,16 +42900,18 @@ function updateSandboxBallPit(deltaTime) {
     player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
     player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
 
-    // climb out -- swim up near the rim and press jump. CONFIRMED BUG
-    // FIX: this originally also required being within 40px of the
-    // ladder's exact x, but the interior swim-clamp's left bound
-    // (pit.x+10) keeps the player's CENTER at least ~46px from the
-    // ladder (which sits outside the left wall) even hugging the
-    // leftmost edge -- that distance check could structurally never
-    // pass. Dropped it: climbing out anywhere along the rim once
-    // you've swum to the top is more intuitive anyway (a real pool
-    // doesn't make you swim back to one specific ladder spot).
-    if (keys.upJustPressed && player.y > pit.rimHeight - 20) {
+    // climb out -- swim up near the rim and press space. CONFIRMED BUG
+    // FIX: this originally required both a distance-to-ladder check
+    // (dropped separately, see below) AND used the up-arrow as the
+    // interact key -- but every OTHER sandbox toy (wig stand,
+    // microscope, balance ball, ladder mount below) uses SPACE to
+    // mount/dismount, with arrows reserved for movement. Up/down here
+    // are already busy driving vertical swim movement, so overloading
+    // them as the exit trigger too was inconsistent with the rest of
+    // the game AND directly caused "idk how to get in the ball pit it
+    // wont let me" -- switched to space throughout, matching every
+    // other toy's own convention.
+    if (keys.spaceJustPressed && player.y > pit.rimHeight - 20) {
       player.inBallPit = false;
       player.y = pit.rimHeight;
       player.jumping = false;
@@ -42849,26 +42920,23 @@ function updateSandboxBallPit(deltaTime) {
     return;
   }
 
-  // mount the ladder -- walk up to it from the ground and press up.
-  // CONFIRMED BUG FIX: this used to gate on !player.jumping, but the
-  // generic "jump on up-arrow" handler elsewhere runs earlier in the
-  // same frame and claims that exact same upJustPressed press-edge
-  // first, setting player.jumping=true before this check ever saw it --
-  // so pressing up near the ladder did a normal little hop FIRST, and
-  // only started actually climbing once that hop's own fall happened to
-  // land while up was still held. Keying off the press-edge directly
-  // and just taking over (resetting vy) engages immediately instead.
-  if (keys.upJustPressed && isPlayerNear(ladderX, 0, 16, 12, 12)) {
+  // mount the ladder -- walk up to it from the ground and press space,
+  // same "walk up, interact" shape as the wig stand/microscope/balance
+  // ball. CONFIRMED BUG FIX: this used to require holding the up arrow,
+  // inconsistent with every other sandbox toy's space-to-interact
+  // convention (and easy to miss entirely, per direct feedback).
+  if (keys.spaceJustPressed && isPlayerNear(ladderX, 0, 20, 14, 14)) {
     player.onBallPitLadder = true;
     player.jumping = true;
     player.vy = 0;
     return;
   }
 
-  // standing on the rim (climbed the ladder all the way up) -- hold
-  // down to drop in and start swimming, same "the toy takes over
-  // position" shape as every other sandbox mount
-  if (keys.down && Math.abs(player.y - pit.rimHeight) < 8 &&
+  // standing on the rim (climbed the ladder all the way up) -- press
+  // space to drop in and start swimming. CONFIRMED BUG FIX: was
+  // hold-down, switched to space for the same consistency reason as
+  // the mount/exit triggers above.
+  if (keys.spaceJustPressed && Math.abs(player.y - pit.rimHeight) < 8 &&
       player.x + player.width > pit.x && player.x < pit.x + pit.width) {
     player.inBallPit = true;
     player.y = pit.rimHeight - 14;
@@ -42895,6 +42963,13 @@ function drawSandboxBallPitBalls(camX, frontOnly) {
   const pit = sandboxBallPit;
   const sx = pit.x - camX;
   const t = performance.now() * 0.001;
+  // CONFIRMED CHANGE: explicit clip to the interior, belt-and-suspenders
+  // alongside the generation margin above -- keeps any ball (including
+  // the bob wobble's few extra px) from ever rendering past the walls
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sx + 14, gy - pit.rimHeight, pit.width - 28, pit.rimHeight);
+  ctx.clip();
   SANDBOX_BALL_PIT_BALLS.forEach(b => {
     if (b.front !== frontOnly) return;
     const bob = Math.sin(t * 0.7 + b.bobPhase) * 2.5;
@@ -42911,6 +42986,7 @@ function drawSandboxBallPitBalls(camX, frontOnly) {
     ctx.arc(bx - b.r * 0.3, by - b.r * 0.3, b.r * 0.28, 0, Math.PI * 2);
     ctx.fill();
   });
+  ctx.restore();
 }
 
 function drawSandboxBallPit(camX) {
@@ -42965,6 +43041,50 @@ function drawSandboxBallPit(camX) {
     ctx.lineTo(ladderX + 6, gy - ry);
     ctx.stroke();
   }
+}
+
+// the balance ball's butterfly obstacle -- a small monarch-style flutter
+// crossing at ankle height, drawn with simple flapping wings rather than
+// anything elaborate (this is a reflex layer on top of the existing
+// balance toy, not a new ride)
+function drawSandboxBalanceBallButterfly(camX) {
+  const b = sandboxBalanceBall;
+  if (!b.butterflyActive) return;
+  const bx = b.butterflyWorldX - camX;
+  const flyHeight = b.radius * 1.6; // roughly ankle-level against the rider's normal standing height
+  const now = performance.now();
+  const by = gy - flyHeight - Math.sin(now * 0.006) * 4;
+  const flap = 0.3 + Math.abs(Math.sin(now * 0.02)) * 0.7;
+
+  ctx.save();
+  ctx.translate(bx, by);
+  [-1, 1].forEach(dir => {
+    ctx.save();
+    ctx.scale(dir, 1);
+    ctx.rotate(-0.25 - flap * 0.55);
+    ctx.fillStyle = "#ff8a3d";
+    ctx.beginPath();
+    ctx.ellipse(6, 0, 7, 4.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(30,20,10,0.65)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // a couple of dark veining marks, the classic monarch cue
+    ctx.strokeStyle = "rgba(30,20,10,0.5)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(2, -1.5);
+    ctx.lineTo(10, -1);
+    ctx.moveTo(2, 1.5);
+    ctx.lineTo(10, 1.5);
+    ctx.stroke();
+    ctx.restore();
+  });
+  ctx.fillStyle = "#2a1a10";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 1.8, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawSandboxScene(camX) {
@@ -43090,6 +43210,7 @@ function drawSandboxScene(camX) {
   drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
   drawSandboxSlinkyDustParticles(camX); // real scattering sand grains, on top of the puff's rings -- also unconditional, same reasoning
   drawSandboxBalanceBall(camX);
+  drawSandboxBalanceBallButterfly(camX);
   drawSandboxBallPit(camX);
   drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
