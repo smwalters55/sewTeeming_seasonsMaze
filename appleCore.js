@@ -39235,6 +39235,73 @@ const SANDBOX_PENDULUM_GOALS = [
 const sandboxPendulumGoalFlash = SANDBOX_PENDULUM_GOALS.map(() => -1e9); // timestamp of last hit, per goal -- drives the animation, same pattern as skipStoneTargetFlash
 const SANDBOX_PENDULUM_GOAL_ANIM_MS = 1100;
 
+/* ======================================================
+   PENDULUM STREAK -- workshopped together ("def 3 for sure, and with 1
+   lets try this. but lets have small apples stacking. but instead of
+   whole pile coming down, lets have a few topple off the top and maybe
+   disappear... i dont what player to feel they can pick these up
+   though. should they sit on a shape in the sky or something").
+   Deliberately NOT a score/HUD -- same "tracked internally, never shown
+   as text" pattern the balance ball's own bestMs and the skip stones
+   already use elsewhere in this sandbox. Every landing (hit or miss)
+   updates a small stack of stylized apples piled on a little fixed
+   platform floating above the pendulum's own anchor point -- well clear
+   of the ball's swing arc, and out of jump reach, so it never reads as
+   "go grab that." Harder goals (farther out, smaller ring) add more
+   apples per hit, giving skill a visibly bigger payoff without any
+   camera punch. A miss doesn't wipe the stack -- it just topples a
+   handful off the top, so one bad throw doesn't erase a good run.
+   ====================================================== */
+let sandboxPendulumStreak = 0;
+const SANDBOX_PENDULUM_STREAK_MAX_VISIBLE = 16; // safety cap so the stack can't grow forever off the top of its little platform
+const sandboxPendulumStreakApples = []; // stable stack, bottom to top: {seed}
+const sandboxPendulumTopplingApples = []; // transient falling-off entries, purely cosmetic: {xOff,y,vx,vy,rot,rotVel,life,seed}
+
+function sandboxPendulumStreakHit(tier) {
+  const gain = 1 + tier; // nearest/easiest ring = 1 apple, farthest/hardest = up to 4 -- skill visibly builds the stack faster
+  for (let i = 0; i < gain; i++) {
+    sandboxPendulumStreak++;
+    sandboxPendulumStreakApples.push({ seed: sandboxPendulumStreak * 13.7 + i * 3.1 });
+  }
+  while (sandboxPendulumStreakApples.length > SANDBOX_PENDULUM_STREAK_MAX_VISIBLE) {
+    sandboxPendulumStreakApples.shift();
+  }
+  sandboxPendulumStreakFlashT = performance.now();
+  sandboxPendulumStreakFlashTier = tier;
+}
+let sandboxPendulumStreakFlashT = -1e9;
+let sandboxPendulumStreakFlashTier = 0;
+
+function sandboxPendulumStreakMiss() {
+  if (!sandboxPendulumStreakApples.length) return;
+  const toppleCount = Math.min(sandboxPendulumStreakApples.length, 1 + Math.floor(pseudoRandom(performance.now() * 0.001) * 3));
+  for (let i = 0; i < toppleCount; i++) {
+    sandboxPendulumStreakApples.pop();
+    sandboxPendulumStreak = Math.max(0, sandboxPendulumStreak - 1);
+    sandboxPendulumTopplingApples.push({
+      xOff: (pseudoRandom(performance.now() * 0.001 + i * 3.3) - 0.5) * 16,
+      y: 0,
+      vx: (pseudoRandom(performance.now() * 0.001 + i * 7.7) - 0.5) * 46,
+      vy: -18 - pseudoRandom(performance.now() * 0.001 + i * 5.1) * 24,
+      rot: 0,
+      rotVel: (pseudoRandom(performance.now() * 0.001 + i * 9.9) - 0.5) * 7,
+      life: 0
+    });
+  }
+}
+
+function updateSandboxPendulumStreak(deltaTime) {
+  for (let i = sandboxPendulumTopplingApples.length - 1; i >= 0; i--) {
+    const a = sandboxPendulumTopplingApples[i];
+    a.life += deltaTime * 1000;
+    a.vy += 90 * deltaTime; // gravity, tumbling off the platform
+    a.xOff += a.vx * deltaTime;
+    a.y += a.vy * deltaTime;
+    a.rot += a.rotVel * deltaTime;
+    if (a.life > 900) sandboxPendulumTopplingApples.splice(i, 1);
+  }
+}
+
 // CONFIRMED BUG FIX ("goals... dont come up again when on pendulum"): the
 // goal-hit check used to live only inline in the y<=0 ground-landing
 // branch, but the farthest right-side goal sits right at the pile's own
@@ -39243,11 +39310,26 @@ const SANDBOX_PENDULUM_GOAL_ANIM_MS = 1100;
 // structurally never flash. Pulled out into a shared helper so both
 // landing branches call it.
 function checkSandboxPendulumGoalHit(landedCenterX) {
+  let bestTier = -1; // -1 = no goal hit at all this landing (a miss)
   SANDBOX_PENDULUM_GOALS.forEach((goal, gi) => {
     if (Math.abs(landedCenterX - goal.x) < goal.radius) {
       sandboxPendulumGoalFlash[gi] = performance.now();
+      // tier within this side's own 4 distances (0 = nearest/easiest,
+      // 3 = farthest/hardest) -- if a landing happens to satisfy more
+      // than one ring's radius, credit the hardest one it qualified for
+      const tier = gi % SANDBOX_PENDULUM_GOAL_OFFSETS.length;
+      if (tier > bestTier) bestTier = tier;
     }
   });
+  // CONFIRMED CHANGE (pendulum workshop -- "def 3 for sure, and with 1
+  // lets try this"): every landing now feeds the apple-stack streak,
+  // hit or miss, so the stack is a real running readout of how the last
+  // several throws went instead of a separate disconnected system.
+  if (bestTier >= 0) {
+    sandboxPendulumStreakHit(bestTier);
+  } else {
+    sandboxPendulumStreakMiss();
+  }
 }
 
 function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
@@ -39255,6 +39337,13 @@ function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
   const flashAge = now - sandboxPendulumGoalFlash[i];
   if (flashAge >= SANDBOX_PENDULUM_GOAL_ANIM_MS) return false;
   const p = flashAge / SANDBOX_PENDULUM_GOAL_ANIM_MS;
+  // CONFIRMED CHANGE (pendulum workshop -- "def 3 for sure" minus any
+  // camera punch): a hit on a harder ring (farther out, smaller radius)
+  // now gets a visibly bigger flourish -- more sparkles, a larger/
+  // brighter ring -- so skill reads as a bigger payoff than luck, purely
+  // through color/scale/particle count, no screen shake anywhere in it.
+  const tier = i % SANDBOX_PENDULUM_GOAL_OFFSETS.length; // 0 = nearest/easiest .. length-1 = farthest/hardest
+  const tierBoost = tier / (SANDBOX_PENDULUM_GOAL_OFFSETS.length - 1); // 0..1
   // same gold-spark -> settled-green -> fade color ramp as the skip-stone
   // hit anim, but landing on a darker, more saturated green (was
   // 110,230,140 -- too close in both hue and lightness to the tan sand
@@ -39265,21 +39354,21 @@ function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
   const gC = Math.round(210 + (165 - 210) * mixT);
   const bC = Math.round(110 + (60 - 110) * mixT);
   const alpha = p < 0.7 ? 0.85 : 0.85 * (1 - (p - 0.7) / 0.3);
-  const ringR = 12 + p * 16;
+  const ringR = (12 + p * 16) * (1 + tierBoost * 0.5);
   // dark under-stroke first, same contrast trick as the idle rings, so
   // the bright color reads clearly no matter what's underneath
   ctx.strokeStyle = `rgba(20,35,15,${alpha * 0.55})`;
-  ctx.lineWidth = 3.6;
+  ctx.lineWidth = 3.6 + tierBoost * 2;
   ctx.beginPath();
   ctx.ellipse(gx, groundY, ringR, ringR * 0.35, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
-  ctx.lineWidth = 2.2;
+  ctx.lineWidth = 2.2 + tierBoost * 1.6;
   ctx.beginPath();
   ctx.ellipse(gx, groundY, ringR, ringR * 0.35, 0, 0, Math.PI * 2);
   ctx.stroke();
   if (p < 0.6) {
-    const sparkleCount = 5;
+    const sparkleCount = 5 + Math.round(tierBoost * 6); // up to 11 sparkles on the hardest ring, vs. 5 on the easiest
     for (let s = 0; s < sparkleCount; s++) {
       const ang = (s / sparkleCount) * Math.PI * 2 + now * 0.006;
       const sr = ringR + 3;
@@ -39287,7 +39376,7 @@ function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
       const sy = groundY + Math.sin(ang) * sr * 0.35;
       ctx.fillStyle = `rgba(255,255,220,${alpha})`;
       ctx.beginPath();
-      ctx.arc(sx, sy, 1.4, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 1.4 + tierBoost * 0.8, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -39342,6 +39431,7 @@ function pendulumBallPos(p) {
 }
 
 function updateSandboxPendulum(deltaTime) {
+  updateSandboxPendulumStreak(deltaTime);
   const p = sandboxPendulum;
   const prevAngle = p.angle;
   p.t += deltaTime;
@@ -39492,6 +39582,87 @@ function drawSandboxPendulum(camX) {
   ctx.stroke();
   // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") --
   // the floating "Pendulum" label removed.
+}
+
+// small, deliberately unglamorous apple, styled NOT to look like the
+// real collectible (drawWholeAppleShape) -- muted bronze tone, loose
+// sketchy double-outline, matching the sky decor's "hand-drawn, not a
+// real item" treatment, so it never invites "go grab that."
+function drawSandboxPendulumStreakApple(x, y, r, seed, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (rotation) ctx.rotate(rotation);
+  ctx.fillStyle = "#c9a668";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r, r * 0.92, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(90,70,40,0.5)";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,240,210,0.35)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r * 1.12, r * 1.02, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(70,55,30,0.6)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(0, -r * 0.9);
+  ctx.lineTo(0, -r * 1.3);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// CONFIRMED CHANGE (pendulum workshop -- "should they sit on a shape in
+// the sky or something"): the streak lives on a small, fixed, hand-drawn
+// platform floating directly above the pivot -- well above the ball's
+// own swing arc (the ball's height formula never lets it rise above the
+// pivot at this amplitude, see updateSandboxPendulum), and well out of
+// jump reach, so there's no ambiguity about whether it's part of the toy
+// you can interact with.
+function drawSandboxPendulumStreak(camX) {
+  const p = sandboxPendulum;
+  const sx = p.x - camX;
+  const anchorScreenY = gy - p.anchorHeight;
+  const platformY = anchorScreenY - 30;
+
+  ctx.save();
+  ctx.fillStyle = "#9a8a72";
+  organicBlobPath(ctx, sx, platformY, 22, 8, 4001, 7);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 1;
+  organicBlobPath(ctx, sx, platformY, 22, 8, 4001, 7);
+  ctx.stroke();
+  ctx.restore();
+
+  const appleR = 4.2;
+  const rowCapacity = [5, 4, 3, 2, 1, 1, 1, 1];
+  let idx = 0, rowY = platformY - 6, rowIdx = 0;
+  while (idx < sandboxPendulumStreakApples.length) {
+    const cap = rowCapacity[Math.min(rowIdx, rowCapacity.length - 1)];
+    const rowCount = Math.min(cap, sandboxPendulumStreakApples.length - idx);
+    const rowWidth = (rowCount - 1) * (appleR * 1.7);
+    for (let i = 0; i < rowCount; i++) {
+      const apple = sandboxPendulumStreakApples[idx];
+      const jitter = (pseudoRandom(apple.seed) - 0.5) * 1.6;
+      drawSandboxPendulumStreakApple(sx - rowWidth / 2 + i * appleR * 1.7 + jitter, rowY, appleR, apple.seed);
+      idx++;
+    }
+    rowY -= appleR * 1.6;
+    rowIdx++;
+  }
+
+  // toppling off the top on a miss -- tumbles and fades, never just
+  // vanishes in place
+  sandboxPendulumTopplingApples.forEach(a => {
+    const alpha = Math.max(0, 1 - a.life / 900);
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawSandboxPendulumStreakApple(sx + a.xOff, platformY - 6 + a.y, appleR, 1, a.rot);
+    ctx.restore();
+  });
 }
 
 /* ======================================================
@@ -43915,14 +44086,27 @@ function antFarmPathPosition(pathDef, t) {
   const n = path.length;
   const cycle = Math.max(1, (n - 1) * 2);
   const raw = ((t * pathDef.speed + pathDef.phase) % cycle + cycle) % cycle;
-  const idx = raw < n - 1 ? raw : cycle - raw; // ping-pong: forward then back
+  const movingForward = raw < n - 1; // ping-pong: forward leg, then the return leg
+  const idx = movingForward ? raw : cycle - raw;
   const i0 = Math.floor(idx), i1 = Math.min(n - 1, i0 + 1);
   const frac = idx - i0;
   const c0 = antFarmCellCenter(path[i0][0], path[i0][1]);
   const c1 = antFarmCellCenter(path[i1][0], path[i1][1]);
   const x = c0.x + (c1.x - c0.x) * frac;
   const y = c0.y + (c1.y - c0.y) * frac;
-  const angle = Math.atan2(c1.y - c0.y, c1.x - c0.x);
+  // CONFIRMED BUG FIX ("i dnt think i ike the ants moving backwards,
+  // lets have them change to the direction they are going in when they
+  // change"): i0/i1 are always path[lower index]/path[higher index]
+  // regardless of leg, since i1 = i0+1 always -- but on the return leg
+  // idx counts DOWN, so the ant's actual travel direction is from the
+  // higher index toward the lower one, the reverse of the c1-c0 vector.
+  // The old code used c1-c0 unconditionally, so on every return leg the
+  // ant kept facing the forward-leg direction while actually walking the
+  // opposite way -- reading as walking backwards. Flips the vector on
+  // the return leg so facing always matches real travel direction.
+  const dirX = movingForward ? (c1.x - c0.x) : (c0.x - c1.x);
+  const dirY = movingForward ? (c1.y - c0.y) : (c0.y - c1.y);
+  const angle = Math.atan2(dirY, dirX);
   return { x, y, angle };
 }
 
@@ -44887,13 +45071,26 @@ function drawSandboxAntFarm(camX) {
     for (let col = 0; col < ANT_FARM_COLS; col++) {
       const strength = ANT_FARM_PHEROMONE[row][col];
       if (strength <= 0) continue;
+      // CONFIRMED BUG FIX ("i dont see anything changeing re phermones"
+      // after leaving it running for a while): confirmed via a real
+      // multi-minute playtest that the mechanic itself is fine -- food
+      // was being collected, strength genuinely climbed as high as ~7.6
+      // out of 14 -- but at that real, typical strength (t roughly
+      // 0.2-0.5, rarely near 1.0) the orb came out at only a few px
+      // radius and fairly low alpha, easy to lose entirely against the
+      // sand-texture speckle pass added earlier this session (which
+      // ended up adding a lot of small warm-toned dots right in the same
+      // size/opacity range). Recalibrated the scale -- still strictly
+      // linear in t, still exactly zero at zero -- so the strength range
+      // that actually occurs in real play reads clearly against the
+      // busier dirt instead of blending into it.
       const t = Math.min(1, strength / ANT_FARM_PHEROMONE_MAX);
       const c0 = antFarmCellCenter(row, col);
       const cx = gx + c0.x, cy = gyTop + c0.y;
-      const r = ANT_FARM_CELL_AVG * (0.1 + t * 0.32);
+      const r = ANT_FARM_CELL_AVG * (0.16 + t * 0.5);
       const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      glow.addColorStop(0, `rgba(255,200,100,${t * 0.6})`);
-      glow.addColorStop(0.6, `rgba(255,195,90,${t * 0.3})`);
+      glow.addColorStop(0, `rgba(255,205,90,${t * 0.85})`);
+      glow.addColorStop(0.55, `rgba(255,195,80,${t * 0.5})`);
       glow.addColorStop(1, "rgba(255,190,80,0)");
       ctx.fillStyle = glow;
       ctx.beginPath();
@@ -45748,6 +45945,7 @@ function drawSandboxScene(camX) {
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
   drawSandboxPendulum(camX);
+  drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
   drawSandboxSlinky(camX);
   // CONFIRMED CHANGE: "place player on top of slinky like its resting
