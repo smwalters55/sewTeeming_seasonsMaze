@@ -2052,6 +2052,39 @@ const PAPER_AIRPLANE_FLIGHT_PATTERNS = [
     const ang = p * Math.PI;
     const bounce = Math.abs(Math.sin(ang * 2)) * 35;
     return { dx: Math.sin(ang * 2) * 70, dy: bounce };
+  },
+  // CONFIRMED CHANGE ("lets add 3-4 more airplane flying patterns"):
+  // four more, each a distinct shape from the five above and from each
+  // other -- all still closed loops (dx/dy both land back on exactly
+  // (0,0) at p=1) so the "never truly leaves inventory" trick keeps working.
+  //
+  // 5: steep climb & dive bomb -- rises hard, then dives well below the
+  // throw origin before recovering back up to it
+  (p) => {
+    const ang = p * Math.PI * 2;
+    return { dx: Math.sin(ang * 0.5) * 60, dy: Math.sin(ang) * 95 - Math.sin(ang * 2) * 15 };
+  },
+  // 6: switchback zigzag -- several quick side-to-side snaps rather than
+  // one smooth curve, envelope-shaped so the zigzag builds in and fades
+  // out instead of snapping abruptly at the throw/return points
+  (p) => {
+    const ang = p * Math.PI * 2;
+    const envelope = Math.sin(p * Math.PI);
+    return { dx: Math.sin(ang * 5) * 40 * envelope, dy: Math.sin(ang) * 30 };
+  },
+  // 7: wide lazy wingover glide -- a much wider, shallower arc than the
+  // flat skim (pattern 3), with a gentle roll wobble instead of a clean flat pass
+  (p) => {
+    const ang = p * Math.PI * 2;
+    return { dx: Math.sin(ang) * 120, dy: Math.sin(ang * 2) * 18 + (1 - Math.cos(ang)) * -10 };
+  },
+  // 8: double loop-de-loop -- two small flips instead of one big loop,
+  // shrinking in/out at the start and end so it doesn't pop into view
+  // already mid-loop
+  (p) => {
+    const ang = p * Math.PI * 4;
+    const shrink = Math.sin(p * Math.PI);
+    return { dx: Math.sin(ang) * 45 * shrink, dy: (1 - Math.cos(ang)) * 40 * shrink };
   }
 ];
 // CONFIRMED BUG FIX: slowed down further -- per direct feedback, even
@@ -45195,9 +45228,41 @@ function drawSandboxBalanceBallButterfly(camX) {
   const scale = Math.max(0, Math.min(1, (SANDBOX_BALANCE_BUTTERFLY_PORTAL_DIST - distFromCenter) / 40));
   if (scale <= 0) return;
 
+  // CONFIRMED CHANGE ("i want to see the butterfly actually entering each
+  // portal not disappearing in front of it"): a plain uniform shrink-to-
+  // nothing reads as "vanishing in place," not "flying into something."
+  // approachT ramps 0->1 over that same last-40px zone -- while it's
+  // rising, squish the butterfly harder on its horizontal axis than its
+  // vertical one (so it visibly turns edge-on to match the portal's own
+  // squished-disc silhouette rather than just shrinking uniformly), add a
+  // few motes spiraling inward toward the portal's center, and flare the
+  // portal's own glow in proportion to how deep into the approach it is
+  // -- so the light visibly intensifies as it's "swallowing" the
+  // butterfly, not just flashing after the fact once it's already gone.
+  const approachT = 1 - scale;
+  if (approachT > 0.02) {
+    for (let p = 0; p < 4; p++) {
+      const ang = now * 0.012 + p * (Math.PI / 2);
+      const r = 9 * (1 - approachT);
+      const mx = bx + Math.cos(ang) * r;
+      const my = by + Math.sin(ang) * r * 0.5;
+      ctx.fillStyle = `rgba(255,240,200,${approachT * 0.55})`;
+      ctx.beginPath();
+      ctx.arc(mx, my, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const flareGlow = ctx.createRadialGradient(bx, by, 0, bx, by, 16 * approachT + 4);
+    flareGlow.addColorStop(0, `rgba(255,235,190,${approachT * 0.5})`);
+    flareGlow.addColorStop(1, "rgba(255,235,190,0)");
+    ctx.fillStyle = flareGlow;
+    ctx.beginPath();
+    ctx.arc(bx, by, 16 * approachT + 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.save();
   ctx.translate(bx, by);
-  ctx.scale(scale, scale);
+  ctx.scale(scale * (1 - approachT * 0.55), scale);
   [-1, 1].forEach(dir => {
     ctx.save();
     ctx.scale(dir, 1);
@@ -47309,8 +47374,19 @@ if (currentScene === "autumn") {
   // territory" rule the lamp already gets in ratroom -- once you're
   // actually back on plain sandbox ground with nothing else held, and
   // you own one, it's in your hand again, no manual reselect needed.
+  // CONFIRMED BUG FIX ("the airplane when it gets thrown it needs to
+  // come off player head and do its thing, not have a plane image stay
+  // there while a dif plane flies around"): this ambient re-equip rule
+  // didn't account for an in-flight throw -- throwPaperAirplane() clears
+  // heldItem to null the same frame paperAirplaneFlight starts, and since
+  // a flight happens entirely within plain sandbox (not the ball pit/ant
+  // farm/ladder/rim), this rule saw heldItem null + plain sandbox and
+  // immediately put the icon right back above the player's head the very
+  // next frame -- while the real thrown plane was simultaneously flying
+  // its pattern nearby. Added the missing exclusion so the held icon
+  // only comes back once there's no actual flight in progress.
   if (heldItem === null && currentScene === "sandbox" && !player.inAntFarm && !player.inBallPit &&
-      !player.onBallPitLadder && !player.onBallPitRim && inventory.paperAirplane > 0) {
+      !player.onBallPitLadder && !player.onBallPitRim && !paperAirplaneFlight && inventory.paperAirplane > 0) {
     heldItem = "paperAirplane";
   }
   // refreshes the inventory strip's scene-locked filtering (SCENE_LOCKED_ITEMS)
