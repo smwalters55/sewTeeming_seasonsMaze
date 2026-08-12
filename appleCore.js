@@ -43374,6 +43374,7 @@ function updateAntFarmDiggers(deltaTime) {
     d.progress += deltaTime;
     if (d.progress >= ANT_FARM_DIGGER_DIG_TIME) {
       ANT_FARM_GRID[d.digRow][d.digCol] = 1;
+      antFarmGridVersion++; // invalidates the cached forager shortest-path field
       d.row = d.digRow;
       d.col = d.digCol;
       d.digRow = -1;
@@ -43433,7 +43434,7 @@ function antFarmPathPosition(pathDef, t) {
 // two antennae) rather than a plain oval -- drawn pointing along
 // `angle`. scale ~1 reads at about a real ant's size against the
 // grid's cell size.
-function drawAntCreature(cx, cy, angle, scale) {
+function drawAntCreature(cx, cy, angle, scale, color) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
@@ -43442,8 +43443,13 @@ function drawAntCreature(cx, cy, angle, scale) {
   // technically animating correctly but essentially invisible against
   // their own tunnels. Lightened to a warm rust-brown with a thin
   // amber rim so they read clearly even sitting on dark dirt.
-  ctx.fillStyle = "#a8622f";
-  ctx.strokeStyle = "#a8622f";
+  // CONFIRMED CHANGE: optional color override, so the forager colony
+  // (see updateAntFarmForagers below) can read as visually distinct
+  // "worker" ants from the purely-decorative wandering residents,
+  // without a second copy of this whole drawing function.
+  const bodyColor = color || "#a8622f";
+  ctx.fillStyle = bodyColor;
+  ctx.strokeStyle = bodyColor;
   ctx.lineWidth = 0.6 * scale;
   // legs first, underneath the body
   [-1, 1].forEach(side => {
@@ -43476,6 +43482,211 @@ function drawAntCreature(cx, cy, angle, scale) {
   ctx.restore();
 }
 
+/* ======================================================
+   ANT FARM FORAGER COLONY -- "the ant algorithm", first pass. Real
+   ant colonies find food via pheromone-trail foraging (this is the
+   classic Ant Colony Optimization idea, simplified way down): an ant
+   wanders randomly until it finds food, then walks straight back to
+   the nest along the shortest route it can find, laying down a
+   pheromone trail as it goes. Other ants wandering nearby are drawn
+   toward stronger pheromone over a random step, so once ONE ant finds
+   a food source, the rest gradually converge onto the same route
+   instead of each re-discovering it independently -- that convergence
+   IS the whole show here, worth watching for.
+   Simplified from the "real" ACO in a few deliberate ways for a first
+   pass: the return trip uses an exact shortest-path distance field
+   (real ants don't have that, they'd also lay a-- weaker outbound
+   trail and rely on gradient-following both ways) rather than a
+   second pheromone-only mechanism; only the LOADED return trip lays
+   trail. Food sources never run out -- they're "the colony's foraging
+   spots", not a countable resource -- so foraging just runs forever
+   as ambient life in the case, which is what "watch them find food"
+   actually wants to look at.
+   ====================================================== */
+const ANT_FARM_FOOD_SOURCES = [
+  { row: 2, col: 16 },
+  { row: 12, col: 0 },
+  { row: 9, col: 10 }
+];
+const ANT_FARM_PHEROMONE = Array.from({ length: ANT_FARM_ROWS }, () => new Array(ANT_FARM_COLS).fill(0));
+const ANT_FARM_PHEROMONE_MAX = 14;
+const ANT_FARM_PHEROMONE_DEPOSIT = 3;
+let antFarmFoodCollected = 0;
+
+// bumped any time ANT_FARM_GRID actually changes (a cell dug open, by
+// the player or by a worker digger) so the cached shortest-path field
+// below knows to recompute instead of guiding foragers through walls
+// that no longer exist, or missing a new shortcut that just opened.
+let antFarmGridVersion = 0;
+let antFarmDistanceField = null;
+let antFarmDistanceFieldVersion = -1;
+
+// BFS shortest-path distance from the single surface entrance to every
+// reachable open cell, over the CURRENT grid (recomputed on demand,
+// see getAntFarmDistanceField) -- this is what lets a food-carrying
+// ant always walk a real shortest route home instead of retracing its
+// own wandering outbound path step for step.
+function computeAntFarmDistanceField() {
+  const field = Array.from({ length: ANT_FARM_ROWS }, () => new Array(ANT_FARM_COLS).fill(Infinity));
+  const startRow = ANT_FARM_ENTRANCE.row, startCol = ANT_FARM_ENTRANCE.col;
+  field[startRow][startCol] = 0;
+  const queue = [[startRow, startCol]];
+  let qi = 0;
+  while (qi < queue.length) {
+    const [r, c] = queue[qi++];
+    const d = field[r][c];
+    [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
+      const nr = r + dr, nc = c + dc;
+      if (antFarmCellOpen(nr, nc) && field[nr][nc] === Infinity) {
+        field[nr][nc] = d + 1;
+        queue.push([nr, nc]);
+      }
+    });
+  }
+  return field;
+}
+
+function getAntFarmDistanceField() {
+  if (antFarmDistanceFieldVersion !== antFarmGridVersion) {
+    antFarmDistanceField = computeAntFarmDistanceField();
+    antFarmDistanceFieldVersion = antFarmGridVersion;
+  }
+  return antFarmDistanceField;
+}
+
+function antFarmOpenNeighbors(row, col) {
+  const out = [];
+  [[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr, dc]) => {
+    const nr = row + dr, nc = col + dc;
+    if (antFarmCellOpen(nr, nc)) out.push({ row: nr, col: nc });
+  });
+  return out;
+}
+
+function antFarmIsFoodCell(row, col) {
+  return ANT_FARM_FOOD_SOURCES.some(f => f.row === row && f.col === col);
+}
+
+// four foragers, starting spread out near the entrance shaft so they
+// fan out into the maze independently rather than all setting off in
+// a single-file line
+const SANDBOX_ANT_FARM_FORAGERS = [0, 1, 2, 3].map(i => ({
+  row: ANT_FARM_ENTRANCE.row + 1,
+  col: ANT_FARM_ENTRANCE.col,
+  fromRow: ANT_FARM_ENTRANCE.row,
+  fromCol: ANT_FARM_ENTRANCE.col,
+  targetRow: ANT_FARM_ENTRANCE.row + 1,
+  targetCol: ANT_FARM_ENTRANCE.col,
+  moveT: 1, // 1 = "already arrived, ready to pick a new target this frame"
+  carrying: false,
+  speed: 1.1 + pseudoRandom(i * 3.1) * 0.6 // cells/sec, slight variety
+}));
+
+function antFarmForagerPickNext(f) {
+  const dist = getAntFarmDistanceField();
+
+  // arriving at food, empty-handed -- pick it up
+  if (!f.carrying && antFarmIsFoodCell(f.row, f.col)) {
+    f.carrying = true;
+  }
+  // arriving home with food -- drop it off
+  if (f.carrying && f.row === ANT_FARM_ENTRANCE.row && f.col === ANT_FARM_ENTRANCE.col) {
+    f.carrying = false;
+    antFarmFoodCollected++;
+  }
+
+  const neighbors = antFarmOpenNeighbors(f.row, f.col);
+  if (!neighbors.length) return; // shouldn't happen, but don't crash if it does
+
+  let next;
+  if (f.carrying) {
+    // straight shortest-path home -- lay pheromone on the cell being
+    // left behind, a real "trail marking the way back to food" that
+    // other foragers can pick up on later
+    ANT_FARM_PHEROMONE[f.row][f.col] = Math.min(ANT_FARM_PHEROMONE_MAX, ANT_FARM_PHEROMONE[f.row][f.col] + ANT_FARM_PHEROMONE_DEPOSIT);
+    next = neighbors.reduce((best, n) => (dist[n.row][n.col] < dist[best.row][best.col] ? n : best), neighbors[0]);
+  } else {
+    // searching -- weighted random step, biased toward whichever
+    // neighbor carries the strongest pheromone scent (this is the
+    // actual "converge on a trail another ant already found" behavior).
+    // Avoids immediately backtracking the way it just came UNLESS
+    // that's the only option (a dead end).
+    let options = neighbors.filter(n => !(n.row === f.fromRow && n.col === f.fromCol));
+    if (!options.length) options = neighbors;
+    const weights = options.map(n => 1 + ANT_FARM_PHEROMONE[n.row][n.col] * 2.2);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let roll = pseudoRandom(f.row * 13.7 + f.col * 5.3 + performance.now() * 0.0001) * totalWeight;
+    next = options[options.length - 1];
+    for (let i = 0; i < options.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) { next = options[i]; break; }
+    }
+  }
+
+  f.fromRow = f.row;
+  f.fromCol = f.col;
+  f.targetRow = next.row;
+  f.targetCol = next.col;
+  f.moveT = 0;
+}
+
+function updateAntFarmForagers(deltaTime) {
+  // pheromone slowly evaporates, same as a real trail losing strength
+  // over time -- without this the whole maze would eventually saturate
+  // solid and the "follow the trail" signal would stop meaning anything
+  const decay = Math.max(0, 1 - deltaTime * 0.12);
+  for (let r = 0; r < ANT_FARM_ROWS; r++) {
+    for (let c = 0; c < ANT_FARM_COLS; c++) {
+      if (ANT_FARM_PHEROMONE[r][c] > 0) ANT_FARM_PHEROMONE[r][c] *= decay;
+    }
+  }
+
+  SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    if (f.moveT >= 1) {
+      f.row = f.targetRow;
+      f.col = f.targetCol;
+      antFarmForagerPickNext(f);
+    }
+    f.moveT = Math.min(1, f.moveT + f.speed * deltaTime);
+  });
+}
+
+function drawAntFarmForagers(gx, gyTop) {
+  // food sources -- small clustered crumbs, permanent (never depleted,
+  // see this system's own top comment)
+  ANT_FARM_FOOD_SOURCES.forEach((food, fi) => {
+    const c = antFarmCellCenter(food.row, food.col);
+    [[-2, -1], [2, 0], [-1, 2]].forEach(([dx, dy], i) => {
+      ctx.fillStyle = "#e8d068";
+      ctx.beginPath();
+      ctx.arc(gx + c.x + dx, gyTop + c.y + dy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,90,20,0.5)";
+      ctx.lineWidth = 0.4;
+      ctx.stroke();
+    });
+  });
+
+  SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    const from = antFarmCellCenter(f.fromRow, f.fromCol);
+    const to = antFarmCellCenter(f.targetRow, f.targetCol);
+    const x = from.x + (to.x - from.x) * f.moveT;
+    const y = from.y + (to.y - from.y) * f.moveT;
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    // amber/gold rather than the decorative residents' rust-brown, so
+    // the colony reads as a distinct "these are doing something" set
+    drawAntCreature(gx + x, gyTop + y, angle, 1.1, "#d9a028");
+    if (f.carrying) {
+      // a tiny crumb riding along on its back, visible proof it's
+      // actually carrying something home rather than just wandering
+      ctx.fillStyle = "#e8d068";
+      ctx.beginPath();
+      ctx.arc(gx + x - Math.cos(angle) * 3, gyTop + y - Math.sin(angle) * 3, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function updateSandboxAntFarm(deltaTime) {
   const farm = sandboxAntFarm;
   const entranceWorldX = farm.x + ANT_FARM_MARGIN + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
@@ -43485,6 +43696,9 @@ function updateSandboxAntFarm(deltaTime) {
   // while in the sandbox at all, so the tunnels have genuinely moved on
   // by the time you check back in, not just while you're staring at them
   updateAntFarmDiggers(deltaTime);
+  // the forager colony (see the "ANT FARM FORAGER COLONY" block above)
+  // -- same "runs the whole time you're in the sandbox" treatment
+  updateAntFarmForagers(deltaTime);
 
   if (player.inAntFarm) {
     const speed = 46;
@@ -43541,6 +43755,7 @@ function updateSandboxAntFarm(deltaTime) {
       }
       if (farm.digProgress >= ANT_FARM_DIG_TIME) {
         ANT_FARM_GRID[farm.digRow][farm.digCol] = 1;
+        antFarmGridVersion++; // invalidates the cached forager shortest-path field
         farm.digProgress = 0;
         farm.digRow = -1;
         farm.digCol = -1;
@@ -43689,6 +43904,10 @@ function drawSandboxAntFarm(camX) {
   // worker ants slowly digging new tunnels of their own -- see
   // updateAntFarmDiggers/drawAntFarmDiggers
   drawAntFarmDiggers(gx, gyTop);
+
+  // the forager colony -- food sources + pheromone-trail-following ants,
+  // see updateAntFarmForagers/drawAntFarmForagers
+  drawAntFarmForagers(gx, gyTop);
 
   // the shrunk player icon, only while actually inside -- a real
   // "mini me" (rounded body + two eye dots, the player's own body
