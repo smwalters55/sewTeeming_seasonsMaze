@@ -168,6 +168,7 @@ const player = {
   onSlinky: false,     // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
   onBalanceBall: false, // CONFIRMED CHANGE: true while riding the sandbox's balance ball -- position driven entirely by updateSandboxBalanceBall, same pattern as onFan/onPendulum/onSlinky
   onBallPitLadder: false, // CONFIRMED CHANGE: true while climbing the sandbox ball pit's outer ladder -- position driven entirely by updateSandboxBallPit
+  onBallPitRim: false,    // CONFIRMED BUG FIX: true while standing at the top of the ladder, protected from gravity until a deliberate drop-in or walk-off -- see applyPhysics' guard chain
   inBallPit: false        // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
 };
 
@@ -2470,8 +2471,12 @@ function applyPhysics(){
   if (player.onBalanceBall) return;
 
   // same idea for the sandbox's ball pit -- position while on its
-  // ladder or swimming inside is driven entirely by updateSandboxBallPit()
-  if (player.onBallPitLadder || player.inBallPit) return;
+  // ladder, standing on its rim, or swimming inside is driven entirely
+  // by updateSandboxBallPit(). CONFIRMED BUG FIX: onBallPitRim wasn't
+  // here originally -- "standing on the rim" wasn't a protected state at
+  // all, so ordinary gravity resumed the instant the player reached the
+  // top of the ladder, yanking them back down before they could react.
+  if (player.onBallPitLadder || player.inBallPit || player.onBallPitRim) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -42589,10 +42594,13 @@ const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the k
 // same pixel units as player.y/b.radius (27px), and this toy's physics
 // runs on real deltaTime seconds throughout (unlike most of the rest of
 // the game's assumed-60fps per-frame convention) -- these are tuned for
-// that: peak height = v^2/(2g) =~ 35px, about a real hop's worth of air
-// above the ball, roughly a 1s full hang time.
-const SANDBOX_BALANCE_JUMP_STRENGTH = 140;
-const SANDBOX_BALANCE_JUMP_GRAVITY = 280;
+// that: peak height = v^2/(2g), about a real hop's worth of air above
+// the ball. CONFIRMED CHANGE ("make jjump on ball just a liiiittle
+// faster") -- scaled strength/gravity together (v*1.15, g*1.15^2) so
+// peak height stays about the same (~35px) but time-to-peak drops from
+// ~0.5s to ~0.43s, reading as a snappier hop rather than a higher one.
+const SANDBOX_BALANCE_JUMP_STRENGTH = 160;
+const SANDBOX_BALANCE_JUMP_GRAVITY = 370;
 
 function updateSandboxBalanceBall(deltaTime) {
   const b = sandboxBalanceBall;
@@ -42865,8 +42873,25 @@ function updateSandboxBallPit(deltaTime) {
     player.vy = 0;
     player.jumping = true;
     if (player.y >= pit.rimHeight) {
-      // reached the top -- steps off onto the rim, standing normally
+      // reached the top -- steps off onto the rim. CONFIRMED BUG FIX:
+      // this used to just clear onBallPitLadder and set jumping=false,
+      // which sounds like "standing normally" but isn't actually a
+      // protected state anywhere -- applyPhysics()'s guard chain only
+      // skips gravity for onFan/onPendulum/onSlinky/onBalanceBall/
+      // onBallPitLadder/inBallPit, none of which are true once you're
+      // just standing at the top. jumping=false doesn't itself pause
+      // gravity in this engine (gravity integration runs unconditionally
+      // once past the guard chain) -- so the very next frame, ordinary
+      // gravity yanked the player straight back down off the rim before
+      // a real human could react and press space, which is exactly what
+      // "once i get to top... space doesnt work, uparrow or rightarrow
+      // doesnt work" was describing: they were already falling again by
+      // the time they pressed anything. Introduced a real protected
+      // onBallPitRim state (see the guard chain and the branch below)
+      // so standing at the top is stable until a deliberate action
+      // (drop in, or walk off the footprint) leaves it.
       player.onBallPitLadder = false;
+      player.onBallPitRim = true;
       player.y = pit.rimHeight;
       player.jumping = false;
     } else if (vertical < 0 && player.y <= 0) {
@@ -42913,9 +42938,44 @@ function updateSandboxBallPit(deltaTime) {
     // other toy's own convention.
     if (keys.spaceJustPressed && player.y > pit.rimHeight - 20) {
       player.inBallPit = false;
+      player.onBallPitRim = true;
       player.y = pit.rimHeight;
       player.jumping = false;
       player.vy = 0;
+    }
+    return;
+  }
+
+  // CONFIRMED BUG FIX: standing on the rim after climbing used to be
+  // handled as two separate stateless checks (a drop-in trigger, plus a
+  // "walked off the edge" safety net) with NOTHING actually holding the
+  // player in place in between -- applyPhysics() has no idea "just
+  // reached the rim" should pause gravity, so on the very next frame
+  // ordinary gravity pulled them straight back down before a real
+  // keypress could land. Real report: "once i get to top like space
+  // doesnt work to get in, uparrow or rightarrow doesnt wrork to tget
+  // in" -- they weren't doing anything wrong, they were already falling
+  // again by the time they reacted. Now a real protected state (see
+  // applyPhysics' guard chain) that only ends via a deliberate drop-in
+  // or by actually walking off the rim's footprint.
+  if (player.onBallPitRim) {
+    player.y = pit.rimHeight;
+    player.vy = 0;
+
+    // press space to drop in and start swimming
+    if (keys.spaceJustPressed) {
+      player.onBallPitRim = false;
+      player.inBallPit = true;
+      player.y = pit.rimHeight - 14;
+      return;
+    }
+
+    // walk off either end of the rim's footprint -- hands back to
+    // ordinary jump/fall physics from here, same as stepping off any
+    // other ledge
+    if (player.x + player.width <= pit.x || player.x >= pit.x + pit.width) {
+      player.onBallPitRim = false;
+      player.jumping = true;
     }
     return;
   }
@@ -42937,32 +42997,6 @@ function updateSandboxBallPit(deltaTime) {
     player.jumping = true;
     player.vy = 0;
     return;
-  }
-
-  // standing on the rim (climbed the ladder all the way up) -- press
-  // space to drop in and start swimming. CONFIRMED BUG FIX: was
-  // hold-down, switched to space for the same consistency reason as
-  // the mount/exit triggers above.
-  if (keys.spaceJustPressed && Math.abs(player.y - pit.rimHeight) < 8 &&
-      player.x + player.width > pit.x && player.x < pit.x + pit.width) {
-    player.inBallPit = true;
-    player.y = pit.rimHeight - 14;
-    return;
-  }
-
-  // CONFIRMED CHANGE: safety net -- unlike the block pile's summit (only
-  // reachable via a deliberate jump arc that a rider then leaves via
-  // another deliberate action), the rim here is reached by climbing and
-  // is walkable along its whole width, so it's easy to just stroll off
-  // either end without pressing anything. Without this, walking off the
-  // rim's footprint would leave the player frozen floating at rimHeight
-  // forever (nothing else in the sandbox continuously re-applies gravity
-  // to a non-jumping player standing at a nonzero height). Hands back to
-  // ordinary jump/fall physics the moment they leave the rim's footprint.
-  if (!player.jumping && Math.abs(player.y - pit.rimHeight) < 4 &&
-      (player.x + player.width <= pit.x || player.x >= pit.x + pit.width)) {
-    player.jumping = true;
-    player.vy = 0;
   }
 }
 
@@ -43269,7 +43303,7 @@ function updateSandboxScene(deltaTime) {
   // red end walls are decorative otherwise, so without an actual clamp
   // the player could just walk straight through/past them into open
   // empty sand forever.
-  if (!player.onSlinky && !player.inBallPit && !player.onBallPitLadder) {
+  if (!player.onSlinky && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim) {
     player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
   }
 
