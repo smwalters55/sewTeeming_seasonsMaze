@@ -42560,11 +42560,11 @@ const sandboxBalanceBall = {
 // actually costs you), and stronger drift (standing still fails fast)
 // -- input torque bumped up alongside so it's still winnable with good
 // reactions, just no longer forgiving of a slow or sloppy one.
-const SANDBOX_BALANCE_GRAVITY_TORQUE = 2.1;  // how hard being off-center accelerates you further off (the "unstable" part)
-const SANDBOX_BALANCE_INPUT_TORQUE = 2.6;    // how strong your own left/right counter-lean is
-const SANDBOX_BALANCE_DAMPING = 0.965;       // per-frame velocity bleed-off -- lower than before, so oscillation lingers instead of settling out on its own
-const SANDBOX_BALANCE_DRIFT = 0.5;           // strength of the ambient organic wobble
-const SANDBOX_BALANCE_FAIL_ANGLE = 0.56;     // a little stricter than before (~32 degrees) -- past this you've toppled off
+const SANDBOX_BALANCE_GRAVITY_TORQUE = 2.7;  // how hard being off-center accelerates you further off (the "unstable" part)
+const SANDBOX_BALANCE_INPUT_TORQUE = 3.1;    // how strong your own left/right counter-lean is
+const SANDBOX_BALANCE_DAMPING = 0.96;        // per-frame velocity bleed-off -- lower than before, so oscillation lingers instead of settling out on its own
+const SANDBOX_BALANCE_DRIFT = 0.65;          // strength of the ambient organic wobble
+const SANDBOX_BALANCE_FAIL_ANGLE = 0.52;     // stricter than before (~30 degrees) -- past this you've toppled off
 const SANDBOX_BALANCE_FAIL_RECOVER_MS = 900; // brief pause after falling before you can hop back on
 const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the knocked-over lie-flat pose holds before rising, out of the recover window above
 // CONFIRMED CHANGE: real jump-while-balancing support, per "allow for
