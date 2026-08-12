@@ -2061,7 +2061,18 @@ const PAPER_AIRPLANE_FLIGHT_MS = 2200;
 // CONFIRMED CHANGE ("i want the airplane ride to be affected by the
 // fans on the ground") -- how strongly a sandbox fan's updraft lifts
 // the flying plane when its path crosses through the fan's cone.
-const SANDBOX_FAN_AIRPLANE_LIFT = 90; // px/s upward, strongest right at the fan's base
+// CONFIRMED BUG FIX ("airplane doesnt seem to change its flying"): this
+// used the RIDER's own cone width (SANDBOX_FAN_CONE_HALF_WIDTH, 85px at
+// hover height), but the plane's own flight patterns drift 65-95px
+// sideways as part of their own shape -- and that drift peaks at almost
+// the same moment the plane is highest (where the cone is also widest),
+// so the plane spent almost no time actually inside the rider-sized
+// cone even thrown dead-center at a fan. Traced it with a fixed pattern
+// to confirm: only a ~3-6px difference over a ~150px arc, essentially
+// unnoticeable. Given its own dedicated, wider cone (and the lift itself
+// boosted) so it's actually visible.
+const SANDBOX_FAN_AIRPLANE_CONE_WIDTH = 130;
+const SANDBOX_FAN_AIRPLANE_LIFT = 110; // px/s upward, strongest right at the fan's base -- was 90 (too weak) then 170 (fine on its own, but the switch to a flat/continuous cylinder below means it now applies for the plane's whole time near the fan, not just an instant, so it needed to come back down to avoid launching the plane offscreen)
 // CONFIRMED CHANGE: the oak "teach the mechanic" moment is no longer a
 // separate scripted throw that runs after pickup -- per direct
 // feedback, that read as two things happening ("don't add it as 'in
@@ -2089,7 +2100,12 @@ function throwPaperAirplane() {
     t: 0,
     duration: PAPER_AIRPLANE_FLIGHT_MS,
     pattern: Math.floor(Math.random() * PAPER_AIRPLANE_FLIGHT_PATTERNS.length),
-    rotation: 0
+    rotation: 0,
+    // CONFIRMED BUG FIX ("airplane doesnt seem to change its flying"):
+    // these two accumulate the fan's effect across frames -- see the note
+    // in updatePaperAirplaneFlight for why that matters.
+    fanLiftY: 0,
+    fanJitterX: 0
   };
   heldItem = null; // out of hand while it flies, same as the boomerang
 }
@@ -2103,8 +2119,21 @@ function updatePaperAirplaneFlight(deltaTime) {
   const offset = PAPER_AIRPLANE_FLIGHT_PATTERNS[f.pattern](p);
   // mirrored by facing so it always reads as thrown the direction
   // the player's actually facing, not always to one fixed side
-  f.x = f.originX + offset.dx * f.facing;
-  f.y = f.originY + offset.dy;
+  //
+  // CONFIRMED BUG FIX ("airplane doesnt seem to change its flying"): the
+  // real root cause, found after the fan-lift code below still barely
+  // moved the needle even at 2-3x the strength -- f.x/f.y get fully
+  // RECOMPUTED from this deterministic pattern formula every single
+  // frame, so anything the fan code added last frame was gone before it
+  // could ever build up; each frame it just re-added one frame's worth
+  // of nudge to a value that was about to be thrown away again, never
+  // compounding into an actual noticeable displacement. fanLiftY/
+  // fanJitterX are now genuine persistent accumulators (kept on the
+  // flight object itself, decaying only when clear of every fan) added
+  // ON TOP of the pattern's own position AFTER it's computed, so time
+  // spent in a fan's wind actually builds up a real, lasting effect.
+  f.x = f.originX + offset.dx * f.facing + (f.fanJitterX || 0);
+  f.y = f.originY + offset.dy + (f.fanLiftY || 0);
 
   // gust zone -- wonkier, less predictable path while passing through
   // it (see GUST_ZONE); fades in/out smoothly via the sin(p*pi)
@@ -2137,16 +2166,43 @@ function updatePaperAirplaneFlight(deltaTime) {
   // Independent of whether anyone is actually riding the fan right now
   // -- it's a running fan, blowing air, whether or not you're on it.
   if (currentScene === "sandbox" && typeof sandboxFan !== "undefined") {
+    // CONFIRMED BUG FIX (round 2 -- the narrowing-triangle cone shape was
+    // ALSO fighting the effect, separately from the accumulator bug
+    // above): every flight pattern's dx swings widest exactly when dy
+    // (height) is also largest, so a cone that narrows as height
+    // increases meant the plane kept clipping its own edge right when it
+    // mattered most. Switched to a flat cylinder (constant width
+    // regardless of height, up to a generous ceiling) so a pattern that
+    // stays within ~130px of the fan's x horizontally gets the effect
+    // for its ENTIRE time near the fan, not just an instant.
+    let inAnyCone = false;
     [sandboxFan, sandboxFan2].forEach(fan => {
       if (!fan) return;
-      const heightFrac = Math.max(0, Math.min(1, f.y / fan.hoverHeight));
-      const coneHalfWidthAtHeight = 16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * heightFrac;
-      if (f.y >= -10 && Math.abs(f.x - fan.x) <= coneHalfWidthAtHeight) {
-        const strength = 1 - heightFrac * 0.6; // still some lift near hover height, strongest low down
-        f.y += SANDBOX_FAN_AIRPLANE_LIFT * strength * deltaTime;
-        f.rotation += Math.sin(f.t * 0.02) * 0.05; // subtle extra wobble while caught in the updraft
+      const dist = Math.abs(f.x - fan.x);
+      if (f.y >= -10 && f.y <= fan.hoverHeight * 1.4 && dist <= SANDBOX_FAN_AIRPLANE_CONE_WIDTH) {
+        inAnyCone = true;
+        const heightFrac = Math.max(0, Math.min(1, f.y / fan.hoverHeight));
+        const distFrac = 1 - dist / SANDBOX_FAN_AIRPLANE_CONE_WIDTH; // 1 dead-center over the fan, 0 at the cylinder's edge
+        const strength = distFrac * (1 - heightFrac * 0.5);
+        f.fanLiftY = (f.fanLiftY || 0) + SANDBOX_FAN_AIRPLANE_LIFT * strength * deltaTime;
+        // CONFIRMED CHANGE ("make it a little more chaotic flying"): real
+        // turbulence while caught in the updraft -- the jitter target
+        // re-rolls every frame (pseudoRandom seeded off the plane's own
+        // running clock, so it's deterministic but reads as noisy) and
+        // fanJitterX eases toward it rather than snapping, so it reads as
+        // an actual buffeting wobble instead of a single teleport-y jump.
+        const jitterTarget = (pseudoRandom(f.t * 0.041 + fan.x * 0.01) - 0.5) * 90 * strength;
+        f.fanJitterX = (f.fanJitterX || 0) + (jitterTarget - (f.fanJitterX || 0)) * Math.min(1, deltaTime * 8);
+        f.rotation += Math.sin(f.t * 0.05 + fan.x) * 0.5 * strength;
       }
     });
+    // clear of every fan this frame -- let the accumulated lift/jitter
+    // bleed off instead of leaving the plane permanently displaced from
+    // its own pattern for the rest of the throw
+    if (!inAnyCone) {
+      f.fanLiftY = (f.fanLiftY || 0) * (1 - Math.min(1, deltaTime * 1.5));
+      f.fanJitterX = (f.fanJitterX || 0) * (1 - Math.min(1, deltaTime * 3));
+    }
   }
 
   if (p >= 1) {
@@ -38071,7 +38127,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 4260; // CONFIRMED CHANGE: widened again (was 4180) alongside the ant farm's move further right ("move ants a bit more to the right... the whole farm") -- keeps ~45px of breathing room past the case's new right edge (3760 + 456 = 4216)
+const SANDBOX_WIDTH = 4650; // CONFIRMED CHANGE ("lets move ball and everything past it to the right more... give more breathing room between ball pit and ant farm and fan"): widened again (was 4260) alongside the balance ball/ball pit/fan2/ant farm all moving right and spreading out -- keeps ~45px of breathing room past the ant farm case's new right edge (4140 + 456 = 4596)
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38138,11 +38194,17 @@ const sandboxFan = {
   kickT: -1 // CONFIRMED CHANGE: -1 = no kick in progress; ticking up while a kick plays out
 };
 // CONFIRMED CHANGE ("lets put a fan in between ball pit and ant farm")
-// -- second fan, same toy, placed in the gap between the ball pit's
-// right wall (3260+320=3580) and the ant farm case's left edge (3760),
-// centered at 3670 for even breathing room on both sides.
+// -- second fan, same toy, placed in the gap between the ball pit and
+// the ant farm case. CONFIRMED CHANGE ("give more breathing room between
+// ball pit and ant farm and fan they are squished together too much"):
+// the old gap (ball pit right wall 3580 to ant farm left edge 3760, fan
+// centered at 3670) only left ~5px of clearance between the fan's own
+// 85px-half-width wind cone and EITHER neighbor -- genuinely squished.
+// Now sits in a much wider gap (ball pit right wall 3640 to ant farm
+// left edge 4140), centered at 3890 for ~165px of real clearance on
+// both sides of the wind cone.
 const sandboxFan2 = {
-  x: 3670,
+  x: 3890,
   hoverHeight: 150,
   launchT: 0,
   bobPhase: 0,
@@ -38297,10 +38359,18 @@ function drawSandboxFanInstance(fan, onFanKey, camX) {
   // height) instead of 3 straight parallel lines -- reads as "a column
   // of air you can drift around inside," matching the actual mechanic
   // (you can move horizontally while hovering, out to the cone's edge)
+  // matches the flat-cylinder shape the physics now uses (see
+  // updatePaperAirplaneFlight) rather than the rider's narrowing triangle
   const planeInCone = paperAirplaneFlight && currentScene === "sandbox" &&
-    Math.abs(paperAirplaneFlight.x - fan.x) <= (16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * Math.max(0, Math.min(1, paperAirplaneFlight.y / fan.hoverHeight))) &&
-    paperAirplaneFlight.y >= -10;
+    Math.abs(paperAirplaneFlight.x - fan.x) <= SANDBOX_FAN_AIRPLANE_CONE_WIDTH &&
+    paperAirplaneFlight.y >= -10 && paperAirplaneFlight.y <= fan.hoverHeight * 1.4;
   if (player[onFanKey] || planeInCone) {
+    // CONFIRMED CHANGE: the plane's own cone is wider than the rider's
+    // (see SANDBOX_FAN_AIRPLANE_CONE_WIDTH) -- draw whichever one is
+    // actually active so the visible wind column always matches where
+    // the effect is really applying, rather than always drawing the
+    // narrower rider-sized cone even while the plane's caught further out.
+    const coneWidth = player[onFanKey] ? SANDBOX_FAN_CONE_HALF_WIDTH : SANDBOX_FAN_AIRPLANE_CONE_WIDTH;
     const coneTopY = gy - fan.hoverHeight - 20;
     const coneGrad = ctx.createLinearGradient(sx, gy - 10, sx, coneTopY);
     coneGrad.addColorStop(0, "rgba(255,255,255,0.38)");
@@ -38309,8 +38379,8 @@ function drawSandboxFanInstance(fan, onFanKey, camX) {
     ctx.beginPath();
     ctx.moveTo(sx - 16, gy - 10);
     ctx.lineTo(sx + 16, gy - 10);
-    ctx.lineTo(sx + SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
-    ctx.lineTo(sx - SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.lineTo(sx + coneWidth, coneTopY);
+    ctx.lineTo(sx - coneWidth, coneTopY);
     ctx.closePath();
     ctx.fill();
 
@@ -38320,9 +38390,9 @@ function drawSandboxFanInstance(fan, onFanKey, camX) {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(sx - 16, gy - 10);
-    ctx.lineTo(sx - SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.lineTo(sx - coneWidth, coneTopY);
     ctx.moveTo(sx + 16, gy - 10);
-    ctx.lineTo(sx + SANDBOX_FAN_CONE_HALF_WIDTH, coneTopY);
+    ctx.lineTo(sx + coneWidth, coneTopY);
     ctx.stroke();
 
     // streaming air lines drifting upward through the cone, spread
@@ -38333,7 +38403,7 @@ function drawSandboxFanInstance(fan, onFanKey, camX) {
       const spread = -1 + (i / 2); // -1, -0.5, 0, 0.5, 1
       const t = (fan.spinPhase * 20 + i * 22) % 60;
       const travelP = t / 60; // 0 at the fan, 1 near the top -- widen the line's x as it rises, matching the cone
-      const lx = sx + spread * (16 + (SANDBOX_FAN_CONE_HALF_WIDTH - 16) * travelP);
+      const lx = sx + spread * (16 + (coneWidth - 16) * travelP);
       ctx.beginPath();
       ctx.moveTo(lx, gy - 12 - t * 2);
       ctx.lineTo(lx, gy - 26 - t * 2);
@@ -42668,7 +42738,7 @@ function drawMicroscopeUI() {
    out remounting before you can hop back on.
    ====================================================== */
 const sandboxBalanceBall = {
-  x: 2920, // CONFIRMED CHANGE: shifted right +400 again alongside the block pile's own move, preserving the same clearance from the pile's edge
+  x: 3010, // CONFIRMED CHANGE ("i dont want overlap of butterfly portal with slinky blocks"): shifted right +90 (was 2920) -- the left sun portal sits at x-230, which at 2920 landed at 2690, well INSIDE the block pile's own footprint (2429-2735). Now clears the pile's right edge (2735) by ~45px.
   radius: 27,
   tiltAngle: 0,   // 0 = perfectly balanced upright; +/- = leaning that way
   tiltVel: 0,
@@ -43008,7 +43078,7 @@ function drawSandboxBalanceBall(camX) {
    itself -- no hidden finds yet, per direct discussion.
    ====================================================== */
 const sandboxBallPit = {
-  x: 3260,       // world x of the pit's left wall
+  x: 3320,       // world x of the pit's left wall. CONFIRMED CHANGE ("give more breathing room"): shifted right +60 (was 3260) alongside the balance ball's own move, keeping clear space between the balance ball's right sun portal (3010+230=3240) and the ladder (x-16)
   width: 320,    // CONFIRMED CHANGE: widened (was 240), "make it bigger" -- more room to actually swim around in
   rimHeight: 230, // CONFIRMED CHANGE: taller (was 190) alongside the width bump, same request
   bobSeed: 12.3,
@@ -43494,7 +43564,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
-  x: 3760, // CONFIRMED CHANGE ("move ants a bit more to the right... the whole farm") -- pushed further right again (was 3660)
+  x: 4140, // CONFIRMED CHANGE ("give more breathing room between ball pit and ant farm and fan") -- pushed further right again (was 3760), opening up real clearance around fan2 on both sides instead of the ~5px gap that existed before
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL_W + ANT_FARM_MARGIN_X * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL_H + ANT_FARM_MARGIN_Y * 2,
   // local pixel position within the grid interior, only meaningful
@@ -44653,6 +44723,28 @@ function drawSandboxAntFarm(camX) {
       ctx.fillStyle = tunnelHighlight;
       ctx.beginPath();
       ctx.ellipse(gx + c0.x - ANT_FARM_CELL_W * 0.12, gyTop + c0.y - ANT_FARM_CELL_H * 0.12, ANT_FARM_CELL_W * 0.22, ANT_FARM_CELL_H * 0.16, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // CONFIRMED CHANGE ("lets talk ant visual" -> pheromone trail visibility,
+  // "vvv subtle. scales yes. i want trueth"): a literal read-out of the
+  // real ANT_FARM_PHEROMONE array already driving forager wander weighting
+  // -- not a separate decorative trail effect. Opacity is a direct LINEAR
+  // scale of each cell's actual current strength (0 -> invisible, capped
+  // low even at full strength per "vvv subtle"), so what's visible is
+  // always exactly true to what's steering the ants right now, never
+  // eased/boosted for legibility the way the digger crumble effect was.
+  // Drawn on top of the tunnel floor, under the ants themselves.
+  const PHEROMONE_GLOW_MAX_ALPHA = 0.16;
+  for (let row = 0; row < ANT_FARM_ROWS; row++) {
+    for (let col = 0; col < ANT_FARM_COLS; col++) {
+      const strength = ANT_FARM_PHEROMONE[row][col];
+      if (strength <= 0) continue;
+      const c0 = antFarmCellCenter(row, col);
+      const alpha = Math.min(1, strength / ANT_FARM_PHEROMONE_MAX) * PHEROMONE_GLOW_MAX_ALPHA;
+      ctx.fillStyle = `rgba(255,195,90,${alpha})`;
+      organicBlobPath(ctx, gx + c0.x, gyTop + c0.y, ANT_FARM_CELL_W * 0.44, ANT_FARM_CELL_H * 0.44, row * 31 + col * 7 + 500, 7);
       ctx.fill();
     }
   }
