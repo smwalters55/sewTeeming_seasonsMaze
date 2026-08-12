@@ -166,7 +166,9 @@ const player = {
   wigId: null,         // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
   onPendulum: false,   // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
   onSlinky: false,     // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
-  onBalanceBall: false // CONFIRMED CHANGE: true while riding the sandbox's balance ball -- position driven entirely by updateSandboxBalanceBall, same pattern as onFan/onPendulum/onSlinky
+  onBalanceBall: false, // CONFIRMED CHANGE: true while riding the sandbox's balance ball -- position driven entirely by updateSandboxBalanceBall, same pattern as onFan/onPendulum/onSlinky
+  onBallPitLadder: false, // CONFIRMED CHANGE: true while climbing the sandbox ball pit's outer ladder -- position driven entirely by updateSandboxBallPit
+  inBallPit: false        // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
 };
 
 /* ======================================================
@@ -2466,6 +2468,10 @@ function applyPhysics(){
   // same idea for the sandbox's balance ball -- position while riding
   // is driven entirely by updateSandboxBalanceBall()
   if (player.onBalanceBall) return;
+
+  // same idea for the sandbox's ball pit -- position while on its
+  // ladder or swimming inside is driven entirely by updateSandboxBallPit()
+  if (player.onBallPitLadder || player.inBallPit) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -37990,7 +37996,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 3150; // CONFIRMED CHANGE: widened again (was 2750) alongside the pendulum's move further right
+const SANDBOX_WIDTH = 3650; // CONFIRMED CHANGE: widened again (was 3150) to make room for the new ball pit toy, placed past the balance ball with its own clear space
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -42749,6 +42755,218 @@ function drawSandboxBalanceBall(camX) {
   }
 }
 
+/* ======================================================
+   SANDBOX BALL PIT -- per direct brainstorm ("a partially semi
+   transluscent ball pit that you climb up to then jump in so that
+   there is a lot of y distance in there, and you just swim around
+   through there slowly"). A tall-walled tank sitting on the sand,
+   filled with balls right up to the rim -- climb the outer ladder to
+   the rim, then hold down to drop in and swim freely anywhere in the
+   full interior depth at a slow, deliberate pace (not normal jump/fall
+   physics at all while inside). First pass is the climb-in/swim feel
+   itself -- no hidden finds yet, per direct discussion.
+   ====================================================== */
+const sandboxBallPit = {
+  x: 3260,       // world x of the pit's left wall
+  width: 240,
+  rimHeight: 190, // how tall the walls stand -- also the full swimmable Y range once inside
+  bobSeed: 12.3
+};
+const SANDBOX_BALL_PIT_LADDER_OFFSET = -16; // ladder sits just outside the left wall
+const SANDBOX_BALL_PIT_SWIM_SPEED = 60;     // px/s -- deliberately slow, "swim," not "run"
+const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
+
+// a fixed scatter of balls filling the interior -- generated once so
+// they don't re-shuffle every frame, split into "back" (drawn behind
+// the player, most of them) and "front" (a handful drawn in front,
+// which is what actually sells "surrounded" rather than "standing in
+// front of a ball-patterned wall")
+const SANDBOX_BALL_PIT_BALL_COLORS = ["#ff5a5a", "#ffb23f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9"];
+const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 90 }, (_, i) => ({
+  x: pseudoRandom(i * 5.3 + 1) * sandboxBallPit.width,
+  y: pseudoRandom(i * 7.1 + 2) * sandboxBallPit.rimHeight,
+  r: 7 + pseudoRandom(i * 3.7 + 3) * 5,
+  color: SANDBOX_BALL_PIT_BALL_COLORS[i % SANDBOX_BALL_PIT_BALL_COLORS.length],
+  front: pseudoRandom(i * 9.9 + 4) > 0.82, // ~18% drawn in front of the player
+  bobPhase: pseudoRandom(i * 4.4 + 5) * Math.PI * 2
+}));
+
+function updateSandboxBallPit(deltaTime) {
+  const pit = sandboxBallPit;
+  const ladderX = pit.x + SANDBOX_BALL_PIT_LADDER_OFFSET;
+
+  if (player.onBallPitLadder) {
+    const vertical = keys.up ? 1 : keys.down ? -1 : 0;
+    player.y += vertical * SANDBOX_BALL_PIT_CLIMB_SPEED * deltaTime;
+    player.x = ladderX - player.width / 2;
+    player.vy = 0;
+    player.jumping = true;
+    if (player.y >= pit.rimHeight) {
+      // reached the top -- steps off onto the rim, standing normally
+      player.onBallPitLadder = false;
+      player.y = pit.rimHeight;
+      player.jumping = false;
+    } else if (player.y <= 0) {
+      // climbed back down to the sand -- steps off, ordinary ground catch takes it from here
+      player.onBallPitLadder = false;
+      player.y = 0;
+      player.jumping = false;
+    }
+    return;
+  }
+
+  if (player.inBallPit) {
+    let vx = 0, vy = 0;
+    if (keys.left) vx = -1;
+    if (keys.right) vx = 1;
+    if (keys.up) vy = 1;
+    if (keys.down) vy = -1;
+    player.x += vx * SANDBOX_BALL_PIT_SWIM_SPEED * deltaTime;
+    player.y += vy * SANDBOX_BALL_PIT_SWIM_SPEED * deltaTime;
+    // clamped to the interior -- can't swim out through the walls/floor,
+    // and reaching the very top just holds you at the rim's underside
+    // rather than popping back out (climbing OUT is its own deliberate
+    // action below, not an accidental byproduct of swimming up)
+    player.x = Math.max(pit.x + 10, Math.min(pit.x + pit.width - 10 - player.width, player.x));
+    player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
+    player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
+
+    // climb out -- swim up near the rim and press jump. CONFIRMED BUG
+    // FIX: this originally also required being within 40px of the
+    // ladder's exact x, but the interior swim-clamp's left bound
+    // (pit.x+10) keeps the player's CENTER at least ~46px from the
+    // ladder (which sits outside the left wall) even hugging the
+    // leftmost edge -- that distance check could structurally never
+    // pass. Dropped it: climbing out anywhere along the rim once
+    // you've swum to the top is more intuitive anyway (a real pool
+    // doesn't make you swim back to one specific ladder spot).
+    if (keys.upJustPressed && player.y > pit.rimHeight - 20) {
+      player.inBallPit = false;
+      player.y = pit.rimHeight;
+      player.jumping = false;
+      player.vy = 0;
+    }
+    return;
+  }
+
+  // mount the ladder -- walk up to it from the ground and press up.
+  // CONFIRMED BUG FIX: this used to gate on !player.jumping, but the
+  // generic "jump on up-arrow" handler elsewhere runs earlier in the
+  // same frame and claims that exact same upJustPressed press-edge
+  // first, setting player.jumping=true before this check ever saw it --
+  // so pressing up near the ladder did a normal little hop FIRST, and
+  // only started actually climbing once that hop's own fall happened to
+  // land while up was still held. Keying off the press-edge directly
+  // and just taking over (resetting vy) engages immediately instead.
+  if (keys.upJustPressed && isPlayerNear(ladderX, 0, 16, 12, 12)) {
+    player.onBallPitLadder = true;
+    player.jumping = true;
+    player.vy = 0;
+    return;
+  }
+
+  // standing on the rim (climbed the ladder all the way up) -- hold
+  // down to drop in and start swimming, same "the toy takes over
+  // position" shape as every other sandbox mount
+  if (keys.down && Math.abs(player.y - pit.rimHeight) < 8 &&
+      player.x + player.width > pit.x && player.x < pit.x + pit.width) {
+    player.inBallPit = true;
+    player.y = pit.rimHeight - 14;
+    return;
+  }
+
+  // CONFIRMED CHANGE: safety net -- unlike the block pile's summit (only
+  // reachable via a deliberate jump arc that a rider then leaves via
+  // another deliberate action), the rim here is reached by climbing and
+  // is walkable along its whole width, so it's easy to just stroll off
+  // either end without pressing anything. Without this, walking off the
+  // rim's footprint would leave the player frozen floating at rimHeight
+  // forever (nothing else in the sandbox continuously re-applies gravity
+  // to a non-jumping player standing at a nonzero height). Hands back to
+  // ordinary jump/fall physics the moment they leave the rim's footprint.
+  if (!player.jumping && Math.abs(player.y - pit.rimHeight) < 4 &&
+      (player.x + player.width <= pit.x || player.x >= pit.x + pit.width)) {
+    player.jumping = true;
+    player.vy = 0;
+  }
+}
+
+function drawSandboxBallPitBalls(camX, frontOnly) {
+  const pit = sandboxBallPit;
+  const sx = pit.x - camX;
+  const t = performance.now() * 0.001;
+  SANDBOX_BALL_PIT_BALLS.forEach(b => {
+    if (b.front !== frontOnly) return;
+    const bob = Math.sin(t * 0.7 + b.bobPhase) * 2.5;
+    const bx = sx + b.x, by = gy - b.y + bob;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath();
+    ctx.arc(bx - b.r * 0.3, by - b.r * 0.3, b.r * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawSandboxBallPit(camX) {
+  const pit = sandboxBallPit;
+  const sx = pit.x - camX;
+  const wallColor = "#e85d5d", wallColorDark = "#c24747";
+
+  // the tank's two side walls, rising up to the rim
+  [0, pit.width - 14].forEach(dx => {
+    ctx.fillStyle = wallColor;
+    ctx.fillRect(sx + dx, gy - pit.rimHeight, 14, pit.rimHeight);
+    ctx.fillStyle = wallColorDark;
+    ctx.fillRect(sx + dx + 10, gy - pit.rimHeight, 4, pit.rimHeight);
+  });
+  // the rim -- a walkable lid across the top
+  ctx.fillStyle = wallColorDark;
+  ctx.fillRect(sx, gy - pit.rimHeight - 8, pit.width, 8);
+
+  // back interior wall, tinted -- gives the pit some real depth instead
+  // of an empty sky-colored gap between the two side walls
+  const backGrad = ctx.createLinearGradient(0, gy - pit.rimHeight, 0, gy);
+  backGrad.addColorStop(0, "rgba(120,170,210,0.35)");
+  backGrad.addColorStop(1, "rgba(80,130,170,0.5)");
+  ctx.fillStyle = backGrad;
+  ctx.fillRect(sx + 14, gy - pit.rimHeight, pit.width - 28, pit.rimHeight);
+
+  // CONFIRMED CHANGE: "partially semi translucent" -- a soft blue wash
+  // over the whole interior on top of the balls, thicker toward the
+  // bottom, so it reads as genuinely filled/hazy rather than a flat
+  // wall of opaque circles
+  drawSandboxBallPitBalls(camX, false);
+  const haze = ctx.createLinearGradient(0, gy - pit.rimHeight, 0, gy);
+  haze.addColorStop(0, "rgba(140,190,225,0.12)");
+  haze.addColorStop(1, "rgba(90,150,190,0.32)");
+  ctx.fillStyle = haze;
+  ctx.fillRect(sx + 14, gy - pit.rimHeight, pit.width - 28, pit.rimHeight);
+
+  // the ladder -- simple rungs just outside the left wall
+  const ladderX = sx + SANDBOX_BALL_PIT_LADDER_OFFSET;
+  ctx.strokeStyle = "#8a6a42";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(ladderX - 6, gy);
+  ctx.lineTo(ladderX - 6, gy - pit.rimHeight - 6);
+  ctx.moveTo(ladderX + 6, gy);
+  ctx.lineTo(ladderX + 6, gy - pit.rimHeight - 6);
+  ctx.stroke();
+  ctx.lineWidth = 2.4;
+  for (let ry = 14; ry < pit.rimHeight + 6; ry += 22) {
+    ctx.beginPath();
+    ctx.moveTo(ladderX - 6, gy - ry);
+    ctx.lineTo(ladderX + 6, gy - ry);
+    ctx.stroke();
+  }
+}
+
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
@@ -42872,6 +43090,7 @@ function drawSandboxScene(camX) {
   drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
   drawSandboxSlinkyDustParticles(camX); // real scattering sand grains, on top of the puff's rings -- also unconditional, same reasoning
   drawSandboxBalanceBall(camX);
+  drawSandboxBallPit(camX);
   drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
@@ -42916,18 +43135,20 @@ function updateSandboxScene(deltaTime) {
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
   updateSandboxBalanceBall(deltaTime);
+  updateSandboxBallPit(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
   // the player could just walk straight through/past them into open
   // empty sand forever.
-  if (!player.onSlinky) {
+  if (!player.onSlinky && !player.inBallPit && !player.onBallPitLadder) {
     player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
   }
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
-  if (!player.onFan && !player.onPendulum && !player.onSlinky && !player.onBalanceBall && player.y <= 0) {
+  if (!player.onFan && !player.onPendulum && !player.onSlinky && !player.onBalanceBall &&
+      !player.onBallPitLadder && !player.inBallPit && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
@@ -43626,6 +43847,12 @@ if (currentScene === "forest") {
   // the closest thing on screen
   drawMoleholeRootPillar(20, camX);
   drawMoleholeRootPillar(MOLEHOLE_WIDTH - 20, camX);
+} else if (currentScene === "sandbox" && player.inBallPit) {
+  // the ball pit's own "front" balls -- drawn AFTER the player so a
+  // handful of balls sit in front of the sprite while swimming, which
+  // is what actually sells "surrounded by balls" instead of "standing
+  // in front of a ball-patterned wall"
+  drawSandboxBallPitBalls(camX, true);
 }
 
 
