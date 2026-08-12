@@ -44455,11 +44455,24 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
    entirely out of systems that already existed rather than a new one.
    ====================================================== */
 const ANT_FARM_FOOD_SUPPLY_MAX = 6; // pickups a source can sustain before running dry
-const ANT_FARM_FOOD_REGEN_PER_SEC = ANT_FARM_FOOD_SUPPLY_MAX / 180; // full regen from empty takes ~3 real minutes
+const ANT_FARM_FOOD_REGEN_PER_SEC = ANT_FARM_FOOD_SUPPLY_MAX / 180; // once regen is actually running, full regen from empty takes ~3 real minutes
+// CONFIRMED CHANGE (path-diversity workshop, "i wonder if we should
+// hold it for a little at no growth... in reality there would be less
+// reward, the ants would have lower pheromones for it and less
+// frequent interaction, if theres close to zero left"): two pieces.
+// (1) a real rest period -- once a source is fully drained, it sits at
+// exactly 0 with NO regen ticking at all for this long before regen
+// resumes, instead of starting to climb back up the instant the last
+// ant leaves. (2) pheromone deposits scale down with how little supply
+// is actually left (see antFarmForagerPickNext) -- a nearly-empty
+// source reinforces its own trail more weakly even before it hits true
+// zero, so the "less reward, lower pheromones" fade-out starts early
+// rather than being a hard cliff.
+const ANT_FARM_FOOD_REST_MS = 60000; // 1 real minute of guaranteed zero once drained
 const ANT_FARM_FOOD_SOURCES = [
-  { row: 2, col: 16, supply: ANT_FARM_FOOD_SUPPLY_MAX },
-  { row: 12, col: 0, supply: ANT_FARM_FOOD_SUPPLY_MAX },
-  { row: 9, col: 10, supply: ANT_FARM_FOOD_SUPPLY_MAX }
+  { row: 2, col: 16, supply: ANT_FARM_FOOD_SUPPLY_MAX, restUntil: 0 },
+  { row: 12, col: 0, supply: ANT_FARM_FOOD_SUPPLY_MAX, restUntil: 0 },
+  { row: 9, col: 10, supply: ANT_FARM_FOOD_SUPPLY_MAX, restUntil: 0 }
 ];
 const ANT_FARM_PHEROMONE = Array.from({ length: ANT_FARM_ROWS }, () => new Array(ANT_FARM_COLS).fill(0));
 const ANT_FARM_PHEROMONE_MAX = 14;
@@ -44496,7 +44509,7 @@ function antFarmMaybeUnlockNewFood(row, col) {
   if (antFarmFirstSeenAt === null) return;
   if (performance.now() - antFarmFirstSeenAt < ANT_FARM_FOOD_UNLOCK_DELAY_MS) return;
   antFarmFoodUnlocked = true;
-  ANT_FARM_FOOD_SOURCES.push({ row, col, supply: ANT_FARM_FOOD_SUPPLY_MAX });
+  ANT_FARM_FOOD_SOURCES.push({ row, col, supply: ANT_FARM_FOOD_SUPPLY_MAX, restUntil: 0 });
   antFarmFoodUnlockFlashT = performance.now();
   antFarmFoodUnlockCell = { row, col };
   // the 5th forager (see SANDBOX_ANT_FARM_FORAGERS below) sits dormant
@@ -44682,7 +44695,21 @@ function antFarmForagerPickNext(f) {
     // drop-off -- the pickup itself is what should make the source
     // read as "getting picked over", not the eventual delivery.
     const src = antFarmFindFoodSource(f.row, f.col);
-    if (src) src.supply = Math.max(0, src.supply - 1);
+    if (src) {
+      // CONFIRMED CHANGE (path-diversity workshop, "lower pheromones
+      // for it... if theres close to zero left"): remembered per-trip
+      // so the RETURN walk's deposit (below, in the f.carrying branch)
+      // can scale down for a source that was already running low at
+      // pickup time, not just react to hitting true zero.
+      f.depositScale = Math.max(0.15, src.supply / ANT_FARM_FOOD_SUPPLY_MAX);
+      src.supply = Math.max(0, src.supply - 1);
+      // CONFIRMED CHANGE (path-diversity workshop, "i wonder if we
+      // should hold it for a little at no growth"): a real rest period
+      // with zero regen once this pickup actually drained it to 0 --
+      // see the regen tick in updateAntFarmForagers, which now checks
+      // this before letting supply climb at all.
+      if (src.supply <= 0) src.restUntil = performance.now() + ANT_FARM_FOOD_REST_MS;
+    }
   }
   // arriving home with food -- drop it off
   if (f.carrying && f.row === ANT_FARM_ENTRANCE.row && f.col === ANT_FARM_ENTRANCE.col) {
@@ -44697,8 +44724,13 @@ function antFarmForagerPickNext(f) {
   if (f.carrying) {
     // straight shortest-path home -- lay pheromone on the cell being
     // left behind, a real "trail marking the way back to food" that
-    // other foragers can pick up on later
-    ANT_FARM_PHEROMONE[f.row][f.col] = Math.min(ANT_FARM_PHEROMONE_MAX, ANT_FARM_PHEROMONE[f.row][f.col] + ANT_FARM_PHEROMONE_DEPOSIT);
+    // other foragers can pick up on later. CONFIRMED CHANGE
+    // (path-diversity workshop): scaled by depositScale (set at
+    // pickup, see above) -- a source that was already running low
+    // reinforces its own trail more weakly, so its pull fades out
+    // gradually rather than staying full-strength right up until the
+    // instant it hits true zero.
+    ANT_FARM_PHEROMONE[f.row][f.col] = Math.min(ANT_FARM_PHEROMONE_MAX, ANT_FARM_PHEROMONE[f.row][f.col] + ANT_FARM_PHEROMONE_DEPOSIT * (f.depositScale ?? 1));
     next = neighbors.reduce((best, n) => (dist[n.row][n.col] < dist[best.row][best.col] ? n : best), neighbors[0]);
   } else if (f.guidedStepsLeft > 0 && f.guidedTarget) {
     // CONFIRMED CHANGE (antennation w/ real effect, "when ant with food
@@ -44774,9 +44806,15 @@ function updateAntFarmForagers(deltaTime) {
   // its own, whether or not it's currently being visited -- a busy
   // source still drains faster than this regen rate, so it'll still
   // run dry under real pressure, but an abandoned one is never gone
-  // forever.
+  // forever. CONFIRMED CHANGE (path-diversity workshop, "hold it for a
+  // little at no growth... that allows more opportunity for patterns
+  // to change"): a source sitting at its rest period (restUntil, set
+  // the moment it actually hit 0 -- see antFarmForagerPickNext) gets
+  // NO regen at all until that real-time window fully elapses, so a
+  // just-drained source stays a genuine dead end for a while instead
+  // of quietly climbing back to relevance the instant traffic stops.
   ANT_FARM_FOOD_SOURCES.forEach(src => {
-    if (src.supply < ANT_FARM_FOOD_SUPPLY_MAX) {
+    if (src.supply < ANT_FARM_FOOD_SUPPLY_MAX && performance.now() >= (src.restUntil || 0)) {
       src.supply = Math.min(ANT_FARM_FOOD_SUPPLY_MAX, src.supply + deltaTime * ANT_FARM_FOOD_REGEN_PER_SEC);
     }
   });
