@@ -43270,9 +43270,24 @@ const sandboxAntFarm = {
   // specific cell.
   digRow: -1,
   digCol: -1,
-  digProgress: 0
+  digProgress: 0,
+  // CONFIRMED CHANGE ("i want a better entry style than this") -- 0..1
+  // over ANT_FARM_ENTER_DURATION, starting at 1 (fully "in") so nothing
+  // plays on load; reset to 0 on mount and eased back up, see the mount
+  // site below and the shrink-in visual in drawSandboxAntFarm
+  enterAnim: 1
 };
-const ANT_FARM_DIG_TIME = 0.8; // seconds of sustained pushing to dig a cell open
+// CONFIRMED CHANGE ("improve player dig. make it slow like the ant
+// dig, showing progress within each square") -- 0.8s was nearly
+// instant, barely enough time to notice the crack/crumble feedback
+// (see drawSandboxAntFarm's digRow block) actually building before the
+// wall just gave way. Slowed way down so the same progressive crumble
+// visual is now clearly visible mid-dig, not just a blink before/after.
+const ANT_FARM_DIG_TIME = 3.5; // seconds of sustained pushing to dig a cell open
+const ANT_FARM_ENTER_DURATION = 0.55; // seconds -- the shrink-in transition on mount
+const ANT_FARM_GREET_RADIUS_SQ = 8 * 8; // how close the mini-me needs to get to notice an ant
+const ANT_FARM_GREET_COOLDOWN = 4000; // ms -- same ant won't re-greet more than once this often
+const ANT_FARM_GREET_DURATION = 0.8; // seconds the sparkle/pause reaction plays for
 
 function antFarmCellOpen(row, col) {
   if (row < 0 || row >= ANT_FARM_ROWS || col < 0 || col >= ANT_FARM_COLS) return false;
@@ -43325,16 +43340,39 @@ const SANDBOX_ANT_FARM_ANTS = [
 // that weren't there before, not just the same fixed maze forever.
 // row>0 respected here too -- workers never touch the single surface
 // entrance.
-const ANT_FARM_DIGGER_DIG_TIME = 6; // seconds -- deliberately slow, "watch it happen" pace
+// CONFIRMED BUG FIX ("new tunnels waaay too common... happened so
+// quickly... ant sitting there and then suddenly a whole new area is
+// open") -- three diggers each finishing a cell every 6s, running
+// unconditionally whenever you're anywhere in the sandbox (not just
+// watching the case), could chew through the ~100 remaining solid
+// cells in only a few real minutes -- exactly the "came back and it's
+// a totally different, way-too-open maze" complaint, and the crumble
+// effect restarting that fast on 3 ants at once is also almost
+// certainly what read as "random flashes across the farm" (a small
+// crumble patch popping in, growing, then vanishing into open tunnel
+// every few seconds, times three, scattered around the map). Slowed
+// way down, cut to two workers, and capped how much total new tunnel
+// they're allowed to add so the original maze's structure survives.
+// ALSO now only progresses while player.inAntFarm (i.e. only while
+// actually being watched), rather than silently running the whole
+// time you're anywhere in the sandbox -- "the progress of them
+// digging, slowly" only means something if it's not happening
+// entirely off-screen between visits.
+const ANT_FARM_DIGGER_DIG_TIME = 40; // seconds per cell -- a real slow, watchable excavation
+const ANT_FARM_MAX_AUTO_DIGS = 14; // caps total new tunnel added over the whole game so the maze doesn't dissolve into an open room
+let antFarmAutoDigCount = 0;
 const SANDBOX_ANT_FARM_DIGGERS = [
   { row: 5, col: 0, digRow: -1, digCol: -1, progress: 0, angle: 0 },
-  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI },
-  { row: 9, col: 8, digRow: -1, digCol: -1, progress: 0, angle: Math.PI / 2 }
+  { row: 10, col: 16, digRow: -1, digCol: -1, progress: 0, angle: Math.PI }
 ];
 
 // picks a solid neighbor of (row,col) to start digging, preferring one
-// not already claimed by another digger this frame
+// not already claimed by another digger this frame. Returns null once
+// ANT_FARM_MAX_AUTO_DIGS has been reached, same as if boxed in -- the
+// workers just keep wandering the existing tunnels forever after that
+// instead of continuing to eat into the maze's original structure.
 function antFarmPickDigTarget(row, col) {
+  if (antFarmAutoDigCount >= ANT_FARM_MAX_AUTO_DIGS) return null;
   const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
   const options = [];
   dirs.forEach(([dr, dc]) => {
@@ -43375,6 +43413,7 @@ function updateAntFarmDiggers(deltaTime) {
     if (d.progress >= ANT_FARM_DIGGER_DIG_TIME) {
       ANT_FARM_GRID[d.digRow][d.digCol] = 1;
       antFarmGridVersion++; // invalidates the cached forager shortest-path field
+      antFarmAutoDigCount++;
       d.row = d.digRow;
       d.col = d.digCol;
       d.digRow = -1;
@@ -43388,6 +43427,7 @@ function drawAntFarmDiggers(gx, gyTop) {
   SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
     const pos = antFarmCellCenter(d.row, d.col);
     drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15);
+    drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
     if (d.digRow !== -1) {
       // small crumble effect at the dig target -- same visual language
       // (growing lighter patch + radiating cracks) as the player's own
@@ -43651,6 +43691,74 @@ function updateAntFarmForagers(deltaTime) {
   });
 }
 
+// shared position helper for the foragers -- used by both the draw
+// loop below and the proximity check in antFarmCheckGreets, so the two
+// can never drift out of sync with each other
+function antFarmForagerPos(f) {
+  const from = antFarmCellCenter(f.fromRow, f.fromCol);
+  const to = antFarmCellCenter(f.targetRow, f.targetCol);
+  return { x: from.x + (to.x - from.x) * f.moveT, y: from.y + (to.y - from.y) * f.moveT };
+}
+
+// CONFIRMED CHANGE ("make it so theres an interaction when i meet an
+// ant") -- called once a frame from updateSandboxAntFarm with the
+// mini-me's current local position. Checks every resident (decorative
+// walkers, worker diggers, foragers) for proximity and, on a fresh
+// approach (past ANT_FARM_GREET_COOLDOWN since last time), starts that
+// specific ant's own little "noticed you" reaction -- see
+// drawAntFarmGreetSparkle for what that actually looks like.
+function antFarmCheckGreets(px, py) {
+  const now = performance.now();
+  const tAnt = now * 0.001;
+  const tryGreet = (ax, ay, obj) => {
+    const dx = ax - px, dy = ay - py;
+    if (dx * dx + dy * dy <= ANT_FARM_GREET_RADIUS_SQ) {
+      if (!obj.lastGreet || now - obj.lastGreet > ANT_FARM_GREET_COOLDOWN) {
+        obj.lastGreet = now;
+        obj.greetStart = now;
+      }
+    }
+  };
+  SANDBOX_ANT_FARM_ANTS.forEach(a => {
+    const pos = antFarmPathPosition(a, tAnt);
+    tryGreet(pos.x, pos.y, a);
+  });
+  SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    const pos = antFarmCellCenter(d.row, d.col);
+    tryGreet(pos.x, pos.y, d);
+  });
+  SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
+    const pos = antFarmForagerPos(f);
+    tryGreet(pos.x, pos.y, f);
+  });
+}
+
+// a little twinkling sparkle + hop, playing for ANT_FARM_GREET_DURATION
+// right after antFarmCheckGreets starts it on a given ant -- the same
+// object is shared between the check and the draw (greetStart lives
+// directly on the ant/digger/forager's own object), so no separate
+// registry to keep in sync
+function drawAntFarmGreetSparkle(x, y, obj) {
+  if (!obj.greetStart) return;
+  const t = (performance.now() - obj.greetStart) / 1000;
+  if (t > ANT_FARM_GREET_DURATION) return;
+  const fade = 1 - t / ANT_FARM_GREET_DURATION;
+  const bounce = Math.sin(Math.min(1, t / 0.25) * Math.PI) * 2.2;
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.strokeStyle = "#fff2b0";
+  ctx.lineWidth = 0.8;
+  [[-3, -6], [2.5, -8]].forEach(([dx, dy], i) => {
+    const sx = x + dx, sy = y + dy - bounce;
+    const r = 1.5 + Math.sin(t * 14 + i * 2) * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(sx - r, sy); ctx.lineTo(sx + r, sy);
+    ctx.moveTo(sx, sy - r); ctx.lineTo(sx, sy + r);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 function drawAntFarmForagers(gx, gyTop) {
   // food sources -- small clustered crumbs, permanent (never depleted,
   // see this system's own top comment)
@@ -43670,12 +43778,12 @@ function drawAntFarmForagers(gx, gyTop) {
   SANDBOX_ANT_FARM_FORAGERS.forEach(f => {
     const from = antFarmCellCenter(f.fromRow, f.fromCol);
     const to = antFarmCellCenter(f.targetRow, f.targetCol);
-    const x = from.x + (to.x - from.x) * f.moveT;
-    const y = from.y + (to.y - from.y) * f.moveT;
+    const { x, y } = antFarmForagerPos(f);
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     // amber/gold rather than the decorative residents' rust-brown, so
     // the colony reads as a distinct "these are doing something" set
     drawAntCreature(gx + x, gyTop + y, angle, 1.1, "#d9a028");
+    drawAntFarmGreetSparkle(gx + x, gyTop + y, f);
     if (f.carrying) {
       // a tiny crumb riding along on its back, visible proof it's
       // actually carrying something home rather than just wandering
@@ -43691,17 +43799,37 @@ function updateSandboxAntFarm(deltaTime) {
   const farm = sandboxAntFarm;
   const entranceWorldX = farm.x + ANT_FARM_MARGIN + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
 
-  // worker ants dig on their own clock regardless of whether you're
-  // actually shrunk down watching them right now -- runs unconditionally
-  // while in the sandbox at all, so the tunnels have genuinely moved on
-  // by the time you check back in, not just while you're staring at them
-  updateAntFarmDiggers(deltaTime);
+  // CONFIRMED BUG FIX ("ant sitting there and then suddenly a whole new
+  // area is open... i want to see the progress... slowly") -- digging
+  // used to advance the whole time you were anywhere in the sandbox,
+  // which is exactly how it could quietly carve out a big chunk of the
+  // maze between visits with no visible progress to watch. Now only
+  // ticks while you're actually shrunk down looking at it, so "watch it
+  // happen slowly" is literally what you get -- it can't run ahead of
+  // you anymore.
+  if (player.inAntFarm) updateAntFarmDiggers(deltaTime);
   // the forager colony (see the "ANT FARM FORAGER COLONY" block above)
-  // -- same "runs the whole time you're in the sandbox" treatment
+  // keeps running in the background either way -- it never mutates the
+  // maze structure itself (only the digging above does), so there's
+  // nothing for it to "run ahead" on; it's just ambient life continuing
+  // to forage whether or not you're watching.
   updateAntFarmForagers(deltaTime);
 
   if (player.inAntFarm) {
-    const speed = 46;
+    // CONFIRMED CHANGE ("i want a better entry style than this") -- a
+    // brief shrink-in beat plays on mount (see the vortex/scale-up
+    // visual in drawSandboxAntFarm); controls hold off until it
+    // finishes so you actually see yourself arrive rather than just
+    // popping into full control mid-shrink.
+    if (farm.enterAnim < 1) {
+      farm.enterAnim = Math.min(1, farm.enterAnim + deltaTime / ANT_FARM_ENTER_DURATION);
+      return;
+    }
+
+    // CONFIRMED CHANGE ("move player slower, i want this to feel
+    // exploratory") -- was 46px/s, a brisk clip that crossed the whole
+    // maze in a few seconds. Slowed to a genuine crawl.
+    const speed = 27;
     let dx = 0, dy = 0;
     if (keys.left) dx = -1;
     if (keys.right) dx = 1;
@@ -43731,6 +43859,17 @@ function updateSandboxAntFarm(deltaTime) {
     }
     farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL - 1, farm.localX));
     farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL - 1, farm.localY));
+
+    // CONFIRMED CHANGE ("make it so theres an interaction when i meet
+    // an ant") -- checks every resident (decorative walkers, worker
+    // diggers, foragers) for how close it currently is to the mini-me;
+    // getting close enough triggers a brief "noticed you" reaction
+    // (see drawAntFarmGreetSparkle) on THAT specific ant, cooled down
+    // per-ant so walking back and forth past the same one doesn't spam
+    // it. Positions are computed fresh here (matching each system's own
+    // draw-time math) since none of the decorative/forager ants store
+    // a persistent x/y otherwise.
+    antFarmCheckGreets(farm.localX, farm.localY);
 
     // CONFIRMED CHANGE ("lets make it diggable now") -- pushing
     // sustained against a solid cell (row>0 only -- the single surface
@@ -43786,6 +43925,7 @@ function updateSandboxAntFarm(deltaTime) {
     player.inAntFarm = true;
     sandboxAntFarm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
     sandboxAntFarm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL + 2;
+    sandboxAntFarm.enterAnim = 0; // kicks off the shrink-in transition, see drawSandboxAntFarm
   }
 }
 
@@ -43899,6 +44039,7 @@ function drawSandboxAntFarm(camX) {
   SANDBOX_ANT_FARM_ANTS.forEach(a => {
     const pos = antFarmPathPosition(a, t);
     drawAntCreature(gx + pos.x, gyTop + pos.y, pos.angle, 1.15);
+    drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, a);
   });
 
   // worker ants slowly digging new tunnels of their own -- see
@@ -43914,6 +44055,33 @@ function drawSandboxAntFarm(camX) {
   // color) rather than a plain colored dot, per direct feedback
   if (player.inAntFarm) {
     const ix = gx + farm.localX, iy = gyTop + farm.localY;
+
+    // CONFIRMED CHANGE ("i want a better entry style than this") --
+    // instead of just popping into existence at full size the instant
+    // you press space, a few shrinking rings spiral in on the mount
+    // spot and the mini-me itself grows in from a pinpoint over
+    // ANT_FARM_ENTER_DURATION, easing out so it settles rather than
+    // snapping to full size.
+    const enterEase = 1 - Math.pow(1 - farm.enterAnim, 3);
+    if (farm.enterAnim < 1) {
+      ctx.save();
+      ctx.globalAlpha = 1 - farm.enterAnim * 0.6;
+      ctx.strokeStyle = "#fff2b0";
+      for (let ring = 0; ring < 3; ring++) {
+        const ringT = Math.max(0, farm.enterAnim * 3 - ring);
+        if (ringT <= 0 || ringT >= 1) continue;
+        ctx.lineWidth = 1.2 * (1 - ringT);
+        ctx.beginPath();
+        ctx.arc(ix, iy, 10 * (1 - ringT), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(ix, iy);
+    ctx.scale(Math.max(0.05, enterEase), Math.max(0.05, enterEase));
+    ctx.translate(-ix, -iy);
+
     ctx.fillStyle = "#7a78b8"; // the player's own body color, ant-sized
     ctx.beginPath();
     ctx.moveTo(ix - 5, iy - 6);
@@ -43934,16 +44102,24 @@ function drawSandboxAntFarm(camX) {
     // that -- the white base gives the pupil something to anti-alias
     // against besides the body color, and the two-layer circle reads
     // properly round even shrunk down to ant-size.
+    // CONFIRMED CHANGE ("put my eyes at the top of my head not right
+    // side") -- these used to be stacked vertically AND shifted
+    // sideways by facing direction, which put them off to one edge of
+    // the body instead of reading as a face. Now a normal side-by-side
+    // pair sitting near the TOP of the body (the body spans iy-6 to
+    // iy+6, so iy-3.6 is up near the crown), centered left/right of
+    // ix regardless of which way it's facing.
     const eyeDir = farm.facingDir;
+    const eyeY = iy - 3.6;
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1.9, 0, Math.PI * 2);
-    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1.9, 0, Math.PI * 2);
+    ctx.arc(ix - 1.6, eyeY, 1.9, 0, Math.PI * 2);
+    ctx.arc(ix + 1.6, eyeY, 1.9, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#1a1a1a";
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1, 0, Math.PI * 2);
-    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1, 0, Math.PI * 2);
+    ctx.arc(ix - 1.6 + eyeDir * 0.4, eyeY, 1, 0, Math.PI * 2);
+    ctx.arc(ix + 1.6 + eyeDir * 0.4, eyeY, 1, 0, Math.PI * 2);
     ctx.fill();
 
     // CONFIRMED CHANGE ("if player wearing a wig or the autumn crown,
@@ -43988,6 +44164,7 @@ function drawSandboxAntFarm(camX) {
       ctx.fill();
       ctx.restore();
     }
+    ctx.restore(); // closes the enter-transition scale transform
   }
 
   // glass shine, drawn last so it sits over everything inside the case
