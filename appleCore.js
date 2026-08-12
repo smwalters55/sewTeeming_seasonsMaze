@@ -42994,9 +42994,14 @@ const SANDBOX_BALL_PIT_LADDER_OFFSET = -16; // ladder sits just outside the left
 // feel like slowly wading through a pit of balls -- cut well back.
 // Vertical (climbing toward the surface to get out, or diving deeper)
 // stays at the original feel.
-const SANDBOX_BALL_PIT_SWIM_SPEED_X = 30;   // px/s -- CONFIRMED CHANGE ("make sideways movement in ball pit just a littttle faster"): nudged up from 26
+const SANDBOX_BALL_PIT_SWIM_SPEED_X = 34;   // px/s -- CONFIRMED CHANGE ("add a little more horizontal swim speed bump pls"): nudged up again from 30 (originally 26)
 const SANDBOX_BALL_PIT_SWIM_SPEED_Y = 60;   // px/s
 const SANDBOX_BALL_PIT_CLIMB_SPEED = 70;    // px/s up the ladder
+// CONFIRMED BUG FIX ("you just have to be at the exact maximum height...
+// add more wiggle room height wise"): how close to pit.rimHeight counts
+// as "reached the top" -- see the onBallPitLadder branch in
+// updateSandboxBallPit for the full story.
+const SANDBOX_BALL_PIT_RIM_TOLERANCE = 14;
 
 // a fixed scatter of balls filling the interior -- generated once so
 // they don't re-shuffle every frame, split into "back" (drawn behind
@@ -43117,7 +43122,20 @@ function updateSandboxBallPit(deltaTime) {
     player.x = ladderX - player.width / 2 - getWigSideOverhang();
     player.vy = 0;
     player.jumping = true;
-    if (player.y >= pit.rimHeight) {
+    // CONFIRMED BUG FIX ("just nothing happens [at the top]... you just
+    // have to be at the exact maximum height"): this used to require
+    // player.y to hit pit.rimHeight EXACTLY (or overshoot it) before
+    // switching to the protected onBallPitRim state -- but climbing
+    // stops the instant up is released, so letting go a hair early
+    // (extremely easy with a real keyboard, not a big miss) leaves the
+    // player sitting a few px under the threshold, permanently stuck in
+    // the ladder-climbing branch, which has no space handling at all.
+    // From there space really does do nothing, indistinguishable from a
+    // dead key -- exactly the report. A real tolerance below the exact
+    // top now counts as "reached it", same forgiving spirit as every
+    // other proximity check in this scene (isPlayerNear's own generous
+    // radii) rather than demanding pixel-perfect climbing.
+    if (player.y >= pit.rimHeight - SANDBOX_BALL_PIT_RIM_TOLERANCE) {
       // reached the top -- steps off onto the rim. CONFIRMED BUG FIX:
       // this used to just clear onBallPitLadder and set jumping=false,
       // which sounds like "standing normally" but isn't actually a
@@ -43189,7 +43207,22 @@ function updateSandboxBallPit(deltaTime) {
     // rather than stacking separate rotations, which would've combined
     // into odd angles if both were held at once. Horizontal takes
     // priority when both are held, same as facing already does.
-    const swimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0);
+    // CONFIRMED BUG FIX ("i am still laying down on top of the ball
+    // pit... didnt we already talk about this"): the last fix for this
+    // ("shouldnt be able to be sideways on top the ball pit edge")
+    // addressed a DIFFERENT source -- leftover balance-ball tilt
+    // leaking onto the rim after mounting. This is a separate, real
+    // second source: swimming is clamped up to pit.rimHeight - 6 (a few
+    // lines up), so swimming sideways right at the very top of the
+    // water puts the lying-flat pose right at the rim line itself --
+    // visually indistinguishable from "standing on the edge sideways"
+    // even though inBallPit is genuinely still true the whole time.
+    // Fades the tilt back toward upright over the last ~34px approaching
+    // the surface, so getting close to the rim while swimming settles
+    // you upright again well before you'd actually read as lying on it.
+    const rimFadeStart = pit.rimHeight - 40, rimFadeEnd = pit.rimHeight - 6;
+    const rimFade = 1 - Math.max(0, Math.min(1, (player.y - rimFadeStart) / (rimFadeEnd - rimFadeStart)));
+    const swimTiltTarget = (vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0)) * rimFade;
     pit.swimTiltAngle += (swimTiltTarget - pit.swimTiltAngle) * Math.min(1, deltaTime * 6);
 
     // climb out -- swim up near the rim and press space. CONFIRMED BUG
@@ -45778,11 +45811,21 @@ if (currentScene === "forest") {
   // the closest thing on screen
   drawMoleholeRootPillar(20, camX);
   drawMoleholeRootPillar(MOLEHOLE_WIDTH - 20, camX);
-} else if (currentScene === "sandbox" && player.inBallPit) {
+} else if (currentScene === "sandbox") {
   // the ball pit's own "front" balls -- drawn AFTER the player so a
-  // handful of balls sit in front of the sprite while swimming, which
-  // is what actually sells "surrounded by balls" instead of "standing
-  // in front of a ball-patterned wall"
+  // handful of balls sit in front of the sprite, which is what actually
+  // sells "surrounded by balls"/"in front of the pit" instead of
+  // "standing in front of a ball-patterned wall".
+  // CONFIRMED BUG FIX ("i dont like that the 'front balls'... only
+  // appear once player is in ball pit"): used to be gated on
+  // player.inBallPit, so the front layer was invisible the entire time
+  // you're just standing on the ladder/rim near the pit, or anywhere
+  // else in the sandbox -- only popping in the instant you actually
+  // dropped into the water. drawSandboxBallPitBalls already clips its
+  // own drawing to the pit's real footprint (see its own clip a few
+  // lines into that function), so drawing it unconditionally here is
+  // safe -- it simply has nothing to draw unless the pit is actually
+  // on screen, same as before, just no longer tied to being submerged.
   drawSandboxBallPitBalls(camX, true);
 }
 
@@ -46759,33 +46802,33 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request. Drops the player into
-// clouds with the boomerang and bucket already in hand, for playtesting
-// the atmosphere/gust-zone work there directly instead of climbing up
-// through spring first. Remove this block (see the "debug spawn
-// removed" comment further up in git history for the exact revert
-// pattern) whenever a real fresh-start playtest is next needed.
-// CONFIRMED CHANGE: repointed directly INTO the sandbox, right in
-// front of the slinky block pile, per direct request ("put me directly
-// in front of slinky blocks when i start the game right now") -- was
-// spring (in front of the entrance mound). discoveredScenes.spring and
-// .clouds are still set true below so nothing UI-gated is broken by
-// skipping straight past them.
+// TEMPORARY debug spawn -- per direct request. Remove this block (see
+// the "debug spawn removed" comment further up in git history for the
+// exact revert pattern) whenever a real fresh-start playtest is next
+// needed. discoveredScenes.spring and .clouds are still set true below
+// so nothing UI-gated is broken by skipping straight past them.
+// CONFIRMED CHANGE ("debug spawn me close to the ball pit with the blue
+// wig on with airplane in play please") -- repointed from the slinky
+// block pile to right next to the ball pit's ladder, for testing the
+// rim-tolerance fix directly on load without walking over every time.
+// NOTE: because this sets currentScene directly rather than going
+// through a real startSeasonTransition, the "grant + auto-equip the
+// paper airplane on a genuine transition into sandbox" logic never
+// actually runs here -- granted/equipped by hand below instead so it
+// still matches what a real transition would leave you with.
 currentScene = "sandbox";
-player.x = sandboxBlockPile.x - 130; // just in front of the pile's base tier, facing it
+player.x = sandboxBallPit.x - 16 - player.width / 2 - 60; // just left of the ladder
 player.y = 0;
+player.wigId = "blueBob";
 addToInventory("shovel");
 touchInventoryOrder("shovel");
-// CONFIRMED CHANGE ("put shovel in my inventory so i can dig") -- the
-// shovel was already being granted here, but heldItem defaults to null
-// and only changes via Tab-cycling, so without pressing Tab first it
-// sat in inventory unused and the ant farm's dig-gated-on-shovel check
-// (see updateSandboxAntFarm) would never fire. Equipped directly so
-// digging works immediately on load, no Tab press required.
-heldItem = "shovel";
+addToInventory("paperAirplane");
+touchInventoryOrder("paperAirplane");
+heldItem = "paperAirplane";
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 updateMapUI();
+updateInventoryUI();
 
 update();
 
