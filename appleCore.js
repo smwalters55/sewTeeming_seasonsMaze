@@ -42858,8 +42858,8 @@ function drawSandboxBalanceBall(camX) {
    ====================================================== */
 const sandboxBallPit = {
   x: 3260,       // world x of the pit's left wall
-  width: 240,
-  rimHeight: 190, // how tall the walls stand -- also the full swimmable Y range once inside
+  width: 320,    // CONFIRMED CHANGE: widened (was 240), "make it bigger" -- more room to actually swim around in
+  rimHeight: 230, // CONFIRMED CHANGE: taller (was 190) alongside the width bump, same request
   bobSeed: 12.3,
   swimTiltAngle: 0 // CONFIRMED CHANGE: eased toward a flat lying-down tilt while actually moving sideways, back to upright otherwise -- see updateSandboxBallPit/getSandboxBallPitSwimTilt
 };
@@ -42887,18 +42887,64 @@ const SANDBOX_BALL_PIT_BALL_COLORS = ["#ff5a5a", "#ffb23f", "#ffe64a", "#6ee66e"
 // outer edge. Margined well inside the walls now (an inset roughly
 // equal to the biggest possible ball radius), plus an explicit clip in
 // the draw function below as a second line of defense regardless.
-const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 90 }, (_, i) => ({
+// CONFIRMED CHANGE: count bumped 90 -> 170 alongside the pit's own
+// size increase, so density stays roughly the same (the old 90 in the
+// smaller 240x190 interior was already a good "surrounded by balls"
+// density -- just scaling the count with the new bigger 320x230 area).
+const SANDBOX_BALL_PIT_BALLS = Array.from({ length: 170 }, (_, i) => ({
   x: 16 + pseudoRandom(i * 5.3 + 1) * (sandboxBallPit.width - 32),
   y: 14 + pseudoRandom(i * 7.1 + 2) * (sandboxBallPit.rimHeight - 22),
   r: 7 + pseudoRandom(i * 3.7 + 3) * 5,
   color: SANDBOX_BALL_PIT_BALL_COLORS[i % SANDBOX_BALL_PIT_BALL_COLORS.length],
   front: pseudoRandom(i * 9.9 + 4) > 0.82, // ~18% drawn in front of the player
-  bobPhase: pseudoRandom(i * 4.4 + 5) * Math.PI * 2
+  bobPhase: pseudoRandom(i * 4.4 + 5) * Math.PI * 2,
+  // CONFIRMED CHANGE ("make it so balls moves as player moves through
+  // them") -- a live displacement from the ball's fixed base position,
+  // pushed away from the player while swimming nearby and springing
+  // back to rest otherwise. See updateSandboxBallPitBallPhysics.
+  offsetX: 0,
+  offsetY: 0
 }));
+
+// CONFIRMED CHANGE ("is it possible to make it so balls moves as
+// player moves through them" -- yes): each ball keeps a live offset
+// away from its fixed rest position. While actually swimming, any ball
+// close enough to the player gets pushed away proportional to how much
+// they're overlapping; every ball (regardless of whether anyone's
+// swimming right now) continuously springs back toward its rest
+// position, so the pit visibly "parts" as you push through and drifts
+// back to normal once you've passed. Runs unconditionally each frame
+// (not just while inBallPit) so balls nudged aside finish settling
+// back even after you've climbed back out.
+function updateSandboxBallPitBallPhysics(deltaTime) {
+  const pit = sandboxBallPit;
+  const swimming = player.inBallPit;
+  const playerCenterX = player.x + player.width / 2;
+  const playerCenterH = player.y + player.height / 2;
+  const springRate = Math.min(1, deltaTime * 5);
+  SANDBOX_BALL_PIT_BALLS.forEach(b => {
+    b.offsetX -= b.offsetX * springRate;
+    b.offsetY -= b.offsetY * springRate;
+    if (!swimming) return;
+    const ballWorldX = pit.x + b.x + b.offsetX;
+    const ballHeight = b.y + b.offsetY;
+    const dx = ballWorldX - playerCenterX;
+    const dy = ballHeight - playerCenterH;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+    const pushRadius = b.r + player.width * 0.5 + 8;
+    if (dist < pushRadius) {
+      const overlap = (pushRadius - dist) / pushRadius;
+      const pushAmount = overlap * 100 * deltaTime;
+      b.offsetX += (dx / dist) * pushAmount;
+      b.offsetY += (dy / dist) * pushAmount;
+    }
+  });
+}
 
 function updateSandboxBallPit(deltaTime) {
   const pit = sandboxBallPit;
   const ladderX = pit.x + SANDBOX_BALL_PIT_LADDER_OFFSET;
+  updateSandboxBallPitBallPhysics(deltaTime);
 
   if (player.onBallPitLadder) {
     const vertical = keys.up ? 1 : keys.down ? -1 : 0;
@@ -42967,8 +43013,14 @@ function updateSandboxBallPit(deltaTime) {
     // vertical swimming or holding still stays upright). See
     // getSandboxBallPitSwimTilt for how this feeds into the shared
     // player-tilt system every other sandbox toy also uses.
-    const swimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : 0;
-    pit.swimTiltAngle += (swimTiltTarget - pit.swimTiltAngle) * Math.min(1, deltaTime * 8);
+    // CONFIRMED CHANGE ("i think i want player to go upside down when
+    // downarrow") -- one single eased tilt value now covers all three
+    // swim poses (lying sideways, upside down while diving, upright)
+    // rather than stacking separate rotations, which would've combined
+    // into odd angles if both were held at once. Horizontal takes
+    // priority when both are held, same as facing already does.
+    const swimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0);
+    pit.swimTiltAngle += (swimTiltTarget - pit.swimTiltAngle) * Math.min(1, deltaTime * 6);
 
     // climb out -- swim up near the rim and press space. CONFIRMED BUG
     // FIX: this originally required both a distance-to-ladder check
@@ -43059,7 +43111,7 @@ function drawSandboxBallPitBalls(camX, frontOnly) {
   SANDBOX_BALL_PIT_BALLS.forEach(b => {
     if (b.front !== frontOnly) return;
     const bob = Math.sin(t * 0.7 + b.bobPhase) * 2.5;
-    const bx = sx + b.x, by = gy - b.y + bob;
+    const bx = sx + b.x + b.offsetX, by = gy - b.y - b.offsetY + bob;
     ctx.fillStyle = b.color;
     ctx.beginPath();
     ctx.arc(bx, by, b.r, 0, Math.PI * 2);
@@ -43429,13 +43481,17 @@ function drawSandboxAntFarm(camX) {
     ctx.arcTo(ix - 5, iy - 6, ix + 5, iy - 6, 2);
     ctx.closePath();
     ctx.fill();
+    // CONFIRMED BUG FIX: at 0.9px radius these were small enough that
+    // canvas anti-aliasing rendered them as blocky squares rather than
+    // round dots ("what are the two squares on player in ant farm") --
+    // bumped the radius up so they actually render as circles.
     ctx.fillStyle = "#1a1a1a";
     const eyeDir = farm.facingDir;
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 0.9, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 1.3, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 0.9, 0, Math.PI * 2);
+    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 1.3, 0, Math.PI * 2);
     ctx.fill();
   }
 
