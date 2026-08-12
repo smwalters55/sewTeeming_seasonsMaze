@@ -43995,18 +43995,40 @@ function updateAntFarmDiggers(deltaTime) {
     // initial walk (relocating set true at spawn, no moveT yet) and any
     // digger's later random mid-walk relocation.
     if (d.relocating) {
-      if (d.moveT === undefined || d.moveT >= 1) {
-        if (d.moveT !== undefined) { d.row = d.wanderToRow; d.col = d.wanderToCol; }
-        if (d.row === d.relocateTargetRow && d.col === d.relocateTargetCol) {
-          d.relocating = false; // arrived -- fall through below to pick a normal dig target from here
-        } else {
-          antFarmDiggerStepToward(d, d.relocateTargetRow, d.relocateTargetCol);
-          return; // first/next step just queued -- animate it over the coming frames
-        }
-      } else {
+      // CONFIRMED BUG FIX (screenshots + "i think it may be when a
+      // digger ant moves" -- the reported "random ant flashing in
+      // different parts of the tunnels"): this branch used to advance
+      // moveT to 1 and immediately `return` WITHOUT updating d.row/
+      // d.col to the arrived cell (unlike the original "boxed in"
+      // wander code just below, which does that update in the same
+      // frame). That left one whole frame where moveT>=1 (so the draw
+      // code stopped treating it as "mid-wander" and switched to
+      // rendering at d.row/d.col) but d.row/d.col still held the OLD
+      // pre-step cell -- a real one-frame snap backward to the old
+      // cell, then snap forward again the next frame once d.row/d.col
+      // finally caught up. Happened on every single step of every
+      // relocation walk, which is exactly why it read as random ants
+      // flashing all over the map rather than one obvious spot. Fixed
+      // by updating d.row/d.col in the SAME frame moveT reaches 1,
+      // mirroring the original wander code exactly.
+      if (d.moveT !== undefined && d.moveT < 1) {
         d.moveT = Math.min(1, d.moveT + deltaTime / ANT_FARM_DIGGER_WANDER_DURATION);
         d.gaitPhase = (d.gaitPhase + deltaTime * (1 / ANT_FARM_DIGGER_WANDER_DURATION) * ANT_GAIT_RATE) % (Math.PI * 2);
-        return;
+        if (d.moveT >= 1) {
+          d.row = d.wanderToRow;
+          d.col = d.wanderToCol;
+        } else {
+          return; // still mid-step, animate further next frame
+        }
+      }
+      // either just arrived at wanderTo this same frame, or this is
+      // the very first step of the relocation walk (moveT still
+      // undefined) -- either way, check/continue right now
+      if (d.row === d.relocateTargetRow && d.col === d.relocateTargetCol) {
+        d.relocating = false; // arrived at final destination -- fall through below to pick a normal dig target from here
+      } else {
+        antFarmDiggerStepToward(d, d.relocateTargetRow, d.relocateTargetCol);
+        return; // next step just queued -- animate it over the coming frames
       }
     }
     // CONFIRMED BUG FIX ("when an ant digs a new area, there is usually
@@ -44176,15 +44198,34 @@ function drawAntFarmDiggers(gx, gyTop) {
     // the cell it left and the cell it's walking to, matching the fix
     // in updateAntFarmDiggers (no more instant snap between cells)
     let pos;
-    if (d.moveT !== undefined && d.moveT < 1) {
+    const isWandering = d.moveT !== undefined && d.moveT < 1;
+    const isDigging = !isWandering && d.digRow !== -1;
+    if (isWandering) {
       const c0 = antFarmCellCenter(d.wanderFromRow, d.wanderFromCol);
       const c1 = antFarmCellCenter(d.wanderToRow, d.wanderToCol);
       pos = { x: c0.x + (c1.x - c0.x) * d.moveT, y: c0.y + (c1.y - c0.y) * d.moveT };
+    } else if (isDigging) {
+      // CONFIRMED BUG FIX (screenshots -- "while ant is digging i want
+      // it to be closer in to the tunnel it has already dug, not this
+      // far away from the endpoint of its current dig situation"): the
+      // ant used to stay pinned at its home cell for the ENTIRE dig,
+      // even as the tunnel-reveal (drawAntFarmDiggerTunnelReveals) grew
+      // further and further away from it toward the target -- by the
+      // end of a 40s dig the reveal had crept most of the way to the
+      // target cell while the ant sat back at the mouth looking
+      // disconnected from its own excavation. Now tracks the SAME
+      // sqrt-eased progress curve the reveal itself uses, sliding along
+      // with the growing tunnel (held back 15% short of the target so
+      // it visually reads as working the actual wall face, not standing
+      // in the newly-opened blob).
+      const origin = antFarmCellCenter(d.row, d.col);
+      const target = antFarmCellCenter(d.digRow, d.digCol);
+      const rawT = d.progress / (d.digTimeTarget || ANT_FARM_DIGGER_DIG_TIME);
+      const t = Math.sqrt(rawT) * 0.85;
+      pos = { x: origin.x + (target.x - origin.x) * t, y: origin.y + (target.y - origin.y) * t };
     } else {
       pos = antFarmCellCenter(d.row, d.col);
     }
-    const isWandering = d.moveT !== undefined && d.moveT < 1;
-    const isDigging = !isWandering && d.digRow !== -1;
     drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null,
       isWandering ? { walkPhase: d.gaitPhase } : (isDigging ? { digPhase: d.digPhase } : null));
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
