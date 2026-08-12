@@ -42782,10 +42782,10 @@ const sandboxBalanceBall = {
 // actually costs you), and stronger drift (standing still fails fast)
 // -- input torque bumped up alongside so it's still winnable with good
 // reactions, just no longer forgiving of a slow or sloppy one.
-const SANDBOX_BALANCE_GRAVITY_TORQUE = 2.7;  // how hard being off-center accelerates you further off (the "unstable" part)
+const SANDBOX_BALANCE_GRAVITY_TORQUE = 2.9;  // how hard being off-center accelerates you further off (the "unstable" part) -- CONFIRMED CHANGE ("make the balance ball just sliiiiightly less balanced"): nudged up slightly from 2.7
 const SANDBOX_BALANCE_INPUT_TORQUE = 3.1;    // how strong your own left/right counter-lean is
 const SANDBOX_BALANCE_DAMPING = 0.96;        // per-frame velocity bleed-off -- lower than before, so oscillation lingers instead of settling out on its own
-const SANDBOX_BALANCE_DRIFT = 0.65;          // strength of the ambient organic wobble
+const SANDBOX_BALANCE_DRIFT = 0.72;          // strength of the ambient organic wobble -- CONFIRMED CHANGE: nudged up slightly from 0.65, same request as gravity torque above
 const SANDBOX_BALANCE_FAIL_ANGLE = 0.52;     // stricter than before (~30 degrees) -- past this you've toppled off
 const SANDBOX_BALANCE_FAIL_RECOVER_MS = 900; // brief pause after falling before you can hop back on
 const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the knocked-over lie-flat pose holds before rising, out of the recover window above
@@ -44719,14 +44719,29 @@ function drawSandboxAntFarm(camX) {
   dirtGrad.addColorStop(1, "#3a2814");
   ctx.fillStyle = dirtGrad;
   ctx.fillRect(sx, top, farm.caseWidth, farm.caseHeight);
-  // scattered dirt speckle texture, purely cosmetic
-  for (let i = 0; i < 60; i++) {
+  // scattered dirt speckle texture, purely cosmetic -- CONFIRMED CHANGE
+  // ("give the ant farm sand more texture"): more speckles, a wider size
+  // range, plus a second layer of small grain/furrow strokes so the dirt
+  // reads as granular sand rather than a flat gradient with a few dots
+  for (let i = 0; i < 140; i++) {
     const spx = sx + pseudoRandom(i * 3.3 + 900) * farm.caseWidth;
     const spy = top + pseudoRandom(i * 5.1 + 901) * farm.caseHeight;
     ctx.fillStyle = pseudoRandom(i * 7.7 + 902) > 0.5 ? "rgba(80,60,38,0.4)" : "rgba(30,20,10,0.35)";
     ctx.beginPath();
-    ctx.arc(spx, spy, 0.8 + pseudoRandom(i * 2.2 + 903) * 1.2, 0, Math.PI * 2);
+    ctx.arc(spx, spy, 0.6 + pseudoRandom(i * 2.2 + 903) * 1.5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  for (let i = 0; i < 45; i++) {
+    const spx = sx + pseudoRandom(i * 4.4 + 950) * farm.caseWidth;
+    const spy = top + pseudoRandom(i * 6.2 + 951) * farm.caseHeight;
+    const ang = pseudoRandom(i * 1.9 + 952) * Math.PI * 2;
+    const len = 1.5 + pseudoRandom(i * 3.1 + 953) * 2.5;
+    ctx.strokeStyle = pseudoRandom(i * 5.5 + 954) > 0.5 ? "rgba(90,68,42,0.3)" : "rgba(25,16,8,0.3)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(spx, spy);
+    ctx.lineTo(spx + Math.cos(ang) * len, spy + Math.sin(ang) * len);
+    ctx.stroke();
   }
 
   // CONFIRMED CHANGE ("waaay mmore organic") -- tunnels used to be flat
@@ -47235,7 +47250,13 @@ if (currentScene === "autumn") {
   // ladder/rim mount-drop presses are handled entirely inside
   // updateSandboxBallPit (called earlier, same frame) and don't need
   // this trigger at all, so excluding these states here is safe.
-  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim && !paperAirplaneFlight) {
+  // CONFIRMED BUG FIX ("when at slinky and charge line is visible, dont
+  // throw airplane with spacebar"): same shape as the ball pit ladder fix
+  // above -- standing on the slinky's top step is its own deliberate
+  // space-to-charge/release-to-fire interaction, so exclude it here too
+  // rather than letting the same spacebar press double up as an airplane
+  // throw.
+  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onBallPitRim && !sandboxSlinky.onTopStep && !paperAirplaneFlight) {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
