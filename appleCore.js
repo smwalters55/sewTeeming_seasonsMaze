@@ -48549,17 +48549,20 @@ updateSeasonTransition(deltaTime);
 // granted/equipped by hand below instead so it still matches what a
 // real transition would leave you with, even though we're not IN the
 // sandbox this time.
-// TEMPORARY ("spawn me in ball pit temporarily pls") -- repointed
-// straight into the ball pit, swimming, with a wig already on, purely
-// to test the wig/pit-boundary clip fix live. Revert back to the
-// spring spawn above (see git history) once that's confirmed.
-currentScene = "sandbox";
-player.wigId = "blueBob";
-player.inBallPit = true;
-player.onBallPitLadder = false;
-player.onBallPitRim = false;
-player.x = sandboxBallPit.x + 40;
-player.y = 60;
+// TEMPORARY ("spawn me in front of it in forest") -- repointed to drop
+// the player right in front of the new zen sand rake in forest, purely
+// to look at/test it live. Bridge segments are force-marked as
+// already built (forestRiverSegmentsStrung/Decked) since otherwise
+// dropping in this far out without actually having crossed the real
+// bridge trips the existing "teleport watchdog" safety-net logic that
+// snaps the player back to the near riverbank. Revert back to the
+// spring spawn above (see git history) once done looking at the rake.
+currentScene = "forest";
+forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+cameraX = FOREST_ZEN_RAKE_X - 300;
+player.x = FOREST_ZEN_RAKE_X - 10;
+player.y = 0;
 addToInventory("shovel");
 touchInventoryOrder("shovel");
 addToInventory("paperAirplane");
@@ -48567,6 +48570,7 @@ touchInventoryOrder("paperAirplane");
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 discoveredScenes.sandbox = true;
+discoveredScenes.forest = true;
 updateMapUI();
 updateInventoryUI();
 
