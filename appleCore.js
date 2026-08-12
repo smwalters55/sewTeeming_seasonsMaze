@@ -43519,7 +43519,18 @@ function updateSandboxBallPit(deltaTime) {
     // Swim bounds are back to plain player.width-only, matching every
     // other clamp in this function; wall-side wig clipping is handled
     // at draw time instead (see the wig draw block).
-    player.x = Math.max(pit.x + 10, Math.min(pit.x + pit.width - 10 - player.width, player.x));
+    // CONFIRMED BUG FIX ("now the wig gets stopped well, but the head of
+    // player goes past the inside of the ball pit") -- the old +-10
+    // inset left the body free to overlap 4px into each wall's own
+    // 14px-thick colored strip (walls are drawn 14px thick -- see the
+    // side-wall fillRects in drawSandboxBallPit -- and the interior/
+    // balls clip starts at exactly +14 too). That 4px overlap was
+    // never really visible on the plain body before, but now that the
+    // wig is precisely clipped to the TRUE wall edge (+-14, see the wig
+    // draw block), the body sitting 4px further in than that reads as
+    // the head itself poking into the wall. Matched to +-14 so body and
+    // wig share the exact same real boundary.
+    player.x = Math.max(pit.x + 14, Math.min(pit.x + pit.width - 14 - player.width, player.x));
     player.y = Math.max(4, Math.min(pit.rimHeight - 6, player.y));
     player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
 
