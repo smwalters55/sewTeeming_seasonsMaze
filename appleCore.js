@@ -13732,6 +13732,34 @@ function drawForestBreatherDuckBranch(camX) {
   });
 }
 
+// tiny sand granulation speckle -- computed ONCE with a deterministic
+// seeded PRNG (not re-rolled every frame with Math.random(), which
+// would make the sand visibly shimmer/dance since this redraws every
+// frame) rather than a repeating tiled pattern. Very fine and sparse on
+// purpose ("should we make the sand just have a lillltttle tiny
+// granulation taxture. v fine sand. or might that make it too
+// confusing" -- kept subtle/low-opacity specifically so it reads as
+// texture, not competing lines, and stays well under the rake grooves
+// in contrast). Normalized 0..1 coordinates so the same set can be
+// reused at both the small world-space patch and the larger diorama
+// grid, just scaled to each one's own size.
+const FOREST_ZEN_SAND_GRAIN_SPOTS = Array.from({ length: 90 }, (_, i) => ({
+  nx: pseudoRandom(i * 3 + 101),
+  ny: pseudoRandom(i * 3 + 102),
+  r: 0.4 + pseudoRandom(i * 3 + 103) * 0.5,
+  a: 0.05 + pseudoRandom(i * 3 + 104) * 0.08
+}));
+// a separate, denser set for the much larger diorama grid inset (see
+// drawZenRakeUI) -- same idea/density-per-area as the world patch's
+// speckle above, just more points since that canvas is a lot bigger,
+// with its own seed range so it isn't a visibly repeated pattern
+const FOREST_ZEN_SAND_GRAIN_SPOTS_UI = Array.from({ length: 260 }, (_, i) => ({
+  nx: pseudoRandom(i * 3 + 501),
+  ny: pseudoRandom(i * 3 + 502),
+  r: 0.4 + pseudoRandom(i * 3 + 503) * 0.5,
+  a: 0.05 + pseudoRandom(i * 3 + 504) * 0.08
+}));
+
 // the zen sand rake patch -- a modest raked-sand mound sitting in the
 // breather gap, closer to the pool side (see FOREST_ZEN_SAND_PATCH's
 // own comment). Just a decorative ground patch with the rake prop
@@ -13745,6 +13773,20 @@ function drawForestZenSandPatch(camX) {
   ctx.beginPath();
   ctx.ellipse(px + patch.width / 2, gy + 4, patch.width / 2, 14, 0, 0, Math.PI * 2);
   ctx.fill();
+  // fine sand granulation speckle, clipped to the same ellipse
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(px + patch.width / 2, gy + 4, patch.width / 2, 14, 0, 0, Math.PI * 2);
+  ctx.clip();
+  FOREST_ZEN_SAND_GRAIN_SPOTS.forEach(s => {
+    const sx = px + s.nx * patch.width;
+    const sy = gy - 10 + s.ny * 28;
+    ctx.fillStyle = `rgba(90,70,40,${s.a})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
   // a few faint raked-groove lines baked into the ground art itself,
   // just for flavor -- separate from the interactive grid inside the UI
   ctx.strokeStyle = "#c2a878";
@@ -14087,9 +14129,7 @@ let playerDuckAmount = 0;
 // downstream actually require good timing.
 // shifted from 5900 -> 6050 ("we also need to add more space there
 // with breathing room") to make room for the new zen sand rake patch
-// (see FOREST_ZEN_SAND_PATCH below), which sits closer to the pool
-// side of this same breather gap -- keeps clear separation between the
-// two features instead of the branch hanging right over the sand.
+// (see FOREST_ZEN_SAND_PATCH below).
 const FOREST_BREATHER_DUCK_BRANCH = { x: 6050, w: 46, clearance: 58, duckThreshold: 0.4 };
 
 // ZEN SAND RAKE -- "well i meant since its in forest where there is
@@ -14097,22 +14137,23 @@ const FOREST_BREATHER_DUCK_BRANCH = { x: 6050, w: 46, clearance: 58, duckThresho
 // towers out of sand" evolved into a smaller, calmer zen-garden take
 // ("yeah i think zen garden could be good in forest near river banks"),
 // placed in this same breather gap between the reflection pool
-// (5400) and the float zone/"Rushing River" (now starting 6900),
-// closer to the pool side per direct choice. A self-contained
-// decorative "patch" prop (there's no existing dedicated sand-texture
-// drawing function to hook into). Shifted further right from its first
-// placement (x=5560 -> 5700) per direct feedback that it read as
-// crowding the pool ("move this further to the right for sure its
-// like adjacent to pond rn. breathing room") -- now sits ~160px clear
-// of the pool's own 140px isPlayerNear radius (pool interactions end
-// around x=5540) on one side, and ~160px clear of the duck branch at
-// 6050 on the other. How far the sand ultimately extends toward the
-// float zone is still undecided ("but also might have that be start
-// of sand going to edge of rushing rive idk") -- this is deliberately
-// a modest, easily-widened starting patch rather than a guess at the
-// final extent.
-const FOREST_ZEN_SAND_PATCH = { x: 5700, width: 190 }; // world-space sand patch span
-const FOREST_ZEN_RAKE_X = 5760; // the rake prop itself, sitting within the patch
+// (5400) and the float zone/"Rushing River" (now starting 6900). A
+// self-contained decorative "patch" prop (there's no existing
+// dedicated sand-texture drawing function to hook into). Went through
+// two repositions: first shifted right off the pool (x=5560 -> 5700,
+// "move this further to the right for sure its like adjacent to pond
+// rn. breathing room"), then moved past the duck branch entirely
+// ("move this zen sand past the duck vine") so the breather gap now
+// reads pool -> duck branch (6050) -> zen sand -> float zone, instead
+// of sand sitting between the pool and the branch. Comfortably clear
+// of the branch's own swaying visual span (~6015-6085) on one side and
+// with plenty of room before the float zone on the other. How far the
+// sand ultimately extends toward the float zone is still undecided
+// ("but also might have that be start of sand going to edge of
+// rushing rive idk") -- this is deliberately a modest, easily-widened
+// starting patch rather than a guess at the final extent.
+const FOREST_ZEN_SAND_PATCH = { x: 6180, width: 190 }; // world-space sand patch span
+const FOREST_ZEN_RAKE_X = 6240; // the rake prop itself, sitting within the patch
 
 // V1 build is diorama-style (matching the ant farm / wig stand pattern)
 // per direct confirmation ("we could start it in diarama view first
@@ -14126,6 +14167,15 @@ const FOREST_ZEN_RAKE_X = 5760; // the rake prop itself, sitting within the patc
 const ZEN_RAKE_GRID_COLS = 14;
 const ZEN_RAKE_GRID_ROWS = 8;
 const ZEN_RAKE_OPEN_CLOSE_MS = 350; // matches WIG_OPEN_CLOSE_MS's flourish timing
+// the diorama box (see drawZenRakeUI) is a fixed 480x300 with a fixed
+// 30/46-inset grid, so these ratios are constant regardless of canvas
+// size or the open/close ease scale -- pulled out here so
+// updateZenRakeUI can compute angles in the SAME non-square pixel
+// aspect ratio the grid actually renders at (cols/rows aren't equal,
+// so a diagonal in grid-units isn't a true 45-degree diagonal in
+// pixels unless this ratio is accounted for)
+const ZEN_RAKE_CELL_W = (480 - 60) / ZEN_RAKE_GRID_COLS;
+const ZEN_RAKE_CELL_H = (300 - 96) / ZEN_RAKE_GRID_ROWS;
 const zenRakeUI = {
   active: false,
   opening: false,
@@ -14160,8 +14210,12 @@ function openZenRakeUI() {
   zenRakeUI.openT = 0;
   zenRakeUI.closing = false;
   zenRakeUI.closeT = 0;
-  zenRakeUI.cursorX = ZEN_RAKE_GRID_COLS / 2;
-  zenRakeUI.cursorY = ZEN_RAKE_GRID_ROWS / 2;
+  // deliberately NOT resetting cursorX/cursorY (or the raked path)
+  // here -- leave the rake wherever it was last left ("if someone
+  // leaves and comes back, keep the rake where they left it, dont move
+  // it back to the og position"). The state object's own cursorX/Y
+  // defaults (grid center) only apply once, the very first time this
+  // is ever opened.
 }
 
 function closeZenRakeUI() {
@@ -14195,17 +14249,23 @@ function updateZenRakeUI(deltaTime) {
     return;
   }
 
-  let dx = 0, dy = 0, angle = null;
-  if (keys.left) { dx = -1; angle = Math.PI; }
-  if (keys.right) { dx += 1; angle = 0; }
-  if (keys.up) { dy = -1; angle = -Math.PI / 2; }
-  if (keys.down) { dy += 1; angle = Math.PI / 2; }
+  let dx = 0, dy = 0;
+  if (keys.left) dx -= 1;
+  if (keys.right) dx += 1;
+  if (keys.up) dy -= 1;
+  if (keys.down) dy += 1;
 
   if (dx !== 0 || dy !== 0) {
     const step = ZEN_RAKE_CURSOR_SPEED * dtMs;
     zenRakeUI.cursorX = Math.max(0, Math.min(ZEN_RAKE_GRID_COLS - 0.001, zenRakeUI.cursorX + dx * step));
     zenRakeUI.cursorY = Math.max(0, Math.min(ZEN_RAKE_GRID_ROWS - 0.001, zenRakeUI.cursorY + dy * step));
-    zenRakeUI.lastAngle = angle;
+    // real combined direction (handles diagonals), computed in the
+    // same non-square pixel aspect ratio the grid actually renders at
+    // -- was previously just whichever single axis key got checked
+    // last, which snapped the rake icon to a cardinal angle even while
+    // visibly dragging diagonally ("when diagonal also match up the
+    // rake tines to the lines drawn")
+    zenRakeUI.lastAngle = Math.atan2(dy * ZEN_RAKE_CELL_H, dx * ZEN_RAKE_CELL_W);
 
     const last = zenRakeUI.path[zenRakeUI.path.length - 1];
     if (!last || Math.hypot(zenRakeUI.cursorX - last.x, zenRakeUI.cursorY - last.y) >= ZEN_RAKE_PATH_MIN_STEP) {
@@ -14236,15 +14296,30 @@ function drawZenRakeUI() {
   ctx.fillStyle = "#e8d3a8";
   roundRect(ctx, boxX, boxY, boxW, boxH, 14);
   ctx.fill();
+  // fancier title treatment ("lets make the font... a little fancier
+  // like fairytale font") -- the generic "cursive" CSS font family is
+  // the closest zero-dependency match to a whimsical/storybook script
+  // (no custom @font-face is loaded anywhere in this codebase, so this
+  // sticks to what the browser already provides rather than adding a
+  // web font load), sized up a little since script faces read smaller
+  // than sans-serif at the same px.
   ctx.fillStyle = "#5a4a30";
-  ctx.font = "16px sans-serif";
+  ctx.font = "22px cursive";
   ctx.textAlign = "center";
-  ctx.fillText("Zen Sand Rake", canvas.width / 2, boxY + 28);
+  ctx.fillText("Zen Sand Rake", canvas.width / 2, boxY + 30);
 
   const gridX = boxX + 30, gridY = boxY + 46, gridW = boxW - 60, gridH = boxH - 96;
   const cellW = gridW / ZEN_RAKE_GRID_COLS, cellH = gridH / ZEN_RAKE_GRID_ROWS;
   ctx.fillStyle = "#d8c090";
   ctx.fillRect(gridX, gridY, gridW, gridH);
+  // fine sand granulation speckle, same subtle treatment as the
+  // world-space patch (see FOREST_ZEN_SAND_GRAIN_SPOTS_UI's comment)
+  FOREST_ZEN_SAND_GRAIN_SPOTS_UI.forEach(s => {
+    ctx.fillStyle = `rgba(90,70,40,${s.a})`;
+    ctx.beginPath();
+    ctx.arc(gridX + s.nx * gridW, gridY + s.ny * gridH, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
   // real zen-garden rake marks are several parallel tine-grooves that
   // follow the ACTUAL path the rake was dragged along, curving smoothly
   // through turns rather than snapping to a fixed angle per grid cell
@@ -14340,9 +14415,8 @@ function drawZenRakeUI() {
     ctx.restore();
   }
 
-  ctx.fillStyle = "#5a4a30";
-  ctx.font = "12px sans-serif";
-  ctx.fillText("arrow keys to rake · space to leave", canvas.width / 2, boxY + boxH - 16);
+  // "lets remove the lines about arrow keys and space bar" -- the
+  // instruction line used to render here.
   ctx.textAlign = "left";
   ctx.restore();
 }
