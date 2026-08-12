@@ -43838,6 +43838,55 @@ function updateAntFarmDiggers(deltaTime) {
   });
 }
 
+// CONFIRMED BUG FIX ("ant dug tunel is drawn over ant digging and other
+// ants passing"): the growing tunnel-reveal (connecting line + blob) used
+// to be drawn from inside drawAntFarmDiggers, interleaved with the ant
+// sprite draws -- and since drawSandboxAntFarm draws the decorative
+// walker ants BEFORE calling drawAntFarmDiggers at all, any digger's
+// reveal could still paint over an already-drawn walker sharing that
+// spot, on top of painting over its own digging ant. Split into its own
+// pass, called from drawSandboxAntFarm BEFORE any ant creature draws at
+// all (right alongside the rest of the tunnel dirt), so every ant --
+// walker, digger, or forager, regardless of draw order -- always renders
+// on top of the dirt, never under it.
+function drawAntFarmDiggerTunnelReveals(gx, gyTop) {
+  SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    if (d.digRow === -1) return;
+    // CONFIRMED CHANGE ("i dont like this visual at all-- this isnt
+    // what i said... i want to see it get dug in real time"): swapped
+    // the abstract crack-pattern effect for the ACTUAL tunnel shape
+    // growing in at the target cell -- the exact same organic-blob +
+    // connecting-line style real finished tunnels use a few dozen
+    // lines up in drawSandboxAntFarm (same seed formula too, so the
+    // preview shape lines up exactly with the permanent one it turns
+    // into at 100%, no pop/mismatch at the handoff), just scaled from
+    // nothing up to full size as progress advances. Reads as watching
+    // the passage itself get carved out in real time, not a
+    // decorative sticker on an otherwise-untouched wall.
+    const origin = antFarmCellCenter(d.row, d.col);
+    const target = antFarmCellCenter(d.digRow, d.digCol);
+    const ox = gx + origin.x, oy = gyTop + origin.y;
+    const tx = gx + target.x, ty = gyTop + target.y;
+    const rawT = d.progress / (d.digTimeTarget || ANT_FARM_DIGGER_DIG_TIME);
+    const t = Math.sqrt(rawT); // quick initial mark, then slow widening, same easing as before -- just driving the real tunnel shape now instead of a crack decal
+    const tunnelColor = "#1c1207";
+    ctx.strokeStyle = tunnelColor;
+    ctx.lineWidth = ANT_FARM_CELL_H * 0.62 * t;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + (tx - ox) * t, oy + (ty - oy) * t);
+    ctx.stroke();
+    if (t > 0.05) {
+      ctx.globalAlpha = Math.min(1, t * 1.4);
+      ctx.fillStyle = tunnelColor;
+      organicBlobPath(ctx, tx, ty, ANT_FARM_CELL_W * 0.52 * t, ANT_FARM_CELL_H * 0.52 * t, d.digRow * 31 + d.digCol * 7, 7);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
 function drawAntFarmDiggers(gx, gyTop) {
   SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
     // mid-wander move -- draw at the smoothly interpolated spot between
@@ -43856,40 +43905,6 @@ function drawAntFarmDiggers(gx, gyTop) {
     drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15, null,
       isWandering ? { walkPhase: d.gaitPhase } : (isDigging ? { digPhase: d.digPhase } : null));
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
-    if (d.digRow !== -1) {
-      // CONFIRMED CHANGE ("i dont like this visual at all-- this isnt
-      // what i said... i want to see it get dug in real time"): swapped
-      // the abstract crack-pattern effect for the ACTUAL tunnel shape
-      // growing in at the target cell -- the exact same organic-blob +
-      // connecting-line style real finished tunnels use a few dozen
-      // lines up in drawSandboxAntFarm (same seed formula too, so the
-      // preview shape lines up exactly with the permanent one it turns
-      // into at 100%, no pop/mismatch at the handoff), just scaled from
-      // nothing up to full size as progress advances. Reads as watching
-      // the passage itself get carved out in real time, not a
-      // decorative sticker on an otherwise-untouched wall.
-      const origin = antFarmCellCenter(d.row, d.col);
-      const target = antFarmCellCenter(d.digRow, d.digCol);
-      const ox = gx + origin.x, oy = gyTop + origin.y;
-      const tx = gx + target.x, ty = gyTop + target.y;
-      const rawT = d.progress / (d.digTimeTarget || ANT_FARM_DIGGER_DIG_TIME);
-      const t = Math.sqrt(rawT); // quick initial mark, then slow widening, same easing as before -- just driving the real tunnel shape now instead of a crack decal
-      const tunnelColor = "#1c1207";
-      ctx.strokeStyle = tunnelColor;
-      ctx.lineWidth = ANT_FARM_CELL_H * 0.62 * t;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.lineTo(ox + (tx - ox) * t, oy + (ty - oy) * t);
-      ctx.stroke();
-      if (t > 0.05) {
-        ctx.globalAlpha = Math.min(1, t * 1.4);
-        ctx.fillStyle = tunnelColor;
-        organicBlobPath(ctx, tx, ty, ANT_FARM_CELL_W * 0.52 * t, ANT_FARM_CELL_H * 0.52 * t, d.digRow * 31 + d.digCol * 7, 7);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
   });
 }
 
@@ -44920,6 +44935,12 @@ function drawSandboxAntFarm(camX) {
       ctx.stroke();
     }
   }
+
+  // any digger's in-progress tunnel reveal goes down BEFORE any ant
+  // creature draws at all -- see drawAntFarmDiggerTunnelReveals' own
+  // comment for why this has to happen before every ant loop below, not
+  // interleaved with them.
+  drawAntFarmDiggerTunnelReveals(gx, gyTop);
 
   // real ant residents, stepping along actual tunnel cells
   const t = performance.now() * 0.001;
