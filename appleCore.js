@@ -2528,9 +2528,18 @@ function applyPhysics(){
     }
 
     // hit the actual visible cloud — not an invisible number
+    // CONFIRMED BUG FIX ("swinging on the pendulum jumping off once
+    // threw me into clouds"): this check used goalCloud's fixed world
+    // x/height with NO scene gate at all -- goalCloud only exists (and
+    // only makes sense) in spring, but every scene shares the same raw
+    // x/y number space, and the pendulum's own goals now happen to sit
+    // close enough to goalCloud's coordinates (x:2150, height:220) that
+    // a sandbox throw arcing through roughly that same spot mid-flight
+    // could trip this and warp the player straight into clouds. Scoped
+    // to spring only, where the swing-to-cloud mechanic actually lives.
     const dx = (player.x + player.width / 2) - goalCloud.x;
     const dy = player.y - goalCloud.height;
-    const hitGoalCloud = Math.sqrt(dx * dx + dy * dy) < goalCloud.radius;
+    const hitGoalCloud = currentScene === "spring" && Math.sqrt(dx * dx + dy * dy) < goalCloud.radius;
 
     if (hitGoalCloud && seasonTransition.phase === "idle" && !cloudLanding.active && player.cloudLandingImmunity <= 0) {
       // land ON the cloud, don't just clip through it — freeze here briefly
@@ -42536,22 +42545,37 @@ const sandboxBalanceBall = {
   bestMs: 0,
   failed: false,
   failT: 0,
-  tAccum: 0
+  fallDir: 1,     // CONFIRMED CHANGE: which way the player toppled -- drives the lie-down/rise-up recovery animation
+  tAccum: 0,
+  spinAngle: 0,   // CONFIRMED CHANGE: separate from tiltAngle -- the ball's own visible roll, so it reads as a real rolling ball rather than only ever wobbling a few degrees
+  jumpOffset: 0,  // CONFIRMED CHANGE: real hop-while-balancing support
+  jumpVel: 0
 };
-// CONFIRMED CHANGE: softened all four of these after headless testing
-// showed a reactive-counter bot surviving SHORTER than doing nothing at
-// all -- the instability was accelerating faster than a realistic
-// human reaction+hold cadence could counter without overshooting, so
-// bang-bang correction was actively making it worse. Lower gravity
-// torque, lower input torque (still bigger than gravity, just not by
-// as much), more damping to settle oscillation instead of amplifying
-// it, and a gentler ambient drift.
-const SANDBOX_BALANCE_GRAVITY_TORQUE = 1.3;  // how hard being off-center accelerates you further off (the "unstable" part)
-const SANDBOX_BALANCE_INPUT_TORQUE = 2.0;    // how strong your own left/right counter-lean is
-const SANDBOX_BALANCE_DAMPING = 0.975;       // per-frame velocity bleed-off -- meaningfully higher now, so corrections settle instead of ringing
-const SANDBOX_BALANCE_DRIFT = 0.3;           // strength of the ambient organic wobble
-const SANDBOX_BALANCE_FAIL_ANGLE = 0.62;     // ~35 degrees -- past this you've toppled off
+// CONFIRMED CHANGE: retuned harder after direct feedback ("make balance
+// ball more difficult its super easy rn") -- the earlier pass (1.3
+// gravity / 2.0 input / 0.975 damping / 0.3 drift) was tuned down from
+// an over-tuned first draft, but ended up well on the easy side of
+// "genuine challenge." More gravity torque (falls accelerate faster),
+// less damping (corrections don't settle as quickly, so overshooting
+// actually costs you), and stronger drift (standing still fails fast)
+// -- input torque bumped up alongside so it's still winnable with good
+// reactions, just no longer forgiving of a slow or sloppy one.
+const SANDBOX_BALANCE_GRAVITY_TORQUE = 2.1;  // how hard being off-center accelerates you further off (the "unstable" part)
+const SANDBOX_BALANCE_INPUT_TORQUE = 2.6;    // how strong your own left/right counter-lean is
+const SANDBOX_BALANCE_DAMPING = 0.965;       // per-frame velocity bleed-off -- lower than before, so oscillation lingers instead of settling out on its own
+const SANDBOX_BALANCE_DRIFT = 0.5;           // strength of the ambient organic wobble
+const SANDBOX_BALANCE_FAIL_ANGLE = 0.56;     // a little stricter than before (~32 degrees) -- past this you've toppled off
 const SANDBOX_BALANCE_FAIL_RECOVER_MS = 900; // brief pause after falling before you can hop back on
+const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the knocked-over lie-flat pose holds before rising, out of the recover window above
+// CONFIRMED CHANGE: real jump-while-balancing support, per "allow for
+// jumps on the ball if you want to test yourself." jumpOffset is in the
+// same pixel units as player.y/b.radius (27px), and this toy's physics
+// runs on real deltaTime seconds throughout (unlike most of the rest of
+// the game's assumed-60fps per-frame convention) -- these are tuned for
+// that: peak height = v^2/(2g) =~ 35px, about a real hop's worth of air
+// above the ball, roughly a 1s full hang time.
+const SANDBOX_BALANCE_JUMP_STRENGTH = 140;
+const SANDBOX_BALANCE_JUMP_GRAVITY = 280;
 
 function updateSandboxBalanceBall(deltaTime) {
   const b = sandboxBalanceBall;
@@ -42577,22 +42601,50 @@ function updateSandboxBalanceBall(deltaTime) {
     b.tiltAngle += b.tiltVel * deltaTime;
     b.surviveMs += deltaTime * 1000;
 
+    // CONFIRMED CHANGE ("want to see it spinning") -- the ball's own
+    // visible roll is now separate from tiltAngle (which stays a small
+    // lean for the balance physics/fail check). Real rolling motion:
+    // the ball's surface speed under a rider tilted at `tiltAngle` with
+    // angular rate `tiltVel` is tiltVel*radius, so the ball's own spin
+    // tracks that directly instead of just mirroring the small wobble
+    // -- reads as an actual ball rolling underfoot, not a toy tipping.
+    b.spinAngle += b.tiltVel * 1.6 * deltaTime;
+
+    // CONFIRMED CHANGE ("also i wonder if we should allow for jum[s on
+    // the ball if you want to test yourself") -- a real hop layered on
+    // top of the balance physics: input still controls tiltAngle the
+    // whole time you're airborne, this only offsets the render/landing
+    // height, same "still fully in control mid-air" feel as the rest
+    // of the game's jump.
+    if (keys.upJustPressed && b.jumpOffset <= 0) {
+      b.jumpVel = SANDBOX_BALANCE_JUMP_STRENGTH;
+    }
+    b.jumpOffset += b.jumpVel * deltaTime;
+    b.jumpVel -= SANDBOX_BALANCE_JUMP_GRAVITY * deltaTime;
+    if (b.jumpOffset < 0) {
+      b.jumpOffset = 0;
+      b.jumpVel = 0;
+    }
+
     // rider sits on the ball's curved top surface at the current tilt
     // position -- descends slightly to whichever side it's tipped
     player.x = b.x - player.width / 2 + Math.sin(b.tiltAngle) * b.radius;
-    player.y = b.radius * (1 + Math.cos(b.tiltAngle));
+    player.y = b.radius * (1 + Math.cos(b.tiltAngle)) + b.jumpOffset;
     player.facing = Math.sin(b.tiltAngle) >= 0 ? 1 : -1;
 
     if (Math.abs(b.tiltAngle) > SANDBOX_BALANCE_FAIL_ANGLE) {
       player.onBalanceBall = false;
       b.failed = true;
       b.failT = 0;
+      b.fallDir = Math.sign(b.tiltAngle) || 1;
+      b.jumpOffset = 0;
+      b.jumpVel = 0;
       if (b.surviveMs > b.bestMs) b.bestMs = b.surviveMs;
       // hand off to normal fall physics from wherever they toppled --
       // a real stumble off the side, not a scripted animation
       player.jumping = true;
       player.vy = 1.2;
-      player.vx = Math.sign(b.tiltAngle) * 2.5;
+      player.vx = b.fallDir * 2.5;
     }
   } else if (b.failed) {
     b.failT += deltaTime * 1000;
@@ -42606,7 +42658,31 @@ function updateSandboxBalanceBall(deltaTime) {
     // idle settle when nobody's on it
     b.tiltAngle *= 0.9;
     b.tiltVel *= 0.9;
+    b.spinAngle *= 0.95;
   }
+}
+
+// CONFIRMED CHANGE ("when player fall off, play player sideways on
+// ground before rising player slowly back up") -- a real knock-down/
+// recovery beat instead of just standing back up instantly the moment
+// normal fall physics settles: lies flat on the side it toppled toward
+// for the first chunk of the recovery window, then eases back upright
+// for the rest of it. Feeds into the shared player-sway tilt in draw()
+// the same way the game's other "stunned"/tilted states already do.
+function getSandboxBalanceBallFallTilt() {
+  const b = sandboxBalanceBall;
+  if (!b.failed) return 0;
+  const lieAngle = b.fallDir * (Math.PI / 2);
+  if (b.failT < 150) {
+    // quick knock-down into the flat lying pose
+    return lieAngle * (b.failT / 150);
+  }
+  if (b.failT < SANDBOX_BALANCE_FALL_LIE_MS) {
+    return lieAngle;
+  }
+  const riseP = Math.min(1, (b.failT - SANDBOX_BALANCE_FALL_LIE_MS) / (SANDBOX_BALANCE_FAIL_RECOVER_MS - SANDBOX_BALANCE_FALL_LIE_MS));
+  // ease-out back to standing rather than a linear rise
+  return lieAngle * (1 - riseP) * (1 - riseP);
 }
 
 function drawSandboxBalanceBall(camX) {
@@ -42621,11 +42697,16 @@ function drawSandboxBalanceBall(camX) {
   ctx.ellipse(sx, gy + 2, b.radius * 1.15, b.radius * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // the ball itself -- bold striped beach-ball colors, rotated with
-  // the current tilt so it visibly rolls under the rider
+  // the ball itself -- bold striped beach-ball colors. CONFIRMED CHANGE
+  // ("want to see it spinning"): rotated by the separate spinAngle
+  // accumulator now instead of the small balance-physics tiltAngle --
+  // tiltAngle alone only ever swung a few degrees either way, which
+  // barely read as motion at all; spinAngle tracks real rolling speed
+  // (tiltVel*radius) so the stripes genuinely spin round and round
+  // under a rider actively fighting to balance.
   ctx.save();
   ctx.translate(sx, cy);
-  ctx.rotate(b.tiltAngle);
+  ctx.rotate(b.spinAngle);
   const stripeColors = ["#ff5a5a", "#ffd23f", "#4ac8ff", "#6ee66e", "#ff8fc9"];
   ctx.beginPath();
   ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
@@ -43328,8 +43409,11 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   // together"). Capped well under the tub's own angle so it still
   // reads as the character tumbling, not just rotating like a box.
   const mineCartTipLean = (typeof mineCart !== "undefined" && mineCart.ending) ? mineCart.tipAngle * 0.4 : 0;
+  // the sandbox balance ball's own knocked-over lie-down/rise-up beat --
+  // see getSandboxBalanceBallFallTilt's own comment for the shape of it
+  const balanceBallFallTilt = (typeof sandboxBalanceBall !== "undefined") ? getSandboxBalanceBallFallTilt() : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0);
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
