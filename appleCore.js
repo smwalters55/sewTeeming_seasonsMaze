@@ -2515,11 +2515,12 @@ function applyPhysics(){
           player.usedDoubleJump = false;
           player.launched = false;
           // CONFIRMED BUG FIX ("goals... dont come up again"): the
-          // farthest goal circle sits right at the pile's own front edge
-          // by design (see SANDBOX_PENDULUM_GOALS_X comment), which means
-          // a throw landing in it lands on THIS platform branch, not the
-          // y<=0 ground branch below -- so it needs its own goal check
-          // too, or that goal could structurally never flash.
+          // farthest right-side goal circle sits right at the pile's own
+          // front edge by design (see SANDBOX_PENDULUM_GOALS comment),
+          // which means a throw landing in it lands on THIS platform
+          // branch, not the y<=0 ground branch below -- so it needs its
+          // own goal check too, or that goal could structurally never
+          // flash.
           checkSandboxPendulumGoalHit(player.x + player.width / 2);
           return;
         }
@@ -37980,7 +37981,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 2250; // CONFIRMED CHANGE: widened again (was 1950) to make room for the new balance ball toy, placed past the block pile with its own clear space
+const SANDBOX_WIDTH = 2650; // CONFIRMED CHANGE: widened again (was 2250) to make room for the pendulum's own move further right and its new left-side goal circles
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38892,7 +38893,7 @@ function drawSandboxBubbles(camX) {
    shape as the fan, but the ride itself is an arc instead of a hover.
    ====================================================== */
 const sandboxPendulum = {
-  x: 1150, // CONFIRMED CHANGE: moved further right again ("make the pendulum further away from stuff more") -- was overlapping the shovel's swing-arc clearance at the old x:1050
+  x: 1500, // CONFIRMED CHANGE: moved further right again (was 1050, then 1150) -- per "give pendulum a lot more room," now that it has goal circles on BOTH sides instead of just toward the pile, it needs real clearance from the bubble wand on its left too, not just the pile on its right
   anchorHeight: 190,   // height above ground of the pivot point -- raised along with everything else below, per "make the pendulum big"
   armLength: 120,
   angle: 0.9,          // radians from straight-down; swings between -amplitude and +amplitude
@@ -38905,13 +38906,31 @@ const SANDBOX_PENDULUM_OMEGA = 1.7; // swing speed
 
 // CONFIRMED CHANGE ("goal circles to try to land on... glow green for a
 // moment when u land in them, like how we do it w skipping stones") --
-// fixed world-x rings in the sand between the pendulum and the pile,
-// spanning the throw's real reachable range (see the headless-tested
-// distance sweep in the launch code below), same sparkle -> green ->
-// fade hit animation as the forest's skip-stone targets, just anchored
-// to fixed ground spots instead of pool-relative fractions.
-const SANDBOX_PENDULUM_GOALS_X = [1280, 1370, 1460]; // short/medium/far -- far one sits right at the pile's own front edge
-const SANDBOX_PENDULUM_GOAL_RADIUS = 24;
+// fixed world-x rings in the sand around the pendulum, same sparkle ->
+// green -> fade hit animation as the forest's skip-stone targets, just
+// anchored to fixed ground spots instead of pool-relative fractions.
+// CONFIRMED CHANGE ("lets also talk re...also lets give pendulum a lot
+// more room. also need circles to the left. and i want to make them
+// different diameters so some are harder... at least 4 ovals on each
+// side of it") -- since the release-timing throw's vx can come out
+// positive OR negative depending on which half of the swing you let go
+// on (see the THROW_POWER comment below), throws to the LEFT were
+// always physically reachable, they just never had any goals placed
+// there. Four per side now, nearest to farthest, with radius shrinking
+// as distance grows -- so the easy/generous landings are close in, and
+// the far ones demand a genuinely well-timed release, not just "throw
+// hard." Same four distances/radii mirrored on both sides for a
+// symmetric difficulty curve either direction.
+const SANDBOX_PENDULUM_GOAL_OFFSETS = [
+  { dist: 110, radius: 28 },
+  { dist: 180, radius: 24 },
+  { dist: 250, radius: 19 },
+  { dist: 320, radius: 15 }
+];
+const SANDBOX_PENDULUM_GOALS = [
+  ...SANDBOX_PENDULUM_GOAL_OFFSETS.map(g => ({ x: sandboxPendulum.x - g.dist, radius: g.radius, side: "left" })),
+  ...SANDBOX_PENDULUM_GOAL_OFFSETS.map(g => ({ x: sandboxPendulum.x + g.dist, radius: g.radius, side: "right" }))
+];
 // CONFIRMED BUG FIX ("glow green for a split second when debug drops me
 // in... but then they dont come up again") -- these used to default to 0,
 // and performance.now() is time-since-page-load, so right after the page
@@ -38919,18 +38938,19 @@ const SANDBOX_PENDULUM_GOAL_RADIUS = 24;
 // window), making every goal look like it had "just been hit" for the
 // first second of play. Seeded far in the past instead, so flashAge starts
 // huge and no goal appears freshly hit until a real landing sets it.
-const sandboxPendulumGoalFlash = [-1e9, -1e9, -1e9]; // timestamp of last hit, per goal -- drives the animation, same pattern as skipStoneTargetFlash
+const sandboxPendulumGoalFlash = SANDBOX_PENDULUM_GOALS.map(() => -1e9); // timestamp of last hit, per goal -- drives the animation, same pattern as skipStoneTargetFlash
 const SANDBOX_PENDULUM_GOAL_ANIM_MS = 1100;
 
 // CONFIRMED BUG FIX ("goals... dont come up again when on pendulum"): the
 // goal-hit check used to live only inline in the y<=0 ground-landing
-// branch, but the farthest goal sits right at the pile's own front edge by
-// design -- a throw landing there lands on the PLATFORM branch instead,
-// which never ran this check, so that goal could structurally never
-// flash. Pulled out into a shared helper so both landing branches call it.
+// branch, but the farthest right-side goal sits right at the pile's own
+// front edge by design -- a throw landing there lands on the PLATFORM
+// branch instead, which never ran this check, so that goal could
+// structurally never flash. Pulled out into a shared helper so both
+// landing branches call it.
 function checkSandboxPendulumGoalHit(landedCenterX) {
-  SANDBOX_PENDULUM_GOALS_X.forEach((goalX, gi) => {
-    if (Math.abs(landedCenterX - goalX) < SANDBOX_PENDULUM_GOAL_RADIUS) {
+  SANDBOX_PENDULUM_GOALS.forEach((goal, gi) => {
+    if (Math.abs(landedCenterX - goal.x) < goal.radius) {
       sandboxPendulumGoalFlash[gi] = performance.now();
     }
   });
@@ -38985,8 +39005,9 @@ function drawSandboxPendulumGoals(camX) {
   // down so the whole ring (including the hit-animation's larger ring,
   // which grows past the idle ring's radius) sits below the line.
   const groundY = gy + 12;
-  SANDBOX_PENDULUM_GOALS_X.forEach((worldX, i) => {
-    const gx = worldX - camX;
+  SANDBOX_PENDULUM_GOALS.forEach((goal, i) => {
+    const gx = goal.x - camX;
+    const r = goal.radius;
     if (drawSandboxPendulumGoalHitAnim(gx, groundY, i)) return;
     if (!showLive) return;
     // CONFIRMED BUG FIX ("so light they blend into the sand almost
@@ -38997,12 +39018,12 @@ function drawSandboxPendulumGoals(camX) {
     ctx.strokeStyle = "rgba(40,30,15,0.35)";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(gx, groundY, SANDBOX_PENDULUM_GOAL_RADIUS, SANDBOX_PENDULUM_GOAL_RADIUS * 0.35, 0, 0, Math.PI * 2);
+    ctx.ellipse(gx, groundY, r, r * 0.35, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.strokeStyle = "rgba(255,220,140,0.75)";
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.ellipse(gx, groundY, SANDBOX_PENDULUM_GOAL_RADIUS, SANDBOX_PENDULUM_GOAL_RADIUS * 0.35, 0, 0, Math.PI * 2);
+    ctx.ellipse(gx, groundY, r, r * 0.35, 0, 0, Math.PI * 2);
     ctx.stroke();
   });
 }
@@ -39182,7 +39203,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1700, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 again, alongside the pendulum's own move, to keep the same pendulum-to-pile throw distance -- SANDBOX_WIDTH bumped alongside it below
+const sandboxBlockPile = { x: 2100, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +400 again, alongside the pendulum's own bigger move, to clear the pendulum's new far-right goal circle -- SANDBOX_WIDTH bumped alongside it below
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -39239,34 +39260,34 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
-  { x: 1529, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1587, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1639, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1689, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1743, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1791, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1929, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1987, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2039, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 2089, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 2143, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2191, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
-  { x: 1569, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1615, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1659, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1705, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1747, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1969, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 2015, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2059, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 2105, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2147, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
-  { x: 1602, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1642, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1680, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 1720, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2002, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 2042, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2080, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 2120, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
-  { x: 1632, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1668, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1702, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 2032, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 2068, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 2102, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 1654, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1686, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 2054, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 2086, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
-  { x: 1670, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
+  { x: 2070, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -42273,7 +42294,7 @@ function drawMicroscopeUI() {
    out remounting before you can hop back on.
    ====================================================== */
 const sandboxBalanceBall = {
-  x: 2020,
+  x: 2420, // CONFIRMED CHANGE: shifted right +400 alongside the block pile's own move (pendulum rework), preserving the same clearance from the pile's edge
   radius: 27,
   tiltAngle: 0,   // 0 = perfectly balanced upright; +/- = leaning that way
   tiltVel: 0,
