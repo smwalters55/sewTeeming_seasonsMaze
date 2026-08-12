@@ -2883,6 +2883,31 @@ function applyPhysics(){
     }
   });
 
+  // CONFIRMED CHANGE: the return mound's top face is now a real jumpable
+  // platform too, mirroring the entrance mound's own fix over in spring
+  // ("make it so we can jump onto center of sandbox") -- per direct
+  // request ("enable jumping in exit sandbox within sandbox to exit out
+  // of"). Same flat-landing-zone approximation, same dimensions as
+  // drawSandMound draws for it.
+  {
+    const boxCenterX = sandboxReturnMound.x;
+    const boxTopHalfSpan = 44;
+    const boxTopHeight = 20;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > boxCenterX - boxTopHalfSpan &&
+      player.x < boxCenterX + boxTopHalfSpan &&
+      playerBottom <= boxTopHeight &&
+      playerBottom >= boxTopHeight - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = boxTopHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   } else if (currentScene === "spring") {
 
   // CONFIRMED CHANGE: the sandbox entrance marker's top face is now a
@@ -42521,7 +42546,11 @@ function drawSandboxScene(camX) {
 }
 
 function updateSandboxScene(deltaTime) {
-  if (keys.spaceJustPressed && isPlayerNear(sandboxReturnMound.x, 0, 26, 15, 15)) {
+  // CONFIRMED CHANGE: radiusYUp bumped 15 -> 26, same fix as the entrance
+  // mound got -- now that its top is a real jumpable platform, standing on
+  // top of it puts player.y past the old 15 tolerance, so interact would
+  // silently stop working the moment you jumped up there.
+  if (keys.spaceJustPressed && isPlayerNear(sandboxReturnMound.x, 0, 26, 26, 15)) {
     startSeasonTransition("spring");
   }
 
