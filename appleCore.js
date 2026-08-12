@@ -43945,12 +43945,17 @@ function drawAntCreature(cx, cy, angle, scale, color, motion) {
       if (digPhase != null && lIdx === 2) {
         // front pair scrabbles at the wall -- a bigger, faster reach-
         // forward/rake-back than the walk swing, staggered per side so
-        // it reads as alternating scoops rather than both arms as one
-        swing = Math.sin(digPhase * 2.2 + side * 1.1) * 2.6 * scale;
+        // it reads as alternating scoops rather than both arms as one.
+        // CONFIRMED CHANGE ("need to see digging ants moving legs and
+        // probs antennae while they are digging" -- the first pass was
+        // too subtle at the ant's actual on-screen size): swing amplitude
+        // roughly doubled so it's unmistakable, not just a faint jitter.
+        swing = Math.sin(digPhase * 2.6 + side * 1.1) * 4.6 * scale;
       } else if (digPhase != null) {
         // mid/back legs stay mostly planted, bracing against the dig,
-        // just a small twitch rather than a full walk swing
-        swing = Math.sin(digPhase * 2.2 + Math.PI) * 0.5 * scale;
+        // just a twitch rather than a full walk swing -- bumped up
+        // alongside the front legs so the whole ant reads as straining
+        swing = Math.sin(digPhase * 2.6 + Math.PI) * 1.1 * scale;
       } else {
         const group = (sIdx + lIdx) % 2;
         swing = walkPhase != null ? Math.sin(walkPhase + (group === 0 ? 0 : Math.PI)) * 1.6 * scale : 0;
@@ -44720,23 +44725,43 @@ function drawSandboxAntFarm(camX) {
   ctx.fillStyle = dirtGrad;
   ctx.fillRect(sx, top, farm.caseWidth, farm.caseHeight);
   // scattered dirt speckle texture, purely cosmetic -- CONFIRMED CHANGE
-  // ("give the ant farm sand more texture"): more speckles, a wider size
-  // range, plus a second layer of small grain/furrow strokes so the dirt
-  // reads as granular sand rather than a flat gradient with a few dots
-  for (let i = 0; i < 140; i++) {
+  // ("give the ant farm sand more texture", then "need more sand
+  // texture" again -- the first pass still wasn't enough): speckle count
+  // roughly tripled again (140->320) with a wider size range including
+  // some bigger pebble-like flecks, grain/furrow strokes more than
+  // doubled (45->110) and darkened/lengthened a bit, plus a new third
+  // layer of tiny clustered dot-groups (little pebble clumps) so the
+  // texture reads as dense and granular even at a glance, not just
+  // "a few extra dots."
+  for (let i = 0; i < 320; i++) {
     const spx = sx + pseudoRandom(i * 3.3 + 900) * farm.caseWidth;
     const spy = top + pseudoRandom(i * 5.1 + 901) * farm.caseHeight;
-    ctx.fillStyle = pseudoRandom(i * 7.7 + 902) > 0.5 ? "rgba(80,60,38,0.4)" : "rgba(30,20,10,0.35)";
+    ctx.fillStyle = pseudoRandom(i * 7.7 + 902) > 0.5 ? "rgba(80,60,38,0.45)" : "rgba(30,20,10,0.4)";
     ctx.beginPath();
-    ctx.arc(spx, spy, 0.6 + pseudoRandom(i * 2.2 + 903) * 1.5, 0, Math.PI * 2);
+    ctx.arc(spx, spy, 0.5 + pseudoRandom(i * 2.2 + 903) * 2.0, 0, Math.PI * 2);
     ctx.fill();
   }
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < 28; i++) {
+    // a scatter of small pebble clumps -- 3-4 tiny dots huddled together,
+    // reads as coarser grit mixed into the finer speckle layer above
+    const clumpX = sx + pseudoRandom(i * 8.8 + 1200) * farm.caseWidth;
+    const clumpY = top + pseudoRandom(i * 6.6 + 1201) * farm.caseHeight;
+    const clumpCount = 3 + Math.floor(pseudoRandom(i * 4.4 + 1202) * 2);
+    for (let j = 0; j < clumpCount; j++) {
+      const jx = clumpX + (pseudoRandom(i * 3.1 + j * 2.7 + 1203) - 0.5) * 6;
+      const jy = clumpY + (pseudoRandom(i * 5.5 + j * 1.9 + 1204) - 0.5) * 6;
+      ctx.fillStyle = "rgba(20,12,6,0.4)";
+      ctx.beginPath();
+      ctx.arc(jx, jy, 0.5 + pseudoRandom(i * 2.2 + j + 1205) * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  for (let i = 0; i < 110; i++) {
     const spx = sx + pseudoRandom(i * 4.4 + 950) * farm.caseWidth;
     const spy = top + pseudoRandom(i * 6.2 + 951) * farm.caseHeight;
     const ang = pseudoRandom(i * 1.9 + 952) * Math.PI * 2;
-    const len = 1.5 + pseudoRandom(i * 3.1 + 953) * 2.5;
-    ctx.strokeStyle = pseudoRandom(i * 5.5 + 954) > 0.5 ? "rgba(90,68,42,0.3)" : "rgba(25,16,8,0.3)";
+    const len = 1.5 + pseudoRandom(i * 3.1 + 953) * 3.2;
+    ctx.strokeStyle = pseudoRandom(i * 5.5 + 954) > 0.5 ? "rgba(95,72,45,0.35)" : "rgba(20,12,6,0.35)";
     ctx.lineWidth = 0.6;
     ctx.beginPath();
     ctx.moveTo(spx, spy);
@@ -45058,9 +45083,25 @@ function drawSandboxAntFarm(camX) {
     ctx.restore(); // closes the enter-transition scale transform
   }
 
-  // glass shine, drawn last so it sits over everything inside the case
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  ctx.fillRect(sx, top, farm.caseWidth * 0.3, farm.caseHeight);
+  // glass shine, drawn last so it sits over everything inside the case.
+  // CONFIRMED BUG FIX ("wait is this whole section on the left suposed to
+  // be the pheromone aura????? absolutely NOT like this dude" -- turned
+  // out to have nothing to do with pheromones at all, per Sam's own later
+  // catch: "i just refreshed for the new push and noticed that line was
+  // already there before anything really happened in ant farm"): this was
+  // a flat rgba(255,255,255,0.06) rect stopping dead at exactly 30% of the
+  // case width -- a real hard edge, present on every single frame from
+  // the moment the scene loads, completely unrelated to pheromone state.
+  // Subtle in an isolated screenshot, but a flat color-step like that can
+  // read as a much starker seam depending on display/scaling. Replaced
+  // with a feathered gradient that fades out smoothly instead of cutting
+  // off, so there's no hard edge left to misread as anything.
+  const shineGrad = ctx.createLinearGradient(sx, top, sx + farm.caseWidth * 0.42, top);
+  shineGrad.addColorStop(0, "rgba(255,255,255,0.09)");
+  shineGrad.addColorStop(0.7, "rgba(255,255,255,0.03)");
+  shineGrad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shineGrad;
+  ctx.fillRect(sx, top, farm.caseWidth * 0.42, farm.caseHeight);
 }
 
 // CONFIRMED CHANGE (butterfly sun-portals, "make it a neat sorta
@@ -45400,16 +45441,31 @@ function drawSandboxSkyToroid(sx, sy, size, rotation, palette, seed) {
 // world-space) since it's meant to read as distant atmosphere, not a
 // scene object.
 function drawSandboxSkyAurora() {
+  // CONFIRMED BUG FIX ("the aura needs to be a gradient i hate the
+  // straight horiz line"): the horizontal hue gradient was only ever
+  // varying color across x -- the band's BOTTOM edge was a flat rect cut
+  // off dead at bandHeight, a hard straight line with no fade at all.
+  // Fixed with a proper two-pass fade: fill the hue gradient at full
+  // strength, then knock its alpha down to 0 smoothly from top to bottom
+  // via a destination-in vertical gradient, so the ribbon dissolves into
+  // the sky instead of ending on a ruler-straight edge.
   const t = performance.now() * 0.00005;
   const hueA = (205 + Math.sin(t) * 45 + 360) % 360;
   const hueB = (hueA + 55 + Math.sin(t * 1.4 + 2) * 20 + 360) % 360;
-  const bandTop = 0, bandHeight = 130;
+  const bandTop = 0, bandHeight = 150;
   ctx.save();
   const grad = ctx.createLinearGradient(0, bandTop, canvas.width, bandTop + bandHeight);
-  grad.addColorStop(0, `hsla(${hueA},65%,78%,0.11)`);
-  grad.addColorStop(0.5, `hsla(${(hueA + hueB) / 2},70%,82%,0.17)`);
-  grad.addColorStop(1, `hsla(${hueB},65%,78%,0.11)`);
+  grad.addColorStop(0, `hsla(${hueA},65%,78%,0.22)`);
+  grad.addColorStop(0.5, `hsla(${(hueA + hueB) / 2},70%,82%,0.32)`);
+  grad.addColorStop(1, `hsla(${hueB},65%,78%,0.22)`);
   ctx.fillStyle = grad;
+  ctx.fillRect(0, bandTop, canvas.width, bandHeight);
+  ctx.globalCompositeOperation = "destination-in";
+  const fade = ctx.createLinearGradient(0, bandTop, 0, bandTop + bandHeight);
+  fade.addColorStop(0, "rgba(0,0,0,0.85)");
+  fade.addColorStop(0.55, "rgba(0,0,0,0.4)");
+  fade.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = fade;
   ctx.fillRect(0, bandTop, canvas.width, bandHeight);
   ctx.restore();
 }
