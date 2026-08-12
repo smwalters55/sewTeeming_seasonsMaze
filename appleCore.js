@@ -38160,7 +38160,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 4650; // CONFIRMED CHANGE ("lets move ball and everything past it to the right more... give more breathing room between ball pit and ant farm and fan"): widened again (was 4260) alongside the balance ball/ball pit/fan2/ant farm all moving right and spreading out -- keeps ~45px of breathing room past the ant farm case's new right edge (4140 + 456 = 4596)
+const SANDBOX_WIDTH = 4800; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746)
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -43768,7 +43768,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
-  x: 4140, // CONFIRMED CHANGE ("give more breathing room between ball pit and ant farm and fan") -- pushed further right again (was 3760), opening up real clearance around fan2 on both sides instead of the ~5px gap that existed before
+  x: 4290, // CONFIRMED CHANGE ("move the ant farm mooore to the right"): pushed further right again (was 4140), widening the gap to fan2 (was a symmetric 250/250 around fan2, now 250 before / 400 after) -- SANDBOX_WIDTH bumped +150 alongside this to keep the same clearance past the case's right edge
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL_W + ANT_FARM_MARGIN_X * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL_H + ANT_FARM_MARGIN_Y * 2,
   // local pixel position within the grid interior, only meaningful
@@ -46230,9 +46230,15 @@ function drawSandboxSkyDecor(camX) {
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
+  // CONFIRMED CHANGE ("darken the whole sky just a little so we can
+  // see airplane flying better") -- the paper airplane's cream color
+  // (#f0e8d8) sat too close in lightness to this sky's original pale
+  // blue-to-near-white gradient, especially near the top. Darkened both
+  // stops modestly (same gradient shape, just deeper) for real contrast
+  // without turning the sky itself moody/overcast.
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
-  sky.addColorStop(0, "#bfe3f5");
-  sky.addColorStop(1, "#eaf6ff");
+  sky.addColorStop(0, "#a2c1d0");
+  sky.addColorStop(1, "#d2dde5");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -48163,24 +48169,34 @@ updateSeasonTransition(deltaTime);
 // exact revert pattern) whenever a real fresh-start playtest is next
 // needed. discoveredScenes.spring and .clouds are still set true below
 // so nothing UI-gated is broken by skipping straight past them.
-// CONFIRMED CHANGE ("debug spawn me close to the ball pit with the blue
-// wig on with airplane in play please") -- repointed from the slinky
-// block pile to right next to the ball pit's ladder, for testing the
-// rim-tolerance fix directly on load without walking over every time.
-// NOTE: because this sets currentScene directly rather than going
-// through a real startSeasonTransition, the "grant + auto-equip the
-// paper airplane on a genuine transition into sandbox" logic never
-// actually runs here -- granted/equipped by hand below instead so it
-// still matches what a real transition would leave you with.
-currentScene = "sandbox";
-player.x = sandboxBallPit.x - 16 - player.width / 2 - 60; // just left of the ladder
+// CONFIRMED CHANGE ("spawn me now instead in spring like a bit further
+// to the left so that you cant see the sandbox yet. make sure i have
+// paper airplane") -- repointed from just inside the sandbox (ball pit
+// ladder) to spring instead, well left of the sandbox entrance mound
+// (x:2860, see sandboxEntranceMound) so it's out of view on load rather
+// than sitting right at/near the door. NOTE: because this sets
+// currentScene directly rather than going through a real
+// startSeasonTransition, the "grant + auto-equip the paper airplane on
+// a genuine transition into sandbox" logic never actually runs here --
+// granted/equipped by hand below instead so it still matches what a
+// real transition would leave you with, even though we're not IN the
+// sandbox this time.
+currentScene = "spring";
+player.x = 2200; // ~660px left of the sandbox entrance mound (x:2860) -- well outside view on load
 player.y = 0;
 player.wigId = "blueBob";
 addToInventory("shovel");
 touchInventoryOrder("shovel");
 addToInventory("paperAirplane");
 touchInventoryOrder("paperAirplane");
-heldItem = "paperAirplane";
+// CONFIRMED CHANGE ("make sure no not airplane is held... but that it
+// will be avail once i enter sandbox... which i think is already true
+// anyway i just want to make sure"): confirmed -- the existing
+// heldItem==="paperAirplane" cleanup (see the update loop, fires every
+// frame outside oak/clouds/sandbox) unsets it the instant this loads
+// in spring regardless, and the existing ambient re-equip rule picks
+// it back up automatically the moment currentScene actually becomes
+// "sandbox" for real. So it's just left in inventory, unheld, here.
 discoveredScenes.spring = true;
 discoveredScenes.clouds = true;
 updateMapUI();
