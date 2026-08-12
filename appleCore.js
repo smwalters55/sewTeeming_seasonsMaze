@@ -509,7 +509,11 @@ const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick
 // general as inventory keeps growing.
 const SCENE_LOCKED_ITEMS = {
   lamp: ["oak", "ratroom"],
-  paperAirplane: ["oak", "clouds"]
+  // CONFIRMED CHANGE ("allow for paper airplane flying here" -- the
+  // sandbox) -- added sandbox to the plane's home scenes alongside oak
+  // and clouds, so it no longer gets put back the moment you carry it
+  // in there.
+  paperAirplane: ["oak", "clouds", "sandbox"]
 };
 let lastInventoryUIScene = null; // tracked so the strip only rebuilds when currentScene actually changes, not every frame
 
@@ -1119,10 +1123,12 @@ function updateSeasonTransition(deltaTime) {
       // auto-equips arriving in EITHER home scene and gets put back
       // leaving to anywhere else, so it never lingers "in play" out in
       // scenes it has no function in.
-      if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds") {
+      // CONFIRMED CHANGE ("allow for paper airplane flying here") --
+      // sandbox added as a third home scene, matching SCENE_LOCKED_ITEMS.
+      if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox") {
         heldItem = null;
       }
-      if ((currentScene === "oak" || currentScene === "clouds") && previousScene !== currentScene && inventory.paperAirplane > 0) {
+      if ((currentScene === "oak" || currentScene === "clouds" || currentScene === "sandbox") && previousScene !== currentScene && inventory.paperAirplane > 0) {
         heldItem = "paperAirplane";
       }
       if (currentScene === "ratroom" && previousScene !== "ratroom") {
@@ -2189,7 +2195,7 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -38024,7 +38030,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 4060; // CONFIRMED CHANGE: widened again (was 3920) for the ant farm's v3 size increase (case grew to 342px wide)
+const SANDBOX_WIDTH = 4260; // CONFIRMED CHANGE: widened again (was 4180) alongside the ant farm's move further right ("move ants a bit more to the right... the whole farm") -- keeps ~45px of breathing room past the case's new right edge (3760 + 456 = 4216)
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -42591,8 +42597,12 @@ const SANDBOX_BALANCE_FALL_LIE_MS = 500;     // CONFIRMED CHANGE: how long the k
 // faster") -- scaled strength/gravity together (v*1.15, g*1.15^2) so
 // peak height stays about the same (~35px) but time-to-peak drops from
 // ~0.5s to ~0.43s, reading as a snappier hop rather than a higher one.
-const SANDBOX_BALANCE_JUMP_STRENGTH = 160;
-const SANDBOX_BALANCE_JUMP_GRAVITY = 370;
+// CONFIRMED CHANGE (same request again, "just a liiiittle faster") --
+// same v*1.15/g*1.15^2 scaling applied on top of the previous pass:
+// peak height still lands around ~35px, time-to-peak now ~0.38s (down
+// from ~0.43s).
+const SANDBOX_BALANCE_JUMP_STRENGTH = 184;
+const SANDBOX_BALANCE_JUMP_GRAVITY = 489;
 
 function updateSandboxBalanceBall(deltaTime) {
   const b = sandboxBalanceBall;
@@ -43235,8 +43245,14 @@ function drawSandboxBallPit(camX) {
 // invariant.
 const ANT_FARM_COLS = 17;
 const ANT_FARM_ROWS = 13;
-const ANT_FARM_CELL = 18;
-const ANT_FARM_MARGIN = 18;
+// CONFIRMED CHANGE ("lets also make this bigger") -- cell/margin bumped
+// up from 18 -> 24 (x1.333) so the whole case, tunnels, and mini-me's
+// world read noticeably larger on screen. Every other ant-farm distance
+// (movement speed, collision half-width, greet radius) is scaled by the
+// same 1.333 factor below so nothing feels relatively faster/slower or
+// more/less sensitive than before -- only the overall size changed.
+const ANT_FARM_CELL = 24;
+const ANT_FARM_MARGIN = 24;
 const ANT_FARM_GRID = [
   [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -43254,7 +43270,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
-  x: 3660, // CONFIRMED CHANGE: pushed further right (was 3560) for more breathing room past the ball pit's right wall, per direct feedback
+  x: 3760, // CONFIRMED CHANGE ("move ants a bit more to the right... the whole farm") -- pushed further right again (was 3660)
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
   // local pixel position within the grid interior, only meaningful
@@ -43275,7 +43291,17 @@ const sandboxAntFarm = {
   // over ANT_FARM_ENTER_DURATION, starting at 1 (fully "in") so nothing
   // plays on load; reset to 0 on mount and eased back up, see the mount
   // site below and the shrink-in visual in drawSandboxAntFarm
-  enterAnim: 1
+  enterAnim: 1,
+  // CONFIRMED CHANGE ("i want to do a funner entry... like a whimsical
+  // teleportation... whisps and stars... swirling around character...
+  // takes a few beats... before placing in the same way in the farm as
+  // small") -- a wind-up beat that plays on the REAL, full-size player
+  // out at the case, before they actually shrink/warp inside. teleportT
+  // counts up 0..ANT_FARM_TELEPORT_WINDUP while teleporting is true; the
+  // existing shrink-in (enterAnim) only kicks off once this finishes,
+  // so the whole sequence reads as "swirl-swirl-swirl -> poof, tiny."
+  teleporting: false,
+  teleportT: 0
 };
 // CONFIRMED CHANGE ("improve player dig. make it slow like the ant
 // dig, showing progress within each square") -- 0.8s was nearly
@@ -43285,7 +43311,8 @@ const sandboxAntFarm = {
 // visual is now clearly visible mid-dig, not just a blink before/after.
 const ANT_FARM_DIG_TIME = 3.5; // seconds of sustained pushing to dig a cell open
 const ANT_FARM_ENTER_DURATION = 0.55; // seconds -- the shrink-in transition on mount
-const ANT_FARM_GREET_RADIUS_SQ = 8 * 8; // how close the mini-me needs to get to notice an ant
+const ANT_FARM_TELEPORT_WINDUP = 0.85; // seconds -- the whimsical swirl beat on the full-size player before they shrink in, see sandboxAntFarm.teleporting
+const ANT_FARM_GREET_RADIUS_SQ = (8 * 1.333) * (8 * 1.333); // how close the mini-me needs to get to notice an ant -- scaled with the cell-size bump
 const ANT_FARM_GREET_COOLDOWN = 4000; // ms -- same ant won't re-greet more than once this often
 const ANT_FARM_GREET_DURATION = 0.8; // seconds the sparkle/pause reaction plays for
 
@@ -43807,6 +43834,26 @@ function updateSandboxAntFarm(deltaTime) {
   // ticks while you're actually shrunk down looking at it, so "watch it
   // happen slowly" is literally what you get -- it can't run ahead of
   // you anymore.
+  // CONFIRMED CHANGE ("whimsical teleportation... takes a few beats
+  // before placing in the same way in the farm as small") -- while the
+  // windup is running, the player is neither in the farm yet nor free
+  // to move/act; the swirl visual itself is drawn separately (see the
+  // heldItem-block area in the main draw flow) around the real,
+  // full-size player's actual world position, since they haven't
+  // shrunk or moved yet at this point.
+  if (farm.teleporting) {
+    farm.teleportT += deltaTime;
+    if (farm.teleportT >= ANT_FARM_TELEPORT_WINDUP) {
+      farm.teleporting = false;
+      farm.teleportT = 0;
+      player.inAntFarm = true;
+      farm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+      farm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL + 2;
+      farm.enterAnim = 0; // kicks off the existing shrink-in visual, now acting as the "landing" half of the teleport
+    }
+    return;
+  }
+
   if (player.inAntFarm) updateAntFarmDiggers(deltaTime);
   // the forager colony (see the "ANT FARM FORAGER COLONY" block above)
   // keeps running in the background either way -- it never mutates the
@@ -43829,7 +43876,10 @@ function updateSandboxAntFarm(deltaTime) {
     // CONFIRMED CHANGE ("move player slower, i want this to feel
     // exploratory") -- was 46px/s, a brisk clip that crossed the whole
     // maze in a few seconds. Slowed to a genuine crawl.
-    const speed = 27;
+    // CONFIRMED CHANGE ("lets also make this bigger") -- speed scaled
+    // by the same 1.333 cell-size factor so covering a corridor still
+    // takes the same amount of real time as before the resize.
+    const speed = 27 * 1.333;
     let dx = 0, dy = 0;
     if (keys.left) dx = -1;
     if (keys.right) dx = 1;
@@ -43840,7 +43890,7 @@ function updateSandboxAntFarm(deltaTime) {
     // small point-sized hitbox (the ant icon is tiny, no real need for
     // a wider box), so sliding along a corridor wall in one direction
     // doesn't also get blocked by the other axis
-    const antHalf = 4;
+    const antHalf = 4 * 1.333;
     let blockedTarget = null;
     if (dx !== 0) {
       farm.facingDir = dx;
@@ -43920,19 +43970,103 @@ function updateSandboxAntFarm(deltaTime) {
     return;
   }
 
-  // shrink down and enter -- walk up to the case and press space
+  // shrink down and enter -- walk up to the case and press space. Kicks
+  // off the whimsical swirl windup on the real, full-size player rather
+  // than shrinking immediately; see the `farm.teleporting` block above
+  // for what happens once the windup finishes.
   if (keys.spaceJustPressed && isPlayerNear(entranceWorldX, 0, 30, 20, 20)) {
-    player.inAntFarm = true;
-    sandboxAntFarm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
-    sandboxAntFarm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL + 2;
-    sandboxAntFarm.enterAnim = 0; // kicks off the shrink-in transition, see drawSandboxAntFarm
+    farm.teleporting = true;
+    farm.teleportT = 0;
+  }
+}
+
+// CONFIRMED CHANGE ("i want to do a funner entry... like a whimsical
+// teleportation... whisps and stars... like not smoke but kind of like
+// mystical looking semy translucent powdery stuff swirling around
+// character... takes a few beats") -- drawn around the REAL, full-size
+// player at their actual on-screen position (they haven't shrunk or
+// moved into the case yet at this point -- see sandboxAntFarm.teleporting
+// in updateSandboxAntFarm). A soft violet glow builds up underneath, and
+// a ring of small four-point sparkle-stars + soft round motes (no
+// smoke-style blur, just small solid translucent shapes) spiral inward
+// and spin faster as the windup builds toward the finish.
+function drawAntFarmTeleportSwirl(camX) {
+  const farm = sandboxAntFarm;
+  if (!farm.teleporting) return;
+  const t = Math.max(0, Math.min(1, farm.teleportT / ANT_FARM_TELEPORT_WINDUP));
+  const cx = player.x - camX + player.width / 2;
+  const cy = gy - player.height / 2 - player.y;
+  const now = performance.now() * 0.001;
+
+  // CONFIRMED BUG FIX (visual check after implementing) -- the first
+  // pass here rendered at such low opacity/size (14-24px glow, 1-4px
+  // particles, ~0.3-0.6 alpha over a busy background) that it was
+  // effectively invisible in practice, confirmed via a direct
+  // screenshot test. Boosted glow size/opacity and particle
+  // size/count/alpha well past what looked "reasonable" on paper so it
+  // actually reads clearly against both the light sky and the dark case.
+  ctx.save();
+  ctx.globalAlpha = 0.45 + t * 0.35;
+  const glowR = 22 + t * 16;
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+  glow.addColorStop(0, "rgba(215,185,255,0.75)");
+  glow.addColorStop(0.6, "rgba(190,160,255,0.4)");
+  glow.addColorStop(1, "rgba(190,160,255,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const particleCount = 14;
+  for (let p = 0; p < particleCount; p++) {
+    const seed = p * 13.7;
+    const baseAngle = (p / particleCount) * Math.PI * 2;
+    const spinSpeed = 3 + pseudoRandom(seed + 1) * 2;
+    const ang = baseAngle + now * spinSpeed + t * Math.PI * 2; // extra wind-up spin as it builds toward the finish
+    const orbitR = (26 - t * 14) * (0.6 + pseudoRandom(seed + 2) * 0.5); // spirals inward as t -> 1
+    const px2 = cx + Math.cos(ang) * orbitR;
+    const py2 = cy + Math.sin(ang) * orbitR * 0.6 - t * 8; // squashed ellipse orbit + slight upward drift
+    const isStar = pseudoRandom(seed + 3) < 0.4;
+    const alpha = (0.6 + t * 0.35) * (0.65 + 0.35 * Math.sin(now * 4 + seed));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    if (isStar) {
+      ctx.fillStyle = "#fff6d8";
+      const s = 3.2 + pseudoRandom(seed + 4) * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(px2, py2 - s);
+      ctx.lineTo(px2 + s * 0.3, py2 - s * 0.3);
+      ctx.lineTo(px2 + s, py2);
+      ctx.lineTo(px2 + s * 0.3, py2 + s * 0.3);
+      ctx.lineTo(px2, py2 + s);
+      ctx.lineTo(px2 - s * 0.3, py2 + s * 0.3);
+      ctx.lineTo(px2 - s, py2);
+      ctx.lineTo(px2 - s * 0.3, py2 - s * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "rgba(220,195,255,0.9)";
+      ctx.beginPath();
+      ctx.arc(px2, py2, 2 + pseudoRandom(seed + 5) * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 
 function drawSandboxAntFarm(camX) {
   const farm = sandboxAntFarm;
   const sx = farm.x - camX;
-  const top = gy - farm.caseHeight;
+  // CONFIRMED CHANGE ("lets also make this bigger") -- the case used to
+  // always bottom-align exactly at ground level (top = gy - caseHeight),
+  // which worked fine at the old smaller size but would now push the top
+  // off the top of the canvas (caseHeight grew past gy's own 300px). Clamp
+  // so the case never renders above y=10; at the old size this clamp
+  // never engages (gy - caseHeight was already > 10), so small/old-size
+  // behavior is unchanged -- only the new bigger case sinks a bit into
+  // the foreground sand instead of clipping off-screen.
+  const top = Math.max(10, gy - farm.caseHeight);
 
   // wooden case frame
   ctx.fillStyle = "#8a6a42";
@@ -44062,7 +44196,17 @@ function drawSandboxAntFarm(camX) {
     // spot and the mini-me itself grows in from a pinpoint over
     // ANT_FARM_ENTER_DURATION, easing out so it settles rather than
     // snapping to full size.
-    const enterEase = 1 - Math.pow(1 - farm.enterAnim, 3);
+    // CONFIRMED CHANGE ("i want to do a funner entry") -- swapped the
+    // plain ease-out shrink for a springy "pop" (overshoots past full
+    // size, then settles back -- the classic back-ease curve) combined
+    // with a full spin that unwinds to 0 rotation right as it settles,
+    // so the mini-me visibly twirls into place rather than just growing
+    // in a straight line. The shrinking rings stay (still a nice mount
+    // cue) and a small burst of sparkle motes flings outward alongside
+    // them for more of a "poof!" feel.
+    const backC1 = 1.70158, backC3 = backC1 + 1;
+    const enterEase = 1 + backC3 * Math.pow(farm.enterAnim - 1, 3) + backC1 * Math.pow(farm.enterAnim - 1, 2);
+    const enterSpin = (1 - farm.enterAnim) * Math.PI * 2;
     if (farm.enterAnim < 1) {
       ctx.save();
       ctx.globalAlpha = 1 - farm.enterAnim * 0.6;
@@ -44076,9 +44220,24 @@ function drawSandboxAntFarm(camX) {
         ctx.stroke();
       }
       ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = "#fff6c8";
+      for (let p = 0; p < 8; p++) {
+        const sparkAlpha = Math.max(0, 1 - farm.enterAnim * 1.3);
+        if (sparkAlpha <= 0) continue;
+        const ang = (p / 8) * Math.PI * 2 + pseudoRandom(p * 3.3 + 700) * 0.4;
+        const dist = farm.enterAnim * 14;
+        ctx.globalAlpha = sparkAlpha;
+        ctx.beginPath();
+        ctx.arc(ix + Math.cos(ang) * dist, iy + Math.sin(ang) * dist, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
     ctx.save();
     ctx.translate(ix, iy);
+    ctx.rotate(enterSpin);
     ctx.scale(Math.max(0.05, enterEase), Math.max(0.05, enterEase));
     ctx.translate(-ix, -iy);
 
@@ -44128,11 +44287,29 @@ function drawSandboxAntFarm(camX) {
     // too, at ant-sized scale, using the exact same draw functions the
     // real player uses (both are already coordinate/scale-agnostic) so
     // there's no separate mini art to keep in sync by hand.
-    if (player.wigId) {
-      drawWigShape(player.wigId, ix, iy - 6, 0.11);
-    }
-    if (typeof crownState !== "undefined" && crownState.worn) {
-      drawCrownProcedural(ctx, ix, iy - 7, 3.4);
+    // CONFIRMED BUG FIX ("wig doesnt fit player head while in ant
+    // colony") -- at this tiny scale a couple of the wigs' own geometry
+    // (greyPixie especially, whose hair sweeps down to "ear level" PLUS
+    // carries its own internal 1.22x scale bump) dips low enough to
+    // paint right over the eyes instead of sitting above them like
+    // hair actually should -- looked like a plain white blob smearing
+    // the whole face rather than a wig. Rather than hand-tune each
+    // wig's geometry for this one tiny scale, clipped the whole
+    // headwear draw to a region that stops just above the eye line --
+    // guarantees nothing worn on top can ever paint over the face,
+    // regardless of any individual wig's own shape quirks.
+    if (player.wigId || (typeof crownState !== "undefined" && crownState.worn)) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(ix - 8, iy - 15, 16, (eyeY - 1.6) - (iy - 15));
+      ctx.clip();
+      if (player.wigId) {
+        drawWigShape(player.wigId, ix, iy - 6, 0.11);
+      }
+      if (typeof crownState !== "undefined" && crownState.worn) {
+        drawCrownProcedural(ctx, ix, iy - 7, 3.4);
+      }
+      ctx.restore();
     }
 
     // and the shovel itself, held up near the mini-me's side -- purely
@@ -44228,9 +44405,14 @@ function drawSandboxScene(camX) {
   // disheveled sand floor -- base tone, then dense granular texture,
   // then real dug-out holes (not just tinted smudges) -- so it reads as
   // actually played-in sand, not a flat floor with a few shadows on it.
+  // CONFIRMED CHANGE ("space-like purple maybe. the sand") -- swapped
+  // the warm tan sand palette for a cosmic violet one. Kept the same
+  // light-to-dark gradient shape and the same texture/hole layers below
+  // (just recolored), so the granular "played-in sand" look is unchanged,
+  // it just reads as otherworldly purple dust now instead of beach sand.
   const groundGrad = ctx.createLinearGradient(0, gy, 0, canvas.height);
-  groundGrad.addColorStop(0, "#e8d5a3");
-  groundGrad.addColorStop(1, "#d6bf85");
+  groundGrad.addColorStop(0, "#8a6fb5");
+  groundGrad.addColorStop(1, "#4f3572");
   ctx.fillStyle = groundGrad;
   ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
 
@@ -44240,7 +44422,7 @@ function drawSandboxScene(camX) {
   // dense field of tiny individual grains on top of those, each varying
   // in size/tone so it reads as real granular sand instead of a flat
   // tinted fill.
-  ctx.fillStyle = "rgba(150,125,75,0.22)";
+  ctx.fillStyle = "rgba(150,110,190,0.22)";
   for (let i = 0; i < 70; i++) {
     const gx = pseudoRandom(i * 11.3 + 200) * (SANDBOX_WIDTH + 80) - 20 - camX;
     const gyy = gy + 2 + pseudoRandom(i * 6.7 + 201) * (canvas.height - gy - 4);
@@ -44253,7 +44435,7 @@ function drawSandboxScene(camX) {
     const gx = pseudoRandom(i * 3.7) * (SANDBOX_WIDTH + 80) - 20 - camX;
     const gyy = gy + 3 + pseudoRandom(i * 5.1 + 1) * (canvas.height - gy - 8);
     const light = pseudoRandom(i * 2.2 + 9) < 0.5;
-    ctx.fillStyle = light ? "rgba(255,248,222,0.4)" : "rgba(150,120,70,0.32)";
+    ctx.fillStyle = light ? "rgba(225,205,255,0.4)" : "rgba(110,75,160,0.32)";
     const gsize = 1 + pseudoRandom(i * 8.8) * 1.6;
     ctx.fillRect(gx, gyy, gsize, gsize);
   }
@@ -44298,16 +44480,16 @@ function drawSandboxScene(camX) {
     const dx = wx - camX;
     const dy = gy + 4 + pseudoRandom(i * 4.1) * 12;
     const baseR = 7 + pseudoRandom(i * 2.7) * 7;
-    ctx.fillStyle = "rgba(95,76,45,0.5)";
+    ctx.fillStyle = "rgba(70,45,95,0.5)";
     organicBlobPath(dx, dy, baseR, baseR * 0.42, i * 31.7, 11);
     ctx.fill();
-    ctx.fillStyle = "rgba(70,55,32,0.35)";
+    ctx.fillStyle = "rgba(50,32,68,0.35)";
     ctx.beginPath();
     ctx.ellipse(dx, dy + baseR * 0.18, baseR * 0.75, baseR * 0.22, 0, 0, Math.PI);
     ctx.fill();
     const mSide = pseudoRandom(i * 6.6) < 0.5 ? -1 : 1;
     const mx = dx + mSide * (baseR * 1.1);
-    ctx.fillStyle = "rgba(255,248,222,0.45)";
+    ctx.fillStyle = "rgba(225,205,255,0.45)";
     organicBlobPath(mx, dy, baseR * 0.4, baseR * 0.22, i * 47.3 + 500, 8);
     ctx.fill();
   }
@@ -45172,6 +45354,7 @@ if (currentScene === "molehole") {
 // with no body under it -- looking completely disconnected from the
 // mini-me actually moving around inside the case. Hidden here the same
 // way the body is.
+drawAntFarmTeleportSwirl(camX); // the whimsical windup swirl on the real player, right before they shrink into the ant farm case (see updateSandboxAntFarm's `teleporting` block)
 if (heldItem && !fallState.active && !activeDig && !player.inAntFarm) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
@@ -45949,8 +46132,9 @@ if (currentScene === "autumn") {
   if (heldItem === "lamp" && currentScene !== "oak" && currentScene !== "ratroom") {
     heldItem = null;
   }
-  // same continuous safety net for the paper airplane's two home scenes
-  if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds") {
+  // same continuous safety net for the paper airplane's home scenes
+  // (oak, clouds, and now sandbox -- "allow for paper airplane flying here")
+  if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox") {
     heldItem = null;
   }
   // refreshes the inventory strip's scene-locked filtering (SCENE_LOCKED_ITEMS)
@@ -45969,11 +46153,11 @@ if (currentScene === "autumn") {
   updateBoomerangThrow(deltaTime);
 
   // paper airplane -- real throw. Originally scoped to clouds only
-  // (see the big comment above throwPaperAirplane), but per direct
-  // request oak throws it too now -- it's the room you actually pick
-  // the plane up in, so being able to fly it there as soon as it's in
-  // play makes sense alongside clouds.
-  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak") && !paperAirplaneFlight) {
+  // (see the big comment above throwPaperAirplane), then oak too (the
+  // room you actually pick the plane up in), and now sandbox as well
+  // per direct request ("allow for paper airplane flying here") -- it's
+  // open and roomy enough to fly it around the same as clouds/oak.
+  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !paperAirplaneFlight) {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
