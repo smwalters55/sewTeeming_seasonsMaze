@@ -44081,6 +44081,30 @@ function updateAntFarmDiggers(deltaTime) {
       } else {
         d.wanderCooldown = (d.wanderCooldown || 0) - deltaTime;
         if (d.wanderCooldown > 0) return;
+        // CONFIRMED BUG FIX (screenshots -- "the digger ants stopping
+        // for as long as they do at each point... there are 2 in this
+        // portion that seem locked in forever"): a digger with zero
+        // solid neighbors left (fully enclosed in an already-open
+        // pocket, like the checkerboard block-grid area) used to ONLY
+        // ever take this tiny local 1-cell shuffle, forever -- the
+        // general relocation chance added for path-diversity only ever
+        // rolled after finishing an actual DIG, and a boxed-in digger
+        // by definition never has one to finish. So it could wander the
+        // same handful of cells in one small pocket indefinitely, which
+        // is exactly "locked in forever". Now it gets a real chance,
+        // every time this cooldown fires, to abandon the pocket
+        // entirely and relocate across the map instead of just
+        // shuffling one cell over within the same enclosed area.
+        if (pseudoRandom(performance.now() * 0.00031 + d.row * 6.1 + d.col * 2.7) < ANT_FARM_DIGGER_RELOCATE_CHANCE) {
+          const openCells = antFarmAllOpenCells();
+          if (openCells.length) {
+            const relTarget = openCells[Math.floor(pseudoRandom(performance.now() * 0.00037 + d.col * 8.3 + d.row * 1.9) * openCells.length) % openCells.length];
+            d.relocating = true;
+            d.relocateTargetRow = relTarget.row;
+            d.relocateTargetCol = relTarget.col;
+            return;
+          }
+        }
         // boxed in by open cells on every side right now -- walk to a
         // random open neighbor instead of sitting idle forever, so it
         // eventually wanders somewhere with a fresh wall to work on
