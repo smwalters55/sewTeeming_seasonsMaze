@@ -1125,7 +1125,10 @@ function updateSeasonTransition(deltaTime) {
       // scenes it has no function in.
       // CONFIRMED CHANGE ("allow for paper airplane flying here") --
       // sandbox added as a third home scene, matching SCENE_LOCKED_ITEMS.
-      if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox") {
+      // CONFIRMED CHANGE ("not eg in farm or in ball pit of course") --
+      // both are sub-states of this same "sandbox" scene value, so
+      // cleared here too, not just when currentScene itself changes.
+      if (heldItem === "paperAirplane" && (currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox" || player.inAntFarm || player.inBallPit)) {
         heldItem = null;
       }
       if ((currentScene === "oak" || currentScene === "clouds" || currentScene === "sandbox") && previousScene !== currentScene && inventory.paperAirplane > 0) {
@@ -43245,34 +43248,54 @@ function drawSandboxBallPit(camX) {
 // invariant.
 const ANT_FARM_COLS = 17;
 const ANT_FARM_ROWS = 13;
-// CONFIRMED CHANGE ("lets also make this bigger") -- cell/margin bumped
-// up from 18 -> 24 (x1.333) so the whole case, tunnels, and mini-me's
-// world read noticeably larger on screen. Every other ant-farm distance
-// (movement speed, collision half-width, greet radius) is scaled by the
-// same 1.333 factor below so nothing feels relatively faster/slower or
-// more/less sensitive than before -- only the overall size changed.
-const ANT_FARM_CELL = 24;
-const ANT_FARM_MARGIN = 24;
+// CONFIRMED CHANGE ("lets also make this bigger", then "shorten farm
+// height. i dont want it to go below the horizon of the zone") --
+// cells are no longer square: width stayed bumped up (18 -> 24, the
+// x1.333 that makes the case/tunnels/mini-me's world read noticeably
+// larger left-to-right) but height reverted back to the original 18,
+// since going any taller pushed the case below ground level (the
+// horizon) or off the top of the canvas -- there just isn't extra
+// vertical room to spend, only horizontal. Movement speed/collision
+// half-width/greet radius below are scaled off the 1.333 width factor
+// only (they're generic px distances, not tied to one axis).
+const ANT_FARM_CELL_W = 24;
+const ANT_FARM_CELL_H = 18;
+// small isotropic effects (crumble patches, crack lengths) that just
+// want "a cell-ish size" rather than a specific axis
+const ANT_FARM_CELL_AVG = (ANT_FARM_CELL_W + ANT_FARM_CELL_H) / 2;
+const ANT_FARM_MARGIN_X = ANT_FARM_CELL_W;
+const ANT_FARM_MARGIN_Y = ANT_FARM_CELL_H;
+// CONFIRMED CHANGE ("lets also start w a few less tunnels so that when
+// ants dig new tunnels it can make a big difference... not too much of
+// the wide open tunnel space. a little of that is def good tho") --
+// closed off ~18 previously-open cells (about 15% of the maze) down to
+// solid dirt, picked programmatically so every food source, every
+// decorative ant's path, both diggers' start cells, and the entrance
+// stay fully reachable from the entrance the whole time (verified via
+// a BFS connectivity check before locking in each closure) -- nothing
+// that depends on a specific open cell broke, there's just noticeably
+// more solid wall left for the diggers to actually carve into now,
+// and a few of the old wide-open stretches read as tighter corridors.
 const ANT_FARM_GRID = [
   [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
   [1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
-  [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1],
+  [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
   [1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1],
-  [1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
-  [1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-  [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
   x: 3760, // CONFIRMED CHANGE ("move ants a bit more to the right... the whole farm") -- pushed further right again (was 3660)
-  caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
-  caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
+  caseWidth: ANT_FARM_COLS * ANT_FARM_CELL_W + ANT_FARM_MARGIN_X * 2,
+  caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL_H + ANT_FARM_MARGIN_Y * 2,
   // local pixel position within the grid interior, only meaningful
   // while player.inAntFarm -- (0,0) is the grid's top-left corner
   localX: 0,
@@ -43301,7 +43324,14 @@ const sandboxAntFarm = {
   // existing shrink-in (enterAnim) only kicks off once this finishes,
   // so the whole sequence reads as "swirl-swirl-swirl -> poof, tiny."
   teleporting: false,
-  teleportT: 0
+  teleportT: 0,
+  teleportMode: null, // "enter" or "exit" -- which end of the trip the current swirl belongs to
+  // CONFIRMED CHANGE ("when teleport out from farm, use the same
+  // mystical look as teleporting in") -- mirrors enterAnim on the way
+  // out: while true, enterAnim counts back down 1 -> 0 (shrinking away
+  // inside the case) before flipping player.inAntFarm off and starting
+  // the outside swirl (see updateSandboxAntFarm)
+  exiting: false
 };
 // CONFIRMED CHANGE ("improve player dig. make it slow like the ant
 // dig, showing progress within each square") -- 0.8s was nearly
@@ -43322,7 +43352,7 @@ function antFarmCellOpen(row, col) {
 }
 
 function antFarmCellCenter(row, col) {
-  return { x: (col + 0.5) * ANT_FARM_CELL, y: (row + 0.5) * ANT_FARM_CELL };
+  return { x: (col + 0.5) * ANT_FARM_CELL_W, y: (row + 0.5) * ANT_FARM_CELL_H };
 }
 
 // CONFIRMED CHANGE ("i want there to be ants in there!") -- real
@@ -43414,8 +43444,34 @@ function antFarmPickDigTarget(row, col) {
   return options[Math.floor(pseudoRandom(row * 31 + col * 7 + performance.now() * 0.00001) * options.length) % options.length];
 }
 
+const ANT_FARM_DIGGER_WANDER_DURATION = 0.9; // seconds -- an actual walk between cells while boxed in, not an instant snap
 function updateAntFarmDiggers(deltaTime) {
   SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
+    // CONFIRMED BUG FIX ("when an ant digs a new area, there is usually
+    // some spaz out of the ant going flashing everywhere... gated in
+    // one area for a time") -- root cause: the "boxed in, wander to a
+    // random open neighbor" branch below used to run, pick, AND
+    // relocate the digger EVERY SINGLE FRAME for as long as it stayed
+    // boxed in (no solid wall left adjacent), since nothing ever set
+    // digRow away from -1 to stop it re-entering this branch. That's a
+    // 60fps random walk among the same handful of nearby open cells --
+    // reads exactly as "flashing", confined to one local area (its
+    // current neighbors) "for a time" (however long it stayed boxed
+    // in, which can be indefinite). Fixed two ways: a cooldown so a new
+    // wander target is only picked every ANT_FARM_DIGGER_WANDER_DURATION
+    // or so (not every frame), and the chosen move now animates
+    // smoothly toward the target cell over that same window (mirroring
+    // how the forager colony already interpolates its own moves)
+    // instead of snapping instantly -- see drawAntFarmDiggers for the
+    // matching interpolated draw position.
+    if (d.moveT !== undefined && d.moveT < 1) {
+      d.moveT = Math.min(1, d.moveT + deltaTime / ANT_FARM_DIGGER_WANDER_DURATION);
+      if (d.moveT >= 1) {
+        d.row = d.wanderToRow;
+        d.col = d.wanderToCol;
+      }
+      return;
+    }
     if (d.digRow === -1) {
       const target = antFarmPickDigTarget(d.row, d.col);
       if (target) {
@@ -43424,15 +43480,22 @@ function updateAntFarmDiggers(deltaTime) {
         d.progress = 0;
         d.angle = Math.atan2(target.r - d.row, target.c - d.col);
       } else {
-        // boxed in by open cells on every side right now -- shuffle to
-        // a random open neighbor instead of sitting idle forever, so it
+        d.wanderCooldown = (d.wanderCooldown || 0) - deltaTime;
+        if (d.wanderCooldown > 0) return;
+        // boxed in by open cells on every side right now -- walk to a
+        // random open neighbor instead of sitting idle forever, so it
         // eventually wanders somewhere with a fresh wall to work on
         const openDirs = [[-1,0],[1,0],[0,-1],[0,1]].filter(([dr,dc]) => antFarmCellOpen(d.row + dr, d.col + dc) && (d.row + dr) > 0);
         if (openDirs.length) {
           const [dr, dc] = openDirs[Math.floor(pseudoRandom(performance.now() * 0.0001 + d.row) * openDirs.length) % openDirs.length];
-          d.row += dr;
-          d.col += dc;
+          d.wanderFromRow = d.row;
+          d.wanderFromCol = d.col;
+          d.wanderToRow = d.row + dr;
+          d.wanderToCol = d.col + dc;
+          d.angle = Math.atan2(dr, dc);
+          d.moveT = 0;
         }
+        d.wanderCooldown = 1.4 + pseudoRandom(performance.now() * 0.00007 + d.col) * 1.2; // ~1.4-2.6s between wander steps, so it visibly rests rather than flickering
       }
       return;
     }
@@ -43452,7 +43515,17 @@ function updateAntFarmDiggers(deltaTime) {
 
 function drawAntFarmDiggers(gx, gyTop) {
   SANDBOX_ANT_FARM_DIGGERS.forEach(d => {
-    const pos = antFarmCellCenter(d.row, d.col);
+    // mid-wander move -- draw at the smoothly interpolated spot between
+    // the cell it left and the cell it's walking to, matching the fix
+    // in updateAntFarmDiggers (no more instant snap between cells)
+    let pos;
+    if (d.moveT !== undefined && d.moveT < 1) {
+      const c0 = antFarmCellCenter(d.wanderFromRow, d.wanderFromCol);
+      const c1 = antFarmCellCenter(d.wanderToRow, d.wanderToCol);
+      pos = { x: c0.x + (c1.x - c0.x) * d.moveT, y: c0.y + (c1.y - c0.y) * d.moveT };
+    } else {
+      pos = antFarmCellCenter(d.row, d.col);
+    }
     drawAntCreature(gx + pos.x, gyTop + pos.y, d.angle, 1.15);
     drawAntFarmGreetSparkle(gx + pos.x, gyTop + pos.y, d);
     if (d.digRow !== -1) {
@@ -43824,7 +43897,7 @@ function drawAntFarmForagers(gx, gyTop) {
 
 function updateSandboxAntFarm(deltaTime) {
   const farm = sandboxAntFarm;
-  const entranceWorldX = farm.x + ANT_FARM_MARGIN + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+  const entranceWorldX = farm.x + ANT_FARM_MARGIN_X + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL_W;
 
   // CONFIRMED BUG FIX ("ant sitting there and then suddenly a whole new
   // area is open... i want to see the progress... slowly") -- digging
@@ -43841,15 +43914,46 @@ function updateSandboxAntFarm(deltaTime) {
   // heldItem-block area in the main draw flow) around the real,
   // full-size player's actual world position, since they haven't
   // shrunk or moved yet at this point.
+  // CONFIRMED CHANGE ("when teleport out from farm, use the same
+  // mystical look as teleporting in") -- teleportMode tracks which
+  // direction this windup belongs to, since the swirl visual itself
+  // (drawAntFarmTeleportSwirl) is identical either way -- only what
+  // happens once it finishes differs: entering actually shrinks the
+  // player into the case, exiting just releases control since the
+  // player is already back outside by the time this swirl plays.
   if (farm.teleporting) {
     farm.teleportT += deltaTime;
     if (farm.teleportT >= ANT_FARM_TELEPORT_WINDUP) {
       farm.teleporting = false;
       farm.teleportT = 0;
-      player.inAntFarm = true;
-      farm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
-      farm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL + 2;
-      farm.enterAnim = 0; // kicks off the existing shrink-in visual, now acting as the "landing" half of the teleport
+      if (farm.teleportMode === "enter") {
+        player.inAntFarm = true;
+        farm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL_W;
+        farm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL_H + 2;
+        farm.enterAnim = 0; // kicks off the existing shrink-in visual, now acting as the "landing" half of the teleport
+      }
+      farm.teleportMode = null;
+    }
+    return;
+  }
+
+  // CONFIRMED CHANGE (same as above) -- the shrink-out beat plays first,
+  // still inside the case (mirrors the shrink-in landing in reverse:
+  // enterAnim counts back down from 1 to 0 instead of up), THEN the
+  // outside swirl plays once the player is actually back at full size
+  // in the sandbox. farm.exiting gates this so it only runs once.
+  if (farm.exiting) {
+    farm.enterAnim = Math.max(0, farm.enterAnim - deltaTime / ANT_FARM_ENTER_DURATION);
+    if (farm.enterAnim <= 0) {
+      farm.exiting = false;
+      player.inAntFarm = false;
+      player.x = entranceWorldX - player.width / 2;
+      player.y = 0;
+      player.jumping = false;
+      player.vy = 0;
+      farm.teleporting = true;
+      farm.teleportT = 0;
+      farm.teleportMode = "exit";
     }
     return;
   }
@@ -43895,20 +43999,20 @@ function updateSandboxAntFarm(deltaTime) {
     if (dx !== 0) {
       farm.facingDir = dx;
       const tryX = farm.localX + dx * speed * deltaTime;
-      const col = Math.floor((tryX + (dx > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
-      const row = Math.floor(farm.localY / ANT_FARM_CELL);
+      const col = Math.floor((tryX + (dx > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL_W);
+      const row = Math.floor(farm.localY / ANT_FARM_CELL_H);
       if (antFarmCellOpen(row, col)) farm.localX = tryX;
       else blockedTarget = { row, col };
     }
     if (dy !== 0) {
       const tryY = farm.localY + dy * speed * deltaTime;
-      const row = Math.floor((tryY + (dy > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
-      const col = Math.floor(farm.localX / ANT_FARM_CELL);
+      const row = Math.floor((tryY + (dy > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL_H);
+      const col = Math.floor(farm.localX / ANT_FARM_CELL_W);
       if (antFarmCellOpen(row, col)) farm.localY = tryY;
       else if (!blockedTarget) blockedTarget = { row, col };
     }
-    farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL - 1, farm.localX));
-    farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL - 1, farm.localY));
+    farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL_W - 1, farm.localX));
+    farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL_H - 1, farm.localY));
 
     // CONFIRMED CHANGE ("make it so theres an interaction when i meet
     // an ant") -- checks every resident (decorative walkers, worker
@@ -43933,6 +44037,12 @@ function updateSandboxAntFarm(deltaTime) {
     // dig-style interaction elsewhere in the game (the tunnel town wall,
     // the dig site) rather than being a free action anyone can do just
     // by walking in.
+    // CONFIRMED CHANGE ("lets actually comment out player ability to
+    // dig in the ant farm. idk if i really want that yet") -- player
+    // digging disabled for now, not deleted -- uncomment the block
+    // below (and remove the two-line reset that replaced it) to bring
+    // it back later.
+    /*
     if (heldItem === "shovel" && blockedTarget && blockedTarget.row > 0 && blockedTarget.row < ANT_FARM_ROWS &&
         blockedTarget.col >= 0 && blockedTarget.col < ANT_FARM_COLS) {
       if (farm.digRow === blockedTarget.row && farm.digCol === blockedTarget.col) {
@@ -43954,18 +44064,23 @@ function updateSandboxAntFarm(deltaTime) {
       farm.digCol = -1;
       farm.digProgress = 0;
     }
+    */
+    farm.digRow = -1;
+    farm.digCol = -1;
+    farm.digProgress = 0;
 
     // exit -- only from the entrance cell, same "walk up, interact"
     // convention as everywhere else, this time walking back UP to the
     // surface opening rather than to a fixed spot
-    const curRow = Math.floor(farm.localY / ANT_FARM_CELL);
-    const curCol = Math.floor(farm.localX / ANT_FARM_CELL);
-    if (keys.spaceJustPressed && curRow === ANT_FARM_ENTRANCE.row && curCol === ANT_FARM_ENTRANCE.col) {
-      player.inAntFarm = false;
-      player.x = entranceWorldX - player.width / 2;
-      player.y = 0;
-      player.jumping = false;
-      player.vy = 0;
+    const curRow = Math.floor(farm.localY / ANT_FARM_CELL_H);
+    const curCol = Math.floor(farm.localX / ANT_FARM_CELL_W);
+    // CONFIRMED CHANGE ("when teleport out from farm, use the same
+    // mystical look as teleporting in") -- no longer an instant snap
+    // back outside; kicks off the shrink-out beat (farm.exiting, see
+    // the block above) which itself chains into the outside swirl once
+    // it finishes.
+    if (keys.spaceJustPressed && curRow === ANT_FARM_ENTRANCE.row && curCol === ANT_FARM_ENTRANCE.col && !farm.exiting) {
+      farm.exiting = true;
     }
     return;
   }
@@ -43977,6 +44092,7 @@ function updateSandboxAntFarm(deltaTime) {
   if (keys.spaceJustPressed && isPlayerNear(entranceWorldX, 0, 30, 20, 20)) {
     farm.teleporting = true;
     farm.teleportT = 0;
+    farm.teleportMode = "enter";
   }
 }
 
@@ -44005,9 +44121,15 @@ function drawAntFarmTeleportSwirl(camX) {
   // screenshot test. Boosted glow size/opacity and particle
   // size/count/alpha well past what looked "reasonable" on paper so it
   // actually reads clearly against both the light sky and the dark case.
+  // CONFIRMED CHANGE ("make it a little more mystical whimsical") --
+  // the glow now gently breathes (pulses in size) instead of just
+  // growing linearly with t, and a second, slower outer ring of pale
+  // gold motes orbits wider and looser than the inner violet ring --
+  // two layers reads as noticeably more magical than one.
+  const pulse = 1 + Math.sin(now * 3.2) * 0.12;
   ctx.save();
   ctx.globalAlpha = 0.45 + t * 0.35;
-  const glowR = 22 + t * 16;
+  const glowR = (22 + t * 16) * pulse;
   const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
   glow.addColorStop(0, "rgba(215,185,255,0.75)");
   glow.addColorStop(0.6, "rgba(190,160,255,0.4)");
@@ -44017,6 +44139,23 @@ function drawAntFarmTeleportSwirl(camX) {
   ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  const outerCount = 6;
+  for (let p = 0; p < outerCount; p++) {
+    const seed = p * 19.1 + 400;
+    const ang = (p / outerCount) * Math.PI * 2 - now * 1.4 - t * Math.PI; // slower, opposite spin from the inner ring
+    const orbitR = (34 - t * 16) * (0.75 + pseudoRandom(seed + 1) * 0.35);
+    const px3 = cx + Math.cos(ang) * orbitR;
+    const py3 = cy + Math.sin(ang) * orbitR * 0.6 - t * 10;
+    const alpha = (0.4 + t * 0.3) * (0.5 + 0.5 * Math.sin(now * 2.5 + seed));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ctx.fillStyle = "rgba(255,225,160,0.85)";
+    ctx.beginPath();
+    ctx.arc(px3, py3, 1.6 + pseudoRandom(seed + 2) * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   const particleCount = 14;
   for (let p = 0; p < particleCount; p++) {
@@ -44058,14 +44197,13 @@ function drawAntFarmTeleportSwirl(camX) {
 function drawSandboxAntFarm(camX) {
   const farm = sandboxAntFarm;
   const sx = farm.x - camX;
-  // CONFIRMED CHANGE ("lets also make this bigger") -- the case used to
-  // always bottom-align exactly at ground level (top = gy - caseHeight),
-  // which worked fine at the old smaller size but would now push the top
-  // off the top of the canvas (caseHeight grew past gy's own 300px). Clamp
-  // so the case never renders above y=10; at the old size this clamp
-  // never engages (gy - caseHeight was already > 10), so small/old-size
-  // behavior is unchanged -- only the new bigger case sinks a bit into
-  // the foreground sand instead of clipping off-screen.
+  // CONFIRMED CHANGE ("shorten farm height. i dont want it to go below
+  // the horizon of the zone") -- caseHeight is back to using the
+  // original, smaller ANT_FARM_CELL_H so the case sits fully above
+  // ground level again (bottom edge exactly at gy, same as before any
+  // resize) -- it no longer sinks into the foreground sand at all. This
+  // clamp is now just a defensive floor in case caseHeight ever grows
+  // again later; it doesn't engage at the current size.
   const top = Math.max(10, gy - farm.caseHeight);
 
   // wooden case frame
@@ -44095,11 +44233,11 @@ function drawSandboxAntFarm(camX) {
   // cell (via the shared organicBlobPath helper) sitting on top to
   // round out each junction/room into something that reads as
   // excavated dirt rather than machine-cut squares.
-  const gx = sx + ANT_FARM_MARGIN, gyTop = top + ANT_FARM_MARGIN;
+  const gx = sx + ANT_FARM_MARGIN_X, gyTop = top + ANT_FARM_MARGIN_Y;
   const tunnelColor = "#1c1207";
   const tunnelHighlight = "rgba(70,50,30,0.5)";
   ctx.strokeStyle = tunnelColor;
-  ctx.lineWidth = ANT_FARM_CELL * 0.62;
+  ctx.lineWidth = ANT_FARM_CELL_H * 0.62;
   ctx.lineCap = "round";
   for (let row = 0; row < ANT_FARM_ROWS; row++) {
     for (let col = 0; col < ANT_FARM_COLS; col++) {
@@ -44123,13 +44261,13 @@ function drawSandboxAntFarm(camX) {
       const c0 = antFarmCellCenter(row, col);
       const seed = row * 31 + col * 7;
       ctx.fillStyle = tunnelColor;
-      organicBlobPath(ctx, gx + c0.x, gyTop + c0.y, ANT_FARM_CELL * 0.52, ANT_FARM_CELL * 0.52, seed, 7);
+      organicBlobPath(ctx, gx + c0.x, gyTop + c0.y, ANT_FARM_CELL_W * 0.52, ANT_FARM_CELL_H * 0.52, seed, 7);
       ctx.fill();
       // a soft inner highlight along the upper-left, giving the
       // tunnel a little depth instead of reading completely flat
       ctx.fillStyle = tunnelHighlight;
       ctx.beginPath();
-      ctx.ellipse(gx + c0.x - ANT_FARM_CELL * 0.12, gyTop + c0.y - ANT_FARM_CELL * 0.12, ANT_FARM_CELL * 0.22, ANT_FARM_CELL * 0.16, -0.6, 0, Math.PI * 2);
+      ctx.ellipse(gx + c0.x - ANT_FARM_CELL_W * 0.12, gyTop + c0.y - ANT_FARM_CELL_H * 0.12, ANT_FARM_CELL_W * 0.22, ANT_FARM_CELL_H * 0.16, -0.6, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -44137,10 +44275,10 @@ function drawSandboxAntFarm(camX) {
   // the surface opening -- a lighter patch right at the entrance so it
   // reads as "this is where you go in", matching the ball pit ladder's
   // visual affordance
-  const entX = gx + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
+  const entX = gx + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL_W;
   ctx.fillStyle = "rgba(255,240,200,0.25)";
   ctx.beginPath();
-  ctx.ellipse(entX, gyTop, ANT_FARM_CELL * 0.45, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(entX, gyTop, ANT_FARM_CELL_W * 0.45, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // CONFIRMED CHANGE ("lets make it diggable now") -- visible feedback
@@ -44152,7 +44290,7 @@ function drawSandboxAntFarm(camX) {
     const dc = antFarmCellCenter(farm.digRow, farm.digCol);
     ctx.fillStyle = `rgba(150,110,70,${0.15 + digFrac * 0.4})`;
     ctx.beginPath();
-    ctx.arc(gx + dc.x, gyTop + dc.y, ANT_FARM_CELL * 0.15 + digFrac * ANT_FARM_CELL * 0.3, 0, Math.PI * 2);
+    ctx.arc(gx + dc.x, gyTop + dc.y, ANT_FARM_CELL_AVG * 0.15 + digFrac * ANT_FARM_CELL_AVG * 0.3, 0, Math.PI * 2);
     ctx.fill();
     // a few crack lines radiating out, more of them as progress builds
     ctx.strokeStyle = `rgba(20,12,5,${0.4 + digFrac * 0.4})`;
@@ -44160,7 +44298,7 @@ function drawSandboxAntFarm(camX) {
     const crackCount = 2 + Math.floor(digFrac * 4);
     for (let i = 0; i < crackCount; i++) {
       const ang = (i / crackCount) * Math.PI * 2 + farm.digRow * 0.7 + farm.digCol * 1.3;
-      const len = ANT_FARM_CELL * (0.2 + digFrac * 0.25);
+      const len = ANT_FARM_CELL_AVG * (0.2 + digFrac * 0.25);
       ctx.beginPath();
       ctx.moveTo(gx + dc.x, gyTop + dc.y);
       ctx.lineTo(gx + dc.x + Math.cos(ang) * len, gyTop + dc.y + Math.sin(ang) * len);
@@ -46133,8 +46271,14 @@ if (currentScene === "autumn") {
     heldItem = null;
   }
   // same continuous safety net for the paper airplane's home scenes
-  // (oak, clouds, and now sandbox -- "allow for paper airplane flying here")
-  if (heldItem === "paperAirplane" && currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox") {
+  // (oak, clouds, and now sandbox -- "allow for paper airplane flying here").
+  // CONFIRMED CHANGE ("give player ability to fly airplane in sandbox,
+  // but not eg in farm or in ball pit of course") -- being shrunk down
+  // in the ant farm or swimming in the ball pit are sub-states of the
+  // SAME "sandbox" currentScene value, so the scene check alone let the
+  // plane stay equipped (and throwable, see the trigger below) in both.
+  // Cleared here too now, same as any other scene it doesn't belong in.
+  if (heldItem === "paperAirplane" && (currentScene !== "oak" && currentScene !== "clouds" && currentScene !== "sandbox" || player.inAntFarm || player.inBallPit)) {
     heldItem = null;
   }
   // refreshes the inventory strip's scene-locked filtering (SCENE_LOCKED_ITEMS)
@@ -46157,7 +46301,7 @@ if (currentScene === "autumn") {
   // room you actually pick the plane up in), and now sandbox as well
   // per direct request ("allow for paper airplane flying here") -- it's
   // open and roomy enough to fly it around the same as clouds/oak.
-  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !paperAirplaneFlight) {
+  if (keys.space && heldItem === "paperAirplane" && (currentScene === "clouds" || currentScene === "oak" || currentScene === "sandbox") && !player.inAntFarm && !player.inBallPit && !paperAirplaneFlight) {
     throwPaperAirplane();
   }
   updatePaperAirplaneFlight(deltaTime);
