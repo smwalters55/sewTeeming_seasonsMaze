@@ -1168,12 +1168,12 @@ function updateSeasonTransition(deltaTime) {
       } else if (currentScene === "molehole" && previousScene === "tunneltown") {
         player.x = tunnelTownEntrance.x; // climb back out right where you fell in, not the generic molehole spawn
       } else if (currentScene === "sandbox" && previousScene === "spring") {
-        // TEMPORARY CONFIRMED CHANGE: spawn right at the block pile
-        // instead of the usual return-mound spot, per direct request
-        // ("put me in sandbox near it to test") -- easy to revert back
-        // to sandboxReturnMound.x + 40 once the pile's climbability is
-        // confirmed.
-        player.x = sandboxBlockPile.x - 130;
+        // CONFIRMED CHANGE ("put me how it normally works at the
+        // beginning of sandbox. not near slinky pile or anywhere
+        // else"): reverted the temporary block-pile testing override
+        // back to the real entry point -- lands at the return mound,
+        // same symmetric pattern as the spring-side landing just below.
+        player.x = sandboxReturnMound.x + 40;
       } else if (currentScene === "spring" && previousScene === "sandbox") {
         player.x = sandboxEntranceMound.x + 40; // same, landing back out in spring
       } else {
@@ -48184,7 +48184,6 @@ updateSeasonTransition(deltaTime);
 currentScene = "spring";
 player.x = 2200; // ~660px left of the sandbox entrance mound (x:2860) -- well outside view on load
 player.y = 0;
-player.wigId = "blueBob";
 addToInventory("shovel");
 touchInventoryOrder("shovel");
 addToInventory("paperAirplane");
