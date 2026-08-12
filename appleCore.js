@@ -2447,6 +2447,7 @@ function applyPhysics(){
     player.x += player.vx;
 
     const ascending = player.vy > 0;
+    const prevLaunchedY = player.y; // CONFIRMED CHANGE: captured before the y update below, for the new sandbox pile-landing crossing check
     player.y += player.vy;
     // per-flight gravity multiplier (default 1, see the launch-trigger
     // code in handleInput) -- lets one specific short hop feel snappier
@@ -2457,6 +2458,35 @@ function applyPhysics(){
 
     if (player.y > player.launchPeakHeight) {
       player.launchPeakHeight = player.y;
+    }
+
+    // CONFIRMED CHANGE ("throwing player on pile"): this generic
+    // launched-flight path was built for the spring's cloud-launch (see
+    // the goalCloud check just below) and otherwise "ignores platforms/
+    // ramp/stump entirely" -- normally fine, since nothing else needs a
+    // launch to land mid-air, but the pendulum throw specifically needs
+    // to be able to land ON one of the pile's block tiers, not just sail
+    // through it down to the ground. Scoped to the sandbox scene only,
+    // same crossing-detection shape as the normal (non-launched)
+    // block-pile collision below in this same function.
+    if (currentScene === "sandbox" && player.vy <= 0) {
+      for (const step of sandboxBlockSteps) {
+        const platformTop = step.heightAboveGround;
+        if (
+          player.x + player.width > step.x &&
+          player.x < step.x + step.width &&
+          prevLaunchedY > platformTop &&
+          player.y <= platformTop
+        ) {
+          player.y = platformTop;
+          player.vx = 0;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+          player.launched = false;
+          return;
+        }
+      }
     }
 
     // hit the actual visible cloud — not an invisible number
@@ -2482,6 +2512,19 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
       player.launched = false;
+      // CONFIRMED CHANGE ("goal circles... glow green for a moment when
+      // u land in them") -- the only source of a launched flight inside
+      // the sandbox scene is the pendulum throw, so checking landing
+      // proximity here (scoped to that scene) is safe without needing
+      // to tag which system triggered this particular launch.
+      if (currentScene === "sandbox") {
+        const landedCenterX = player.x + player.width / 2;
+        SANDBOX_PENDULUM_GOALS_X.forEach((goalX, gi) => {
+          if (Math.abs(landedCenterX - goalX) < SANDBOX_PENDULUM_GOAL_RADIUS) {
+            sandboxPendulumGoalFlash[gi] = performance.now();
+          }
+        });
+      }
     }
 
     return; // launched flight ignores platforms/ramp/stump entirely — spring has none anyway
@@ -37880,7 +37923,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1750; // CONFIRMED CHANGE: widened again (was 1650) to preserve the same right-side margin after shifting the pile/pendulum right
+const SANDBOX_WIDTH = 1850; // CONFIRMED CHANGE: widened again (was 1750) to preserve the same right-side margin after shifting the pile/pendulum right once more
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38577,7 +38620,7 @@ function drawMicroscopeStation(camX) {
    shape as the fan, but the ride itself is an arc instead of a hover.
    ====================================================== */
 const sandboxPendulum = {
-  x: 1050, // CONFIRMED CHANGE: moved further right per "move pendulum more to the right"
+  x: 1150, // CONFIRMED CHANGE: moved further right again ("make the pendulum further away from stuff more") -- was overlapping the shovel's swing-arc clearance at the old x:1050
   anchorHeight: 190,   // height above ground of the pivot point -- raised along with everything else below, per "make the pendulum big"
   armLength: 120,
   angle: 0.9,          // radians from straight-down; swings between -amplitude and +amplitude
@@ -38587,6 +38630,73 @@ const sandboxPendulum = {
   ballRadius: 34       // CONFIRMED CHANGE: bumped from 18 -- "make the pendulum big... like bigger than player for suree" (player is 40 wide/54 tall, so a 34-radius/68-diameter ball is clearly bigger than the player)
 };
 const SANDBOX_PENDULUM_OMEGA = 1.7; // swing speed
+
+// CONFIRMED CHANGE ("goal circles to try to land on... glow green for a
+// moment when u land in them, like how we do it w skipping stones") --
+// fixed world-x rings in the sand between the pendulum and the pile,
+// spanning the throw's real reachable range (see the headless-tested
+// distance sweep in the launch code below), same sparkle -> green ->
+// fade hit animation as the forest's skip-stone targets, just anchored
+// to fixed ground spots instead of pool-relative fractions.
+const SANDBOX_PENDULUM_GOALS_X = [1280, 1370, 1460]; // short/medium/far -- far one sits right at the pile's own front edge
+const SANDBOX_PENDULUM_GOAL_RADIUS = 24;
+const sandboxPendulumGoalFlash = [0, 0, 0]; // timestamp of last hit, per goal -- drives the animation, same pattern as skipStoneTargetFlash
+const SANDBOX_PENDULUM_GOAL_ANIM_MS = 1100;
+
+function drawSandboxPendulumGoalHitAnim(gx, groundY, i) {
+  const now = performance.now();
+  const flashAge = now - sandboxPendulumGoalFlash[i];
+  if (flashAge >= SANDBOX_PENDULUM_GOAL_ANIM_MS) return false;
+  const p = flashAge / SANDBOX_PENDULUM_GOAL_ANIM_MS;
+  // same gold-spark -> settled-green -> fade color ramp as the skip-stone hit anim
+  const mixT = Math.min(1, p / 0.6);
+  const rC = Math.round(255 + (110 - 255) * mixT);
+  const gC = Math.round(210 + (230 - 210) * mixT);
+  const bC = Math.round(110 + (140 - 110) * mixT);
+  const alpha = p < 0.7 ? 0.85 : 0.85 * (1 - (p - 0.7) / 0.3);
+  const ringR = 12 + p * 16;
+  ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(gx, groundY, ringR, ringR * 0.35, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  if (p < 0.6) {
+    const sparkleCount = 5;
+    for (let s = 0; s < sparkleCount; s++) {
+      const ang = (s / sparkleCount) * Math.PI * 2 + now * 0.006;
+      const sr = ringR + 3;
+      const sx = gx + Math.cos(ang) * sr;
+      const sy = groundY + Math.sin(ang) * sr * 0.35;
+      ctx.fillStyle = `rgba(255,255,220,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  return true;
+}
+
+// CONFIRMED CHANGE: goal rings only show while actually mounted on the
+// pendulum (charging up a throw) or mid-flight from one -- otherwise
+// they'd just be permanent sand decor instead of "here's what you're
+// aiming for right now," same visibility rule the skip-stone targets
+// use relative to holding/throwing the stone. The hit-flash animation
+// itself is NOT gated on this, so it still plays out in full even after
+// landing clears onPendulum/launched.
+function drawSandboxPendulumGoals(camX) {
+  const showLive = player.onPendulum || player.launched;
+  const groundY = gy + 2;
+  SANDBOX_PENDULUM_GOALS_X.forEach((worldX, i) => {
+    const gx = worldX - camX;
+    if (drawSandboxPendulumGoalHitAnim(gx, groundY, i)) return;
+    if (!showLive) return;
+    ctx.strokeStyle = "rgba(230,240,225,0.35)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(gx, groundY, SANDBOX_PENDULUM_GOAL_RADIUS, SANDBOX_PENDULUM_GOAL_RADIUS * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
 
 function pendulumBallPos(p) {
   // ball position relative to the anchor -- standard pendulum geometry
@@ -38610,7 +38720,18 @@ function updateSandboxPendulum(deltaTime) {
   const ballWorldX = p.x + dx;
   const ballHeightAboveGround = gy - (gy - p.anchorHeight + dy); // = p.anchorHeight - dy, kept explicit for clarity
 
-  if (!player.onPendulum) {
+  // CONFIRMED BUG FIX (found while tuning the release-timing throw):
+  // this catch check used to run any time !player.onPendulum, which
+  // includes the instant right after a real release too -- and right
+  // then, the player is still sitting exactly at the ball's own
+  // position (hasn't had a frame to move away yet), so any release with
+  // a non-upward vy (roughly half of all release timings) satisfied
+  // nearX/nearHeight/vy<=0 immediately and re-caught the ball on the
+  // very same or next frame, silently overwriting the throw with
+  // vx=vy=0 before it ever got anywhere. Guarded on !player.launched too
+  // now, so a deliberate release can't be immediately re-caught -- the
+  // catch only re-arms once that flight actually ends.
+  if (!player.onPendulum && !player.launched) {
     // trigger: land on the ball like any other ground contact, only
     // while it's swung down near ground level (catching it mid-air at
     // head height would look/feel wrong)
@@ -38626,22 +38747,56 @@ function updateSandboxPendulum(deltaTime) {
     }
     return;
   }
+  if (player.launched) return; // mid-flight from a release -- generic launched physics (see applyPhysics) owns position now
 
   // riding -- position fully driven by the swing's current geometry
   player.x = ballWorldX - player.width / 2;
   player.y = ballHeightAboveGround;
 
-  // jump to let go -- launches with the swing's actual current
-  // tangential velocity, so letting go at the bottom of the arc barely
-  // launches you, but letting go near either peak sends you flying
-  // sideways, same "timing matters" feel as a real playground swing
+  // CONFIRMED CHANGE ("have the distance traveled depend on when you hit
+  // jump in the pendulum cycle more... aim for places to throw you in
+  // the sand [or onto the pile]") -- same real-tangential-velocity
+  // formula the forest swing's own releaseSwing() uses (vx =
+  // armLength*cos(angle)*angularVelocity, vHeight = the sin() version),
+  // instead of the old flat-horizontal-only approximation with an
+  // arbitrary *0.05 squash. Release at the bottom of the arc (angle~0)
+  // -> nearly pure horizontal, fastest point in the swing -> flattest,
+  // farthest throw, good for clearing sand. Release near either peak
+  // (angle~+-amplitude) -> more vertical, and real pendulum speed
+  // legitimately hits ~0 exactly at that turning point, so -- same fix
+  // the swing itself uses for its own amplitude-clamped case -- speed
+  // gets floored to a fraction of this swing's known peak (amplitude*
+  // omega, always hit at angle=0 every cycle) instead of being allowed
+  // to hit true zero, so releasing near a peak is still a real, shorter/
+  // steeper throw instead of "nothing happened."
+  // angleVel is tracked in rad/SEC (see its own definition above); the
+  // rest of this launched-flight physics (gravity constants etc.) is
+  // tuned in rad-per-FRAME-style units at an assumed 60fps, same as the
+  // swing's own angularVelocity accumulator -- /60 converts.
   if (keys.upJustPressed) {
     player.onPendulum = false;
     player.jumping = true;
     player.usedDoubleJump = false;
-    const tangentialSpeed = p.angleVel * p.armLength; // px/sec, signed by swing direction
-    player.vx = Math.max(-14, Math.min(14, tangentialSpeed * 0.05));
-    player.vy = 10;
+    const peakAngleVel = p.amplitude * SANDBOX_PENDULUM_OMEGA;
+    const dirSign = p.angleVel !== 0 ? Math.sign(p.angleVel) : 1;
+    const useAngleVel = Math.abs(p.angleVel) > peakAngleVel * 0.3 ? p.angleVel : dirSign * peakAngleVel * 0.3;
+    const perFrameAngleVel = useAngleVel / 60;
+    // CONFIRMED CHANGE: the raw physically-derived numbers above (see
+    // headless-tested sweep) come out tiny relative to this room's scale
+    // -- max real distance was only ~160px, nowhere near reaching the
+    // pile a few hundred px away. THROW_POWER scales the whole throw up
+    // to a satisfying, actually-aimable range while keeping every
+    // timing-dependent ratio between releases exactly the same.
+    const THROW_POWER = 3;
+    player.vx = p.armLength * Math.cos(p.angle) * perFrameAngleVel * THROW_POWER;
+    // NOTE: this pendulum's own ballHeightAboveGround is anchorHeight
+    // MINUS a dy that itself grows with cos(angle) (see pendulumBallPos)
+    // -- i.e. height here rises as cos(angle) rises, the opposite sign
+    // convention from the forest swing's height formula. Negated here
+    // to match THIS file's own geometry so the launch velocity is
+    // actually continuous with the ball's real motion at the instant of
+    // release, instead of popping in the wrong vertical direction.
+    player.vy = -p.armLength * Math.sin(p.angle) * perFrameAngleVel * THROW_POWER;
     player.launched = true; // reuse the existing launch-arc physics (gravity + vx drift) instead of driving it manually
     player.launchPeakHeight = player.y;
   }
@@ -38718,7 +38873,7 @@ function drawSandboxPendulum(camX) {
    patterns chosen at random each run (per direct request: "power
    determine the speed it traverses the random pattern").
    ====================================================== */
-const sandboxBlockPile = { x: 1500, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 ("slinky block pile more to the right") -- SANDBOX_WIDTH bumped alongside it below to keep the same right-side margin
+const sandboxBlockPile = { x: 1600, topHeight: 220 }; // CONFIRMED CHANGE: shifted right +100 again, alongside the pendulum's own move, to keep the same pendulum-to-pile throw distance -- SANDBOX_WIDTH bumped alongside it below
 
 // CONFIRMED CHANGE: fully rebuilt again -- per direct feedback with a
 // screenshot ("this looks like tower? not actual pile of blocks?").
@@ -38775,34 +38930,34 @@ const SANDBOX_PILE_COLORS = ["#e8483a", "#f2b93c", "#3fa7d6", "#5fbf5a", "#c265d
 // base tier always followed correctly.
 const sandboxBlockSteps = [
   // base tier -- on the ground, wide footprint, now 6 blocks instead of 4
-  { x: 1329, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1387, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1439, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1489, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1543, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1591, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1429, width: 58, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1487, width: 52, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1539, width: 50, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1589, width: 54, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1643, width: 48, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1691, width: 44, heightAboveGround: 40, restsOn: 0, color: SANDBOX_PILE_COLORS[7] },
   // tier 2 -- resting on the base tier, now 5 blocks
-  { x: 1369, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
-  { x: 1415, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1459, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
-  { x: 1505, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1547, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1469, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1515, width: 44, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1559, width: 46, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[0] },
+  { x: 1605, width: 42, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1647, width: 40, heightAboveGround: 84, restsOn: 40, color: SANDBOX_PILE_COLORS[3] },
   // tier 3 -- now 4 blocks
-  { x: 1402, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
-  { x: 1442, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
-  { x: 1480, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
-  { x: 1520, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1502, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[2] },
+  { x: 1542, width: 38, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1580, width: 40, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[7] },
+  { x: 1620, width: 36, heightAboveGround: 128, restsOn: 84, color: SANDBOX_PILE_COLORS[6] },
   // tier 4 -- now 3 blocks
-  { x: 1432, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
-  { x: 1468, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
-  { x: 1502, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
+  { x: 1532, width: 36, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[6] },
+  { x: 1568, width: 34, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[3] },
+  { x: 1602, width: 32, heightAboveGround: 168, restsOn: 128, color: SANDBOX_PILE_COLORS[4] },
   // tier 5
-  { x: 1454, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
-  { x: 1486, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
+  { x: 1554, width: 32, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[1] },
+  { x: 1586, width: 30, heightAboveGround: 200, restsOn: 168, color: SANDBOX_PILE_COLORS[5] },
   // the peak -- charge the slinky from here. 228, up from 220 -- ~18px
   // of head clearance left while standing here (gy 300 - player height
   // 54 - 228 = 18), down from ~26px before, still comfortably clear.
-  { x: 1470, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
+  { x: 1570, width: 36, heightAboveGround: 228, restsOn: 200, color: SANDBOX_PILE_COLORS[7] }
 ];
 const SANDBOX_SLINKY_TOP_STEP = sandboxBlockSteps.reduce((top, s) => s.heightAboveGround > top.heightAboveGround ? s : top, sandboxBlockSteps[0]);
 // every distinct tier height in the pile, peak-first, down to the
@@ -40629,6 +40784,7 @@ function drawSandboxScene(camX) {
   // pile/pendulum/etc all correctly occlude them like any other
   // background element.
   drawCrows(camX); // same birds, consistent across every zone
+  drawSandboxPendulumGoals(camX); // ground-level aim rings, drawn early/low so props and the player naturally layer in front
   drawStuckShovel(SANDBOX_WIDTH * 0.55, camX);
   drawSandMound(sandboxReturnMound.x, camX, null); // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") -- "Back to Spring" label removed, same as the entrance mound's own label removal above
   drawWigStand(camX);
