@@ -165,7 +165,8 @@ const player = {
   onFan: false,        // true while hovering above the sandbox's upward fan toy -- position driven entirely by updateSandboxFan, same pattern as swing.mounted/vines
   wigId: null,         // CONFIRMED CHANGE: which sandbox wig (if any) the player is currently wearing -- purely cosmetic, set/cleared via the sandbox wig stand UI. null = no wig.
   onPendulum: false,   // CONFIRMED CHANGE: true while riding the sandbox's pendulum toy -- position driven entirely by updateSandboxPendulum, same pattern as onFan
-  onSlinky: false      // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
+  onSlinky: false,     // CONFIRMED CHANGE: true while riding the sandbox's slinky toy down the block pile -- position driven entirely by updateSandboxSlinky, same pattern as onFan/onPendulum
+  onBalanceBall: false // CONFIRMED CHANGE: true while riding the sandbox's balance ball -- position driven entirely by updateSandboxBalanceBall, same pattern as onFan/onPendulum/onSlinky
 };
 
 /* ======================================================
@@ -2461,6 +2462,10 @@ function applyPhysics(){
   // same idea for the sandbox's slinky toy -- position while riding
   // down the block pile is driven entirely by updateSandboxSlinky()
   if (player.onSlinky) return;
+
+  // same idea for the sandbox's balance ball -- position while riding
+  // is driven entirely by updateSandboxBalanceBall()
+  if (player.onBalanceBall) return;
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
@@ -37950,7 +37955,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 1950; // CONFIRMED CHANGE: widened again (was 1750) to preserve the same right-side margin after shifting the pile/pendulum right once more
+const SANDBOX_WIDTH = 2250; // CONFIRMED CHANGE: widened again (was 1950) to make room for the new balance ball toy, placed past the block pile with its own clear space
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -38306,6 +38311,13 @@ function drawWigShape(id, cx, topY, scale) {
     // head like the other wigs (pulled-back part + a bit of coverage
     // down to ear level), but it's swept UP and back into a coiled bun
     // sitting on top, with the two needles as the signature read.
+    // CONFIRMED CHANGE: scaled up a bit more, per direct feedback ("the
+    // grey wig a lil too small for player") -- the bun+needles accessory
+    // ate a lot of the visual budget, making the actual hair coverage
+    // read smaller than the other wigs even though its coordinate range
+    // was similar.
+    ctx.save();
+    ctx.scale(1.22, 1.22);
     ctx.fillStyle = wig.color;
     ctx.beginPath();
     ctx.moveTo(-20, 16);
@@ -38380,6 +38392,7 @@ function drawWigShape(id, cx, topY, scale) {
       ctx.arc(endX, endY, 2, 0, Math.PI * 2);
       ctx.fill();
     });
+    ctx.restore();
   } else if (id === "blueBob" || id === "greenWavy") {
     // CONFIRMED CHANGE: blueBob and greenWavy fully rebuilt together
     // (same underlying problem, 4th/5th pass) -- per direct feedback
@@ -38803,34 +38816,41 @@ function drawSandboxBubbles(camX) {
     const fadeOut = Math.min(1, Math.max(0, (SANDBOX_BUBBLE_MAX_AGE_MS - b.ageMs) / 400));
     const alpha = fadeIn * fadeOut;
 
-    // CONFIRMED CHANGE: boosted overall visibility a bit -- the first
-    // pass matched real soap-bubble faintness a little too well and
-    // read as barely-there against the sky.
-    ctx.fillStyle = `rgba(210,235,250,${0.2 * alpha})`;
+    // CONFIRMED CHANGE: much stronger rainbow sheen, per direct
+    // feedback ("give the bubbles a lot more rainbow reflection you
+    // almost cant see them against the sky") -- real soap-film
+    // iridescence is a full ring of shifting oily color bands, not just
+    // two faint pink/blue slivers, so this now sweeps a full-circle
+    // rainbow (red -> orange -> yellow -> green -> blue -> violet)
+    // around the rim at real opacity instead of a near-invisible tint.
+    ctx.fillStyle = `rgba(220,240,252,${0.22 * alpha})`;
     ctx.beginPath();
     ctx.arc(bx, by, b.r, 0, Math.PI * 2);
     ctx.fill();
-    // soap-film sheen -- a thin rainbow-ish arc along the rim rather
-    // than a flat outline, since a real bubble's edge catches color,
-    // not just a plain stroke
-    ctx.strokeStyle = `rgba(255,255,255,${0.55 * alpha})`;
-    ctx.lineWidth = 1.2;
+
+    const rainbow = ["#ff5a5a", "#ff9d3f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9"];
+    const spin = b.wobbleSeed * 0.001; // each bubble's band pattern starts at a different rotation, so they don't all look identical
+    ctx.lineWidth = 2.4;
+    rainbow.forEach((color, ci) => {
+      const a0 = spin + (ci / rainbow.length) * Math.PI * 2;
+      const a1 = spin + ((ci + 1.05) / rainbow.length) * Math.PI * 2;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.75 * alpha;
+      ctx.beginPath();
+      ctx.arc(bx, by, b.r * 0.95, a0, a1);
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    // crisp bright rim on top of the color bands, so the edge still
+    // reads as a clean sphere outline rather than just a colored smear
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 * alpha})`;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(bx, by, b.r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(255,190,220,${0.42 * alpha})`;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.arc(bx, by, b.r * 0.92, -0.6, 0.6);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(180,220,255,${0.42 * alpha})`;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.arc(bx, by, b.r * 0.92, Math.PI - 0.6, Math.PI + 0.6);
-    ctx.stroke();
-    // small bright highlight fleck, off-center like a real curved
-    // reflective surface
-    ctx.fillStyle = `rgba(255,255,255,${0.55 * alpha})`;
+    // bright highlight fleck, off-center like a real curved reflective
+    // surface
+    ctx.fillStyle = `rgba(255,255,255,${0.7 * alpha})`;
     ctx.beginPath();
     ctx.arc(bx - b.r * 0.35, by - b.r * 0.35, b.r * 0.22, 0, Math.PI * 2);
     ctx.fill();
@@ -41768,7 +41788,12 @@ const MICROSCOPE_SLIDES = [
     id: "liveYeast",
     name: "Live Yeast (budding)",
     draw: () => {
-      ctx.fillStyle = "#e8dcc0";
+      // CONFIRMED CHANGE: boosted contrast, per direct feedback ("make
+      // live yeast have a little more contrast") -- the background and
+      // cells were both close variants of the same tan, so the cells
+      // barely stood out. Cooler, darker background now, richer more
+      // saturated amber cells.
+      ctx.fillStyle = "#c9b896";
       ctx.fillRect(-60, -60, 120, 120);
       const t = microscopeAnimClock * 0.001;
 
@@ -41797,29 +41822,29 @@ const MICROSCOPE_SLIDES = [
         if (budSize > 0.5) {
           const bx = jx + Math.cos(budAng) * (cell.r + budSize * 0.6);
           const by = jy + Math.sin(budAng) * (cell.r + budSize * 0.6);
-          ctx.fillStyle = "rgba(225,205,160,0.85)";
+          ctx.fillStyle = "rgba(240,190,70,0.95)";
           ctx.beginPath();
           ctx.arc(bx, by, budSize, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = "rgba(160,130,80,0.5)";
-          ctx.lineWidth = 0.7;
+          ctx.strokeStyle = "rgba(110,75,20,0.75)";
+          ctx.lineWidth = 0.9;
           ctx.stroke();
         }
 
         // the parent cell -- a simple oval with a faint vacuole and a
         // soft highlight for translucency
-        ctx.fillStyle = "rgba(230,212,170,0.9)";
+        ctx.fillStyle = "rgba(245,200,80,0.95)";
         ctx.beginPath();
         ctx.ellipse(jx, jy, cell.r, cell.r * 0.9, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = "rgba(160,130,80,0.55)";
-        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = "rgba(110,75,20,0.8)";
+        ctx.lineWidth = 1.1;
         ctx.stroke();
-        ctx.fillStyle = "rgba(190,160,110,0.35)";
+        ctx.fillStyle = "rgba(190,140,50,0.45)";
         ctx.beginPath();
         ctx.arc(jx + cell.r * 0.15, jy + cell.r * 0.1, cell.r * 0.45, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = "rgba(255,250,235,0.35)";
+        ctx.fillStyle = "rgba(255,250,235,0.55)";
         ctx.beginPath();
         ctx.arc(jx - cell.r * 0.3, jy - cell.r * 0.3, cell.r * 0.3, 0, Math.PI * 2);
         ctx.fill();
@@ -41862,21 +41887,29 @@ const MICROSCOPE_SLIDES = [
       }
 
       // the water itself -- a soft round highlight gradient standing in
-      // for the droplet's own curved surface catching the light
-      const dewGrad = ctx.createRadialGradient(-8, -10, 4, 0, 0, 65);
-      dewGrad.addColorStop(0, "rgba(255,255,255,0.35)");
+      // for the droplet's own curved surface catching the light. Its
+      // center slowly drifts in a small loop, per direct follow-up
+      // ("werent we going to add movement to... morning dew") -- a real
+      // droplet's surface highlight shifts as the water settles/breathes
+      // very slightly, which is a much more visible motion cue than the
+      // settled debris drifting alone.
+      const shimmerX = -8 + Math.cos(t * 0.35) * 6;
+      const shimmerY = -10 + Math.sin(t * 0.28) * 5;
+      const dewGrad = ctx.createRadialGradient(shimmerX, shimmerY, 4, 0, 0, 65);
+      dewGrad.addColorStop(0, "rgba(255,255,255,0.4)");
       dewGrad.addColorStop(0.4, "rgba(220,240,225,0.12)");
       dewGrad.addColorStop(1, "rgba(200,225,205,0.05)");
       ctx.fillStyle = dewGrad;
       ctx.fillRect(-60, -60, 120, 120);
 
       // fine settled dust and pollen grains at the bottom of the droplet
-      // -- pollen as small round bumpy grains, dust as tiny dark flecks,
-      // both drifting only very slightly (dew is mostly still, unlike
-      // flowing water)
+      // -- pollen as small round bumpy grains, dust as tiny dark flecks.
+      // CONFIRMED CHANGE: drift amplitude bumped up (was 1.5, nearly
+      // imperceptible) so the motion actually reads clearly, per the
+      // same follow-up.
       for (let i = 0; i < 8; i++) {
-        const px = (pseudoRandom(i * 5.5) - 0.5) * 100 + Math.sin(t * 0.08 + i) * 1.5;
-        const py = (pseudoRandom(i * 8.1 + 1) - 0.5) * 100 + Math.cos(t * 0.07 + i) * 1.5;
+        const px = (pseudoRandom(i * 5.5) - 0.5) * 100 + Math.sin(t * 0.15 + i) * 4;
+        const py = (pseudoRandom(i * 8.1 + 1) - 0.5) * 100 + Math.cos(t * 0.13 + i) * 4;
         ctx.fillStyle = "rgba(230,190,90,0.7)";
         ctx.beginPath();
         ctx.arc(px, py, 2.2, 0, Math.PI * 2);
@@ -41973,6 +42006,14 @@ const MICROSCOPE_SLIDES = [
     draw: () => {
       ctx.fillStyle = "#9ec97e";
       ctx.fillRect(-60, -60, 120, 120);
+      // CONFIRMED CHANGE: real motion added -- per direct follow-up
+      // ("werent we going to add movement to wet moss") this had none.
+      // Live moss cells under a scope show genuine cytoplasmic streaming
+      // -- the chloroplasts visibly drift in a slow loop around the
+      // inside of the cell wall rather than sitting fixed -- so each
+      // chloroplast below orbits a per-cell center instead of holding a
+      // static jittered position.
+      const t = microscopeAnimClock * 0.001;
 
       // the costa (midrib) running down one side, with the leaf's
       // toothed margin just past it -- establishes this as a single
@@ -42010,10 +42051,17 @@ const MICROSCOPE_SLIDES = [
           ctx.fillRect(ox - 9, oy - 7, 18, 14);
           // chloroplasts -- small round dots clustered per cell, denser
           // than the leaf slide's sparser chloroplast specks since moss
-          // cells are famously packed with them
+          // cells are famously packed with them. Each one streams in a
+          // slow loop around a per-cell orbit center (real cytoplasmic
+          // streaming), at a per-cell speed/direction/phase so the whole
+          // grid doesn't pulse in unison.
+          const cellSpeed = 0.4 + pseudoRandom(row * 6.6 + col * 3.3) * 0.4;
+          const cellDir = pseudoRandom(row * 2.1 + col * 5.5) > 0.5 ? 1 : -1;
           for (let c = 0; c < 6; c++) {
-            const cx2 = ox + (pseudoRandom(row * 4 + col * 6 + c) - 0.5) * 14;
-            const cy2 = oy + (pseudoRandom(row * 2 + col * 3 + c * 1.7) - 0.5) * 10;
+            const orbitR = 3 + pseudoRandom(row * 5 + col * 2 + c) * 3.5;
+            const orbitPhase = (pseudoRandom(row * 4 + col * 6 + c) * Math.PI * 2) + t * cellSpeed * cellDir;
+            const cx2 = ox + Math.cos(orbitPhase) * orbitR * 1.6;
+            const cy2 = oy + Math.sin(orbitPhase) * orbitR;
             ctx.fillStyle = "rgba(50,120,35,0.75)";
             ctx.beginPath();
             ctx.arc(cx2, cy2, 1.6, 0, Math.PI * 2);
@@ -42184,6 +42232,162 @@ function drawMicroscopeUI() {
   ctx.restore();
 }
 
+/* ======================================================
+   SANDBOX BALANCE BALL -- per direct request ("something that has to
+   do w balancing... maybe like a rolling in the air type thing" ->
+   "for balance, can we try ball first"). Hop on top of a big ball and
+   hold left/right to counter-balance -- modeled as a simple inverted
+   pendulum (the same "unstable equilibrium" physics behind real
+   balance-beam/ball-walking acts): the further you tip from center,
+   gravity accelerates you FURTHER off (positive feedback), and your
+   own left/right input is the only thing pushing back the other way.
+   A gentle organic drift (summed slow sine waves, not raw jitter) means
+   standing dead still isn't a valid strategy -- there's always a little
+   correction needed, same as a real balance challenge. Falling off past
+   a tip threshold hands off to normal fall physics and briefly locks
+   out remounting before you can hop back on.
+   ====================================================== */
+const sandboxBalanceBall = {
+  x: 2020,
+  radius: 27,
+  tiltAngle: 0,   // 0 = perfectly balanced upright; +/- = leaning that way
+  tiltVel: 0,
+  surviveMs: 0,
+  bestMs: 0,
+  failed: false,
+  failT: 0,
+  tAccum: 0
+};
+// CONFIRMED CHANGE: softened all four of these after headless testing
+// showed a reactive-counter bot surviving SHORTER than doing nothing at
+// all -- the instability was accelerating faster than a realistic
+// human reaction+hold cadence could counter without overshooting, so
+// bang-bang correction was actively making it worse. Lower gravity
+// torque, lower input torque (still bigger than gravity, just not by
+// as much), more damping to settle oscillation instead of amplifying
+// it, and a gentler ambient drift.
+const SANDBOX_BALANCE_GRAVITY_TORQUE = 1.3;  // how hard being off-center accelerates you further off (the "unstable" part)
+const SANDBOX_BALANCE_INPUT_TORQUE = 2.0;    // how strong your own left/right counter-lean is
+const SANDBOX_BALANCE_DAMPING = 0.975;       // per-frame velocity bleed-off -- meaningfully higher now, so corrections settle instead of ringing
+const SANDBOX_BALANCE_DRIFT = 0.3;           // strength of the ambient organic wobble
+const SANDBOX_BALANCE_FAIL_ANGLE = 0.62;     // ~35 degrees -- past this you've toppled off
+const SANDBOX_BALANCE_FAIL_RECOVER_MS = 900; // brief pause after falling before you can hop back on
+
+function updateSandboxBalanceBall(deltaTime) {
+  const b = sandboxBalanceBall;
+  b.tAccum += deltaTime;
+
+  if (player.onBalanceBall) {
+    const input = keys.left ? -1 : keys.right ? 1 : 0;
+    // smooth multi-frequency drift instead of raw per-frame noise --
+    // reads as a gentle organic wobble rather than a jittery shake
+    const drift = Math.sin(b.tAccum * 0.9) * 0.5 + Math.sin(b.tAccum * 2.3 + 1.7) * 0.3;
+    // CONFIRMED BUG FIX: this sign was inverted -- holding the
+    // "correcting" direction (e.g. left while tilted right) was
+    // actually ADDING torque in the same direction as the fall instead
+    // of opposing it, discovered via a headless reactive-bot test that
+    // survived SHORTER with active correction than with no input at
+    // all. Flipped so `input` now genuinely opposes tiltAngle's own
+    // sign.
+    const accel = SANDBOX_BALANCE_GRAVITY_TORQUE * Math.sin(b.tiltAngle)
+      + drift * SANDBOX_BALANCE_DRIFT
+      + SANDBOX_BALANCE_INPUT_TORQUE * input * Math.cos(b.tiltAngle);
+    b.tiltVel += accel * deltaTime;
+    b.tiltVel *= SANDBOX_BALANCE_DAMPING;
+    b.tiltAngle += b.tiltVel * deltaTime;
+    b.surviveMs += deltaTime * 1000;
+
+    // rider sits on the ball's curved top surface at the current tilt
+    // position -- descends slightly to whichever side it's tipped
+    player.x = b.x - player.width / 2 + Math.sin(b.tiltAngle) * b.radius;
+    player.y = b.radius * (1 + Math.cos(b.tiltAngle));
+    player.facing = Math.sin(b.tiltAngle) >= 0 ? 1 : -1;
+
+    if (Math.abs(b.tiltAngle) > SANDBOX_BALANCE_FAIL_ANGLE) {
+      player.onBalanceBall = false;
+      b.failed = true;
+      b.failT = 0;
+      if (b.surviveMs > b.bestMs) b.bestMs = b.surviveMs;
+      // hand off to normal fall physics from wherever they toppled --
+      // a real stumble off the side, not a scripted animation
+      player.jumping = true;
+      player.vy = 1.2;
+      player.vx = Math.sign(b.tiltAngle) * 2.5;
+    }
+  } else if (b.failed) {
+    b.failT += deltaTime * 1000;
+    if (b.failT > SANDBOX_BALANCE_FAIL_RECOVER_MS) {
+      b.failed = false;
+      b.tiltAngle = 0;
+      b.tiltVel = 0;
+      b.surviveMs = 0;
+    }
+  } else {
+    // idle settle when nobody's on it
+    b.tiltAngle *= 0.9;
+    b.tiltVel *= 0.9;
+  }
+}
+
+function drawSandboxBalanceBall(camX) {
+  const b = sandboxBalanceBall;
+  const sx = b.x - camX;
+  const cy = gy - b.radius;
+
+  // shallow sand depression it rests in, same "dug-in" language as the
+  // other ground props
+  ctx.fillStyle = "rgba(95,76,45,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy + 2, b.radius * 1.15, b.radius * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // the ball itself -- bold striped beach-ball colors, rotated with
+  // the current tilt so it visibly rolls under the rider
+  ctx.save();
+  ctx.translate(sx, cy);
+  ctx.rotate(b.tiltAngle);
+  const stripeColors = ["#ff5a5a", "#ffd23f", "#4ac8ff", "#6ee66e", "#ff8fc9"];
+  ctx.beginPath();
+  ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+  ctx.clip();
+  const stripeW = (b.radius * 2) / stripeColors.length;
+  stripeColors.forEach((color, i) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(-b.radius + i * stripeW, -b.radius, stripeW, b.radius * 2);
+  });
+  // soft shading so it still reads as a sphere, not a flat painted disc
+  const shade = ctx.createRadialGradient(-b.radius * 0.3, -b.radius * 0.35, b.radius * 0.1, 0, 0, b.radius);
+  shade.addColorStop(0, "rgba(255,255,255,0.35)");
+  shade.addColorStop(0.5, "rgba(255,255,255,0)");
+  shade.addColorStop(1, "rgba(0,0,0,0.25)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(-b.radius, -b.radius, b.radius * 2, b.radius * 2);
+  ctx.restore();
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(sx, cy, b.radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // a small tilt gauge floating just above, only while actually riding
+  // -- reads the current lean at a glance without needing text
+  if (player.onBalanceBall) {
+    const gx = sx, gyy = cy - b.radius - player.height - 16;
+    ctx.strokeStyle = "rgba(60,45,25,0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(gx - 20, gyy);
+    ctx.lineTo(gx + 20, gyy);
+    ctx.stroke();
+    const dangerT = Math.min(1, Math.abs(b.tiltAngle) / SANDBOX_BALANCE_FAIL_ANGLE);
+    const dotColor = dangerT > 0.75 ? "#e0402f" : dangerT > 0.4 ? "#e0a02f" : "#3fae5a";
+    ctx.fillStyle = dotColor;
+    ctx.beginPath();
+    ctx.arc(gx + (b.tiltAngle / SANDBOX_BALANCE_FAIL_ANGLE) * 20, gyy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
@@ -42306,6 +42510,7 @@ function drawSandboxScene(camX) {
   drawSandboxSlinkyRider(camX);
   drawSandboxSlinkyLandingPuff(camX); // drawn unconditionally (not gated on s.running) so the ride's final landing still plays out after the ride ends
   drawSandboxSlinkyDustParticles(camX); // real scattering sand grains, on top of the puff's rings -- also unconditional, same reasoning
+  drawSandboxBalanceBall(camX);
   drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
@@ -42330,10 +42535,22 @@ function updateSandboxScene(deltaTime) {
     openMicroscopeUI();
   }
 
+  // hop on the balance ball -- walk up and press space, same "walk up,
+  // interact" shape as the wig stand/microscope rather than a jump-
+  // timing grab, since there's no moving target to time here
+  if (keys.spaceJustPressed && !player.onBalanceBall && !sandboxBalanceBall.failed &&
+      isPlayerNear(sandboxBalanceBall.x, 0, 26, 20, 15)) {
+    player.onBalanceBall = true;
+    sandboxBalanceBall.tiltAngle = 0;
+    sandboxBalanceBall.tiltVel = 0;
+    sandboxBalanceBall.surviveMs = 0;
+  }
+
   updateSandboxFan(deltaTime);
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
+  updateSandboxBalanceBall(deltaTime);
 
   // CONFIRMED CHANGE: bounded room, matching the "small" framing -- the
   // red end walls are decorative otherwise, so without an actual clamp
@@ -42345,7 +42562,7 @@ function updateSandboxScene(deltaTime) {
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
-  if (!player.onFan && !player.onPendulum && !player.onSlinky && player.y <= 0) {
+  if (!player.onFan && !player.onPendulum && !player.onSlinky && !player.onBalanceBall && player.y <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
