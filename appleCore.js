@@ -43145,23 +43145,31 @@ function drawSandboxBallPit(camX) {
    coordinates; the real player.x/y stay parked at the mount spot for
    the whole visit and only resume once you exit.
    ====================================================== */
-const ANT_FARM_COLS = 6;
-const ANT_FARM_ROWS = 5;
-const ANT_FARM_CELL = 24;
-const ANT_FARM_MARGIN = 16;
-// 1 = tunnel (dug out, walkable), 0 = solid dirt. Hand-laid and checked
-// for full connectivity from the entrance (row 0's only open cell) --
-// every other open cell is reachable from it. A little branching (the
-// row3/row4 pockets on both sides) without being a real labyrinth,
-// matching the "small maze, navigate only" scope.
+// CONFIRMED CHANGE: "bigger, more interesting maze... waaay more
+// organic... i want there to be ants in there!" -- v2 pass. Grid grew
+// from 6x5 (14 open cells, barely branching) to 11x9 (41 open cells)
+// with real dead ends and branches, generated with a proper wall-
+// preserving maze carve (moves two cells at a time so a real 1-cell
+// wall of solid dirt survives between passages, unlike a naive
+// visit-every-cell DFS which would've opened the entire grid) and
+// checked for full single-component connectivity from one single
+// surface opening before being hardcoded here.
+const ANT_FARM_COLS = 11;
+const ANT_FARM_ROWS = 9;
+const ANT_FARM_CELL = 20;
+const ANT_FARM_MARGIN = 18;
 const ANT_FARM_GRID = [
-  [0, 0, 1, 0, 0, 0],
-  [0, 0, 1, 1, 1, 0],
-  [0, 1, 1, 0, 1, 0],
-  [1, 1, 0, 0, 1, 1],
-  [1, 0, 0, 1, 1, 0]
+  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+  [0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0],
+  [0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+  [0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0],
+  [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+  [0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0],
+  [0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+  [0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0]
 ];
-const ANT_FARM_ENTRANCE = { row: 0, col: 2 };
+const ANT_FARM_ENTRANCE = { row: 0, col: 5 };
 const sandboxAntFarm = {
   x: 3660, // CONFIRMED CHANGE: pushed further right (was 3560) for more breathing room past the ball pit's right wall, per direct feedback
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL + ANT_FARM_MARGIN * 2,
@@ -43169,20 +43177,99 @@ const sandboxAntFarm = {
   // local pixel position within the grid interior, only meaningful
   // while player.inAntFarm -- (0,0) is the grid's top-left corner
   localX: 0,
-  localY: 0
+  localY: 0,
+  facingDir: 1 // last horizontal direction moved, for the mini-me icon's eye placement
 };
-// a few purely decorative ants wandering back and forth along short
-// stretches of tunnel -- non-interactive, just gives the case some
-// life the way the microscope's live-yeast slide does
-const SANDBOX_ANT_FARM_DECOR_ANTS = [
-  { row: 1, col: 3, axis: "x", span: 20, speed: 1.3, seed: 0.7 },
-  { row: 3, col: 4, axis: "y", span: 16, speed: 1.7, seed: 2.1 },
-  { row: 2, col: 1, axis: "y", span: 14, speed: 1.1, seed: 4.4 }
-];
 
 function antFarmCellOpen(row, col) {
   if (row < 0 || row >= ANT_FARM_ROWS || col < 0 || col >= ANT_FARM_COLS) return false;
   return ANT_FARM_GRID[row][col] === 1;
+}
+
+function antFarmCellCenter(row, col) {
+  return { x: (col + 0.5) * ANT_FARM_CELL, y: (row + 0.5) * ANT_FARM_CELL };
+}
+
+// CONFIRMED CHANGE ("i want there to be ants in there!") -- real
+// ant-shaped decorative residents (head/thorax/abdomen + legs +
+// antennae, not just a wandering oval), each stepping stone-to-stone
+// along a short hand-picked loop of real ANT_FARM_GRID cells so they
+// visibly stay inside actual tunnels rather than drifting through
+// dirt. Fully time-derived (no per-frame state to update) via a
+// ping-pong index into its own path, same "stateless, performance.now()
+// driven" pattern the rest of the sandbox's ambient decor already uses.
+const SANDBOX_ANT_FARM_ANTS = [
+  { path: [[0,5],[1,5],[2,5],[3,5],[4,5]], speed: 0.55, phase: 0 },
+  { path: [[2,1],[2,2],[2,3]], speed: 0.9, phase: 1.4 },
+  { path: [[4,5],[4,6],[4,7],[4,8],[4,9]], speed: 0.5, phase: 3.1 },
+  { path: [[2,7],[2,8],[2,9]], speed: 1.1, phase: 4.7 },
+  { path: [[2,1],[3,1],[4,1],[5,1],[6,1],[7,1],[8,1]], speed: 0.42, phase: 2.0 },
+  { path: [[8,3],[8,4],[8,5],[8,6],[8,7],[8,8],[8,9]], speed: 0.5, phase: 5.6 }
+];
+
+// walks a ping-pong cycle along a path of [row,col] cells and returns
+// the current interpolated local-pixel position + facing angle
+function antFarmPathPosition(pathDef, t) {
+  const path = pathDef.path;
+  const n = path.length;
+  const cycle = Math.max(1, (n - 1) * 2);
+  const raw = ((t * pathDef.speed + pathDef.phase) % cycle + cycle) % cycle;
+  const idx = raw < n - 1 ? raw : cycle - raw; // ping-pong: forward then back
+  const i0 = Math.floor(idx), i1 = Math.min(n - 1, i0 + 1);
+  const frac = idx - i0;
+  const c0 = antFarmCellCenter(path[i0][0], path[i0][1]);
+  const c1 = antFarmCellCenter(path[i1][0], path[i1][1]);
+  const x = c0.x + (c1.x - c0.x) * frac;
+  const y = c0.y + (c1.y - c0.y) * frac;
+  const angle = Math.atan2(c1.y - c0.y, c1.x - c0.x);
+  return { x, y, angle };
+}
+
+// a small, real ant silhouette (head/thorax/abdomen, six thin legs,
+// two antennae) rather than a plain oval -- drawn pointing along
+// `angle`. scale ~1 reads at about a real ant's size against the
+// grid's cell size.
+function drawAntCreature(cx, cy, angle, scale) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  // CONFIRMED BUG FIX: originally drawn in almost the exact same
+  // near-black brown as the tunnel color underneath it -- the ants were
+  // technically animating correctly but essentially invisible against
+  // their own tunnels. Lightened to a warm rust-brown with a thin
+  // amber rim so they read clearly even sitting on dark dirt.
+  ctx.fillStyle = "#a8622f";
+  ctx.strokeStyle = "#a8622f";
+  ctx.lineWidth = 0.6 * scale;
+  // legs first, underneath the body
+  [-1, 1].forEach(side => {
+    [-2, 0, 2].forEach(lx => {
+      ctx.beginPath();
+      ctx.moveTo(lx * scale, 0);
+      ctx.lineTo(lx * scale + 1.5 * scale, side * 3 * scale);
+      ctx.stroke();
+    });
+  });
+  // abdomen (rear), thorax (mid), head (front) -- three overlapping
+  // ellipses, each with a thin dark outline so the body reads as
+  // segmented rather than one blobby shape
+  ctx.lineWidth = 0.35 * scale;
+  ctx.strokeStyle = "rgba(40,20,8,0.7)";
+  [[-3.2, 2.4, 1.6], [0, 1.6, 1.3], [2.6, 1.3, 1.1]].forEach(([ex, erx, ery]) => {
+    ctx.beginPath();
+    ctx.ellipse(ex * scale, 0, erx * scale, ery * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+  // antennae
+  ctx.lineWidth = 0.5 * scale;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(3.6 * scale, 0);
+    ctx.quadraticCurveTo(4.6 * scale, side * 1.8 * scale, 5.2 * scale, side * 2.4 * scale);
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 function updateSandboxAntFarm(deltaTime) {
@@ -43203,6 +43290,7 @@ function updateSandboxAntFarm(deltaTime) {
     // doesn't also get blocked by the other axis
     const antHalf = 4;
     if (dx !== 0) {
+      farm.facingDir = dx;
       const tryX = farm.localX + dx * speed * deltaTime;
       const col = Math.floor((tryX + (dx > 0 ? antHalf : -antHalf)) / ANT_FARM_CELL);
       const row = Math.floor(farm.localY / ANT_FARM_CELL);
@@ -43248,49 +43336,106 @@ function drawSandboxAntFarm(camX) {
   // wooden case frame
   ctx.fillStyle = "#8a6a42";
   ctx.fillRect(sx - 6, top - 6, farm.caseWidth + 12, farm.caseHeight + 12);
-  // glass front over dirt fill
-  ctx.fillStyle = "#4a3420";
+  // dirt fill, with a subtle vertical gradient so it doesn't read as one flat color
+  const dirtGrad = ctx.createLinearGradient(0, top, 0, top + farm.caseHeight);
+  dirtGrad.addColorStop(0, "#5a4028");
+  dirtGrad.addColorStop(1, "#3a2814");
+  ctx.fillStyle = dirtGrad;
   ctx.fillRect(sx, top, farm.caseWidth, farm.caseHeight);
+  // scattered dirt speckle texture, purely cosmetic
+  for (let i = 0; i < 60; i++) {
+    const spx = sx + pseudoRandom(i * 3.3 + 900) * farm.caseWidth;
+    const spy = top + pseudoRandom(i * 5.1 + 901) * farm.caseHeight;
+    ctx.fillStyle = pseudoRandom(i * 7.7 + 902) > 0.5 ? "rgba(80,60,38,0.4)" : "rgba(30,20,10,0.35)";
+    ctx.beginPath();
+    ctx.arc(spx, spy, 0.8 + pseudoRandom(i * 2.2 + 903) * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  // carve the tunnels out of the dirt -- lighter, hollow-looking cells
+  // CONFIRMED CHANGE ("waaay mmore organic") -- tunnels used to be flat
+  // carved-out squares, reading as a blocky grid rather than dug earth.
+  // Now built the same way the microscope's slime mold veins are: thick
+  // rounded-cap strokes connecting adjacent open cells' centers (the
+  // actual tunnel passages), with a soft organic blob at every open
+  // cell (via the shared organicBlobPath helper) sitting on top to
+  // round out each junction/room into something that reads as
+  // excavated dirt rather than machine-cut squares.
   const gx = sx + ANT_FARM_MARGIN, gyTop = top + ANT_FARM_MARGIN;
+  const tunnelColor = "#1c1207";
+  const tunnelHighlight = "rgba(70,50,30,0.5)";
+  ctx.strokeStyle = tunnelColor;
+  ctx.lineWidth = ANT_FARM_CELL * 0.62;
+  ctx.lineCap = "round";
   for (let row = 0; row < ANT_FARM_ROWS; row++) {
     for (let col = 0; col < ANT_FARM_COLS; col++) {
       if (!antFarmCellOpen(row, col)) continue;
-      const cx = gx + col * ANT_FARM_CELL, cy = gyTop + row * ANT_FARM_CELL;
-      ctx.fillStyle = "#1f150d";
-      ctx.fillRect(cx + 1, cy + 1, ANT_FARM_CELL - 2, ANT_FARM_CELL - 2);
+      const c0 = antFarmCellCenter(row, col);
+      // only ever check right/down neighbors -- each connection gets
+      // drawn exactly once regardless of scan direction
+      [[0, 1], [1, 0]].forEach(([dr, dc]) => {
+        if (!antFarmCellOpen(row + dr, col + dc)) return;
+        const c1 = antFarmCellCenter(row + dr, col + dc);
+        ctx.beginPath();
+        ctx.moveTo(gx + c0.x, gyTop + c0.y);
+        ctx.lineTo(gx + c1.x, gyTop + c1.y);
+        ctx.stroke();
+      });
     }
   }
+  for (let row = 0; row < ANT_FARM_ROWS; row++) {
+    for (let col = 0; col < ANT_FARM_COLS; col++) {
+      if (!antFarmCellOpen(row, col)) continue;
+      const c0 = antFarmCellCenter(row, col);
+      const seed = row * 31 + col * 7;
+      ctx.fillStyle = tunnelColor;
+      organicBlobPath(ctx, gx + c0.x, gyTop + c0.y, ANT_FARM_CELL * 0.52, ANT_FARM_CELL * 0.52, seed, 7);
+      ctx.fill();
+      // a soft inner highlight along the upper-left, giving the
+      // tunnel a little depth instead of reading completely flat
+      ctx.fillStyle = tunnelHighlight;
+      ctx.beginPath();
+      ctx.ellipse(gx + c0.x - ANT_FARM_CELL * 0.12, gyTop + c0.y - ANT_FARM_CELL * 0.12, ANT_FARM_CELL * 0.22, ANT_FARM_CELL * 0.16, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // the surface opening -- a lighter patch right at the entrance so it
   // reads as "this is where you go in", matching the ball pit ladder's
   // visual affordance
   const entX = gx + (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL;
   ctx.fillStyle = "rgba(255,240,200,0.25)";
   ctx.beginPath();
-  ctx.ellipse(entX, gyTop, ANT_FARM_CELL * 0.4, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(entX, gyTop, ANT_FARM_CELL * 0.45, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // a few decorative wandering ants, purely ambient
+  // real ant residents, stepping along actual tunnel cells
   const t = performance.now() * 0.001;
-  SANDBOX_ANT_FARM_DECOR_ANTS.forEach(a => {
-    const wobble = Math.sin(t * a.speed + a.seed) * a.span;
-    const baseX = gx + (a.col + 0.5) * ANT_FARM_CELL;
-    const baseY = gyTop + (a.row + 0.5) * ANT_FARM_CELL;
-    const ax = a.axis === "x" ? baseX + wobble : baseX;
-    const ay = a.axis === "y" ? baseY + wobble : baseY;
-    ctx.fillStyle = "#2a1a10";
-    ctx.beginPath();
-    ctx.ellipse(ax, ay, 3, 1.8, a.axis === "x" ? 0 : Math.PI / 2, 0, Math.PI * 2);
-    ctx.fill();
+  SANDBOX_ANT_FARM_ANTS.forEach(a => {
+    const pos = antFarmPathPosition(a, t);
+    drawAntCreature(gx + pos.x, gyTop + pos.y, pos.angle, 1.15);
   });
 
-  // the shrunk player icon, only while actually inside
+  // the shrunk player icon, only while actually inside -- a real
+  // "mini me" (rounded body + two eye dots, the player's own body
+  // color) rather than a plain colored dot, per direct feedback
   if (player.inAntFarm) {
-    const px = gx + farm.localX, py = gyTop + farm.localY;
+    const ix = gx + farm.localX, iy = gyTop + farm.localY;
     ctx.fillStyle = "#7a78b8"; // the player's own body color, ant-sized
     ctx.beginPath();
-    ctx.ellipse(px, py, 5, 4, 0, 0, Math.PI * 2);
+    ctx.moveTo(ix - 5, iy - 6);
+    ctx.arcTo(ix + 5, iy - 6, ix + 5, iy + 6, 2);
+    ctx.arcTo(ix + 5, iy + 6, ix - 5, iy + 6, 2);
+    ctx.arcTo(ix - 5, iy + 6, ix - 5, iy - 6, 2);
+    ctx.arcTo(ix - 5, iy - 6, ix + 5, iy - 6, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#1a1a1a";
+    const eyeDir = farm.facingDir;
+    ctx.beginPath();
+    ctx.arc(ix + eyeDir * 1.4, iy - 1.4, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ix + eyeDir * 1.4, iy + 1.4, 0.9, 0, Math.PI * 2);
     ctx.fill();
   }
 
