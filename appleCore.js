@@ -19285,7 +19285,7 @@ let snakeAskT = 0;
 // first") swapped for the snake actually speaking, in its own
 // fairytale-snake voice -- still points at the marble without naming
 // it outright.
-const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round, sssomething that catchesss the light."];
+const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round -- it wearsss a blush of pink where the light touchesss it."];
 
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
@@ -21877,6 +21877,15 @@ function updateForestScene(deltaTime) {
             // as the original gate: a silent bounce with zero feedback
             // is indistinguishable from a bug, so this surfaces the
             // same floating callout instead.
+            //
+            // Cancel the proactive ask if it's still fading -- without
+            // this, a failed mount attempt right after first approaching
+            // (the ask hint's own 3.2s window hasn't finished yet) drew
+            // BOTH bubbles on top of each other at once: overlapping
+            // boxes, doubled/garbled text, a black-on-white smear. The
+            // reminder line supersedes the first ask, it shouldn't stack
+            // with it.
+            snakeAskActive = false;
             snakeBlockedHint.active = true;
             snakeBlockedHint.x = p.x;
             snakeBlockedHint.t = 0;
@@ -21920,6 +21929,10 @@ function updateForestScene(deltaTime) {
             forestSnake.mountTime = performance.now(); // this window is a full 80px tall, so this ease-in matters even more here than the precision catch above
             forestSnake.mountFromY = player.y;
           } else {
+            // see the precision-catch branch above for why the ask gets
+            // cancelled here too -- same overlapping-bubble bug applies
+            // to this grace-catch path as well.
+            snakeAskActive = false;
             snakeBlockedHint.active = true;
             snakeBlockedHint.x = p.x;
             snakeBlockedHint.t = 0;
