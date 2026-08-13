@@ -13279,7 +13279,14 @@ function drawForestReflectionPoolReeds(camX) {
 // instead of at the water's edge
 const FOREST_FROG_SPOTS = [
   { offsetX: 112, offsetY: 0 },
-  { offsetX: 152, offsetY: 2 }
+  { offsetX: 152, offsetY: 2 },
+  // one more near the rushing river's own entrance (the sand bank trail
+  // right before the float zone starts), per direct request ("one frog
+  // near the rushing river entrance") -- offsetX computed relative to
+  // the pool same as the others (1450 = 6850 - FOREST_REFLECTION_POOL_X)
+  // since that's how this array's positioning already works, not because
+  // it's actually anchored to the pool.
+  { offsetX: 1450, offsetY: 0 }
 ];
 const forestFrogs = FOREST_FROG_SPOTS.map((spot, i) => ({
   x: FOREST_REFLECTION_POOL_X + spot.offsetX,
@@ -13387,9 +13394,17 @@ function drawForestFrogs(camX) {
 // the duck vine, per direct request ("move right newt somewhere else")
 // -- gives the newts some spread along the whole breather zone instead
 // of both flanking the same pool.
+// three more added along the pond-to-rushing-river corridor per direct
+// request ("add three more newts around this area") -- spread across the
+// stretch (past the pool, near the zen sand, and further along toward
+// the sand junction/bank trail) rather than clustered in one spot, same
+// spacing idea as the original two.
 const FOREST_NEWT_SPOTS = [
   { x: FOREST_REFLECTION_POOL_X - 175, offsetY: 0, dir: 1 },
-  { x: 6130, offsetY: 2, dir: -1 } // FOREST_BREATHER_DUCK_BRANCH.x (6050) + 80 -- can't reference that constant directly here, it's declared further down the file
+  { x: 6130, offsetY: 2, dir: -1 }, // FOREST_BREATHER_DUCK_BRANCH.x (6050) + 80 -- can't reference that constant directly here, it's declared further down the file
+  { x: 5750, offsetY: 1, dir: 1 },
+  { x: 6320, offsetY: 3, dir: -1 },
+  { x: 6640, offsetY: 0, dir: 1 }
 ];
 const forestNewts = FOREST_NEWT_SPOTS.map((spot, i) => ({
   x: spot.x,
@@ -13660,6 +13675,48 @@ function drawForestGrassScatter(camX) {
       ctx.beginPath();
       ctx.moveTo(bladeX, y);
       ctx.lineTo(bladeX, y - h);
+      ctx.stroke();
+    }
+  }
+}
+
+// extra long-grass clumps specifically along the stretch between the
+// skip-stone pond and the rushing river (the zen sand patch / breather
+// duck tree / sand junction corridor) -- per direct request ("add more
+// long grasses behind the sand between the pond and the rushing
+// river"). Drawn BEFORE the sand patches in the scene layer (same
+// relative order as the generic grass scatter), so tall blade tips show
+// up behind/around the sand shapes while their bases get covered where
+// the sand actually overlaps them -- reads as grass growing up behind
+// the sand, not sand floating on bare dirt. Denser and noticeably taller
+// than the generic ground scatter (that one tops out around 19px on its
+// tallest clumps; these run up to ~30px) since this corridor specifically
+// was called out as needing more/longer grass, not just uniformly across
+// the whole forest floor.
+const FOREST_POND_TO_RIVER_TALLGRASS_START_X = 5700; // just past the reflection pool
+const FOREST_POND_TO_RIVER_TALLGRASS_END_X = 6830; // where the sand hands off to the rushing river's own bank
+function drawForestPondToRiverTallGrass(camX) {
+  const step = 13;
+  const startX = Math.max(FOREST_POND_TO_RIVER_TALLGRASS_START_X, Math.floor((camX - 40) / step) * step);
+  const endX = Math.min(FOREST_POND_TO_RIVER_TALLGRASS_END_X, camX + canvas.width + 40);
+  if (startX >= endX) return;
+  for (let x = startX; x < endX; x += step) {
+    if (pseudoRandom(x * 0.61 + 5100) < 0.4) continue; // patchy, but denser than the generic scatter's own 0.86 skip chance
+    const seed = x * 1.7 + 5100;
+    const bladeCount = 3 + Math.floor(pseudoRandom(seed) * 4);
+    const cx = x - camX;
+    const baseY = gy + 3 + pseudoRandom(seed + 1) * 8;
+    for (let b = 0; b < bladeCount; b++) {
+      const bSeed = seed + b * 7.3;
+      const bx = cx + (pseudoRandom(bSeed) - 0.5) * 12;
+      const h = 16 + pseudoRandom(bSeed + 1) * 14; // genuinely "long" -- generic clumps top out around 19px
+      const lean = (pseudoRandom(bSeed + 2) - 0.5) * 5;
+      const shade = Math.floor(pseudoRandom(bSeed + 3) * FOREST_GRASS_COLORS.length);
+      ctx.strokeStyle = FOREST_GRASS_COLORS[shade];
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.moveTo(bx, baseY);
+      ctx.quadraticCurveTo(bx + lean * 0.6, baseY - h * 0.6, bx + lean, baseY - h);
       ctx.stroke();
     }
   }
@@ -14546,6 +14603,7 @@ function drawForestScene(camX) {
   }
 
   drawForestGrassScatter(camX);
+  drawForestPondToRiverTallGrass(camX);
   drawForestFloatZoneReeds(camX);
   drawForestForegroundTrees(camX);
   drawForestEntranceFerns(camX);
@@ -50278,46 +50336,17 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request. Remove this block (see
-// the "debug spawn removed" comment further up in git history for the
-// exact revert pattern) whenever a real fresh-start playtest is next
-// needed. discoveredScenes.spring and .clouds are still set true below
-// so nothing UI-gated is broken by skipping straight past them.
-// CONFIRMED CHANGE ("spawn me now instead in spring like a bit further
-// to the left so that you cant see the sandbox yet. make sure i have
-// paper airplane") -- repointed from just inside the sandbox (ball pit
-// ladder) to spring instead, well left of the sandbox entrance mound
-// (x:2860, see sandboxEntranceMound) so it's out of view on load rather
-// than sitting right at/near the door. NOTE: because this sets
-// currentScene directly rather than going through a real
-// startSeasonTransition, the "grant + auto-equip the paper airplane on
-// a genuine transition into sandbox" logic never actually runs here --
-// granted/equipped by hand below instead so it still matches what a
-// real transition would leave you with, even though we're not IN the
-// sandbox this time.
-// TEMPORARY ("debuug spawn me in front of rushing river") -- repointed
-// to drop the player right at the start of the float zone/"Rushing
-// River", purely to look at/test the new spaced-out + lengthened
-// obstacle course live. Bridge segments are force-marked as already
-// built (forestRiverSegmentsStrung/Decked) since otherwise dropping in
-// this far out without actually having crossed the real bridge trips
-// the existing "teleport watchdog" safety-net logic that snaps the
-// player back to the near riverbank. Revert back to the spring spawn
-// above (see git history) once done looking at the river.
-currentScene = "forest";
-forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-cameraX = FOREST_FLOAT_ZONE_START_X - 100;
-player.x = FOREST_FLOAT_ZONE_START_X - 60;
-player.y = 0;
-addToInventory("shovel");
-touchInventoryOrder("shovel");
-addToInventory("paperAirplane");
-touchInventoryOrder("paperAirplane");
-discoveredScenes.spring = true;
-discoveredScenes.clouds = true;
-discoveredScenes.sandbox = true;
-discoveredScenes.forest = true;
+// real fresh-start playtest -- per direct request ("put me at the full
+// normal start of my game no debug spawn or set up base inventory").
+// The temporary debug spawn block that used to sit here (spring, then
+// repointed to drop straight into the rushing river float zone for
+// testing) is gone -- currentScene/player/discoveredScenes/inventory
+// all now just keep whatever their real initial declarations set them
+// to above (currentScene="autumn", player.x=400, discoveredScenes =
+// {autumn:true} only, empty inventory), the same state any actual first
+// launch has always had. updateMapUI/updateInventoryUI still run once
+// here to sync the UI to that real starting state before the loop
+// begins.
 updateMapUI();
 updateInventoryUI();
 
