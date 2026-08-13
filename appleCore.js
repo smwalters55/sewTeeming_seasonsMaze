@@ -16150,7 +16150,21 @@ function updateForestRiverBoats() {
   // in the water the instant it's picked up (same class of bug the skip
   // stones' own armed-debounce comment describes for their overlapping
   // pickup/charge zones).
-  if (!heldItem && keys.spaceJustPressed &&
+  // CONFIRMED BUG FIX ("pick up leaf boat and then change inventory in
+  // play item, can no longer pick up leaf again"): this used to require
+  // heldItem to be fully empty (null) to grab a boat -- but leafBoat is
+  // a carry-only item, never actually added to `inventory`/inventoryOrder
+  // (see the pickup below, which sets heldItem directly rather than
+  // calling addToInventory), so Tab-cycling away from it lands on some
+  // OTHER real item and there's no way back to heldItem===null through
+  // Tab alone (nothing to click-deselect either, since it never had its
+  // own inventory chip). That permanently blocked ever grabbing another
+  // leaf boat afterward. Same free-swap pattern oak's carriedBook
+  // pickups already use (walking up to a different book always swaps,
+  // no empty-hands requirement) -- now only blocks re-grabbing while
+  // ALREADY holding a leaf boat, same as before, but freely swaps out
+  // any other held item same as everywhere else in the game.
+  if (heldItem !== "leafBoat" && keys.spaceJustPressed &&
       (isPlayerNear(FOREST_RIVER_BOAT_PILE_START_X, 0, 26, 20, 20) ||
        FOREST_RIVER_BOAT_LILYPADS.some(pad => isPlayerNear(pad.x, pad.heightAboveGround, 30, 24, 16)))) {
     heldItem = "leafBoat";
@@ -21151,7 +21165,25 @@ function updateForestScene(deltaTime) {
   // push while inside the zone, plus obstacle blocking and collectible
   // pickup, same simple push-back-out-of-the-way style as the duck log.
   riverFloat.active = player.x > FOREST_FLOAT_ZONE_START_X - 20 && player.x < FOREST_FLOAT_ZONE_END_X;
-  floatSubmergeAmount += ((riverFloat.active ? 1 : 0) - floatSubmergeAmount) * 0.15;
+  // CONFIRMED BUG FIX ("on the sand where leaf is, when you duck it
+  // looks like you're part under water it shouldn't"): the submerge
+  // VISUAL used to key off riverFloat.active directly, which flips on
+  // the instant the player crosses FOREST_FLOAT_ZONE_START_X - 20
+  // (6880) -- but the actual sand bank art (and the leaf boat pile
+  // sitting on it, FOREST_RIVER_BOAT_PILE_START_X = zone start + 30)
+  // visibly extends well past that point; the current itself doesn't
+  // even start ramping in until FOREST_FLOAT_CURRENT_RAMP_START_X
+  // (zone start + 55, see its own comment). So the wet/submerged tint
+  // was kicking in while still visibly standing on dry sand, and
+  // ducking there (which lowers the sprite further into where that
+  // tint gets drawn) made it read as sinking into water on solid
+  // ground. Gameplay (current push, obstacles, collectibles) still
+  // uses riverFloat.active unchanged -- only this purely-visual amount
+  // now waits until the player's actually past the same ramp point the
+  // current itself uses, so the "wet" look starts where the art (and
+  // the current) actually put the water.
+  const submergeTarget = riverFloat.active && player.x > FOREST_FLOAT_CURRENT_RAMP_START_X ? 1 : 0;
+  floatSubmergeAmount += (submergeTarget - floatSubmergeAmount) * 0.15;
   if (floatSubmergeAmount < 0.01) floatSubmergeAmount = 0;
   if (riverFloat.active) {
     // the lily pad -- a real resting platform (same landing-snap
@@ -21311,6 +21343,14 @@ function updateForestScene(deltaTime) {
     player.y = 0;
     player.vy = 0;
     forestFloatReturnPendingAt = 0;
+    // CONFIRMED BUG FIX ("when restart the river rushing, re-add the
+    // rewards again for sure"): the lever sends the player all the way
+    // back to run the float zone again, but every driftberry's
+    // `collected` flag was permanent -- a second (or third...) run had
+    // nothing left to pick up anywhere along the whole course. Reset
+    // them here, right at the moment the player actually lands back at
+    // the start, so a fresh run always has a fresh set of rewards.
+    FOREST_FLOAT_COLLECTIBLES.forEach(c => { c.collected = false; });
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
