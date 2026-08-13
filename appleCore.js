@@ -5646,7 +5646,12 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     // clear what you're about to launch. Otherwise heldItem="leafBoat"
     // would fall through to the generic apple piece icon at the bottom
     // of this chain, which reads wrong held over the player's head
-    drawLeafBoatShape(ctx, x, y, size, rotation, "#6a7a2f");
+    // CONFIRMED CHANGE ("make space to return leaf dark green"): the
+    // carried-in-hand render used the same muted olive tone as the
+    // boats already drifting in the water (#6a7a2f) -- recolored to a
+    // proper dark green so the one in your hand reads distinctly from
+    // the ones already on the river.
+    drawLeafBoatShape(ctx, x, y, size, rotation, "#1e5631");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
   } else if (itemType === "windSeed") {
@@ -14894,6 +14899,16 @@ const FOREST_RIVER_LOG_FADE_MS = 400; // gentle appear, not a snap-in
 const FOREST_RIVER_STRINGER_SETTLE_MS = 450; // minimum time a stringer must wobble before it can be decked -- can't nail down a plank that's still actively rocking
 const FOREST_RIVER_STRINGER_ONBEAT_THRESHOLD = -0.55; // deck-press must land while the wobble's sine phase is below this (near its low point) -- a real small timing action, not just "wait then tap"
 
+// CONFIRMED CHANGE ("not obvi at all that you cant just use logs just
+// directly on bridge"): a raw bridgePiece carried straight to the build
+// edge used to just silently do nothing when space was pressed there.
+// Tried a floating explainer bubble first; direct feedback was "i dont
+// want to use a sign" -- so instead the dump-to-pile action itself now
+// also works from the build edge, not just the pile spot (see the
+// RIVER BRIDGE BUILDING interaction below): pressing space with a raw
+// bridgePiece at EITHER location just builds/adds to the pile, no dead
+// keypress and no explanatory text needed.
+
 // no pile sits here by default anymore -- it only exists once the
 // player actually builds it (see the RIVER BRIDGE BUILDING interaction
 // below), dumping their whole real bridgePiece stock onto the ground
@@ -19262,7 +19277,15 @@ let snakeAskShown = false;
 let snakeAskActive = false;
 const SNAKE_ASK_HINT_DURATION = 3200;
 let snakeAskT = 0;
-const forestSnakeAskLines = ["This old snake won't carry just anyone...", "offer it something small, round, and shiny first."];
+// CONFIRMED CHANGE ("i really lean away from hint bubbles when
+// possible" -> "i would prefer another e.g. dialogue from the snake
+// saying like sssssaaay, bah blah blah something sorta vague but you
+// know its about the marble in snake fairytale language"): plain
+// instructional text ("offer it something small, round, and shiny
+// first") swapped for the snake actually speaking, in its own
+// fairytale-snake voice -- still points at the marble without naming
+// it outright.
+const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round, sssomething that catchesss the light."];
 
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
@@ -20968,7 +20991,7 @@ function drawSnakeBlockedHint(camX) {
   const sx = snakeBlockedHint.x - camX;
   const sy = gy - snakeBlockedHint.heightAboveGround - 40;
   ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["It curls away, unconvinced.", "Still wants that something round and shiny first."]);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["I ssspoke plainly once already...", "sssomething small and round, or you don't crosss."]);
   ctx.globalAlpha = 1;
 }
 
@@ -21366,7 +21389,8 @@ function updateForestScene(deltaTime) {
   const riverEdgeBeforeThisPress = forestRiverBuildEdgeX();
 
   if (keys.spaceJustPressed && heldItem === "bridgePiece" && inventory.bridgePiece > 0 &&
-      Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26) {
+      (Math.abs(player.x + player.width / 2 - FOREST_RIVER_LOG_PILE_X) < 26 ||
+       Math.abs(player.x + player.width / 2 - riverEdgeBeforeThisPress) < 14)) {
     // no pile sits here by default anymore -- the player has to
     // actually have a real bridgePiece in hand (selected via Tab/the
     // inventory chips, collected anywhere in the game) and choose to
@@ -21378,6 +21402,16 @@ function updateForestScene(deltaTime) {
     // time"). Note: this does mean the pile is only as big as whatever
     // the player actually collected -- no guaranteed-minimum safety net
     // anymore, a deliberate trade the player asked for.
+    //
+    // CONFIRMED CHANGE ("not obvi at all that you cant just use logs
+    // just directly on bridge" -> "i dont want to use a sign. what
+    // about if you try to use wood at the bridge, it will make the
+    // pile for you like it already does but also include the bridge
+    // start area"): this dump now also triggers when pressed right at
+    // the build edge, not just at the log pile spot -- a raw
+    // bridgePiece carried straight to the bridge just builds/adds to
+    // the pile on the spot instead of silently failing or needing an
+    // explainer bubble.
     forestRiverLogPile += inventory.bridgePiece;
     delete inventory.bridgePiece;
     heldItem = null;
@@ -21699,16 +21733,50 @@ function updateForestScene(deltaTime) {
   // itself (see the removal note further up, near where its constants
   // used to live).
 
-  // CONFIRMED CHANGE ("the yellow snake marble gate is wayyyy fucked up
-  // ... remove that gate and just allow player to mount yellow snake
-  // normally"): the marble-toll offer (and the blocking checks below
-  // that refused to let you actually land on the snake until it was
-  // paid) is removed entirely -- mounting now works exactly like every
-  // other jump-and-land platform, no prerequisite item or interaction
-  // needed first.
+  // RE-CONFIRMED CHANGE: the marble toll was removed once ("remove that
+  // gate and just allow player to mount yellow snake normally"), then
+  // asked back in ("make it so we have to trade a marble for passage on
+  // yellow snake") -- so it's back, but rebuilt from scratch rather than
+  // just re-enabling whatever the old gate did, since the old version was
+  // reported as "wayyyy fucked up" to begin with. The toll now has three
+  // real, testable parts instead of vestigial dead state: (1) the ask
+  // hint fires once, proactively, the first time the player is actually
+  // standing near a docked snake without having paid -- see just below,
+  // (2) pressing space near the docked snake while holding the marble
+  // pays the toll and consumes it, (3) the mount-catch checks further
+  // down now require marbleGiven and show the blocked hint (instead of
+  // silently bouncing you off) when it's missing.
   if (snakeBlockedHint.active) {
     snakeBlockedHint.t += deltaTime * 1000;
     if (snakeBlockedHint.t >= SNAKE_BLOCKED_HINT_DURATION) snakeBlockedHint.active = false;
+  }
+  if (snakeAskActive) {
+    snakeAskT += deltaTime * 1000;
+    if (snakeAskT >= SNAKE_ASK_HINT_DURATION) snakeAskActive = false;
+  }
+
+  // proactive ask -- only fires once, only while the snake is actually
+  // docked (no point asking about a snake that's mid-river and can't be
+  // boarded right now), and only if the toll hasn't been paid yet.
+  if (forestSnake.state === "docked" && !forestSnake.marbleGiven && !snakeAskShown &&
+      isPlayerNear(forestSnake.currentX, 0, 90, 40, 20)) {
+    snakeAskActive = true;
+    snakeAskShown = true;
+    snakeAskT = 0;
+  }
+
+  // paying the toll -- press space right at the docked snake while
+  // holding the marble. Same consume-and-clear pattern used everywhere
+  // else a single carried item gets handed over for good (see e.g. the
+  // rat's acorn feed or the mole shop pumpkin).
+  if (keys.spaceJustPressed && heldItem === "marble" && !forestSnake.marbleGiven &&
+      forestSnake.state === "docked" && isPlayerNear(forestSnake.currentX, 0, 90, 40, 20)) {
+    inventory.marble -= 1;
+    if (inventory.marble <= 0) delete inventory.marble;
+    heldItem = null;
+    forestSnake.marbleGiven = true;
+    snakeAskActive = false;
+    updateInventoryUI();
   }
 
   forestSnake.t += deltaTime * 1000;
@@ -21784,28 +21852,36 @@ function updateForestScene(deltaTime) {
     // gating on it made it impossible to ever mount the snake for the
     // first time.)
     //
-    console.log("SNAKEPROBE gate: jumping=" + player.jumping + " vy=" + player.vy + " dismountCD=" + forestSnake.dismountCooldown + " bumpedCD=" + forestSnake.bumpedCooldown);
     if (player.jumping && player.vy <= 0 && forestSnake.dismountCooldown <= 0 && forestSnake.bumpedCooldown <= 0) {
       const segments = 30;
-      let bestMatch = null;
       for (let i = 0; i <= segments; i++) {
         const p = getForestSnakePoint(i / segments);
         const bodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - p.y;
-        if (i === 15) console.log("SNAKEPROBE seg15 p.x=" + p.x + " bodyTop=" + bodyTop + " player.x=" + player.x + " player.width=" + player.width + " player.y=" + player.y);
         if (
           player.x + player.width > p.x - 24 &&
           player.x < p.x + 24 &&
           player.y <= bodyTop + 6 &&
           player.y >= bodyTop - 34
         ) {
-          forestSnake.riding = true;
-          forestSnake.midJump = false;
-          forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
-          player.jumping = false;
-          player.usedDoubleJump = false;
-          player.vy = 0;
-          forestSnake.mountTime = performance.now(); // see the eased position update below -- this catch window is 40px tall, so a catch near either edge shouldn't pop the player that whole distance in one frame
-          forestSnake.mountFromY = player.y;
+          if (forestSnake.marbleGiven) {
+            forestSnake.riding = true;
+            forestSnake.midJump = false;
+            forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
+            player.jumping = false;
+            player.usedDoubleJump = false;
+            player.vy = 0;
+            forestSnake.mountTime = performance.now(); // see the eased position update below -- this catch window is 40px tall, so a catch near either edge shouldn't pop the player that whole distance in one frame
+            forestSnake.mountFromY = player.y;
+          } else {
+            // toll unpaid -- same "reads as broken otherwise" reasoning
+            // as the original gate: a silent bounce with zero feedback
+            // is indistinguishable from a bug, so this surfaces the
+            // same floating callout instead.
+            snakeBlockedHint.active = true;
+            snakeBlockedHint.x = p.x;
+            snakeBlockedHint.t = 0;
+            snakeBlockedHint.heightAboveGround = bodyTop;
+          }
           break;
         }
       }
@@ -21834,14 +21910,21 @@ function updateForestScene(deltaTime) {
           player.y <= bodyTop + 20 &&
           player.y >= bodyTop - 60
         ) {
-          forestSnake.riding = true;
-          forestSnake.midJump = false;
-          forestSnake.riderBodyProgress = i / segments;
-          player.jumping = false;
-          player.usedDoubleJump = false;
-          player.vy = 0;
-          forestSnake.mountTime = performance.now(); // this window is a full 80px tall, so this ease-in matters even more here than the precision catch above
-          forestSnake.mountFromY = player.y;
+          if (forestSnake.marbleGiven) {
+            forestSnake.riding = true;
+            forestSnake.midJump = false;
+            forestSnake.riderBodyProgress = i / segments;
+            player.jumping = false;
+            player.usedDoubleJump = false;
+            player.vy = 0;
+            forestSnake.mountTime = performance.now(); // this window is a full 80px tall, so this ease-in matters even more here than the precision catch above
+            forestSnake.mountFromY = player.y;
+          } else {
+            snakeBlockedHint.active = true;
+            snakeBlockedHint.x = p.x;
+            snakeBlockedHint.t = 0;
+            snakeBlockedHint.heightAboveGround = bodyTop;
+          }
           break;
         }
       }
@@ -50598,17 +50681,30 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request, dropped back at the very
-// start of forest for testing. Remove this block again for a real
+// TEMPORARY debug spawn -- per direct request, dropped right in front of
+// the forest snake (docked at its near-side "A" position, just before
+// the bramble) for testing the marble-gate/snake report, with marble,
+// acorn and shovel on hand. Remove this block again for a real
 // fresh-start playtest, same as every earlier round of this same
 // back-and-forth.
 currentScene = "forest";
-player.x = 220;
+player.x = 1320;
 player.y = 0;
 player.vy = 0;
 discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
 discoveredScenes.forest = true;
+// force the snake docked right here (its own "A" dock, x:1370) instead
+// of wherever the normal docked/traveling cycle would otherwise have it
+// -- firstDepartureTriggered is set true so it departs on its own normal
+// DOCK_TIME (3500ms) instead of the much shorter proximity-trigger delay
+// (150ms) meant for a player who's just walked up naturally, giving a
+// real few seconds to react and jump on before it moves off.
+forestSnake.state = "docked";
+forestSnake.dockedAt = "A";
+forestSnake.currentX = forestSnake.dockA.x;
+forestSnake.t = 0;
+forestSnake.firstDepartureTriggered = true;
 // per direct request, tester needs these on hand right at spawn
 // CONFIRMED BUG FIX ("tab through inventory... doesn't seem to [work]"):
 // setting inventory[type] directly here (the original version of this
@@ -50619,8 +50715,8 @@ discoveredScenes.forest = true;
 // directly-assigned starting items, but that's exactly the state this
 // tester is in. touchInventoryOrder() (the same call addToInventory
 // makes) fixes it for good, not just this one case.
-inventory.boomerang = 1;
-touchInventoryOrder("boomerang");
+inventory.marble = 1;
+touchInventoryOrder("marble");
 inventory.acorn = 3;
 touchInventoryOrder("acorn");
 inventory.shovel = 1;
