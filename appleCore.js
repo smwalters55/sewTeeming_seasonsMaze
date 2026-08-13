@@ -13989,6 +13989,19 @@ function drawForestSandRiverJunction(camX) {
   // out from it -- some barely past the edge, some considerably further
   // into the grass -- which is what actually reads as an uneven
   // landscape trailing off, rather than a second parallel outline.
+  // middle density step -- packed tight against the edge so it reads as
+  // a near-solid "thinner sand" band (the "6") before the sparser
+  // sprinkle layer below thins the rest of the way to nothing (the "3")
+  FOREST_SAND_JUNCTION_MIDGRAINS.forEach(s => {
+    const edgeOff = sandJunctionOffAt(s.t, "botOff");
+    const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
+    const sy = gy + edgeOff + Math.min(s.dist, 20);
+    const alpha = 0.8 * Math.exp(-s.dist / 7);
+    ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
   FOREST_SAND_JUNCTION_SPRINKLES.forEach(s => {
     const edgeOff = sandJunctionOffAt(s.t, "botOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
@@ -14040,45 +14053,63 @@ function drawForestSandBankTrail(camX) {
     botY: gy + p.botOff
   }));
 
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].topY);
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i], prev = pts[i - 1];
-    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
-    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
-  }
-  const lastP = pts[pts.length - 1];
-  ctx.quadraticCurveTo(lastP.x, lastP.topY, lastP.x, lastP.botY);
-  for (let i = pts.length - 2; i >= 1; i--) {
-    const p = pts[i], next = pts[i + 1];
-    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
-    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
-  }
-  // same closing fix as the junction ribbon -- reach pts[0]'s own
-  // bottom point explicitly before closePath, or the loop above stops
-  // one midpoint short and closePath cuts a wrong diagonal corner
-  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
-  ctx.closePath();
+  // shared path tracer, mirroring traceSandJunctionPath's rounded-cap
+  // technique -- this used to just moveTo(pts[0].topY) and drop straight
+  // down to pts[0].botY, a hard flat vertical wall exactly where this
+  // trail is thickest (t=0). Right next to the junction ribbon's own
+  // soft rounded end and the existing blurred near-bank halo, that
+  // dead-straight edge is what read as "pasted on with a vertical line"
+  // instead of blending in. Bulges a rounded cap out to the LEFT of
+  // pts[0] the same way the junction ribbon rounds its right end.
+  const traceBankTrailPath = () => {
+    const firstP = pts[0], capMidY = (firstP.topY + firstP.botY) / 2, capBulge = 9;
+    ctx.moveTo(firstP.x - capBulge, capMidY);
+    ctx.quadraticCurveTo(firstP.x - capBulge, firstP.topY, firstP.x, firstP.topY);
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i], prev = pts[i - 1];
+      const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
+      ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
+    }
+    const lastP = pts[pts.length - 1];
+    ctx.quadraticCurveTo(lastP.x, lastP.topY, lastP.x, lastP.botY);
+    for (let i = pts.length - 2; i >= 1; i--) {
+      const p = pts[i], next = pts[i + 1];
+      const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
+      ctx.quadraticCurveTo(next.x, next.botY, mx, my);
+    }
+    ctx.quadraticCurveTo(firstP.x, firstP.botY, firstP.x - capBulge, capMidY);
+    ctx.closePath();
+  };
 
-  ctx.fillStyle = "#8c7a56"; // matches the bank's own sand tone exactly
+  ctx.beginPath();
+  traceBankTrailPath();
+  // fade the fill's own opacity in from the left cap instead of snapping
+  // straight to full color -- per direct feedback ("not blending into
+  // the haze of sand and blue that its right adjacent to"). The blurred
+  // near-bank halo already sitting here is soft-edged; matching that
+  // softness (rather than a flat opaque fill) is what actually makes
+  // this read as part of the same shoreline instead of a separate
+  // sticker laid on top of it.
+  const lastP = pts[pts.length - 1];
+  const fillGrad = ctx.createLinearGradient(pts[0].x - 9, gy, pts[0].x + 30, gy);
+  fillGrad.addColorStop(0, "rgba(140,122,86,0)");
+  fillGrad.addColorStop(1, "rgba(140,122,86,1)");
+  ctx.fillStyle = fillGrad;
   ctx.fill();
+  // solid fill for the rest of the shape past the blend-in zone, so the
+  // gradient above only softens the left cap rather than washing out the
+  // whole trail's own color
+  ctx.save();
+  ctx.beginPath();
+  traceBankTrailPath();
+  ctx.clip();
+  ctx.fillStyle = "#8c7a56"; // matches the bank's own sand tone exactly
+  ctx.fillRect(pts[0].x + 30, 0, canvas.width, canvas.height);
+  ctx.restore();
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].topY);
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i], prev = pts[i - 1];
-    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
-    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
-  }
-  ctx.quadraticCurveTo(lastP.x, lastP.topY, lastP.x, lastP.botY);
-  for (let i = pts.length - 2; i >= 1; i--) {
-    const p = pts[i], next = pts[i + 1];
-    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
-    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
-  }
-  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
-  ctx.closePath();
+  traceBankTrailPath();
   ctx.clip();
   FOREST_SAND_BANK_TRAIL_GRAINS.forEach(g => {
     const gx = startX + (endX - startX) * g.t - camX;
@@ -14090,6 +14121,24 @@ function drawForestSandBankTrail(camX) {
   });
   ctx.restore();
 
+  // middle density step, same role as the junction ribbon's own
+  // MIDGRAINS -- packed tight against the edge (the "6"), with the same
+  // water-distance taper the sparser layer below already uses so it
+  // never paints onto the river either
+  FOREST_SAND_BANK_TRAIL_MIDGRAINS.forEach(s => {
+    const edgeOff = sandProfileOffAt(FOREST_SAND_BANK_TRAIL_PROFILE, s.t, "botOff");
+    const worldX = startX + (endX - startX) * s.t;
+    const sx = worldX - camX + s.dxJit;
+    const distToWater = FOREST_FLOAT_ZONE_START_X - worldX;
+    const maxDist = Math.max(0, Math.min(20, distToWater * 0.7));
+    if (maxDist <= 0.5) return;
+    const sy = gy + edgeOff + Math.min(s.dist, maxDist);
+    const alpha = 0.8 * Math.exp(-s.dist / 7);
+    ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
   // edge-fade sprinkles, deliberately outside the clip so they land in
   // the grass past the trail's own edge -- see FOREST_SAND_BANK_TRAIL_SPRINKLES
   FOREST_SAND_BANK_TRAIL_SPRINKLES.forEach(s => {
@@ -14842,6 +14891,29 @@ const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
     dark: pseudoRandom(seed + 6) > 0.45
   };
 });
+// a MIDDLE density step between the solid ribbon (full sand) and the
+// sparse SPRINKLES above (which thin out to almost nothing) -- per
+// direct request ("add a middle version of sand thickness before the
+// scattered sand. this is like 10 to 3. i want a 6"). Same exponential-
+// falloff idea as the sprinkles, just packed much tighter (mean ~5px
+// instead of ~11px) and drawn bigger/more opaque, so right past the
+// ribbon's own edge the grains overlap densely enough to read as a
+// solid "thinner sand" surface rather than individual dots -- THEN the
+// existing sparser sprinkle layer takes over further out. Together the
+// two layers form one continuous descent (10 -> ~6 -> ~3 -> 0) instead
+// of jumping straight from solid fill to sparse scatter.
+const FOREST_SAND_BANK_TRAIL_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
+  const seed = 9700 + i * 2.6;
+  const u = pseudoRandom(seed + 2);
+  return {
+    t: pseudoRandom(seed) ** 1.6,
+    dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
+    dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
+    r: 1.6 + pseudoRandom(seed + 4) * 2.2,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
+  };
+});
 // the sand junction bridging the zen garden's own patch and the river's
 // near bank -- per direct request ("build more of an organically shaped
 // sand junction between the zen garden and the rushing river bank"),
@@ -15008,6 +15080,24 @@ const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
     dist: -Math.log(1 - u * 0.999) * 11, // px past the edge, exponential falloff
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
+  };
+});
+// middle density step between the solid ribbon and the sparse
+// SPRINKLES above -- same idea as FOREST_SAND_BANK_TRAIL_MIDGRAINS, see
+// its comment for the full rationale ("i want a 6"). Packed much
+// tighter (mean ~5px vs ~11px) and bigger/more opaque so it reads as a
+// near-solid thinner band of sand right past the edge before the
+// sparser layer takes over.
+const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
+  const seed = 8950 + i * 2.6;
+  const u = pseudoRandom(seed + 2);
+  return {
+    t: pseudoRandom(seed),
+    dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
+    dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
+    r: 1.6 + pseudoRandom(seed + 4) * 2.2,
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
