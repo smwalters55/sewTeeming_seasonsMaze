@@ -15766,7 +15766,21 @@ function updateForestRiverBoats() {
       }
       continue;
     }
-    b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult * floatCurrentStrengthAt(b.x);
+    // NOTE: this used to be a bare floatCurrentStrengthAt(b.x) multiplier,
+    // which returns exactly 0 until FOREST_FLOAT_CURRENT_RAMP_START_X
+    // (6955) -- but FOREST_RIVER_BOAT_PILE_START_X, the actual launch
+    // point boats spawn from, is 6930, INSIDE that zero-strength zone.
+    // A boat launched there got multiplied by zero every frame and
+    // never moved again -- sitting frozen at its spawn x while the
+    // player/camera continued on, scrolling it off-screen forever. Per
+    // direct, repeated report ("as i already said before... it just
+    // dissappears once i hit space... nothing goes down the river").
+    // The floor here guarantees a boat can never fully freeze -- it still
+    // moves noticeably slower right at the very start (matching "boats
+    // shouldn't rando drift away while still on sand bank"), but always
+    // makes it into the current instead of getting stranded and
+    // vanishing off-camera.
+    b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult * Math.max(0.4, floatCurrentStrengthAt(b.x));
     FOREST_FLOAT_OBSTACLES.forEach((ob, idx) => {
       if (b.resolvedObstacles[idx]) return;
       if (ob.type === "duck") {
