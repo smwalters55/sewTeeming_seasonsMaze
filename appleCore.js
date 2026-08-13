@@ -50524,9 +50524,21 @@ discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
 discoveredScenes.forest = true;
 // per direct request, tester needs these on hand right at spawn
+// CONFIRMED BUG FIX ("tab through inventory... doesn't seem to [work]"):
+// setting inventory[type] directly here (the original version of this
+// block) bypasses addToInventory/touchInventoryOrder entirely, so these
+// items never actually landed in inventoryOrder -- the array Tab's own
+// cycleHeldItem reads to build its cycle list. A REAL pickup always goes
+// through addToInventory, so this only ever broke Tab for a debug spawn's
+// directly-assigned starting items, but that's exactly the state this
+// tester is in. touchInventoryOrder() (the same call addToInventory
+// makes) fixes it for good, not just this one case.
 inventory.boomerang = 1;
+touchInventoryOrder("boomerang");
 inventory.acorn = 3;
+touchInventoryOrder("acorn");
 inventory.shovel = 1;
+touchInventoryOrder("shovel");
 
 updateMapUI();
 updateInventoryUI();
