@@ -13766,9 +13766,11 @@ function drawBuffressRoot(bx, trunkBaseY, dir, reach, rootSeed) {
   // narrow where it meets the trunk, widest a bit before the ground tip,
   // tapering back down near ground contact -- plus an uneven per-segment
   // knobble factor so the width doesn't taper smoothly, it bulges and
-  // pinches like real bark-covered root wood
+  // pinches like real bark-covered root wood. Base width bumped up (was
+  // 3 + t^0.55*12) per direct follow-up ("make the butrees on land tree
+  // a little thicker").
   const widthAt = (t, i) => {
-    const base = (3 + Math.pow(t, 0.55) * 12) * (1 - Math.pow(t, 3) * 0.5);
+    const base = (5 + Math.pow(t, 0.55) * 18) * (1 - Math.pow(t, 3) * 0.5);
     const knobble = 0.75 + pseudoRandom(rootSeed + 50 + i * 5.3) * 0.5;
     return base * knobble;
   };
@@ -20881,10 +20883,14 @@ function updateForestScene(deltaTime) {
     if (playerDuckAmount > 0.999) playerDuckAmount = 1;
   }
 
-  // the breather duck branch -- solid to upright walking, passable
-  // ducked (at ground level) or jumped clean over the top. Same simple
+  // the breather duck branch -- solid to upright walking, passable ONLY
+  // ducked (at ground level) -- jumping clean over the top used to also
+  // count as passable, but per direct request ("block jumping over it")
+  // that path's removed: this is meant to actually teach ducking as the
+  // way past this obstacle (it's the very first duck gate in the level),
+  // and letting a jump skip it entirely undercut that. Same simple
   // push-back-out-of-the-way collision style as other solid forest
-  // obstacles, just gated on the pass conditions above instead of
+  // obstacles, just gated on the pass condition below instead of
   // being unconditionally solid. Moved here from a heavier "duck log"
   // that used to sit before the bridge (see FOREST_BREATHER_DUCK_BRANCH's
   // own comment) -- same mechanics, just relocated and softened.
@@ -20893,8 +20899,7 @@ function updateForestScene(deltaTime) {
     const playerCenterX = player.x + player.width / 2;
     const withinLogX = playerCenterX > log.x - log.w / 2 - player.width / 2 &&
                         playerCenterX < log.x + log.w / 2 + player.width / 2;
-    const passable = player.y > log.clearance ||
-                      (player.y <= 2 && playerDuckAmount > log.duckThreshold);
+    const passable = player.y <= 2 && playerDuckAmount > log.duckThreshold;
     if (withinLogX && !passable) {
       // push all the way out past the SAME threshold withinLogX itself
       // checks against (playerCenterX, not player.x) -- the left-side
