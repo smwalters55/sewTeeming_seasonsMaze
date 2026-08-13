@@ -11578,17 +11578,13 @@ const peanutVine = {
 const VINE_GROW_DURATION = 4000;
 const VINE_CLIMB_SPEED = 100; // units/sec while holding up -- raised alongside climbHeight so the taller climb doesn't just take proportionally longer
 
-// the reward waiting at the top -- was a gold pile, but tunnel town's
-// mine cart now has its own whole gold-collecting minigame (see
-// MINE_CART_GOLD / addToInventory("goldPile") there), which made a
-// single static gold pile up here read as a redundant, lesser version
-// of the same thing rather than its own moment. Swapped for something
-// that belongs to the vine specifically. Kept the variable name generic
-// (not vineGoldPile) since it's not gold anymore.
-const vineTopReward = {
-  collected: false,
-  collecting: false
-};
+// CONFIRMED CHANGE: the vine's "reward at the top" used to be a collectible
+// cloud blossom here (before that, a gold pile). Removed once the nest +
+// bird visit became the actual top-of-vine moment -- the blossom read as
+// visual clutter sitting right on top of the nest ("remove the white
+// flower thing"), and per the earlier gut-check about not needing more
+// one-off collectibles, there wasn't a good reason to keep it around
+// alongside the nest.
 
 let vineDropTimer = 0;
 const VINE_FIRST_DROP_DELAY = 6000; // short — lands while the bucket is still freshly empty from watering
@@ -22938,12 +22934,6 @@ function drawDigSitePlantVine(camX) {
       }
     }
 
-    // the blossom near the top, until collected — only once FULLY grown
-    if (peanutVine.grown && !vineTopReward.collected) {
-      const topX = dx + Math.sin(peanutVine.climbHeight * 0.05) * 15;
-      drawCloudBlossomShape(ctx, topX, pitDepth - (peanutVine.climbHeight - 20), 12, 0);
-    }
-
     // the nest at the top -- player auto-settles into it once they reach
     // the top (see peanutVineAtTop's snap in updateDigPlantVine), and the
     // vine-top bird visit flies specifically into it. Anchored to the same
@@ -23006,34 +22996,82 @@ function drawPeanutVineNest(nx, ny) {
   ctx.save();
   ctx.translate(nx, ny);
 
-  // woven twig strands across the bowl, alternating tone for a basket-weave read
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8;
-    const wx = -22 + t * 44;
-    const bow = Math.sin(t * Math.PI) * 7;
-    ctx.strokeStyle = i % 2 === 0 ? "#8a6a3a" : "#a3824a";
-    ctx.lineWidth = 3;
+  // CONFIRMED CHANGE ("make the nest better") -- the first pass was just
+  // a handful of floating twig lines with no actual body behind them,
+  // which read as thin/sparse rather than a real nest. Rebuilt with a
+  // filled basket silhouette (light-to-shadow gradient for real volume),
+  // the twig texture now clipped ON TOP of that body instead of floating
+  // free, a proper dimensional rim (edge/face/shade sweep, same convention
+  // the sandbox toroid uses), and a dark interior hollow so it reads as a
+  // real cupped bowl you're looking down into.
+  ctx.fillStyle = "rgba(40,30,15,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(1, 17, 22, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const bodyPath = () => {
     ctx.beginPath();
-    ctx.moveTo(wx, -bow * 0.15);
-    ctx.quadraticCurveTo(wx * 0.7, 8, wx * 0.4, 12 + bow * 0.3);
+    ctx.moveTo(-26, -1);
+    ctx.quadraticCurveTo(-30, 15, 0, 19);
+    ctx.quadraticCurveTo(30, 15, 26, -1);
+    ctx.quadraticCurveTo(0, 8, -26, -1);
+    ctx.closePath();
+  };
+  const bodyGrad = ctx.createLinearGradient(0, -1, 0, 19);
+  bodyGrad.addColorStop(0, "#c9a563");
+  bodyGrad.addColorStop(1, "#8a6a3a");
+  bodyPath();
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+
+  // woven twig texture, clipped to the basket's own silhouette so nothing
+  // sticks out past the edges
+  ctx.save();
+  bodyPath();
+  ctx.clip();
+  for (let i = 0; i < 11; i++) {
+    const t = i / 10;
+    const wy = -1 + t * 19;
+    const bow = Math.sin(t * Math.PI) * 5;
+    ctx.strokeStyle = i % 2 === 0 ? "rgba(122,90,48,0.65)" : "rgba(179,148,90,0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-28, wy);
+    ctx.quadraticCurveTo(0, wy + bow, 28, wy);
     ctx.stroke();
   }
+  ctx.restore();
 
-  // woven rim along the front edge -- thicker double-line, same "hand-
-  // wound" feel as the twig strands underneath
-  ctx.strokeStyle = "#7a5a30";
-  ctx.lineWidth = 4;
+  // rim -- a real woven ring around the opening instead of a single thin
+  // line, so it reads as a 3D ring you're looking into rather than a flat
+  // painted edge
+  const rimGrad = ctx.createLinearGradient(-26, -6, 26, 6);
+  rimGrad.addColorStop(0, "#6a4e28");
+  rimGrad.addColorStop(0.5, "#a3824a");
+  rimGrad.addColorStop(1, "#6a4e28");
+  ctx.strokeStyle = rimGrad;
+  ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.ellipse(0, 2, 24, 8, 0, 0.15, Math.PI - 0.15);
+  ctx.ellipse(0, 0, 26, 8, 0, 0.1, Math.PI - 0.1);
   ctx.stroke();
-  ctx.strokeStyle = "#b3945a";
-  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = "#e0c483";
+  ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.ellipse(0, 1, 24, 8, 0, 0.15, Math.PI - 0.15);
+  ctx.ellipse(0, -1, 26, 8, 0, 0.1, Math.PI - 0.1);
   ctx.stroke();
 
-  // a couple of small speckled eggs tucked in the corner
-  [[-14, 5], [-8, 7.5]].forEach(([ex, ey], i) => {
+  // dark interior hollow -- sells "looking down into a cupped nest"
+  // instead of a flat painted disc
+  const throatGrad = ctx.createRadialGradient(0, 4, 2, 0, 4, 20);
+  throatGrad.addColorStop(0, "rgba(35,25,12,0.35)");
+  throatGrad.addColorStop(1, "rgba(35,25,12,0)");
+  ctx.fillStyle = throatGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 20, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a couple of small speckled eggs tucked in the corner, inside the hollow
+  [[-13, 6], [-6, 8.5]].forEach(([ex, ey], i) => {
     ctx.fillStyle = "#e8ddc0";
     ctx.beginPath();
     ctx.ellipse(ex, ey, 4, 5, 0, 0, Math.PI * 2);
@@ -23055,18 +23093,42 @@ function drawPeanutVineNest(nx, ny) {
 // illusion of spiraling around behind the vine rather than always
 // floating in front of it. Mirrors drawMoleholeShaftPoleSegment's own
 // "stretched to cover the rider" fix for the same class of problem.
+//
+// CONFIRMED BUG FIX ("occlusion isnt working. green line to the left of
+// player going up peanut vine" -- still broken after the first alignment
+// fix): the first fix aligned the segment's x to the real polyline, but
+// only AT THE PLAYER'S EXACT HEIGHT -- the segment itself was still drawn
+// as one straight VERTICAL stroke across the player's whole sprite height,
+// while the actual vine polyline is diagonal there (each ~40-unit sample
+// segment slopes). A single vertical line can only ever touch the real
+// diagonal line at one point, so most of its length visibly detached from
+// it. Fixed by sampling the same polyline (peanutVineSegmentXAt) at
+// several heights across the player's sprite span and stroking THAT as a
+// connected path, so the redraw actually follows the vine's real slope
+// instead of cutting a straight line through it.
 function drawPeanutVineOcclusionSegment(camX) {
   const dx = digSite.x - camX;
   const h = peanutVine.playerClimbHeight;
-  const segX = dx + peanutVineSegmentXAt(h);
   const bottomY = gy + cameraY - player.y;
   const topY = bottomY - player.height;
+  const padding = 6;
+  // screenY = bottomY - (sampleHeight - h), so solve for the height range
+  // that covers [topY - padding, bottomY + padding]
+  const hTop = h + (bottomY - (topY - padding));
+  const hBottom = h - padding;
+  const steps = 8;
   ctx.strokeStyle = "#5a8a4a";
   ctx.lineWidth = 6;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.beginPath();
-  ctx.moveTo(segX, topY - 6);
-  ctx.lineTo(segX, bottomY + 6);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const sampleH = hBottom + (hTop - hBottom) * t; // bottom to top
+    const sx = dx + peanutVineSegmentXAt(sampleH);
+    const sy = bottomY - (sampleH - h);
+    if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+  }
   ctx.stroke();
 }
 
@@ -23304,8 +23366,16 @@ function updateDigPlantVine(deltaTime) {
         // spot on the vine instead, same polyline-aligned x the nest
         // itself draws at (see peanutVineSegmentXAt) so the player visibly
         // sits centered inside it rather than clinging to one side.
+        //
+        // CONFIRMED BUG FIX ("make it looklike player is inside nest not
+        // floating above it"): y was still tracking the raw
+        // playerClimbHeight here, which sits up to PEANUT_VINE_TOP_THRESHOLD
+        // above the nest's own (lower) height -- a visible gap between the
+        // player's feet and the nest. Locked to the nest's own height
+        // instead, same as x, so both axes actually settle at the nest
+        // rather than just x.
         player.x = peanutVine.x + peanutVineSegmentXAt(peanutVineNestHeight());
-        player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
+        player.y = peanutVineNestHeight() - PEANUT_PIT_DEPTH;
       } else {
         player.x = peanutVine.x + Math.sin(peanutVine.playerClimbHeight * 0.05) * 15; // spiral
         player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
@@ -23314,20 +23384,6 @@ function updateDigPlantVine(deltaTime) {
   }
 
   updateVineBirdVisit(deltaTime);
-
-  // BLOSSOM — sits near the vine's top, collectible once grown.
-  // Wider tolerance than a typical pickup, since the spiral climb motion
-  // drifts the player left-right — needs real forgiveness to reliably reach.
-  if (peanutVine.grown && !vineTopReward.collected && !vineTopReward.collecting) {
-    if (pressedDownNear(peanutVine.x, peanutVine.climbHeight - 20, 40, 30, 30)) {
-      vineTopReward.collecting = true;
-      startCollectAnimation(
-        { x: peanutVine.x, y: gy + PEANUT_PIT_DEPTH - (peanutVine.climbHeight - 20), size: 12, rotation: 0 },
-        "cloudBlossom"
-      );
-      vineTopReward.collected = true;
-    }
-  }
 
   // PERIODIC PEANUT DROPS — a real renewable resource, rarer than water drips
   if (peanutVine.grown) {
@@ -50041,7 +50097,12 @@ const riverWadeSink = (typeof forestRiverWadeAmount !== "undefined" ? forestRive
 // lets make the player like bobbing up and down gently").
 const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmount : 0) *
   Math.sin(performance.now() * 0.0028) * 3;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob;
+// settled into the peanut-vine nest -- purely visual (same pattern as
+// riverWadeSink above), sinks the sprite a few px lower so the legs tuck
+// down into the bowl instead of standing flush on top of it, per direct
+// feedback ("make it look like player is inside nest not floating above it").
+const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 
 // the single shared head-anchor offset for this frame -- see
 // playerVisualDX/DY's own declaration up near the crown state for why
@@ -50448,6 +50509,22 @@ if (currentScene === "forest") {
 // spiral depth phase no longer means anything.
 if (currentScene === "spring" && peanutVine.mounted && !peanutVineAtTop() && peanutVineDepthAt(peanutVine.playerClimbHeight) < 0) {
   drawPeanutVineOcclusionSegment(camX);
+}
+
+// CONFIRMED CHANGE ("make it look like player is inside nest not floating
+// above it") -- the nest's first pass only ever drew once, as part of the
+// normal ground-level scene pass before the player sprite, so the player
+// always rendered fully on top of it and just looked like they were
+// standing above a platform. Redraws the same nest a second time here,
+// after the player, so its front wall wraps back over their lower body --
+// same "redraw the same asset over the player" trick as the vine
+// occlusion segment above.
+if (currentScene === "spring" && peanutVine.mounted && peanutVine.grown && peanutVineAtTop()) {
+  const dx = digSite.x - camX;
+  const nestHeight = peanutVineNestHeight();
+  const nestX = dx + peanutVineSegmentXAt(nestHeight);
+  const nestY = gy + cameraY + PEANUT_PIT_DEPTH - nestHeight;
+  drawPeanutVineNest(nestX, nestY);
 }
 
 // bird visitor at the top of the vine -- always drawn on top (not subject
