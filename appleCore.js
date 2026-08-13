@@ -22873,6 +22873,39 @@ function drawDigSitePlantVine(camX) {
   });
 }
 
+// same spiral phase the vine's own curve above and the climbing player's
+// own x-offset already share (segX here, and player.x in
+// updateDigPlantVine, are both sin(height * 0.05) * 15) -- reusing that
+// identical phase for a depth value means it's most extreme (fully
+// front/back) exactly when the player sits centered on the vine's own
+// line, and washes toward 0 (edge-on) as they swing out to either side --
+// same trick as the molehole cushion-lift's own depth/occlusion pair
+// (moleholeCushionDepth / drawMoleholeShaftPoleSegment). Negative = the
+// player is currently passing behind the vine.
+function peanutVineDepthAt(h) {
+  return Math.cos(h * 0.05);
+}
+
+// redraws a short stretch of vine directly over the climbing player,
+// sized to cover their whole sprite (not just a thin slice) -- gives the
+// illusion of spiraling around behind the vine rather than always
+// floating in front of it. Mirrors drawMoleholeShaftPoleSegment's own
+// "stretched to cover the rider" fix for the same class of problem.
+function drawPeanutVineOcclusionSegment(camX) {
+  const dx = digSite.x - camX;
+  const h = peanutVine.playerClimbHeight;
+  const segX = dx + Math.sin(h * 0.05) * 15;
+  const bottomY = gy + cameraY - player.y;
+  const topY = bottomY - player.height;
+  ctx.strokeStyle = "#5a8a4a";
+  ctx.lineWidth = 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(segX, topY - 6);
+  ctx.lineTo(segX, bottomY + 6);
+  ctx.stroke();
+}
+
 function updateWillow(deltaTime) {
   if (!hasReturnedFromClouds) return; // locked entirely until a genuine clouds round-trip
 
@@ -50068,6 +50101,17 @@ if (currentScene === "forest") {
   }
 }
 
+
+// peanut vine climb occlusion -- same technique as the molehole
+// cushion-lift's pole (see peanutVineDepthAt/drawPeanutVineOcclusionSegment
+// just above drawDigSitePlantVine): the climbing player's own lateral
+// spiral offset already shares its phase with the vine's own curve, so
+// depth < 0 means they're currently on the "behind" side of that spiral.
+// Drawn here, after the player sprite has already rendered, so the
+// redrawn vine segment actually covers them rather than sitting under them.
+if (currentScene === "spring" && peanutVine.mounted && peanutVineDepthAt(peanutVine.playerClimbHeight) < 0) {
+  drawPeanutVineOcclusionSegment(camX);
+}
 
 drawCrown(camX);
 drawBoomerangPrompt(camX);
