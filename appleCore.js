@@ -15738,6 +15738,19 @@ const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 320 }, (_, i) => {
 // last obstacle) -- per direct request ("i think i want to space it
 // out just a little, and make it longer").
 const FOREST_FLOAT_ZONE_END_X = 13350;
+// CONFIRMED CHANGE ("fix the end of the rushing river now so that it
+// looks good" -> "gradually bend down to the right so it looks like
+// the river is just changing direction but still moving"): the water's
+// top edge used to just stop in a hard flat vertical line at the
+// zone's end -- same "wall of water" problem the START edge had before
+// its own organic bank curve was added (see drawForestFloatZone's left
+// bank block). This is the mirror of that fix for the end: over the
+// last stretch before the zone actually ends, the top edge curves
+// downward (an accelerating ease, not a straight ramp) instead of
+// staying flat, so the visible water band narrows and dips out of view
+// like it's turning a corner, not dead-ending.
+const FOREST_FLOAT_END_BEND_DIST = 260; // how far before the zone's end the bend starts
+const FOREST_FLOAT_END_BEND_DROP = 85; // how far down the top edge sinks by the very end
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 // the current used to kick in instantly right at the float zone's
 // nominal edge (FOREST_FLOAT_ZONE_START_X - 20), but the sand bank trail
@@ -17065,7 +17078,17 @@ function drawForestFloatZone(camX) {
     for (let i = 0; i <= waterSamples; i++) {
       const wx = leftX + (rightX - leftX) * (i / waterSamples);
       const jitter = FOREST_RIVER_JITTER[i % FOREST_RIVER_JITTER.length] * 0.6;
-      waterTopPts.push({ x: wx, y: gy + jitter });
+      let wy = gy + jitter;
+      // bend the top edge down over the last stretch before the actual
+      // zone end (in WORLD space, via zoneEndPx -- not just wherever
+      // this particular on-screen sample happens to fall) -- see
+      // FOREST_FLOAT_END_BEND_DIST/DROP's own comment
+      const distFromEnd = zoneEndPx - wx;
+      if (distFromEnd >= 0 && distFromEnd < FOREST_FLOAT_END_BEND_DIST) {
+        const bendP = 1 - distFromEnd / FOREST_FLOAT_END_BEND_DIST; // 0 at bend start -> 1 at the very end
+        wy += bendP * bendP * FOREST_FLOAT_END_BEND_DROP; // eased, accelerating -- reads as a real bend, not a straight ramp
+      }
+      waterTopPts.push({ x: wx, y: wy });
     }
     ctx.fillStyle = "rgba(46,90,98,0.72)";
     ctx.beginPath();
@@ -50793,15 +50816,21 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps), dropped right at the real forest entrance
-// (sceneSpawns.forest -- not stapled to the snake's dock this time,
-// since the toll no longer cares where the snake is) with marble, acorn
-// and shovel already on hand. Remove this block again once done testing
+// URL param, no extra steps). Currently dropped at the END of the float
+// zone (the new bent river-end curve, right by the return sign) instead
+// of the forest entrance, so it's immediately visible on load -- the
+// bridge and snake toll are force-completed here too since both sit
+// between the entrance and the float zone and would otherwise block a
+// straight walk there. Remove/move this block again once done looking
 // -- it overrides every load, same as every earlier round of this.
 currentScene = "forest";
-player.x = sceneSpawns.forest.x;
+forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+forestSnake.marbleGiven = true;
+player.x = FOREST_FLOAT_ZONE_END_X - 250;
 player.y = 0;
 player.vy = 0;
+cameraX = Math.max(0, player.x - canvas.width * 0.4);
 discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
 discoveredScenes.forest = true;
