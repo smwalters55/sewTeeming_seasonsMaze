@@ -13992,11 +13992,20 @@ function drawForestSandRiverJunction(camX) {
   FOREST_SAND_JUNCTION_SPRINKLES.forEach(s => {
     const edgeOff = sandJunctionOffAt(s.t, "botOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
-    // clamped so a sprinkle can never render below the horizon/water
-    // line, even where the ribbon's own edge already dips deep -- per
-    // direct request ("i dont want it in water, at least not now")
-    const sy = Math.min(gy, gy + edgeOff + s.side * (4 + s.spread * 34));
-    const alpha = 0.18 + (1 - s.spread) * 0.34;
+    // NOTE: this used to be `Math.min(gy, gy + edgeOff + s.dist)` --
+    // since edgeOff+dist is always positive, that clamp always resolved
+    // to exactly gy, silently collapsing EVERY sprinkle onto one
+    // invisible line at the horizon instead of actually fading into the
+    // grass below. That's the real reason the gradient never showed up
+    // no matter how the density/alpha math was tuned. Fixed by capping
+    // the FALL-OFF DISTANCE itself (not the y-coordinate) to a sane
+    // max, so sprinkles genuinely spread down into the grass but still
+    // can't wander arbitrarily far past the ribbon's own edge.
+    const sy = gy + edgeOff + Math.min(s.dist, 42);
+    // alpha fades on the SAME exponential curve as the placement
+    // distance itself, so opacity and density thin out together as one
+    // continuous descent rather than two mismatched effects
+    const alpha = 0.5 * Math.exp(-s.dist / 15);
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14085,12 +14094,30 @@ function drawForestSandBankTrail(camX) {
   // the grass past the trail's own edge -- see FOREST_SAND_BANK_TRAIL_SPRINKLES
   FOREST_SAND_BANK_TRAIL_SPRINKLES.forEach(s => {
     const edgeOff = sandProfileOffAt(FOREST_SAND_BANK_TRAIL_PROFILE, s.t, "botOff");
-    const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
-    // clamped so a sprinkle can never render below the horizon/water
-    // line -- per direct request ("i dont want it in water, at least
-    // not now" / "i want it below the sand we just added only")
-    const sy = Math.min(gy, gy + edgeOff + s.side * (4 + s.spread * 34));
-    const alpha = 0.18 + (1 - s.spread) * 0.34;
+    const worldX = startX + (endX - startX) * s.t;
+    const sx = worldX - camX + s.dxJit;
+    // NOTE: this used to be `Math.min(gy, gy + edgeOff + s.dist)`, which
+    // always resolved to exactly gy (edgeOff+dist is always positive) --
+    // silently collapsing every sprinkle onto one invisible line instead
+    // of fading into the grass. Fixed the same way as the junction
+    // ribbon's own sprinkles: cap the fall-off DISTANCE, not the
+    // y-coordinate. BUT unlike the junction (which sits entirely on dry
+    // land well before the river), this trail's own high-t end runs
+    // right up against where the float zone's water actually starts --
+    // letting the full fade distance apply there painted sand-colored
+    // dots straight onto the water. So the allowed fade distance itself
+    // tapers down to ~0 as worldX approaches FOREST_FLOAT_ZONE_START_X,
+    // instead of a flat cap everywhere -- per the standing "i dont want
+    // it in water" request, now actually honored again.
+    const distToWater = FOREST_FLOAT_ZONE_START_X - worldX;
+    const maxDist = Math.max(0, Math.min(42, distToWater * 0.7));
+    if (maxDist <= 0.5) return;
+    const sy = gy + edgeOff + Math.min(s.dist, maxDist);
+    // alpha fades on the SAME exponential curve as the placement
+    // distance, so opacity and density thin together as one continuous
+    // descent instead of two mismatched effects -- per direct
+    // clarification ("no but not bands like not lines. gradient descent")
+    const alpha = 0.5 * Math.exp(-s.dist / 15);
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14790,18 +14817,25 @@ const FOREST_SAND_BANK_TRAIL_GRAINS = Array.from({ length: 140 }, (_, i) => {
 // own grains, so the fade-out feels continuous with the shape's own
 // taper rather than sprinkled evenly regardless of where the sand
 // itself has already thinned out.
-const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 130 }, (_, i) => {
-  const seed = 9800 + i * 6.3;
+// distance-past-the-edge is drawn from a genuine exponential
+// distribution (not a fixed power-law "spread" mapped through a
+// formula, and NOT discrete terrace bands/lines) -- per direct
+// clarification ("no but not bands like not lines. gradient descent").
+// An exponential distribution naturally piles up the great majority of
+// grains within the first ~10-12px past the edge, meaningfully fewer by
+// ~25px, fewer still by ~40px, asymptotically thinning to nothing --
+// that's what a real physical gradient (sand thick right where you
+// stand, thinner just past it, thinner past that, then bare grass)
+// actually looks like as a continuous density falloff, with no visible
+// step anywhere and no hard ring of dots. dist starts essentially at 0
+// (touching the sand's own edge, no gap/seam) rather than the old fixed
+// "+4px" offset.
+const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
+  const seed = 9800 + i * 3.1;
+  const u = pseudoRandom(seed + 2);
   return {
     t: pseudoRandom(seed) ** 1.6,
-    side: 1, // bottom only -- per direct request ("i dont want sand above")
-    // spread biased toward 0 (close to the edge) with **2.2 -- a flat
-    // pseudoRandom(0..1) here only faded ALPHA with distance while the
-    // DENSITY of points per unit distance stayed uniform, which is why it
-    // read as "odd sporadic random sand" instead of a real gradient. This
-    // skews far more grains to cluster near the edge and thins the actual
-    // COUNT out with distance, not just the opacity -- genuine dithering.
-    spread: pseudoRandom(seed + 2) ** 2.2,
+    dist: -Math.log(1 - u * 0.999) * 11, // px past the edge, exponential falloff
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
     rot: pseudoRandom(seed + 5) * Math.PI,
@@ -14861,10 +14895,32 @@ forestDragonflies.push({
 // length instead of tracing a fixed-height band.
 const FOREST_SAND_JUNCTION_PROFILE = (() => {
   const samples = 18;
+  // per-point jitter used to be pulled independently at every sample --
+  // fine mathematically (the quadratic-through-midpoints tracer is C1
+  // continuous everywhere), but two NEIGHBORING points could still land
+  // up to 8-9px apart with nothing correlating them, and over the ~23px
+  // gap between samples that forces a real sharp-looking kink -- exactly
+  // the "really sharp corner i dont like" report (with screenshot showing
+  // a distinct pointed bump in the ribbon's top edge). "Continuous" in
+  // the math sense isn't the same as "looks smooth" when the slope has to
+  // swing that hard that fast. Fix: pull the raw jitter first, then
+  // smooth each point against its neighbors (a simple 1-2-1 blend) before
+  // using it, so adjacent points can no longer diverge sharply -- the
+  // ribbon still drifts and undulates (that blend is itself still random
+  // per-point), it just can't whipsaw between two samples anymore.
+  const rawTopJitter = [], rawBotJitter = [];
+  for (let i = 0; i <= samples; i++) {
+    const seed = 8100 + i * 9.3;
+    rawTopJitter.push(pseudoRandom(seed) * 8);
+    rawBotJitter.push(pseudoRandom(seed + 1) * 9);
+  }
+  const smooth = (arr, i) => {
+    const prev = arr[Math.max(0, i - 1)], cur = arr[i], next = arr[Math.min(arr.length - 1, i + 1)];
+    return (prev + cur * 2 + next) / 4;
+  };
   const pts = [];
   for (let i = 0; i <= samples; i++) {
     const t = i / samples;
-    const seed = 8100 + i * 9.3;
     const topWave = Math.sin(t * Math.PI * 2.4) * 7 + Math.sin(t * Math.PI * 5.1 + 1.4) * 4
       + Math.sin(t * Math.PI * 9.7 + 3.3) * 2;
     const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 9 + Math.sin(t * Math.PI * 4.2 + 2.1) * 5
@@ -14884,8 +14940,8 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
     const taperIn = Math.min(1, t / 0.18);
     pts.push({
       t,
-      topOff: -(2 + taperIn * 4 + Math.max(0, topWave) * taperIn + pseudoRandom(seed) * 8 * taperIn),
-      botOff: 2 + taperIn * 3 + Math.max(0, botWave) * taperIn + pseudoRandom(seed + 1) * 9 * taperIn + flare
+      topOff: -(2 + taperIn * 4 + Math.max(0, topWave) * taperIn + smooth(rawTopJitter, i) * taperIn),
+      botOff: 2 + taperIn * 3 + Math.max(0, botWave) * taperIn + smooth(rawBotJitter, i) * taperIn + flare
     });
   }
   return pts;
@@ -14938,15 +14994,18 @@ const FOREST_SAND_JUNCTION_GRAINS = Array.from({ length: 220 }, (_, i) => {
 // though the code was technically there) and spread distance widened
 // so the fade-out is unmistakable at a glance, not something that only
 // shows up if you know to look for it.
-const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 170 }, (_, i) => {
-  const seed = 8900 + i * 7.1;
+// same exponential-distance model as the bank trail's sprinkles above --
+// per direct clarification ("no but not bands like not lines. gradient
+// descent"): a real continuous density falloff, not discrete terrace
+// bands and not a flat-random scatter. `dist` starts essentially at 0
+// (right at the ribbon's own edge, no gap) and the great majority of
+// grains land within the first ~10-12px, thinning out asymptotically.
+const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
+  const seed = 8900 + i * 4.1;
+  const u = pseudoRandom(seed + 2);
   return {
     t: pseudoRandom(seed),
-    side: 1, // bottom only -- per direct request ("i dont want sand above")
-    // same density-bias fix as the bank trail's sprinkles above -- spread
-    // skewed toward the edge with **2.2 so the grain COUNT itself thins
-    // out with distance (a real gradient), not just each grain's alpha.
-    spread: pseudoRandom(seed + 2) ** 2.2,
+    dist: -Math.log(1 - u * 0.999) * 11, // px past the edge, exponential falloff
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
     rot: pseudoRandom(seed + 5) * Math.PI,
