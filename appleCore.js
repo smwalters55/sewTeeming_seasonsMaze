@@ -14474,7 +14474,7 @@ const FOREST_FLOAT_ZONE_START_X = 6900;
 // trailing buffer, close to the ~400px the old zone had after its own
 // last obstacle) -- per direct request ("i think i want to space it
 // out just a little, and make it longer").
-const FOREST_FLOAT_ZONE_END_X = 11800;
+const FOREST_FLOAT_ZONE_END_X = 13350;
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 // extra calm distance prepended before the obstacle course actually
 // starts -- the current (and the leaf/bark boat launch pile) still
@@ -14661,7 +14661,24 @@ const FOREST_FLOAT_OBSTACLES = [
   // gentle closing gate -- raised clearance but no punishment, same
   // "soft landing" role the original variant-2 gate played at the very
   // end of the first pass
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, w: 40, clearance: 110, type: "jump", variant: 2 }
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, w: 40, clearance: 110, type: "jump", variant: 2 },
+
+  // THIRD PASS -- per direct request ("we should make this a little
+  // longer... but i dont wanna slow it down to keep the difficulty").
+  // Same drift speed, same per-obstacle spacing/timing values as the
+  // first two passes -- this only adds more distance to cover, it does
+  // not change how hard any single obstacle is to clear.
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4400, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0025, duckPhase: 0.8 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4620, w: 40, clearance: 72, type: "jump", variant: 1 },
+  // final echo of the moving-log idea -- back down to a pair like the
+  // second pass's reprise, out of phase the same way
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4860, range: 55, speed: 0.0022, phase: 0.3, w: 40, clearance: 40, type: "movingJump", variant: 2 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5040, range: 50, speed: 0.0027, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 4 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5260, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0021, duckPhase: 3.0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5480, w: 40, clearance: 125, type: "jump", variant: 0, spiky: true },
+  // final gentle closing gate -- same "soft landing" role as the other
+  // two passes' closers
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5700, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -14699,8 +14716,12 @@ const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 // how the original one sits in a gap in the first pass.
 const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 860, width: 56, heightAboveGround: 20 };
 const FOREST_FLOAT_LILYPAD_2 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3190, width: 56, heightAboveGround: 20 };
+// third pad -- same role, sits in the third pass's own calm gap right
+// after the final moving-log pair and before the last duck
+const FOREST_FLOAT_LILYPAD_3 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5150, width: 56, heightAboveGround: 20 };
 let playerOnFloatLilypad = false;
 let playerOnFloatLilypad2 = false;
+let playerOnFloatLilypad3 = false;
 // minY (optional) gates a collectible behind actually reaching a
 // specific arc height, not just walking/floating near it at ground
 // level -- rewards a well-timed jump instead of being freely walkable
@@ -14723,7 +14744,13 @@ const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3540, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3780, collected: false },
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3900, collected: false, minY: 128 }, // right over the second spiky gate
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, collected: false, minY: 113 }  // right over the final closing gate
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, collected: false, minY: 113 }, // right over the final closing gate
+  // third pass -- same density/pattern repeated
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4460, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4680, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5320, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5480, collected: false, minY: 128 }, // right over the third spiky gate
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5700, collected: false, minY: 113 }  // right over the final closing gate
 ];
 
 // leaf/bark boats -- launched right where the current starts, well
@@ -15523,6 +15550,7 @@ function drawForestFloatZone(camX) {
 
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
+  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_3);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     const ox = floatObstacleX(ob) - camX;
@@ -19538,8 +19566,9 @@ function updateForestScene(deltaTime) {
     };
     playerOnFloatLilypad = landOnFloatPad(FOREST_FLOAT_LILYPAD);
     playerOnFloatLilypad2 = landOnFloatPad(FOREST_FLOAT_LILYPAD_2);
+    playerOnFloatLilypad3 = landOnFloatPad(FOREST_FLOAT_LILYPAD_3);
 
-    if (!playerOnFloatLilypad && !playerOnFloatLilypad2) player.x += FOREST_FLOAT_DRIFT_SPEED;
+    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3) player.x += FOREST_FLOAT_DRIFT_SPEED;
 
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
