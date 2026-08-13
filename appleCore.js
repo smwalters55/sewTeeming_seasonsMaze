@@ -15031,10 +15031,17 @@ const FOREST_RIVER_BOAT_COLORS = ["#6a7a2f", "#5a6a2a"]; // two leaf tones -- ba
 // only in the boat's way part of the time; duck-type swamp-tree roots
 // aren't checked at all (see updateForestRiverBoats), the boat just
 // slides underneath every time
+// plain-rock snag chance lowered (was 0.35) -- per direct report ("the
+// leaf boats are getting stuck on the first rock far too much. was
+// like 4 times in a row"). At 0.35, four-in-a-row was ~1.5% per attempt
+// but still landed exactly that way in practice and read as clearly
+// too sticky; halving it brings four-in-a-row down to roughly a tenth
+// of a percent while still leaving plain rocks a real, just less
+// dominant, chance to catch a boat.
 function forestRiverBoatSnagChance(ob) {
   if (ob.spiky) return 0.55;
   if (ob.type === "movingJump") return 0.22;
-  return 0.35;
+  return 0.16;
 }
 
 function updateForestRiverBoats() {
