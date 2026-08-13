@@ -23070,8 +23070,11 @@ function drawPeanutVineNest(nx, ny) {
   ctx.ellipse(0, 4, 20, 7, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // a couple of small speckled eggs tucked in the corner, inside the hollow
-  [[-13, 6], [-6, 8.5]].forEach(([ex, ey], i) => {
+  // CONFIRMED CHANGE ("make eggs inside nest") -- moved off the left
+  // corner (where they could end up sitting right under/behind whichever
+  // side the bird happens to land on) to sit centered in the hollow, lower
+  // in the cup so they read clearly as nested down inside the bowl.
+  [[-4, 8], [3, 9.5]].forEach(([ex, ey], i) => {
     ctx.fillStyle = "#e8ddc0";
     ctx.beginPath();
     ctx.ellipse(ex, ey, 4, 5, 0, 0, Math.PI * 2);
@@ -51581,24 +51584,14 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Currently dropped in SPRING, at the base of
-// the fully-grown peanut vine (dig site pre-filled through watered/grown
-// so the vine is already climbable on load). Remove/move this block again
-// once done testing -- it overrides every load, same as every earlier
-// round of this.
-hasReturnedFromClouds = true;
-currentScene = "spring";
-digSite.dug = true;
-digSite.planted = true;
-digSite.watered = true;
-peanutVine.grown = true;
-peanutVine.mounted = false;
-peanutVine.playerClimbHeight = 0;
-player.x = peanutVine.x;
+// URL param, no extra steps). Back in the SANDBOX, in front of the
+// trampoline. Remove/move this block again once done testing -- it
+// overrides every load, same as every earlier round of this.
+currentScene = "sandbox";
+player.x = sandboxTrampoline.x - 70;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
-cameraY = 0;
 discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
 discoveredScenes.forest = true;
