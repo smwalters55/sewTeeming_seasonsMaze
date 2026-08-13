@@ -323,6 +323,9 @@ function cycleHeldItem() {
 // future item can opt in the same way.
 const ITEM_CANVAS_RENDER = {
   paperAirplane: (iconCtx) => {
+    // CONFIRMED CHANGE ("give airpane more outline you can barely see it
+    // with the skies"): matching outline strengthening as the world/held
+    // version, so the inventory chip reads the same way.
     iconCtx.clearRect(0, 0, 20, 20);
     iconCtx.save();
     iconCtx.translate(10, 10);
@@ -335,9 +338,11 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.lineTo(-7, 5);
     iconCtx.closePath();
     iconCtx.fill();
-    iconCtx.strokeStyle = "rgba(0,0,0,0.2)";
-    iconCtx.lineWidth = 0.6;
+    iconCtx.strokeStyle = "rgba(60,45,25,0.75)";
+    iconCtx.lineWidth = 1.4;
     iconCtx.stroke();
+    iconCtx.strokeStyle = "rgba(60,45,25,0.6)";
+    iconCtx.lineWidth = 1;
     iconCtx.beginPath();
     iconCtx.moveTo(8, 0);
     iconCtx.lineTo(-3, 0);
@@ -5946,6 +5951,14 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.fill();
     ctx.restore();
   } else if (itemType === "paperAirplane") {
+    // CONFIRMED CHANGE ("give airpane more outline you can barely see it
+    // with the skies"): the cream fill (#f0e8d8) sits very close in
+    // lightness to this game's pale sky gradients, and the old outline
+    // (0.15 alpha, 0.6 width) was too faint to pick up the slack -- reads
+    // as a near-invisible pale smudge against the sky. Bumped the outline
+    // to a real dark warm brown at much higher alpha/width so the
+    // silhouette reads clearly regardless of which sky it's flying
+    // against.
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
@@ -5957,10 +5970,11 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     ctx.lineTo(-size * 0.7, size * 0.5);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.15)";
-    ctx.lineWidth = 0.6;
+    ctx.strokeStyle = "rgba(60,45,25,0.75)";
+    ctx.lineWidth = 1.6;
     ctx.stroke();
-    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.strokeStyle = "rgba(60,45,25,0.6)";
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     ctx.moveTo(size * 0.9, 0);
     ctx.lineTo(-size * 0.3, 0);
@@ -29542,10 +29556,15 @@ function drawPaperAirplane(camX) {
   ctx.lineTo(-7, 5);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.15)";
-  ctx.lineWidth = 0.6;
+  // CONFIRMED CHANGE ("give airpane more outline you can barely see it
+  // with the skies"): same outline strengthening as drawCollectible's
+  // paperAirplane branch, kept in sync so the ground pickup spot and the
+  // flying/held version look identical.
+  ctx.strokeStyle = "rgba(60,45,25,0.75)";
+  ctx.lineWidth = 1.6;
   ctx.stroke();
-  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.strokeStyle = "rgba(60,45,25,0.6)";
+  ctx.lineWidth = 1.1;
   ctx.beginPath();
   ctx.moveTo(9, 0);
   ctx.lineTo(-3, 0);
