@@ -2938,9 +2938,21 @@ function applyPhysics(){
       // right at its surface -- forgiving of real variance in how a bounce
       // actually plays out, matching the "fun to chain, not physics-
       // precise" goal.
+      //
+      // CONFIRMED CHANGE ("make the trampo landing a lil les generous i
+      // dont wanna be standing on air"): the wide x radius above was
+      // needed for a RELIABLE catch, but catching the player wherever they
+      // happened to be within that whole radius (rather than snapping them
+      // onto the mat) visibly left them floating well off to the side of
+      // it -- looked like standing on air since the mat itself only reads
+      // as ~40px wide. Tightened the radius some, and now snaps player.x
+      // onto the mat's own center on every catch, so the catch can still
+      // be forgiving about TIMING without ever looking wrong about WHERE
+      // they land.
       if (player.vy < -1 &&
           Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_CHAIN_RADIUS &&
           playerBottom <= platformTop && playerBottom >= platformTop - 100) {
+        player.x = t.x - player.width / 2;
         player.y = platformTop;
         player.vy = t.launchVy;
         player.jumping = true;
@@ -2964,9 +2976,16 @@ function applyPhysics(){
     // fall all the way to the ground). Widened further than any other
     // catch in the chain since this is the one landing that really
     // shouldn't be missed by a near-hit.
+    //
+    // CONFIRMED CHANGE ("make the trampo landing a lil les generous i dont
+    // wanna be standing on air"): same fix as the chain platforms above --
+    // snap player.x onto the perch's own center on landing so a generous
+    // catch never reads as floating beside it, and pulled the tolerance in
+    // a bit now that the visual result is always correct either way.
     const perchTop = sandboxTrampolineChainPerch.heightAboveGround;
-    if (Math.abs(player.x + player.width / 2 - sandboxTrampolineChainPerch.x) < 90 &&
-        player.y <= perchTop && player.y >= perchTop - 110 && player.vy <= 0) {
+    if (Math.abs(player.x + player.width / 2 - sandboxTrampolineChainPerch.x) < 75 &&
+        player.y <= perchTop && player.y >= perchTop - 90 && player.vy <= 0) {
+      player.x = sandboxTrampolineChainPerch.x - player.width / 2;
       player.y = perchTop;
       player.vy = 0;
       player.jumping = false;
