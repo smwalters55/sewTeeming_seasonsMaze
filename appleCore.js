@@ -17195,7 +17195,19 @@ function drawForestFloatZone(camX) {
       const j = FOREST_RIVER_JITTER[(i + 6) % FOREST_RIVER_JITTER.length] * 0.7;
       edgePts.push({ x: bx + j, y: by });
     }
-    const bankPts = [{ x: topX - 50, y: topY }, ...edgePts, { x: waterX - 30, y: waterY + 30 }, { x: topX - 60, y: canvas.height + 20 }];
+    // CONFIRMED BUG FIX ("can you still make that angle on its left
+    // connecting to the horiz piece softer"): the closing edge used to
+    // run from (topX-50, topY) almost straight down to (topX-60,
+    // canvas.height+20) -- barely 10px of horizontal spread over the
+    // entire vertical span, i.e. essentially a vertical wall. Where that
+    // near-vertical edge met the sand trail's own much shallower
+    // horizontal boundary, the slope changed abruptly enough to read as
+    // a visible kink/elbow even after the blur softened the fill itself.
+    // Swinging the bottom-left point much further out (topX-160 instead
+    // of topX-60) makes this closing edge a real diagonal, so it meets
+    // the trail's edge at a much shallower, gentler angle instead of a
+    // sharp corner.
+    const bankPts = [{ x: topX - 50, y: topY }, ...edgePts, { x: waterX - 30, y: waterY + 30 }, { x: topX - 160, y: canvas.height + 20 }];
     ctx.save();
     ctx.filter = "blur(4px)";
     // alpha lowered (was 0.55) -- this soft shadow pass reaches all the
@@ -50902,18 +50914,21 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Currently dropped at the END of the float
-// zone (the new bent river-end curve, right by the return sign) instead
-// of the forest entrance, so it's immediately visible on load -- the
-// bridge and snake toll are force-completed here too since both sit
-// between the entrance and the float zone and would otherwise block a
-// straight walk there. Remove/move this block again once done looking
-// -- it overrides every load, same as every earlier round of this.
-currentScene = "forest";
-forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-forestSnake.marbleGiven = true;
-player.x = FOREST_FLOAT_ZONE_END_X - 250;
+// URL param, no extra steps). Currently dropped in SPRING, right at the
+// peanut vine, with it already fully grown (digSite planted+watered,
+// peanutVine.grown forced true, growProgress maxed) so it's climbable
+// immediately on load instead of needing to plant/water/wait 4 real
+// seconds first. Per direct request ("temp debug spawn me in spring
+// after the peanut vine has grown so i can test that rn"). Remove/move
+// this block again once done testing -- it overrides every load, same
+// as every earlier round of this.
+currentScene = "spring";
+hasReturnedFromClouds = true; // the whole dig-site/vine draw path is gated behind this -- without it the vine never renders at all, grown flag or not
+digSite.planted = true;
+digSite.watered = true;
+peanutVine.grown = true;
+peanutVine.growProgress = 1;
+player.x = peanutVine.x - 40;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
