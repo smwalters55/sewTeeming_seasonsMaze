@@ -1931,6 +1931,25 @@ function updateBoomerangThrow(deltaTime) {
           b.returnFromY = b.y;
         }
       }
+    } else if (withinPeakWindow && currentScene === "molehole" && !moleHoleSecretPiece.collected) {
+      // CONFIRMED CHANGE ("hit hanging log in root with boomerang"):
+      // the secret log tangled in the hanging root above stall 1 reads
+      // exactly like the beehive/grafted-fruit/vault-cloud hanging
+      // targets elsewhere, but never actually had a boomerang hit wired
+      // up -- it was only ever reachable via a precise double jump onto
+      // it as a platform. Same stationary-target pattern as those
+      // (shared BOOMERANG_HIT_RADIUS, same 45%-55% peak window) as a
+      // second, alternate way in -- the double-jump route is untouched.
+      const dx = b.x - moleHoleSecretPiece.x;
+      const dy = b.y - moleHoleSecretPiece.heightAboveGround;
+      if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+        collectMoleHoleSecretPiece();
+
+        b.phase = "returning";
+        b.t = 0;
+        b.returnFromX = b.x;
+        b.returnFromY = b.y;
+      }
     } else if (currentScene === "forest" && p >= 0.25 && p <= 0.75 && !forestBoomerangTarget.hit && (forestSnake.riding || forestSnake.midJump)) {
       // Uses its own wider window (25%-75% of the flight, not the
       // shared narrow 45%-55% peak window the other targets use) --
@@ -21725,11 +21744,14 @@ function updateForestScene(deltaTime) {
     // gating on it made it impossible to ever mount the snake for the
     // first time.)
     //
+    console.log("SNAKEPROBE gate: jumping=" + player.jumping + " vy=" + player.vy + " dismountCD=" + forestSnake.dismountCooldown + " bumpedCD=" + forestSnake.bumpedCooldown);
     if (player.jumping && player.vy <= 0 && forestSnake.dismountCooldown <= 0 && forestSnake.bumpedCooldown <= 0) {
       const segments = 30;
+      let bestMatch = null;
       for (let i = 0; i <= segments; i++) {
         const p = getForestSnakePoint(i / segments);
         const bodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - p.y;
+        if (i === 15) console.log("SNAKEPROBE seg15 p.x=" + p.x + " bodyTop=" + bodyTop + " player.x=" + player.x + " player.width=" + player.width + " player.y=" + player.y);
         if (
           player.x + player.width > p.x - 24 &&
           player.x < p.x + 24 &&
@@ -30003,6 +30025,19 @@ const MOLEHOLE_ALCOVES = [
 // genuine double-jump-only territory (double-jump max ~140.6).
 const moleHoleSecretPiece = { x: 350, heightAboveGround: 130, collected: false, fadeT: 0 };
 
+// shared by both ways of actually grabbing it -- the original
+// double-jump-onto-the-platform-then-press-space route, and the
+// boomerang hit added per direct request ("hit hanging log in root
+// above stall 1 with boomerang" -- matches the beehive/grafted-fruit/
+// vault-cloud pattern elsewhere of a hanging reward that a thrown
+// boomerang can knock loose, which this secret log never actually had
+// wired up despite looking exactly like that same kind of target).
+function collectMoleHoleSecretPiece() {
+  if (moleHoleSecretPiece.collected) return;
+  moleHoleSecretPiece.collected = true;
+  startCollectAnimation({ x: moleHoleSecretPiece.x, y: gy - moleHoleSecretPiece.heightAboveGround, size: 9, rotation: 0 }, "bridgePiece");
+}
+
 /* ------------------------------------------------------
    MOLE HOLE SHOPKEEPER -- a real, interactive third alcove, bigger and
    more done-up than the two background market stalls, tucked in the gap
@@ -37540,8 +37575,7 @@ function updateMoleholeScene(deltaTime) {
       player.x < moleHoleSecretPiece.x + 16 &&
       keys.spaceJustPressed
     ) {
-      moleHoleSecretPiece.collected = true;
-      startCollectAnimation({ x: moleHoleSecretPiece.x, y: gy - platTop, size: 9, rotation: 0 }, "bridgePiece");
+      collectMoleHoleSecretPiece();
     }
   }
 
