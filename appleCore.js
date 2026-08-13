@@ -15770,10 +15770,29 @@ const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of 
 const FOREST_FLOAT_CURRENT_RAMP_START_X = FOREST_FLOAT_ZONE_START_X + 55;
 const FOREST_FLOAT_CURRENT_RAMP_END_X = FOREST_FLOAT_ZONE_START_X + 95;
 function floatCurrentStrengthAt(x) {
-  if (x <= FOREST_FLOAT_CURRENT_RAMP_START_X) return 0;
-  if (x >= FOREST_FLOAT_CURRENT_RAMP_END_X) return 1;
-  const t = (x - FOREST_FLOAT_CURRENT_RAMP_START_X) / (FOREST_FLOAT_CURRENT_RAMP_END_X - FOREST_FLOAT_CURRENT_RAMP_START_X);
-  return t * t * (3 - 2 * t); // smoothstep -- gradual, not a hard on/off
+  let s;
+  if (x <= FOREST_FLOAT_CURRENT_RAMP_START_X) s = 0;
+  else if (x >= FOREST_FLOAT_CURRENT_RAMP_END_X) s = 1;
+  else {
+    const t = (x - FOREST_FLOAT_CURRENT_RAMP_START_X) / (FOREST_FLOAT_CURRENT_RAMP_END_X - FOREST_FLOAT_CURRENT_RAMP_START_X);
+    s = t * t * (3 - 2 * t); // smoothstep -- gradual, not a hard on/off
+  }
+  // CONFIRMED BUG FIX ("once im out of the river i should no longer be
+  // floating river movement or hav water on body"): the current used to
+  // stay at full strength right up to FOREST_FLOAT_ZONE_END_X, which was
+  // fine while the water's visual edge was a hard flat line at that same
+  // X -- but now the bank curves away and reads as dry ground well
+  // before that (see FOREST_FLOAT_END_BEND_DIST), so the player kept
+  // getting shoved by "current" while standing on what looks like grass.
+  // Taper it down over that same bend stretch so the push (and, since
+  // this feeds the wet-visual target below too, the water-on-body look)
+  // both fade out in step with where the bank actually goes dry.
+  const distFromEnd = FOREST_FLOAT_ZONE_END_X - x;
+  if (distFromEnd < FOREST_FLOAT_END_BEND_DIST) {
+    const endT = Math.max(0, distFromEnd) / FOREST_FLOAT_END_BEND_DIST;
+    s *= endT * endT * (3 - 2 * endT);
+  }
+  return s;
 }
 // extra calm distance prepended before the obstacle course actually
 // starts -- the current (and the leaf/bark boat launch pile) still
@@ -21333,7 +21352,12 @@ function updateForestScene(deltaTime) {
   // now waits until the player's actually past the same ramp point the
   // current itself uses, so the "wet" look starts where the art (and
   // the current) actually put the water.
-  const submergeTarget = riverFloat.active && player.x > FOREST_FLOAT_CURRENT_RAMP_START_X ? 1 : 0;
+  // now driven straight off floatCurrentStrengthAt (which tapers at BOTH
+  // ends -- see its own comment on the end-of-zone fade) instead of a
+  // flat on/off, so the wet-body look fades out in step with the current
+  // itself as the player nears the bent, drying-out bank -- not just
+  // wherever riverFloat.active happens to flip off.
+  const submergeTarget = riverFloat.active ? floatCurrentStrengthAt(player.x) : 0;
   floatSubmergeAmount += (submergeTarget - floatSubmergeAmount) * 0.15;
   if (floatSubmergeAmount < 0.01) floatSubmergeAmount = 0;
   if (riverFloat.active) {
