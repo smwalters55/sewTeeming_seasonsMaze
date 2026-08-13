@@ -11596,6 +11596,64 @@ const VINE_DROP_MIN = 220000; // ~4 minutes-ish, with natural variance
 const VINE_DROP_MAX = 260000;
 let fallingVinePeanuts = []; // {x, heightAboveGround, falling}
 
+// bird visitor at the top of the vine -- flies in, snuggles against the
+// player for a bit, then flies off on its own. Deliberately NOT another
+// pickup/collectible (see the direct gut-check that shelved the earlier
+// "leaves a shiny bead" idea -- "damn idk that we need another collectible
+// tho honestly"), just a charm moment. Retriggers every time the player
+// reaches the top after having left it (no real-time cooldown, no
+// day-gating), since without an item to protect there's no reason to make
+// it scarce.
+const PEANUT_VINE_TOP_THRESHOLD = 30; // how close to full climbHeight counts as "at the top"
+const vineBirdVisit = {
+  state: "idle", // idle | flyingIn | snuggling | flyingOut
+  t: 0,
+  hasVisitedThisStay: false, // guards against re-triggering every frame while just sitting at the top
+  side: 1 // which side of the player the bird nestles against, re-rolled each visit
+};
+const VINE_BIRD_FLY_IN_DURATION = 900;
+const VINE_BIRD_SNUGGLE_DURATION = 3400;
+const VINE_BIRD_FLY_OUT_DURATION = 800;
+
+function updateVineBirdVisit(deltaTime) {
+  const atTop = peanutVine.mounted && peanutVine.grown &&
+    peanutVine.playerClimbHeight >= peanutVine.climbHeight - PEANUT_VINE_TOP_THRESHOLD;
+
+  if (!atTop) {
+    // left the top (or dismounted) -- reset so the next arrival triggers a
+    // fresh visit, and snap any in-progress visit away immediately rather
+    // than leaving the bird stranded mid-air over an empty pit
+    vineBirdVisit.hasVisitedThisStay = false;
+    if (vineBirdVisit.state !== "idle") {
+      vineBirdVisit.state = "idle";
+      vineBirdVisit.t = 0;
+    }
+    return;
+  }
+
+  if (vineBirdVisit.state === "idle" && !vineBirdVisit.hasVisitedThisStay) {
+    vineBirdVisit.state = "flyingIn";
+    vineBirdVisit.t = 0;
+    vineBirdVisit.side = Math.random() < 0.5 ? -1 : 1;
+    vineBirdVisit.hasVisitedThisStay = true;
+    return;
+  }
+
+  if (vineBirdVisit.state === "idle") return;
+
+  vineBirdVisit.t += deltaTime * 1000;
+  if (vineBirdVisit.state === "flyingIn" && vineBirdVisit.t >= VINE_BIRD_FLY_IN_DURATION) {
+    vineBirdVisit.state = "snuggling";
+    vineBirdVisit.t = 0;
+  } else if (vineBirdVisit.state === "snuggling" && vineBirdVisit.t >= VINE_BIRD_SNUGGLE_DURATION) {
+    vineBirdVisit.state = "flyingOut";
+    vineBirdVisit.t = 0;
+  } else if (vineBirdVisit.state === "flyingOut" && vineBirdVisit.t >= VINE_BIRD_FLY_OUT_DURATION) {
+    vineBirdVisit.state = "idle";
+    vineBirdVisit.t = 0;
+  }
+}
+
 /* ======================================================
    SNAIL NPC — drives the graft interaction. Slimes slowly near
    the graft trees, same wander behavior as the other spring
@@ -22906,6 +22964,132 @@ function drawPeanutVineOcclusionSegment(camX) {
   ctx.stroke();
 }
 
+// a small plump bird — same restrained shape-primitive style as
+// drawForestDragonfly (ellipses/arcs, no image assets). Faces toward
+// whichever side it's snuggled against (side = -1 left of player, 1 right
+// of player) via a horizontal flip, so it always reads as leaning IN
+// rather than facing away. wingFlap is a small radian offset for the
+// flying phases; snuggling tucks the wing flat and closes the eye instead.
+function drawSmallBirdShape(x, y, side, wingFlap, snuggling) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(-side, 1);
+
+  const bodyColor = "#7a93b0";
+  const wingColor = "#5f7a94";
+  const chestColor = "#ecdfc0";
+  const beakColor = "#e0a040";
+
+  // tail, trailing behind (away from the player)
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.moveTo(-6, 1);
+  ctx.lineTo(-13, -2);
+  ctx.lineTo(-12, 3);
+  ctx.closePath();
+  ctx.fill();
+
+  // wing — tucked flat while snuggling, lifted/flapping otherwise
+  ctx.save();
+  ctx.translate(-1, -1);
+  ctx.rotate(snuggling ? -0.05 : wingFlap);
+  ctx.fillStyle = wingColor;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 6, 3, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // plump body
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 8, 6.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // cream chest/belly
+  ctx.fillStyle = chestColor;
+  ctx.beginPath();
+  ctx.ellipse(2, 2.5, 5, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.arc(7, -3, 4.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // beak
+  ctx.fillStyle = beakColor;
+  ctx.beginPath();
+  ctx.moveTo(11, -3);
+  ctx.lineTo(15, -2);
+  ctx.lineTo(11, -1);
+  ctx.closePath();
+  ctx.fill();
+
+  // eye — content little closed curve while snuggling, open dot otherwise
+  ctx.strokeStyle = "#241708";
+  ctx.fillStyle = "#241708";
+  if (snuggling) {
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(8, -4, 1.4, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(8.3, -4, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// drives the bird's on-screen position through its own flight/snuggle/
+// flight-out arc and calls the shape draw above. Anchored to the
+// PLAYER'S OWN screen position (same gy + cameraY - player.height -
+// player.y formula the main player sprite draw uses), not a world x/y,
+// since the vine's spiral climb keeps moving the player around underneath it.
+function drawVineBirdVisit(camX) {
+  if (vineBirdVisit.state === "idle") return;
+
+  const anchorX = player.x - camX + player.width / 2;
+  const anchorY = gy + cameraY - player.height - player.y + player.height * 0.4; // roughly chest height
+  const side = vineBirdVisit.side;
+  const restX = anchorX + side * (player.width / 2 + 2); // a couple px of overlap -- reads as leaning against, not floating beside
+  const restY = anchorY + 4;
+
+  let bx, by, wingFlap;
+  const snuggling = vineBirdVisit.state === "snuggling";
+
+  if (vineBirdVisit.state === "flyingIn") {
+    const p = Math.min(vineBirdVisit.t / VINE_BIRD_FLY_IN_DURATION, 1);
+    const e = 1 - Math.pow(1 - p, 3); // ease out cubic — fast start, gentle landing
+    const startX = restX + side * 40;
+    const startY = restY - 90;
+    bx = startX + (restX - startX) * e;
+    by = startY + (restY - startY) * e;
+    wingFlap = Math.sin(performance.now() * 0.02) * 0.6;
+  } else if (snuggling) {
+    const bob = Math.sin(performance.now() * 0.003) * 1.5;
+    bx = restX;
+    by = restY + bob;
+    wingFlap = 0;
+
+    // a brief one-shot sparkle right as the snuggle begins, same reveal-
+    // moment sparkle already used elsewhere (drawSparkleBurst)
+    if (vineBirdVisit.t < 500) {
+      drawSparkleBurst(restX, restY - 4, vineBirdVisit.t / 500, 0.7);
+    }
+  } else { // flyingOut
+    const p = Math.min(vineBirdVisit.t / VINE_BIRD_FLY_OUT_DURATION, 1);
+    const e = p * p; // ease in — slow start, quick exit
+    bx = restX + side * 50 * e;
+    by = restY - 100 * e;
+    wingFlap = Math.sin(performance.now() * 0.025) * 0.8;
+  }
+
+  drawSmallBirdShape(bx, by, side, wingFlap, snuggling);
+}
+
 function updateWillow(deltaTime) {
   if (!hasReturnedFromClouds) return; // locked entirely until a genuine clouds round-trip
 
@@ -23009,6 +23193,8 @@ function updateDigPlantVine(deltaTime) {
       }
     }
   }
+
+  updateVineBirdVisit(deltaTime);
 
   // BLOSSOM — sits near the vine's top, collectible once grown.
   // Wider tolerance than a typical pickup, since the spiral climb motion
@@ -50113,6 +50299,13 @@ if (currentScene === "spring" && peanutVine.mounted && peanutVineDepthAt(peanutV
   drawPeanutVineOcclusionSegment(camX);
 }
 
+// bird visitor at the top of the vine -- always drawn on top (not subject
+// to the occlusion check above), since it's meant to read clearly as
+// snuggled right up against the player, not partially hidden behind anything.
+if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
+  drawVineBirdVisit(camX);
+}
+
 drawCrown(camX);
 drawBoomerangPrompt(camX);
 if (currentScene === "molehole") {
@@ -51146,15 +51339,24 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Currently dropped in the SANDBOX, right
-// in front of the new trampoline, for testing it. Remove/move this
-// block again once done testing -- it overrides every load, same as
-// every earlier round of this.
-currentScene = "sandbox";
-player.x = sandboxTrampoline.x - 70;
+// URL param, no extra steps). Currently dropped in SPRING, at the base of
+// the fully-grown peanut vine (dig site pre-filled through watered/grown
+// so the vine is already climbable on load). Remove/move this block again
+// once done testing -- it overrides every load, same as every earlier
+// round of this.
+hasReturnedFromClouds = true;
+currentScene = "spring";
+digSite.dug = true;
+digSite.planted = true;
+digSite.watered = true;
+peanutVine.grown = true;
+peanutVine.mounted = false;
+peanutVine.playerClimbHeight = 0;
+player.x = peanutVine.x;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
+cameraY = 0;
 discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
 discoveredScenes.forest = true;
