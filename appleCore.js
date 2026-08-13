@@ -13877,6 +13877,20 @@ function drawForestZenSandPatch(camX) {
 // edge-sprinkle scatter (see FOREST_SAND_JUNCTION_SPRINKLES) can sit
 // genuinely ON the ribbon's own wavy edge at any point along it,
 // instead of only at the coarse sample spacing.
+// smooth stand-in for Math.max(0, v) -- a hard max(0,v) has a genuine
+// discontinuous derivative right at v=0 (a real geometric fold, not a
+// sampling artifact), and every sine wave used to shape the sand
+// profiles below crosses zero periodically, so that hard floor was
+// baking an actual sharp "V" kink into the ribbon's edge at each
+// crossing -- exactly the recurring "sharp corner" reports, and NOT
+// fixed by the earlier jitter-smoothing pass (that fixed a different,
+// sampling-based cause of sharp corners; this is a separate one baked
+// directly into the math). This rounds that fold off over a small ~2-3
+// unit window instead of snapping to a hard edge, while still tracking
+// max(0,v) closely everywhere else.
+function softMax0(v, k) {
+  return 0.5 * (v + Math.sqrt(v * v + k * k)) - k / 2;
+}
 function sandProfileOffAt(profile, t, key) {
   const n = profile.length - 1;
   const f = Math.max(0, Math.min(1, t)) * n;
@@ -14836,8 +14850,8 @@ const FOREST_SAND_BANK_TRAIL_PROFILE = (() => {
     const botWave = Math.sin(t * Math.PI * 2.3 + 1.2) * 4 + Math.sin(t * Math.PI * 6.4 + 2.4) * 2;
     pts.push({
       t,
-      topOff: -(1 + fade * 9 + Math.max(0, topWave) * fade + pseudoRandom(seed) * 5 * fade),
-      botOff: 1 + fade * 15 + Math.max(0, botWave) * fade + pseudoRandom(seed + 1) * 7 * fade
+      topOff: -(1 + fade * 9 + softMax0(topWave, 2.5) * fade + pseudoRandom(seed) * 5 * fade),
+      botOff: 1 + fade * 15 + softMax0(botWave, 2.5) * fade + pseudoRandom(seed + 1) * 7 * fade
     });
   }
   return pts;
@@ -14852,7 +14866,7 @@ const FOREST_SAND_BANK_TRAIL_GRAINS = Array.from({ length: 140 }, (_, i) => {
   return {
     t,
     dy: -6 + pseudoRandom(seed + 1) * 20,
-    r: 0.6 + pseudoRandom(seed + 2) * 1.6,
+    r: 0.35 + pseudoRandom(seed + 2) * 0.9, // per direct request ("these sand grains finer")
     rot: pseudoRandom(seed + 3) * Math.PI,
     dark: pseudoRandom(seed + 4) > 0.5,
     a: 0.06 + pseudoRandom(seed + 5) * 0.1
@@ -14909,7 +14923,7 @@ const FOREST_SAND_BANK_TRAIL_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
     t: pseudoRandom(seed) ** 1.6,
     dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
-    r: 1.6 + pseudoRandom(seed + 4) * 2.2,
+    r: 0.9 + pseudoRandom(seed + 4) * 1.2, // per direct request ("these sand grains finer")
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
@@ -15012,8 +15026,8 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
     const taperIn = Math.min(1, t / 0.18);
     pts.push({
       t,
-      topOff: -(2 + taperIn * 4 + Math.max(0, topWave) * taperIn + smooth(rawTopJitter, i) * taperIn),
-      botOff: 2 + taperIn * 3 + Math.max(0, botWave) * taperIn + smooth(rawBotJitter, i) * taperIn + flare
+      topOff: -(2 + taperIn * 4 + softMax0(topWave, 2.5) * taperIn + smooth(rawTopJitter, i) * taperIn),
+      botOff: 2 + taperIn * 3 + softMax0(botWave, 2.5) * taperIn + smooth(rawBotJitter, i) * taperIn + flare
     });
   }
   return pts;
@@ -15041,7 +15055,7 @@ const FOREST_SAND_JUNCTION_GRAINS = Array.from({ length: 220 }, (_, i) => {
   return {
     t,
     dy: -6 + pseudoRandom(seed + 1) * 18,
-    r: 0.5 + t * 1.6 + pseudoRandom(seed + 2) * (0.5 + t),
+    r: 0.3 + t * 0.9 + pseudoRandom(seed + 2) * (0.3 + t * 0.55), // per direct request ("these sand grains finer")
     rot: pseudoRandom(seed + 3) * Math.PI,
     dark: pseudoRandom(seed + 4) > 0.5,
     a: 0.06 + pseudoRandom(seed + 5) * 0.1
@@ -15097,7 +15111,7 @@ const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
     t: pseudoRandom(seed),
     dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
-    r: 1.6 + pseudoRandom(seed + 4) * 2.2,
+    r: 0.9 + pseudoRandom(seed + 4) * 1.2, // per direct request ("these sand grains finer")
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
