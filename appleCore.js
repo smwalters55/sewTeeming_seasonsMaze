@@ -50804,6 +50804,44 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
+// CONFIRMED CHANGE ("i was trying to test as if i just entered the
+// forest dude. im not going through 40 minutes of game playing to test
+// this"): the earlier debug spawn was removed entirely because it ran
+// UNCONDITIONALLY on every load -- fine for active testing, but it also
+// meant every real playthrough (and every plain page refresh) got
+// silently hijacked into the forest, which is what caused "why am i at
+// the beginning randomly" the moment it was removed and a normal load
+// finally showed the real, save-less start. This version splits the
+// difference: gated behind a URL query param, so a plain load/refresh
+// is completely untouched (real start, exactly like a first-time
+// player), but appending ?debugSpawn=forest to the URL still drops you
+// at the actual forest entrance (sceneSpawns.forest -- not stapled to
+// the snake specifically this time, since the toll no longer cares
+// where the snake is either) with marble/acorn/shovel on hand for quick
+// testing, no 40-minute playthrough required.
+if (new URLSearchParams(window.location.search).get("debugSpawn") === "forest") {
+  currentScene = "forest";
+  player.x = sceneSpawns.forest.x;
+  player.y = 0;
+  player.vy = 0;
+  discoveredScenes.autumn = true;
+  discoveredScenes.spring = true;
+  discoveredScenes.forest = true;
+  // CONFIRMED BUG FIX ("tab through inventory... doesn't seem to
+  // [work]"): setting inventory[type] directly bypasses
+  // addToInventory/touchInventoryOrder, so these items never actually
+  // land in inventoryOrder -- the array Tab's own cycleHeldItem reads
+  // to build its cycle list. touchInventoryOrder() (the same call
+  // addToInventory makes) fixes it for good.
+  inventory.marble = 1;
+  touchInventoryOrder("marble");
+  inventory.acorn = 3;
+  touchInventoryOrder("acorn");
+  inventory.shovel = 1;
+  touchInventoryOrder("shovel");
+  updateMapUI();
+  updateInventoryUI();
+}
 
 update();
 
