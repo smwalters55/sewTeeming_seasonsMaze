@@ -13887,11 +13887,19 @@ function drawForestSandRiverJunction(camX) {
   }
   const lastTop = pts[pts.length - 1];
   ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
-  for (let i = pts.length - 2; i >= 0; i--) {
+  for (let i = pts.length - 2; i >= 1; i--) {
     const p = pts[i], next = pts[i + 1];
     const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
     ctx.quadraticCurveTo(next.x, next.botY, mx, my);
   }
+  // close the loop properly, actually reaching pts[0]'s own bottom
+  // point before closePath draws the final connector back up to the
+  // start -- without this explicit step, the bottom edge loop above
+  // stops one midpoint short of pts[0], and closePath() cuts a straight
+  // diagonal line directly from that midpoint to the TOP start point
+  // instead, which reads as a sharp, wrong triangular notch at the left
+  // end (exactly the "sharp left corner thing" reported).
+  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
   ctx.closePath();
 
   const grad = ctx.createLinearGradient(pts[0].x, gy, pts[pts.length - 1].x, gy);
@@ -13911,11 +13919,12 @@ function drawForestSandRiverJunction(camX) {
     ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
   }
   ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
-  for (let i = pts.length - 2; i >= 0; i--) {
+  for (let i = pts.length - 2; i >= 1; i--) {
     const p = pts[i], next = pts[i + 1];
     const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
     ctx.quadraticCurveTo(next.x, next.botY, mx, my);
   }
+  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
   ctx.closePath();
   ctx.clip();
 
@@ -14613,12 +14622,20 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
   for (let i = 0; i <= samples; i++) {
     const t = i / samples;
     const seed = 8100 + i * 9.3;
-    const topWave = Math.sin(t * Math.PI * 2.4) * 4 + Math.sin(t * Math.PI * 5.1 + 1.4) * 2;
-    const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 5 + Math.sin(t * Math.PI * 4.2 + 2.1) * 2.5;
+    const topWave = Math.sin(t * Math.PI * 2.4) * 7 + Math.sin(t * Math.PI * 5.1 + 1.4) * 4;
+    const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 9 + Math.sin(t * Math.PI * 4.2 + 2.1) * 5;
+    // a real sand deposit piles up more where it meets moving water --
+    // this strip should read as thin/dry near the zen garden and
+    // progressively wider/deeper (sinking further below the horizon)
+    // as it nears the bank, not a uniform-thickness band throughout.
+    // Per direct feedback ("really think of this as organic, what
+    // would likely naturally happen" + "blob this a bit lower on the
+    // screen in parts").
+    const flare = t * t * 16;
     pts.push({
       t,
-      topOff: -(6 + Math.max(0, topWave) + pseudoRandom(seed) * 6),
-      botOff: 5 + Math.max(0, botWave) + pseudoRandom(seed + 1) * 7
+      topOff: -(6 + Math.max(0, topWave) + pseudoRandom(seed) * 8),
+      botOff: 5 + Math.max(0, botWave) + pseudoRandom(seed + 1) * 9 + flare
     });
   }
   return pts;
