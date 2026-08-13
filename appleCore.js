@@ -14146,26 +14146,34 @@ function drawForestSandBankTrail(camX) {
 
   ctx.beginPath();
   traceBankTrailPath();
-  // ONE continuous alpha gradient across the whole trail, not just a
-  // fade-in at the left cap -- per direct follow-up ("the one you added
-  // still doesnt blend enough in with the blue gorgeous sand gradient
-  // already there"). The real problem: drawForestFloatZone's own bank
-  // curve (bankPts, drawn earlier this same frame) already has its own
-  // lovely tan-to-blue gradient fill exactly where this trail overlaps
-  // it (from FOREST_FLOAT_ZONE_START_X out to where the water goes
-  // full-depth) -- and this trail's fill used to be flat opaque
-  // "#8c7a56" everywhere past its left cap, which simply painted over
-  // that existing gradient instead of blending with it. Now it fades
-  // IN from the left cap (same as before), stays solid through the
-  // genuinely dry shore stretch, then fades back OUT starting right at
-  // FOREST_FLOAT_ZONE_START_X (where the bank curve's own gradient
-  // starts turning blue) so that existing color shows through instead
-  // of getting covered by a second, unrelated flat tan.
+  // ONE continuous alpha gradient across the whole trail -- per direct
+  // follow-up ("the one you added still doesnt blend enough in with the
+  // blue gorgeous sand gradient already there"). drawForestFloatZone's
+  // own bank curve (bankPts, drawn earlier this frame) has its own tan-
+  // to-blue gradient fill exactly where this trail overlaps it; fading
+  // OUT past FOREST_FLOAT_ZONE_START_X lets that existing color show
+  // through instead of this trail painting flat tan over it.
+  //
+  // The LEFT fade-in used to run a full ~39px (frac 0.09 of the whole
+  // gradient) -- but FOREST_SAND_BANK_TRAIL.x now starts at the EXACT
+  // same world x the junction ribbon ends at (the gap between them was
+  // closed), and the ribbon's own rounded end cap only extends ~10px
+  // past that point. For the ~20-30px stretch between where the
+  // ribbon's cap coverage ran out and where this fade-in finally
+  // reached full opacity, this trail's semi-transparent tan was sitting
+  // directly over bare grass with nothing solid underneath -- mixing
+  // into a muddy brownish-green smear that read as a separate patched-
+  // on piece rather than a blend. Per direct, frustrated follow-up ("it
+  // still looks lke the thing that fully reaches the bottom is like
+  // pasted on connecting the other two sand lengths... make this all a
+  // smooth transition"). Shrunk to ~13px -- just enough to soften the
+  // cap's own geometric seam -- so full opacity is reached well within
+  // the ribbon's own cap coverage instead of past it.
   const lastP = pts[pts.length - 1];
   const worldFrac = (wx) => Math.max(0, Math.min(1, (wx - startX) / (endX - startX)));
   const fillGrad = ctx.createLinearGradient(pts[0].x - 9, gy, lastP.x, gy);
   fillGrad.addColorStop(0, "rgba(140,122,86,0)");
-  fillGrad.addColorStop(0.09, "rgba(140,122,86,1)");
+  fillGrad.addColorStop(0.03, "rgba(140,122,86,1)");
   fillGrad.addColorStop(worldFrac(FOREST_FLOAT_ZONE_START_X), "rgba(140,122,86,1)");
   fillGrad.addColorStop(worldFrac(FOREST_FLOAT_ZONE_START_X + 150), "rgba(140,122,86,0.12)");
   fillGrad.addColorStop(1, "rgba(140,122,86,0.05)");
@@ -15167,16 +15175,21 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
 // darker/lighter blotches for organic tonal variation on top of the
 // left-to-right gradient -- weighted toward more/darker blots as t
 // increases (the river end), fewer/lighter ones near the zen end
-const FOREST_SAND_JUNCTION_MOTTLES = Array.from({ length: 16 }, (_, i) => {
+// radius roughly halved (was 8-22) -- per direct, repeated request
+// ("i really really want finer grained sand, not these clumps"). At the
+// old size these read as big soft blobs sitting on top of an otherwise
+// genuinely fine-grained surface, which is exactly what made them stand
+// out as "clumps" rather than natural tonal variation.
+const FOREST_SAND_JUNCTION_MOTTLES = Array.from({ length: 20 }, (_, i) => {
   const seed = 8300 + i * 11.3;
   const t = pseudoRandom(seed);
   return {
     t,
     dy: -4 + pseudoRandom(seed + 1) * 14,
-    r: 8 + pseudoRandom(seed + 2) * 14,
+    r: 3.5 + pseudoRandom(seed + 2) * 6,
     rot: pseudoRandom(seed + 3) * Math.PI,
     dark: pseudoRandom(seed + 4) < 0.35 + t * 0.35,
-    a: 0.06 + pseudoRandom(seed + 5) * 0.1
+    a: 0.05 + pseudoRandom(seed + 5) * 0.08
   };
 });
 // granule speckle, sized/densified along the strip -- fine+sparse near
