@@ -17215,6 +17215,21 @@ function drawForestFloatZone(camX) {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+    // CONFIRMED BUG FIX ("that is an actual whole shape pasted on with
+    // two obvious lines, not just the one"): this fill used to have a
+    // completely crisp, unblurred tracePathOrganic edge -- fine on its
+    // own, but drawForestSandBankTrail draws its grain scatter (soft,
+    // patchy, no hard boundary anywhere) right on top of it afterward.
+    // Wherever the trail's own patchy coverage happened to skip a spot,
+    // this shape's flat gradient showed through with its full crisp
+    // silhouette still intact, reading as a separate solid piece
+    // dropped onto the grainy texture around it rather than one
+    // continuous bank. A light blur here (same technique as the shadow
+    // pass just above, just much subtler) feathers that silhouette so
+    // it holds together with the grain texture regardless of how much
+    // of it the trail happens to cover.
+    ctx.save();
+    ctx.filter = "blur(3px)";
     const sandGrad = ctx.createLinearGradient(topX, topY, waterX, waterY);
     sandGrad.addColorStop(0, "#8c7a56");
     sandGrad.addColorStop(1, "#3f6a72");
@@ -17223,6 +17238,7 @@ function drawForestFloatZone(camX) {
     tracePathOrganic(ctx, bankPts);
     ctx.closePath();
     ctx.fill();
+    ctx.restore();
 
     // a scatter of loose sand grains bleeding out into the grass just
     // past the bank's own top edge, so the sand-to-grass transition
