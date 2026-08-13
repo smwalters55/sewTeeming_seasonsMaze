@@ -14793,6 +14793,7 @@ function drawForestScene(camX) {
   drawForestBrambleBehindLayer(camX); // cached -- covers both the transition tapers and the main wall's behind layer
   drawForestBrambleBehindSnakeStrand(camX); // one crossing strand, live (not cached) so it can sit behind the snake specifically -- the rest of the front layer still draws after the snake, see drawForestBrambleFrontLayer below
   drawForestSnake(camX);
+  drawForestSnakeNook(camX);
   drawSnakeAskHint(camX);
   drawSnakeBlockedHint(camX);
   drawSnakeAcceptHint(camX);
@@ -19419,6 +19420,46 @@ const FOREST_BRAMBLE_X2 = 2290; // shifted +80 (was 2210)
 const FOREST_BRAMBLE_TRANSITION_IN_X1 = 1380; // looser vines building up to the main wall (was 1300)
 const FOREST_BRAMBLE_TRANSITION_OUT_X2 = 2330; // looser vines tapering off after the main wall (was 2250)
 
+// CONFIRMED CHANGE ("what if instead of giving it directly to snake,
+// player places it in something at the start of the bramble... right
+// now it is moving quickly w not much time to read text and then snake
+// leaves and you have to wait and still might not get it with the text
+// gone"): the marble toll no longer requires the snake to be physically
+// docked and present -- a small hollow carved into the bramble wall
+// itself, always there, always interactable. Placing the marble here
+// pays the toll permanently on the spot, no timing, no missed window,
+// no dependency on where the snake currently is in its travel cycle.
+const FOREST_SNAKE_NOOK_X = FOREST_BRAMBLE_X1 - 20;
+function drawForestSnakeNook(camX) {
+  const nx = FOREST_SNAKE_NOOK_X - camX;
+  const ny = gy - 22;
+  ctx.save();
+  ctx.translate(nx, ny);
+  // carved-out hollow -- dark recess with a lighter worn rim, reads as
+  // "a spot for something" even before anything's placed in it
+  ctx.fillStyle = "#2a2410";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 13, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a4a26";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  if (forestSnake.marbleGiven) {
+    // the marble itself, sitting in the hollow once paid -- same shape
+    // and color as the carried icon, just resting rather than floating
+    ctx.fillStyle = "#c85a8a";
+    ctx.beginPath();
+    ctx.arc(0, -1, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.beginPath();
+    ctx.arc(-2, -3, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.lineWidth = 1; // see drawForestSnake's own note -- don't leak a fat stroke into whatever draws next
+}
+
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -21005,14 +21046,16 @@ function drawForestSnake(camX) {
   ctx.lineWidth = 1;
 }
 
-// the snake's proactive ask, shown once on first encounter -- same
-// fitted speech bubble every other NPC uses, anchored above the head
+// the snake's proactive ask, shown once on first encounter -- CONFIRMED
+// CHANGE (nook rework, see FOREST_SNAKE_NOOK_X's own comment): anchored
+// to the nook's fixed position now, not the snake's own head -- the ask
+// fires based on proximity to the nook, independent of where the snake
+// currently is, so tying its position to a possibly-distant, possibly-
+// traveling snake made no sense anymore.
 function drawSnakeAskHint(camX) {
   if (!snakeAskActive) return;
-  const headP = getForestSnakePoint(0);
-  const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
-  const sx = headP.x - camX;
-  const sy = gy - headBodyTop - 30;
+  const sx = FOREST_SNAKE_NOOK_X - camX;
+  const sy = gy - 60;
   const p = snakeAskT / SNAKE_ASK_HINT_DURATION;
   const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
   ctx.globalAlpha = Math.max(0, fade);
@@ -21034,14 +21077,13 @@ function drawSnakeBlockedHint(camX) {
   ctx.globalAlpha = 1;
 }
 
-// acknowledgement once the toll is actually paid -- anchored above the
-// head, same as the ask, so it reads as the same speaker
+// acknowledgement once the toll is actually paid -- anchored to the
+// nook, same reasoning as the ask above (fires wherever the player just
+// placed the marble, not wherever the snake happens to currently be)
 function drawSnakeAcceptHint(camX) {
   if (!snakeAcceptHint.active) return;
-  const headP = getForestSnakePoint(0);
-  const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
-  const sx = headP.x - camX;
-  const sy = gy - headBodyTop - 30;
+  const sx = FOREST_SNAKE_NOOK_X - camX;
+  const sy = gy - 60;
   const p = snakeAcceptHint.t / SNAKE_ACCEPT_HINT_DURATION;
   const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
   ctx.globalAlpha = Math.max(0, fade);
@@ -21814,26 +21856,29 @@ function updateForestScene(deltaTime) {
   }
 
   // proactive ask -- only fires once, only if the toll hasn't been paid
-  // yet. CONFIRMED CHANGE ("i want the snake to be saying the first line
-  // as it comes to you normally in the game, not when its already
-  // turned around"): originally gated on forestSnake.state === "docked",
-  // so in a normal playthrough the line only played once the snake had
-  // already fully arrived and turned to face the player -- it stayed
-  // silent while actually approaching. Proximity alone is enough to
-  // speak; it doesn't need to have stopped and turned first.
+  // yet. CONFIRMED CHANGE (nook rework, see FOREST_SNAKE_NOOK_X's own
+  // comment -- "right now it is moving quickly w not much time to read
+  // text and then snake leaves and you have to wait and still might not
+  // get it with the text gone"): tied to the fixed nook now instead of
+  // the snake's own currentX, which used to mean the ask (and the offer
+  // window below) only existed while the snake happened to be docked
+  // and nearby -- a real, missable timing window. The nook is always
+  // there, so this fires the first time the player is simply near IT,
+  // snake present or not.
   if (!forestSnake.marbleGiven && !snakeAskShown &&
-      isPlayerNear(forestSnake.currentX, 0, 90, 40, 20)) {
+      isPlayerNear(FOREST_SNAKE_NOOK_X, 0, 90, 40, 20)) {
     snakeAskActive = true;
     snakeAskShown = true;
     snakeAskT = 0;
   }
 
-  // paying the toll -- press space right at the docked snake while
-  // holding the marble. Same consume-and-clear pattern used everywhere
-  // else a single carried item gets handed over for good (see e.g. the
-  // rat's acorn feed or the mole shop pumpkin).
+  // paying the toll -- press space at the nook while holding the marble,
+  // ANY time, no snake presence or dock timing required anymore. Same
+  // consume-and-clear pattern used everywhere else a single carried item
+  // gets handed over for good (see e.g. the rat's acorn feed or the mole
+  // shop pumpkin).
   if (keys.spaceJustPressed && heldItem === "marble" && !forestSnake.marbleGiven &&
-      forestSnake.state === "docked" && isPlayerNear(forestSnake.currentX, 0, 90, 40, 20)) {
+      isPlayerNear(FOREST_SNAKE_NOOK_X, 0, 90, 40, 20)) {
     inventory.marble -= 1;
     if (inventory.marble <= 0) delete inventory.marble;
     heldItem = null;
