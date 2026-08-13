@@ -2877,12 +2877,29 @@ function applyPhysics(){
     (snakeState.knockbackFlightMs > 0 ? 0.22 :
     ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 : 0.8));
 
-  // ground collision
+  // ground collision -- with a special case for the sandbox trampoline:
+  // landing on its mat while genuinely falling launches the player back
+  // up instead of stopping them (see SANDBOX_TRAMPOLINE_* constants'
+  // own comments), a one-frame velocity kick rather than a "mounted"
+  // ride, so ordinary jump/movement keeps working the whole time. Kept
+  // right here in the shared ground-collision check (rather than a
+  // separate sandbox-only block) since it's the exact same moment/shape
+  // as any other landing -- just a different outcome.
   if (player.y <= 0) {
-    player.y = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.vy = 0;
+    if (currentScene === "sandbox" && player.vy < -1 &&
+        Math.abs(player.x + player.width / 2 - sandboxTrampoline.x) < SANDBOX_TRAMPOLINE_RADIUS) {
+      const fallSpeed = Math.abs(player.vy);
+      player.y = 0;
+      player.vy = Math.min(SANDBOX_TRAMPOLINE_MAX_VY, Math.max(SANDBOX_TRAMPOLINE_MIN_VY, fallSpeed * SANDBOX_TRAMPOLINE_BOUNCE_MULT));
+      player.jumping = true;
+      player.usedDoubleJump = false; // a fresh bounce refreshes the double-jump too, same as landing normally would
+      sandboxTrampoline.squishT = 0;
+    } else {
+      player.y = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.vy = 0;
+    }
   }
 
   // everything below is autumn-specific (its platforms, ramp, stump, frog) —
@@ -41692,6 +41709,136 @@ function drawSandboxBubbles(camX) {
 }
 
 /* ======================================================
+   SANDBOX TRAMPOLINE -- classic version, per direct request. Bouncing
+   is fully automatic: landing on the mat while falling launches the
+   player back up instead of stopping them, with launch speed scaled
+   off how fast they were falling (a light tap gives a small hop, a
+   real jump-onto-it from height gives a big launch), clamped so an
+   extreme fall doesn't send them off the top of the world. No
+   goal/reward yet -- pure bounce toy for now, same category as the
+   ball pit/balance ball. Sits between the bubble wand (x:960) and the
+   pendulum (x:1900), the biggest open gap in the sandbox's layout, with
+   real clearance from both. Unlike the fan/pendulum/balance ball, this
+   ISN'T a "mount and ride" toy -- there's no persistent ridden state,
+   just a one-frame velocity kick applied at the moment of landing (see
+   applyPhysics' ground-collision block), so ordinary jump/movement
+   controls keep working the entire time, mid-air included.
+   ====================================================== */
+const sandboxTrampoline = {
+  x: 1400,
+  squishT: 9999 // ms since the last bounce -- high so no squish animation plays before the first one
+};
+const SANDBOX_TRAMPOLINE_RADIUS = 42; // how close to center (x) counts as landing on the mat
+const SANDBOX_TRAMPOLINE_MIN_VY = 11; // floor on launch speed -- even a barely-falling touch still gives a real, satisfying hop
+const SANDBOX_TRAMPOLINE_BOUNCE_MULT = 1.35; // fraction of incoming fall speed converted to launch speed -- >1 so bouncing gradually builds height rather than just matching the last fall
+const SANDBOX_TRAMPOLINE_MAX_VY = 30; // cap so repeated bounces can't build height forever and launch the player off the top of the world
+const SANDBOX_TRAMPOLINE_SQUISH_MS = 260; // how long the mat-compress-then-spring-back animation takes
+
+function updateSandboxTrampoline(deltaTime) {
+  if (sandboxTrampoline.squishT < SANDBOX_TRAMPOLINE_SQUISH_MS) sandboxTrampoline.squishT += deltaTime * 1000;
+}
+
+// dark stretched mat inside a metal ring, short angled legs, springs
+// evenly spaced around the rim -- reads as an actual classic trampoline,
+// not just a colored ellipse. The mat visibly dips (compresses toward
+// the ring) right at the moment of a bounce and springs back over
+// SANDBOX_TRAMPOLINE_SQUISH_MS, same "squish sells the impact" idea the
+// slinky's landing puff and the balance ball's wobble already use.
+function drawSandboxTrampoline(camX) {
+  const sx = sandboxTrampoline.x - camX;
+  const outerRx = 50, outerRy = 16;
+  // CONFIRMED BUG FIX: the ring's center used to be gy - outerRy*0.5,
+  // which put its BOTTOM edge at gy + outerRy*0.5 -- well below the
+  // ground line -- so the whole ring/mat visually sank half into the
+  // sand, no legs reaching it, no springs visible, reading as a plain
+  // black hole rather than a raised trampoline. A round object actually
+  // resting ON TOP of the ground needs its bottom edge AT gy, i.e.
+  // center = gy - outerRy, matching how the rest of this scene's
+  // raised props (not sunken pits) are positioned.
+  const ringCy = gy - outerRy; // the rigid frame ring's own fixed center -- never moves
+
+  // squish: 1 right at the moment of a bounce, eased back to 0 -- a
+  // real spring wobble (overshoots slightly past flat before settling),
+  // not a linear fade. Only the MAT reacts to this, never the frame
+  // ring/legs, which are rigid -- a mat that sinks under impact while
+  // the ring around it stays put is what actually reads as "compressed
+  // fabric on a fixed frame" rather than the whole toy wobbling.
+  const squishP = Math.min(sandboxTrampoline.squishT / SANDBOX_TRAMPOLINE_SQUISH_MS, 1);
+  const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
+  const matCy = ringCy + squish * 5; // sinks DOWN (toward the legs) on impact
+  const matRy = Math.max(2, (outerRy - 3) - squish * 6); // and FLATTENS (shorter vertical radius) at the same time
+  // CONFIRMED BUG FIX: matRx used to be 0.8 of outerRx, leaving barely
+  // any visible gap between the ring's inner edge and the mat -- the
+  // springs (drawn in that gap) were nearly zero-length and invisible,
+  // and the mat filling almost the entire ring read as a flat black
+  // void/hole rather than fabric stretched inside a frame. Pulled
+  // in further (0.62) so there's a real visible ring of springs.
+  const matRx = outerRx * 0.62;
+
+  // legs -- four short angled struts reaching from the ring's underside
+  // down to the ground, drawn first so the frame/mat sit on top
+  ctx.strokeStyle = "#6b6b6b";
+  ctx.lineWidth = 4;
+  [[-34, 3], [-18, 0], [18, 0], [34, 3]].forEach(([lx, ly]) => {
+    ctx.beginPath();
+    ctx.moveTo(sx + lx * 0.5, ringCy + outerRy * 0.7);
+    ctx.lineTo(sx + lx, gy + ly);
+    ctx.stroke();
+  });
+
+  // metal frame ring -- fixed, doesn't squish
+  ctx.strokeStyle = "#8a8f96";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.ellipse(sx, ringCy, outerRx, outerRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // springs -- small radial ticks between the frame ring and the mat,
+  // stretching to follow the mat as it sinks/flattens. Darker + thicker
+  // than the first pass so they actually read against both the pale
+  // ring and the dark mat instead of nearly disappearing.
+  const springCount = 14;
+  ctx.strokeStyle = "#5f6570";
+  ctx.lineWidth = 2.2;
+  for (let i = 0; i < springCount; i++) {
+    const ang = (i / springCount) * Math.PI * 2;
+    const outerX = sx + Math.cos(ang) * outerRx, outerY = ringCy + Math.sin(ang) * outerRy;
+    const innerX = sx + Math.cos(ang) * matRx, innerY = matCy + Math.sin(ang) * matRy;
+    ctx.beginPath();
+    ctx.moveTo(outerX, outerY);
+    ctx.lineTo(innerX, innerY);
+    ctx.stroke();
+  }
+
+  // mat -- dark navy fabric, sinks and flattens toward the ring on a
+  // fresh bounce. CONFIRMED BUG FIX: the original gradient (#2e3440 ->
+  // near-black #1a1e26, both very dark) read as a flat void/hole rather
+  // than taut fabric -- lightened the center stop and added a soft
+  // highlight band so it catches a bit of light like a real stretched
+  // mat surface would.
+  const matGrad = ctx.createRadialGradient(sx, matCy, 2, sx, matCy, matRx);
+  matGrad.addColorStop(0, "#3f4f66");
+  matGrad.addColorStop(0.6, "#2a3648");
+  matGrad.addColorStop(1, "#1c2531");
+  ctx.fillStyle = matGrad;
+  ctx.beginPath();
+  ctx.ellipse(sx, matCy, matRx, matRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // soft highlight streak, offset toward the upper-left -- sells "taut
+  // woven fabric catching light" instead of a flat painted disc
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, matCy, matRx, matRy, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "rgba(200,215,235,0.14)";
+  ctx.beginPath();
+  ctx.ellipse(sx - matRx * 0.25, matCy - matRy * 0.35, matRx * 0.55, matRy * 0.4, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ======================================================
    SANDBOX PENDULUM -- fourth "weird toy" per direct request ("lets
    add a pendulum to sandbox"). A-frame stand with a ball swinging
    continuously on a rod. Jump onto the ball while it swings near
@@ -48868,6 +49015,19 @@ function drawSandboxScene(camX) {
 
   drawSandboxSkyDecor(camX);
 
+  // everything from here down is ground-level -- translating the whole
+  // block by cameraY in one shot (same technique drawSpringScene uses
+  // for its own ground-level block, see that function's own comment)
+  // keeps every existing prop's positioning exactly as authored, no
+  // need to thread a manual +cameraY into dozens of individual draw
+  // calls. A no-op except while airborne well above ground (currently
+  // just the trampoline's bounce, see updateSandboxScene's cameraY
+  // line) -- the player sprite itself is drawn separately/later in the
+  // shared draw() step and already applies cameraY on its own, so
+  // nothing here double-shifts it.
+  ctx.save();
+  ctx.translate(0, cameraY);
+
   // disheveled sand floor -- base tone, then dense granular texture,
   // then real dug-out holes (not just tinted smudges) -- so it reads as
   // actually played-in sand, not a flat floor with a few shadows on it.
@@ -48975,6 +49135,7 @@ function drawSandboxScene(camX) {
   drawSandboxFan2(camX);
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
+  drawSandboxTrampoline(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
@@ -48995,6 +49156,8 @@ function drawSandboxScene(camX) {
   drawSandboxAntFarm(camX);
   drawSandboxBubbles(camX); // drawn near the end so bubbles float in front of the other props as they drift up
 
+  ctx.restore(); // matches the ctx.save() right before the ground-level cameraY translate above
+
   // CONFIRMED CHANGE: removed the tall red wood-panel end walls per
   // direct feedback ("remove the big tall red box thing i dont like
   // that") -- the room's edges are still a hard boundary (see the
@@ -49003,6 +49166,18 @@ function drawSandboxScene(camX) {
 }
 
 function updateSandboxScene(deltaTime) {
+  // vertical camera -- same follow-once-past-a-comfortable-height
+  // pattern tunnel town's own climbing and the spring vine both use
+  // (see updateTunnelTownScene's cameraY line for the full rationale).
+  // Unconditional here (not gated on any specific toy) so ANY reason
+  // the player ends up well above ground in the sandbox -- the new
+  // trampoline's bounce being the main one -- scrolls the view up
+  // instead of capping height at whatever a single static screen shows.
+  // Settles back to 0 automatically once player.y drops back down.
+  cameraY = Math.max(0, player.y - 150);
+
+  updateSandboxTrampoline(deltaTime);
+
   // CONFIRMED CHANGE: radiusYUp bumped 15 -> 26, same fix as the entrance
   // mound got -- now that its top is a real jumpable platform, standing on
   // top of it puts player.y past the old 15 tolerance, so interact would
@@ -49051,8 +49226,21 @@ function updateSandboxScene(deltaTime) {
 
   // guarded on !onFan -- while hovering, updateSandboxFan is the one
   // driving player.y, this shouldn't stomp it back to ground level
+  //
+  // CONFIRMED BUG FIX (found while adding the trampoline): this used to
+  // check ONLY player.y <= 0, no velocity check at all -- applyPhysics'
+  // own ground-collision handling explicitly sets player.y = 0 as part
+  // of a trampoline bounce too (same as a normal landing), the only
+  // difference being vy is launched positive instead of zeroed. Since
+  // this runs every frame right after applyPhysics with no vy check, it
+  // saw y <= 0 immediately after a bounce and re-zeroed vy in the same
+  // frame, undoing the bounce before it ever left the ground. Matching
+  // the vy <= 0 guard every other "resting on the ground" check in the
+  // codebase already uses (e.g. the sandbox pile-landing check) fixes
+  // it -- only re-grounds when actually at/below ground AND not moving
+  // upward, exactly what "still legitimately resting" should mean.
   if (!player.onFan && !player.onFan2 && !player.onPendulum && !player.onSlinky && !player.onBalanceBall &&
-      !player.onBallPitLadder && !player.inBallPit && player.y <= 0) {
+      !player.onBallPitLadder && !player.inBallPit && player.y <= 0 && player.vy <= 0) {
     player.y = 0;
     player.vy = 0;
     player.jumping = false;
@@ -50914,21 +51102,12 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Currently dropped in SPRING, right at the
-// peanut vine, with it already fully grown (digSite planted+watered,
-// peanutVine.grown forced true, growProgress maxed) so it's climbable
-// immediately on load instead of needing to plant/water/wait 4 real
-// seconds first. Per direct request ("temp debug spawn me in spring
-// after the peanut vine has grown so i can test that rn"). Remove/move
-// this block again once done testing -- it overrides every load, same
-// as every earlier round of this.
-currentScene = "spring";
-hasReturnedFromClouds = true; // the whole dig-site/vine draw path is gated behind this -- without it the vine never renders at all, grown flag or not
-digSite.planted = true;
-digSite.watered = true;
-peanutVine.grown = true;
-peanutVine.growProgress = 1;
-player.x = peanutVine.x - 40;
+// URL param, no extra steps). Currently dropped in the SANDBOX, right
+// in front of the new trampoline, for testing it. Remove/move this
+// block again once done testing -- it overrides every load, same as
+// every earlier round of this.
+currentScene = "sandbox";
+player.x = sandboxTrampoline.x - 70;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
