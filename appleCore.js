@@ -16478,7 +16478,8 @@ function drawFloatRewardToroid(cx, cy, seed) {
   const theta = now * 0.0016 + seed * 2.3; // per-collectible phase offset so a whole river's worth don't spin in lockstep
   const spin = Math.cos(theta); // -1..1, drives both squash and which "face" is toward the camera
   const bob = Math.sin(now * 0.0022 + seed * 1.7) * 1.4; // small idle float, same language as the boat pile's own gentle bob
-  const outerR = 7.2, outerRy = outerR * 0.62, holeR = 3, holeRy = holeR * 0.62;
+  // per direct request ("make them at least twice as big") -- was 7.2/3
+  const outerR = 14.4, outerRy = outerR * 0.62, holeR = 6, holeRy = holeR * 0.62;
   // never fully collapses to a hairline at the exact edge-on instant --
   // a real torus still shows a thin sliver of its tube from the side
   const squash = Math.max(0.14, Math.abs(spin));
