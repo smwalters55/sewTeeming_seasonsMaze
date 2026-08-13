@@ -2826,8 +2826,12 @@ function applyPhysics(){
   // tunnelFallingThroughGap above), same dramatic-fall pattern already
   // used for the giant pile collapse and the snake knockback -- doesn't
   // touch normal jumping/landing anywhere else in tunnel town at all.
+  // CONFIRMED BUG FIX: this used to key off snakeState.hissing (its full
+  // ~2000ms lifetime) rather than the dedicated knockbackFlightMs timer --
+  // see that timer's own comment at the knockback trigger site for the
+  // real repro ("flies into oblivion... disappeared for a sec").
   player.vy -= giantPileCollapse.phase === "falling" ? 0.12 :
-    (snakeState.hissing > 0 ? 0.22 :
+    (snakeState.knockbackFlightMs > 0 ? 0.22 :
     ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 : 0.8));
 
   // ground collision
@@ -6872,6 +6876,12 @@ const hayBales = {
   toppling: false,
   toppleT: 0
 };
+// "Room cut" at the far end of the squash patch, past the end-cap bale
+// pile (x:6300) -- once the camera reaches this point the view just
+// stops scrolling. Hoisted to module scope (was a local const inside
+// update()) so both the camera clamp AND the player's own movement
+// clamp below can share the same value, per the bug fix just below.
+const AUTUMN_END_ROOM_CUT_X = 6420;
 const HAY_BALE_ROWS = 10; // tall stack, two columns wide -- reads as genuinely imposing, "all the way up"
 const HAY_BALE_ROW_HEIGHT = 22;
 const HAY_BALE_STANDING_HEIGHT = HAY_BALE_ROWS * HAY_BALE_ROW_HEIGHT;
@@ -7273,19 +7283,33 @@ function drawPumpkinMouth(idx, x, y, s, fillColor) {
     ctx.arc(0, s * 0.08, s * 0.15, 0, Math.PI * 2);
     ctx.fill();
   } else if (idx === 11) { // zigzag scream -- a tall jagged strip
+    // CONFIRMED BUG FIX ("vertical zipup mouth touches nose, it
+    // shouldn't"): this ran the full -s*0.5..s*0.5 vertical span same as
+    // every other mouth's own local coordinate space, but this is the
+    // one TALL mouth shape -- at the mouth's actual draw position
+    // (cy + size*0.24) that top edge lands right at the nose's own
+    // bottom edge (cy + size*0.03 + nose's own downward reach), so the
+    // two visibly touch/overlap for this shape specifically even though
+    // every other (shorter) mouth clears the nose fine at that same
+    // origin. Pulled the top edge in from -0.5 to -0.32 -- still reads
+    // as a tall jagged scream shape, just with real breathing room
+    // under the nose. Bottom edge left alone since there's nothing
+    // below it to collide with.
+    const topOffset = -s * 0.32, botOffset = s * 0.5;
+    const spanY = botOffset - topOffset;
     ctx.beginPath();
-    ctx.moveTo(-s * 0.16, -s * 0.5);
+    ctx.moveTo(-s * 0.16, topOffset);
     const steps = 6;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const py = -s * 0.5 + t * s;
+      const py = topOffset + t * spanY;
       const px = (i % 2 === 0 ? -1 : 1) * s * 0.16;
       ctx.lineTo(px, py);
     }
-    ctx.lineTo(s * 0.16, s * 0.5);
+    ctx.lineTo(s * 0.16, botOffset);
     for (let i = steps; i >= 0; i--) {
       const t = i / steps;
-      const py = -s * 0.5 + t * s;
+      const py = topOffset + t * spanY;
       const px = (i % 2 === 0 ? 1 : -1) * s * 0.16;
       ctx.lineTo(px, py);
     }
@@ -28314,7 +28338,7 @@ function updateSpider(deltaTime) {
 // bare per the shelf's original comment ("somewhere for an uncoiled tail
 // to rest").
 const snakeSpot = { x: 1155, y: 78 };
-const snakeState = { tailWaveT: 0, hissing: 0, hissT: 0 };
+const snakeState = { tailWaveT: 0, hissing: 0, hissT: 0, knockbackFlightMs: 0 };
 const snakeDialogue = { active: false, index: 0, t: 0, everShownThisVisit: false };
 const snakeLines = [
   ["Sssomeone'sss curioussss down here."],
@@ -29858,11 +29882,32 @@ function updateRatRoomScene(deltaTime) {
       // the actual knockback, once the hiss has had a moment to register
       player.vy = 6;
       player.jumping = true;
+      // CONFIRMED BUG FIX ("player still flies into oblivion on high
+      // bookshelf... and disappeared for a sec"): the slow-motion gravity
+      // below (applyPhysics, keyed off snakeState.hissing) used to stay
+      // active for hissing's ENTIRE ~2000ms lifetime, not just the brief
+      // scripted knockback hop. If the player jumped again on their own
+      // (very natural right after getting bumped, trying to recover)
+      // anywhere in that 2-second window, THEIR jump also got the same
+      // ultra-slow 0.22 gravity instead of the normal 0.8 -- a real
+      // double-jump under that little gravity sails far higher than any
+      // legit jump ever should, well off the top of the (vertically
+      // fixed, non-following) ratroom camera, reading as "flew into
+      // oblivion" and "disappeared" until it eventually, slowly drifted
+      // back down. Scoped the slow gravity to a dedicated short timer
+      // covering just the scripted pop's own real flight time (~900ms
+      // for vy=6 at 0.22 gravity, up and back down) instead of riding
+      // along with the much longer hiss/no-landing window.
+      snakeState.knockbackFlightMs = 950;
     }
     if (snakeState.hissT >= 2000) {
       snakeState.hissing = 0;
       snakeState.hissT = 0;
     }
+  }
+  if (snakeState.knockbackFlightMs > 0) {
+    snakeState.knockbackFlightMs -= deltaTime * 1000;
+    if (snakeState.knockbackFlightMs < 0) snakeState.knockbackFlightMs = 0;
   }
 
   // stair collision — same landing pattern as the oak room's platforms,
@@ -50217,6 +50262,20 @@ lastTime = now;
           else player.x = pile.x + 24;
         }
       });
+
+      // CONFIRMED BUG FIX ("end camera after the last hay bale pile"):
+      // the camera itself already stops scrolling at AUTUMN_END_ROOM_CUT_X
+      // (see the clamp near the bottom of update()), but nothing was
+      // stopping the PLAYER from continuing to walk right past that same
+      // point -- since the camera stays frozen while the player keeps
+      // moving, they'd walk straight off the visible edge of the screen
+      // and out of view entirely. Capped here to match the camera's own
+      // stopping point (with a little room to still stand on/explore the
+      // end-cap pile), same pattern as the oak jump-run gate's
+      // player-side clamp.
+      if (player.x > AUTUMN_END_ROOM_CUT_X - player.width) {
+        player.x = AUTUMN_END_ROOM_CUT_X - player.width;
+      }
     }
   }
 
@@ -50432,9 +50491,10 @@ updateSeasonTransition(deltaTime);
   // whole point of this pile is to be the visible wall the room cuts
   // off at, so the anchor needs to sit PAST the pile, not before it.
   // "Room cut" at the far end of the squash patch: once the camera
-  // reaches this point the view just stops scrolling, even though the
-  // player can keep walking right past it.
-  const AUTUMN_END_ROOM_CUT_X = 6420;
+  // reaches this point the view just stops scrolling.
+  // (AUTUMN_END_ROOM_CUT_X itself now lives at module scope, next to
+  // hayBales -- see the player-side clamp using the same constant,
+  // just below the "standing wall" block earlier in this function.)
   if (currentScene === "autumn" && hayBales.toppled && cameraX > AUTUMN_END_ROOM_CUT_X - canvas.width + 40) {
     cameraX = AUTUMN_END_ROOM_CUT_X - canvas.width + 40;
   }
@@ -50452,19 +50512,21 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// TEMPORARY debug spawn -- per direct request, dropped at the start of
-// sandbox for testing this round's sandbox changes (microscope wing
-// slide, crown fixes, second exit mound, ball pit front balls). Remove
-// this block again for a real fresh-start playtest, same as every
-// earlier round of this same back-and-forth.
-currentScene = "sandbox";
-player.x = 200;
+// TEMPORARY debug spawn -- per direct request, dropped back at the very
+// start of forest for testing. Remove this block again for a real
+// fresh-start playtest, same as every earlier round of this same
+// back-and-forth.
+currentScene = "forest";
+player.x = 220;
 player.y = 0;
 player.vy = 0;
 discoveredScenes.autumn = true;
 discoveredScenes.spring = true;
-discoveredScenes.clouds = true;
-discoveredScenes.sandbox = true;
+discoveredScenes.forest = true;
+// per direct request, tester needs these on hand right at spawn
+inventory.boomerang = 1;
+inventory.acorn = 3;
+inventory.shovel = 1;
 
 updateMapUI();
 updateInventoryUI();
