@@ -3474,6 +3474,18 @@ function drawFittedSpeechBubble(ctx, x, y, sentences) {
   roundRect(ctx, x, y, bubbleWidth, bubbleHeight, 9);
   ctx.fill();
   ctx.strokeStyle = "#2b2b2b";
+  // explicit, not assumed -- this bubble is shared by every NPC/hint in
+  // the game (snake, rat, mole shop, tunnel dig hint, etc), drawn right
+  // after whatever else was on screen that frame. Found a real case
+  // where the forest snake's own body outline stroke (lineWidth 30/23)
+  // was left set on the canvas context afterward and never reset, so
+  // this bubble's border inherited it -- a border that thick eats most
+  // of a ~40px-tall box, which is exactly the "black smear swallowing
+  // the text" bug reported. Pinning this to 1 makes the bubble immune
+  // to whatever line width anything drawn earlier in the frame leaves
+  // behind, rather than just patching the one leak that happened to be
+  // found.
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   ctx.fillStyle = "#2b2b2b";
@@ -19284,8 +19296,10 @@ let snakeAskT = 0;
 // instructional text ("offer it something small, round, and shiny
 // first") swapped for the snake actually speaking, in its own
 // fairytale-snake voice -- still points at the marble without naming
-// it outright.
-const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round -- it wearsss a blush of pink where the light touchesss it."];
+// it outright. The extra pink-hue clue only belongs on the reminder
+// line (see drawSnakeBlockedHint) for a player who's already tried and
+// failed once -- this first proactive ask stays vaguer.
+const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round, sssomething that catchesss the light."];
 
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
@@ -20964,6 +20978,16 @@ function drawForestSnake(camX) {
   ctx.arc(5, -3, 2.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  // the body outline stroke earlier in this function sets lineWidth to
+  // 30 (then 23) OUTSIDE any save/restore, so it's still sitting on the
+  // canvas context when this function returns -- everything else drawn
+  // later in the same frame (starting with the snake's own ask/blocked
+  // speech bubbles, right after this call in the draw order) inherited
+  // that huge width, turning a normal 1px bubble border into a thick
+  // black band that swallowed most of the text. Reset back to a sane
+  // default before handing off.
+  ctx.lineWidth = 1;
 }
 
 // the snake's proactive ask, shown once on first encounter -- same
@@ -20991,7 +21015,7 @@ function drawSnakeBlockedHint(camX) {
   const sx = snakeBlockedHint.x - camX;
   const sy = gy - snakeBlockedHint.heightAboveGround - 40;
   ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["I ssspoke plainly once already...", "sssomething small and round, or you don't crosss."]);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["I ssspoke plainly once already...", "sssomething small and round, with a blush of pink where the light touchesss it."]);
   ctx.globalAlpha = 1;
 }
 
