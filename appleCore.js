@@ -13990,9 +13990,12 @@ function drawForestSandRiverJunction(camX) {
   // into the grass -- which is what actually reads as an uneven
   // landscape trailing off, rather than a second parallel outline.
   FOREST_SAND_JUNCTION_SPRINKLES.forEach(s => {
-    const edgeOff = sandJunctionOffAt(s.t, s.side > 0 ? "botOff" : "topOff");
+    const edgeOff = sandJunctionOffAt(s.t, "botOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
-    const sy = gy + edgeOff + s.side * (4 + s.spread * 34);
+    // clamped so a sprinkle can never render below the horizon/water
+    // line, even where the ribbon's own edge already dips deep -- per
+    // direct request ("i dont want it in water, at least not now")
+    const sy = Math.min(gy, gy + edgeOff + s.side * (4 + s.spread * 34));
     const alpha = 0.18 + (1 - s.spread) * 0.34;
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
@@ -14081,9 +14084,12 @@ function drawForestSandBankTrail(camX) {
   // edge-fade sprinkles, deliberately outside the clip so they land in
   // the grass past the trail's own edge -- see FOREST_SAND_BANK_TRAIL_SPRINKLES
   FOREST_SAND_BANK_TRAIL_SPRINKLES.forEach(s => {
-    const edgeOff = sandProfileOffAt(FOREST_SAND_BANK_TRAIL_PROFILE, s.t, s.side > 0 ? "botOff" : "topOff");
+    const edgeOff = sandProfileOffAt(FOREST_SAND_BANK_TRAIL_PROFILE, s.t, "botOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
-    const sy = gy + edgeOff + s.side * (4 + s.spread * 34);
+    // clamped so a sprinkle can never render below the horizon/water
+    // line -- per direct request ("i dont want it in water, at least
+    // not now" / "i want it below the sand we just added only")
+    const sy = Math.min(gy, gy + edgeOff + s.side * (4 + s.spread * 34));
     const alpha = 0.18 + (1 - s.spread) * 0.34;
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
@@ -14788,8 +14794,14 @@ const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 130 }, (_, i) => {
   const seed = 9800 + i * 6.3;
   return {
     t: pseudoRandom(seed) ** 1.6,
-    side: pseudoRandom(seed + 1) < 0.8 ? 1 : -1,
-    spread: pseudoRandom(seed + 2),
+    side: 1, // bottom only -- per direct request ("i dont want sand above")
+    // spread biased toward 0 (close to the edge) with **2.2 -- a flat
+    // pseudoRandom(0..1) here only faded ALPHA with distance while the
+    // DENSITY of points per unit distance stayed uniform, which is why it
+    // read as "odd sporadic random sand" instead of a real gradient. This
+    // skews far more grains to cluster near the edge and thins the actual
+    // COUNT out with distance, not just the opacity -- genuine dithering.
+    spread: pseudoRandom(seed + 2) ** 2.2,
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
     rot: pseudoRandom(seed + 5) * Math.PI,
@@ -14930,8 +14942,11 @@ const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 170 }, (_, i) => {
   const seed = 8900 + i * 7.1;
   return {
     t: pseudoRandom(seed),
-    side: pseudoRandom(seed + 1) < 0.78 ? 1 : -1, // 1 = below the bottom edge, -1 = above the top edge
-    spread: pseudoRandom(seed + 2),
+    side: 1, // bottom only -- per direct request ("i dont want sand above")
+    // same density-bias fix as the bank trail's sprinkles above -- spread
+    // skewed toward the edge with **2.2 so the grain COUNT itself thins
+    // out with distance (a real gradient), not just each grain's alpha.
+    spread: pseudoRandom(seed + 2) ** 2.2,
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
     rot: pseudoRandom(seed + 5) * Math.PI,
@@ -16122,7 +16137,17 @@ function drawForestFloatZone(camX) {
     const bankPts = [{ x: topX - 50, y: topY }, ...edgePts, { x: waterX - 30, y: waterY + 30 }, { x: topX - 60, y: canvas.height + 20 }];
     ctx.save();
     ctx.filter = "blur(4px)";
-    ctx.globalAlpha = 0.55;
+    // alpha lowered (was 0.55) -- this soft shadow pass reaches all the
+    // way down to canvas.height+20 (deep into open water), which used
+    // to blend in fine against plain grass/water on either side. Now
+    // that the new sand junction/bank trail (a crisp, flat, much
+    // lighter tan) sits right alongside it, that same muddy wedge reads
+    // as an obviously misplaced diagonal smear cutting across the sand
+    // -- reported as "dear.......... what is this". Toning it down
+    // instead of removing it outright, since it's still doing real work
+    // giving the bank curve some depth/shadow where nothing else covers
+    // it, just needs to stop competing with the new sand art next to it.
+    ctx.globalAlpha = 0.22;
     ctx.fillStyle = "#7a6a4a";
     ctx.beginPath();
     tracePathOrganic(ctx, bankPts);
