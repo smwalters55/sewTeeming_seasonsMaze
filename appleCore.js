@@ -3098,6 +3098,27 @@ function applyPhysics(){
     }
   }
 
+  // second return mound (near the ant farm) -- same jumpable-top-face
+  // treatment as the first one above.
+  {
+    const boxCenterX = sandboxReturnMound2.x;
+    const boxTopHalfSpan = 44;
+    const boxTopHeight = 20;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > boxCenterX - boxTopHalfSpan &&
+      player.x < boxCenterX + boxTopHalfSpan &&
+      playerBottom <= boxTopHeight &&
+      playerBottom >= boxTopHeight - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = boxTopHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   } else if (currentScene === "spring") {
 
   // CONFIRMED CHANGE: the sandbox entrance marker's top face is now a
@@ -3539,6 +3560,21 @@ let crownLeaves = []; // {shape, color} — the actual leaves you've caught, in 
 // this universal." Zero until the first player-draw frame runs.
 let playerVisualDX = 0;
 let playerVisualDY = 0;
+// same idea as playerVisualDX/DY but for rotation -- filled in by the main
+// player draw with whatever total tilt angle the body itself is being
+// rotated by that frame (ball pit swim lie-down, mine cart tip, forest
+// bridge/gear tilt, etc). CONFIRMED BUG FIX ("crown is on butt or on
+// side, its just up top" while swimming tilted in the ball pit): the
+// crown used to be drawn upright/axis-aligned every frame regardless of
+// how far the body itself had been visually rotated, so once the player
+// tips over to swim, the head that "up top" math assumes is pointing at
+// is no longer where the actual (rotated) head is -- the crown just sat
+// at the untilted head position, which lands on the side or back of the
+// now-lying-down body instead. Reading this back in drawCrownOnHead and
+// rotating the crown by the same amount around the same pivot keeps it
+// pinned to the real head through any tilt, exactly like the crown
+// already follows every positional wobble via playerVisualDX/DY.
+let playerVisualRotation = 0;
 
 const crownState = {
   ready: false,   // true once needed leaves collected — crown exists, waiting to be worn
@@ -3865,6 +3901,20 @@ function drawCrownOnHead(camX, sinkAmount) {
   const isFalling = fallState.active;
   const widthScale = isFalling ? 0.85 : 1; // narrower while falling through a hole, so it stays inside the hole's own width — but still close to the player's own body width, not tiny
 
+  // rotate the whole crown to match the body's own current tilt (ball pit
+  // swim lie-down, mine cart tip, etc) -- see playerVisualRotation's own
+  // comment. Pivot is the same swayCx/swayCy point the main player draw
+  // rotates its own sprite around: px here already equals that swayCx
+  // (both are player.x - camX + width/2, offset by the same wobble term),
+  // and topY - lowerOffset + height/2 works out to the same swayCy.
+  ctx.save();
+  if (playerVisualRotation) {
+    const pivotY = topY - lowerOffset + player.height / 2;
+    ctx.translate(px, pivotY);
+    ctx.rotate(playerVisualRotation);
+    ctx.translate(-px, -pivotY);
+  }
+
   ctx.fillStyle = "#7a4a28";
   ctx.beginPath();
   ctx.moveTo(px - player.width * 0.55 * widthScale, topY + 4);
@@ -3889,6 +3939,39 @@ function drawCrownOnHead(camX, sinkAmount) {
   if (!isFalling) {
     drawLeafShape(ctx, px - player.width * 0.5, topY + 2, 5, -1.2, "maple", LEAF_COLORS[1]);
     drawLeafShape(ctx, px + player.width * 0.5, topY + 2, 5, 1.2, "round", LEAF_COLORS[3]);
+  }
+  ctx.restore();
+}
+
+// CONFIRMED BUG FIX ("crown doesn't work in the ant farm well"): the ant
+// farm mini-me used to draw the crown with drawCrownProcedural, the same
+// full-360-degree ring used for the small flat UI icon -- fine for a
+// standalone icon, but on an actual head that reads as a ring circling
+// (and partly clipped behind) the head rather than a crown resting on
+// top of it, and most of its bottom arc fell outside the ant farm's own
+// headwear clip region (built for a wig's side-braid shape, not a ring).
+// This mirrors drawCrownOnHead's real shape instead -- a shallow band of
+// leaves across just the TOP of the head -- scaled down for the ant-size
+// mini-me, so it actually sits on top like a crown should, at any scale.
+function drawCrownMini(ctx, cx, topY, halfWidth) {
+  ctx.fillStyle = "#7a4a28";
+  ctx.beginPath();
+  ctx.moveTo(cx - halfWidth, topY + 1.4);
+  ctx.quadraticCurveTo(cx, topY - 3, cx + halfWidth, topY + 1.4);
+  ctx.quadraticCurveTo(cx + halfWidth * 0.8, topY - 0.6, cx, topY - 1.2);
+  ctx.quadraticCurveTo(cx - halfWidth * 0.8, topY - 0.6, cx - halfWidth, topY + 1.4);
+  ctx.closePath();
+  ctx.fill();
+
+  const leafCount = CROWN_LEAVES_NEEDED;
+  const displayLeaves = getCrownDisplayLeaves();
+  for (let i = 0; i < leafCount; i++) {
+    const leaf = displayLeaves[i] || { shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] };
+    const spacingJitter = (pseudoRandom(i * 3.7) - 0.5) * 0.16;
+    const t = i / leafCount + spacingJitter;
+    const lx = cx - halfWidth + t * halfWidth * 2;
+    const ly = topY - 0.3 - Math.sin(t * Math.PI) * 0.3;
+    drawLeafShape(ctx, lx, ly, leaf.shape === "maple" ? 1.9 : 1.5, (t - 0.5) * 1.4, leaf.shape, leaf.color);
   }
 }
 
@@ -21498,50 +21581,13 @@ function updateForestScene(deltaTime) {
   // itself (see the removal note further up, near where its constants
   // used to live).
 
-  // offering the marble -- the toll that unlocks riding for good. Checked
-  // against the snake's actual current head position (not a fixed dock
-  // spot), so it works whichever side it's currently sitting at. Requires
-  // actively holding the marble (matches every other trade in the game,
-  // e.g. the mole shop's acorn check) rather than just having one buried
-  // in inventory, so it's a deliberate offer, not an accidental one.
-  if (!forestSnake.marbleGiven) {
-    const headP = getForestSnakePoint(0);
-    const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
-    // radiusYDown needs to comfortably cover standing at ordinary ground
-    // level (player.y=0) reaching up to the head's own resting height
-    // (FOREST_SNAKE_HEIGHT_ABOVE_GROUND=32) -- the first version of this
-    // used 30/20, just short of that, which meant a player standing flat
-    // on the ground right next to the snake wouldn't register as "near"
-    // at all.
-    const nearHead = isPlayerNear(headP.x, headBodyTop, 60, 50, 45);
-
-    // the snake's own ask -- fires once, the first time it's actually
-    // docked (not mid-travel across the bramble gap) and close enough
-    // to the player to notice, so the very first encounter proactively
-    // explains what it wants instead of leaving the player to guess
-    // after a failed jump.
-    if (!snakeAskShown && forestSnake.state === "docked" && nearHead) {
-      snakeAskShown = true;
-      snakeAskActive = true;
-      snakeAskT = 0;
-    }
-    if (snakeAskActive) {
-      snakeAskT += deltaTime * 1000;
-      if (snakeAskT >= SNAKE_ASK_HINT_DURATION) snakeAskActive = false;
-    }
-
-    if (heldItem === "marble" && inventory.marble > 0 && keys.spaceJustPressed &&
-        isPlayerNear(headP.x, headBodyTop, 30, 40, 45)) {
-      snakeAskActive = false;
-      inventory.marble -= 1;
-      if (inventory.marble <= 0) delete inventory.marble;
-      heldItem = null;
-      updateInventoryUI();
-      startPlaceAnimation("marble", headP.x, gy - headBodyTop, () => {
-        forestSnake.marbleGiven = true;
-      });
-    }
-  }
+  // CONFIRMED CHANGE ("the yellow snake marble gate is wayyyy fucked up
+  // ... remove that gate and just allow player to mount yellow snake
+  // normally"): the marble-toll offer (and the blocking checks below
+  // that refused to let you actually land on the snake until it was
+  // paid) is removed entirely -- mounting now works exactly like every
+  // other jump-and-land platform, no prerequisite item or interaction
+  // needed first.
   if (snakeBlockedHint.active) {
     snakeBlockedHint.t += deltaTime * 1000;
     if (snakeBlockedHint.t >= SNAKE_BLOCKED_HINT_DURATION) snakeBlockedHint.active = false;
@@ -21631,13 +21677,6 @@ function updateForestScene(deltaTime) {
           player.y <= bodyTop + 6 &&
           player.y >= bodyTop - 34
         ) {
-          if (!forestSnake.marbleGiven) {
-            snakeBlockedHint.active = true;
-            snakeBlockedHint.t = 0;
-            snakeBlockedHint.x = p.x;
-            snakeBlockedHint.heightAboveGround = bodyTop;
-            break;
-          }
           forestSnake.riding = true;
           forestSnake.midJump = false;
           forestSnake.riderBodyProgress = i / segments; // where along the body, head to tail, the player landed
@@ -21674,7 +21713,6 @@ function updateForestScene(deltaTime) {
           player.y <= bodyTop + 20 &&
           player.y >= bodyTop - 60
         ) {
-          if (!forestSnake.marbleGiven) break;
           forestSnake.riding = true;
           forestSnake.midJump = false;
           forestSnake.riderBodyProgress = i / segments;
@@ -40047,6 +40085,13 @@ function updateTunnelTownScene(deltaTime) {
 // the box's own footprint and interact radius are factored in.
 const sandboxEntranceMound = { x: 2860, width: 40 }; // in SPRING -- walk up, space to shrink down into the sandbox
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
+// second exit back to the same spring area, per direct request ("put
+// another sandbox exit to same spring area on the right of the ant
+// farm") -- sits just past the ant farm case's right edge (4290 + 456 =
+// 4746, see sandboxAntFarm's own comment), with SANDBOX_WIDTH widened
+// alongside it below so there's real breathing room on both sides of
+// the mound instead of it crowding the world's edge.
+const sandboxReturnMound2 = { x: 4790, width: 40 };
 
 // CONFIRMED CHANGE: rebuilt with an ACTUAL 3/4 angled top face this
 // time, not a flat head-on rectangle -- per direct feedback across
@@ -40190,7 +40235,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 4800; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746)
+const SANDBOX_WIDTH = 4900; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge.
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -44501,8 +44546,35 @@ const MICROSCOPE_SLIDES = [
         ctx.lineTo(x1, y1);
         ctx.stroke();
       });
+      // CONFIRMED CHANGE ("can we add more detail to butterfly wing") --
+      // finer cross-veinlets bridging the main veins (real wing venation
+      // is a connected net, not just branching spokes), plus a scatter of
+      // short microtrichia (the fine sensory hairs that fringe a real
+      // wing membrane at this zoom) along a couple of the vein edges, so
+      // the vein network reads as a genuine structure instead of a few
+      // isolated lines.
+      ctx.strokeStyle = "rgba(15,10,5,0.5)";
+      ctx.lineWidth = 1;
+      [[6, -6, 26, -22], [14, 20, 33, 4], [-16, 24, -34, 40]].forEach(([x0, y0, x1, y1]) => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      });
+      ctx.strokeStyle = "rgba(20,14,8,0.55)";
+      ctx.lineWidth = 0.6;
+      [[-10, 6, 30, -18], [-10, 6, 20, 40]].forEach(([x0, y0, x1, y1]) => {
+        for (let h = 0.15; h < 0.95; h += 0.22) {
+          const hx = x0 + (x1 - x0) * h, hy = y0 + (y1 - y0) * h;
+          const hairAng = Math.atan2(y1 - y0, x1 - x0) + (pseudoRandom(h * 37 + x0) > 0.5 ? 1.1 : -1.1);
+          ctx.beginPath();
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(hx + Math.cos(hairAng) * 2.6, hy + Math.sin(hairAng) * 2.6);
+          ctx.stroke();
+        }
+      });
 
-      const drawScale = (ox, oy, ang, len, wid, color) => {
+      const drawScale = (ox, oy, ang, len, wid, color, seed) => {
         ctx.save();
         ctx.translate(ox, oy);
         ctx.rotate(ang);
@@ -44522,6 +44594,33 @@ const MICROSCOPE_SLIDES = [
           ctx.lineTo(len * 0.42, s * wid * 0.22);
           ctx.stroke();
         }
+        // CONFIRMED CHANGE ("more detail to butterfly wing") -- a real
+        // monarch scale's outer (distal) edge is finely serrated/fringed,
+        // not a clean smooth curve -- a few small notches cut into the
+        // tip sell that under this much zoom. Plus a couple of tiny
+        // darker pigment-granule dots scattered inside the scale body,
+        // since the pigment itself sits in visible clumps rather than as
+        // one flat fill.
+        const s = seed || 0;
+        ctx.fillStyle = color;
+        for (let n = 0; n < 3; n++) {
+          const nt = -0.3 + n * 0.3 + (pseudoRandom(s + n * 3.1) - 0.5) * 0.1;
+          const ny = nt * wid * (pseudoRandom(s + n * 5.7) > 0.5 ? 1 : -1);
+          ctx.beginPath();
+          ctx.moveTo(len * 0.46, ny * 0.3);
+          ctx.lineTo(len * 0.58, ny * 0.55);
+          ctx.lineTo(len * 0.46, ny * 0.85);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        for (let g = 0; g < 3; g++) {
+          const gx = (pseudoRandom(s + g * 2.3) - 0.5) * len * 0.6;
+          const gy = (pseudoRandom(s + g * 4.1) - 0.5) * wid * 0.5;
+          ctx.beginPath();
+          ctx.arc(gx, gy, 0.55, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.restore();
       };
 
@@ -44538,7 +44637,7 @@ const MICROSCOPE_SLIDES = [
           const jy = oy + (pseudoRandom(row * 2.2 + col * 5.5) - 0.5) * 3;
           const shade = pseudoRandom(row * 4.4 + col * 1.7) * 0.18 - 0.09;
           const c = shadeColor(baseColor, shade * 255);
-          drawScale(jx, jy, 0.25 + (pseudoRandom(row * 3.3 + col) - 0.5) * 0.3, 15, 7, c);
+          drawScale(jx, jy, 0.25 + (pseudoRandom(row * 3.3 + col) - 0.5) * 0.3, 15, 7, c, row * 41 + col * 7);
         }
       }
       // a few stray individual scales that have lifted/detached, drifting
@@ -44548,7 +44647,21 @@ const MICROSCOPE_SLIDES = [
         const ox = (pseudoRandom(i * 9.9 + 500) - 0.5) * 100;
         const oy = (pseudoRandom(i * 6.6 + 501) - 0.5) * 100;
         const ang = pseudoRandom(i * 3.3 + 502) * Math.PI * 2;
-        drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f");
+        drawScale(ox, oy, ang, 12, 5.5, pseudoRandom(i * 4.4) > 0.7 ? "#f0ead8" : "#e0781f", i * 913 + 200);
+      }
+      // CONFIRMED CHANGE ("more detail to butterfly wing") -- a sparse
+      // scatter of tiny wear/chip flecks (a few scales scuffed pale, a
+      // couple of small dark gaps where scales have worn away entirely)
+      // -- real specimen wings never look pristine at this zoom, and
+      // this breaks up any remaining uniformity in the shingled field.
+      for (let i = 0; i < 10; i++) {
+        const wx = (pseudoRandom(i * 13.7 + 700) - 0.5) * 110;
+        const wy = (pseudoRandom(i * 8.3 + 701) - 0.5) * 110;
+        const wr = 1.2 + pseudoRandom(i * 5.1 + 702) * 1.6;
+        ctx.fillStyle = pseudoRandom(i * 3.9 + 703) > 0.5 ? "rgba(240,230,210,0.3)" : "rgba(10,8,5,0.4)";
+        ctx.beginPath();
+        ctx.arc(wx, wy, wr, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // faint iridescent structural sheen sweeping across the top of
@@ -47777,7 +47890,7 @@ function drawSandboxAntFarm(camX) {
         drawWigShape(player.wigId, ix, iy - 6, 0.22);
       }
       if (typeof crownState !== "undefined" && crownState.worn) {
-        drawCrownProcedural(ctx, ix, iy - 7, 3.4);
+        drawCrownMini(ctx, ix, iy - 9, 4.2);
       }
       ctx.restore();
     }
@@ -48409,6 +48522,7 @@ function drawSandboxScene(camX) {
   drawSandboxPendulumGoals(camX); // ground-level aim rings, drawn early/low so props and the player naturally layer in front
   drawStuckShovel(SANDBOX_WIDTH * 0.55, camX);
   drawSandMound(sandboxReturnMound.x, camX, null); // CONFIRMED CHANGE ("remove alll text within this [the sandbox]") -- "Back to Spring" label removed, same as the entrance mound's own label removal above
+  drawSandMound(sandboxReturnMound2.x, camX, null); // second exit back to spring, near the ant farm -- per direct request
   drawWigStand(camX);
   drawSandboxFan(camX);
   drawSandboxFan2(camX);
@@ -48446,7 +48560,7 @@ function updateSandboxScene(deltaTime) {
   // mound got -- now that its top is a real jumpable platform, standing on
   // top of it puts player.y past the old 15 tolerance, so interact would
   // silently stop working the moment you jumped up there.
-  if (keys.spaceJustPressed && isPlayerNear(sandboxReturnMound.x, 0, 26, 26, 15)) {
+  if (keys.spaceJustPressed && (isPlayerNear(sandboxReturnMound.x, 0, 26, 26, 15) || isPlayerNear(sandboxReturnMound2.x, 0, 26, 26, 15))) {
     startSeasonTransition("spring");
   }
 
@@ -49011,6 +49125,10 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
   ctx.translate(-swayCx, -swayCy);
+  // hand this frame's total tilt back to the crown (see playerVisualRotation's
+  // own comment) so it can rotate itself to match instead of staying upright
+  // while the body underneath it tips over.
+  playerVisualRotation = totalTilt;
 
   // a quick crouch-and-spring right when a river log gets picked up --
   // heftier than the carried icon's own pop-in alone, this is the
@@ -49299,20 +49417,18 @@ if (currentScene === "forest") {
   // handful of balls sit in front of the sprite, which is what actually
   // sells "surrounded by balls"/"in front of the pit" instead of
   // "standing in front of a ball-patterned wall".
-  // CONFIRMED BUG FIX ("when not in ball pit, dont draw balls on top of
-  // player"): drawing this unconditionally (removed the inBallPit gate
-  // a push ago, to fix a DIFFERENT complaint about the front layer never
-  // showing at all) went too far the other way -- since the pit's clip
-  // region is a fixed footprint on screen, standing on the ladder/rim
-  // (which sits right at that footprint's edge) got balls drawn right
-  // over the player's face even though they're standing outside the
-  // pit, not submerged in it. Only actually being IN the water puts the
-  // player visually among the balls; back to gating on player.inBallPit,
-  // but the regular (non-front) ball field elsewhere in the draw order
-  // is still unconditional, so the pit still reads as full of balls
-  // while just standing nearby -- only the over-the-player layer is
-  // restricted.
-  if (player.inBallPit) {
+  // CONFIRMED CHANGE ("the front balls only show up when swimming,
+  // again"): previously gated on player.inBallPit alone, which meant
+  // standing on the ladder or the rim -- right at the pit's own edge,
+  // knee-deep in the same balls -- read as "outside" and got none of the
+  // front layer. Widened to also cover onBallPitLadder/onBallPitRim so
+  // the front balls show any time the player is actually at the pit
+  // (climbing in, perched on the rim, or swimming), not just once fully
+  // submerged. Standing elsewhere in the sandbox, away from the pit
+  // entirely, still isn't covered by the pit's own screen-footprint clip
+  // in drawSandboxBallPitBalls, so this doesn't reintroduce the earlier
+  // "balls drawn over a player who isn't anywhere near the pit" bug.
+  if (player.inBallPit || player.onBallPitLadder || player.onBallPitRim) {
     drawSandboxBallPitBalls(camX, true);
   }
 }
@@ -50336,17 +50452,20 @@ updateSeasonTransition(deltaTime);
 }
 
 
-// real fresh-start playtest -- per direct request ("put me at the full
-// normal start of my game no debug spawn or set up base inventory").
-// The temporary debug spawn block that used to sit here (spring, then
-// repointed to drop straight into the rushing river float zone for
-// testing) is gone -- currentScene/player/discoveredScenes/inventory
-// all now just keep whatever their real initial declarations set them
-// to above (currentScene="autumn", player.x=400, discoveredScenes =
-// {autumn:true} only, empty inventory), the same state any actual first
-// launch has always had. updateMapUI/updateInventoryUI still run once
-// here to sync the UI to that real starting state before the loop
-// begins.
+// TEMPORARY debug spawn -- per direct request, dropped at the start of
+// sandbox for testing this round's sandbox changes (microscope wing
+// slide, crown fixes, second exit mound, ball pit front balls). Remove
+// this block again for a real fresh-start playtest, same as every
+// earlier round of this same back-and-forth.
+currentScene = "sandbox";
+player.x = 200;
+player.y = 0;
+player.vy = 0;
+discoveredScenes.autumn = true;
+discoveredScenes.spring = true;
+discoveredScenes.clouds = true;
+discoveredScenes.sandbox = true;
+
 updateMapUI();
 updateInventoryUI();
 
