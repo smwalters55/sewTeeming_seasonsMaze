@@ -50979,8 +50979,25 @@ if (currentScene === "forest") {
   // entirely, still isn't covered by the pit's own screen-footprint clip
   // in drawSandboxBallPitBalls, so this doesn't reintroduce the earlier
   // "balls drawn over a player who isn't anywhere near the pit" bug.
+  // CONFIRMED BUG FIX ("when jump on ladder, front ball apears. then as
+  // you go up they move up with the camera w player") -- this call sits
+  // in the shared post-player section of the top-level draw(), which runs
+  // AFTER drawSandboxScene has already closed its own
+  // ctx.save()/ctx.translate(0, cameraY)/ctx.restore() block (see that
+  // function's own comment). Every OTHER ball-pit ball is drawn inside
+  // that translated block via drawSandboxBallPit, so it correctly scrolls
+  // down-screen as cameraY grows while climbing the ladder, tracking the
+  // player (whose own draw math bakes in + cameraY directly). This front
+  // layer had no cameraY applied at all, so it stayed pinned to its raw
+  // screen position -- which reads as "drifting up, following the player"
+  // relative to the rest of the pit sinking away underneath it. Wrapping
+  // this call in the identical translate fixes it to move with the pit
+  // exactly like its non-front counterpart does.
   if (player.inBallPit || player.onBallPitLadder || player.onBallPitRim) {
+    ctx.save();
+    ctx.translate(0, cameraY);
     drawSandboxBallPitBalls(camX, true);
+    ctx.restore();
   }
 }
 
