@@ -50968,17 +50968,6 @@ if (currentScene === "forest") {
   // handful of balls sit in front of the sprite, which is what actually
   // sells "surrounded by balls"/"in front of the pit" instead of
   // "standing in front of a ball-patterned wall".
-  // CONFIRMED CHANGE ("the front balls only show up when swimming,
-  // again"): previously gated on player.inBallPit alone, which meant
-  // standing on the ladder or the rim -- right at the pit's own edge,
-  // knee-deep in the same balls -- read as "outside" and got none of the
-  // front layer. Widened to also cover onBallPitLadder/onBallPitRim so
-  // the front balls show any time the player is actually at the pit
-  // (climbing in, perched on the rim, or swimming), not just once fully
-  // submerged. Standing elsewhere in the sandbox, away from the pit
-  // entirely, still isn't covered by the pit's own screen-footprint clip
-  // in drawSandboxBallPitBalls, so this doesn't reintroduce the earlier
-  // "balls drawn over a player who isn't anywhere near the pit" bug.
   // CONFIRMED BUG FIX ("when jump on ladder, front ball apears. then as
   // you go up they move up with the camera w player") -- this call sits
   // in the shared post-player section of the top-level draw(), which runs
@@ -50993,12 +50982,26 @@ if (currentScene === "forest") {
   // relative to the rest of the pit sinking away underneath it. Wrapping
   // this call in the identical translate fixes it to move with the pit
   // exactly like its non-front counterpart does.
-  if (player.inBallPit || player.onBallPitLadder || player.onBallPitRim) {
-    ctx.save();
-    ctx.translate(0, cameraY);
-    drawSandboxBallPitBalls(camX, true);
-    ctx.restore();
-  }
+  // CONFIRMED BUG FIX ("i just want those bright front balls to be
+  // visible all the time, not only flash appear once you get on the
+  // ladder") -- this was never actually about position at all. The
+  // front-flagged balls (18% of the pit) get drawn a SECOND time, right
+  // on top of themselves, only while this state gate was true. Since
+  // each ball's highlight/outline use semi-transparent white/black, that
+  // second pass compounds -- it doesn't move anything, it makes that same
+  // 18% of balls visibly more saturated/crisp than their neighbors the
+  // instant the gate flips true (measured directly: ~3.4% brighter in the
+  // pit region, at the exact same camera/player position, purely from
+  // onBallPitLadder flipping on at the bottom of the ladder -- no
+  // climbing involved). That's the "flash" -- not new balls appearing,
+  // the same balls suddenly repainting brighter. Sam wants that brighter
+  // look to just always be there, not gated behind any player state, so
+  // the gate is removed entirely -- this now draws every frame the scene
+  // is sandbox, same as the back layer's own unconditional draw.
+  ctx.save();
+  ctx.translate(0, cameraY);
+  drawSandboxBallPitBalls(camX, true);
+  ctx.restore();
 }
 
 
