@@ -14204,11 +14204,34 @@ function drawForestSandBankTrail(camX) {
     const sx = worldX - camX + s.dxJit;
     const distToWater = FOREST_FLOAT_ZONE_START_X - worldX;
     const maxDist = Math.max(0, Math.min(20, distToWater * 0.7));
-    if (maxDist <= 0.5) return;
-    const sy = gy + edgeOff + Math.min(s.dist, maxDist);
+    // used to be `Math.min(s.dist, maxDist)` -- clamping the DISTANCE to
+    // the taper ceiling instead of skipping the grain. As the water taper
+    // narrows near FOREST_FLOAT_ZONE_START_X, maxDist shrinks toward 0,
+    // so most grains' own (larger, randomly-drawn) s.dist got clamped down
+    // to that same tiny shared ceiling -- piling a whole cluster of grains
+    // onto the exact same clamped edge instead of thinning out. That's
+    // the actual "dense patch that looks pasted on, not a gradient" bug
+    // (found by rendering each grain dataset in its own debug color and
+    // watching which one lit up the reported patch) -- per direct,
+    // careful follow-up ("this bottom part coming up to the top part,
+    // that is what looks pasted on"). Skipping grains past the taper
+    // instead of clamping them lets density genuinely thin out as the
+    // taper narrows, same as it already does everywhere else.
+    if (maxDist <= 0.5 || s.dist > maxDist) return;
+    const sy = gy + edgeOff + s.dist;
     // Gaussian plateau falloff -- same fix as the junction ribbon's own
     // MIDGRAINS, see its comment for the full reasoning
-    const alpha = 0.85 * Math.exp(-(s.dist * s.dist) / (2 * 8 * 8));
+    //
+    // taperFrac fades opacity down as maxDist itself shrinks near the
+    // water. Without this, the exponential distribution's density right
+    // at dist=0 is roughly CONSTANT no matter how tight the cutoff is
+    // (truncating a longer tail doesn't thin the dense part near zero) --
+    // so a hard cutoff alone still left a visibly solid, abruptly-ended
+    // rim of near-full-opacity grains hugging the water's edge instead of
+    // actually fading out, which is what still read as a distinct pasted-
+    // on patch even after fixing the clamp-collision above.
+    const taperFrac = maxDist / 20;
+    const alpha = 0.85 * taperFrac * Math.exp(-(s.dist * s.dist) / (2 * 8 * 8));
     ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14235,13 +14258,22 @@ function drawForestSandBankTrail(camX) {
     // it in water" request, now actually honored again.
     const distToWater = FOREST_FLOAT_ZONE_START_X - worldX;
     const maxDist = Math.max(0, Math.min(42, distToWater * 0.7));
-    if (maxDist <= 0.5) return;
-    const sy = gy + edgeOff + Math.min(s.dist, maxDist);
+    // same fix as the MIDGRAINS loop above -- skip past the taper instead
+    // of clamping onto it, so sprinkles genuinely thin out near the water
+    // instead of piling onto one shared clamped edge
+    if (maxDist <= 0.5 || s.dist > maxDist) return;
+    const sy = gy + edgeOff + s.dist;
     // alpha fades on the SAME exponential curve as the placement
     // distance, so opacity and density thin together as one continuous
     // descent instead of two mismatched effects -- per direct
     // clarification ("no but not bands like not lines. gradient descent")
-    const alpha = 0.5 * Math.exp(-s.dist / 15);
+    //
+    // same taperFrac fade as MIDGRAINS above -- see its comment. Without
+    // it, this layer's own near-zero-dist grains stayed just as dense
+    // right up to the water as anywhere else along the trail, cut off
+    // abruptly instead of actually thinning out.
+    const taperFrac = maxDist / 42;
+    const alpha = 0.5 * taperFrac * Math.exp(-s.dist / 15);
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14990,13 +15022,27 @@ const FOREST_SAND_BANK_TRAIL_PROFILE = (() => {
   }
   return pts;
 })();
-// grains/mottles biased toward the thick (low t) end -- squaring a
-// uniform 0..1 draw compresses the distribution toward 0, so most
-// grains cluster near the bank and thin out along with the shape
-// itself, instead of spreading evenly across the whole trail
+// grains used to be biased toward the thick (low t) end via a t**exponent
+// -- first ** 2, then softened to ** 1.15, but EITHER way it stacked an
+// extra artificial "more grains here" bias directly on top of a SECOND,
+// separate source of extra density at that same spot: MIDGRAINS/SPRINKLES
+// below already hug tightly against their own per-point edge (their `dist`
+// is drawn from an exponential that's densest at 0 EVERYWHERE along the
+// trail, not just near the seam), and the solid fill's own gradient
+// already encodes "thick near the junction, thinner further out" on its
+// own. Layering a THIRD along-length density bias on top of both of those
+// is what compounded into a genuinely over-dense, visually distinct patch
+// right at the seam -- confirmed empirically by rendering each dataset in
+// isolation and comparing before/after screenshots at the exact same
+// crop, per direct, careful follow-up ("this bottom part coming up to the
+// top part, that is what looks pasted on"). Removed the bias outright
+// (uniform t, matching how the junction ribbon's own MIDGRAINS/SPRINKLES
+// already do this) -- the edge-hugging + fill gradient alone already read
+// as a smooth "thick near solid sand, fading out" descent without also
+// clumping extra raw grain COUNT into one spot.
 const FOREST_SAND_BANK_TRAIL_GRAINS = Array.from({ length: 140 }, (_, i) => {
   const seed = 9500 + i * 5.3;
-  const t = pseudoRandom(seed) ** 2;
+  const t = pseudoRandom(seed);
   return {
     t,
     dy: -6 + pseudoRandom(seed + 1) * 20,
@@ -15031,7 +15077,12 @@ const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
   const seed = 9800 + i * 3.1;
   const u = pseudoRandom(seed + 2);
   return {
-    t: pseudoRandom(seed) ** 1.6,
+    // bias removed entirely (was ** 1.6, then ** 1.2) -- same reasoning as
+    // FOREST_SAND_BANK_TRAIL_GRAINS above: this dataset's own `dist`
+    // falloff already concentrates near the edge on its own, everywhere
+    // along the trail, so an extra along-length bias here just doubled up
+    // with that and the fill's own gradient right at the seam
+    t: pseudoRandom(seed),
     dist: -Math.log(1 - u * 0.999) * 11, // px past the edge, exponential falloff
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
     r: 1 + pseudoRandom(seed + 4) * 1.8,
@@ -15054,7 +15105,7 @@ const FOREST_SAND_BANK_TRAIL_MIDGRAINS = Array.from({ length: 320 }, (_, i) => {
   const seed = 9700 + i * 1.8;
   const u = pseudoRandom(seed + 2);
   return {
-    t: pseudoRandom(seed) ** 1.6,
+    t: pseudoRandom(seed), // bias removed, see SPRINKLES comment above
     dist: -Math.log(1 - u * 0.999) * 6, // px past the edge -- tight, hugs the sand
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
     r: 1 + pseudoRandom(seed + 4) * 1.4,
