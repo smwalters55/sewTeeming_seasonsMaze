@@ -15605,8 +15605,13 @@ forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_3.x, anchorY: gy, radiusX
 const FOREST_FLOAT_LILYPAD_END = { x: FOREST_FLOAT_ZONE_END_X - 90, width: 62, heightAboveGround: 20 };
 forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_END.x, anchorY: gy, radiusX: 40, radiusY: 14, heightBase: -22, speed: 0.00074, yFreq: 1.2, seed: 6.6, color: "#2f7a8a" });
 // the lever itself -- "a leaf on a leaf stick stem" per direct
-// description -- planted just off-center on the end pad
-const FOREST_FLOAT_RETURN_LEVER_X = FOREST_FLOAT_LILYPAD_END.x + 16;
+// description. Used to be planted just off-center on the end pad
+// (floating, elevated) -- moved to solid ground a little past the float
+// zone's own actual end per direct request ("put the re-do lever for the
+// rushing river and the sign on the ground a little to the right of the
+// end of it"), so it now sits on dry land just past where the current
+// stops, not out on the water.
+const FOREST_FLOAT_RETURN_LEVER_X = FOREST_FLOAT_ZONE_END_X + 40;
 let forestFloatReturnLeverPullT = 0; // 0 = at rest, 1 = just pulled, eases back to 0
 let playerOnFloatLilypad = false;
 let playerOnFloatLilypad2 = false;
@@ -16365,8 +16370,9 @@ function drawFloatLilypad(camX, pad) {
 }
 
 // the return-to-start lever -- "a leaf on a leaf stick stem" per direct
-// description. Planted upright on FOREST_FLOAT_LILYPAD_END, gently
-// swaying at rest; pulling it (see the FLOAT ZONE update block) kicks
+// description. Planted upright on solid ground just past the float
+// zone's end (see FOREST_FLOAT_RETURN_LEVER_X), gently swaying at rest;
+// pulling it (see the FLOAT ZONE update block) kicks
 // forestFloatReturnLeverPullT up to 1, which this tilts the whole stem
 // down toward, then eases back upright over about a second via
 // updateForestFloatReturnLever -- reads as an actual pull-and-release
@@ -16379,7 +16385,7 @@ function updateForestFloatReturnLever(deltaTime) {
 function drawForestFloatReturnLever(camX) {
   const lx = FOREST_FLOAT_RETURN_LEVER_X - camX;
   if (lx < -30 || lx > canvas.width + 30) return;
-  const ly = gy - FOREST_FLOAT_LILYPAD_END.heightAboveGround;
+  const ly = gy; // ground level now, not the floating end pad -- see FOREST_FLOAT_RETURN_LEVER_X's own comment
   const now = performance.now();
   const idleSway = Math.sin(now * 0.0018) * 0.06;
   // eased pull-tilt -- sin() ease so the swing-down and swing-back-up
@@ -16490,9 +16496,25 @@ function drawFloatRewardToroid(cx, cy, seed) {
   const spin = Math.cos(theta); // -1..1, drives both squash and which "face" is toward the camera
   const bob = Math.sin(now * 0.0022 + seed * 1.7) * 1.4; // small idle float, same language as the boat pile's own gentle bob
   const outerR = 14.4, holeR = 6;
-  // never fully collapses to a hairline at the exact edge-on instant --
-  // a real torus still shows a thin sliver of its tube from the side
-  const squash = Math.max(0.14, Math.abs(spin));
+  const tubeR = (outerR - holeR) / 2; // the tube's own real thickness
+  const absSpin = Math.abs(spin);
+  // squash floor used to be an arbitrary flat 0.14 -- at that width the
+  // whole donut (including its hole) just squeezed down into a thin
+  // vertical line with barely any visible body, per direct follow-up
+  // ("they dont look like a line when they spin in a certain position...
+  // they have a little girth"). A real torus spinning edge-on doesn't
+  // vanish to a line -- you're looking straight down the tube's own
+  // cross-section, so what you actually see at that instant is roughly
+  // the tube's real width (its thickness), not a sliver of the whole
+  // ring's diameter. Floor set to that physical ratio instead of a
+  // guessed constant, so edge-on shows a genuine rounded capsule with
+  // real width to it.
+  const squash = Math.max(tubeR / outerR, absSpin);
+  // the hole itself closes down toward edge-on -- looking straight down
+  // the tube's cross-section, the tube's own body is what's facing you,
+  // there's no hole to see through anymore (that only opens up as the
+  // ring turns back toward face-on)
+  const holeEff = holeR * absSpin;
   // near face (spin >= 0) a touch brighter/warmer than the far face, a
   // quiet depth cue riding on top of the squash itself
   const nearFace = spin >= 0;
@@ -16517,11 +16539,11 @@ function drawFloatRewardToroid(cx, cy, seed) {
     const g = Math.round(shadowBase[1] + (litBase[1] - shadowBase[1]) * shade);
     const b = Math.round(shadowBase[2] + (litBase[2] - shadowBase[2]) * shade);
     const alpha = 0.38 + shade * 0.34; // stays translucent throughout, a bit more opaque along the lit crown
-    const bandR = holeR + (outerR - holeR) * uMid;
+    const bandR = holeEff + (outerR - holeEff) * uMid;
     ctx.beginPath();
     ctx.ellipse(0, 0, bandR, bandR * 0.62, 0, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-    ctx.lineWidth = (outerR - holeR) / steps + 0.7; // slight overlap between strips so no visible seams
+    ctx.lineWidth = (outerR - holeEff) / steps + 0.7; // slight overlap between strips so no visible seams
     ctx.stroke();
   }
 
@@ -16532,9 +16554,9 @@ function drawFloatRewardToroid(cx, cy, seed) {
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(0, 0, outerR, outerR * 0.62, 0, 0, Math.PI * 2);
-  ctx.ellipse(0, 0, holeR, holeR * 0.62, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, holeEff, holeEff * 0.62, 0, 0, Math.PI * 2);
   ctx.clip("evenodd");
-  const hlX = spin * (outerR - holeR) * 0.55;
+  const hlX = spin * (outerR - holeEff) * 0.55;
   const hlGrad = ctx.createRadialGradient(hlX, -2, 0, hlX, -2, outerR * 0.85);
   hlGrad.addColorStop(0, "rgba(255,225,180,0.55)");
   hlGrad.addColorStop(1, "rgba(255,225,180,0)");
@@ -20761,23 +20783,6 @@ function updateForestScene(deltaTime) {
 
     if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED * floatCurrentStrengthAt(player.x);
 
-    // return-to-start lever -- per direct request ("make a return to
-    // start 'lever' at end of river... yes finish to the end"). Only
-    // reachable by actually landing on the end pad (isPlayerNear alone
-    // would also fire while still drifting past it in the current), so
-    // it really is a "finish the course" payoff, not a shortcut you can
-    // grab mid-drift. Swimming back upstream by hand is untouched and
-    // still works exactly as before -- per direct confirmation ("yes
-    // slow upstrream def still exist") -- this is just a faster option
-    // for anyone who'd rather not.
-    if (playerOnFloatLilypadEnd && keys.spaceJustPressed && isPlayerNear(FOREST_FLOAT_RETURN_LEVER_X, FOREST_FLOAT_LILYPAD_END.heightAboveGround, 28, 20, 20)) {
-      cameraX = FOREST_FLOAT_ZONE_START_X - 120;
-      player.x = FOREST_FLOAT_ZONE_START_X - 90;
-      player.y = 0;
-      player.vy = 0;
-      forestFloatReturnLeverPullT = 1; // kicks off the pulled-lever flourish, see drawForestFloatReturnLever
-    }
-
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
       const obX = floatObstacleX(ob);
@@ -20868,6 +20873,29 @@ function updateForestScene(deltaTime) {
         addToInventory("driftberry");
       }
     });
+  }
+
+  // return-to-start lever -- per direct request ("make a return to
+  // start 'lever' at end of river... yes finish to the end"). Used to
+  // require actually landing on the end pad, which was fine while the
+  // lever stood ON that pad -- but it's since been moved to solid ground
+  // a little past the float zone's own end (per direct follow-up, "on
+  // the ground a little to the right of the end of it"), which sits
+  // PAST FOREST_FLOAT_ZONE_END_X. That's outside the `riverFloat.active`
+  // window above (this check used to live inside that block), so it's
+  // pulled out here to run unconditionally -- otherwise the lever would
+  // silently never trigger at all once moved past the zone's own active
+  // range. Simply walking up and standing near it is now the "actually
+  // finished the course" gate. Swimming back upstream by hand is
+  // untouched and still works exactly as before -- per direct
+  // confirmation ("yes slow upstrream def still exist") -- this is just
+  // a faster option for anyone who'd rather not.
+  if (keys.spaceJustPressed && isPlayerNear(FOREST_FLOAT_RETURN_LEVER_X, 0, 28, 20, 20)) {
+    cameraX = FOREST_FLOAT_ZONE_START_X - 120;
+    player.x = FOREST_FLOAT_ZONE_START_X - 90;
+    player.y = 0;
+    player.vy = 0;
+    forestFloatReturnLeverPullT = 1; // kicks off the pulled-lever flourish, see drawForestFloatReturnLever
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
