@@ -13780,15 +13780,21 @@ const FOREST_ZEN_SAND_GRAIN_SPOTS_UI = Array.from({ length: 260 }, (_, i) => ({
 function drawForestZenSandPatch(camX) {
   const patch = FOREST_ZEN_SAND_PATCH;
   const px = patch.x - camX;
+  const cx = px + patch.width / 2, cy = gy + 4, prx = patch.width / 2, pry = 14;
+  // organic blob outline instead of a clean ctx.ellipse() oval -- per
+  // direct request ("shape the zen garden sand shape itself more
+  // organically not a straight clean oval"). Reuses the same
+  // organicBlobPath helper the rest of the game already uses for every
+  // other natural/hand-shaped patch of ground; fixed seed so the shape
+  // is stable frame to frame, not reshuffled every draw.
+  const patchSeed = 6180.1;
 
   ctx.fillStyle = "#d8c090";
-  ctx.beginPath();
-  ctx.ellipse(px + patch.width / 2, gy + 4, patch.width / 2, 14, 0, 0, Math.PI * 2);
+  organicBlobPath(ctx, cx, cy, prx, pry, patchSeed, 11);
   ctx.fill();
-  // fine sand granulation speckle, clipped to the same ellipse
+  // fine sand granulation speckle, clipped to the same blob outline
   ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(px + patch.width / 2, gy + 4, patch.width / 2, 14, 0, 0, Math.PI * 2);
+  organicBlobPath(ctx, cx, cy, prx, pry, patchSeed, 11);
   ctx.clip();
   FOREST_ZEN_SAND_GRAIN_SPOTS.forEach(s => {
     const sx = px + s.nx * patch.width;
@@ -13827,6 +13833,49 @@ function drawForestZenSandPatch(camX) {
     ctx.lineTo(rx - 6 + t * 4, gy - 40);
     ctx.stroke();
   }
+}
+
+// an organic sand strip bridging the zen garden's own patch and the
+// river's near bank -- per direct request ("build more of an
+// organically shaped sand junction between the zen garden and the
+// rushing river bank"). Deliberately several separate overlapping
+// blobs strung along the gap rather than one single stretched-out
+// blob -- a lone blob that wide reads as just another oval (the same
+// "clean oval" problem the zen patch itself had), while a loose chain
+// of smaller, differently-sized ones reads as a natural, irregular
+// spit of sand the way a real bank margin actually widens and narrows.
+// Each blob has its own fixed seed so the whole strip is stable frame
+// to frame. FOREST_SAND_JUNCTION_BLOBS itself is defined further down
+// (right after FOREST_SAND_RIVER_JUNCTION, which it depends on) --
+// this function only runs later, at actual draw time, well after that
+// const has been evaluated, so the forward reference is fine.
+function drawForestSandRiverJunction(camX) {
+  const leftPx = FOREST_SAND_RIVER_JUNCTION.x - camX - 60;
+  const rightPx = FOREST_SAND_RIVER_JUNCTION.endX - camX + 60;
+  if (rightPx < -30 || leftPx > canvas.width + 30) return;
+
+  ctx.fillStyle = "#d8c090";
+  FOREST_SAND_JUNCTION_BLOBS.forEach(b => {
+    organicBlobPath(ctx, b.cx - camX, gy + 4, b.rx, b.ry, b.seed, 9);
+    ctx.fill();
+  });
+  // fine sand granulation speckle, reusing the same speckle set the
+  // zen patch uses -- clipped per-blob so it stays inside each lobe of
+  // the strip instead of speckling the plain grass between them
+  FOREST_SAND_JUNCTION_BLOBS.forEach(b => {
+    ctx.save();
+    organicBlobPath(ctx, b.cx - camX, gy + 4, b.rx, b.ry, b.seed, 9);
+    ctx.clip();
+    FOREST_ZEN_SAND_GRAIN_SPOTS.forEach(s => {
+      const sx = b.cx - camX + (s.nx - 0.5) * b.rx * 2;
+      const sy = gy - 6 + s.ny * 20;
+      ctx.fillStyle = `rgba(90,70,40,${s.a})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  });
 }
 
 function drawForestScene(camX) {
@@ -13952,10 +14001,11 @@ function drawForestScene(camX) {
   drawForestSkipStones(camX);
   drawForestWaterStriders(camX);
   drawForestZenSandPatch(camX);
+  drawForestSandRiverJunction(camX); // organic sand strip bridging the zen patch and the river's near bank
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
-  drawForestRiverBoatPiles(camX); // the two leaf/bark boat pickup spots -- one right at the zone's calm start, one on the lily pad rest stop
+  drawForestRiverBoatPiles(camX); // the boat pickup spots -- one at the zone's calm start, one at each lily pad
   drawForestRiverBoats(camX); // launched leaf/bark boats drifting on the float zone's current -- drawn right after the water/obstacles so they read as sitting on the surface among them
   drawForestFlightPiece(camX);
   drawForestGnawSecret(camX);
@@ -14468,6 +14518,39 @@ function drawZenRakeUI() {
 // breathing room") -- width (END - START) kept the same so none of the
 // internal obstacle spacing needed to change.
 const FOREST_FLOAT_ZONE_START_X = 6900;
+// the sand junction bridging the zen garden's own patch and the river's
+// near bank -- per direct request ("build more of an organically shaped
+// sand junction between the zen garden and the rushing river bank"),
+// answering the "might have that be start of sand going to edge of
+// rushing river" question left open when the zen patch was first added.
+// Overlaps a little into both the zen patch's right edge and the
+// bank curve's own left extent (see drawForestFloatZone's "topX")
+// on purpose, so the three pieces visually knit together instead of
+// butting up against each other with a hard seam.
+const FOREST_SAND_RIVER_JUNCTION = {
+  x: FOREST_ZEN_SAND_PATCH.x + FOREST_ZEN_SAND_PATCH.width - 20,
+  endX: FOREST_FLOAT_ZONE_START_X - 15
+};
+const FOREST_SAND_JUNCTION_BLOBS = (() => {
+  const span = FOREST_SAND_RIVER_JUNCTION.endX - FOREST_SAND_RIVER_JUNCTION.x;
+  const count = 6;
+  const blobs = [];
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    const seed = 7400 + i * 13.7;
+    blobs.push({
+      cx: FOREST_SAND_RIVER_JUNCTION.x + span * t,
+      // a gentle waist in the middle of the strip, wider where it
+      // meets the zen patch and the bank, narrower in between -- reads
+      // as sand naturally thinning out mid-crossing rather than a
+      // uniform pipe connecting the two
+      rx: 55 + Math.sin(t * Math.PI) * -18 + pseudoRandom(seed) * 14,
+      ry: 11 + pseudoRandom(seed + 1) * 4,
+      seed
+    });
+  }
+  return blobs;
+})();
 // widened from 9600 (width 2700) to 11800 (width 4900) to fit the
 // spaced-out + repeated-second-pass obstacle course above (last
 // obstacle now sits at START+CALM_LEAD+4160=11360, leaving a ~440px
