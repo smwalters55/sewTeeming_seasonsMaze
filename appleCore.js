@@ -2902,6 +2902,78 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED CHANGE ("ya maybe trampo time" -> chain of trampolines you
+  // keep bouncing up to reach something, saved earlier as a brainstorm
+  // item): the elevated trampoline chain, same "hits mat while falling,
+  // launches back up" idea as the ground trampoline just above, but
+  // checked against each platform's own height instead of y<=0 (same
+  // descend-through-a-band tolerance the autumn platforms use below).
+  //
+  // CONFIRMED BUG FIX (found via a real held-key playtest, not a forced-
+  // state check): originally reused the ground trampoline's own
+  // fall-speed-multiplied launch (fallSpeed * 1.35). That's great for a
+  // single vertical toy where overshoot doesn't matter, but across a
+  // CHAIN it self-reinforces -- a strong catch launches you even faster
+  // into the next platform, which launches you faster still, and by the
+  // second or third platform the arc is so big (peak height ~950 in one
+  // real test, versus platform 3 sitting at just 450) that you sail
+  // straight over the next platform's x column before you're back down in
+  // its height band. Switched to a FIXED launchVy per platform instead --
+  // every bounce off a given platform sends you to the same predictable
+  // height/hangtime no matter how fast you hit it, so the whole chain
+  // stays learnable and reachable rather than escalating out of control.
+  if (currentScene === "sandbox") {
+    SANDBOX_TRAMPOLINE_CHAIN.forEach(t => {
+      const platformTop = t.heightAboveGround;
+      const playerBottom = player.y;
+      // CONFIRMED BUG FIX (found via several real held-key playtests with
+      // slightly different timing each run): a hand-tuned "thin band right
+      // at this platform's exact height" was fragile in practice -- real
+      // play never lands exactly on the scripted trajectory a single test
+      // run produces, so even a fairly generous-looking band missed
+      // depending on exactly when/how hard the previous bounce landed.
+      // Widened a lot (nearly half the gap to the platform above) so a
+      // falling player is caught anywhere in a big chunk of the space
+      // between this platform and the next one up, not just a thin slice
+      // right at its surface -- forgiving of real variance in how a bounce
+      // actually plays out, matching the "fun to chain, not physics-
+      // precise" goal.
+      if (player.vy < -1 &&
+          Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_CHAIN_RADIUS &&
+          playerBottom <= platformTop && playerBottom >= platformTop - 100) {
+        player.y = platformTop;
+        player.vy = t.launchVy;
+        player.jumping = true;
+        player.usedDoubleJump = false;
+        t.squishT = 0;
+      }
+    });
+
+    // the chain's own destination -- a small static perch you land on
+    // normally (not a bounce), same plain "land on top" platform collision
+    // the autumn platforms use just below. Pure charm moment, no pickup,
+    // per the earlier direct steer against adding more one-off
+    // collectibles.
+    //
+    // CONFIRMED BUG FIX (found via a real held-key playtest): a 40px x
+    // tolerance and 46px height band sounded plenty generous on paper, but
+    // a real fall arriving at accelerating speed crossed this exact band
+    // just 2-3px past the x cutoff -- missing the WHOLE point of the chain
+    // after three successful bounces to get here is much more punishing
+    // than missing an earlier platform (you don't get a re-catch, you just
+    // fall all the way to the ground). Widened further than any other
+    // catch in the chain since this is the one landing that really
+    // shouldn't be missed by a near-hit.
+    const perchTop = sandboxTrampolineChainPerch.heightAboveGround;
+    if (Math.abs(player.x + player.width / 2 - sandboxTrampolineChainPerch.x) < 90 &&
+        player.y <= perchTop && player.y >= perchTop - 110 && player.vy <= 0) {
+      player.y = perchTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // everything below is autumn-specific (its platforms, ramp, stump, frog) —
   // guarded so future scenes don't inherit autumn's solid surfaces
   if (currentScene === "autumn") {
@@ -42149,6 +42221,179 @@ function updateSandboxTrampoline(deltaTime) {
   if (sandboxTrampoline.squishT < SANDBOX_TRAMPOLINE_SQUISH_MS) sandboxTrampoline.squishT += deltaTime * 1000;
 }
 
+/* ======================================================
+   SANDBOX TRAMPOLINE CHAIN -- "trampo time" -> built out the ground
+   trampoline's own saved brainstorm idea: a staircase of elevated
+   trampolines planted right next to it that you keep bouncing between to
+   climb higher, ending on a small static perch with a nice unobstructed
+   view of the sky decor. Pure charm destination, no collectible (per the
+   earlier direct steer against adding more one-off pickups). Reuses the
+   ground trampoline's exact bounce-on-descent idea, just checked against
+   each platform's own height instead of y<=0.
+   ====================================================== */
+// CONFIRMED BUG FIX (found via a real held-key playtest): the first gap
+// (ground trampoline -> platform 1) used to be 130px, tuned as if the
+// player could freely drift while building height. In practice, building
+// real height means bouncing near-STATIONARY on the ground mat (drifting
+// off its own 42px radius kills the escalation before it gets going), so
+// by the time a big bounce finally launches, there's only ~1 fall's worth
+// of horizontal travel (~90-100px at this speed) to reach the next
+// platform, not several bounces' worth. Shrunk to 80 so the very first
+// hop is reachable off one strong bounce; the later gaps stay wider since
+// each already-elevated bounce has more hangtime to drift across.
+// CONFIRMED BUG FIX (found via a real held-key playtest): launchVy per
+// platform tuned so each bounce's own peak height clears the next
+// platform with real margin, AND the hangtime while falling back through
+// the next platform's height band covers more horizontal distance than
+// the gap to it (at this player's ~3px/frame air speed) -- see the fixed-
+// launchVy comment above for why this replaced the old fall-speed-scaled
+// launch.
+// CONFIRMED BUG FIX (found via a real held-key playtest, precise per-frame
+// trace): platform 3's x was placed using hand-derived hangtime formulas
+// that assumed a clean parabola from the moment of THIS bounce, but what
+// actually matters is where the FALL FROM THE PREVIOUS bounce's peak
+// crosses this platform's own height -- verified by recording an actual
+// physics trace and reading off exactly where y crosses each platform's
+// band, rather than recomputing it by hand. Moved right (320 -> 386) to
+// match where a real bounce-2 fall actually re-crosses 450 height.
+const SANDBOX_TRAMPOLINE_CHAIN = [
+  { x: sandboxTrampoline.x + 80, heightAboveGround: 140, launchVy: 22, squishT: 9999 },
+  { x: sandboxTrampoline.x + 200, heightAboveGround: 290, launchVy: 22, squishT: 9999 },
+  { x: sandboxTrampoline.x + 386, heightAboveGround: 450, launchVy: 18, squishT: 9999 }
+];
+// CONFIRMED BUG FIX (found via a real held-key playtest): matching the
+// ground trampoline's own 42px radius sounded consistent, but a real
+// chained fall arrives at each next platform already carrying real
+// horizontal speed from the drift -- a near-miss of just ~15-20px was
+// enough to sail past the catch column entirely and fall all the way to
+// the ground. Widened well past that observed miss margin.
+const SANDBOX_TRAMPOLINE_CHAIN_RADIUS = 90;
+const SANDBOX_TRAMPOLINE_CHAIN_SQUISH_MS = 260;
+// the chain's own destination -- a small static perch, no bounce, just a
+// place to land and look around
+// CONFIRMED BUG FIX (found via a real held-key playtest, precise per-frame
+// trace): a real fall from platform 3's bounce crossed the perch's height
+// band right at x~1869, just barely inside the old +430 (x=1830) zone's
+// edge -- reliable in this one test but too fragile a margin for real
+// play with slightly different timing. Shifted right to center on where
+// the real fall actually lands.
+const sandboxTrampolineChainPerch = { x: sandboxTrampoline.x + 460, heightAboveGround: 620 };
+
+function updateSandboxTrampolineChain(deltaTime) {
+  SANDBOX_TRAMPOLINE_CHAIN.forEach(t => {
+    if (t.squishT < SANDBOX_TRAMPOLINE_CHAIN_SQUISH_MS) t.squishT += deltaTime * 1000;
+  });
+}
+
+// same ring/springs/mat construction as drawSandboxTrampoline, just
+// smaller (reads as "part of the chain," not a duplicate of the main
+// one), floating at height with a thin support post down to the ground
+// so it reads as a tethered platform rather than an unexplained hovering
+// object, and no legs (nothing at height for legs to reach).
+function drawSandboxTrampolineChainOne(camX, t) {
+  const sx = t.x - camX;
+  const outerRx = 40, outerRy = 13;
+  const ringCy = gy - outerRy - t.heightAboveGround;
+
+  const squishP = Math.min(t.squishT / SANDBOX_TRAMPOLINE_CHAIN_SQUISH_MS, 1);
+  const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
+  const matCy = ringCy + squish * 4;
+  const matRy = Math.max(2, (outerRy - 2) - squish * 5);
+  const matRx = outerRx * 0.62;
+
+  ctx.strokeStyle = "rgba(150,130,180,0.45)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx, ringCy + outerRy * 0.6);
+  ctx.lineTo(sx, gy);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#8a8f96";
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.ellipse(sx, ringCy, outerRx, outerRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const springCount = 12;
+  ctx.strokeStyle = "#5f6570";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < springCount; i++) {
+    const ang = (i / springCount) * Math.PI * 2;
+    const outerX = sx + Math.cos(ang) * outerRx, outerY = ringCy + Math.sin(ang) * outerRy;
+    const innerX = sx + Math.cos(ang) * matRx, innerY = matCy + Math.sin(ang) * matRy;
+    ctx.beginPath();
+    ctx.moveTo(outerX, outerY);
+    ctx.lineTo(innerX, innerY);
+    ctx.stroke();
+  }
+
+  const matGrad = ctx.createRadialGradient(sx, matCy, 2, sx, matCy, matRx);
+  matGrad.addColorStop(0, "#3f4f66");
+  matGrad.addColorStop(0.6, "#2a3648");
+  matGrad.addColorStop(1, "#1c2531");
+  ctx.fillStyle = matGrad;
+  ctx.beginPath();
+  ctx.ellipse(sx, matCy, matRx, matRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, matCy, matRx, matRy, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "rgba(200,215,235,0.14)";
+  ctx.beginPath();
+  ctx.ellipse(sx - matRx * 0.25, matCy - matRy * 0.35, matRx * 0.55, matRy * 0.4, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSandboxTrampolineChain(camX) {
+  SANDBOX_TRAMPOLINE_CHAIN.forEach(t => drawSandboxTrampolineChainOne(camX, t));
+}
+
+// the chain's payoff -- a small cushioned perch with a little pennant
+// flag marking "you made it," meant purely as a charm moment/nice view of
+// the sky decor from up high, not a goal or pickup.
+function drawSandboxTrampolineChainPerch(camX) {
+  const p = sandboxTrampolineChainPerch;
+  const sx = p.x - camX;
+  const topY = gy - p.heightAboveGround;
+
+  ctx.strokeStyle = "rgba(150,130,180,0.45)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx, topY + 9);
+  ctx.lineTo(sx, gy);
+  ctx.stroke();
+
+  const grad = ctx.createRadialGradient(sx, topY, 2, sx, topY, 30);
+  grad.addColorStop(0, "#e8ddc0");
+  grad.addColorStop(1, "#c9a563");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(sx, topY, 30, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#a3824a";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.ellipse(sx, topY, 30, 11, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx + 22, topY - 4);
+  ctx.lineTo(sx + 22, topY - 34);
+  ctx.stroke();
+  ctx.fillStyle = "#e07a5f";
+  ctx.beginPath();
+  ctx.moveTo(sx + 22, topY - 34);
+  ctx.lineTo(sx + 22, topY - 22);
+  ctx.lineTo(sx + 38, topY - 28);
+  ctx.closePath();
+  ctx.fill();
+}
+
 // dark stretched mat inside a metal ring, short angled legs, springs
 // evenly spaced around the rim -- reads as an actual classic trampoline,
 // not just a colored ellipse. The mat visibly dips (compresses toward
@@ -49179,6 +49424,20 @@ const SANDBOX_SKY_MOTES = Array.from({ length: 8 }, (_, i) => ({
 // now a loose double-line too -- a fainter second pass traced slightly
 // outside the first, like a pen retracing a line that didn't quite land
 // the same place twice.
+// small helper for the sky decor's shading -- parses two "rgba(r,g,b,a)"
+// strings and linearly interpolates between them, used to blend a
+// continuous brightness gradient across a shape's facets instead of a
+// hard two-color split
+function skyDecorMixRgba(colorA, colorB, t) {
+  const pa = colorA.match(/[\d.]+/g).map(Number);
+  const pb = colorB.match(/[\d.]+/g).map(Number);
+  const r = pa[0] + (pb[0] - pa[0]) * t;
+  const g = pa[1] + (pb[1] - pa[1]) * t;
+  const b = pa[2] + (pb[2] - pa[2]) * t;
+  const a = pa[3] + (pb[3] - pa[3]) * t;
+  return `rgba(${r.toFixed(1)},${g.toFixed(1)},${b.toFixed(1)},${a.toFixed(3)})`;
+}
+
 function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette, seed) {
   ctx.save();
   ctx.translate(sx, sy);
@@ -49201,8 +49460,13 @@ function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette, seed) {
   // edges read as showing through once the real (translucent) facets glaze
   // over them on top, exactly like the crystal's backBot corner lines.
   const backPts = pts.map(([x, y]) => [x * 0.42, y * 0.42]);
-  ctx.strokeStyle = "rgba(255,255,255,0.28)";
-  ctx.lineWidth = 0.6;
+  // CONFIRMED CHANGE ("make this look better 3d too"): bumped from 0.28 to
+  // 0.4 alpha and 0.6 to 0.85 width -- with the facets below now shaded
+  // continuously instead of one flat opaque half, these back-face lines
+  // were getting washed out and needed more contrast to still read as
+  // "showing through" rather than disappearing.
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 0.85;
   ctx.beginPath();
   for (let i = 0; i < sides; i++) {
     const [x1, y1] = backPts[i], [x2, y2] = backPts[i + 1];
@@ -49220,11 +49484,21 @@ function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette, seed) {
   }
   ctx.stroke();
 
+  // CONFIRMED CHANGE ("make this look better 3d too" -- flat two-tone
+  // split read as flat, not faceted): the old lit/shaded test was a hard
+  // binary split (one solid-color half, one solid-shade half), which looks
+  // like a flag, not a gem. Swapped for a continuous brightness value per
+  // facet (how directly it faces the light) blended smoothly across
+  // shade -> face -> edge, so each facet gets its own distinct tone and the
+  // whole shape reads as many angled faces catching light gradually around
+  // its rotation, like a real cut gem, instead of two flat halves.
   for (let i = 0; i < sides; i++) {
     const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
     const midAngle = (i / sides) * Math.PI * 2 + Math.PI / sides;
-    const lit = Math.cos(midAngle - Math.PI * 0.75) > 0;
-    ctx.fillStyle = lit ? palette.face : palette.shade;
+    const bright = (Math.cos(midAngle - Math.PI * 0.75) + 1) / 2; // 0 (facing away) .. 1 (facing the light)
+    ctx.fillStyle = bright > 0.5
+      ? skyDecorMixRgba(palette.face, palette.edge, (bright - 0.5) * 2)
+      : skyDecorMixRgba(palette.shade, palette.face, bright * 2);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(x1, y1);
@@ -49258,6 +49532,18 @@ function drawSandboxSkyBlob(sx, sy, size, rotation, palette, seed) {
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(rotation * 0.5);
+  // CONFIRMED CHANGE ("make this look better 3d too" -- reviewed alongside
+  // the polygon/toroid passes for consistency): the polygons and toroid
+  // both now hint at a hidden back surface showing through the translucent
+  // front; the blob had nothing to match. Adds the same faint smaller
+  // inner-silhouette trace, drawn first, before the real fill goes over it.
+  ctx.save();
+  organicBlobPath(ctx, 0, 0, size * 0.42, size * 0.36, seed, 8);
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 0.85;
+  ctx.stroke();
+  ctx.restore();
+
   organicBlobPath(ctx, 0, 0, size, size * 0.85, seed, 8);
   ctx.fillStyle = palette.face;
   ctx.fill();
@@ -49593,6 +49879,8 @@ function drawSandboxScene(camX) {
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
   drawSandboxTrampoline(camX);
+  drawSandboxTrampolineChain(camX);
+  drawSandboxTrampolineChainPerch(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
@@ -49634,6 +49922,7 @@ function updateSandboxScene(deltaTime) {
   cameraY = Math.max(0, player.y - 150);
 
   updateSandboxTrampoline(deltaTime);
+  updateSandboxTrampolineChain(deltaTime);
 
   // CONFIRMED CHANGE: radiusYUp bumped 15 -> 26, same fix as the entrance
   // mound got -- now that its top is a real jumpable platform, standing on
