@@ -1146,9 +1146,16 @@ function updateSeasonTransition(deltaTime) {
       // CONFIRMED CHANGE ("put airplane default in play for this
       // push") -- entering the sandbox specifically now grants one for
       // free if you don't already have one, rather than only
-      // auto-equipping an existing pickup. oak/clouds are unchanged
-      // (still require having actually picked one up first).
-      if (currentScene === "sandbox" && previousScene !== currentScene && !(inventory.paperAirplane > 0)) {
+      // auto-equipping an existing pickup. oak is unchanged (still
+      // requires having actually picked one up first from the giant
+      // book pile).
+      // CONFIRMED CHANGE ("make sure default in-play item is auto
+      // airplane" for clouds): clouds is the scene the whole throwing
+      // mechanic is actually built around, so requiring a trip to oak's
+      // book pile first before it ever works there read as a real
+      // blocker rather than an intentional gate. Now gets the same
+      // free-grant-on-first-visit treatment as sandbox.
+      if ((currentScene === "sandbox" || currentScene === "clouds") && previousScene !== currentScene && !(inventory.paperAirplane > 0)) {
         inventory.paperAirplane = 1;
         touchInventoryOrder("paperAirplane");
         updateInventoryUI();
@@ -2608,6 +2615,23 @@ function applyPhysics(){
   // same idea for the vines — position is fully driven by updateVines()
   if (vines.some(v => v.mounted)) return;
 
+  // CONFIRMED BUG FIX ("cant see player as it crawls up past og top y
+  // height on the peanut vine"): every other mounted-ride state above
+  // gets an early return here so normal gravity/ground physics never
+  // touches player.y while something else is driving position -- the
+  // peanut vine climb (updateDigPlantVine, position fully driven while
+  // peanutVine.mounted) was missing from that list. Every frame, plain
+  // gravity ran on the player FIRST (this function), then the climb
+  // logic corrected player.y back to the real climb height AFTER, in
+  // updateSpringScene -- but updateSpringScene's own cameraY line reads
+  // player.y before that correction runs, so cameraY was tracking
+  // whatever half-fallen position gravity left behind that frame rather
+  // than the real climb height. That made cameraY lag and even
+  // temporarily drop while the player kept climbing, which is exactly
+  // what let a high climb outrun the camera and vanish off the top of
+  // the canvas.
+  if (peanutVine.mounted) return;
+
   // while mid-bounce off the seesaw, gravity is handled inside updateSeesaw
   // itself (slower descent than standard) — skip normal gravity here
   if (player.onSeesawBounce) return;
@@ -3131,7 +3155,13 @@ function applyPhysics(){
   // top face's middle height (it's actually a slanted parallelogram
   // visually, but a flat landing zone reads fine for a small prop like
   // this), spanning the box's on-screen width.
-  {
+  // CONFIRMED BUG FIX ("no sandbox until after bean stock grows"): this
+  // collision existed unconditionally, so even while the mound itself
+  // was hidden (pre-vine-growth), its invisible platform could still
+  // catch a landing jump right there in open ground -- an invisible
+  // wall/step with nothing to explain it. Gated the same as the draw
+  // and the interact trigger now.
+  if (discoveredScenes.clouds && peanutVine.grown) {
     const boxCenterX = sandboxEntranceMound.x;
     const boxTopHalfSpan = 44; // CONFIRMED CHANGE: drawSandMound is now a plain flat rectangle (boxW=78, rim +5px inset each side) -- matches that width exactly
     const boxTopHeight = 20;   // matches drawSandMound's wallH -- the flat front-wall top is the landing surface now
@@ -12525,7 +12555,12 @@ function drawSpringScene(camX) {
   // CONFIRMED CHANGE: hidden until clouds has actually been visited --
   // per direct request, same "stays out of sight until earned" pattern
   // as the squirrel above.
-  if (discoveredScenes.clouds) drawSandMound(sandboxEntranceMound.x, camX, null); // CONFIRMED CHANGE: removed the "Sandbox" label text per direct request
+  // CONFIRMED CHANGE ("no sandbox until after bean stock grows"): also
+  // gated on the peanut vine actually having grown -- previously only
+  // required having visited clouds, which could happen well before the
+  // vine (planted/watered separately down in its own pit) ever finished
+  // growing, letting the sandbox show up "too early" story-wise.
+  if (discoveredScenes.clouds && peanutVine.grown) drawSandMound(sandboxEntranceMound.x, camX, null); // CONFIRMED CHANGE: removed the "Sandbox" label text per direct request
 
   ctx.restore();
 }
@@ -26411,21 +26446,20 @@ function drawOwl(camX) {
 }
 
 function updateOakScene(deltaTime) {
-  // REMOVED per direct request: oak used to get a vertical-follow camera
-  // here (same pattern as tunnel town), added specifically to keep a
-  // very high jump on the book-pile climb from carrying the player off
-  // the top of the fixed-height canvas. It also (after a fix earlier
-  // this session) had to be gated on OAK_JUMPRUN_GATE_X to stop it from
-  // wrongly engaging near the short/medium shelves. Pulled back out
-  // entirely now -- the whole rest of oak was built and tuned around a
-  // fixed camera before this capability existed, and re-introducing a
-  // moving vertical camera into a scene that never expected one caused
-  // more friction than the original "player briefly rises off-screen on
-  // a very tall jump" problem it was solving. cameraY simply stays at
-  // its scene-entry default (0) in oak now, like every scene except
-  // tunnel town. If a fix is wanted for the tall-jump case again later,
-  // it should be scoped tightly to just the book-pile climb rather than
-  // the whole scene -- see git history for the removed block.
+  // CONFIRMED BUG FIX ("player still flies into oblivion off of high
+  // book piles in oak"): this vertical-follow camera was pulled out
+  // entirely once before (see prior comment history) because gating it
+  // across the whole scene caused friction with the short/medium
+  // shelves earlier in the room. Re-added here, but scoped tightly per
+  // that same note -- only engages once the player is out past
+  // OAK_JUMPRUN_GATE_X, i.e. actually on the jump-run climb itself,
+  // never near the low decorative piles closer to the start. Same
+  // Math.max(0, player.y - 150) follow-threshold pattern tunnel town
+  // and spring's peanut vine both already use; every draw call that
+  // reads `gy + cameraY` (book piles, background walls, the crown
+  // wobble offset, the player sprite itself) already accounts for this
+  // and was simply a no-op while cameraY sat stuck at 0.
+  cameraY = player.x > OAK_JUMPRUN_GATE_X ? Math.max(0, player.y - 150) : 0;
 
   owl.bob = Math.sin(performance.now() * 0.0025) * 2;
   updateOakLampTable();
@@ -27727,7 +27761,16 @@ function drawFeatherHangSpot(camX) {
     const size = FEATHER_REST_SIZE * (0.7 + settleP * 0.3);
     ctx.translate(baseX, baseY);
     ctx.rotate(tilt);
-    ctx.globalAlpha = featherHangAnim.active ? 0.5 + settleP * 0.5 : 1;
+    // CONFIRMED BUG FIX ("feather is bright in dark, jar isnt, both should
+    // be relatively dark"): this used to force globalAlpha back to 1 once
+    // the placement animation finished, which stomped right over the
+    // hungAndDark (0.035) / lampLit-but-hung (0.5) alpha the outer
+    // ctx.save() above had already captured -- so the feather itself
+    // always rendered at full daylight brightness no matter how dark the
+    // jar around it was. Only the in-progress placement animation still
+    // gets its own explicit fade-in; once settled, the feather just
+    // inherits whatever alpha the outer scope set, same as the jar.
+    if (featherHangAnim.active) ctx.globalAlpha = 0.5 + settleP * 0.5;
     drawFeatherShape(ctx, 0, -size, size, 0); // shifted so the vane's base, not its middle, sits at the pivot
     ctx.restore();
     // re-draw the jar's full body on top, since the feather's actual
@@ -29315,48 +29358,17 @@ function drawRatRoomFeather(camX) {
   ctx.ellipse(fx - 7, fy + 11, 6, 2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  // CONFIRMED CHANGE ("feather still surgically attached to wall but
+  // tiny. REMOVE THIS WEIRD STRAPPING VISUAL"): the loose "string"
+  // strands that used to unwind off the feather here read as some kind
+  // of binding holding it to the ledge/wall no matter how they were
+  // angled or faded -- removed entirely. The feather just rests on its
+  // ledge now, same as everywhere else it's drawn.
   ctx.save();
   ctx.translate(fx - 6, fy + 7);
   ctx.rotate(1.05);
   drawFeatherShape(ctx, 0, -9, 9, 0);
   ctx.restore();
-
-  // string -- thin, loose, mostly-horizontal strands rather than
-  // neat wound loops, since real string just tossed on wouldn't form
-  // tidy shapes at all
-  const unravelP = featherUnravelAnim.active ? Math.min(1, featherUnravelAnim.t / FEATHER_UNRAVEL_MS) : 0;
-  const loopCount = 4;
-  ctx.strokeStyle = "rgba(225,215,185,0.95)";
-  ctx.lineWidth = 0.75;
-  for (let i = 0; i < loopCount; i++) {
-    const loopUnravelStart = i / loopCount;
-    if (unravelP >= loopUnravelStart + 1 / loopCount) continue; // this strand has fully fallen away
-    const loopP = Math.max(0, (unravelP - loopUnravelStart) * loopCount); // 0 to 1 for this specific strand's own unwind
-    const seed = i * 17 + 5;
-    const loopY = fy - 6 + i * 4 + ((seed * 3) % 5) - 2; // irregular vertical spacing, not evenly stepped
-    const loopAngle = ((seed * 7) % 30 - 15) / 100; // small tilt range -- stays mostly horizontal rather than varied angles
-    const loopRx = 6 + ((seed * 11) % 5); // varied horizontal spread per strand
-    const loopRy = 0.4 + ((seed * 5) % 3) * 0.12; // quite flat
-    const droop = loopP * 11 + Math.sin(loopP * 9 + seed) * loopP * 2.5; // irregular jitter on the way down, not a smooth linear drift
-    const sideJitter = Math.sin(loopP * 7 + seed * 1.7) * loopP * 4;
-    ctx.save();
-    ctx.globalAlpha = 1 - loopP * 0.7;
-    ctx.translate(fx + ((seed * 13) % 5) - 2 + loopP * 3 + sideJitter, loopY + droop);
-    ctx.rotate(loopAngle + loopP * 0.5 + Math.sin(loopP * 11 + seed) * loopP * 0.4);
-    // open, loose squiggly strand -- not a closed loop, so it reads as
-    // haphazardly tossed rather than deliberately wound
-    ctx.beginPath();
-    const segs = 6;
-    for (let s = 0; s <= segs; s++) {
-      const t = s / segs;
-      const wobble = Math.sin(t * Math.PI * 2.6 + seed) * loopRy;
-      const px2 = (t - 0.5) * loopRx * 2 * (1 - loopP * 0.3);
-      const py2 = wobble;
-      if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
 }
 function updateFeatherUnravelAnim(deltaTime) {
   if (!featherUnravelAnim.active) return;
@@ -50052,14 +50064,14 @@ function updateSpringScene(deltaTime) {
   }
 
   // SANDBOX ENTRANCE — walk up, space to shrink down into it. Hidden
-  // (and inert) until clouds has been visited, matching the mound's own
-  // draw gate above.
+  // (and inert) until clouds has been visited AND the peanut vine has
+  // grown, matching the mound's own draw gate above.
   // CONFIRMED BUG FIX: radiusYUp bumped 15 -> 26 -- now that the box's
   // top is a real jumpable platform (~20 above ground), standing on top
   // of it put player.y past the old 15 tolerance, so interact silently
   // stopped working the moment you jumped up there. Per direct request
   // ("when jump on sandbox, interact needs to still work to enter").
-  if (discoveredScenes.clouds && keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 26, 15)) {
+  if (discoveredScenes.clouds && peanutVine.grown && keys.spaceJustPressed && isPlayerNear(sandboxEntranceMound.x, 0, 26, 26, 15)) {
     startSeasonTransition("sandbox");
   }
 
