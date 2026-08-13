@@ -2890,6 +2890,19 @@ function applyPhysics(){
   // right here in the shared ground-collision check (rather than a
   // separate sandbox-only block) since it's the exact same moment/shape
   // as any other landing -- just a different outcome.
+  // CONFIRMED CHANGE ("try ideas with tranpolines engled" -- the OTHER
+  // saved trampoline brainstorm item, now built alongside the ground one
+  // and the chain): a cluster of trampolines tilted at different angles,
+  // each flinging a falling player off at ITS OWN angle instead of
+  // straight up. Reuses the exact same launched-flight physics the forest
+  // clockwork gears and pendulum throw already use (player.launched, its
+  // own floatier gravity) rather than the ground trampoline's straight-up
+  // vy kick, since a real diagonal fling needs genuine vx, not just vy.
+  // Pure physics playground per direct steer -- no goal/target, just fun
+  // to bounce around between.
+  const angledHit = currentScene === "sandbox" && player.vy < -1 &&
+    SANDBOX_ANGLED_TRAMPOLINES.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_ANGLED_TRAMPOLINE_RADIUS);
+
   if (player.y <= 0) {
     if (currentScene === "sandbox" && player.vy < -1 &&
         Math.abs(player.x + player.width / 2 - sandboxTrampoline.x) < SANDBOX_TRAMPOLINE_RADIUS) {
@@ -2899,6 +2912,17 @@ function applyPhysics(){
       player.jumping = true;
       player.usedDoubleJump = false; // a fresh bounce refreshes the double-jump too, same as landing normally would
       sandboxTrampoline.squishT = 0;
+    } else if (angledHit) {
+      const rad = angledHit.tiltDeg * Math.PI / 180;
+      player.y = 0;
+      player.vx = Math.sin(rad) * SANDBOX_ANGLED_TRAMPOLINE_LAUNCH_SPEED;
+      player.vy = Math.cos(rad) * SANDBOX_ANGLED_TRAMPOLINE_LAUNCH_SPEED;
+      player.launched = true;
+      player.launchGravityMult = 1;
+      player.launchPeakHeight = player.y;
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      angledHit.squishT = 0;
     } else {
       player.y = 0;
       player.jumping = false;
@@ -42432,6 +42456,107 @@ function drawSandboxTrampolineChainPerch(camX) {
   ctx.fill();
 }
 
+/* ======================================================
+   SANDBOX ANGLED TRAMPOLINE FIELD -- "try ideas with tranpolines engled",
+   the OTHER saved trampoline brainstorm item (see the ground trampoline's
+   own comment for the vertical-chain one, already shipped). A small
+   cluster of trampolines tilted at different angles, each flinging a
+   falling player off in ITS OWN direction instead of straight up --
+   "more of a physics playground than a destination" per the original
+   brainstorm note, and per direct steer this first pass is PURE physics,
+   no goals/targets yet (those can layer on top later the same way the
+   pendulum's goal rings did). Sits in the open gap between the ball pit
+   (right wall at 3320+320=3640) and the ant farm (starts ~4290), with
+   real breathing room on both sides.
+   ====================================================== */
+const SANDBOX_ANGLED_TRAMPOLINES = [
+  { x: 3820, tiltDeg: -35, squishT: 9999 },
+  { x: 3900, tiltDeg: -13, squishT: 9999 },
+  { x: 3980, tiltDeg: 13, squishT: 9999 },
+  { x: 4060, tiltDeg: 35, squishT: 9999 }
+];
+const SANDBOX_ANGLED_TRAMPOLINE_RADIUS = 40;
+// CONFIRMED CHANGE: reuses player.launched -- the same launched-flight
+// physics the forest clockwork gears and pendulum throw already use
+// (floaty LAUNCH_GRAVITY/FLOATY_FALL_GRAVITY, real vx+vy) instead of the
+// ground trampoline's straight-up-only vy kick, since a genuine diagonal
+// fling needs actual horizontal velocity, not just a bigger vertical one.
+// Tuned to that physics' own established scale (the forest gears launch
+// around vy=8) rather than the ground trampoline's much larger vy (11-30)
+// -- that scale assumes the game's normal 0.8 gravity, and would send the
+// player flying absurdly far/high under this much floatier gravity.
+const SANDBOX_ANGLED_TRAMPOLINE_LAUNCH_SPEED = 10;
+const SANDBOX_ANGLED_TRAMPOLINE_SQUISH_MS = 260;
+
+function updateSandboxAngledTrampolineField(deltaTime) {
+  SANDBOX_ANGLED_TRAMPOLINES.forEach(t => {
+    if (t.squishT < SANDBOX_ANGLED_TRAMPOLINE_SQUISH_MS) t.squishT += deltaTime * 1000;
+  });
+}
+
+// same ring/springs/mat construction as the chain trampolines, on a
+// short post (reads as "propped at this angle on a stand" rather than an
+// unexplained floating tilted disc) -- the whole mat assembly rotates by
+// the trampoline's own tiltDeg around the top of the post.
+function drawSandboxAngledTrampoline(camX, t) {
+  const sx = t.x - camX;
+  const outerRx = 40, outerRy = 14;
+  const postHeight = 26;
+  const pivotY = gy - postHeight;
+
+  ctx.strokeStyle = "rgba(150,130,180,0.5)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx, pivotY);
+  ctx.lineTo(sx, gy);
+  ctx.stroke();
+
+  const rad = t.tiltDeg * Math.PI / 180;
+  ctx.save();
+  ctx.translate(sx, pivotY);
+  ctx.rotate(rad);
+
+  const squishP = Math.min(t.squishT / SANDBOX_ANGLED_TRAMPOLINE_SQUISH_MS, 1);
+  const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
+  const matCy = squish * 4;
+  const matRy = Math.max(2, (outerRy - 2) - squish * 5);
+  const matRx = outerRx * 0.62;
+
+  ctx.strokeStyle = "#8a8f96";
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const springCount = 12;
+  ctx.strokeStyle = "#5f6570";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < springCount; i++) {
+    const ang = (i / springCount) * Math.PI * 2;
+    const outerX = Math.cos(ang) * outerRx, outerY = Math.sin(ang) * outerRy;
+    const innerX = Math.cos(ang) * matRx, innerY = matCy + Math.sin(ang) * matRy;
+    ctx.beginPath();
+    ctx.moveTo(outerX, outerY);
+    ctx.lineTo(innerX, innerY);
+    ctx.stroke();
+  }
+
+  const matGrad = ctx.createRadialGradient(0, matCy, 2, 0, matCy, matRx);
+  matGrad.addColorStop(0, "#3f4f66");
+  matGrad.addColorStop(0.6, "#2a3648");
+  matGrad.addColorStop(1, "#1c2531");
+  ctx.fillStyle = matGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, matCy, matRx, matRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawSandboxAngledTrampolineField(camX) {
+  SANDBOX_ANGLED_TRAMPOLINES.forEach(t => drawSandboxAngledTrampoline(camX, t));
+}
+
 // dark stretched mat inside a metal ring, short angled legs, springs
 // evenly spaced around the rim -- reads as an actual classic trampoline,
 // not just a colored ellipse. The mat visibly dips (compresses toward
@@ -49919,6 +50044,7 @@ function drawSandboxScene(camX) {
   drawSandboxTrampoline(camX);
   drawSandboxTrampolineChain(camX);
   drawSandboxTrampolineChainPerch(camX);
+  drawSandboxAngledTrampolineField(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
@@ -49961,6 +50087,7 @@ function updateSandboxScene(deltaTime) {
 
   updateSandboxTrampoline(deltaTime);
   updateSandboxTrampolineChain(deltaTime);
+  updateSandboxAngledTrampolineField(deltaTime);
 
   // CONFIRMED CHANGE: radiusYUp bumped 15 -> 26, same fix as the entrance
   // mound got -- now that its top is a real jumpable platform, standing on
