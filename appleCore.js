@@ -14795,6 +14795,7 @@ function drawForestScene(camX) {
   drawForestSnake(camX);
   drawSnakeAskHint(camX);
   drawSnakeBlockedHint(camX);
+  drawSnakeAcceptHint(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
   drawForestClockworkLever(camX);
@@ -19306,6 +19307,15 @@ let snakeAskT = 0;
 // failed once -- this first proactive ask stays vaguer.
 const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round, sssomething that catchesss the light."];
 
+// CONFIRMED CHANGE ("the snake should say something when it accepts the
+// marble"): paying the toll used to just silently flip marbleGiven true
+// with zero acknowledgement -- same fade-in/hold/fade-out bubble as the
+// ask and reminder, just triggered on a successful offer instead of a
+// failed mount.
+const SNAKE_ACCEPT_HINT_DURATION = 3200;
+let snakeAcceptHint = { active: false, t: 0 };
+const forestSnakeAcceptLines = ["Ahh... yesss, this will do nicely.", "Climb on, sssstranger -- hold on tight."];
+
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
 // FOREST_SNAKE_TURN_STAGGER per segment, see below). Slowed down from
@@ -21024,6 +21034,21 @@ function drawSnakeBlockedHint(camX) {
   ctx.globalAlpha = 1;
 }
 
+// acknowledgement once the toll is actually paid -- anchored above the
+// head, same as the ask, so it reads as the same speaker
+function drawSnakeAcceptHint(camX) {
+  if (!snakeAcceptHint.active) return;
+  const headP = getForestSnakePoint(0);
+  const headBodyTop = FOREST_SNAKE_HEIGHT_ABOVE_GROUND - headP.y;
+  const sx = headP.x - camX;
+  const sy = gy - headBodyTop - 30;
+  const p = snakeAcceptHint.t / SNAKE_ACCEPT_HINT_DURATION;
+  const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
+  ctx.globalAlpha = Math.max(0, fade);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, forestSnakeAcceptLines);
+  ctx.globalAlpha = 1;
+}
+
 function updateForestScene(deltaTime) {
   updateReflectionPool();
   updateForestFrogs(deltaTime);
@@ -21783,11 +21808,20 @@ function updateForestScene(deltaTime) {
     snakeAskT += deltaTime * 1000;
     if (snakeAskT >= SNAKE_ASK_HINT_DURATION) snakeAskActive = false;
   }
+  if (snakeAcceptHint.active) {
+    snakeAcceptHint.t += deltaTime * 1000;
+    if (snakeAcceptHint.t >= SNAKE_ACCEPT_HINT_DURATION) snakeAcceptHint.active = false;
+  }
 
-  // proactive ask -- only fires once, only while the snake is actually
-  // docked (no point asking about a snake that's mid-river and can't be
-  // boarded right now), and only if the toll hasn't been paid yet.
-  if (forestSnake.state === "docked" && !forestSnake.marbleGiven && !snakeAskShown &&
+  // proactive ask -- only fires once, only if the toll hasn't been paid
+  // yet. CONFIRMED CHANGE ("i want the snake to be saying the first line
+  // as it comes to you normally in the game, not when its already
+  // turned around"): originally gated on forestSnake.state === "docked",
+  // so in a normal playthrough the line only played once the snake had
+  // already fully arrived and turned to face the player -- it stayed
+  // silent while actually approaching. Proximity alone is enough to
+  // speak; it doesn't need to have stopped and turned first.
+  if (!forestSnake.marbleGiven && !snakeAskShown &&
       isPlayerNear(forestSnake.currentX, 0, 90, 40, 20)) {
     snakeAskActive = true;
     snakeAskShown = true;
@@ -21805,6 +21839,9 @@ function updateForestScene(deltaTime) {
     heldItem = null;
     forestSnake.marbleGiven = true;
     snakeAskActive = false;
+    snakeBlockedHint.active = false; // in case a reminder from an earlier failed attempt is still fading
+    snakeAcceptHint.active = true;
+    snakeAcceptHint.t = 0;
     updateInventoryUI();
   }
 
@@ -50722,64 +50759,6 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
-
-// TEMPORARY debug spawn -- per direct request, dropped right in front of
-// the forest snake (docked at its near-side "A" position, just before
-// the bramble) for testing the marble-gate/snake report, with marble,
-// acorn and shovel on hand. Remove this block again for a real
-// fresh-start playtest, same as every earlier round of this same
-// back-and-forth.
-currentScene = "forest";
-player.x = 1320;
-player.y = 0;
-player.vy = 0;
-discoveredScenes.autumn = true;
-discoveredScenes.spring = true;
-discoveredScenes.forest = true;
-// force the snake docked right here (its own "A" dock, x:1370) instead
-// of wherever the normal docked/traveling cycle would otherwise have it
-// -- firstDepartureTriggered is set true so it departs on its own normal
-// DOCK_TIME (3500ms) instead of the much shorter proximity-trigger delay
-// (150ms) meant for a player who's just walked up naturally, giving a
-// real few seconds to react and jump on before it moves off.
-forestSnake.state = "docked";
-forestSnake.dockedAt = "A";
-forestSnake.currentX = forestSnake.dockA.x;
-forestSnake.t = 0;
-forestSnake.firstDepartureTriggered = true;
-// CONFIRMED BUG FIX ("why is snake moving backwards all the sudden"):
-// forcing dockedAt to "A" here without also updating prevDir/targetDir
-// left them at the object's own DEFAULT facing (-1/-1, left) -- correct
-// for the real default dock (B, first leg travels B->A leftward) but
-// wrong for a snake forced to start at A, whose first real leg travels
-// A->B (rightward). The head rotation is driven entirely by
-// prevDir/targetDir (see drawForestSnake's headDir calc), not by the
-// snake's actual x movement, so the mismatch meant the head stayed
-// facing left the whole time while the body visibly slid right -- reading
-// exactly like it was moving backwards. Matches the direction a REAL
-// arrival at dock A would set (see the dockedAt-swap block above:
-// arriving at A sets targetDir = 1).
-forestSnake.prevDir = 1;
-forestSnake.targetDir = 1;
-// per direct request, tester needs these on hand right at spawn
-// CONFIRMED BUG FIX ("tab through inventory... doesn't seem to [work]"):
-// setting inventory[type] directly here (the original version of this
-// block) bypasses addToInventory/touchInventoryOrder entirely, so these
-// items never actually landed in inventoryOrder -- the array Tab's own
-// cycleHeldItem reads to build its cycle list. A REAL pickup always goes
-// through addToInventory, so this only ever broke Tab for a debug spawn's
-// directly-assigned starting items, but that's exactly the state this
-// tester is in. touchInventoryOrder() (the same call addToInventory
-// makes) fixes it for good, not just this one case.
-inventory.marble = 1;
-touchInventoryOrder("marble");
-inventory.acorn = 3;
-touchInventoryOrder("acorn");
-inventory.shovel = 1;
-touchInventoryOrder("shovel");
-
-updateMapUI();
-updateInventoryUI();
 
 update();
 
