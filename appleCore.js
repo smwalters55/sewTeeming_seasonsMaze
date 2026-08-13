@@ -13813,6 +13813,37 @@ function drawForestZenSandPatch(camX) {
     ctx.fill();
   });
   ctx.restore();
+
+  // fine grain texture fading OUT past the blob's own edge, into the
+  // grass -- per direct request ("add a little fine grain texture to
+  // the zen sand from outside it... a liiiitle fine grained both medium
+  // fine grained and then a little less fine grained gradual layers").
+  // Same solid -> medium -> sparse -> nothing descent as the river
+  // junction/bank trail sand, just much smaller/subtler to match this
+  // patch's own scale -- each grain sits on the blob's real boundary
+  // (zenSandBoundaryAt, tracing the exact same organicBlobPath shape)
+  // and is pushed further out along the local outward direction.
+  FOREST_ZEN_SAND_MIDGRAINS.forEach(s => {
+    const b = zenSandBoundaryAt(s.u);
+    const sx = cx + b.dx + b.nx * s.dist;
+    const sy = cy + b.dy + b.ny * s.dist;
+    const alpha = 0.7 * Math.exp(-s.dist / 3.5);
+    ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.6, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  FOREST_ZEN_SAND_SPRINKLES.forEach(s => {
+    const b = zenSandBoundaryAt(s.u);
+    const sx = cx + b.dx + b.nx * s.dist;
+    const sy = cy + b.dy + b.ny * s.dist;
+    const alpha = 0.4 * Math.exp(-s.dist / 4.5);
+    ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.6, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   // a few faint raked-groove lines baked into the ground art itself,
   // just for flavor -- separate from the interactive grid inside the UI
   ctx.strokeStyle = "#c2a878";
@@ -14097,29 +14128,31 @@ function drawForestSandBankTrail(camX) {
 
   ctx.beginPath();
   traceBankTrailPath();
-  // fade the fill's own opacity in from the left cap instead of snapping
-  // straight to full color -- per direct feedback ("not blending into
-  // the haze of sand and blue that its right adjacent to"). The blurred
-  // near-bank halo already sitting here is soft-edged; matching that
-  // softness (rather than a flat opaque fill) is what actually makes
-  // this read as part of the same shoreline instead of a separate
-  // sticker laid on top of it.
+  // ONE continuous alpha gradient across the whole trail, not just a
+  // fade-in at the left cap -- per direct follow-up ("the one you added
+  // still doesnt blend enough in with the blue gorgeous sand gradient
+  // already there"). The real problem: drawForestFloatZone's own bank
+  // curve (bankPts, drawn earlier this same frame) already has its own
+  // lovely tan-to-blue gradient fill exactly where this trail overlaps
+  // it (from FOREST_FLOAT_ZONE_START_X out to where the water goes
+  // full-depth) -- and this trail's fill used to be flat opaque
+  // "#8c7a56" everywhere past its left cap, which simply painted over
+  // that existing gradient instead of blending with it. Now it fades
+  // IN from the left cap (same as before), stays solid through the
+  // genuinely dry shore stretch, then fades back OUT starting right at
+  // FOREST_FLOAT_ZONE_START_X (where the bank curve's own gradient
+  // starts turning blue) so that existing color shows through instead
+  // of getting covered by a second, unrelated flat tan.
   const lastP = pts[pts.length - 1];
-  const fillGrad = ctx.createLinearGradient(pts[0].x - 9, gy, pts[0].x + 30, gy);
+  const worldFrac = (wx) => Math.max(0, Math.min(1, (wx - startX) / (endX - startX)));
+  const fillGrad = ctx.createLinearGradient(pts[0].x - 9, gy, lastP.x, gy);
   fillGrad.addColorStop(0, "rgba(140,122,86,0)");
-  fillGrad.addColorStop(1, "rgba(140,122,86,1)");
+  fillGrad.addColorStop(0.09, "rgba(140,122,86,1)");
+  fillGrad.addColorStop(worldFrac(FOREST_FLOAT_ZONE_START_X), "rgba(140,122,86,1)");
+  fillGrad.addColorStop(worldFrac(FOREST_FLOAT_ZONE_START_X + 150), "rgba(140,122,86,0.12)");
+  fillGrad.addColorStop(1, "rgba(140,122,86,0.05)");
   ctx.fillStyle = fillGrad;
   ctx.fill();
-  // solid fill for the rest of the shape past the blend-in zone, so the
-  // gradient above only softens the left cap rather than washing out the
-  // whole trail's own color
-  ctx.save();
-  ctx.beginPath();
-  traceBankTrailPath();
-  ctx.clip();
-  ctx.fillStyle = "#8c7a56"; // matches the bank's own sand tone exactly
-  ctx.fillRect(pts[0].x + 30, 0, canvas.width, canvas.height);
-  ctx.restore();
 
   ctx.save();
   ctx.beginPath();
@@ -14527,6 +14560,65 @@ const FOREST_BREATHER_DUCK_BRANCH = { x: 6050, w: 46, clearance: 58, duckThresho
 // starting patch rather than a guess at the final extent.
 const FOREST_ZEN_SAND_PATCH = { x: 6180, width: 190 }; // world-space sand patch span
 const FOREST_ZEN_RAKE_X = 6240; // the rake prop itself, sitting within the patch
+// a little edge-fade grain texture outside the patch itself, same
+// layered-density idea as the river junction/bank trail sand (solid ->
+// medium -> sparse -> nothing), just scaled way down to match this much
+// smaller patch -- per direct request ("add a little fine grain texture
+// to the zen sand from outside it... more real... a liiiitle fine
+// grained both medium fine grained and then a little less fine grained
+// gradual layers, like i have been asking for with the sand"). These
+// boundary vertices replicate drawForestZenSandPatch's own
+// organicBlobPath call EXACTLY (same rx/ry/seedBase/pointCount), so the
+// scatter genuinely traces the visible blob edge instead of a separate
+// approximate oval that wouldn't quite line up with it.
+const FOREST_ZEN_SAND_BLOB_VERTS = (() => {
+  const rx = FOREST_ZEN_SAND_PATCH.width / 2, ry = 14, seedBase = 6180.1, pointCount = 11;
+  const verts = [];
+  for (let p = 0; p < pointCount; p++) {
+    const angJitter = (pseudoRandom(seedBase + p * 4.4) - 0.5) * (Math.PI * 2 / pointCount) * 0.7;
+    const ang = (p / pointCount) * Math.PI * 2 + angJitter;
+    const rJitter = 0.55 + pseudoRandom(seedBase + p * 7.7 + 3) * 0.6;
+    verts.push({ dx: Math.cos(ang) * rx * rJitter, dy: Math.sin(ang) * ry * rJitter });
+  }
+  return verts;
+})();
+// interpolates a point (and outward direction) anywhere around the
+// patch's own organic boundary at u (0..1), not just at the 11 discrete
+// vertices -- same role as sandProfileOffAt plays for the ribbon
+function zenSandBoundaryAt(u) {
+  const n = FOREST_ZEN_SAND_BLOB_VERTS.length;
+  const f = ((u % 1) + 1) % 1 * n;
+  const i0 = Math.floor(f), i1 = (i0 + 1) % n;
+  const frac = f - i0;
+  const a = FOREST_ZEN_SAND_BLOB_VERTS[i0], b = FOREST_ZEN_SAND_BLOB_VERTS[i1];
+  const dx = a.dx + (b.dx - a.dx) * frac, dy = a.dy + (b.dy - a.dy) * frac;
+  const len = Math.hypot(dx, dy) || 1;
+  return { dx, dy, nx: dx / len, ny: dy / len };
+}
+// medium-density layer (the "6") -- tight against the edge
+const FOREST_ZEN_SAND_MIDGRAINS = Array.from({ length: 70 }, (_, i) => {
+  const seed = 6400 + i * 3.7;
+  const u = pseudoRandom(seed + 2);
+  return {
+    u: pseudoRandom(seed),
+    dist: -Math.log(1 - u * 0.999) * 2.6, // px past the edge -- tight, hugs the sand
+    r: 0.8 + pseudoRandom(seed + 4) * 1,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
+  };
+});
+// sparse outer layer (the "3") -- same exponential falloff, longer reach
+const FOREST_ZEN_SAND_SPRINKLES = Array.from({ length: 90 }, (_, i) => {
+  const seed = 6500 + i * 3.1;
+  const u = pseudoRandom(seed + 2);
+  return {
+    u: pseudoRandom(seed),
+    dist: -Math.log(1 - u * 0.999) * 5,
+    r: 0.6 + pseudoRandom(seed + 4) * 0.9,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
+  };
+});
 
 // V1 build is diorama-style (matching the ant farm / wig stand pattern)
 // per direct confirmation ("we could start it in diarama view first
@@ -14832,8 +14924,20 @@ const FOREST_FLOAT_ZONE_START_X = 6900;
 // sand continuing along the shore past the bank, thick near it and
 // thinning out further along -- see drawForestSandBankTrail's own
 // comment for the full rationale.
+// x used to be FOREST_FLOAT_ZONE_START_X - 25 (6875), independent of
+// where the junction ribbon actually ends (FOREST_FLOAT_ZONE_START_X -
+// 70 = 6830, matching FOREST_SAND_RIVER_JUNCTION.endX) -- that 45px gap
+// between the two was never intentional, it was just two features
+// picking their own starting points without checking each other, and it
+// left a real stretch of bare grass between them. Per direct report
+// ("theres also still this gap in the sand between what you added and
+// what was already there"). Starting here at the SAME x the ribbon ends
+// closes it outright. (Can't reference FOREST_SAND_RIVER_JUNCTION.endX
+// directly -- it's declared further down and this is an immediately-
+// evaluated object literal, so that would be the same TDZ mistake made
+// twice already this session. Using the identical formula instead.)
 const FOREST_SAND_BANK_TRAIL = {
-  x: FOREST_FLOAT_ZONE_START_X - 25,
+  x: FOREST_FLOAT_ZONE_START_X - 70,
   endX: FOREST_FLOAT_ZONE_START_X + 360
 };
 const FOREST_SAND_BANK_TRAIL_PROFILE = (() => {
@@ -15124,6 +15228,29 @@ const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
 // out just a little, and make it longer").
 const FOREST_FLOAT_ZONE_END_X = 13350;
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
+// the current used to kick in instantly right at the float zone's
+// nominal edge (FOREST_FLOAT_ZONE_START_X - 20), but the sand bank trail
+// (FOREST_SAND_BANK_TRAIL) visually covers that same stretch with what
+// still reads as dry shore -- so both the player and any boat launched
+// there got shoved by "the current" while standing/floating on what
+// looks like sand, not water. Per direct report ("the player also
+// shouldnt feel like they are pushing against the current when on the
+// sand bank" / "leaf boats should not rando drift away while still on
+// sand bank"). Fixed with a real spatial ramp -- the same taper-in
+// technique already used to grow the sand shapes themselves in from a
+// thin sliver, just applied here to how strongly the current pushes,
+// and kept short per direct request ("shorten that a bit... just
+// shorter"): zero effect until well past the thick part of the bank,
+// full strength shortly after, smoothstepped in between instead of
+// snapping on.
+const FOREST_FLOAT_CURRENT_RAMP_START_X = FOREST_FLOAT_ZONE_START_X + 55;
+const FOREST_FLOAT_CURRENT_RAMP_END_X = FOREST_FLOAT_ZONE_START_X + 95;
+function floatCurrentStrengthAt(x) {
+  if (x <= FOREST_FLOAT_CURRENT_RAMP_START_X) return 0;
+  if (x >= FOREST_FLOAT_CURRENT_RAMP_END_X) return 1;
+  const t = (x - FOREST_FLOAT_CURRENT_RAMP_START_X) / (FOREST_FLOAT_CURRENT_RAMP_END_X - FOREST_FLOAT_CURRENT_RAMP_START_X);
+  return t * t * (3 - 2 * t); // smoothstep -- gradual, not a hard on/off
+}
 // extra calm distance prepended before the obstacle course actually
 // starts -- the current (and the leaf/bark boat launch pile) still
 // begins right at FOREST_FLOAT_ZONE_START_X, but every obstacle,
@@ -15598,7 +15725,7 @@ function updateForestRiverBoats() {
       }
       continue;
     }
-    b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult;
+    b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult * floatCurrentStrengthAt(b.x);
     FOREST_FLOAT_OBSTACLES.forEach((ob, idx) => {
       if (b.resolvedObstacles[idx]) return;
       if (ob.type === "duck") {
@@ -20411,7 +20538,7 @@ function updateForestScene(deltaTime) {
     playerOnFloatLilypad3 = landOnFloatPad(FOREST_FLOAT_LILYPAD_3);
     playerOnFloatLilypadEnd = landOnFloatPad(FOREST_FLOAT_LILYPAD_END);
 
-    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED;
+    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED * floatCurrentStrengthAt(player.x);
 
     // return-to-start lever -- per direct request ("make a return to
     // start 'lever' at end of river... yes finish to the end"). Only
