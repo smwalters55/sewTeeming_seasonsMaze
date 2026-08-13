@@ -82,6 +82,7 @@ window.addEventListener("keydown", e => {
   if (e.key==="Tab" && !e.repeat) cycleHeldItem();
   if ((e.key==="c" || e.key==="C") && !e.repeat) keys.cJustPressed = true;
   if ((e.key==="b" || e.key==="B") && !e.repeat) selectBoomerangIfAvailable();
+  if ((e.key==="r" || e.key==="R") && !e.repeat) keys.rJustPressed = true; // zen sand rake: clear/start over -- see updateZenRakeUI
 });
 
 window.addEventListener("keyup", e => {
@@ -3955,7 +3956,18 @@ function drawCrown(camX) {
     ctx.globalAlpha *= moleHoleSinkFade;
   }
 
-  if (crownState.worn) {
+  // while shrunk down in the ant farm, the mini-me already draws its
+  // own tiny crown (see drawSandboxAntFarm) -- the real player.x/y stay
+  // parked at the mount spot the whole visit (same as the main body
+  // sprite, which gets pushed off-canvas for the exact same reason;
+  // see the `px = player.inAntFarm ? -9999 : ...` comment on the main
+  // player draw), so drawing the full-size crown here too would either
+  // float it at the parked mount position or risk a second, duplicate
+  // crown depending on where that position lands on screen. Guarded
+  // out explicitly rather than relying on it happening to land
+  // somewhere unnoticed ("make sure that crown from autumn works in
+  // both the ball pit and the ant farm when player is wearing it").
+  if (crownState.worn && !player.inAntFarm) {
     drawCrownOnHead(camX, sinkAmount);
   } else if (!crownState.ready && currentScene === "autumn") {
     // in-progress — visible beside the player so catching a leaf feels
@@ -14249,6 +14261,14 @@ function updateZenRakeUI(deltaTime) {
     return;
   }
 
+  // "i wish there was an easy way to erase with keyboard if you want
+  // to start over" -- R clears the raked path so far, leaving the
+  // cursor exactly where it is rather than snapping it back to center.
+  if (keys.rJustPressed) {
+    zenRakeUI.path = [];
+    return;
+  }
+
   let dx = 0, dy = 0;
   if (keys.left) dx -= 1;
   if (keys.right) dx += 1;
@@ -14415,8 +14435,16 @@ function drawZenRakeUI() {
     ctx.restore();
   }
 
-  // "lets remove the lines about arrow keys and space bar" -- the
-  // instruction line used to render here.
+  // the arrow-keys/space instruction line was removed from here per
+  // direct request, but R (clear/start over) isn't discoverable any
+  // other way, so it gets its own small hint -- worded "start over" to
+  // match how it was actually described ("an easy way to erase... if
+  // you want to start over"), which also reads calmer/more fitting for
+  // a zen garden than "erase".
+  ctx.fillStyle = "#8a7a5a";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("R to start over", canvas.width / 2, boxY + boxH - 14);
   ctx.textAlign = "left";
   ctx.restore();
 }
@@ -14440,7 +14468,13 @@ function drawZenRakeUI() {
 // breathing room") -- width (END - START) kept the same so none of the
 // internal obstacle spacing needed to change.
 const FOREST_FLOAT_ZONE_START_X = 6900;
-const FOREST_FLOAT_ZONE_END_X = 9600; // pushed out another 300 to match FOREST_FLOAT_CALM_LEAD below, so the trailing gap after the last obstacle stays the same size it was before the calmer entrance was added
+// widened from 9600 (width 2700) to 11800 (width 4900) to fit the
+// spaced-out + repeated-second-pass obstacle course above (last
+// obstacle now sits at START+CALM_LEAD+4160=11360, leaving a ~440px
+// trailing buffer, close to the ~400px the old zone had after its own
+// last obstacle) -- per direct request ("i think i want to space it
+// out just a little, and make it longer").
+const FOREST_FLOAT_ZONE_END_X = 11800;
 const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of normal movement
 // extra calm distance prepended before the obstacle course actually
 // starts -- the current (and the leaf/bark boat launch pile) still
@@ -14575,30 +14609,59 @@ let floatSubmergeAmount = 0;
 // collision block's ob.spiky branch and drawFloatRock's spiky arg).
 // The later gate (variant 2, new) is the gentler introduction --
 // raised clearance but no punishment, just a wall until you clear it.
+// spaced out ~30% further apart than the original layout, and the
+// whole course extended with a second, repeated pass of the same
+// obstacle vocabulary (duck / jump / moving-log pair / spiky gate /
+// gentle closing gate) rather than inventing new obstacle types --
+// per direct request ("i think i want to space it out just a little,
+// and make it longer and maybe repeat some of the stuff we already
+// have"). The original 11-obstacle course (offsets 160-2000) is now
+// offsets 210-2600; everything from 2840 on is the new repeated
+// second half.
 const FOREST_FLOAT_OBSTACLES = [
   // clearance raised from 40 -- still clearable with a single jump
   // (peaks at 96), but now needs a real full jump instead of a tiny
   // reflexive hop. Per direct request ("make the single jump rocks
   // higher too so they are harder to clear").
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 160, w: 40, clearance: 72, type: "jump", variant: 0 },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 340, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 560, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 780, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1120, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 210, w: 40, clearance: 72, type: "jump", variant: 0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 440, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0022, duckPhase: 0 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 730, range: 70, speed: 0.0016, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1010, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0019, duckPhase: 2.1 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1460, range: 60, speed: 0.0021, phase: 2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1690, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0026, duckPhase: 4.4 },
   // out-of-phase moving log quartet -- logs close enough together that
   // their swings overlap, but on different speeds/phases (each offset
   // from the others) so there's no single fixed rhythm that clears all
   // of them -- each has to be read and timed on its own. Per direct
   // request ("out of phase double moving logs", then "add the third
   // moving log to right of the two moving logs next to each other",
-  // then "add a fourth moving log with the other three").
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1460, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1560, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1660, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
-  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1760, range: 55, speed: 0.0019, phase: 3.4, w: 40, clearance: 40, type: "movingJump", variant: 5 },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2000, w: 40, clearance: 110, type: "jump", variant: 2 }
+  // then "add a fourth moving log with the other three"). Internal
+  // spacing between these four kept tight on purpose (that overlap IS
+  // the puzzle) even while everything else spaced out.
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1900, range: 50, speed: 0.0026, phase: 0, w: 40, clearance: 40, type: "movingJump", variant: 2 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2010, range: 50, speed: 0.0026, phase: Math.PI, w: 40, clearance: 40, type: "movingJump", variant: 3 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2120, range: 45, speed: 0.0031, phase: 1.6, w: 40, clearance: 40, type: "movingJump", variant: 4 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2230, range: 55, speed: 0.0019, phase: 3.4, w: 40, clearance: 40, type: "movingJump", variant: 5 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2600, w: 40, clearance: 110, type: "jump", variant: 2 },
+
+  // SECOND PASS -- repeats the same vocabulary (duck, single jump,
+  // out-of-phase moving-log pair, spiky gate, gentle closing gate)
+  // rather than new obstacle types, giving the now-longer zone a real
+  // second act instead of a long empty drift after 2600.
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2840, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0024, duckPhase: 1.1 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3060, w: 40, clearance: 72, type: "jump", variant: 1 },
+  // a smaller echo of the earlier quartet -- just a pair this time, out
+  // of phase with each other the same way, so it reads as a reprise of
+  // that idea rather than a full repeat of the exact same puzzle
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3300, range: 55, speed: 0.0023, phase: 0.6, w: 40, clearance: 40, type: "movingJump", variant: 3 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3420, range: 50, speed: 0.0028, phase: 2.8, w: 40, clearance: 40, type: "movingJump", variant: 5 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3660, w: 70, clearance: 48, type: "duck", duckSpeed: 0.002, duckPhase: 3.6 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3900, w: 40, clearance: 125, type: "jump", variant: 0, spiky: true },
+  // gentle closing gate -- raised clearance but no punishment, same
+  // "soft landing" role the original variant-2 gate played at the very
+  // end of the first pass
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -14630,24 +14693,37 @@ const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 // collision (see the FLOAT ZONE update block), same landing-snap
 // pattern the autumn scene's own platforms use -- player.y actually
 // rests at heightAboveGround while standing on it, not just a visual.
-const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 660, width: 56, heightAboveGround: 20 };
+// second lilypad added for the new second pass -- same "somewhere to
+// actually stand still" role, placed in that stretch's own calm gap
+// (between the reprised jump rock and the moving-log pair), same as
+// how the original one sits in a gap in the first pass.
+const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 860, width: 56, heightAboveGround: 20 };
+const FOREST_FLOAT_LILYPAD_2 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3190, width: 56, heightAboveGround: 20 };
 let playerOnFloatLilypad = false;
+let playerOnFloatLilypad2 = false;
 // minY (optional) gates a collectible behind actually reaching a
 // specific arc height, not just walking/floating near it at ground
 // level -- rewards a well-timed jump instead of being freely walkable
 // into. Per direct request ("need specific arc height to get the
-// jumping rewards"). The two gated ones sit right at the double-jump
-// gates, just above each one's own clearance, so grabbing one means
-// you cleared that gate at close to its real peak, not just barely.
+// jumping rewards"). The gated ones sit right at a double-jump gate,
+// just above its own clearance, so grabbing one means you cleared
+// that gate at close to its real peak, not just barely.
 const FOREST_FLOAT_COLLECTIBLES = [
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 250, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 430, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 600, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 860, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1080, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, collected: false },
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1000, collected: false, minY: 128 }, // right over the spiky double-jump rock
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2000, collected: false, minY: 113 }  // right over the plain double-jump gate
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 330, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 560, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 780, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1120, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1400, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1690, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 1300, collected: false, minY: 128 }, // right over the spiky double-jump rock
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2600, collected: false, minY: 113 }, // right over the first pass's closing gate
+  // second pass -- same density/pattern repeated
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 2960, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3190, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3540, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3780, collected: false },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3900, collected: false, minY: 128 }, // right over the second spiky gate
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 4160, collected: false, minY: 113 }  // right over the final closing gate
 ];
 
 // leaf/bark boats -- launched right where the current starts, well
@@ -15215,11 +15291,15 @@ function drawFloatLog(ox, obBottom, w, variant) {
 // the calm mid-river resting spot -- a real lily pad with a classic
 // notch silhouette, veins, and a small flower accent, not just a green
 // disc. Per direct request ("a lili pad to catch breath somewhere").
-function drawFloatLilypad(camX) {
-  const lx = FOREST_FLOAT_LILYPAD.x - camX;
+// takes a pad object now instead of hardcoding FOREST_FLOAT_LILYPAD --
+// the now-longer zone got a second rest stop (FOREST_FLOAT_LILYPAD_2)
+// for its repeated second pass, and this draw is identical for both,
+// just at a different x.
+function drawFloatLilypad(camX, pad) {
+  const lx = pad.x - camX;
   if (lx < -60 || lx > canvas.width + 60) return;
-  const topY = gy - FOREST_FLOAT_LILYPAD.heightAboveGround;
-  const w = FOREST_FLOAT_LILYPAD.width;
+  const topY = gy - pad.heightAboveGround;
+  const w = pad.width;
   // flattened wide oval lying flat on the water, not a near-circle --
   // rx well beyond the pad's own footprint half-width and a shallow ry
   // so it reads as a thin flat leaf floating on the surface rather than
@@ -15441,7 +15521,8 @@ function drawForestFloatZone(camX) {
   ctx.lineTo(zoneEndPx, canvas.height);
   ctx.stroke();
 
-  drawFloatLilypad(camX);
+  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD);
+  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     const ox = floatObstacleX(ob) - camX;
@@ -19437,20 +19518,28 @@ function updateForestScene(deltaTime) {
     // landing on it this frame can skip that frame's push -- otherwise
     // the current would still shove the player sideways while standing
     // still on a pad that's supposed to be a break from it.
-    const padLeft = FOREST_FLOAT_LILYPAD.x - FOREST_FLOAT_LILYPAD.width / 2;
-    const padRight = FOREST_FLOAT_LILYPAD.x + FOREST_FLOAT_LILYPAD.width / 2;
-    const padTop = FOREST_FLOAT_LILYPAD.heightAboveGround;
-    playerOnFloatLilypad = false;
-    if (player.x + player.width > padLeft && player.x < padRight &&
-        player.y <= padTop && player.y >= padTop - 14 && player.vy <= 0) {
-      player.y = padTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      playerOnFloatLilypad = true;
-    }
+    // second rest stop added for the now-longer zone's repeated second
+    // pass (see FOREST_FLOAT_LILYPAD_2's own comment) -- same landing
+    // check, just run once per pad instead of duplicating the whole
+    // block by hand.
+    const landOnFloatPad = (pad) => {
+      const padLeft = pad.x - pad.width / 2;
+      const padRight = pad.x + pad.width / 2;
+      const padTop = pad.heightAboveGround;
+      if (player.x + player.width > padLeft && player.x < padRight &&
+          player.y <= padTop && player.y >= padTop - 14 && player.vy <= 0) {
+        player.y = padTop;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        return true;
+      }
+      return false;
+    };
+    playerOnFloatLilypad = landOnFloatPad(FOREST_FLOAT_LILYPAD);
+    playerOnFloatLilypad2 = landOnFloatPad(FOREST_FLOAT_LILYPAD_2);
 
-    if (!playerOnFloatLilypad) player.x += FOREST_FLOAT_DRIFT_SPEED;
+    if (!playerOnFloatLilypad && !playerOnFloatLilypad2) player.x += FOREST_FLOAT_DRIFT_SPEED;
 
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
@@ -48377,6 +48466,7 @@ lastTime = now;
     keys.leftJustPressed = false;
     keys.rightJustPressed = false;
     keys.spaceJustPressed = false;
+    keys.rJustPressed = false;
     requestAnimationFrame(update);
     draw();
     return;
@@ -48696,6 +48786,7 @@ updateSeasonTransition(deltaTime);
   keys.upJustPressed = false;
   keys.spaceJustPressed = false;
   keys.cJustPressed = false;
+  keys.rJustPressed = false;
 
   // console.log("UPDATE END y =", apple.y);
 
@@ -48720,19 +48811,20 @@ updateSeasonTransition(deltaTime);
 // granted/equipped by hand below instead so it still matches what a
 // real transition would leave you with, even though we're not IN the
 // sandbox this time.
-// TEMPORARY ("spawn me in front of it in forest") -- repointed to drop
-// the player right in front of the new zen sand rake in forest, purely
-// to look at/test it live. Bridge segments are force-marked as
-// already built (forestRiverSegmentsStrung/Decked) since otherwise
-// dropping in this far out without actually having crossed the real
-// bridge trips the existing "teleport watchdog" safety-net logic that
-// snaps the player back to the near riverbank. Revert back to the
-// spring spawn above (see git history) once done looking at the rake.
+// TEMPORARY ("debuug spawn me in front of rushing river") -- repointed
+// to drop the player right at the start of the float zone/"Rushing
+// River", purely to look at/test the new spaced-out + lengthened
+// obstacle course live. Bridge segments are force-marked as already
+// built (forestRiverSegmentsStrung/Decked) since otherwise dropping in
+// this far out without actually having crossed the real bridge trips
+// the existing "teleport watchdog" safety-net logic that snaps the
+// player back to the near riverbank. Revert back to the spring spawn
+// above (see git history) once done looking at the river.
 currentScene = "forest";
 forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
 forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-cameraX = FOREST_ZEN_RAKE_X - 300;
-player.x = FOREST_ZEN_RAKE_X - 10;
+cameraX = FOREST_FLOAT_ZONE_START_X - 100;
+player.x = FOREST_FLOAT_ZONE_START_X - 60;
 player.y = 0;
 addToInventory("shovel");
 touchInventoryOrder("shovel");
