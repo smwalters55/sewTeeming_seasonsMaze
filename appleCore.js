@@ -13722,6 +13722,124 @@ function drawForestFloatZoneReeds(camX) {
 // untouched -- still the same clearance/duck rules as any other duck
 // obstacle, see FOREST_BREATHER_DUCK_BRANCH's own comment and the
 // DUCKING block in updateForestScene.
+// a single buttress root, built as a real tapered organic strip (sampled
+// along a curved centerline, offset into a left/right edge by a width
+// that itself tapers smoothly) instead of the old technique (a
+// hand-drawn quadratic wedge, closed by looping back through a SECOND,
+// differently-curved edge) -- per direct, unambiguous follow-up on how
+// that old shape actually looked once scaled up bigger ("this looks
+// horrible", "this is like rectangles glued on"). The old wedge's two
+// edges didn't follow a consistent perpendicular offset from a shared
+// centerline, so they visibly crossed/pinched against each other and
+// against the trunk, reading as jumbled flat panels rather than one
+// continuous root. Sampling a real centerline and offsetting both edges
+// by the same normal at every point guarantees a clean, non-self-
+// intersecting taper.
+//
+// On top of that base shape, per direct follow-up ("try a little more
+// carefully, and make it look like real buttressing... gnarled
+// buttresses you know how they actually look?") this adds real
+// knottiness instead of a perfectly smooth taper: the centerline itself
+// buckles/wobbles rather than following one clean bezier arc, the width
+// bulges and pinches unevenly along its length instead of tapering
+// evenly, a couple of dark bark-groove lines run along it, and a few
+// small knot bumps sit on the surface -- all seeded per root (not
+// re-randomized every frame) so it stays stable, just genuinely gnarled
+// rather than a smooth rounded blob.
+function drawBuffressRoot(bx, trunkBaseY, dir, reach, rootSeed) {
+  const p0 = { x: bx + dir * 6, y: trunkBaseY - 50 }; // emerges from the trunk, up high
+  const p1 = { x: bx + dir * reach * 0.55, y: trunkBaseY - 6 }; // curve control, sweeps outward
+  const p2 = { x: bx + dir * reach, y: trunkBaseY + 5 }; // ground contact
+  const steps = 18;
+  const centerPts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, omt = 1 - t;
+    let x = omt * omt * p0.x + 2 * omt * t * p1.x + t * t * p2.x;
+    let y = omt * omt * p0.y + 2 * omt * t * p1.y + t * t * p2.y;
+    // the centerline itself buckles a little, tapering to zero right at
+    // both the trunk and the ground tip so it stays anchored at both
+    // ends -- this is what keeps it from reading as one too-clean arc
+    const wobble = (pseudoRandom(rootSeed + i * 3.7) - 0.5) * 7 * Math.sin(t * Math.PI);
+    y += wobble;
+    centerPts.push({ x, y, t });
+  }
+  // narrow where it meets the trunk, widest a bit before the ground tip,
+  // tapering back down near ground contact -- plus an uneven per-segment
+  // knobble factor so the width doesn't taper smoothly, it bulges and
+  // pinches like real bark-covered root wood
+  const widthAt = (t, i) => {
+    const base = (3 + Math.pow(t, 0.55) * 12) * (1 - Math.pow(t, 3) * 0.5);
+    const knobble = 0.75 + pseudoRandom(rootSeed + 50 + i * 5.3) * 0.5;
+    return base * knobble;
+  };
+  const leftEdge = [], rightEdge = [];
+  for (let i = 0; i < centerPts.length; i++) {
+    const cur = centerPts[i];
+    const prev = centerPts[Math.max(0, i - 1)];
+    const next = centerPts[Math.min(centerPts.length - 1, i + 1)];
+    const tx = next.x - prev.x, ty = next.y - prev.y;
+    const len = Math.hypot(tx, ty) || 1;
+    const nx = -ty / len, ny = tx / len;
+    const w = widthAt(cur.t, i) / 2;
+    leftEdge.push({ x: cur.x + nx * w, y: cur.y + ny * w });
+    rightEdge.push({ x: cur.x - nx * w, y: cur.y - ny * w });
+  }
+  ctx.fillStyle = "#3e2e1c";
+  ctx.beginPath();
+  ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
+  for (let i = 1; i < leftEdge.length; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
+  for (let i = rightEdge.length - 1; i >= 0; i--) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
+  ctx.closePath();
+  ctx.fill();
+
+  // a couple of dark bark-groove lines running along the root's length,
+  // following the same wobbly centerline offset inward a bit -- reads as
+  // ridged wood grain rather than a flat-shaded panel
+  [0.3, -0.3].forEach(off => {
+    ctx.strokeStyle = "rgba(30,20,10,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    centerPts.forEach((cur, i) => {
+      if (cur.t < 0.08 || cur.t > 0.92) return; // stop short of both ends
+      const w = widthAt(cur.t, i) * off;
+      const prev = centerPts[Math.max(0, i - 1)];
+      const next = centerPts[Math.min(centerPts.length - 1, i + 1)];
+      const tx = next.x - prev.x, ty = next.y - prev.y;
+      const len = Math.hypot(tx, ty) || 1;
+      const nx = -ty / len, ny = tx / len;
+      const gx = cur.x + nx * w, gy2 = cur.y + ny * w;
+      if (i === 0) ctx.moveTo(gx, gy2); else ctx.lineTo(gx, gy2);
+    });
+    ctx.stroke();
+  });
+
+  // rim-light along the outward-facing edge only (left edge when dir>0,
+  // right edge when dir<0), so the root reads as a rounded ridge catching
+  // light rather than a flat panel
+  const outerEdge = dir > 0 ? leftEdge : rightEdge;
+  ctx.strokeStyle = "rgba(90,70,45,0.5)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(outerEdge[0].x, outerEdge[0].y);
+  for (let i = 1; i < outerEdge.length; i++) ctx.lineTo(outerEdge[i].x, outerEdge[i].y);
+  ctx.stroke();
+
+  // a few small knot bumps on the surface -- real buttress bark is
+  // never perfectly smooth, these read as knots/burls along the root
+  [0.35, 0.6, 0.8].forEach((t, ki) => {
+    const idx = Math.round(t * steps);
+    const cur = centerPts[idx];
+    const knotSeed = rootSeed + 200 + ki * 17;
+    if (pseudoRandom(knotSeed) < 0.4) return; // not every root shows every knot -- avoids a too-regular repeated pattern
+    const kx = cur.x + (pseudoRandom(knotSeed + 1) - 0.5) * widthAt(cur.t, idx) * 0.6;
+    const ky = cur.y + (pseudoRandom(knotSeed + 2) - 0.5) * 4;
+    ctx.fillStyle = "rgba(25,17,9,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(kx, ky, 2.2 + pseudoRandom(knotSeed + 3) * 1.6, 1.6 + pseudoRandom(knotSeed + 4) * 1.2, pseudoRandom(knotSeed + 5) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawForestBreatherDuckBranch(camX) {
   const branch = FOREST_BREATHER_DUCK_BRANCH;
   const bx = branch.x - camX;
@@ -13744,42 +13862,24 @@ function drawForestBreatherDuckBranch(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // buttress roots -- bigger spread than the rushing river's own tree
-  // (that one peaks at dir 1.35 / mag 1.15) per direct request ("bigger
-  // butress than whats in rushing river")
-  [[-1.9, 1.55], [-1.2, 0.95], [1.2, 0.95], [1.9, 1.55]].forEach(([dir, mag]) => {
-    ctx.fillStyle = "#3e2e1c";
-    ctx.beginPath();
-    ctx.moveTo(bx + dir * 10, trunkBaseY - 62);
-    ctx.quadraticCurveTo(bx + dir * 30 * mag, trunkBaseY - 20, bx + dir * 48 * mag, trunkBaseY + 10);
-    ctx.lineTo(bx + dir * 36 * mag, trunkBaseY + 12);
-    ctx.quadraticCurveTo(bx + dir * 20 * mag, trunkBaseY - 8, bx + dir * 3, trunkBaseY - 48);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "rgba(90,70,45,0.5)";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(bx + dir * 10, trunkBaseY - 60);
-    ctx.quadraticCurveTo(bx + dir * 30 * mag, trunkBaseY - 20, bx + dir * 46 * mag, trunkBaseY + 6);
-    ctx.stroke();
-  });
+  // buttress roots -- two gnarled tapered roots (see drawBuffressRoot),
+  // reaching a bit wider than the rushing river's own tree (that one
+  // peaks around 48*1.15=~55px of outward reach; these reach 62px) per
+  // direct follow-up ("a little smaller too just bigger than the
+  // butressed river trees"). Each seeded differently so the two sides
+  // don't mirror each other identically.
+  drawBuffressRoot(bx, trunkBaseY, -1, 62, 340);
+  drawBuffressRoot(bx, trunkBaseY, 1, 62, 890);
 
-  // full canopy, same layered-blob + leaf-cluster language as every
-  // other real tree in the forest
-  const cy0 = trunkTopY - 4;
-  const canopyBlobs = [[-24, -14, 30], [10, -27, 35], [28, -3, 27], [-8, -36, 28]];
-  ctx.fillStyle = "#1a2712";
-  canopyBlobs.forEach(([dx, dy, r]) => {
-    ctx.beginPath();
-    ctx.arc(bx + dx, cy0 + dy, r, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  canopyBlobs.forEach(([dx, dy, r], ci) => {
-    drawForestTreeLeafCluster(bx + dx, cy0 + dy, r * 0.9, "#233a1a", 7200 + ci * 37, 15);
-  });
-  [[-5, -30, 18], [15, -18, 14]].forEach(([dx, dy, r], ci) => {
-    drawForestTreeLeafCluster(bx + dx, cy0 + dy, r, "#324a24", 7700 + ci * 29, 9);
-  });
+  // same simple canopy stub as the rushing river's own duck tree, per
+  // direct request ("use the same tree top as the river one") -- keeps
+  // the two duck trees reading as siblings, differing in their
+  // buttresses (the actual thing being compared/sized against each
+  // other) rather than in unrelated canopy style too.
+  ctx.fillStyle = "rgba(40,60,30,0.6)";
+  ctx.beginPath();
+  ctx.arc(bx, trunkTopY - 4, 30, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // the "DUCK!" sign for this first tree -- planted with real lead
