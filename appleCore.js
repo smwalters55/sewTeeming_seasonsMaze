@@ -15613,6 +15613,16 @@ forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_END.x, anchorY: gy, radiu
 // stops, not out on the water.
 const FOREST_FLOAT_RETURN_LEVER_X = FOREST_FLOAT_ZONE_END_X + 40;
 let forestFloatReturnLeverPullT = 0; // 0 = at rest, 1 = just pulled, eases back to 0
+// per direct request ("short animation of the leaf lever getting pulled
+// down before putting us back at the beginning") -- pulling the lever
+// used to teleport the player back to the start on the very same frame
+// space was pressed, so the lever's own pull-down animation (see
+// forestFloatReturnLeverPullT above) never actually got seen before the
+// camera cut away. Now the pull just arms this timer instead of
+// teleporting immediately; the real jump-back happens once it elapses,
+// giving the lever time to actually swing down on screen first.
+let forestFloatReturnPendingAt = 0; // 0 = no pending return; else a performance.now() timestamp
+const FOREST_FLOAT_RETURN_DELAY_MS = 500;
 let playerOnFloatLilypad = false;
 let playerOnFloatLilypad2 = false;
 let playerOnFloatLilypad3 = false;
@@ -20968,12 +20978,23 @@ function updateForestScene(deltaTime) {
   // untouched and still works exactly as before -- per direct
   // confirmation ("yes slow upstrream def still exist") -- this is just
   // a faster option for anyone who'd rather not.
-  if (keys.spaceJustPressed && isPlayerNear(FOREST_FLOAT_RETURN_LEVER_X, 0, 28, 20, 20)) {
+  //
+  // Pressing space here used to teleport back to the start on the very
+  // same frame -- per direct follow-up ("short animation of the leaf
+  // lever getting pulled down before putting us back at the beginning
+  // please"), it now just arms forestFloatReturnPendingAt and lets the
+  // lever's own pull-down animation actually play out; the real jump
+  // happens below once FOREST_FLOAT_RETURN_DELAY_MS has elapsed.
+  if (!forestFloatReturnPendingAt && keys.spaceJustPressed && isPlayerNear(FOREST_FLOAT_RETURN_LEVER_X, 0, 28, 20, 20)) {
+    forestFloatReturnLeverPullT = 1; // kicks off the pulled-lever flourish, see drawForestFloatReturnLever
+    forestFloatReturnPendingAt = performance.now();
+  }
+  if (forestFloatReturnPendingAt && performance.now() - forestFloatReturnPendingAt >= FOREST_FLOAT_RETURN_DELAY_MS) {
     cameraX = FOREST_FLOAT_ZONE_START_X - 120;
     player.x = FOREST_FLOAT_ZONE_START_X - 90;
     player.y = 0;
     player.vy = 0;
-    forestFloatReturnLeverPullT = 1; // kicks off the pulled-lever flourish, see drawForestFloatReturnLever
+    forestFloatReturnPendingAt = 0;
   }
 
   // RIVER BRIDGE BUILDING — two steps per segment, matching how a real
