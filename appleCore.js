@@ -14794,9 +14794,8 @@ function drawForestScene(camX) {
   drawForestBrambleBehindSnakeStrand(camX); // one crossing strand, live (not cached) so it can sit behind the snake specifically -- the rest of the front layer still draws after the snake, see drawForestBrambleFrontLayer below
   drawForestSnake(camX);
   drawForestSnakeNook(camX);
-  drawSnakeAskHint(camX);
+  drawForestSnakeNookSign(camX);
   drawSnakeBlockedHint(camX);
-  drawSnakeAcceptHint(camX);
   drawForestSnakeObstacles(camX);
   drawForestBoomerangTarget(camX);
   drawForestClockworkLever(camX);
@@ -19287,35 +19286,16 @@ const forestSnake = {
 const SNAKE_BLOCKED_HINT_DURATION = 4500;
 let snakeBlockedHint = { active: false, t: 0, x: 0, heightAboveGround: 0 };
 
-// the snake's own ask -- shown proactively the first time it's actually
-// close enough to matter (docked and near the player), not just as a
-// reaction to a failed mount attempt. Fires once and stays remembered,
-// so it doesn't nag on every later approach -- the blocked-mount hint
-// above still covers reminding a returning player who's forgotten.
-let snakeAskShown = false;
-let snakeAskActive = false;
-const SNAKE_ASK_HINT_DURATION = 5500; // see SNAKE_BLOCKED_HINT_DURATION's note -- same fix, same reason
-let snakeAskT = 0;
-// CONFIRMED CHANGE ("i really lean away from hint bubbles when
-// possible" -> "i would prefer another e.g. dialogue from the snake
-// saying like sssssaaay, bah blah blah something sorta vague but you
-// know its about the marble in snake fairytale language"): plain
-// instructional text ("offer it something small, round, and shiny
-// first") swapped for the snake actually speaking, in its own
-// fairytale-snake voice -- still points at the marble without naming
-// it outright. The extra pink-hue clue only belongs on the reminder
-// line (see drawSnakeBlockedHint) for a player who's already tried and
-// failed once -- this first proactive ask stays vaguer.
-const forestSnakeAskLines = ["Sssstranger... no one crossesss on my back for free.", "Bring me sssomething small and round, sssomething that catchesss the light."];
-
-// CONFIRMED CHANGE ("the snake should say something when it accepts the
-// marble"): paying the toll used to just silently flip marbleGiven true
-// with zero acknowledgement -- same fade-in/hold/fade-out bubble as the
-// ask and reminder, just triggered on a successful offer instead of a
-// failed mount.
-const SNAKE_ACCEPT_HINT_DURATION = 3200;
-let snakeAcceptHint = { active: false, t: 0 };
-const forestSnakeAcceptLines = ["Ahh... yesss, this will do nicely.", "Climb on, sssstranger -- hold on tight."];
+// CONFIRMED CHANGE ("dialogue looks weird separate from snake"): the
+// proactive ask and the accept-acknowledgement used to be snake-voiced
+// speech bubbles anchored to the nook, but the actual snake is often
+// off traveling somewhere else entirely when either fires -- reading
+// like the bramble itself was talking. Both replaced by the always-
+// visible wooden sign (see drawForestSnakeNookSign) instead -- nothing
+// left to track for either one. The blocked-mount reminder below stays
+// snake-voiced, since that one only ever fires while you're actually
+// jumping onto the snake's own body -- it's legitimately right there
+// when it "speaks".
 
 // how long the snake's turn-around takes -- shared between the head
 // (drawn with no stagger) and the body segments (staggered off this by
@@ -19458,6 +19438,59 @@ function drawForestSnakeNook(camX) {
   }
   ctx.restore();
   ctx.lineWidth = 1; // see drawForestSnake's own note -- don't leak a fat stroke into whatever draws next
+}
+
+// CONFIRMED CHANGE ("dialogue looks weird separate from snake" -- the
+// ask/accept speech bubbles used to fire here even when the actual
+// snake was off traveling somewhere else entirely, which read as the
+// bramble itself talking in the snake's voice -- "small wooden sign w a
+// pink marble imge saying '[pink marble image] for passssage'"):
+// replaced both bubbles with a plain, always-visible wooden sign next
+// to the nook -- same post+plank style as the other forest signs
+// (drawForestBreatherDuckSign, drawTunnelTownExitSign). Needs the actual
+// words, not just the icon alone ("they get the marble a lot earlier in
+// game in rat room, just the image w no words would be confusing") --
+// by the time a player reaches this nook the marble may have been sitting
+// unused in inventory for a long stretch, so the icon alone wouldn't be
+// enough to place it back in context.
+function drawForestSnakeNookSign(camX) {
+  const sx = FOREST_SNAKE_NOOK_X - 32 - camX;
+  const sy = gy;
+  ctx.strokeStyle = "#5a3e22";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy - 22);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(sx, sy - 38);
+  ctx.rotate(-0.03);
+  ctx.fillStyle = "#7a5636";
+  ctx.fillRect(-21, -18, 42, 36);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-21, -18, 42, 36);
+  // the marble icon -- same shape/color as the carried/nook version, so
+  // it's instantly recognizable as the same object
+  ctx.fillStyle = "#c85a8a";
+  ctx.beginPath();
+  ctx.arc(0, -8, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.beginPath();
+  ctx.arc(-2, -10, 2, 0, Math.PI * 2);
+  ctx.fill();
+  // the words -- plain carved text, no dialogue framing, nothing
+  // "spoken" by anyone, so there's no attribution problem
+  ctx.fillStyle = "rgba(230,210,170,0.95)";
+  ctx.font = "bold 7px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("for", 0, 5);
+  ctx.fillText("passssage", 0, 13);
+  ctx.textAlign = "left";
+  ctx.restore();
+  ctx.lineWidth = 1;
 }
 
 function hexToRgba(hex, alpha) {
@@ -21046,23 +21079,6 @@ function drawForestSnake(camX) {
   ctx.lineWidth = 1;
 }
 
-// the snake's proactive ask, shown once on first encounter -- CONFIRMED
-// CHANGE (nook rework, see FOREST_SNAKE_NOOK_X's own comment): anchored
-// to the nook's fixed position now, not the snake's own head -- the ask
-// fires based on proximity to the nook, independent of where the snake
-// currently is, so tying its position to a possibly-distant, possibly-
-// traveling snake made no sense anymore.
-function drawSnakeAskHint(camX) {
-  if (!snakeAskActive) return;
-  const sx = FOREST_SNAKE_NOOK_X - camX;
-  const sy = gy - 60;
-  const p = snakeAskT / SNAKE_ASK_HINT_DURATION;
-  const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
-  ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, forestSnakeAskLines);
-  ctx.globalAlpha = 1;
-}
-
 // reaction to a blocked mount attempt -- same fade pattern as tunnel
 // town's own dig-blocked hint (see tunnelBlockedHint), just anchored to
 // wherever along the body the player actually tried to land
@@ -21074,20 +21090,6 @@ function drawSnakeBlockedHint(camX) {
   const sy = gy - snakeBlockedHint.heightAboveGround - 40;
   ctx.globalAlpha = Math.max(0, fade);
   drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["I ssspoke plainly once already...", "sssomething small and round, with a blush of pink where the light touchesss it."]);
-  ctx.globalAlpha = 1;
-}
-
-// acknowledgement once the toll is actually paid -- anchored to the
-// nook, same reasoning as the ask above (fires wherever the player just
-// placed the marble, not wherever the snake happens to currently be)
-function drawSnakeAcceptHint(camX) {
-  if (!snakeAcceptHint.active) return;
-  const sx = FOREST_SNAKE_NOOK_X - camX;
-  const sy = gy - 60;
-  const p = snakeAcceptHint.t / SNAKE_ACCEPT_HINT_DURATION;
-  const fade = p < 0.1 ? p / 0.1 : (p > 0.8 ? (1 - p) / 0.2 : 1);
-  ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, forestSnakeAcceptLines);
   ctx.globalAlpha = 1;
 }
 
@@ -21833,47 +21835,24 @@ function updateForestScene(deltaTime) {
   // gate and just allow player to mount yellow snake normally"), then
   // asked back in ("make it so we have to trade a marble for passage on
   // yellow snake") -- so it's back, but rebuilt from scratch rather than
-  // just re-enabling whatever the old gate did, since the old version was
-  // reported as "wayyyy fucked up" to begin with. The toll now has three
-  // real, testable parts instead of vestigial dead state: (1) the ask
-  // hint fires once, proactively, the first time the player is actually
-  // standing near a docked snake without having paid -- see just below,
-  // (2) pressing space near the docked snake while holding the marble
-  // pays the toll and consumes it, (3) the mount-catch checks further
-  // down now require marbleGiven and show the blocked hint (instead of
-  // silently bouncing you off) when it's missing.
+  // just re-enabling whatever the old gate did. Explaining it went
+  // through a couple more rounds too: a snake-voiced proactive ask (read
+  // fine while the snake was nearby, weird once the nook was decoupled
+  // from the snake's actual position -- see FOREST_SNAKE_NOOK_X and
+  // drawForestSnakeNookSign's own comments for that history), now
+  // settled on the always-visible wooden sign instead. The toll has two
+  // real, testable parts left: (1) pressing space at the nook while
+  // holding the marble pays it and consumes it -- see just below, (2)
+  // the mount-catch checks further down require marbleGiven and show
+  // the blocked hint (instead of silently bouncing you off) when it's
+  // missing.
   if (snakeBlockedHint.active) {
     snakeBlockedHint.t += deltaTime * 1000;
     if (snakeBlockedHint.t >= SNAKE_BLOCKED_HINT_DURATION) snakeBlockedHint.active = false;
   }
-  if (snakeAskActive) {
-    snakeAskT += deltaTime * 1000;
-    if (snakeAskT >= SNAKE_ASK_HINT_DURATION) snakeAskActive = false;
-  }
-  if (snakeAcceptHint.active) {
-    snakeAcceptHint.t += deltaTime * 1000;
-    if (snakeAcceptHint.t >= SNAKE_ACCEPT_HINT_DURATION) snakeAcceptHint.active = false;
-  }
-
-  // proactive ask -- only fires once, only if the toll hasn't been paid
-  // yet. CONFIRMED CHANGE (nook rework, see FOREST_SNAKE_NOOK_X's own
-  // comment -- "right now it is moving quickly w not much time to read
-  // text and then snake leaves and you have to wait and still might not
-  // get it with the text gone"): tied to the fixed nook now instead of
-  // the snake's own currentX, which used to mean the ask (and the offer
-  // window below) only existed while the snake happened to be docked
-  // and nearby -- a real, missable timing window. The nook is always
-  // there, so this fires the first time the player is simply near IT,
-  // snake present or not.
-  if (!forestSnake.marbleGiven && !snakeAskShown &&
-      isPlayerNear(FOREST_SNAKE_NOOK_X, 0, 90, 40, 20)) {
-    snakeAskActive = true;
-    snakeAskShown = true;
-    snakeAskT = 0;
-  }
 
   // paying the toll -- press space at the nook while holding the marble,
-  // ANY time, no snake presence or dock timing required anymore. Same
+  // ANY time, no snake presence or dock timing required. Same
   // consume-and-clear pattern used everywhere else a single carried item
   // gets handed over for good (see e.g. the rat's acorn feed or the mole
   // shop pumpkin).
@@ -21883,10 +21862,7 @@ function updateForestScene(deltaTime) {
     if (inventory.marble <= 0) delete inventory.marble;
     heldItem = null;
     forestSnake.marbleGiven = true;
-    snakeAskActive = false;
     snakeBlockedHint.active = false; // in case a reminder from an earlier failed attempt is still fading
-    snakeAcceptHint.active = true;
-    snakeAcceptHint.t = 0;
     updateInventoryUI();
   }
 
@@ -21988,15 +21964,6 @@ function updateForestScene(deltaTime) {
             // as the original gate: a silent bounce with zero feedback
             // is indistinguishable from a bug, so this surfaces the
             // same floating callout instead.
-            //
-            // Cancel the proactive ask if it's still fading -- without
-            // this, a failed mount attempt right after first approaching
-            // (the ask hint's own 3.2s window hasn't finished yet) drew
-            // BOTH bubbles on top of each other at once: overlapping
-            // boxes, doubled/garbled text, a black-on-white smear. The
-            // reminder line supersedes the first ask, it shouldn't stack
-            // with it.
-            snakeAskActive = false;
             snakeBlockedHint.active = true;
             snakeBlockedHint.x = p.x;
             snakeBlockedHint.t = 0;
@@ -22040,10 +22007,6 @@ function updateForestScene(deltaTime) {
             forestSnake.mountTime = performance.now(); // this window is a full 80px tall, so this ease-in matters even more here than the precision catch above
             forestSnake.mountFromY = player.y;
           } else {
-            // see the precision-catch branch above for why the ask gets
-            // cancelled here too -- same overlapping-bubble bug applies
-            // to this grace-catch path as well.
-            snakeAskActive = false;
             snakeBlockedHint.active = true;
             snakeBlockedHint.x = p.x;
             snakeBlockedHint.t = 0;
