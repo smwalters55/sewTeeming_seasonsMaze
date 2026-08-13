@@ -23374,10 +23374,24 @@ function updateDigPlantVine(deltaTime) {
         // player's feet and the nest. Locked to the nest's own height
         // instead, same as x, so both axes actually settle at the nest
         // rather than just x.
-        player.x = peanutVine.x + peanutVineSegmentXAt(peanutVineNestHeight());
+        //
+        // CONFIRMED BUG FIX ("player hanging outside nest"): player.x is
+        // the sprite's LEFT edge (see px = player.x - camX elsewhere), but
+        // this was anchoring that left edge directly to the nest's own
+        // CENTER x -- so the whole body sat shifted right by half its own
+        // width, reading as standing beside the nest rather than in it.
+        // Subtracting player.width/2 centers the sprite over the nest instead.
+        player.x = peanutVine.x + peanutVineSegmentXAt(peanutVineNestHeight()) - player.width / 2;
         player.y = peanutVineNestHeight() - PEANUT_PIT_DEPTH;
       } else {
-        player.x = peanutVine.x + Math.sin(peanutVine.playerClimbHeight * 0.05) * 15; // spiral
+        // CONFIRMED CHANGE ("make the player wind up the vine more in the
+        // center instead of larger to the right of it") -- player.x is the
+        // sprite's LEFT edge (same issue as the nest-seating bug just
+        // fixed above), so anchoring it directly to the vine's own curve
+        // put the whole body to the right of the vine rather than
+        // centered on it. Subtracting player.width/2 centers the sprite
+        // on the spiral instead.
+        player.x = peanutVine.x + Math.sin(peanutVine.playerClimbHeight * 0.05) * 15 - player.width / 2; // spiral
         player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
       }
     }
