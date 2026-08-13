@@ -14827,6 +14827,16 @@ const FOREST_SAND_RIVER_JUNCTION = {
   x: FOREST_ZEN_SAND_PATCH.x + FOREST_ZEN_SAND_PATCH.width + FOREST_SAND_JUNCTION_GAP,
   endX: FOREST_FLOAT_ZONE_START_X - 70
 };
+// per direct request ("can we please add like 3-5 more dragonflies") --
+// this one over the sand junction/bank stretch, pushed here (not in
+// FOREST_DRAGONFLY_SPECS above) for the same reason the lily pad one
+// is pushed after ITS own constant further down: so its anchor tracks
+// the real, current position of the thing it's meant to hover near
+// instead of a hand-typed literal that can silently go stale later.
+forestDragonflies.push({
+  anchorX: (FOREST_SAND_RIVER_JUNCTION.x + FOREST_SAND_RIVER_JUNCTION.endX) / 2,
+  anchorY: gy, radiusX: 44, radiusY: 16, heightBase: -22, speed: 0.00062, yFreq: 1.1, seed: 7.2, color: "#8a4a2f"
+});
 // the ribbon's own top/bottom undulation -- per direct request ("real
 // flow with... 'hieghts' in the sense of how low each part goes from
 // horizon to below it"). topOff/botOff are both OFFSETS FROM gy (the
@@ -14946,6 +14956,10 @@ const FOREST_FLOAT_DRIFT_SPEED = 1.6; // px/frame current push, added on top of 
 // deliberately does NOT get this offset -- it should stay right at the
 // zone's own start, in that same calm lead-in.
 const FOREST_FLOAT_CALM_LEAD = 300;
+forestDragonflies.push({
+  anchorX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD * 0.5,
+  anchorY: gy, radiusX: 46, radiusY: 15, heightBase: -24, speed: 0.00058, yFreq: 1.25, seed: 1.9, color: "#3a8a6a"
+});
 
 // an occasional frog that briefly swims across the float zone's calm
 // lead-in (before the first real obstacle) and then hops back out --
@@ -15181,15 +15195,18 @@ const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_
 // tracks FOREST_FLOAT_LILYPAD.x directly and can never go stale again.
 forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD.x, anchorY: gy, radiusX: 38, radiusY: 13, heightBase: -24, speed: 0.00086, yFreq: 0.85, seed: 5.5, color: "#2f7a8a" });
 const FOREST_FLOAT_LILYPAD_2 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3190, width: 56, heightAboveGround: 20 };
+forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_2.x, anchorY: gy, radiusX: 42, radiusY: 15, heightBase: -20, speed: 0.00068, yFreq: 1.4, seed: 9.1, color: "#3a8a6a" });
 // third pad -- same role, sits in the third pass's own calm gap right
 // after the final moving-log pair and before the last duck
 const FOREST_FLOAT_LILYPAD_3 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5150, width: 56, heightAboveGround: 20 };
+forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_3.x, anchorY: gy, radiusX: 50, radiusY: 18, heightBase: -26, speed: 0.00048, yFreq: 0.95, seed: 3.7, color: "#8a4a2f" });
 // landing spot right at the far end of the course, for the return
 // lever to stand on -- per direct request ("make a return to start
 // 'lever' at end of river... yes finish to the end"). Sits just shy of
 // FOREST_FLOAT_ZONE_END_X so it's fully on-screen once reached rather
 // than right at the current's own hard cutoff edge.
 const FOREST_FLOAT_LILYPAD_END = { x: FOREST_FLOAT_ZONE_END_X - 90, width: 62, heightAboveGround: 20 };
+forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_END.x, anchorY: gy, radiusX: 40, radiusY: 14, heightBase: -22, speed: 0.00074, yFreq: 1.2, seed: 6.6, color: "#2f7a8a" });
 // the lever itself -- "a leaf on a leaf stick stem" per direct
 // description -- planted just off-center on the end pad
 const FOREST_FLOAT_RETURN_LEVER_X = FOREST_FLOAT_LILYPAD_END.x + 16;
