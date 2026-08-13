@@ -21873,6 +21873,24 @@ function updateForestScene(deltaTime) {
     updateInventoryUI();
   }
 
+  // CONFIRMED BUG FIX ("i pressed spacebar with a non marble and
+  // nothing happened when i did it with snake right there"): pressing
+  // space at the nook while holding the WRONG item (or nothing) did
+  // absolutely nothing -- no feedback at all, reads as broken. Only
+  // reacts with the snake's own voice when the snake is actually
+  // nearby right now (see FOREST_SNAKE_NOOK_X's neighborhood check
+  // below) -- matches the "dialogue needs a plausible present speaker"
+  // rule from the sign rework above. If the snake's off elsewhere, this
+  // stays silent on purpose; the sign is the only source of info then.
+  if (keys.spaceJustPressed && heldItem !== "marble" && !forestSnake.marbleGiven &&
+      isPlayerNear(FOREST_SNAKE_NOOK_X, 0, 90, 40, 20) &&
+      Math.abs(forestSnake.currentX - FOREST_SNAKE_NOOK_X) < 150) {
+    snakeBlockedHint.active = true;
+    snakeBlockedHint.x = forestSnake.currentX;
+    snakeBlockedHint.t = 0;
+    snakeBlockedHint.heightAboveGround = FOREST_SNAKE_HEIGHT_ABOVE_GROUND;
+  }
+
   forestSnake.t += deltaTime * 1000;
 
   if (forestSnake.state === "docked") {
