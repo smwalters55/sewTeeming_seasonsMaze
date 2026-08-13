@@ -15778,19 +15778,20 @@ function floatCurrentStrengthAt(x) {
     s = t * t * (3 - 2 * t); // smoothstep -- gradual, not a hard on/off
   }
   // CONFIRMED BUG FIX ("once im out of the river i should no longer be
-  // floating river movement or hav water on body"): the current used to
-  // stay at full strength right up to FOREST_FLOAT_ZONE_END_X, which was
-  // fine while the water's visual edge was a hard flat line at that same
-  // X -- but now the bank curves away and reads as dry ground well
-  // before that (see FOREST_FLOAT_END_BEND_DIST), so the player kept
-  // getting shoved by "current" while standing on what looks like grass.
-  // Taper it down over that same bend stretch so the push (and, since
-  // this feeds the wet-visual target below too, the water-on-body look)
-  // both fade out in step with where the bank actually goes dry.
+  // floating river movement or hav water on body" -> follow-up direct
+  // correction "i shouldnt still be in water here. once the water
+  // starts tapering i need to no longer be in water"): first pass here
+  // tapered the current/wet-look gradually across the whole bend
+  // stretch, but that still left it near full strength for most of that
+  // stretch (the bend curve itself barely dips for its first chunk,
+  // since it's an eased/accelerating drop -- see FOREST_FLOAT_END_BEND_DROP's
+  // own comment), so the player still read as "in the river" well past
+  // where the bend visibly starts. Now a hard cutoff: the instant the
+  // bend zone starts at all, current and wet-look are off, full stop --
+  // no lingering partial effect through the taper.
   const distFromEnd = FOREST_FLOAT_ZONE_END_X - x;
   if (distFromEnd < FOREST_FLOAT_END_BEND_DIST) {
-    const endT = Math.max(0, distFromEnd) / FOREST_FLOAT_END_BEND_DIST;
-    s *= endT * endT * (3 - 2 * endT);
+    s = 0;
   }
   return s;
 }
@@ -17123,6 +17124,51 @@ function drawForestFloatZone(camX) {
     ctx.lineTo(rightX, canvas.height);
     ctx.closePath();
     ctx.fill();
+  }
+
+  // reeds/longer grasses tracing the new bent end curve, so the bank
+  // there reads as a real natural edge instead of one clean curved line
+  // -- same blade/cattail technique as drawForestFloatZoneReeds' general
+  // scatter (see its own comment), just finer-grained and rooted along
+  // the curve itself (which dips below gy here) instead of flat at gy.
+  // Drawn on top of the water fill above, same layering the sand-grain
+  // scatter on the START bank uses. Per direct request ("put some reeds
+  // and longer grasses along the edges of that last part of the river
+  // so it isnt just like a clean curved line").
+  {
+    const reedStep = 14;
+    const reedStartPx = zoneEndPx - FOREST_FLOAT_END_BEND_DIST - 30;
+    const reedEndPx = zoneEndPx + 20;
+    const tReed = performance.now();
+    for (let sx = reedStartPx; sx < reedEndPx; sx += reedStep) {
+      const worldX = sx + camX;
+      if (pseudoRandom(worldX * 0.67 + 3300) < 0.22) continue; // patchy, not a solid wall of reeds
+      const seedI = worldX * 0.89 + 3300;
+      const distFromEnd = zoneEndPx - sx;
+      let curveY = gy;
+      if (distFromEnd >= 0 && distFromEnd < FOREST_FLOAT_END_BEND_DIST) {
+        const bendP = 1 - distFromEnd / FOREST_FLOAT_END_BEND_DIST;
+        curveY += bendP * bendP * FOREST_FLOAT_END_BEND_DROP; // matches the water fill's own curve exactly
+      } else if (distFromEnd < 0) {
+        curveY += FOREST_FLOAT_END_BEND_DROP; // past the very end, stays down at the full drop
+      }
+      const baseY = curveY - 2 + (pseudoRandom(seedI + 1) * 5 - 1);
+      const reedH = 9 + pseudoRandom(seedI + 2) * 17;
+      const sway = Math.sin(tReed * 0.0012 + seedI * 0.7) * 3;
+      const isCattail = pseudoRandom(seedI + 3) < 0.4;
+      ctx.strokeStyle = FOREST_FLOAT_REED_COLORS[Math.floor(pseudoRandom(seedI + 4) * FOREST_FLOAT_REED_COLORS.length)];
+      ctx.lineWidth = 1.1 + pseudoRandom(seedI + 5) * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(sx, baseY);
+      ctx.quadraticCurveTo(sx + sway * 0.6, baseY - reedH * 0.6, sx + sway, baseY - reedH);
+      ctx.stroke();
+      if (isCattail) {
+        ctx.fillStyle = "#5a4022";
+        ctx.beginPath();
+        ctx.ellipse(sx + sway * 0.86, baseY - reedH * 0.84, 1.1, 2.8, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   // LEFT EDGE -- an organic diagonal bank instead of a straight vertical
