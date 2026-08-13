@@ -13838,44 +13838,112 @@ function drawForestZenSandPatch(camX) {
 // an organic sand strip bridging the zen garden's own patch and the
 // river's near bank -- per direct request ("build more of an
 // organically shaped sand junction between the zen garden and the
-// rushing river bank"). Deliberately several separate overlapping
-// blobs strung along the gap rather than one single stretched-out
-// blob -- a lone blob that wide reads as just another oval (the same
-// "clean oval" problem the zen patch itself had), while a loose chain
-// of smaller, differently-sized ones reads as a natural, irregular
-// spit of sand the way a real bank margin actually widens and narrows.
-// Each blob has its own fixed seed so the whole strip is stable frame
-// to frame. FOREST_SAND_JUNCTION_BLOBS itself is defined further down
-// (right after FOREST_SAND_RIVER_JUNCTION, which it depends on) --
-// this function only runs later, at actual draw time, well after that
-// const has been evaluated, so the forward reference is fine.
+// rushing river bank"). First pass at this (a chain of separate same-
+// tone ovals) was rejected on sight ("i do not not like these awk
+// somewhat sand ovals... i want a real flow with differing gradients
+// of colors and granuals, textures, sizes and 'hieghts' in the sense
+// of how low each part goes from horizon to below it"). Rebuilt as ONE
+// continuous ribbon instead of separate blobs:
+//   - top AND bottom edges both undulate independently along the
+//     strip (see FOREST_SAND_JUNCTION_PROFILE's topOff/botOff), so the
+//     sand visibly rises higher above the horizon in some stretches and
+//     sinks lower below it in others, instead of a fixed-thickness band
+//   - filled with a left-to-right color gradient (the zen patch's own
+//     warm tan easing into the river bank's own darker, cooler sand
+//     tone -- #8c7a56 is the exact color drawForestFloatZone's bank
+//     curve already fades its own sand into, so the two meet as one
+//     continuous gradient rather than two different colors touching)
+//   - granule texture also scales along the strip -- fine and sparse
+//     near the zen end, coarser and denser near the river end, the way
+//     dry garden sand actually is finer than wet bank grit
+//   - a handful of soft mottled patches (darker + lighter blots)
+//     breaks up the gradient so it doesn't read as one flat airbrushed
+//     sweep -- real sand/mud has blotchy tonal variation, not a smooth
+//     ramp
+// FOREST_SAND_JUNCTION_PROFILE is defined further down (right after
+// FOREST_SAND_RIVER_JUNCTION, which it depends on) -- this function
+// only runs later, at actual draw time, well after that const has been
+// evaluated, so the forward reference is fine.
 function drawForestSandRiverJunction(camX) {
-  const leftPx = FOREST_SAND_RIVER_JUNCTION.x - camX - 60;
-  const rightPx = FOREST_SAND_RIVER_JUNCTION.endX - camX + 60;
+  const startX = FOREST_SAND_RIVER_JUNCTION.x, endX = FOREST_SAND_RIVER_JUNCTION.endX;
+  const leftPx = startX - camX - 20;
+  const rightPx = endX - camX + 20;
   if (rightPx < -30 || leftPx > canvas.width + 30) return;
 
-  ctx.fillStyle = "#d8c090";
-  FOREST_SAND_JUNCTION_BLOBS.forEach(b => {
-    organicBlobPath(ctx, b.cx - camX, gy + 4, b.rx, b.ry, b.seed, 9);
+  const pts = FOREST_SAND_JUNCTION_PROFILE.map(p => ({
+    x: startX + (endX - startX) * p.t - camX,
+    topY: gy + p.topOff,
+    botY: gy + p.botOff
+  }));
+
+  // the ribbon itself -- smoothed top edge left-to-right, then smoothed
+  // bottom edge right-to-left, closing into one continuous fill path
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].topY);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i], prev = pts[i - 1];
+    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
+    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
+  }
+  const lastTop = pts[pts.length - 1];
+  ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
+  for (let i = pts.length - 2; i >= 0; i--) {
+    const p = pts[i], next = pts[i + 1];
+    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
+    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
+  }
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(pts[0].x, gy, pts[pts.length - 1].x, gy);
+  grad.addColorStop(0, "#d8c090");   // matches the zen patch exactly
+  grad.addColorStop(0.55, "#c2a878");
+  grad.addColorStop(1, "#8c7a56");   // matches the river bank's own sand tone
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.save();
+  // re-trace the exact same path to clip texture/mottling to it
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].topY);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i], prev = pts[i - 1];
+    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
+    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
+  }
+  ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
+  for (let i = pts.length - 2; i >= 0; i--) {
+    const p = pts[i], next = pts[i + 1];
+    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
+    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
+  }
+  ctx.closePath();
+  ctx.clip();
+
+  // soft mottled blots -- darker (wetter-looking) and lighter (drier)
+  // patches scattered along the strip, more of the darker ones toward
+  // the river end, so the color variation reads as organic blotching
+  // on top of the gradient, not just the gradient alone
+  FOREST_SAND_JUNCTION_MOTTLES.forEach(m => {
+    const mx = startX + (endX - startX) * m.t - camX;
+    const my = gy + m.dy;
+    ctx.fillStyle = m.dark ? `rgba(70,58,36,${m.a})` : `rgba(220,204,164,${m.a})`;
+    ctx.beginPath();
+    ctx.ellipse(mx, my, m.r, m.r * 0.5, m.rot, 0, Math.PI * 2);
     ctx.fill();
   });
-  // fine sand granulation speckle, reusing the same speckle set the
-  // zen patch uses -- clipped per-blob so it stays inside each lobe of
-  // the strip instead of speckling the plain grass between them
-  FOREST_SAND_JUNCTION_BLOBS.forEach(b => {
-    ctx.save();
-    organicBlobPath(ctx, b.cx - camX, gy + 4, b.rx, b.ry, b.seed, 9);
-    ctx.clip();
-    FOREST_ZEN_SAND_GRAIN_SPOTS.forEach(s => {
-      const sx = b.cx - camX + (s.nx - 0.5) * b.rx * 2;
-      const sy = gy - 6 + s.ny * 20;
-      ctx.fillStyle = `rgba(90,70,40,${s.a})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.restore();
+
+  // granule speckle -- size/density lerp from fine-and-sparse (zen end)
+  // to coarser-and-denser (river end), reusing the two-tone light/dark
+  // grain language the rest of the sand art already uses
+  FOREST_SAND_JUNCTION_GRAINS.forEach(g => {
+    const gx = startX + (endX - startX) * g.t - camX;
+    const gyPos = gy + g.dy;
+    ctx.fillStyle = g.dark ? `rgba(70,58,36,${g.a})` : `rgba(230,214,172,${g.a})`;
+    ctx.beginPath();
+    ctx.ellipse(gx, gyPos, g.r, g.r * 0.6, g.rot, 0, Math.PI * 2);
+    ctx.fill();
   });
+  ctx.restore();
 }
 
 function drawForestScene(camX) {
@@ -14531,26 +14599,59 @@ const FOREST_SAND_RIVER_JUNCTION = {
   x: FOREST_ZEN_SAND_PATCH.x + FOREST_ZEN_SAND_PATCH.width - 20,
   endX: FOREST_FLOAT_ZONE_START_X - 15
 };
-const FOREST_SAND_JUNCTION_BLOBS = (() => {
-  const span = FOREST_SAND_RIVER_JUNCTION.endX - FOREST_SAND_RIVER_JUNCTION.x;
-  const count = 6;
-  const blobs = [];
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1);
-    const seed = 7400 + i * 13.7;
-    blobs.push({
-      cx: FOREST_SAND_RIVER_JUNCTION.x + span * t,
-      // a gentle waist in the middle of the strip, wider where it
-      // meets the zen patch and the bank, narrower in between -- reads
-      // as sand naturally thinning out mid-crossing rather than a
-      // uniform pipe connecting the two
-      rx: 55 + Math.sin(t * Math.PI) * -18 + pseudoRandom(seed) * 14,
-      ry: 11 + pseudoRandom(seed + 1) * 4,
-      seed
+// the ribbon's own top/bottom undulation -- per direct request ("real
+// flow with... 'hieghts' in the sense of how low each part goes from
+// horizon to below it"). topOff/botOff are both OFFSETS FROM gy (the
+// ground horizon), topOff negative (rises above it), botOff positive
+// (sinks below it) -- both vary independently per sample point via a
+// couple of overlaid sine frequencies plus per-point jitter, so the
+// ribbon's thickness AND its vertical position both drift along its
+// length instead of tracing a fixed-height band.
+const FOREST_SAND_JUNCTION_PROFILE = (() => {
+  const samples = 14;
+  const pts = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const seed = 8100 + i * 9.3;
+    const topWave = Math.sin(t * Math.PI * 2.4) * 4 + Math.sin(t * Math.PI * 5.1 + 1.4) * 2;
+    const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 5 + Math.sin(t * Math.PI * 4.2 + 2.1) * 2.5;
+    pts.push({
+      t,
+      topOff: -(6 + Math.max(0, topWave) + pseudoRandom(seed) * 6),
+      botOff: 5 + Math.max(0, botWave) + pseudoRandom(seed + 1) * 7
     });
   }
-  return blobs;
+  return pts;
 })();
+// darker/lighter blotches for organic tonal variation on top of the
+// left-to-right gradient -- weighted toward more/darker blots as t
+// increases (the river end), fewer/lighter ones near the zen end
+const FOREST_SAND_JUNCTION_MOTTLES = Array.from({ length: 16 }, (_, i) => {
+  const seed = 8300 + i * 11.3;
+  const t = pseudoRandom(seed);
+  return {
+    t,
+    dy: -4 + pseudoRandom(seed + 1) * 14,
+    r: 8 + pseudoRandom(seed + 2) * 14,
+    rot: pseudoRandom(seed + 3) * Math.PI,
+    dark: pseudoRandom(seed + 4) < 0.35 + t * 0.35,
+    a: 0.06 + pseudoRandom(seed + 5) * 0.1
+  };
+});
+// granule speckle, sized/densified along the strip -- fine+sparse near
+// the zen end (low t), coarser+denser near the river end (high t)
+const FOREST_SAND_JUNCTION_GRAINS = Array.from({ length: 220 }, (_, i) => {
+  const seed = 8600 + i * 5.9;
+  const t = pseudoRandom(seed);
+  return {
+    t,
+    dy: -6 + pseudoRandom(seed + 1) * 18,
+    r: 0.5 + t * 1.6 + pseudoRandom(seed + 2) * (0.5 + t),
+    rot: pseudoRandom(seed + 3) * Math.PI,
+    dark: pseudoRandom(seed + 4) > 0.5,
+    a: 0.06 + pseudoRandom(seed + 5) * 0.1
+  };
+});
 // widened from 9600 (width 2700) to 11800 (width 4900) to fit the
 // spaced-out + repeated-second-pass obstacle course above (last
 // obstacle now sits at START+CALM_LEAD+4160=11360, leaving a ~440px
