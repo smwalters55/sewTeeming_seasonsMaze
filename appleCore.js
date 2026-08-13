@@ -49303,15 +49303,32 @@ function drawSandboxSkyToroid(sx, sy, size, rotation, palette, seed) {
   ctx.rotate(rotation * 0.4); // gentler tumble than the polygons -- a ring's silhouette barely changes with rotation, so a fast spin just looks like jitter
   const outerRx = size, outerRy = size * 0.82;
   const innerRx = size * 0.58, innerRy = size * 0.5; // thinner band, bigger hole -- the hole is the point, it needs to read as open
-  const grad = ctx.createLinearGradient(-outerRx, -outerRy, outerRx, outerRy);
-  grad.addColorStop(0, palette.edge);
-  grad.addColorStop(0.5, palette.face);
-  grad.addColorStop(1, palette.shade);
-  ctx.fillStyle = grad;
+
+  // CONFIRMED CHANGE ("i need this to be more 3d"): the old fill was a flat
+  // corner-to-corner linear gradient (edge->face->shade along one diagonal),
+  // which barely reads as shading on a translucent ring since it doesn't
+  // follow the tube's actual curvature. A real torus's cross-section gets
+  // BRIGHT at both rims (outer silhouette AND the inner hole edge, where the
+  // surface catches light face-on) and goes dark in the MIDDLE of the band
+  // (where the tube curves away from the viewer). That's a radial profile
+  // across the ring's width, not a diagonal one -- so this now scales the
+  // context to squash circles into the ring's ellipse aspect and fills with
+  // a radial gradient (bright rim -> dark mid-tube -> bright rim) instead.
+  const yScale = outerRy / outerRx;
+  ctx.save();
+  ctx.scale(1, yScale);
+  const radial = ctx.createRadialGradient(0, 0, innerRx * 0.82, 0, 0, outerRx * 1.06);
+  radial.addColorStop(0, palette.edge);
+  radial.addColorStop(0.22, "rgba(255,255,255,0.4)");
+  radial.addColorStop(0.5, palette.shade);
+  radial.addColorStop(0.82, palette.face);
+  radial.addColorStop(1, palette.edge);
+  ctx.fillStyle = radial;
   ctx.beginPath();
-  ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
-  ctx.ellipse(0, 0, innerRx, innerRy, 0, 0, Math.PI * 2, true); // reverse winding punches the hole via the evenodd fill below
+  ctx.arc(0, 0, outerRx, 0, Math.PI * 2);
+  ctx.arc(0, 0, innerRx, 0, Math.PI * 2, true); // reverse winding punches the hole via the evenodd fill below
   ctx.fill("evenodd");
+  ctx.restore();
   // the hole itself stays basically clear -- we're not filling it with an opaque disc,
   // just hinting at the far inner wall of the tube with a faint arc so it doesn't look
   // like flat empty space, while the sky stays visibly readable straight through it
