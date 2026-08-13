@@ -13864,29 +13864,43 @@ function drawForestZenSandPatch(camX) {
 // FOREST_SAND_RIVER_JUNCTION, which it depends on) -- this function
 // only runs later, at actual draw time, well after that const has been
 // evaluated, so the forward reference is fine.
-function drawForestSandRiverJunction(camX) {
-  const startX = FOREST_SAND_RIVER_JUNCTION.x, endX = FOREST_SAND_RIVER_JUNCTION.endX;
-  const leftPx = startX - camX - 20;
-  const rightPx = endX - camX + 20;
-  if (rightPx < -30 || leftPx > canvas.width + 30) return;
-
-  const pts = FOREST_SAND_JUNCTION_PROFILE.map(p => ({
-    x: startX + (endX - startX) * p.t - camX,
-    topY: gy + p.topOff,
-    botY: gy + p.botOff
-  }));
-
-  // the ribbon itself -- smoothed top edge left-to-right, then smoothed
-  // bottom edge right-to-left, closing into one continuous fill path
-  ctx.beginPath();
+// interpolates FOREST_SAND_JUNCTION_PROFILE's topOff/botOff at an
+// arbitrary t (0..1), not just the fixed sample points -- used so the
+// edge-sprinkle scatter (see FOREST_SAND_JUNCTION_SPRINKLES) can sit
+// genuinely ON the ribbon's own wavy edge at any point along it,
+// instead of only at the coarse sample spacing.
+function sandJunctionOffAt(t, key) {
+  const profile = FOREST_SAND_JUNCTION_PROFILE;
+  const n = profile.length - 1;
+  const f = Math.max(0, Math.min(1, t)) * n;
+  const i0 = Math.floor(f), i1 = Math.min(n, i0 + 1);
+  const frac = f - i0;
+  return profile[i0][key] + (profile[i1][key] - profile[i0][key]) * frac;
+}
+// traces the junction ribbon's outline into ctx's current path --
+// shared by both the fill pass and the clip-for-texture pass below so
+// the two can never drift out of sync with each other (the earlier
+// version duplicated this by hand in both places, which is exactly how
+// a fix to one copy missed the other and left the left-edge notch bug
+// in place the first time around).
+function traceSandJunctionPath(ctx, pts) {
   ctx.moveTo(pts[0].x, pts[0].topY);
   for (let i = 1; i < pts.length; i++) {
     const p = pts[i], prev = pts[i - 1];
     const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
     ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
   }
+  // rounded right-end cap instead of a hard vertical drop straight from
+  // the top edge to the bottom edge -- per direct report ("the corner
+  // on the right is way too sharp still"). Bulges a little further
+  // right of the last sample point, through the vertical midpoint, so
+  // the whole right end reads as one soft rounded cap (like a rounded
+  // rectangle's short edge) instead of two sharp right-angle corners.
   const lastTop = pts[pts.length - 1];
-  ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
+  const capMidY = (lastTop.topY + lastTop.botY) / 2;
+  const capBulge = 10;
+  ctx.quadraticCurveTo(lastTop.x + capBulge, lastTop.topY, lastTop.x + capBulge, capMidY);
+  ctx.quadraticCurveTo(lastTop.x + capBulge, lastTop.botY, lastTop.x, lastTop.botY);
   for (let i = pts.length - 2; i >= 1; i--) {
     const p = pts[i], next = pts[i + 1];
     const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
@@ -13901,7 +13915,21 @@ function drawForestSandRiverJunction(camX) {
   // end (exactly the "sharp left corner thing" reported).
   ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
   ctx.closePath();
+}
+function drawForestSandRiverJunction(camX) {
+  const startX = FOREST_SAND_RIVER_JUNCTION.x, endX = FOREST_SAND_RIVER_JUNCTION.endX;
+  const leftPx = startX - camX - 20;
+  const rightPx = endX - camX + 20;
+  if (rightPx < -30 || leftPx > canvas.width + 30) return;
 
+  const pts = FOREST_SAND_JUNCTION_PROFILE.map(p => ({
+    x: startX + (endX - startX) * p.t - camX,
+    topY: gy + p.topOff,
+    botY: gy + p.botOff
+  }));
+
+  ctx.beginPath();
+  traceSandJunctionPath(ctx, pts);
   const grad = ctx.createLinearGradient(pts[0].x, gy, pts[pts.length - 1].x, gy);
   grad.addColorStop(0, "#d8c090");   // matches the zen patch exactly
   grad.addColorStop(0.55, "#c2a878");
@@ -13910,22 +13938,8 @@ function drawForestSandRiverJunction(camX) {
   ctx.fill();
 
   ctx.save();
-  // re-trace the exact same path to clip texture/mottling to it
   ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].topY);
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i], prev = pts[i - 1];
-    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
-    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
-  }
-  ctx.quadraticCurveTo(lastTop.x, lastTop.topY, lastTop.x, lastTop.botY);
-  for (let i = pts.length - 2; i >= 1; i--) {
-    const p = pts[i], next = pts[i + 1];
-    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
-    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
-  }
-  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
-  ctx.closePath();
+  traceSandJunctionPath(ctx, pts);
   ctx.clip();
 
   // soft mottled blots -- darker (wetter-looking) and lighter (drier)
@@ -13953,6 +13967,27 @@ function drawForestSandRiverJunction(camX) {
     ctx.fill();
   });
   ctx.restore();
+
+  // loose grains scattered past the ribbon's own edge, deliberately
+  // OUTSIDE the clip above so they land in the grass, not on the sand --
+  // per direct feedback ("some sand sprinkles on the bottom. its not
+  // just a wavy line its a landscape. some sand is closer to the bottom
+  // in this et up"). Each one sits at its own edge offset (interpolated
+  // from the same profile the ribbon itself is built from, so they
+  // genuinely track the wavy edge) plus its own varying spread distance
+  // out from it -- some barely past the edge, some considerably further
+  // into the grass -- which is what actually reads as an uneven
+  // landscape trailing off, rather than a second parallel outline.
+  FOREST_SAND_JUNCTION_SPRINKLES.forEach(s => {
+    const edgeOff = sandJunctionOffAt(s.t, s.side > 0 ? "botOff" : "topOff");
+    const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
+    const sy = gy + edgeOff + s.side * (3 + s.spread * 24);
+    const alpha = 0.12 + (1 - s.spread) * 0.28;
+    ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawForestScene(camX) {
@@ -14600,30 +14635,52 @@ const FOREST_FLOAT_ZONE_START_X = 6900;
 // sand junction between the zen garden and the rushing river bank"),
 // answering the "might have that be start of sand going to edge of
 // rushing river" question left open when the zen patch was first added.
-// Overlaps a little into both the zen patch's right edge and the
-// bank curve's own left extent (see drawForestFloatZone's "topX")
-// on purpose, so the three pieces visually knit together instead of
-// butting up against each other with a hard seam.
+// A real gap of plain grass sits between the zen patch's own right edge
+// and where this strip starts -- per direct correction ("it should be a
+// thin sliver close to a little gap before it reaches zen garden"), NOT
+// overlapping/touching it directly the way the first two passes did
+// (that overlap was also the cause of an odd fin/paisley-shaped visual
+// artifact right at the seam -- two independently-jittered organic
+// shapes overlapping never lines up cleanly).
+//
+// endX deliberately pulled back to line up almost exactly with
+// drawForestFloatZone's own bank curve start (topX = FLOAT_ZONE_START_X
+// - 70 = 6830) instead of reaching 55px past it. The earlier, deeper
+// overlap was the actual cause of a persistent "sharp corner" report
+// (survived a rounded-end-cap fix and a rougher-edge pass, because it
+// was never this ribbon's own end shape at fault) -- the bank curve is
+// nearly a zero-width POINT right at its own topX and only widens
+// further right/down from there, so while this ribbon's flare (see
+// FOREST_SAND_JUNCTION_PROFILE) had it near full thick well before
+// reaching that point, the bank had nothing yet to cover it with,
+// leaving a tall, sharp-edged tan wedge poking out above/past the
+// bank's own thin start. Ending right at the bank's own start point
+// (where the bank itself is thinnest) hands off cleanly instead.
+const FOREST_SAND_JUNCTION_GAP = 45;
 const FOREST_SAND_RIVER_JUNCTION = {
-  x: FOREST_ZEN_SAND_PATCH.x + FOREST_ZEN_SAND_PATCH.width - 20,
-  endX: FOREST_FLOAT_ZONE_START_X - 15
+  x: FOREST_ZEN_SAND_PATCH.x + FOREST_ZEN_SAND_PATCH.width + FOREST_SAND_JUNCTION_GAP,
+  endX: FOREST_FLOAT_ZONE_START_X - 70
 };
 // the ribbon's own top/bottom undulation -- per direct request ("real
 // flow with... 'hieghts' in the sense of how low each part goes from
 // horizon to below it"). topOff/botOff are both OFFSETS FROM gy (the
 // ground horizon), topOff negative (rises above it), botOff positive
-// (sinks below it) -- both vary independently per sample point via a
-// couple of overlaid sine frequencies plus per-point jitter, so the
-// ribbon's thickness AND its vertical position both drift along its
+// (sinks below it) -- both vary independently per sample point via
+// several overlaid sine frequencies (a coarse wave plus a finer, higher-
+// frequency ripple layered on top, for rougher, less smoothly-oval edges
+// -- per "doesnt look near as natural enough") plus per-point jitter, so
+// the ribbon's thickness AND its vertical position both drift along its
 // length instead of tracing a fixed-height band.
 const FOREST_SAND_JUNCTION_PROFILE = (() => {
-  const samples = 14;
+  const samples = 18;
   const pts = [];
   for (let i = 0; i <= samples; i++) {
     const t = i / samples;
     const seed = 8100 + i * 9.3;
-    const topWave = Math.sin(t * Math.PI * 2.4) * 7 + Math.sin(t * Math.PI * 5.1 + 1.4) * 4;
-    const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 9 + Math.sin(t * Math.PI * 4.2 + 2.1) * 5;
+    const topWave = Math.sin(t * Math.PI * 2.4) * 7 + Math.sin(t * Math.PI * 5.1 + 1.4) * 4
+      + Math.sin(t * Math.PI * 9.7 + 3.3) * 2;
+    const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 9 + Math.sin(t * Math.PI * 4.2 + 2.1) * 5
+      + Math.sin(t * Math.PI * 8.4 + 0.9) * 2.5;
     // a real sand deposit piles up more where it meets moving water --
     // this strip should read as thin/dry near the zen garden and
     // progressively wider/deeper (sinking further below the horizon)
@@ -14632,10 +14689,15 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
     // would likely naturally happen" + "blob this a bit lower on the
     // screen in parts").
     const flare = t * t * 16;
+    // taper the very start down to a thin sliver instead of jumping
+    // straight to full thickness -- per "it should be a thin sliver...
+    // before it reaches zen garden". Ramps up to full amplitude over
+    // the first ~18% of the strip's length.
+    const taperIn = Math.min(1, t / 0.18);
     pts.push({
       t,
-      topOff: -(6 + Math.max(0, topWave) + pseudoRandom(seed) * 8),
-      botOff: 5 + Math.max(0, botWave) + pseudoRandom(seed + 1) * 9 + flare
+      topOff: -(2 + taperIn * 4 + Math.max(0, topWave) * taperIn + pseudoRandom(seed) * 8 * taperIn),
+      botOff: 2 + taperIn * 3 + Math.max(0, botWave) * taperIn + pseudoRandom(seed + 1) * 9 * taperIn + flare
     });
   }
   return pts;
@@ -14667,6 +14729,30 @@ const FOREST_SAND_JUNCTION_GRAINS = Array.from({ length: 220 }, (_, i) => {
     rot: pseudoRandom(seed + 3) * Math.PI,
     dark: pseudoRandom(seed + 4) > 0.5,
     a: 0.06 + pseudoRandom(seed + 5) * 0.1
+  };
+});
+// loose sand grains bleeding out past the ribbon's own bottom edge into
+// the grass -- per direct feedback ("some sand sprinkles on the bottom.
+// its not just a wavy line its a landscape. some sand is closer to the
+// bottom in this et up"), same "sprinkles fading out past the edge"
+// language the main river bank curve already uses at its own top edge
+// (see drawForestFloatZone's own sand-grain scatter). `spread` is how
+// far out from the ribbon's edge each grain sits (0 = right at the
+// edge, 1 = furthest out) -- varying per grain, NOT a fixed distance,
+// is what makes it read as a real uneven landscape trailing off into
+// the grass rather than a second parallel line. Mostly along the
+// bottom edge (per the direct request), with a few along the top too
+// for the same reason the bank curve treats both transitions.
+const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 46 }, (_, i) => {
+  const seed = 8900 + i * 7.1;
+  return {
+    t: pseudoRandom(seed),
+    side: pseudoRandom(seed + 1) < 0.78 ? 1 : -1, // 1 = below the bottom edge, -1 = above the top edge
+    spread: pseudoRandom(seed + 2),
+    dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
+    r: 0.8 + pseudoRandom(seed + 4) * 1.5,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
   };
 });
 // widened from 9600 (width 2700) to 11800 (width 4900) to fit the
