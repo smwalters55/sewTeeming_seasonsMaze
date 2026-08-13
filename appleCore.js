@@ -16463,50 +16463,81 @@ function drawForestFloatReturnSign(camX) {
 // gold marker to a rotating burnt orange toroid that is slightly
 // translucent so you can see the other side of it. like i really wanna
 // see that"). Faked in 2D the same way a spinning coin/ring is normally
-// faked on a flat canvas: an outer ellipse with an elliptical hole cut
-// out of its middle (even-odd fill), horizontally squashed by cos(theta)
-// so it reads as tumbling around a vertical axis -- squash passes through
-// (near) zero edge-on and back out the other side, which is also where
-// the "far face" color kicks in so spinning through to the back reads as
-// a real flip, not just a resize. Genuinely translucent fill (not just a
-// thin outline) so the water/sand/whatever is directly behind it shows
-// through the ring's own body, not just through the hole in the middle --
-// that see-through body was the specific thing asked for, not just "has
-// a hole in it".
+// faked on a flat canvas: horizontally squashed by cos(theta) so it reads
+// as tumbling around a vertical axis -- squash passes through (near) zero
+// edge-on and back out the other side, which is also where the "far
+// face" color kicks in so spinning through to the back reads as a real
+// flip, not just a resize.
+//
+// The tube itself (the round part of the donut, not just its silhouette)
+// used to be one flat fill color across the whole band -- per direct
+// follow-up ("make them look more 3d like i want to feel like i am
+// looking at the donut shape"), it's now drawn as many thin concentric
+// elliptical strips from the hole out to the outer edge, each shaded by
+// where it sits across the tube's own cross-section (limb-darkening: dark
+// near the inner hole and dark again right at the outer silhouette edge,
+// brightest in the middle where the tube's rounded surface catches the
+// light most directly) -- the same trick that makes a 2D-rendered sphere
+// or pipe read as round instead of flat. A moving specular highlight on
+// top of that (still tied to spin, so it slides across the tube as it
+// turns) is what actually sells "this is a rounded 3D surface, not a flat
+// ring," rather than the highlight alone doing all the work like before.
+// Rotation slowed down (theta's own rate) per direct follow-up ("rotate
+// slower").
 function drawFloatRewardToroid(cx, cy, seed) {
   const now = performance.now();
-  const theta = now * 0.0016 + seed * 2.3; // per-collectible phase offset so a whole river's worth don't spin in lockstep
+  const theta = now * 0.0006 + seed * 2.3; // was 0.0016 -- per direct request ("rotate slower")
   const spin = Math.cos(theta); // -1..1, drives both squash and which "face" is toward the camera
   const bob = Math.sin(now * 0.0022 + seed * 1.7) * 1.4; // small idle float, same language as the boat pile's own gentle bob
-  // per direct request ("make them at least twice as big") -- was 7.2/3
-  const outerR = 14.4, outerRy = outerR * 0.62, holeR = 6, holeRy = holeR * 0.62;
+  const outerR = 14.4, holeR = 6;
   // never fully collapses to a hairline at the exact edge-on instant --
   // a real torus still shows a thin sliver of its tube from the side
   const squash = Math.max(0.14, Math.abs(spin));
+  // near face (spin >= 0) a touch brighter/warmer than the far face, a
+  // quiet depth cue riding on top of the squash itself
+  const nearFace = spin >= 0;
 
   ctx.save();
   ctx.translate(cx, cy + bob);
   ctx.scale(squash, 1);
 
-  ctx.beginPath();
-  ctx.ellipse(0, 0, outerR, outerRy, 0, 0, Math.PI * 2);
-  ctx.ellipse(0, 0, holeR, holeRy, 0, 0, Math.PI * 2);
-  // near face (spin >= 0) a touch brighter/warmer than the far face, a
-  // quiet depth cue on top of the squash itself
-  ctx.fillStyle = spin >= 0 ? "rgba(201,90,24,0.6)" : "rgba(150,66,18,0.52)";
-  ctx.fill("evenodd");
+  // the tube cross-section, built from many concentric elliptical strips
+  // rather than one flat annulus -- see the function comment above
+  const steps = 16;
+  const litBase = nearFace ? [222, 116, 48] : [176, 88, 34];
+  const shadowBase = nearFace ? [126, 54, 16] : [96, 40, 12];
+  for (let i = 0; i < steps; i++) {
+    const uMid = (i + 0.5) / steps; // 0 = inner hole edge, 1 = outer silhouette edge
+    // limb-darkening curve: bright across the tube's rounded "crown"
+    // (mid-band), dark toward both the inner and outer edges where the
+    // tube's own surface curves away from the viewer
+    const round = Math.sin(uMid * Math.PI);
+    const shade = Math.pow(round, 0.7);
+    const r = Math.round(shadowBase[0] + (litBase[0] - shadowBase[0]) * shade);
+    const g = Math.round(shadowBase[1] + (litBase[1] - shadowBase[1]) * shade);
+    const b = Math.round(shadowBase[2] + (litBase[2] - shadowBase[2]) * shade);
+    const alpha = 0.38 + shade * 0.34; // stays translucent throughout, a bit more opaque along the lit crown
+    const bandR = holeR + (outerR - holeR) * uMid;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bandR, bandR * 0.62, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    ctx.lineWidth = (outerR - holeR) / steps + 0.7; // slight overlap between strips so no visible seams
+    ctx.stroke();
+  }
 
-  // soft directional highlight sweeping across the ring's own body as it
-  // turns, clipped to the donut shape so it never spills into the hole
+  // moving specular highlight, clipped to the donut's own silhouette so
+  // it never spills into the hole -- slides across the tube with spin,
+  // which is what actually reads as "a rounded surface catching light as
+  // it turns" on top of the limb-darkening above
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(0, 0, outerR, outerRy, 0, 0, Math.PI * 2);
-  ctx.ellipse(0, 0, holeR, holeRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, outerR, outerR * 0.62, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, holeR, holeR * 0.62, 0, 0, Math.PI * 2);
   ctx.clip("evenodd");
-  const hlX = spin * (outerR - holeR) * 0.5;
-  const hlGrad = ctx.createRadialGradient(hlX, -2, 0, hlX, -2, outerR * 1.15);
-  hlGrad.addColorStop(0, "rgba(255,205,150,0.5)");
-  hlGrad.addColorStop(1, "rgba(255,205,150,0)");
+  const hlX = spin * (outerR - holeR) * 0.55;
+  const hlGrad = ctx.createRadialGradient(hlX, -2, 0, hlX, -2, outerR * 0.85);
+  hlGrad.addColorStop(0, "rgba(255,225,180,0.55)");
+  hlGrad.addColorStop(1, "rgba(255,225,180,0)");
   ctx.fillStyle = hlGrad;
   ctx.fillRect(-outerR - 2, -outerR - 2, (outerR + 2) * 2, (outerR + 2) * 2);
   ctx.restore();
