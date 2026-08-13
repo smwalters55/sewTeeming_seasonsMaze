@@ -13709,57 +13709,126 @@ function drawForestFloatZoneReeds(camX) {
   }
 }
 
-// the breather duck branch -- a low hanging vine strung between two
-// unseen anchor points overhead, NOT a heavy log on supports like the
-// old before-the-bridge obstacle. Deliberately reads as light/soft
-// (thin sagging vine, loose leaves, gentle sway) rather than a solid
-// barrier, matching its job as a gentle first introduction to ducking
-// rather than a real gate. Collision uses the same clearance/duck
-// rules as any other duck obstacle -- see FOREST_BREATHER_DUCK_BRANCH's
-// own comment and the DUCKING block in updateForestScene.
+// the breather duck branch -- used to be a low hanging vine strung
+// between two unseen anchor points, but per direct correction ("the
+// 'duck' sign needs to be near where the current duck VINE is. and i
+// want to replace the duck vine with a buttressed tree! with bigger
+// butress than whats in rushing river"), it's now a real tree with
+// buttress roots, same visual language as the rushing river's own duck
+// tree (see drawFloatSwampTreeBack) but with an even bigger, wider
+// buttress spread -- this is the very first duck obstacle in the level
+// (the "gentle first introduction to ducking"), so it gets the biggest,
+// most obvious buttresses of any of them, not the smallest. Collision is
+// untouched -- still the same clearance/duck rules as any other duck
+// obstacle, see FOREST_BREATHER_DUCK_BRANCH's own comment and the
+// DUCKING block in updateForestScene.
 function drawForestBreatherDuckBranch(camX) {
   const branch = FOREST_BREATHER_DUCK_BRANCH;
   const bx = branch.x - camX;
-  const sagY = gy - branch.clearance + 10; // lowest point of the vine's sag
-  const sway = Math.sin(performance.now() * 0.0011 + branch.x * 0.01) * 2;
+  const trunkBaseY = gy;
+  const trunkTopY = trunkBaseY - 130;
 
-  // faint ground shadow, just enough to ground it without reading as
-  // solid/heavy
-  ctx.fillStyle = "rgba(10,10,5,0.14)";
+  // faint ground shadow under the whole root spread
+  ctx.fillStyle = "rgba(10,10,5,0.16)";
   ctx.beginPath();
-  ctx.ellipse(bx, gy + 2, branch.w / 2 + 6, 4, 0, 0, Math.PI * 2);
+  ctx.ellipse(bx, gy + 2, 78, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // the vine itself -- a thin sagging line rather than a rigid bar, so
-  // it visually reads as soft/passable, not a wall
-  const leftX = bx - branch.w / 2 - 10 + sway * 0.4;
-  const rightX = bx + branch.w / 2 + 10 + sway * 0.4;
-  const topY = sagY - 20;
-  ctx.strokeStyle = "#4c6a34";
-  ctx.lineWidth = 3.4;
+  // trunk -- same taper as the rushing river's own duck tree
+  ctx.fillStyle = "#4a3822";
   ctx.beginPath();
-  ctx.moveTo(leftX, topY);
-  ctx.quadraticCurveTo(bx + sway, sagY, rightX, topY);
-  ctx.stroke();
-  ctx.strokeStyle = "#3a5326";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(leftX, topY);
-  ctx.quadraticCurveTo(bx + sway, sagY, rightX, topY);
-  ctx.stroke();
+  ctx.moveTo(bx - 5, trunkTopY);
+  ctx.quadraticCurveTo(bx - 9, (trunkTopY + trunkBaseY) / 2, bx - 15, trunkBaseY);
+  ctx.lineTo(bx + 15, trunkBaseY);
+  ctx.quadraticCurveTo(bx + 9, (trunkTopY + trunkBaseY) / 2, bx + 5, trunkTopY);
+  ctx.closePath();
+  ctx.fill();
 
-  // small leaf clusters along the sag, a few extra dangling loose so it
-  // reads as foliage rather than a bare rope
-  const leafSpots = [-0.5, -0.22, 0, 0.24, 0.5];
-  leafSpots.forEach((f, i) => {
-    const t = 0.5 + f;
-    const lx = leftX + (rightX - leftX) * t;
-    const ly = topY + (sagY - topY) * (1 - (2 * f) * (2 * f)) + Math.sin(performance.now() * 0.0015 + i * 2) * 1.2;
-    ctx.fillStyle = i % 2 === 0 ? "#5c8a3e" : "#4c7a34";
+  // buttress roots -- bigger spread than the rushing river's own tree
+  // (that one peaks at dir 1.35 / mag 1.15) per direct request ("bigger
+  // butress than whats in rushing river")
+  [[-1.9, 1.55], [-1.2, 0.95], [1.2, 0.95], [1.9, 1.55]].forEach(([dir, mag]) => {
+    ctx.fillStyle = "#3e2e1c";
     ctx.beginPath();
-    ctx.ellipse(lx, ly, 4, 2.2, f * 1.2, 0, Math.PI * 2);
+    ctx.moveTo(bx + dir * 10, trunkBaseY - 62);
+    ctx.quadraticCurveTo(bx + dir * 30 * mag, trunkBaseY - 20, bx + dir * 48 * mag, trunkBaseY + 10);
+    ctx.lineTo(bx + dir * 36 * mag, trunkBaseY + 12);
+    ctx.quadraticCurveTo(bx + dir * 20 * mag, trunkBaseY - 8, bx + dir * 3, trunkBaseY - 48);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90,70,45,0.5)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(bx + dir * 10, trunkBaseY - 60);
+    ctx.quadraticCurveTo(bx + dir * 30 * mag, trunkBaseY - 20, bx + dir * 46 * mag, trunkBaseY + 6);
+    ctx.stroke();
+  });
+
+  // full canopy, same layered-blob + leaf-cluster language as every
+  // other real tree in the forest
+  const cy0 = trunkTopY - 4;
+  const canopyBlobs = [[-24, -14, 30], [10, -27, 35], [28, -3, 27], [-8, -36, 28]];
+  ctx.fillStyle = "#1a2712";
+  canopyBlobs.forEach(([dx, dy, r]) => {
+    ctx.beginPath();
+    ctx.arc(bx + dx, cy0 + dy, r, 0, Math.PI * 2);
     ctx.fill();
   });
+  canopyBlobs.forEach(([dx, dy, r], ci) => {
+    drawForestTreeLeafCluster(bx + dx, cy0 + dy, r * 0.9, "#233a1a", 7200 + ci * 37, 15);
+  });
+  [[-5, -30, 18], [15, -18, 14]].forEach(([dx, dy, r], ci) => {
+    drawForestTreeLeafCluster(bx + dx, cy0 + dy, r, "#324a24", 7700 + ci * 29, 9);
+  });
+}
+
+// the "DUCK!" sign for this first tree -- planted with real lead
+// distance ahead of it (not right up against the trunk) per direct
+// follow-up ("so you recognize it when you get there coming at it
+// fast") -- the player's usually moving at a real clip through here, so
+// the sign needs enough of a head start to actually be read and reacted
+// to, not just a label on the obstacle itself. Same post-and-plank
+// language as drawForestFloatReturnSign. This is the only "DUCK!" sign in
+// the game -- the rushing river's own duck tree doesn't get one, per
+// direct follow-up ("def remove allll other duck signs too").
+function drawForestBreatherDuckSign(camX) {
+  const branch = FOREST_BREATHER_DUCK_BRANCH;
+  const sx = branch.x - 110 - camX;
+  const sy = gy;
+  ctx.strokeStyle = "#5a3e22";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy - 20);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(sx, sy - 29);
+  ctx.rotate(-0.04);
+  ctx.fillStyle = "#7a5636";
+  ctx.fillRect(-17, -14, 34, 28);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-17, -14, 34, 28);
+  ctx.fillStyle = "rgba(230,210,170,0.95)";
+  ctx.font = "bold 8px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("DUCK!", 0, -4);
+  ctx.strokeStyle = "rgba(230,210,170,0.95)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 8);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(230,210,170,0.95)";
+  ctx.beginPath();
+  ctx.moveTo(-4, 7);
+  ctx.lineTo(4, 7);
+  ctx.lineTo(0, 12.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.textAlign = "left";
+  ctx.restore();
 }
 
 // tiny sand granulation speckle -- computed ONCE with a deterministic
@@ -14406,6 +14475,7 @@ function drawForestScene(camX) {
   drawForestZenSandPatch(camX);
   drawForestSandRiverJunction(camX); // organic sand strip bridging the zen patch and the river's near bank
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
+  drawForestBreatherDuckSign(camX); // "DUCK!" sign with lead distance ahead of the tree -- see its own comment
   drawForestFloatZone(camX);
   drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
@@ -16002,19 +16072,6 @@ function drawFloatSwampTreeBack(ox, obBottom, openAmount) {
   ctx.translate(0, bob);
   const trunkTopY = obBottom - 130;
   const trunkBaseY = gy;
-
-  // a little water sitting right at the base -- per direct request ("put
-  // one of the river trees on land there with a little water under
-  // it"): this is a real tree planted on the bank, not standing IN the
-  // river the way the old stylized mangrove was, but it's still right at
-  // the water's edge, so a small shallow puddle under the roots keeps it
-  // reading as riverside rather than looking like it wandered onto dry
-  // ground in the middle of a float course.
-  ctx.fillStyle = "rgba(46,90,98,0.55)";
-  ctx.beginPath();
-  ctx.ellipse(ox, trunkBaseY + 6, 58, 10, 0, 0, Math.PI * 2);
-  ctx.fill();
-
   // trunk -- a real taper, wider at the buttressed base than up top
   ctx.fillStyle = "#4a3822";
   ctx.beginPath();
@@ -16024,17 +16081,14 @@ function drawFloatSwampTreeBack(ox, obBottom, openAmount) {
   ctx.quadraticCurveTo(ox + 9, (trunkTopY + trunkBaseY) / 2, ox + 5, trunkTopY);
   ctx.closePath();
   ctx.fill();
-  // buttress roots -- flared, curved legs radiating out from the base,
-  // like a mangrove/cypress, instead of a trunk that just plants straight
-  // into the ground. These are THE thing you have to duck under (matches
-  // the collision fix that removed jumping-over as a way past duck
-  // obstacles). Gap between the inner pair widened a lot (was 0.55/mag
-  // 0.6, now 0.95/mag 0.72) per direct follow-up ("the space between the
-  // buttresses a lot wider") -- the old gap read as a tight, almost
-  // impossible-looking squeeze even once the actual collision box was
-  // fair; this opens up real, visible daylight between the two legs
-  // you're meant to duck through.
-  [[-1.35, 1.15], [-0.95, 0.72], [0.95, 0.72], [1.35, 1.15]].forEach(([dir, mag]) => {
+  // buttress roots -- flared, curved legs radiating out from the base
+  // into the water, like a mangrove/cypress, instead of a trunk that
+  // just plants straight into the ground. Sized deliberately huge --
+  // these are now THE thing you have to duck under (matches the
+  // collision fix that removed jumping-over as a way past duck
+  // obstacles), not just background texture, so they sweep up high
+  // and wide rather than staying a low ankle-height flare.
+  [[-1, 1], [-0.55, 0.6], [0.55, 0.6], [1, 1]].forEach(([dir, mag]) => {
     ctx.fillStyle = "#3e2e1c";
     ctx.beginPath();
     ctx.moveTo(ox + dir * 10, trunkBaseY - 62);
@@ -16053,27 +16107,12 @@ function drawFloatSwampTreeBack(ox, obBottom, openAmount) {
     ctx.quadraticCurveTo(ox + dir * 30 * mag, trunkBaseY - 20, ox + dir * 46 * mag, trunkBaseY + 6);
     ctx.stroke();
   });
-
-  // a full canopy instead of the old flat translucent stub -- per direct
-  // request ("put one of the river trees on land there"), matching the
-  // same layered-blobs + scattered-leaf-cluster language every other
-  // real tree in this forest uses (see drawForestForegroundTrees), not
-  // just a see-through circle standing in for "there's foliage up here
-  // somewhere."
-  const cy0 = trunkTopY - 4;
-  const canopyBlobs = [[-24, -14, 30], [10, -27, 35], [28, -3, 27], [-8, -36, 28]];
-  ctx.fillStyle = "#1a2712";
-  canopyBlobs.forEach(([dx, dy, r]) => {
-    ctx.beginPath();
-    ctx.arc(ox + dx, cy0 + dy, r, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  canopyBlobs.forEach(([dx, dy, r], ci) => {
-    drawForestTreeLeafCluster(ox + dx, cy0 + dy, r * 0.9, "#233a1a", 6200 + ci * 37, 15);
-  });
-  [[-5, -30, 18], [15, -18, 14]].forEach(([dx, dy, r], ci) => {
-    drawForestTreeLeafCluster(ox + dx, cy0 + dy, r, "#324a24", 6700 + ci * 29, 9);
-  });
+  // a little canopy stub up top, just enough to read as "this is a real
+  // tree" rather than a bare pole -- doesn't need to be a full crown
+  ctx.fillStyle = "rgba(40,60,30,0.6)";
+  ctx.beginPath();
+  ctx.arc(ox, trunkTopY - 4, 30, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -16123,52 +16162,6 @@ function drawFloatSeedPods(ox, obBottom, w, openAmount) {
     }
     ctx.restore();
   });
-  ctx.restore();
-}
-
-// a small wood sign planted beside the duck tree, "DUCK!" plus a down
-// arrow -- per direct request ("a little wood sign that says 'duck!'
-// with a down arrow visual on it"). Same post-and-plank language as
-// drawForestFloatReturnSign, just its own text/arrow instead of a return
-// prompt, and off to the side of the tree rather than centered on it so
-// it doesn't get lost against the trunk/roots.
-function drawFloatDuckSign(ox, obBottom) {
-  const sx = ox - 62, sy = gy;
-  ctx.strokeStyle = "#5a3e22";
-  ctx.lineWidth = 2.4;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(sx, sy - 20);
-  ctx.stroke();
-  ctx.save();
-  ctx.translate(sx, sy - 29);
-  ctx.rotate(0.04);
-  ctx.fillStyle = "#7a5636";
-  ctx.fillRect(-17, -14, 34, 28);
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1.4;
-  ctx.strokeRect(-17, -14, 34, 28);
-  ctx.fillStyle = "rgba(230,210,170,0.95)";
-  ctx.font = "bold 8px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("DUCK!", 0, -4);
-  // down arrow -- a simple stem + triangular head, same pale color as
-  // the text so it reads as part of the same carved lettering
-  ctx.strokeStyle = "rgba(230,210,170,0.95)";
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, 8);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(230,210,170,0.95)";
-  ctx.beginPath();
-  ctx.moveTo(-4, 7);
-  ctx.lineTo(4, 7);
-  ctx.lineTo(0, 12.5);
-  ctx.closePath();
-  ctx.fill();
-  ctx.textAlign = "left";
   ctx.restore();
 }
 
@@ -16856,7 +16849,6 @@ function drawForestFloatZone(camX) {
       const openAmount = floatDuckOpenAmount(ob);
       drawFloatSwampTreeBack(ox, obBottom, openAmount);
       drawFloatSeedPods(ox, obBottom, ob.w, openAmount);
-      drawFloatDuckSign(ox, obBottom);
     } else if (ob.type === "movingJump") {
       // real driftwood log art -- see drawFloatLog's own comment
       drawFloatLog(ox, gy, ob.w, ob.variant);
