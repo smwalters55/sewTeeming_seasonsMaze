@@ -13522,11 +13522,19 @@ const FOREST_DRAGONFLY_SPECS = [
   { anchorX: FOREST_REFLECTION_POOL_X, anchorY: FOREST_REFLECTION_POOL_Y, radiusX: 70, radiusY: 24, heightBase: -50, speed: 0.00074, yFreq: 0.7, seed: 4.9, color: "#8a4a2f" },
   // over the calm water at the bridge crossing (bank span is 4340-4800,
   // so 4570 sits right at the middle of the crossing)
-  { anchorX: 4570, anchorY: gy, radiusX: 58, radiusY: 15, heightBase: -28, speed: 0.00055, yFreq: 1.6, seed: 2.6, color: "#3a8a6a" },
-  // over the float zone's lily pad (FOREST_FLOAT_LILYPAD.x, computed
-  // here as a literal since that constant is declared further down the
-  // file) -- the calm rest stop, not the rapids around it
-  { anchorX: 7260, anchorY: gy, radiusX: 38, radiusY: 13, heightBase: -24, speed: 0.00086, yFreq: 0.85, seed: 5.5, color: "#2f7a8a" }
+  { anchorX: 4570, anchorY: gy, radiusX: 58, radiusY: 15, heightBase: -28, speed: 0.00055, yFreq: 1.6, seed: 2.6, color: "#3a8a6a" }
+  // the float zone's lily pad dragonfly used to live here as a
+  // hand-typed literal (7260) standing in for FOREST_FLOAT_LILYPAD.x,
+  // which is declared much further down the file. That literal never
+  // got updated across several later passes that moved the calm
+  // lead-in/lily pad position, so it drifted away from the pad it was
+  // meant to circle and ended up floating alone over the new sand bank
+  // trail with nothing else around it -- reported as "what is this.
+  // remove this what the f?", understandably, since out of context it
+  // just looks like a stray glitched sprite. Moved to a push() right
+  // after FOREST_FLOAT_LILYPAD's own declaration below instead, so it
+  // always tracks the pad's REAL position and can't silently drift out
+  // of sync like this again.
 ];
 function drawForestDragonfly(d, camX) {
   const now = performance.now();
@@ -13869,13 +13877,16 @@ function drawForestZenSandPatch(camX) {
 // edge-sprinkle scatter (see FOREST_SAND_JUNCTION_SPRINKLES) can sit
 // genuinely ON the ribbon's own wavy edge at any point along it,
 // instead of only at the coarse sample spacing.
-function sandJunctionOffAt(t, key) {
-  const profile = FOREST_SAND_JUNCTION_PROFILE;
+function sandProfileOffAt(profile, t, key) {
   const n = profile.length - 1;
   const f = Math.max(0, Math.min(1, t)) * n;
   const i0 = Math.floor(f), i1 = Math.min(n, i0 + 1);
   const frac = f - i0;
   return profile[i0][key] + (profile[i1][key] - profile[i0][key]) * frac;
+}
+// thin wrapper kept for the junction ribbon's own call sites
+function sandJunctionOffAt(t, key) {
+  return sandProfileOffAt(FOREST_SAND_JUNCTION_PROFILE, t, key);
 }
 // traces the junction ribbon's outline into ctx's current path --
 // shared by both the fill pass and the clip-for-texture pass below so
@@ -13981,8 +13992,99 @@ function drawForestSandRiverJunction(camX) {
   FOREST_SAND_JUNCTION_SPRINKLES.forEach(s => {
     const edgeOff = sandJunctionOffAt(s.t, s.side > 0 ? "botOff" : "topOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
-    const sy = gy + edgeOff + s.side * (3 + s.spread * 24);
-    const alpha = 0.12 + (1 - s.spread) * 0.28;
+    const sy = gy + edgeOff + s.side * (4 + s.spread * 34);
+    const alpha = 0.18 + (1 - s.spread) * 0.34;
+    ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// a second, separate sand feature -- more sand continuing "down" along
+// the river bank past where the junction ribbon hands off, thick right
+// at the bank and gradually thinning out along the shore, rather than
+// just the sparse individual sprinkle grains above. Per direct request
+// ("add some more sand that is natural coming 'down' from that sand
+// bank. like it is thick where it is now, and starts to thin out a
+// little. not just a few stray granuals"). Deliberately its own
+// tapering ribbon (not reusing FOREST_SAND_RIVER_JUNCTION's) since this
+// one only ever shrinks in one direction -- full thickness at the bank
+// end, easing down to a thin point further along the shore -- instead
+// of the junction's thin-to-thick-to-thin profile. FOREST_SAND_BANK_TRAIL
+// itself (and its profile/grains) is defined further down, right after
+// FOREST_FLOAT_ZONE_START_X, which it depends on -- same forward-
+// reference reasoning as FOREST_SAND_JUNCTION_PROFILE above (this
+// function only runs later, at actual draw time).
+function drawForestSandBankTrail(camX) {
+  const startX = FOREST_SAND_BANK_TRAIL.x, endX = FOREST_SAND_BANK_TRAIL.endX;
+  const leftPx = startX - camX - 20;
+  const rightPx = endX - camX + 20;
+  if (rightPx < -30 || leftPx > canvas.width + 30) return;
+
+  const pts = FOREST_SAND_BANK_TRAIL_PROFILE.map(p => ({
+    x: startX + (endX - startX) * p.t - camX,
+    topY: gy + p.topOff,
+    botY: gy + p.botOff
+  }));
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].topY);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i], prev = pts[i - 1];
+    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
+    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
+  }
+  const lastP = pts[pts.length - 1];
+  ctx.quadraticCurveTo(lastP.x, lastP.topY, lastP.x, lastP.botY);
+  for (let i = pts.length - 2; i >= 1; i--) {
+    const p = pts[i], next = pts[i + 1];
+    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
+    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
+  }
+  // same closing fix as the junction ribbon -- reach pts[0]'s own
+  // bottom point explicitly before closePath, or the loop above stops
+  // one midpoint short and closePath cuts a wrong diagonal corner
+  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
+  ctx.closePath();
+
+  ctx.fillStyle = "#8c7a56"; // matches the bank's own sand tone exactly
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].topY);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i], prev = pts[i - 1];
+    const mx = (prev.x + p.x) / 2, my = (prev.topY + p.topY) / 2;
+    ctx.quadraticCurveTo(prev.x, prev.topY, mx, my);
+  }
+  ctx.quadraticCurveTo(lastP.x, lastP.topY, lastP.x, lastP.botY);
+  for (let i = pts.length - 2; i >= 1; i--) {
+    const p = pts[i], next = pts[i + 1];
+    const mx = (next.x + p.x) / 2, my = (next.botY + p.botY) / 2;
+    ctx.quadraticCurveTo(next.x, next.botY, mx, my);
+  }
+  ctx.quadraticCurveTo(pts[1].x, pts[1].botY, pts[0].x, pts[0].botY);
+  ctx.closePath();
+  ctx.clip();
+  FOREST_SAND_BANK_TRAIL_GRAINS.forEach(g => {
+    const gx = startX + (endX - startX) * g.t - camX;
+    const gyPos = gy + g.dy;
+    ctx.fillStyle = g.dark ? `rgba(70,58,36,${g.a})` : `rgba(230,214,172,${g.a})`;
+    ctx.beginPath();
+    ctx.ellipse(gx, gyPos, g.r, g.r * 0.6, g.rot, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // edge-fade sprinkles, deliberately outside the clip so they land in
+  // the grass past the trail's own edge -- see FOREST_SAND_BANK_TRAIL_SPRINKLES
+  FOREST_SAND_BANK_TRAIL_SPRINKLES.forEach(s => {
+    const edgeOff = sandProfileOffAt(FOREST_SAND_BANK_TRAIL_PROFILE, s.t, s.side > 0 ? "botOff" : "topOff");
+    const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
+    const sy = gy + edgeOff + s.side * (4 + s.spread * 34);
+    const alpha = 0.18 + (1 - s.spread) * 0.34;
     ctx.fillStyle = s.dark ? `rgba(90,72,44,${alpha.toFixed(3)})` : `rgba(210,192,150,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14116,6 +14218,7 @@ function drawForestScene(camX) {
   drawForestSandRiverJunction(camX); // organic sand strip bridging the zen patch and the river's near bank
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestFloatZone(camX);
+  drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
   drawForestRiverBoatPiles(camX); // the boat pickup spots -- one at the zone's calm start, one at each lily pad
   drawForestRiverBoats(camX); // launched leaf/bark boats drifting on the float zone's current -- drawn right after the water/obstacles so they read as sitting on the surface among them
@@ -14630,6 +14733,69 @@ function drawZenRakeUI() {
 // breathing room") -- width (END - START) kept the same so none of the
 // internal obstacle spacing needed to change.
 const FOREST_FLOAT_ZONE_START_X = 6900;
+// sand continuing along the shore past the bank, thick near it and
+// thinning out further along -- see drawForestSandBankTrail's own
+// comment for the full rationale.
+const FOREST_SAND_BANK_TRAIL = {
+  x: FOREST_FLOAT_ZONE_START_X - 25,
+  endX: FOREST_FLOAT_ZONE_START_X + 360
+};
+const FOREST_SAND_BANK_TRAIL_PROFILE = (() => {
+  const samples = 16;
+  const pts = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const seed = 9200 + i * 8.7;
+    // eased fade (not linear) -- stays close to full thickness a little
+    // longer before tapering off, reading as "thick where it is now,
+    // starts to thin out" rather than an even ramp down
+    const fade = Math.pow(1 - t, 1.4);
+    const topWave = Math.sin(t * Math.PI * 3.1 + 0.4) * 3 + Math.sin(t * Math.PI * 7.2 + 1.1) * 1.5;
+    const botWave = Math.sin(t * Math.PI * 2.3 + 1.2) * 4 + Math.sin(t * Math.PI * 6.4 + 2.4) * 2;
+    pts.push({
+      t,
+      topOff: -(1 + fade * 9 + Math.max(0, topWave) * fade + pseudoRandom(seed) * 5 * fade),
+      botOff: 1 + fade * 15 + Math.max(0, botWave) * fade + pseudoRandom(seed + 1) * 7 * fade
+    });
+  }
+  return pts;
+})();
+// grains/mottles biased toward the thick (low t) end -- squaring a
+// uniform 0..1 draw compresses the distribution toward 0, so most
+// grains cluster near the bank and thin out along with the shape
+// itself, instead of spreading evenly across the whole trail
+const FOREST_SAND_BANK_TRAIL_GRAINS = Array.from({ length: 140 }, (_, i) => {
+  const seed = 9500 + i * 5.3;
+  const t = pseudoRandom(seed) ** 2;
+  return {
+    t,
+    dy: -6 + pseudoRandom(seed + 1) * 20,
+    r: 0.6 + pseudoRandom(seed + 2) * 1.6,
+    rot: pseudoRandom(seed + 3) * Math.PI,
+    dark: pseudoRandom(seed + 4) > 0.5,
+    a: 0.06 + pseudoRandom(seed + 5) * 0.1
+  };
+});
+// same edge-fade sprinkle treatment as the junction ribbon's own
+// FOREST_SAND_JUNCTION_SPRINKLES -- this trail never had one at all
+// (only the clipped-inside grains above), which was the other half of
+// "where is the sand fading i asked for... on the bottom of the sand
+// drift". Weighted toward low t (the thick end) same as this trail's
+// own grains, so the fade-out feels continuous with the shape's own
+// taper rather than sprinkled evenly regardless of where the sand
+// itself has already thinned out.
+const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 130 }, (_, i) => {
+  const seed = 9800 + i * 6.3;
+  return {
+    t: pseudoRandom(seed) ** 1.6,
+    side: pseudoRandom(seed + 1) < 0.8 ? 1 : -1,
+    spread: pseudoRandom(seed + 2),
+    dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
+    r: 1 + pseudoRandom(seed + 4) * 1.8,
+    rot: pseudoRandom(seed + 5) * Math.PI,
+    dark: pseudoRandom(seed + 6) > 0.45
+  };
+});
 // the sand junction bridging the zen garden's own patch and the river's
 // near bank -- per direct request ("build more of an organically shaped
 // sand junction between the zen garden and the rushing river bank"),
@@ -14743,14 +14909,21 @@ const FOREST_SAND_JUNCTION_GRAINS = Array.from({ length: 220 }, (_, i) => {
 // the grass rather than a second parallel line. Mostly along the
 // bottom edge (per the direct request), with a few along the top too
 // for the same reason the bank curve treats both transitions.
-const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 46 }, (_, i) => {
+// count raised sharply (was 46, spread across the ribbon's full ~470px
+// length -- worked out to roughly one sprinkle every 10px, way too
+// sparse to actually notice in any single on-screen window, which is
+// exactly why it read as "where is the sand fading i asked for" even
+// though the code was technically there) and spread distance widened
+// so the fade-out is unmistakable at a glance, not something that only
+// shows up if you know to look for it.
+const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 170 }, (_, i) => {
   const seed = 8900 + i * 7.1;
   return {
     t: pseudoRandom(seed),
     side: pseudoRandom(seed + 1) < 0.78 ? 1 : -1, // 1 = below the bottom edge, -1 = above the top edge
     spread: pseudoRandom(seed + 2),
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 16,
-    r: 0.8 + pseudoRandom(seed + 4) * 1.5,
+    r: 1 + pseudoRandom(seed + 4) * 1.8,
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
@@ -15002,13 +15175,29 @@ const FOREST_FLOAT_DUCK_OPEN_THRESHOLD = 0.35;
 // (between the reprised jump rock and the moving-log pair), same as
 // how the original one sits in a gap in the first pass.
 const FOREST_FLOAT_LILYPAD = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 860, width: 56, heightAboveGround: 20 };
+// the lily pad's own dragonfly, circling the calm rest stop -- pushed
+// in here (rather than living in FOREST_DRAGONFLY_SPECS above, which
+// is evaluated long before this pad's real x is known) so it always
+// tracks FOREST_FLOAT_LILYPAD.x directly and can never go stale again.
+forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD.x, anchorY: gy, radiusX: 38, radiusY: 13, heightBase: -24, speed: 0.00086, yFreq: 0.85, seed: 5.5, color: "#2f7a8a" });
 const FOREST_FLOAT_LILYPAD_2 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 3190, width: 56, heightAboveGround: 20 };
 // third pad -- same role, sits in the third pass's own calm gap right
 // after the final moving-log pair and before the last duck
 const FOREST_FLOAT_LILYPAD_3 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5150, width: 56, heightAboveGround: 20 };
+// landing spot right at the far end of the course, for the return
+// lever to stand on -- per direct request ("make a return to start
+// 'lever' at end of river... yes finish to the end"). Sits just shy of
+// FOREST_FLOAT_ZONE_END_X so it's fully on-screen once reached rather
+// than right at the current's own hard cutoff edge.
+const FOREST_FLOAT_LILYPAD_END = { x: FOREST_FLOAT_ZONE_END_X - 90, width: 62, heightAboveGround: 20 };
+// the lever itself -- "a leaf on a leaf stick stem" per direct
+// description -- planted just off-center on the end pad
+const FOREST_FLOAT_RETURN_LEVER_X = FOREST_FLOAT_LILYPAD_END.x + 16;
+let forestFloatReturnLeverPullT = 0; // 0 = at rest, 1 = just pulled, eases back to 0
 let playerOnFloatLilypad = false;
 let playerOnFloatLilypad2 = false;
 let playerOnFloatLilypad3 = false;
+let playerOnFloatLilypadEnd = false;
 // minY (optional) gates a collectible behind actually reaching a
 // specific arc height, not just walking/floating near it at ground
 // level -- rewards a well-timed jump instead of being freely walkable
@@ -15152,12 +15341,35 @@ function updateForestRiverBoats() {
   // launch -- anywhere in the float zone, holding a boat, tap space to drop it in
   } else if (heldItem === "leafBoat" && nearFloatZone && keys.spaceJustPressed) {
     if (forestRiverBoats.length >= FOREST_RIVER_BOAT_MAX) forestRiverBoats.shift();
+    const spawnX = player.x + player.width / 2;
+    // pre-resolve any obstacle already behind the launch point WITHOUT
+    // rolling a snag chance for it -- per direct report ("wheni i try
+    // to float a new leaf boat from a new lilly pad it just
+    // dissappears once i clikc space while its above my head"). Root
+    // cause: resolvedObstacles used to always start empty, so a boat
+    // launched from the second or third lily pad (both added well down
+    // the course, past a dozen-plus earlier obstacles) hit the main
+    // update loop below on its very first frame and rolled a snag
+    // chance against EVERY obstacle already behind its spawn point in
+    // one go -- with that many rolls at once, landing "stuck" on at
+    // least one was nearly guaranteed, which also snapped the boat's x
+    // BACKWARD to that earlier obstacle's position, off-camera to the
+    // left of where it was just launched. It hadn't "disappeared", it
+    // had been yanked far upstream, off-screen, on frame one. Marking
+    // already-passed obstacles resolved up front (same as a boat that
+    // had genuinely drifted past them) means only obstacles actually
+    // AHEAD of the launch point ever get a snag roll, same as boats
+    // launched from the very first pile always correctly behaved.
+    const resolvedObstacles = {};
+    FOREST_FLOAT_OBSTACLES.forEach((ob, idx) => {
+      if (floatObstacleX(ob) - ob.w / 2 - 6 <= spawnX) resolvedObstacles[idx] = true;
+    });
     forestRiverBoats.push({
-      x: player.x + player.width / 2,
+      x: spawnX,
       spawnTime: now,
       stuck: false,
       driftMult: 0.85 + Math.random() * 0.35, // each boat drifts at its own slightly different pace
-      resolvedObstacles: {},
+      resolvedObstacles,
       bobSeed: Math.random() * 10,
       color: FOREST_RIVER_BOAT_COLORS[Math.floor(Math.random() * FOREST_RIVER_BOAT_COLORS.length)]
     });
@@ -15169,7 +15381,28 @@ function updateForestRiverBoats() {
       forestRiverBoats.splice(i, 1);
       continue;
     }
-    if (b.stuck) continue;
+    if (b.stuck) {
+      // if snagged on a movingJump log, keep tracking its CURRENT
+      // position every frame instead of freezing at wherever it
+      // happened to be at the instant of the snag -- per direct report
+      // ("why did this leaf boat stop in the middle of the water. i am
+      // guessing it hit the moving log. but this positioning doesnt
+      // make sense"). The log oscillates back and forth continuously
+      // (see floatObstacleX); a boat that froze at the log's position
+      // the moment it got snagged visibly drifted apart from it as the
+      // log kept swinging away, ending up stranded alone in open water
+      // with nothing nearby to explain why it stopped there. Fixed
+      // obstacles (plain/spiky rocks) don't need this -- their x never
+      // changes, so the original snapshot position already stays
+      // correct forever.
+      if (b.stuckObstacleIdx != null) {
+        const ob = FOREST_FLOAT_OBSTACLES[b.stuckObstacleIdx];
+        if (ob && ob.type === "movingJump") {
+          b.x = floatObstacleX(ob) - ob.w / 2 - 6;
+        }
+      }
+      continue;
+    }
     b.x += FOREST_FLOAT_DRIFT_SPEED * b.driftMult;
     FOREST_FLOAT_OBSTACLES.forEach((ob, idx) => {
       if (b.resolvedObstacles[idx]) return;
@@ -15182,6 +15415,7 @@ function updateForestRiverBoats() {
         b.resolvedObstacles[idx] = true;
         if (Math.random() < forestRiverBoatSnagChance(ob)) {
           b.stuck = true;
+          b.stuckObstacleIdx = idx;
           b.x = obX - ob.w / 2 - 6;
         }
       }
@@ -15702,6 +15936,75 @@ function drawFloatLilypad(camX, pad) {
   ctx.fill();
 }
 
+// the return-to-start lever -- "a leaf on a leaf stick stem" per direct
+// description. Planted upright on FOREST_FLOAT_LILYPAD_END, gently
+// swaying at rest; pulling it (see the FLOAT ZONE update block) kicks
+// forestFloatReturnLeverPullT up to 1, which this tilts the whole stem
+// down toward, then eases back upright over about a second via
+// updateForestFloatReturnLever -- reads as an actual pull-and-release
+// rather than an instant snap back to resting position.
+function updateForestFloatReturnLever(deltaTime) {
+  if (forestFloatReturnLeverPullT > 0) {
+    forestFloatReturnLeverPullT = Math.max(0, forestFloatReturnLeverPullT - deltaTime * 1.1);
+  }
+}
+function drawForestFloatReturnLever(camX) {
+  const lx = FOREST_FLOAT_RETURN_LEVER_X - camX;
+  if (lx < -30 || lx > canvas.width + 30) return;
+  const ly = gy - FOREST_FLOAT_LILYPAD_END.heightAboveGround;
+  const now = performance.now();
+  const idleSway = Math.sin(now * 0.0018) * 0.06;
+  // eased pull-tilt -- sin() ease so the swing-down and swing-back-up
+  // both feel like motion, not a linear metronome tick
+  const pullTilt = Math.sin(forestFloatReturnLeverPullT * Math.PI * 0.5) * 1.0;
+  const angle = -Math.PI / 2 + idleSway + pullTilt;
+
+  const stemLen = 30;
+  const baseX = lx, baseY = ly + 2;
+  const tipX = baseX + Math.cos(angle) * stemLen;
+  const tipY = baseY + Math.sin(angle) * stemLen;
+
+  ctx.strokeStyle = "#5a7a3a";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+
+  // the leaf handle at the tip -- same broad-oval-with-center-vein
+  // language the rest of the game's leaf art already uses (boats, wig
+  // leaves), just planted as a lever paddle instead of floating/worn
+  ctx.save();
+  ctx.translate(tipX, tipY);
+  ctx.rotate(angle + Math.PI / 2);
+  ctx.fillStyle = "#6a8a3a";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 6.5, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4a6a2a";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.lineTo(0, 9);
+  ctx.stroke();
+  ctx.restore();
+
+  // "space to return" hint -- only shown once the player has actually
+  // landed on the end pad (not just visible from a distance), same
+  // "only surface the prompt once it's actually usable" pattern the
+  // zen rake's own "R to start over" hint follows
+  if (playerOnFloatLilypadEnd) {
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "#eee8d8";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("space to return to start", lx, ly - 40);
+    ctx.restore();
+  }
+}
+
 function drawForestFloatZone(camX) {
   const zoneStartPx = FOREST_FLOAT_ZONE_START_X - camX;
   const zoneEndPx = FOREST_FLOAT_ZONE_END_X - camX;
@@ -15879,16 +16182,11 @@ function drawForestFloatZone(camX) {
     }
   }
 
-  ctx.strokeStyle = "#ffcc33";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(zoneEndPx, gy);
-  ctx.lineTo(zoneEndPx, canvas.height);
-  ctx.stroke();
-
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_3);
+  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
+  drawForestFloatReturnLever(camX);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     const ox = floatObstacleX(ob) - camX;
@@ -19693,6 +19991,7 @@ function updateForestScene(deltaTime) {
   updateForestRiverBoats();
   updateForestRiverFrog();
   updateForestRiverBoatPileNotice(deltaTime);
+  updateForestFloatReturnLever(deltaTime);
 
   // ZEN SAND RAKE -- diorama-style open, same trigger pattern as the
   // sandbox wig stand: walk up, press space, open the contained inset.
@@ -19905,8 +20204,26 @@ function updateForestScene(deltaTime) {
     playerOnFloatLilypad = landOnFloatPad(FOREST_FLOAT_LILYPAD);
     playerOnFloatLilypad2 = landOnFloatPad(FOREST_FLOAT_LILYPAD_2);
     playerOnFloatLilypad3 = landOnFloatPad(FOREST_FLOAT_LILYPAD_3);
+    playerOnFloatLilypadEnd = landOnFloatPad(FOREST_FLOAT_LILYPAD_END);
 
-    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3) player.x += FOREST_FLOAT_DRIFT_SPEED;
+    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED;
+
+    // return-to-start lever -- per direct request ("make a return to
+    // start 'lever' at end of river... yes finish to the end"). Only
+    // reachable by actually landing on the end pad (isPlayerNear alone
+    // would also fire while still drifting past it in the current), so
+    // it really is a "finish the course" payoff, not a shortcut you can
+    // grab mid-drift. Swimming back upstream by hand is untouched and
+    // still works exactly as before -- per direct confirmation ("yes
+    // slow upstrream def still exist") -- this is just a faster option
+    // for anyone who'd rather not.
+    if (playerOnFloatLilypadEnd && keys.spaceJustPressed && isPlayerNear(FOREST_FLOAT_RETURN_LEVER_X, FOREST_FLOAT_LILYPAD_END.heightAboveGround, 28, 20, 20)) {
+      cameraX = FOREST_FLOAT_ZONE_START_X - 120;
+      player.x = FOREST_FLOAT_ZONE_START_X - 90;
+      player.y = 0;
+      player.vy = 0;
+      forestFloatReturnLeverPullT = 1; // kicks off the pulled-lever flourish, see drawForestFloatReturnLever
+    }
 
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
