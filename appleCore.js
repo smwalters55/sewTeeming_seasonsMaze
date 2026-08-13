@@ -21081,7 +21081,14 @@ function drawForestSnake(camX) {
 
 // reaction to a blocked mount attempt -- same fade pattern as tunnel
 // town's own dig-blocked hint (see tunnelBlockedHint), just anchored to
-// wherever along the body the player actually tried to land
+// wherever along the body the player actually tried to land.
+// CONFIRMED BUG FIX ("the snake says the second line... like he didn't
+// already tell you anything yet"): this used to open with "I spoke
+// plainly once already," which assumed a prior proactive ask line that
+// no longer exists -- that dialogue was replaced by the static wooden
+// sign at the nook (see drawForestSnakeNookSign). Rewritten to point at
+// the sign instead of claiming to have already spoken, since the snake
+// itself never actually said anything before this moment.
 function drawSnakeBlockedHint(camX) {
   if (!snakeBlockedHint.active) return;
   const p = snakeBlockedHint.t / SNAKE_BLOCKED_HINT_DURATION;
@@ -21089,7 +21096,7 @@ function drawSnakeBlockedHint(camX) {
   const sx = snakeBlockedHint.x - camX;
   const sy = gy - snakeBlockedHint.heightAboveGround - 40;
   ctx.globalAlpha = Math.max(0, fade);
-  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["I ssspoke plainly once already...", "sssomething small and round, with a blush of pink where the light touchesss it."]);
+  drawFittedSpeechBubble(ctx, sx - 60, sy - 30, ["Can't you read the sssign, sssstranger?", "Sssomething small and round goes in the hollow, or you don't crosss."]);
   ctx.globalAlpha = 1;
 }
 
