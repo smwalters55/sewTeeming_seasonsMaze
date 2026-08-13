@@ -12714,12 +12714,22 @@ function drawForestReflectionPool(camX) {
     ctx.beginPath();
     ctx.ellipse(11, -14, 5.5, 3.4, 0.35, 0, Math.PI * 2);
     ctx.fill();
+    // trunk now runs all the way to the pool's own top edge (y=-44
+    // reaches almost exactly FOREST_REFLECTION_POOL_Y - H/2 in world
+    // space) instead of stopping at -35, a good 10px short of the
+    // surface. Per direct report ("make the reflection in the pond have
+    // the trunk go to the top edge vs here where it looks like its
+    // floating and not attached to the ground") -- a reflection whose
+    // trunk doesn't actually reach the water's surface line reads as a
+    // separate object hovering in the pool rather than the real tree's
+    // mirror image, since in a true reflection the trunk base (right at
+    // ground level) has to touch the surface exactly, no gap.
     ctx.beginPath();
     ctx.moveTo(-7, -13);
     ctx.quadraticCurveTo(-9, -20, -6, -26);
-    ctx.quadraticCurveTo(-8, -31, -4, -35);
-    ctx.lineTo(4, -35);
-    ctx.quadraticCurveTo(8, -31, 6, -26);
+    ctx.quadraticCurveTo(-8.5, -34, -4, -44);
+    ctx.lineTo(4, -44);
+    ctx.quadraticCurveTo(8.5, -34, 6, -26);
     ctx.quadraticCurveTo(9, -20, 7, -13);
     ctx.closePath();
     ctx.fill();
@@ -14041,7 +14051,15 @@ function drawForestSandRiverJunction(camX) {
     const edgeOff = sandJunctionOffAt(s.t, "botOff");
     const sx = startX + (endX - startX) * s.t - camX + s.dxJit;
     const sy = gy + edgeOff + Math.min(s.dist, 20);
-    const alpha = 0.8 * Math.exp(-s.dist / 7);
+    // Gaussian-shaped falloff instead of pure exponential -- exponential
+    // decays fastest right at dist=0, so it was already fading before it
+    // ever built up enough coverage to read as a distinct "6" plateau;
+    // a Gaussian stays close to full strength for the first several px
+    // (flat top) before dropping, which is what actually looks like a
+    // solid-but-thinner middle band instead of blending straight into
+    // the sparser layer below. Per repeated follow-up ("i still dont
+    // see the medium 6 level here").
+    const alpha = 0.85 * Math.exp(-(s.dist * s.dist) / (2 * 8 * 8));
     ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14180,7 +14198,9 @@ function drawForestSandBankTrail(camX) {
     const maxDist = Math.max(0, Math.min(20, distToWater * 0.7));
     if (maxDist <= 0.5) return;
     const sy = gy + edgeOff + Math.min(s.dist, maxDist);
-    const alpha = 0.8 * Math.exp(-s.dist / 7);
+    // Gaussian plateau falloff -- same fix as the junction ribbon's own
+    // MIDGRAINS, see its comment for the full reasoning
+    const alpha = 0.85 * Math.exp(-(s.dist * s.dist) / (2 * 8 * 8));
     ctx.fillStyle = s.dark ? `rgba(100,82,50,${alpha.toFixed(3)})` : `rgba(214,196,154,${alpha.toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, s.r, s.r * 0.55, s.rot, 0, Math.PI * 2);
@@ -14950,12 +14970,14 @@ const FOREST_SAND_BANK_TRAIL_PROFILE = (() => {
     // longer before tapering off, reading as "thick where it is now,
     // starts to thin out" rather than an even ramp down
     const fade = Math.pow(1 - t, 1.4);
-    const topWave = Math.sin(t * Math.PI * 3.1 + 0.4) * 3 + Math.sin(t * Math.PI * 7.2 + 1.1) * 1.5;
-    const botWave = Math.sin(t * Math.PI * 2.3 + 1.2) * 4 + Math.sin(t * Math.PI * 6.4 + 2.4) * 2;
+    // high-frequency components toned down + rounding widened, same
+    // reasoning as the junction ribbon's own profile just above
+    const topWave = Math.sin(t * Math.PI * 3.1 + 0.4) * 3 + Math.sin(t * Math.PI * 7.2 + 1.1) * 0.6;
+    const botWave = Math.sin(t * Math.PI * 2.3 + 1.2) * 4 + Math.sin(t * Math.PI * 6.4 + 2.4) * 0.8;
     pts.push({
       t,
-      topOff: -(1 + fade * 9 + softMax0(topWave, 2.5) * fade + pseudoRandom(seed) * 5 * fade),
-      botOff: 1 + fade * 15 + softMax0(botWave, 2.5) * fade + pseudoRandom(seed + 1) * 7 * fade
+      topOff: -(1 + fade * 9 + softMax0(topWave, 4.5) * fade + pseudoRandom(seed) * 5 * fade),
+      botOff: 1 + fade * 15 + softMax0(botWave, 4.5) * fade + pseudoRandom(seed + 1) * 7 * fade
     });
   }
   return pts;
@@ -15020,14 +15042,14 @@ const FOREST_SAND_BANK_TRAIL_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
 // existing sparser sprinkle layer takes over further out. Together the
 // two layers form one continuous descent (10 -> ~6 -> ~3 -> 0) instead
 // of jumping straight from solid fill to sparse scatter.
-const FOREST_SAND_BANK_TRAIL_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
-  const seed = 9700 + i * 2.6;
+const FOREST_SAND_BANK_TRAIL_MIDGRAINS = Array.from({ length: 320 }, (_, i) => {
+  const seed = 9700 + i * 1.8;
   const u = pseudoRandom(seed + 2);
   return {
     t: pseudoRandom(seed) ** 1.6,
-    dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
+    dist: -Math.log(1 - u * 0.999) * 6, // px past the edge -- tight, hugs the sand
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
-    r: 0.9 + pseudoRandom(seed + 4) * 1.2, // per direct request ("these sand grains finer")
+    r: 1 + pseudoRandom(seed + 4) * 1.4,
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
@@ -15111,10 +15133,16 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
   const pts = [];
   for (let i = 0; i <= samples; i++) {
     const t = i / samples;
+    // high-frequency ripple components toned down (were *2 and *2.5) --
+    // per repeated follow-up ("still dont see... a smoother corner angle
+    // on the right of this image"), the peaks read as pointed ridges
+    // rather than rolling dunes even after the earlier soft-clamp fix,
+    // because these tight, fast-oscillating top layers were adding real
+    // sharp local curvature on top of the coarser wave, not just texture
     const topWave = Math.sin(t * Math.PI * 2.4) * 7 + Math.sin(t * Math.PI * 5.1 + 1.4) * 4
-      + Math.sin(t * Math.PI * 9.7 + 3.3) * 2;
+      + Math.sin(t * Math.PI * 9.7 + 3.3) * 0.8;
     const botWave = Math.sin(t * Math.PI * 1.8 + 0.6) * 9 + Math.sin(t * Math.PI * 4.2 + 2.1) * 5
-      + Math.sin(t * Math.PI * 8.4 + 0.9) * 2.5;
+      + Math.sin(t * Math.PI * 8.4 + 0.9) * 1;
     // a real sand deposit piles up more where it meets moving water --
     // this strip should read as thin/dry near the zen garden and
     // progressively wider/deeper (sinking further below the horizon)
@@ -15130,8 +15158,8 @@ const FOREST_SAND_JUNCTION_PROFILE = (() => {
     const taperIn = Math.min(1, t / 0.18);
     pts.push({
       t,
-      topOff: -(2 + taperIn * 4 + softMax0(topWave, 2.5) * taperIn + smooth(rawTopJitter, i) * taperIn),
-      botOff: 2 + taperIn * 3 + softMax0(botWave, 2.5) * taperIn + smooth(rawBotJitter, i) * taperIn + flare
+      topOff: -(2 + taperIn * 4 + softMax0(topWave, 4.5) * taperIn + smooth(rawTopJitter, i) * taperIn),
+      botOff: 2 + taperIn * 3 + softMax0(botWave, 4.5) * taperIn + smooth(rawBotJitter, i) * taperIn + flare
     });
   }
   return pts;
@@ -15208,14 +15236,14 @@ const FOREST_SAND_JUNCTION_SPRINKLES = Array.from({ length: 260 }, (_, i) => {
 // tighter (mean ~5px vs ~11px) and bigger/more opaque so it reads as a
 // near-solid thinner band of sand right past the edge before the
 // sparser layer takes over.
-const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 220 }, (_, i) => {
-  const seed = 8950 + i * 2.6;
+const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 320 }, (_, i) => {
+  const seed = 8950 + i * 1.8;
   const u = pseudoRandom(seed + 2);
   return {
     t: pseudoRandom(seed),
-    dist: -Math.log(1 - u * 0.999) * 5, // px past the edge -- tight, hugs the sand
+    dist: -Math.log(1 - u * 0.999) * 6, // px past the edge -- tight, hugs the sand
     dxJit: (pseudoRandom(seed + 3) - 0.5) * 14,
-    r: 0.9 + pseudoRandom(seed + 4) * 1.2, // per direct request ("these sand grains finer")
+    r: 1 + pseudoRandom(seed + 4) * 1.4,
     rot: pseudoRandom(seed + 5) * Math.PI,
     dark: pseudoRandom(seed + 6) > 0.45
   };
@@ -16312,19 +16340,44 @@ function drawForestFloatReturnLever(camX) {
   ctx.stroke();
   ctx.restore();
 
-  // "space to return" hint -- only shown once the player has actually
-  // landed on the end pad (not just visible from a distance), same
-  // "only surface the prompt once it's actually usable" pattern the
-  // zen rake's own "R to start over" hint follows
-  if (playerOnFloatLilypadEnd) {
-    ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = "#eee8d8";
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("space to return to start", lx, ly - 40);
-    ctx.restore();
-  }
+}
+
+// a real wooden signpost planted next to the lever, replacing the old
+// floating "space to return to start" text that only appeared once the
+// player had already landed on the end pad -- per direct request ("i
+// think i want space to return to start on the ground... a little
+// wooden sign that says that with the leaf on stem to pull next to
+// it"). Same post-and-plank language as drawTunnelTownExitSign, but
+// planted on the ground as a real prop (not a hint overlay), so it's
+// visible and readable from a distance -- actually discoverable before
+// you're already standing on the pad, not just a tooltip that appears
+// once it's too late to matter.
+function drawForestFloatReturnSign(camX) {
+  const sx = FOREST_FLOAT_RETURN_LEVER_X - 26 - camX;
+  if (sx < -30 || sx > canvas.width + 30) return;
+  const sy = gy;
+  ctx.strokeStyle = "#5a3e22";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy - 22);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(sx, sy - 31);
+  ctx.rotate(-0.05);
+  ctx.fillStyle = "#7a5636";
+  ctx.fillRect(-20, -9, 40, 18);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-20, -9, 40, 18);
+  ctx.fillStyle = "rgba(230,210,170,0.9)";
+  ctx.font = "7px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("SPACE TO", 0, -1.5);
+  ctx.fillText("RETURN", 0, 6.5);
+  ctx.textAlign = "left";
+  ctx.restore();
 }
 
 function drawForestFloatZone(camX) {
@@ -16518,6 +16571,7 @@ function drawForestFloatZone(camX) {
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_3);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
+  drawForestFloatReturnSign(camX);
   drawForestFloatReturnLever(camX);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
