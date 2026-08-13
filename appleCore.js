@@ -14777,6 +14777,14 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // it go ("floats off into oblivion").
 const FOREST_RIVER_BOAT_PILE_START_X = FOREST_FLOAT_ZONE_START_X + 30;
 const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
+// one pile per rest stop -- per direct request ("add leaf boats to each
+// lily pad if not already there"), covers the two lily pads that got
+// added later in the "make it longer" pass and didn't get a pile of
+// their own yet. Kept as its own list (rather than folding LILYPAD in
+// too) since the very first pile still sits at the zone's calm start,
+// on the ground, not on a pad -- that one keeps its own dedicated
+// constant/tolerance above.
+const FOREST_RIVER_BOAT_LILYPADS = [FOREST_FLOAT_LILYPAD, FOREST_FLOAT_LILYPAD_2, FOREST_FLOAT_LILYPAD_3];
 // periodic "notice me" shake on the leaf piles, same pattern the spring
 // wiggle bush uses for its hidden bucket -- a cosmetic jitter that
 // plays every several seconds to signal "this is a thing you can pick
@@ -14785,18 +14793,30 @@ const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
 // a bush in spring that has the bucket behind it"). Stops for good
 // once the player has actually grabbed a boat at least once -- like
 // the bush, nothing left to draw attention to after that.
+// one notice entry per pile now (start + 3 lily pads) -- index 0 is
+// always the start pile, indices 1-3 line up with FOREST_RIVER_BOAT_LILYPADS.
 let forestRiverBoatPileEverGrabbed = false;
 const FOREST_RIVER_BOAT_PILE_NOTICE = [
-  { noticeTimer: 3000 + Math.random() * 2000, noticeWiggle: 0 },
-  { noticeTimer: 4500 + Math.random() * 2000, noticeWiggle: 0 }
+  { noticeTimer: 1200 + Math.random() * 1000, noticeWiggle: 0 },
+  { noticeTimer: 1800 + Math.random() * 1000, noticeWiggle: 0 },
+  { noticeTimer: 2400 + Math.random() * 1000, noticeWiggle: 0 },
+  { noticeTimer: 3000 + Math.random() * 1000, noticeWiggle: 0 }
 ];
+// per direct request ("lets make them a little more obvious to
+// interact with") -- first shake now fires almost immediately instead
+// of making the player wait several seconds to even see the cue, and
+// repeats much more often (was 7-11s between shakes, now 3-5s) so the
+// pile doesn't go quiet for long stretches while the player is nearby
+// deciding what to do. Shake amplitude also raised (see shakeX/scalePulse
+// below in drawForestRiverBoatPile) so it reads as a clearer nudge, not
+// just a faint jitter easy to miss against the water's own motion.
 function updateForestRiverBoatPileNotice(deltaTime) {
   if (forestRiverBoatPileEverGrabbed) return;
   FOREST_RIVER_BOAT_PILE_NOTICE.forEach(n => {
     n.noticeTimer -= deltaTime * 1000;
     if (n.noticeTimer <= 0) {
       n.noticeWiggle = 180;
-      n.noticeTimer = 7000 + Math.random() * 4000;
+      n.noticeTimer = 3000 + Math.random() * 2000;
     }
     if (n.noticeWiggle > 0) n.noticeWiggle--;
   });
@@ -14819,8 +14839,8 @@ function forestRiverBoatSnagChance(ob) {
 function updateForestRiverBoats() {
   const now = performance.now();
   const nearFloatZone = player.x > FOREST_FLOAT_ZONE_START_X - 20 && player.x < FOREST_FLOAT_ZONE_END_X;
-  // pickup -- either the launch-point pile or the lily pad's, empty-handed, tap space.
-  // Deliberately an else-if against the launch check below -- both piles
+  // pickup -- the launch-point pile or any lily pad's, empty-handed, tap space.
+  // Deliberately an else-if against the launch check below -- all piles
   // sit well inside the float zone's own bounds, so the SAME spacebar
   // press that triggers the pickup would otherwise also immediately
   // satisfy the launch condition one line later and drop it right back
@@ -14829,7 +14849,7 @@ function updateForestRiverBoats() {
   // pickup/charge zones).
   if (!heldItem && keys.spaceJustPressed &&
       (isPlayerNear(FOREST_RIVER_BOAT_PILE_START_X, 0, 26, 20, 20) ||
-       isPlayerNear(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, 30, 24, 16))) {
+       FOREST_RIVER_BOAT_LILYPADS.some(pad => isPlayerNear(pad.x, pad.heightAboveGround, 30, 24, 16)))) {
     heldItem = "leafBoat";
     forestRiverBoatPileEverGrabbed = true;
     // stop the notice-shake at its rest position instead of freezing
@@ -14889,10 +14909,31 @@ function drawForestRiverBoatPile(worldX, heightAboveGround, camX, notice) {
   if (lx < -30 || lx > canvas.width + 30) return;
   const ly = gy - heightAboveGround;
   const now = performance.now();
+  // a faint, always-on breathing ring under the pile -- per direct
+  // request ("lets make them a little more obvious to interact with").
+  // Unlike the shake (which only plays every few seconds), this reads
+  // as "something's here" even in the gap between shakes, without being
+  // as loud/attention-grabbing as the shake+glint combo.
+  if (!forestRiverBoatPileEverGrabbed) {
+    const ringPulse = 0.5 + 0.5 * Math.sin(now * 0.0026);
+    ctx.save();
+    ctx.translate(lx, ly + 2);
+    ctx.strokeStyle = `rgba(255,255,210,${(0.12 + ringPulse * 0.16).toFixed(3)})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 9 + ringPulse * 2, 4 + ringPulse * 1, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   // the periodic notice-shake -- same sine-driven jitter formula the
   // spring wiggle bush uses, only active while notice.noticeWiggle is
-  // counting down (see updateForestRiverBoatPileNotice)
-  const shakeX = notice && notice.noticeWiggle > 0 ? Math.sin(notice.noticeWiggle * 0.4) * 1.8 : 0;
+  // counting down (see updateForestRiverBoatPileNotice). Amplitude
+  // raised (was 1.8) and a small scale-pulse added on top of the shake
+  // so the whole pile briefly reads bigger/bouncier, not just jittering
+  // sideways -- per the same "more obvious" request above.
+  const shaking = notice && notice.noticeWiggle > 0;
+  const shakeX = shaking ? Math.sin(notice.noticeWiggle * 0.4) * 2.6 : 0;
+  const scalePulse = shaking ? 1 + Math.sin(notice.noticeWiggle * 0.4) * 0.1 : 1;
   const spots = [{ dx: -3, dy: 0, rot: 0.3, seed: 0 }, { dx: 3, dy: -1, rot: -0.4, seed: 1.7 }];
   spots.forEach(s => {
     const sway = Math.sin(now * 0.0016 + s.seed) * 0.12;
@@ -14900,6 +14941,7 @@ function drawForestRiverBoatPile(worldX, heightAboveGround, camX, notice) {
     ctx.save();
     ctx.translate(lx + s.dx + shakeX, ly + s.dy + bob);
     ctx.rotate(s.rot + sway);
+    ctx.scale(scalePulse, scalePulse);
     ctx.fillStyle = "rgba(10,10,5,0.16)";
     ctx.beginPath();
     ctx.ellipse(0, 3, 5.5, 2, 0, 0, Math.PI * 2);
@@ -14921,7 +14963,9 @@ function drawForestRiverBoatPile(worldX, heightAboveGround, camX, notice) {
 
 function drawForestRiverBoatPiles(camX) {
   drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_START_X, 0, camX, FOREST_RIVER_BOAT_PILE_NOTICE[0]);
-  drawForestRiverBoatPile(FOREST_RIVER_BOAT_PILE_LILYPAD_X, FOREST_FLOAT_LILYPAD.heightAboveGround, camX, FOREST_RIVER_BOAT_PILE_NOTICE[1]);
+  FOREST_RIVER_BOAT_LILYPADS.forEach((pad, i) => {
+    drawForestRiverBoatPile(pad.x, pad.heightAboveGround, camX, FOREST_RIVER_BOAT_PILE_NOTICE[i + 1]);
+  });
 }
 
 function drawForestRiverBoats(camX) {
@@ -19589,11 +19633,32 @@ function updateForestScene(deltaTime) {
         ? (player.y <= 2 && playerDuckAmount > 0.6 && floatDuckOpenAmount(ob) > FOREST_FLOAT_DUCK_OPEN_THRESHOLD)
         : player.y > ob.clearance;
       // spiky rocks reset their "already bounced this pass" flag once
-      // the player drifts back out of range, so the NEXT approach can
-      // bounce again too
-      if (ob.spiky && !within) ob.bounced = false;
+      // the player drifts back out of range AND the post-bounce grace
+      // window has passed (see ob.bounceGraceUntil below), so the NEXT
+      // approach can bounce again too.
+      //
+      // CONFIRMED BUG FIX ("i press right for the whole time and during
+      // that jump or duck get kicked back to the beginning after a few
+      // seconds"): the drift push (plus the player's own walk speed on
+      // top of it) carries the player back into `within` range well
+      // under a second after a bounce -- faster than a real player can
+      // read what happened and line up a fresh jump. If that next
+      // attempt also comes up short, they get bounced again from the
+      // exact same spot, and again, forever -- an inescapable loop that
+      // reads as being thrown all the way back rather than one
+      // knockback. The grace window below keeps the obstacle from
+      // re-arming until a moment after the bounce, giving a real
+      // runway to walk clear and set up an actual jump.
+      if (ob.spiky && !within && (!ob.bounceGraceUntil || performance.now() > ob.bounceGraceUntil)) ob.bounced = false;
       if (within && !passable) {
-        if (ob.spiky && player.y <= 4) {
+        // only the FIRST failed landing this approach actually launches
+        // the player -- once bounced (and still inside the grace
+        // window below), a repeat failure just falls through to the
+        // normal soft horizontal clamp everything else gets, so the
+        // gate still blocks progress but stops re-launching the player
+        // every time drift carries them back into range. See the
+        // CONFIRMED BUG FIX comment above.
+        if (ob.spiky && player.y <= 4 && !ob.bounced) {
           // thrown back toward the left, once per approach (not
           // re-triggered every single frame while still in range) --
           // a real punishing knockback instead of the gentle edge-nudge
@@ -19611,11 +19676,13 @@ function updateForestScene(deltaTime) {
           // punishes an actual failed landing, matching "if you LAND on
           // it you're thrown off" -- a real in-progress jump instead
           // just gets the normal soft horizontal clamp below.
-          if (!ob.bounced) {
-            player.x = obX - ob.w / 2 - player.width - 90;
-            player.vy = 0;
-            ob.bounced = true;
-          }
+          player.x = obX - ob.w / 2 - player.width - 90;
+          player.vy = 0;
+          ob.bounced = true;
+          // 900ms grace before this gate can bounce the player again,
+          // even if drift carries them back into range before then --
+          // see the CONFIRMED BUG FIX comment above.
+          ob.bounceGraceUntil = performance.now() + 900;
         } else if (floatCenterX < obX) {
           player.x = obX - ob.w / 2 - player.width - 1;
           player.vx = 0;
