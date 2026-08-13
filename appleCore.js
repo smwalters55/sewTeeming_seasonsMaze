@@ -19277,7 +19277,12 @@ const forestSnake = {
 // something" -- especially since the marble itself was picked up a
 // long way back, in the ratroom, and is easy to forget about by the
 // time the player reaches the forest.
-const SNAKE_BLOCKED_HINT_DURATION = 2200;
+// CONFIRMED CHANGE ("you can barely read the first line before the
+// text disappears, wait a few beats"): both this and the ask hint's
+// duration below were too short for two full sentences of dialogue --
+// stretched out with the same fade-in/hold/fade-out proportions, just
+// over a longer total window.
+const SNAKE_BLOCKED_HINT_DURATION = 4500;
 let snakeBlockedHint = { active: false, t: 0, x: 0, heightAboveGround: 0 };
 
 // the snake's own ask -- shown proactively the first time it's actually
@@ -19287,7 +19292,7 @@ let snakeBlockedHint = { active: false, t: 0, x: 0, heightAboveGround: 0 };
 // above still covers reminding a returning player who's forgotten.
 let snakeAskShown = false;
 let snakeAskActive = false;
-const SNAKE_ASK_HINT_DURATION = 3200;
+const SNAKE_ASK_HINT_DURATION = 5500; // see SNAKE_BLOCKED_HINT_DURATION's note -- same fix, same reason
 let snakeAskT = 0;
 // CONFIRMED CHANGE ("i really lean away from hint bubbles when
 // possible" -> "i would prefer another e.g. dialogue from the snake
@@ -50742,6 +50747,20 @@ forestSnake.dockedAt = "A";
 forestSnake.currentX = forestSnake.dockA.x;
 forestSnake.t = 0;
 forestSnake.firstDepartureTriggered = true;
+// CONFIRMED BUG FIX ("why is snake moving backwards all the sudden"):
+// forcing dockedAt to "A" here without also updating prevDir/targetDir
+// left them at the object's own DEFAULT facing (-1/-1, left) -- correct
+// for the real default dock (B, first leg travels B->A leftward) but
+// wrong for a snake forced to start at A, whose first real leg travels
+// A->B (rightward). The head rotation is driven entirely by
+// prevDir/targetDir (see drawForestSnake's headDir calc), not by the
+// snake's actual x movement, so the mismatch meant the head stayed
+// facing left the whole time while the body visibly slid right -- reading
+// exactly like it was moving backwards. Matches the direction a REAL
+// arrival at dock A would set (see the dockedAt-swap block above:
+// arriving at A sets targetDir = 1).
+forestSnake.prevDir = 1;
+forestSnake.targetDir = 1;
 // per direct request, tester needs these on hand right at spawn
 // CONFIRMED BUG FIX ("tab through inventory... doesn't seem to [work]"):
 // setting inventory[type] directly here (the original version of this
