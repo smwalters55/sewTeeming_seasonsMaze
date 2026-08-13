@@ -11605,19 +11605,39 @@ let fallingVinePeanuts = []; // {x, heightAboveGround, falling}
 // day-gating), since without an item to protect there's no reason to make
 // it scarce.
 const PEANUT_VINE_TOP_THRESHOLD = 30; // how close to full climbHeight counts as "at the top"
+
+// shared by the bird-visit trigger below AND the climb-snap-into-the-nest
+// logic in updateDigPlantVine -- both need the exact same "are we at the
+// top" answer so the player settling into the nest and the bird deciding
+// to fly in happen at the same moment, not slightly out of sync.
+function peanutVineAtTop() {
+  return peanutVine.mounted && peanutVine.grown &&
+    peanutVine.playerClimbHeight >= peanutVine.climbHeight - PEANUT_VINE_TOP_THRESHOLD;
+}
+
+// the little nest at the very top of the vine -- once the player reaches
+// the top they're snapped to sit centered inside it (see updateDigPlantVine)
+// instead of continuing to spiral side to side, and the visiting bird
+// below flies specifically into the nest next to them.
+const PEANUT_VINE_NEST_HEIGHT_OFFSET = 26; // how far below the vine's true top the nest sits, leaving a little stem visible above it
+function peanutVineNestHeight() {
+  return peanutVine.climbHeight - PEANUT_VINE_NEST_HEIGHT_OFFSET;
+}
+
 const vineBirdVisit = {
   state: "idle", // idle | flyingIn | snuggling | flyingOut
   t: 0,
   hasVisitedThisStay: false, // guards against re-triggering every frame while just sitting at the top
-  side: 1 // which side of the player the bird nestles against, re-rolled each visit
+  side: 1 // which side of the nest the bird settles on, re-rolled each visit
 };
 const VINE_BIRD_FLY_IN_DURATION = 900;
-const VINE_BIRD_SNUGGLE_DURATION = 3400;
+// CONFIRMED CHANGE ("make the beat a lil short that bird is thaere
+// cuddling") -- trimmed down from the original 3400ms
+const VINE_BIRD_SNUGGLE_DURATION = 2200;
 const VINE_BIRD_FLY_OUT_DURATION = 800;
 
 function updateVineBirdVisit(deltaTime) {
-  const atTop = peanutVine.mounted && peanutVine.grown &&
-    peanutVine.playerClimbHeight >= peanutVine.climbHeight - PEANUT_VINE_TOP_THRESHOLD;
+  const atTop = peanutVineAtTop();
 
   if (!atTop) {
     // left the top (or dismounted) -- reset so the next arrival triggers a
@@ -22923,6 +22943,17 @@ function drawDigSitePlantVine(camX) {
       const topX = dx + Math.sin(peanutVine.climbHeight * 0.05) * 15;
       drawCloudBlossomShape(ctx, topX, pitDepth - (peanutVine.climbHeight - 20), 12, 0);
     }
+
+    // the nest at the top -- player auto-settles into it once they reach
+    // the top (see peanutVineAtTop's snap in updateDigPlantVine), and the
+    // vine-top bird visit flies specifically into it. Anchored to the same
+    // polyline the vine itself is drawn with (peanutVineSegmentXAt), same
+    // fix as the occlusion segment, so it doesn't float off to the side.
+    if (peanutVine.grown) {
+      const nestHeight = peanutVineNestHeight();
+      const nestX = dx + peanutVineSegmentXAt(nestHeight);
+      drawPeanutVineNest(nestX, pitDepth - nestHeight);
+    }
   }
 
   // falling / settled vine-dropped peanuts
@@ -22944,6 +22975,81 @@ function peanutVineDepthAt(h) {
   return Math.cos(h * 0.05);
 }
 
+// mirrors the exact polyline drawDigSitePlantVine draws (segments sampled
+// every ~40 units of height, straight lines between samples) -- at that
+// sample density the sine spiral is under-sampled into a visible zigzag,
+// so the drawn vine line does NOT sit exactly on the raw continuous
+// sin(h*0.05)*15 curve except right at the sample points. The occlusion
+// segment below needs to align with the ACTUAL drawn line (not the ideal
+// curve) or it drifts off to the side and reads as a disconnected stray
+// mark instead of the vine itself -- exactly the "green line to the left
+// of player" bug this fixes.
+function peanutVineSegmentXAt(h) {
+  const currentHeight = peanutVine.grown ? peanutVine.climbHeight : peanutVine.growProgress * peanutVine.climbHeight;
+  if (currentHeight <= 0) return 0;
+  const segments = Math.max(2, Math.round(currentHeight / 40));
+  const hClamped = Math.max(0, Math.min(h, currentHeight));
+  const segLen = currentHeight / segments;
+  const segIndex = Math.min(segments - 1, Math.floor(hClamped / segLen));
+  const hLo = segIndex * segLen, hHi = (segIndex + 1) * segLen;
+  const xLo = Math.sin(hLo * 0.05) * 15, xHi = Math.sin(hHi * 0.05) * 15;
+  const localT = segLen > 0 ? (hClamped - hLo) / segLen : 0;
+  return xLo + (xHi - xLo) * localT;
+}
+
+// small woven nest the player settles into at the top of the vine --
+// twigs, a woven rim, and a couple of decorative eggs (not the player's,
+// just dressing, matching the "quiet rest stop, not another collectible"
+// direction). x/y are already the nest's own screen position (see the
+// call site in drawDigSitePlantVine).
+function drawPeanutVineNest(nx, ny) {
+  ctx.save();
+  ctx.translate(nx, ny);
+
+  // woven twig strands across the bowl, alternating tone for a basket-weave read
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8;
+    const wx = -22 + t * 44;
+    const bow = Math.sin(t * Math.PI) * 7;
+    ctx.strokeStyle = i % 2 === 0 ? "#8a6a3a" : "#a3824a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(wx, -bow * 0.15);
+    ctx.quadraticCurveTo(wx * 0.7, 8, wx * 0.4, 12 + bow * 0.3);
+    ctx.stroke();
+  }
+
+  // woven rim along the front edge -- thicker double-line, same "hand-
+  // wound" feel as the twig strands underneath
+  ctx.strokeStyle = "#7a5a30";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 24, 8, 0, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+  ctx.strokeStyle = "#b3945a";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.ellipse(0, 1, 24, 8, 0, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+
+  // a couple of small speckled eggs tucked in the corner
+  [[-14, 5], [-8, 7.5]].forEach(([ex, ey], i) => {
+    ctx.fillStyle = "#e8ddc0";
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(140,110,70,0.5)";
+    for (let s = 0; s < 3; s++) {
+      const sa = pseudoRandom(i * 13.1 + s * 3.3 + 1) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(ex + Math.cos(sa) * 1.6, ey + Math.sin(sa) * 1.8, 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  ctx.restore();
+}
+
 // redraws a short stretch of vine directly over the climbing player,
 // sized to cover their whole sprite (not just a thin slice) -- gives the
 // illusion of spiraling around behind the vine rather than always
@@ -22952,7 +23058,7 @@ function peanutVineDepthAt(h) {
 function drawPeanutVineOcclusionSegment(camX) {
   const dx = digSite.x - camX;
   const h = peanutVine.playerClimbHeight;
-  const segX = dx + Math.sin(h * 0.05) * 15;
+  const segX = dx + peanutVineSegmentXAt(h);
   const bottomY = gy + cameraY - player.y;
   const topY = bottomY - player.height;
   ctx.strokeStyle = "#5a8a4a";
@@ -23044,18 +23150,22 @@ function drawSmallBirdShape(x, y, side, wingFlap, snuggling) {
 }
 
 // drives the bird's on-screen position through its own flight/snuggle/
-// flight-out arc and calls the shape draw above. Anchored to the
-// PLAYER'S OWN screen position (same gy + cameraY - player.height -
-// player.y formula the main player sprite draw uses), not a world x/y,
-// since the vine's spiral climb keeps moving the player around underneath it.
+// flight-out arc and calls the shape draw above. CONFIRMED CHANGE ("add a
+// lil nest at the top of the peanut vine too... that the bird flies
+// into") -- anchored to the NEST's own position now, not the player's,
+// since the bird visit only ever plays while the player is settled at the
+// top (peanutVineAtTop), and flying specifically into the nest reads
+// better than just tucking against whichever side of the player it landed on.
 function drawVineBirdVisit(camX) {
   if (vineBirdVisit.state === "idle") return;
 
-  const anchorX = player.x - camX + player.width / 2;
-  const anchorY = gy + cameraY - player.height - player.y + player.height * 0.4; // roughly chest height
+  const dx = digSite.x - camX;
+  const nestHeight = peanutVineNestHeight();
+  const nestX = dx + peanutVineSegmentXAt(nestHeight);
+  const nestY = gy + cameraY + PEANUT_PIT_DEPTH - nestHeight;
   const side = vineBirdVisit.side;
-  const restX = anchorX + side * (player.width / 2 + 2); // a couple px of overlap -- reads as leaning against, not floating beside
-  const restY = anchorY + 4;
+  const restX = nestX + side * 11; // a cozy spot in the nest just to one side of the player
+  const restY = nestY - 6;
 
   let bx, by, wingFlap;
   const snuggling = vineBirdVisit.state === "snuggling";
@@ -23187,6 +23297,15 @@ function updateDigPlantVine(deltaTime) {
       if (peanutVine.playerClimbHeight <= 0) {
         peanutVine.mounted = false;
         player.y = 0;
+      } else if (peanutVineAtTop()) {
+        // CONFIRMED CHANGE ("add a lil nest at the top of the peanut vine
+        // too where player auto goes inside at the top") -- once at the
+        // top, stop spiraling side to side and settle at the nest's own
+        // spot on the vine instead, same polyline-aligned x the nest
+        // itself draws at (see peanutVineSegmentXAt) so the player visibly
+        // sits centered inside it rather than clinging to one side.
+        player.x = peanutVine.x + peanutVineSegmentXAt(peanutVineNestHeight());
+        player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
       } else {
         player.x = peanutVine.x + Math.sin(peanutVine.playerClimbHeight * 0.05) * 15; // spiral
         player.y = peanutVine.playerClimbHeight - PEANUT_PIT_DEPTH;
@@ -48999,6 +49118,35 @@ function drawSandboxSkyShape(sx, sy, size, sides, rotation, palette, seed) {
     const radJitter = 0.82 + pseudoRandom(seed + idx * 5.1 + 1) * 0.36;
     pts.push([Math.cos(a + angJitter) * size * radJitter, Math.sin(a + angJitter) * size * radJitter]);
   }
+
+  // CONFIRMED CHANGE ("make it more 3D like, show the lines that would
+  // show through the semi-translucent front"): the facets themselves were
+  // already translucent (see each palette's alpha), but nothing existed
+  // for that translucency to actually reveal -- same gap the microscope's
+  // salt crystal solved with its hidden back corner. Adds a smaller inner
+  // "back face" copy of this same silhouette, drawn faintly FIRST so its
+  // edges read as showing through once the real (translucent) facets glaze
+  // over them on top, exactly like the crystal's backBot corner lines.
+  const backPts = pts.map(([x, y]) => [x * 0.42, y * 0.42]);
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const [x1, y1] = backPts[i], [x2, y2] = backPts[i + 1];
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  }
+  ctx.stroke();
+  // spokes from center out to the back face's own vertices -- the actual
+  // "lines showing through the front" the ask was about
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const [bx, by] = backPts[i];
+    ctx.moveTo(0, 0);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+
   for (let i = 0; i < sides; i++) {
     const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
     const midAngle = (i / sides) * Math.PI * 2 + Math.PI / sides;
@@ -50295,7 +50443,10 @@ if (currentScene === "forest") {
 // depth < 0 means they're currently on the "behind" side of that spiral.
 // Drawn here, after the player sprite has already rendered, so the
 // redrawn vine segment actually covers them rather than sitting under them.
-if (currentScene === "spring" && peanutVine.mounted && peanutVineDepthAt(peanutVine.playerClimbHeight) < 0) {
+// Skipped once at the top -- the player stops spiraling and settles into
+// the nest there (see peanutVineAtTop in updateDigPlantVine), so the
+// spiral depth phase no longer means anything.
+if (currentScene === "spring" && peanutVine.mounted && !peanutVineAtTop() && peanutVineDepthAt(peanutVine.playerClimbHeight) < 0) {
   drawPeanutVineOcclusionSegment(camX);
 }
 
