@@ -15609,6 +15609,7 @@ function drawForestScene(camX) {
   drawForestGroundMushrooms(camX);
   // the rock climb, further out past the tree -- same reasoning, called
   // directly rather than nested in anything else that could cull it off.
+  drawForestSwimHoleRocks(camX);
   drawForestSwimHolePreview(camX);
   drawForestRockClimb(camX);
   drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
@@ -17784,6 +17785,98 @@ const FOREST_SWIM_HOLE_HEIGHT = 76;
 // distance below the ledge (580-420=160px), without needing to touch the
 // climb's own camera-follow formula.
 const FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND = 420;
+
+// CONFIRMED CHANGE ("below it we should see semi-realistic rocks, and
+// then rocks on the right side of it, to show this is a pool high up in
+// the rocks. this is before entry"): the preview pool was floating in
+// open grass with nothing actually supporting it -- a real mountain pool
+// this high up would be set INTO rock, not just sitting on grass. Adds a
+// jagged rock mass bridging the pool down to true ground level (reading
+// as the outcrop it's carved into) plus a second mass flanking its right
+// side, mirroring the real climbable cliff that already flanks its left
+// -- so from the ledge it reads as "a pool nestled between rocks," not a
+// puddle floating in a field. Same broken-rock color palette as
+// drawForestRockWall for visual consistency between the two rock
+// features. Drawn BEFORE the water fill (see drawForestSwimHolePreview's
+// own call order) so the water's own clip still reads as sitting on top
+// of/inside the rock.
+function forestSwimHoleRockJag(seed, t, spread) {
+  return (pseudoRandom(seed + Math.floor(t * 10) * 3.7) - 0.5) * spread +
+    Math.sin(t * 7 + seed) * spread * 0.35;
+}
+function drawForestSwimHoleRocks(camX) {
+  const px = FOREST_SWIM_HOLE_X - camX;
+  const w = FOREST_SWIM_HOLE_WIDTH, h = FOREST_SWIM_HOLE_HEIGHT;
+  if (px < -w * 1.5 || px > canvas.width + w * 1.5) return;
+  const poolY = gy - FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND;
+
+  const grad = ctx.createLinearGradient(px - w / 2, 0, px + w / 2, 0);
+  grad.addColorStop(0, "#453f37");
+  grad.addColorStop(0.42, "#665f52");
+  grad.addColorStop(0.55, "#726a5a");
+  grad.addColorStop(1, "#332e27");
+  ctx.fillStyle = grad;
+
+  // rock mass BELOW the pool, bridging down to true ground level -- reads
+  // as the outcrop the pool is carved into, high above the forest floor
+  const belowTop = poolY + h * 0.15; // starts a little inside the ellipse's own bottom, so the water reads as sitting IN the rock rather than floating just above it
+  const belowBottom = gy + 40;
+  const belowSteps = 10;
+  ctx.beginPath();
+  for (let i = 0; i <= belowSteps; i++) {
+    const t = i / belowSteps;
+    const y = belowTop + (belowBottom - belowTop) * t;
+    ctx.lineTo(px - w * 0.42 + forestSwimHoleRockJag(11.3, t, 26), y);
+  }
+  for (let i = belowSteps; i >= 0; i--) {
+    const t = i / belowSteps;
+    const y = belowTop + (belowBottom - belowTop) * t;
+    ctx.lineTo(px + w * 0.42 + forestSwimHoleRockJag(47.9, t, 26), y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // rock mass on the RIGHT side, flanking the pool the way the real
+  // climbable cliff already flanks its left
+  const rightInner = px + w * 0.38;
+  const rightOuter = px + w * 0.68;
+  const rightTop = poolY - h * 0.7;
+  const rightBottom = poolY + h * 0.5;
+  const rightSteps = 8;
+  ctx.beginPath();
+  for (let i = 0; i <= rightSteps; i++) {
+    const t = i / rightSteps;
+    const y = rightTop + (rightBottom - rightTop) * t;
+    ctx.lineTo(rightInner + forestSwimHoleRockJag(23.1, t, 18), y);
+  }
+  for (let i = rightSteps; i >= 0; i--) {
+    const t = i / rightSteps;
+    const y = rightTop + (rightBottom - rightTop) * t;
+    ctx.lineTo(rightOuter + forestSwimHoleRockJag(61.4, t, 22), y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // a few restrained crack lines + moss patches, lighter-touch than the
+  // main climbable wall since this is just a background decoration
+  ctx.strokeStyle = "rgba(20,16,10,0.35)";
+  ctx.lineWidth = 1.4;
+  [0.2, 0.5, 0.75].forEach((t, i) => {
+    const y0 = belowTop + (belowBottom - belowTop) * t;
+    ctx.beginPath();
+    ctx.moveTo(px - 20 + i * 15, y0);
+    ctx.lineTo(px - 20 + i * 15 + pseudoRandom(i * 3.1) * 14 - 7, y0 + 22);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "rgba(70,90,50,0.28)";
+  [0.3, 0.6, 0.85].forEach((t, i) => {
+    const y0 = belowTop + (belowBottom - belowTop) * t;
+    ctx.beginPath();
+    ctx.ellipse(px - w * 0.3 + i * 30, y0, 8, 4, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawForestSwimHolePreview(camX) {
   const px = FOREST_SWIM_HOLE_X - camX;
   const w = FOREST_SWIM_HOLE_WIDTH, h = FOREST_SWIM_HOLE_HEIGHT;
@@ -17803,6 +17896,26 @@ function drawForestSwimHolePreview(camX) {
   grad.addColorStop(1, "rgba(12,45,60,1)");
   ctx.fillStyle = grad;
   ctx.fillRect(px - w, poolY - h, w * 2, h * 2);
+
+  // CONFIRMED CHANGE ("also show some of the plants at the bottom of the
+  // pool"): a handful of small tapered-blade tufts near the bottom-inside
+  // of the preview water, same silhouette style as the real pool's own
+  // POOL_PLANTS "blade" type, simplified since this is just a small
+  // background preview seen from a distance. Drawn inside this same
+  // clip, so they only show up submerged within the ellipse.
+  const floorY = poolY + h / 2 - 4;
+  [-0.28, -0.08, 0.1, 0.3].forEach((frac, i) => {
+    const bx = px + frac * w;
+    const bh = 14 + pseudoRandom(i * 4.4) * 10;
+    const sway = Math.sin(fireflyT * 0.0011 + i * 2.1) * 3;
+    ctx.fillStyle = "rgba(50,100,68,0.85)";
+    ctx.beginPath();
+    ctx.moveTo(bx - 2, floorY);
+    ctx.quadraticCurveTo(bx - 1 + sway * 0.5, floorY - bh * 0.55, bx + sway, floorY - bh);
+    ctx.quadraticCurveTo(bx + 1 + sway * 0.5, floorY - bh * 0.55, bx + 2, floorY);
+    ctx.closePath();
+    ctx.fill();
+  });
 
   const wobble = Math.sin(fireflyT * 0.0018) * 2.5;
   ctx.strokeStyle = "rgba(220,245,250,0.55)";
