@@ -52627,12 +52627,23 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Back in the SANDBOX, now in front of the
-// new inward-facing duo trampolines (was in front of the original ground
-// trampoline). Remove/move this block again once done testing -- it
+// URL param, no extra steps). Now in the FOREST, in front of the new
+// fungus tree climb (was in the sandbox, in front of the duo
+// trampolines). Remove/move this block again once done testing -- it
 // overrides every load, same as every earlier round of this.
-currentScene = "sandbox";
-player.x = sandboxTrampolineDuo.mats[0].x - 70;
+//
+// The fungus tree sits past the river-crossing log bridge, and that
+// bridge normally has to be built segment by segment before you can walk
+// past x~4340-4800 at all (see forestRiverSegmentsStrung/Decked) --
+// without also marking it built here, spawning past it would just get
+// silently snapped back to the near bank every frame (found this exact
+// behavior while testing the fungus climb itself). Marking it built is
+// debug-spawn-only; the real in-game crossing still has to be earned
+// normally, this just skips it for testing what's beyond it.
+currentScene = "forest";
+forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+player.x = FOREST_FUNGUS_TREE_X - 120;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
