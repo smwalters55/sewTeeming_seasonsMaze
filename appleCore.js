@@ -2800,6 +2800,24 @@ function applyPhysics(){
       }
     }
 
+    // CONFIRMED CHANGE ("what you think about doing this w fungius on a
+    // tree in forest to hget up to the rock pool"): the forest fungus
+    // climb's own elevated mid-flight catch -- same shape/same fix as the
+    // sandbox tower's own check right above (only test the single level
+    // this flight is actually targeting, via forestFungusClimb.level, not
+    // every level's band -- see that check's own comment for the real
+    // repro this avoids).
+    if (currentScene === "forest" && player.launchSteerable && player.vy < 0 && forestFungusClimb.level >= 1) {
+      const level = forestFungusClimb.levels[forestFungusClimb.level];
+      if (Math.abs(player.y - level.height) <= FOREST_FUNGUS_BAND) {
+        const fungusHit = level.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < FOREST_FUNGUS_RADIUS);
+        if (fungusHit) {
+          forestFungusLaunch(fungusHit, forestFungusClimb.level);
+          return;
+        }
+      }
+    }
+
     // CONFIRMED CHANGE ("throwing player on pile"): this generic
     // launched-flight path was built for the spring's cloud-launch (see
     // the goalCloud check just below) and otherwise "ignores platforms/
@@ -2881,6 +2899,20 @@ function applyPhysics(){
         sandboxTrampolineDuo.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
       if (duoRelandHit) {
         sandboxTrampolineDuoLaunch(duoRelandHit, 0);
+        return;
+      }
+      // CONFIRMED BUG FIX ("fungius on a tree"): same fix, forest side --
+      // a level-0 fungus flight returning to y<=0 needs this same
+      // mid-flight re-catch (the elevated per-frame check further up only
+      // covers level 1+, since level 0 is ground and normally caught by
+      // the non-launched ground-collision fungusHit check below -- but
+      // that check never runs for an ALREADY-launched flight, only a
+      // fresh fall, so without this the very first within-level bounce
+      // back to the other cap always missed and landed plainly instead).
+      const fungusRelandHit = currentScene === "forest" && player.launchSteerable &&
+        forestFungusClimb.levels[0].mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < FOREST_FUNGUS_RADIUS);
+      if (fungusRelandHit) {
+        forestFungusLaunch(fungusRelandHit, 0);
         return;
       }
       player.y = 0;
@@ -3011,6 +3043,11 @@ function applyPhysics(){
   const duoHit = currentScene === "sandbox" && player.vy < -1 &&
     sandboxTrampolineDuo.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
 
+  // the forest fungus climb's own ground-level catch -- see
+  // forestFungusClimb's own comment for the full design rationale
+  const fungusHit = currentScene === "forest" && player.vy < -1 &&
+    forestFungusClimb.levels[0].mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < FOREST_FUNGUS_RADIUS);
+
   if (player.y <= 0) {
     if (currentScene === "sandbox" && player.vy < -1 &&
         Math.abs(player.x + player.width / 2 - sandboxTrampoline.x) < SANDBOX_TRAMPOLINE_RADIUS) {
@@ -3036,6 +3073,8 @@ function applyPhysics(){
       angledHit.squishT = 0;
     } else if (duoHit) {
       sandboxTrampolineDuoLaunch(duoHit, 0);
+    } else if (fungusHit) {
+      forestFungusLaunch(fungusHit, 0);
     } else {
       player.y = 0;
       player.jumping = false;
@@ -3052,6 +3091,13 @@ function applyPhysics(){
       // credit" feel as the streak reset already had.
       sandboxTrampolineDuo.streak = 0;
       sandboxTrampolineDuo.level = 0;
+      // CONFIRMED CHANGE ("fungius on a tree"): same reset, forest side --
+      // any plain ground landing anywhere in the forest drops a fungus
+      // climb back to level 0 too. Harmless outside the forest (state
+      // just sits unused), same as the tower reset above being harmless
+      // outside the sandbox.
+      forestFungusClimb.streak = 0;
+      forestFungusClimb.level = 0;
     }
   }
 
@@ -16470,6 +16516,208 @@ const FOREST_FLOAT_COLLECTIBLES = [
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5700, collected: false, minY: 113 }  // right over the final closing gate
 ];
 
+// CONFIRMED CHANGE ("what you think about doing this w fungius on a tree
+// in forest to hget up to the rock pool"): the actual connector Sam's
+// been wanting between Rushing River and the still-unbuilt swim hole/rock
+// pool -- climb a tree via bracket-fungus growths using the same bounce-
+// chain physics as the sandbox's trampoline tower, right past where the
+// float zone lets out (so the natural flow is: float the river, pull the
+// return lever's neighbor... actually climb the tree BEFORE looping back,
+// see FOREST_FUNGUS_TREE_X's own placement comment). Tuned deliberately
+// GENTLER than the sandbox tower per direct feedback ("itas a lil hard
+// tto get to each level") -- wider catch radius/band, closer mat spacing,
+// only 2 tiers per level instead of 4, and just 3 total levels instead of
+// 4, so both the aim and the climb length ask less of the player. Kept
+// entirely within the existing ~300px headroom above gy (heights 0/100/
+// 200) rather than adding forest-wide vertical camera-scroll support --
+// the sandbox tower's climb needed that (height 460) but this shorter,
+// gentler climb doesn't, so this avoids a much bigger, riskier edit to
+// drawForestScene/updateForestScene for no benefit here.
+//
+// Top of the climb (height 200) is the actual "you've reached the rock"
+// arrival point -- same as the trampoline tower, the rock/pool itself is
+// deliberately NOT built yet ("not sure yet / decide after seeing it
+// built" was the tower's own answer to the same question, and this is
+// the same open call): it just caps out with repeating max-tier bounces
+// for now, same as the tower's own top.
+//
+// Positioned well clear of the float zone's own return lever
+// (FOREST_FLOAT_RETURN_LEVER_X) with real breathing room, in open space
+// past the end of the float zone -- nothing else is built out here yet.
+const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 200;
+// CONFIRMED BUG FIX (found via a real held-key playtest): the tiers/
+// promotion physics below were tuned for a 60px MAT-TO-MAT gap (the
+// actual travel distance a bounce needs to cover), but the two caps were
+// originally placed 60px on EITHER side of the trunk -- a 120px gap, so
+// every tier fell exactly half short and landed in the empty space
+// between the caps instead of reaching the far one. FOREST_FUNGUS_DX is
+// the full mat-to-mat gap; caps sit at +/- half of it from the trunk.
+const FOREST_FUNGUS_DX = 60;
+function forestFungusLevelMats(height) {
+  return [
+    { x: FOREST_FUNGUS_TREE_X - FOREST_FUNGUS_DX / 2, height, dir: 1, squishT: 9999 },
+    { x: FOREST_FUNGUS_TREE_X + FOREST_FUNGUS_DX / 2, height, dir: -1, squishT: 9999 }
+  ];
+}
+const forestFungusClimb = {
+  levels: [
+    { height: 0, mats: forestFungusLevelMats(0) },
+    { height: 100, mats: forestFungusLevelMats(100) },
+    { height: 200, mats: forestFungusLevelMats(200) }
+  ],
+  streak: 0, // consecutive fungus catches at the CURRENT level, same shape as sandboxTrampolineDuo.streak -- indexes FOREST_FUNGUS_TIERS
+  level: 0   // which level of forestFungusClimb.levels the player is currently chaining bounces on
+};
+// wider than the sandbox tower's own SANDBOX_TRAMPOLINE_DUO_RADIUS (40)
+// and SANDBOX_TRAMPOLINE_TOWER_BAND (45) -- the direct ask was for this
+// to be a gentler, more forgiving climb, and a wider catch window is the
+// most direct way to make that true regardless of skill.
+const FOREST_FUNGUS_RADIUS = 55;
+const FOREST_FUNGUS_BAND = 65;
+// CONFIRMED CHANGE: only 2 tiers (not the tower's 4) -- fewer required
+// back-and-forth bounces before a level promotes, since the tower
+// feedback was specifically about the CLIMB feeling hard, not just any
+// one bounce. Found via the same real per-frame physics simulation
+// technique as the tower's own tiers, tuned for this climb's tighter
+// FOREST_FUNGUS_DX (60, vs the tower's 100).
+const FOREST_FUNGUS_TIERS = [
+  { tiltDeg: 9.5, speed: 6.5 },
+  { tiltDeg: 5.5, speed: 8.5 }
+];
+// the level-to-level promotion bounce, same translation-invariant idea as
+// SANDBOX_TRAMPOLINE_PROMOTE_TILT/SPEED -- one angle/speed pair works for
+// every level transition since gravity doesn't care about absolute
+// height, only the relative rise (here, the fixed 100px gap between
+// levels). Swept numerically until landing reliably falls within
+// FOREST_FUNGUS_BAND of +100 height at the opposite cap's x.
+const FOREST_FUNGUS_PROMOTE_TILT = 7;
+const FOREST_FUNGUS_PROMOTE_SPEED = 10;
+const FOREST_FUNGUS_SQUISH_MS = 220;
+
+// shared by the ground-collision catch AND the mid-flight elevated catch
+// inside applyPhysics' own launched-block (see sandboxTrampolineDuoLaunch
+// for the full rationale behind this shape -- same pattern, forest-scoped
+// constants/state instead of sandbox's).
+function forestFungusLaunch(mat, levelIdx) {
+  const levels = forestFungusClimb.levels;
+  const atMaxTier = forestFungusClimb.streak >= FOREST_FUNGUS_TIERS.length - 1;
+  const canPromote = atMaxTier && levelIdx < levels.length - 1;
+  const baseHeight = levels[levelIdx].height;
+
+  if (canPromote) {
+    const rad = FOREST_FUNGUS_PROMOTE_TILT * Math.PI / 180;
+    player.y = baseHeight;
+    player.vx = Math.sin(rad) * FOREST_FUNGUS_PROMOTE_SPEED * mat.dir;
+    player.vy = Math.cos(rad) * FOREST_FUNGUS_PROMOTE_SPEED;
+    forestFungusClimb.streak = 0;
+    forestFungusClimb.level = levelIdx + 1;
+  } else {
+    const idx = Math.min(forestFungusClimb.streak, FOREST_FUNGUS_TIERS.length - 1);
+    const tier = FOREST_FUNGUS_TIERS[idx];
+    const rad = tier.tiltDeg * Math.PI / 180;
+    player.y = baseHeight;
+    player.vx = Math.sin(rad) * tier.speed * mat.dir;
+    player.vy = Math.cos(rad) * tier.speed;
+    forestFungusClimb.streak++;
+    forestFungusClimb.level = levelIdx;
+  }
+
+  player.launched = true;
+  player.launchGravityMult = 1;
+  player.launchPeakHeight = player.y;
+  player.launchSteerable = true;
+  player.launchBaseVx = player.vx;
+  player.launchSteerOffset = 0;
+  player.jumping = true;
+  player.usedDoubleJump = false;
+  mat.squishT = 0;
+}
+
+function updateForestFungusClimb(deltaTime) {
+  forestFungusClimb.levels.forEach(level => {
+    level.mats.forEach(t => {
+      if (t.squishT < FOREST_FUNGUS_SQUISH_MS) t.squishT += deltaTime * 1000;
+    });
+  });
+}
+
+// a rounded bracket-fungus cap growing straight out of the trunk, same
+// "compress toward the trunk right on impact, spring back over
+// SQUISH_MS" language the sandbox mats already use, just shelf-fungus
+// shaped (a flattened dome, no rim/springs) instead of a stretched mat in
+// a ring, and always facing outward from the trunk rather than tilting
+// with a launch angle -- the trunk itself, not the cap, reads as "in
+// front of/behind" the player, so the cap doesn't need to lean.
+function drawForestFungusCap(camX, t) {
+  const sx = t.x - camX;
+  const cy = gy - t.height;
+  const side = t.dir; // 1 = cap sits to the +x side of the trunk, -1 = to the -x side
+  const capRx = 24, capRy = 14;
+
+  const squishP = Math.min(t.squishT / FOREST_FUNGUS_SQUISH_MS, 1);
+  const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
+  const rx = capRx - squish * 4;
+  const ry = Math.max(3, capRy - squish * 5);
+  // offset toward the trunk's own edge (roughly +/-16 at this height) so
+  // the cap visibly attaches to the bark rather than floating over it
+  const capCx = sx + side * (16 + rx * 0.6);
+
+  const capGrad = ctx.createRadialGradient(capCx - side * rx * 0.3, cy - ry * 0.3, 2, capCx, cy, rx * 1.3);
+  capGrad.addColorStop(0, "#d9a25c");
+  capGrad.addColorStop(0.55, "#b97a3f");
+  capGrad.addColorStop(1, "#7a4f28");
+  ctx.fillStyle = capGrad;
+  ctx.beginPath();
+  ctx.ellipse(capCx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // gill underside -- a few dark parallel lines, like a real bracket
+  // fungus's pore surface, reads as organic rather than a plain blob
+  ctx.strokeStyle = "rgba(60,36,18,0.35)";
+  ctx.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(capCx - rx * 0.7, cy + i * 2.2);
+    ctx.lineTo(capCx + rx * 0.7, cy + i * 2.4);
+    ctx.stroke();
+  }
+}
+
+function drawForestFungusClimb(camX) {
+  const sx = FOREST_FUNGUS_TREE_X - camX;
+  const topHeight = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height + 40;
+
+  // trunk -- a simple tapered wedge, dark bark tone matching the forest's
+  // own muted palette, tall enough to back every fungus level plus a
+  // little headroom above the top one
+  const trunkGrad = ctx.createLinearGradient(sx - 22, 0, sx + 22, 0);
+  trunkGrad.addColorStop(0, "#2c2016");
+  trunkGrad.addColorStop(0.5, "#4a3521");
+  trunkGrad.addColorStop(1, "#241a11");
+  ctx.fillStyle = trunkGrad;
+  ctx.beginPath();
+  ctx.moveTo(sx - 26, gy);
+  ctx.lineTo(sx - 16, gy - topHeight);
+  ctx.lineTo(sx + 16, gy - topHeight);
+  ctx.lineTo(sx + 26, gy);
+  ctx.closePath();
+  ctx.fill();
+
+  // a few bark ridge lines for texture, nothing elaborate
+  ctx.strokeStyle = "rgba(20,14,8,0.4)";
+  ctx.lineWidth = 2;
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(sx + i * 10, gy);
+    ctx.quadraticCurveTo(sx + i * 12 + i * 6, gy - topHeight * 0.5, sx + i * 8, gy - topHeight);
+    ctx.stroke();
+  }
+
+  forestFungusClimb.levels.forEach(level => {
+    level.mats.forEach(t => drawForestFungusCap(camX, t));
+  });
+}
+
 // leaf/bark boats -- launched right where the current starts, well
 // before the first obstacle (+160), so there's a real calm stretch to
 // watch one drift before anything gets busy. Per direct request ("do
@@ -17679,6 +17927,7 @@ function drawForestFloatZone(camX) {
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
   drawForestFloatReturnSign(camX);
   drawForestFloatReturnLever(camX);
+  drawForestFungusClimb(camX);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     const ox = floatObstacleX(ob) - camX;
@@ -21586,6 +21835,7 @@ function updateForestScene(deltaTime) {
   updateForestRiverFrog();
   updateForestRiverBoatPileNotice(deltaTime);
   updateForestFloatReturnLever(deltaTime);
+  updateForestFungusClimb(deltaTime);
 
   // ZEN SAND RAKE -- diorama-style open, same trigger pattern as the
   // sandbox wig stand: walk up, press space, open the contained inset.
