@@ -1170,6 +1170,14 @@ function updateSeasonTransition(deltaTime) {
         delete inventory.pearStick;
         delete inventory.peachStick;
         if (heldItem === "plumStick" || heldItem === "pearStick" || heldItem === "peachStick") heldItem = null;
+        // CONFIRMED CHANGE ("using the honey in spring, after you leave
+        // spring it leaves inventory"): honey's only real use (the graft
+        // tree dabs) lives entirely in spring, same as the sticks above --
+        // so it gets the same "local to spring, dropped on exit" treatment
+        // instead of sitting in inventory forever afterward doing nothing.
+        delete inventory.honey;
+        honeyScoops = 0;
+        if (heldItem === "honey") heldItem = null;
         updateInventoryUI();
       }
       if (currentScene === "forest" && seasonTransition.targetScene !== "forest" && heldItem === "log") {
@@ -18051,9 +18059,13 @@ function drawForestSwimHolePreview(camX) {
                      the shared player draw code) giving the "half in
                      water, calming down" tail end for a beat after.
    ====================================================== */
-const POOL_DIVE_JUMP_MS = 380;
-const POOL_DIVE_SPLASH_MS = 650;
-const POOL_DIVE_SWAP_AT_MS = 190; // mid-splash, not at either end
+// CONFIRMED CHANGE ("lets slow the splash animation just a little"): all
+// three bumped ~20% (jump/splash duration, and the swap-at trigger scaled
+// proportionally so the scene swap still lands at the same ~29% point
+// through the splash) -- a deliberate slow-down, not a bug.
+const POOL_DIVE_JUMP_MS = 460;
+const POOL_DIVE_SPLASH_MS = 780;
+const POOL_DIVE_SWAP_AT_MS = 230; // mid-splash, not at either end
 const POOL_DIVE_SETTLE_MS = 750; // post-arrival half-submerged calm-down tail
 
 let poolDive = {
@@ -18946,7 +18958,14 @@ const POOL_LOOPS = [
   { x: 660, y: -210 },
   { x: 800, y: -90 },
   { x: 950, y: -190 }
-].map((l, i) => ({ x: l.x, y: l.y, rx: 34, ry: 44, seed: i * 7.3, inside: false }));
+].map((l, i) => ({
+  x: l.x, y: l.y, rx: 34, ry: 44, seed: i * 7.3, inside: false,
+  // CONFIRMED CHANGE ("make the ovals in pool look more 3d. like they are
+  // slightly angled"): a small fixed per-loop tilt, seeded so it's stable
+  // across frames (not animated/shimmering) and varies loop to loop so
+  // they don't all read as identical stamped ovals.
+  tiltAngle: (pseudoRandom(i * 5.3) - 0.5) * 0.5
+}));
 
 const POOL_LOOP_SPARKLE_DURATION_MS = 700;
 // active sparkle bursts, {x, y, startedAt} -- pruned as they age out. This
@@ -18983,6 +19002,42 @@ function updatePoolLoops() {
   poolLoopSparkles = poolLoopSparkles.filter(s => now - s.startedAt < POOL_LOOP_SPARKLE_DURATION_MS);
 }
 
+// CONFIRMED CHANGE ("make the ovals in pool look more 3d. like they are
+// slightly angled and that we go through them"): shared ring-drawing
+// helper so every loop reads as a tilted, lit "tube" rather than a single
+// flat painted oval -- a lighting gradient runs along each loop's own
+// tiltAngle (bright near/top edge fading to a darker shadow far/bottom
+// edge), plus a slightly-smaller inner stroke and slightly-smaller-still
+// inner highlight to suggest real ring thickness. Takes ABSOLUTE screen
+// coordinates (sx, sy) so it works both from drawPoolLoops' own
+// already-cameraY-translated call site and drawPoolLoopOcclusion's plain
+// screen-space one, with no transform active in either case (drawPoolLoops
+// draws directly in its caller's translated space; drawPoolLoopOcclusion
+// resets to identity before calling this).
+function drawPoolLoopRingTube(sx, sy, loop) {
+  const dx = Math.sin(loop.tiltAngle) * loop.ry;
+  const dyG = Math.cos(loop.tiltAngle) * loop.ry;
+  const grad = ctx.createLinearGradient(sx - dx, sy - dyG, sx + dx, sy + dyG);
+  grad.addColorStop(0, "rgba(255,255,255,0.9)");
+  grad.addColorStop(0.5, "rgba(170,225,235,0.5)");
+  grad.addColorStop(1, "rgba(35,85,105,0.55)");
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, loop.rx, loop.ry, loop.tiltAngle, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(20,55,70,0.4)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, loop.rx - 6, loop.ry - 6, loop.tiltAngle, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, loop.rx - 9, loop.ry - 9, loop.tiltAngle, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 // world-space pass, drawn INSIDE drawPoolScene's own cameraY-translated
 // block (see its ctx.translate(0, cameraY) above) -- so screenY here is
 // just gy - loop.y, matching every other world-space draw in that block.
@@ -18990,16 +19045,7 @@ function drawPoolLoops(camX) {
   POOL_LOOPS.forEach(loop => {
     const sx = loop.x - camX;
     const sy = gy - loop.y;
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.ellipse(sx, sy, loop.rx, loop.ry, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(120,210,230,0.4)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(sx, sy, loop.rx - 5, loop.ry - 5, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    drawPoolLoopRingTube(sx, sy, loop);
   });
 }
 
@@ -19048,12 +19094,8 @@ function drawPoolLoopOcclusion(camX) {
     ctx.beginPath();
     ctx.rect(-R, -R, R, R * 2); // local x in [-R, 0] -- the entry-side half-plane, opposite the travel direction
     ctx.clip();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // clip stays applied (device-space); draw the ellipse unrotated in plain screen coords
-    ctx.strokeStyle = "rgba(255,255,255,0.75)";
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.ellipse(sx, sy, loop.rx, loop.ry, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // clip stays applied (device-space); draw the ellipse unrotated (except its own tiltAngle) in plain screen coords
+    drawPoolLoopRingTube(sx, sy, loop);
     ctx.restore();
   });
 }
