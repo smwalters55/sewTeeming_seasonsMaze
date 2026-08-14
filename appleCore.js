@@ -2767,6 +2767,35 @@ function applyPhysics(){
   // above.
   if (player.rockClingIndex !== -1) return;
 
+  // CONFIRMED CHANGE ("if fall down and overlap a grab band, land player
+  // on it"): every grab elsewhere on this climb requires a deliberate
+  // press -- correct for climbing UP, but missing while already up the
+  // wall (falling back down, whether from a whiffed release or just
+  // stepping off) felt too punishing when it meant sailing straight past
+  // every lower handhold all the way to the ground. This auto-lands on
+  // whichever handhold's band the player happens to be falling through,
+  // no press needed -- a soft catch on the way down, not a new way to
+  // climb up (this only fires while vy<=0, i.e. already descending).
+  // Checked here, before both the launched-flight branch and the plain
+  // ground-fall physics below, so it applies whether the fall started
+  // from a release (player.launched) or from just stepping off a ledge.
+  if (currentScene === "forest" && player.vy <= 0) {
+    const fallCatch = FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
+      Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
+    if (fallCatch) {
+      player.rockClingIndex = FOREST_ROCK_HANDHOLDS.indexOf(fallCatch);
+      player.x = fallCatch.x - player.width / 2;
+      player.y = fallCatch.height;
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      player.launched = false;
+      player.launchSteerable = false;
+      return;
+    }
+  }
+
   // while mid-bounce off the seesaw, gravity is handled inside updateSeesaw
   // itself (slower descent than standard) — skip normal gravity here
   if (player.onSeesawBounce) return;
@@ -17534,6 +17563,15 @@ function drawForestRockLedge(camX) {
 // whole thing an actual surface to be climbing (see forestRockWallEdgeX
 // for the jaggedness itself, per "make it look like a raggeeeeddy rock
 // wall... it looks like a smooth pip right now").
+// CONFIRMED CHANGE ("make rock visually more real rock-ier"): the jagged
+// silhouette fix addressed the OUTLINE, but the fill itself was still
+// one smooth gradient wash -- real rock reads as an uneven patchwork of
+// individual facets, each catching light a little differently, not a
+// single continuous surface. Rebuilt in three passes: (1) the base fill,
+// unchanged; (2) a grid of irregular polygon FACETS, each independently
+// seeded lighter or darker, laid over the base so the face reads as cut/
+// broken stone rather than a smooth wash; (3) the crack lines, moss
+// patches, and highlight blotches from before, kept and expanded.
 function drawForestRockWall(camX) {
   const topHeight = forestRockWallTopHeight();
   const baseX = FOREST_ROCK_CLIMB_X - camX;
@@ -17563,24 +17601,81 @@ function drawForestRockWall(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // a handful of darker crack lines and lighter texture patches, fixed
-  // (not random per frame) so the face doesn't shimmer
-  ctx.strokeStyle = "rgba(20,18,14,0.35)";
+  // clip to the wall's own silhouette so every facet/crack/moss patch
+  // below stays inside the jagged outline instead of spilling past it
+  ctx.save();
+  ctx.clip();
+
+  // faceted shading -- a loose grid of irregular quads, each own-shade
+  // (seeded, not random per frame), reading as broken/cut rock planes
+  // rather than one smooth surface
+  const FACET_ROWS = 9, FACET_COLS = 4;
+  for (let row = 0; row < FACET_ROWS; row++) {
+    const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
+    const y0 = bottomY - topHeight * t0, y1 = bottomY - topHeight * t1;
+    const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
+    const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
+    for (let col = 0; col < FACET_COLS; col++) {
+      const seed = row * 31.7 + col * 5.3;
+      const cf0 = col / FACET_COLS, cf1 = (col + 1) / FACET_COLS;
+      const jx = k => (pseudoRandom(seed + k) - 0.5) * 10; // small per-corner jitter, breaks up the grid regularity
+      const x00 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf0 + jx(1);
+      const x01 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf1 + jx(2);
+      const x10 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf0 + jx(3);
+      const x11 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf1 + jx(4);
+      const shade = pseudoRandom(seed + 9);
+      // alternates between a darker recessed facet and a lighter one
+      // catching more light, weighted toward subtle so it reads as
+      // texture, not a checkerboard
+      ctx.fillStyle = shade > 0.5
+        ? `rgba(160,152,132,${0.05 + (shade - 0.5) * 0.22})`
+        : `rgba(20,17,13,${0.05 + (0.5 - shade) * 0.26})`;
+      ctx.beginPath();
+      ctx.moveTo(x00, y0);
+      ctx.lineTo(x01, y0);
+      ctx.lineTo(x11, y1);
+      ctx.lineTo(x10, y1);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // a handful of darker crack lines, more of them now and reaching
+  // further across facets, fixed (not random per frame) so the face
+  // doesn't shimmer
+  ctx.strokeStyle = "rgba(15,13,10,0.45)";
   ctx.lineWidth = 2;
-  [0.15, 0.4, 0.62, 0.82].forEach((t, i) => {
+  [0.1, 0.28, 0.4, 0.52, 0.62, 0.74, 0.82, 0.92].forEach((t, i) => {
     const y = bottomY - topHeight * t;
-    const xOff = (i % 2 === 0 ? -1 : 1) * (18 + i * 6);
+    const xOff = (i % 2 === 0 ? -1 : 1) * (16 + (i % 4) * 8);
+    const seed = i * 4.1;
     ctx.beginPath();
     ctx.moveTo(baseX + xOff, y);
-    ctx.lineTo(baseX + xOff * 0.4, y - 45);
+    ctx.lineTo(baseX + xOff * 0.5 + (pseudoRandom(seed) - 0.5) * 14, y - 22);
+    ctx.lineTo(baseX + xOff * 0.2 + (pseudoRandom(seed + 1) - 0.5) * 14, y - 42);
     ctx.stroke();
   });
-  ctx.fillStyle = "rgba(150,145,130,0.18)";
-  [0.2, 0.45, 0.7].forEach(t => {
+
+  // lighter texture blotches (unchanged from before, kept)
+  ctx.fillStyle = "rgba(150,145,130,0.16)";
+  [0.2, 0.45, 0.7, 0.88].forEach(t => {
     ctx.beginPath();
     ctx.ellipse(baseX + (t > 0.4 ? 30 : -25), bottomY - topHeight * t, 26, 16, 0.3, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  // moss/lichen patches -- small irregular green-grey blobs clustered
+  // toward the base and in a couple of cracks, since that's where real
+  // forest rock actually collects growth. Kept muted/desaturated so it
+  // reads as weathering, not a bright green highlight.
+  ctx.fillStyle = "rgba(90,102,68,0.4)";
+  [[0.06, -40, 22], [0.1, 28, 16], [0.3, -50, 12], [0.55, 34, 10]].forEach(([t, xo, r]) => {
+    ctx.beginPath();
+    ctx.ellipse(baseX + xo, bottomY - topHeight * t, r, r * 0.55, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
 }
 
 function drawForestRockClimb(camX) {
