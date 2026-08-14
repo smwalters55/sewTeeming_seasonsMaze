@@ -53051,7 +53051,19 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   // this same clip. Generous horizontal padding costs nothing since
   // there's nothing else in this narrow vertical strip to accidentally
   // reveal.
-  ctx.rect(px - 24, 0, player.width + 48, gy); // only the region above ground level is visible
+  // CONFIRMED BUG FIX ("at this height in pool player disappears"): this
+  // clip's fixed height (0..gy) assumes ground level always renders at
+  // screen y=gy -- true everywhere else, but the pool's fixed cameraY
+  // shift (see POOL_CAMERA_Y) moves its whole depth range further down
+  // the screen than that, so a deep enough dive put drawPy past gy and
+  // got its lower half silently sliced off by this same clip -- same
+  // root cause family as the visibility-gate fix just above, just a
+  // second place that made the same "ground is always at gy" assumption.
+  // Pool has no hole-fall concept this clip needs to protect against, so
+  // it just gets a tall-enough bottom bound to cover its full dive depth
+  // instead of the generic gy.
+  const groundClipBottom = currentScene === "pool" ? gy + cameraY + POOL_MAX_DEPTH + 80 : gy;
+  ctx.rect(px - 24, 0, player.width + 48, groundClipBottom); // only the region above ground level is visible
   ctx.clip();
 
   // CONFIRMED BUG FIX ("wig still pokes out the side... mid ladder,
