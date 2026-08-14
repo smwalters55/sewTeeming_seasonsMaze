@@ -18615,22 +18615,65 @@ function drawPoolTadpoles(camX) {
     ctx.stroke();
 
     if (t.morphing) {
-      // two tiny sprouting hind legs, trailing off the lower body just
-      // ahead of the shortened tail -- the real telltale sign of a
-      // tadpole partway through turning into a frog, well before the
-      // front legs or the tail fully disappear
-      const legWag = Math.sin(fireflyT * 0.01 + t.seed + 2) * 1.2;
-      ctx.strokeStyle = "rgba(45,55,35,0.75)";
-      ctx.lineWidth = 1.3;
+      // CONFIRMED VISUAL FIX ("the half frog tadpool doesnt look right at
+      // all. show some lil frog legs coming out that you can see the
+      // little webbed toes kinda"): the old version was a single straight
+      // stroke with a plain dot at the tip -- didn't read as a leg at
+      // all, let alone a webbed one, at this tiny scale. Rebuilt as a
+      // proper two-segment BENT hind leg (thigh + shin, the actual
+      // silhouette a real frog leg reads as) ending in a small fanned-out
+      // 3-toe foot -- each toe its own splayed stroke off a shared base
+      // point, with a faint filled triangle between them so the webbing
+      // itself is visible, not just implied.
+      // CONFIRMED VISUAL FIX ROUND 2: the first pass was proportioned too
+      // close to the old single-stroke version and got lost at this
+      // creature's tiny on-screen scale (canvas is only 800x400 internal
+      // px). Legs and the toe fan both scaled up substantially, and the
+      // two legs pushed further apart vertically so they read as two
+      // distinct limbs instead of overlapping into one blob.
+      const legWag = Math.sin(fireflyT * 0.01 + t.seed + 2) * 1.6;
+      ctx.lineCap = "round";
       [-1, 1].forEach(side => {
-        ctx.beginPath();
-        ctx.moveTo(sx - t.dir * 1.5, sy + side * 1.8);
-        ctx.lineTo(sx - t.dir * 4.5 + legWag * side, sy + side * 3.6);
+        const hipX = sx - t.dir * 1, hipY = sy + side * 3;
+        const kneeX = hipX - t.dir * 6, kneeY = hipY + side * 6 + legWag * 0.5;
+        const footX = kneeX - t.dir * 3.5 + legWag * side, footY = kneeY + side * 5.5;
+
+        ctx.strokeStyle = "rgba(46,58,34,0.9)";
+        ctx.lineWidth = 2.1;
+        ctx.beginPath(); // thigh
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(kneeX, kneeY);
         ctx.stroke();
-        // tiny webbed foot at the tip
+        ctx.lineWidth = 1.7;
+        ctx.beginPath(); // shin
+        ctx.moveTo(kneeX, kneeY);
+        ctx.lineTo(footX, footY);
+        ctx.stroke();
+
+        // webbed foot -- 3 short toes splayed from the shin's own
+        // direction, with a translucent web fill between them
+        const toeBaseAngle = Math.atan2(footY - kneeY, footX - kneeX);
+        const toeSpread = 0.65, toeLen = 4.2;
+        const toePts = [-1, 0, 1].map(k => ({
+          x: footX + Math.cos(toeBaseAngle + k * toeSpread) * toeLen,
+          y: footY + Math.sin(toeBaseAngle + k * toeSpread) * toeLen
+        }));
+        ctx.fillStyle = "rgba(60,74,45,0.6)";
         ctx.beginPath();
-        ctx.ellipse(sx - t.dir * 4.5 + legWag * side, sy + side * 3.6, 1, 0.7, 0, 0, Math.PI * 2);
+        ctx.moveTo(footX, footY);
+        ctx.lineTo(toePts[0].x, toePts[0].y);
+        ctx.lineTo(toePts[1].x, toePts[1].y);
+        ctx.lineTo(toePts[2].x, toePts[2].y);
+        ctx.closePath();
         ctx.fill();
+        ctx.strokeStyle = "rgba(46,58,34,0.95)";
+        ctx.lineWidth = 1.2;
+        toePts.forEach(p => {
+          ctx.beginPath();
+          ctx.moveTo(footX, footY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        });
       });
     }
   });
@@ -18656,36 +18699,55 @@ function drawPoolSalamander(camX) {
   if (sx < -40 || sx > canvas.width + 40) return;
   const d = s.dir;
   const legWag = Math.sin(performance.now() * 0.008) * 2;
-  ctx.fillStyle = "rgba(80,60,90,0.85)"; // muted purple-brown, distinct from the greens/reds already down here
+  // CONFIRMED VISUAL FIX ("where is my salamander"): it was rendering
+  // correctly all along, but at its old size/color it visually vanished
+  // into the floor clutter (pebbles/plants/sand right where it walks) --
+  // muted purple-brown at a small scale reads as just more floor texture
+  // from a normal viewing distance. Scaled up ~35% (SC below) and
+  // recolored to a real fire-salamander look -- a near-black body with
+  // bright warm-orange blotches -- so it actually pops against the
+  // teal/green palette everything else down here uses.
+  const SC = 1.35;
+  ctx.fillStyle = "rgba(35,28,32,0.92)"; // near-black body, real salamander contrast
   // tail -- long, gently waving
   ctx.strokeStyle = ctx.fillStyle;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.6 * SC;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(sx - d * 8, floorY - 3);
-  ctx.quadraticCurveTo(sx - d * 16, floorY - 3 + legWag, sx - d * 24, floorY - 3 - legWag * 0.6);
+  ctx.moveTo(sx - d * 8 * SC, floorY - 3);
+  ctx.quadraticCurveTo(sx - d * 16 * SC, floorY - 3 + legWag, sx - d * 24 * SC, floorY - 3 - legWag * 0.6);
   ctx.stroke();
   // body
   ctx.beginPath();
-  ctx.ellipse(sx, floorY - 3, 9, 3.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx, floorY - 3, 9 * SC, 3.6 * SC, 0, 0, Math.PI * 2);
   ctx.fill();
+  // bright orange blotches down the back -- the real fire-salamander
+  // marking, and the main thing that makes it actually visible at a glance
+  ctx.fillStyle = "rgba(235,130,35,0.95)";
+  [[-5, -1.6], [0, 1.6], [5.5, -1.4]].forEach(([bx, by]) => {
+    ctx.beginPath();
+    ctx.ellipse(sx + bx * SC, floorY - 3 + by, 1.8 * SC, 1.2 * SC, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "rgba(35,28,32,0.92)";
+  ctx.lineWidth = 1.6 * SC; // legs are thinner than the tail, not inheriting its fat stroke
   // 4 short legs, front/back pairs alternating with the wag
   [[-4, 1], [4, -1]].forEach(([dx, phase]) => {
     [-1, 1].forEach(side => {
       const wag = Math.sin(performance.now() * 0.008 + phase * 1.5) * 1.5;
       ctx.beginPath();
-      ctx.moveTo(sx + dx * d, floorY - 1 + side * 2);
-      ctx.lineTo(sx + (dx + phase * wag) * d, floorY + 2 + side * 2.5);
+      ctx.moveTo(sx + dx * SC * d, floorY - 1 + side * 2);
+      ctx.lineTo(sx + (dx + phase * wag) * SC * d, floorY + 2 + side * 2.5 * SC);
       ctx.stroke();
     });
   });
   // small round head with two dot eyes
   ctx.beginPath();
-  ctx.ellipse(sx + d * 9, floorY - 3, 3.2, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx + d * 9 * SC, floorY - 3, 3.2 * SC, 2.6 * SC, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "rgba(15,10,15,0.8)";
   ctx.beginPath();
-  ctx.ellipse(sx + d * 10.5, floorY - 4, 0.8, 0.8, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx + d * 10.5 * SC, floorY - 4, 0.8, 0.8, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -18884,7 +18946,6 @@ function drawPoolLoopSparkles(camX) {
 
 function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
-  updatePoolLoops();
 
   // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
   // exact shape as updateSandboxBallPit's own swim block -- a direction
@@ -18903,6 +18964,19 @@ function updatePoolScene(deltaTime) {
 
   player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
   player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
+
+  // CONFIRMED BUG FIX ("there is lag for when which part of player is
+  // occluded while going through ovals"): this used to run at the TOP of
+  // this function, before player.x/y were updated for the current frame --
+  // so loop.inside (which drives drawPoolLoopOcclusion later this same
+  // frame) was always testing against last frame's position, one whole
+  // frame stale. Harmless-looking at a glance since draw() runs right
+  // after update() with no visible gap, but it meant the occlusion redraw
+  // was always a frame behind the player's actual on-screen position --
+  // most visible exactly where it matters, mid-pass through a loop, where
+  // it read as the wrong part of the ring flickering in front/behind.
+  // Moved here, after movement, so it reflects this frame's real position.
+  updatePoolLoops();
   player.vx = 0;
   player.vy = 0;
   player.jumping = false;
@@ -53976,6 +54050,26 @@ if (currentScene === "spring" && peanutVine.mounted && !peanutVineAtTop() && pea
 if (currentScene === "pool") {
   drawPoolLoopOcclusion(camX);
   drawPoolLoopSparkles(camX);
+
+  // CONFIRMED CHANGE ("make the animals have the occlusions oto"):
+  // critters (crayfish/snails/tadpoles/salamander/water snake) were only
+  // ever drawn once, inside drawPoolScene's own pre-player pass -- so the
+  // player sprite always rendered flatly on top of every critter it swam
+  // near or through, with no sense of actually swimming among them. Same
+  // "redraw over the player" technique as the loops just above and the
+  // sandbox ball pit's own front-layer balls (see drawSandboxBallPitBalls
+  // call elsewhere in this section): simply calling drawPoolCritters a
+  // second time here, wrapped in the same ctx.translate(0, cameraY) it
+  // normally runs inside of (drawPoolScene has already closed its own
+  // save/translate/restore by this point in the frame, so it has to be
+  // reapplied by hand, same as every other post-player redraw does). Any
+  // critter overlapping the player's silhouette now visually wraps in
+  // front of them there; everywhere else this just redraws the same
+  // pixels over themselves, invisibly.
+  ctx.save();
+  ctx.translate(0, cameraY);
+  drawPoolCritters(camX);
+  ctx.restore();
 }
 
 // pool dive splash -- droplets + ripple, drawn regardless of which scene
