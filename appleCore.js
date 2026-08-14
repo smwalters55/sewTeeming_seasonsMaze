@@ -53479,18 +53479,29 @@ const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 playerVisualDX = pileWobble.x;
 playerVisualDY = drawPy - (gy + cameraY - player.height - player.y);
 
-// shadow shrinks along with the body sinking in -- pinned to the
-// visual ground line, which itself scrolls with cameraY in tunnel
-// town's climbing shaft (a no-op everywhere else, since cameraY is 0)
-ctx.fillStyle = `rgba(60,40,20,${0.18 * (1 - fallProgress)})`;
-ctx.beginPath();
-ctx.ellipse(px + player.width/2, gy + cameraY + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
-ctx.fill();
-// ground contact tint
-ctx.fillStyle = `rgba(90,70,40,${0.08 * (1 - fallProgress)})`;
-ctx.beginPath();
-ctx.ellipse(px + player.width/2, gy + cameraY + 6, 22, 8, 0, 0, Math.PI*2);
-ctx.fill();
+// CONFIRMED BUG FIX ("shadow in water shouldnt be there while
+// swimming"): both of these are a GROUND shadow/contact tint, pinned to
+// the fixed ground line (gy+cameraY) regardless of the player's own
+// depth -- correct everywhere else (you're always standing on or falling
+// toward actual ground), but the pool has no ground under the swimmer at
+// all, so this was drawing a stray dark blob hovering near the water's
+// surface no matter how deep the player actually was. Simply skipped for
+// the pool scene, same "no ground-level concept here" treatment the
+// visibility-gate/ground-clip fixes just below already gave it.
+if (currentScene !== "pool") {
+  // shadow shrinks along with the body sinking in -- pinned to the
+  // visual ground line, which itself scrolls with cameraY in tunnel
+  // town's climbing shaft (a no-op everywhere else, since cameraY is 0)
+  ctx.fillStyle = `rgba(60,40,20,${0.18 * (1 - fallProgress)})`;
+  ctx.beginPath();
+  ctx.ellipse(px + player.width/2, gy + cameraY + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
+  ctx.fill();
+  // ground contact tint
+  ctx.fillStyle = `rgba(90,70,40,${0.08 * (1 - fallProgress)})`;
+  ctx.beginPath();
+  ctx.ellipse(px + player.width/2, gy + cameraY + 6, 22, 8, 0, 0, Math.PI*2);
+  ctx.fill();
+}
 
 // CONFIRMED BUG FIX ("player dissappears and only shadow is visible after
 // going a little lower in the water"): this gate was written assuming
