@@ -2751,6 +2751,55 @@ function applyPhysics(){
       player.launchPeakHeight = player.y;
     }
 
+    // CONFIRMED CHANGE ("tower w more going up"): the elevated tower
+    // levels (level 1+) are never reached via the y<=0 ground-collision
+    // path below -- nothing ever falls TO them from a standstill, they
+    // only exist mid-arc for an already-launched, already-promoted
+    // flight to pass through. So unlike the ground level's own catch
+    // (checked at the exact y<=0 moment further down), this checks EVERY
+    // frame of a steerable sandbox flight for whether the player is
+    // currently passing near one of the upper levels' own mats, using a
+    // generous height band since a promoted arc's peak sits right around
+    // the target level's height rather than crossing it at one exact
+    // instant (see SANDBOX_TRAMPOLINE_PROMOTE_TILT/SPEED's own comment).
+    // CONFIRMED BUG FIX #1 (found via a real held-key playtest, precise
+    // per-frame trace): without a descending check, a promotion launch
+    // FROM a level's own height (climbing away from it) stayed within
+    // that same level's catch band for several frames right after
+    // takeoff while still ascending -- immediately re-catching itself at
+    // the level it just launched from instead of ever reaching the level
+    // above, so the player was stuck bouncing in place at one height
+    // forever. Only catching while genuinely descending (same as the
+    // ground level's own vy < -1 initial-hit check) means a fresh
+    // takeoff's strong positive vy skips right past this until the arc
+    // actually peaks and comes back down near the target level.
+    //
+    // CONFIRMED BUG FIX #2 (found via the same trace, after fixing #1): a
+    // loop that checked EVERY elevated level's band each frame had a
+    // second problem -- the ground pair's own top tiers peak at ~205-265,
+    // which overlaps level 1's height band (230 +/- 45 = 185-275), so a
+    // perfectly normal high ground bounce (meant to just fall back to the
+    // ground, same mat pair) got intercepted mid-arc as if it had arrived
+    // at level 1, and since its streak was already maxed from the ground
+    // climb, that false catch immediately re-promoted it again, skipping
+    // level 1 in the trace entirely. Fixed by checking ONLY the single
+    // level this specific flight is actually bound for --
+    // sandboxTrampolineDuo.level is set at the moment of EVERY launch
+    // (both a same-level bounce and a promotion) to exactly the level
+    // that flight targets, so testing just that one level's band/mats is
+    // both sufficient and immune to any other level's band happening to
+    // overlap along the way.
+    if (currentScene === "sandbox" && player.launchSteerable && player.vy < 0 && sandboxTrampolineDuo.level >= 1) {
+      const level = sandboxTrampolineTower.levels[sandboxTrampolineDuo.level];
+      if (Math.abs(player.y - level.height) <= SANDBOX_TRAMPOLINE_TOWER_BAND) {
+        const towerHit = level.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
+        if (towerHit) {
+          sandboxTrampolineDuoLaunch(towerHit, sandboxTrampolineDuo.level);
+          return;
+        }
+      }
+    }
+
     // CONFIRMED CHANGE ("throwing player on pile"): this generic
     // launched-flight path was built for the spring's cloud-launch (see
     // the goalCloud check just below) and otherwise "ignores platforms/
@@ -2831,7 +2880,7 @@ function applyPhysics(){
       const duoRelandHit = currentScene === "sandbox" && player.launchSteerable &&
         sandboxTrampolineDuo.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
       if (duoRelandHit) {
-        sandboxTrampolineDuoLaunch(duoRelandHit);
+        sandboxTrampolineDuoLaunch(duoRelandHit, 0);
         return;
       }
       player.y = 0;
@@ -2986,7 +3035,7 @@ function applyPhysics(){
       player.usedDoubleJump = false;
       angledHit.squishT = 0;
     } else if (duoHit) {
-      sandboxTrampolineDuoLaunch(duoHit);
+      sandboxTrampolineDuoLaunch(duoHit, 0);
     } else {
       player.y = 0;
       player.jumping = false;
@@ -2997,7 +3046,12 @@ function applyPhysics(){
       // once you touch down" idea the ground trampoline's own escalating
       // bounce doesn't have to worry about (this is a fixed ladder, not a
       // fall-speed multiplier, so it needs an explicit reset point).
+      // CONFIRMED CHANGE ("tower w more going up"): a plain ground landing
+      // also drops the player back to tower level 0 -- a miss anywhere up
+      // the tower sends you all the way back down, same "no partial
+      // credit" feel as the streak reset already had.
       sandboxTrampolineDuo.streak = 0;
+      sandboxTrampolineDuo.level = 0;
     }
   }
 
@@ -42584,11 +42638,18 @@ function updateSandboxAngledTrampolineField(deltaTime) {
 // short post (reads as "propped at this angle on a stand" rather than an
 // unexplained floating tilted disc) -- the whole mat assembly rotates by
 // the trampoline's own tiltDeg around the top of the post.
-function drawSandboxAngledTrampoline(camX, t) {
+// CONFIRMED CHANGE ("tower w more going up"): accepts an optional
+// heightAboveGround (default 0) so the same mat visual can be reused for
+// the trampoline tower's elevated levels, not just ground-level angled
+// mats -- same idea as drawSandboxTrampolineChainOne's floating-platform-
+// on-a-post look, just built on top of this function's existing mat/ring/
+// spring construction instead of a second copy of it.
+function drawSandboxAngledTrampoline(camX, t, heightAboveGround) {
+  const elevated = heightAboveGround || 0;
   const sx = t.x - camX;
   const outerRx = 40, outerRy = 14;
   const postHeight = 26;
-  const pivotY = gy - postHeight;
+  const pivotY = gy - postHeight - elevated;
 
   ctx.strokeStyle = "rgba(150,130,180,0.5)";
   ctx.lineWidth = 3;
@@ -42661,9 +42722,54 @@ const sandboxTrampolineDuo = {
     { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },   // left mat -- visually leans right, flings toward the right mat
     { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }  // right mat -- visually leans left, flings toward the left mat
   ],
-  streak: 0 // consecutive duo catches without a plain-ground landing in between -- indexes SANDBOX_TRAMPOLINE_DUO_TIERS
+  streak: 0, // consecutive duo catches at the CURRENT level without a plain-ground landing in between -- indexes SANDBOX_TRAMPOLINE_DUO_TIERS
+  // CONFIRMED CHANGE ("ok now lets do tower w more going up" -> "stack
+  // more duo pairs vertically... climb the tower level by level"): which
+  // rung of sandboxTrampolineTower.levels the player is currently
+  // chaining bounces on. 0 = this original ground pair. Reset to 0 by the
+  // same plain-ground-landing path that already resets streak to 0.
+  level: 0
 };
 const SANDBOX_TRAMPOLINE_DUO_RADIUS = 40;
+// CONFIRMED CHANGE ("tower w more going up"): two more duo pairs stacked
+// directly above this ground one, same x columns (4140/4240) so the whole
+// thing reads as one tower, not three separate toys. Level 0 reuses
+// sandboxTrampolineDuo.mats itself (same objects, not a copy) so the
+// ground pair's existing behavior/squish state stays exactly as it was.
+// Levels 1/2 get their own mat objects since they're independently
+// squish-animated and drawn at their own height.
+const sandboxTrampolineTower = {
+  levels: [
+    { height: 0, mats: sandboxTrampolineDuo.mats },
+    { height: 230, mats: [
+      { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },
+      { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }
+    ] },
+    { height: 460, mats: [
+      { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },
+      { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }
+    ] }
+  ]
+};
+// vertical catch tolerance for the elevated levels' mats -- these aren't
+// caught by the normal y<=0 ground-collision path at all (nothing ever
+// falls TO them from rest), only by the mid-flight mat-proximity check
+// inside applyPhysics' own launched-block, since a promoted flight passes
+// through this level's height mid-arc rather than landing exactly at it.
+const SANDBOX_TRAMPOLINE_TOWER_BAND = 45;
+// CONFIRMED CHANGE ("tower w more going up"): the "promotion" bounce that
+// carries a player from one level up to the next, used once the ground-
+// pair-style tier ladder below has been maxed out on the current level.
+// Found via the same real per-frame simulation technique as the tier
+// ladder itself -- physics here are translation-invariant (gravity and
+// the launch math don't care about absolute height, only the relative
+// rise/run of the arc), so ONE promotion angle/speed works for every
+// level transition regardless of how high up the tower it happens: swept
+// numerically until landing consistently lands within
+// SANDBOX_TRAMPOLINE_TOWER_BAND of +230 height (the level gap) at the
+// opposite mat's x, ~100px across, same dx the ground tiers already use.
+const SANDBOX_TRAMPOLINE_PROMOTE_TILT = 10;
+const SANDBOX_TRAMPOLINE_PROMOTE_SPEED = 12;
 // CONFIRMED BUG FIX (found via a real per-frame physics simulation, not a
 // guess): a first pass reused a single steep tiltDeg (55) for the actual
 // launch, matching the mat's own visual lean -- but under this floaty
@@ -42694,13 +42800,38 @@ const SANDBOX_TRAMPOLINE_DUO_SQUISH_MS = 260;
 // handler (see that handler's own comment for why a second call site was
 // needed at all) -- keeping the actual launch math in one place so the
 // two triggers can never drift out of sync with each other.
-function sandboxTrampolineDuoLaunch(mat) {
-  const idx = Math.min(sandboxTrampolineDuo.streak, SANDBOX_TRAMPOLINE_DUO_TIERS.length - 1);
-  const tier = SANDBOX_TRAMPOLINE_DUO_TIERS[idx];
-  const rad = tier.tiltDeg * Math.PI / 180;
-  player.y = 0;
-  player.vx = Math.sin(rad) * tier.speed * mat.dir;
-  player.vy = Math.cos(rad) * tier.speed;
+//
+// CONFIRMED CHANGE ("tower w more going up"): now takes the level the hit
+// mat belongs to. Once the ground-pair-style tier ladder is maxed out on
+// the CURRENT level, the next catch promotes to the next level up instead
+// of just repeating the max tier forever at the same height -- that's the
+// actual "climb" of the tower. Capped at the top level (nothing above it
+// yet to promote into), where it just keeps repeating the max tier like
+// the original ground-only duo always did.
+function sandboxTrampolineDuoLaunch(mat, levelIdx) {
+  const levels = sandboxTrampolineTower.levels;
+  const atMaxTier = sandboxTrampolineDuo.streak >= SANDBOX_TRAMPOLINE_DUO_TIERS.length - 1;
+  const canPromote = atMaxTier && levelIdx < levels.length - 1;
+  const baseHeight = levels[levelIdx].height;
+
+  if (canPromote) {
+    const rad = SANDBOX_TRAMPOLINE_PROMOTE_TILT * Math.PI / 180;
+    player.y = baseHeight;
+    player.vx = Math.sin(rad) * SANDBOX_TRAMPOLINE_PROMOTE_SPEED * mat.dir;
+    player.vy = Math.cos(rad) * SANDBOX_TRAMPOLINE_PROMOTE_SPEED;
+    sandboxTrampolineDuo.streak = 0;
+    sandboxTrampolineDuo.level = levelIdx + 1;
+  } else {
+    const idx = Math.min(sandboxTrampolineDuo.streak, SANDBOX_TRAMPOLINE_DUO_TIERS.length - 1);
+    const tier = SANDBOX_TRAMPOLINE_DUO_TIERS[idx];
+    const rad = tier.tiltDeg * Math.PI / 180;
+    player.y = baseHeight;
+    player.vx = Math.sin(rad) * tier.speed * mat.dir;
+    player.vy = Math.cos(rad) * tier.speed;
+    sandboxTrampolineDuo.streak++;
+    sandboxTrampolineDuo.level = levelIdx;
+  }
+
   player.launched = true;
   player.launchGravityMult = 1;
   player.launchPeakHeight = player.y;
@@ -42710,17 +42841,20 @@ function sandboxTrampolineDuoLaunch(mat) {
   player.jumping = true;
   player.usedDoubleJump = false;
   mat.squishT = 0;
-  sandboxTrampolineDuo.streak++;
 }
 
 function updateSandboxTrampolineDuo(deltaTime) {
-  sandboxTrampolineDuo.mats.forEach(t => {
-    if (t.squishT < SANDBOX_TRAMPOLINE_DUO_SQUISH_MS) t.squishT += deltaTime * 1000;
+  sandboxTrampolineTower.levels.forEach(level => {
+    level.mats.forEach(t => {
+      if (t.squishT < SANDBOX_TRAMPOLINE_DUO_SQUISH_MS) t.squishT += deltaTime * 1000;
+    });
   });
 }
 
 function drawSandboxTrampolineDuo(camX) {
-  sandboxTrampolineDuo.mats.forEach(t => drawSandboxAngledTrampoline(camX, t));
+  sandboxTrampolineTower.levels.forEach(level => {
+    level.mats.forEach(t => drawSandboxAngledTrampoline(camX, t, level.height));
+  });
 }
 
 // dark stretched mat inside a metal ring, short angled legs, springs
