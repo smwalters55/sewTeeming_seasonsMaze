@@ -52243,11 +52243,12 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Back in the SANDBOX, in front of the
-// trampoline. Remove/move this block again once done testing -- it
+// URL param, no extra steps). Back in the SANDBOX, now in front of the
+// new inward-facing duo trampolines (was in front of the original ground
+// trampoline). Remove/move this block again once done testing -- it
 // overrides every load, same as every earlier round of this.
 currentScene = "sandbox";
-player.x = sandboxTrampoline.x - 70;
+player.x = sandboxTrampolineDuo.mats[0].x - 70;
 player.y = 0;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
