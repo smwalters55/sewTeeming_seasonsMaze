@@ -54514,24 +54514,30 @@ updateSeasonTransition(deltaTime);
 }
 
 // TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Now in the FOREST, in front of the new
-// fungus tree climb (was in the sandbox, in front of the duo
-// trampolines). Remove/move this block again once done testing -- it
-// overrides every load, same as every earlier round of this.
+// URL param, no extra steps). Now in the FOREST, standing on top of the
+// rock climb's own landing ledge (was in front of the fungus tree before
+// that, and the sandbox duo trampolines before that). Remove/move this
+// block again once done testing -- it overrides every load, same as
+// every earlier round of this.
 //
-// The fungus tree sits past the river-crossing log bridge, and that
-// bridge normally has to be built segment by segment before you can walk
-// past x~4340-4800 at all (see forestRiverSegmentsStrung/Decked) --
-// without also marking it built here, spawning past it would just get
-// silently snapped back to the near bank every frame (found this exact
-// behavior while testing the fungus climb itself). Marking it built is
-// debug-spawn-only; the real in-game crossing still has to be earned
-// normally, this just skips it for testing what's beyond it.
+// The rock climb (and the ledge past it, and the pool past THAT) sits
+// past the river-crossing log bridge, and that bridge normally has to be
+// built segment by segment before you can walk past x~4340-4800 at all
+// (see forestRiverSegmentsStrung/Decked) -- without also marking it built
+// here, spawning past it would just get silently snapped back to the near
+// bank every frame (found this exact behavior while testing the fungus
+// climb itself). Marking it built is debug-spawn-only; the real in-game
+// crossing still has to be earned normally, this just skips it for
+// testing what's beyond it.
 currentScene = "forest";
 forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
 forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-player.x = FOREST_FUNGUS_TREE_X - 120;
-player.y = 0;
+// same landing spot the pool's own exit transition uses (see
+// updateSeasonTransition's forest/pool spawn-override chain) -- clear of
+// the ledge's own left edge, so you're not immediately standing right at
+// the walk-off-into-the-pool trigger zone.
+player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20;
+player.y = FOREST_ROCK_LEDGE.height;
 player.vy = 0;
 cameraX = Math.max(0, player.x - canvas.width * 0.4);
 discoveredScenes.autumn = true;
