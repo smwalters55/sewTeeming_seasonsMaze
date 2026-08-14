@@ -15557,6 +15557,7 @@ function drawForestScene(camX) {
   drawForestGroundMushrooms(camX);
   // the rock climb, further out past the tree -- same reasoning, called
   // directly rather than nested in anything else that could cull it off.
+  drawForestLedgeSkyBackdrop(camX);
   drawForestSwimHoleRocks(camX);
   drawForestSwimHolePreview(camX);
   drawForestRockClimb(camX);
@@ -17798,6 +17799,47 @@ function buildForestSwimHolePondPath(px, poolY, w, h) {
   }
   ctx.closePath();
 }
+// CONFIRMED CHANGE ("for the cannopy make that visible too on the 'deck'
+// you jump off of to get in pool like, show the same tree pattern and
+// tall rocks so it matches"): the same distant-rock-peak + hazy-canopy
+// motif drawPoolSkyBackdrop uses for the view looking UP through the
+// water, mirrored here for the view from the LEDGE looking out before
+// you ever dive in -- so the two match visually rather than the pool's
+// own "up high in the rocks" read only showing up after you're already
+// underwater. Drawn well above the ledge/swim-hole-preview area, in the
+// same forest world-space coordinates (subject to forest's own cameraY
+// climb-follow, same as every other rock-climb-area decoration).
+function drawForestLedgeSkyBackdrop(camX) {
+  const centerX = (FOREST_ROCK_LEDGE.x + FOREST_SWIM_HOLE_X) / 2 - camX;
+  const baseY = gy - (FOREST_ROCK_LEDGE.height + 70); // sits in the open sky just above the ledge/preview area
+  if (centerX < -400 || centerX > canvas.width + 400) return;
+
+  // distant hazy rock peaks -- same soft, low-contrast, receding look as
+  // the pool's own version, just laid out across a wider world-space span
+  ctx.fillStyle = "rgba(130,150,155,0.32)";
+  [-1.6, -0.9, -0.2, 0.5, 1.2].forEach((frac, i) => {
+    const px = centerX + frac * 220;
+    const peakH = 50 + pseudoRandom(i * 4.1 + 950) * 34;
+    ctx.beginPath();
+    ctx.moveTo(px - 90, baseY + 10);
+    ctx.quadraticCurveTo(px, baseY + 10 - peakH, px + 90, baseY + 10);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // hazy green canopy smudges up near the top of this same band, reading
+  // as distant treetops glimpsed from up on the ledge -- matching the
+  // pool's own canopy smudge, just scaled up for forest's world-space
+  ctx.fillStyle = "rgba(70,110,60,0.22)";
+  for (let i = 0; i < 8; i++) {
+    const px = centerX + (i - 3.5) * 90 + (pseudoRandom(i * 3.3 + 960) - 0.5) * 50;
+    const r = 40 + pseudoRandom(i * 5.7 + 961) * 26;
+    ctx.beginPath();
+    ctx.arc(px, baseY - 26, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawForestSwimHoleRocks(camX) {
   const px = FOREST_SWIM_HOLE_X - camX;
   const w = FOREST_SWIM_HOLE_WIDTH, h = FOREST_SWIM_HOLE_HEIGHT;
@@ -19018,21 +19060,48 @@ function drawPoolLoops(camX) {
 // clip region is computed in device pixels at clip()-time and stays
 // fixed even after the transform is reset, so the ellipse itself never
 // visually rotates, only the mask restricting which half of it draws.
+// CONFIRMED BUG FIX ("i dont think this partial occlusion...should
+// happen...this looks off doesnt it", 2 screenshots, confirmed further via
+// an uploaded video of the actual swim-through): the entry/exit split used
+// to pivot around the LOOP's own fixed center. The loop is much wider than
+// the player, so the player is almost never exactly centered inside it --
+// meaning that fixed pivot had nothing to do with where the player's body
+// actually was. That let the redrawn "entry" arc slice diagonally through
+// the middle of the player's sprite (reading as a disconnected notch
+// bitten out of them, or a stray fragment floating beside them) instead of
+// cleanly wrapping around their actual edge. Frame-by-frame review of the
+// video confirmed this: whenever the player sat off-center inside a loop
+// (the normal case), the ring's redrawn half met their body mid-sprite
+// rather than at its silhouette.
+// Fix: pivot the same half-plane split around the PLAYER's own current
+// center instead of the loop's. It still runs perpendicular to the travel
+// direction (so it still reads as "the half already swum past" vs "the
+// half still ahead"), but now that boundary always passes through the
+// player's own body, so the redrawn arc always meets them right at their
+// edge no matter where in the loop they happen to be.
 function drawPoolLoopOcclusion(camX) {
   // world vy>0 means swimming toward the surface (up), which is a
   // DECREASING screen y -- same sign flip drawPoolLoops/drawPoolCritters
   // apply between world y and screen y everywhere else in the pool.
   const travelAngle = Math.atan2(-poolLastSwimDir.y, poolLastSwimDir.x);
+  // same gy+cameraY-player.y convention drawPy uses (see its own comment) --
+  // the player-center pivot point this split now rotates around.
+  const pcx = player.x + player.width / 2 - camX;
+  const pcy = gy + cameraY - player.y - player.height / 2;
   POOL_LOOPS.forEach(loop => {
     if (!loop.inside) return;
     const sx = loop.x - camX;
     const sy = gy + cameraY - loop.y;
-    const R = Math.max(loop.rx, loop.ry) + 20;
+    // generous fixed reach rather than loop-radius-derived -- the pivot is
+    // now the player's position, which can sit anywhere up to a loop
+    // radius away from the loop's own center, so the old tight R (loop
+    // radius + 20) is no longer guaranteed to fully cover the ring.
+    const R = 400;
     ctx.save();
-    ctx.translate(sx, sy);
+    ctx.translate(pcx, pcy);
     ctx.rotate(travelAngle);
     ctx.beginPath();
-    ctx.rect(-R, -R, R, R * 2); // local x in [-R, 0] -- the entry-side half-plane, opposite the travel direction
+    ctx.rect(-R, -R, R, R * 2); // local x in [-R, 0] -- the entry-side half-plane, opposite the travel direction, through the player's own center
     ctx.clip();
     ctx.setTransform(1, 0, 0, 1, 0, 0); // clip stays applied (device-space); draw the ellipse unrotated (except its own tiltAngle) in plain screen coords
     drawPoolLoopRingTube(sx, sy, loop);
@@ -19189,20 +19258,31 @@ function drawPoolTreasureChest(camX) {
     ctx.fill();
   });
 
-  // lid -- swings open (rotated back on its hinge) once opened, per the
-  // chest.opened flag; drawn from the SAME hinge point (back-top edge of
-  // the body) either way so it reads as one continuous piece
+  // lid -- CONFIRMED BUG FIX ("open treasure chest doesnt look good...
+  // the lid is connected halfway through in a weird way, not realistic
+  // depth looking way"): the original version rigidly ROTATED the same
+  // flat dome shape ~78 degrees around the hinge point -- with no
+  // foreshortening, that just spun a wide flat dome edge-on into a thin
+  // blade sticking off at an angle, which is exactly what read as
+  // "disconnected." Rebuilt to interpolate the dome's own shape (height,
+  // spread, and how far it lifts off the hinge) toward a low, flattened,
+  // foreshortened profile as it opens, instead of rotating it -- so it
+  // reads as folding back flat against the box rather than swinging out
+  // as a rigid blade. Always anchored at y=0 (the hinge point) on both
+  // ends, so it can never visually detach from the body's top edge.
   ctx.save();
   ctx.translate(0, -h * 0.08);
-  ctx.rotate(-lidOpenP * (Math.PI / 2.3));
-  const lidGrad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  const domeHeight = h * 0.8 * (1 - lidOpenP * 0.78); // shrinks toward a low ridge as it opens
+  const domeSpread = (w / 2) * (1 - lidOpenP * 0.1); // narrows slightly, selling the turn-away
+  const liftY = -lidOpenP * h * 0.06; // settles back rather than floating upward
+  const lidGrad = ctx.createLinearGradient(-domeSpread, 0, domeSpread, 0);
   lidGrad.addColorStop(0, "#6a4830");
   lidGrad.addColorStop(0.5, "#7d5638");
   lidGrad.addColorStop(1, "#634430");
   ctx.fillStyle = lidGrad;
   ctx.beginPath();
-  ctx.moveTo(-w / 2, 0);
-  ctx.quadraticCurveTo(0, -h * 0.8, w / 2, 0);
+  ctx.moveTo(-domeSpread, liftY);
+  ctx.quadraticCurveTo(0, liftY - domeHeight, domeSpread, liftY);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#382412";
@@ -19212,8 +19292,8 @@ function drawPoolTreasureChest(camX) {
   ctx.strokeStyle = "rgba(120,110,95,0.55)";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(-w / 2, 0);
-  ctx.quadraticCurveTo(0, -h * 0.8, w / 2, 0);
+  ctx.moveTo(-domeSpread, liftY);
+  ctx.quadraticCurveTo(0, liftY - domeHeight, domeSpread, liftY);
   ctx.stroke();
   if (!chest.opened) {
     // gold latch, with a slow idle glint so the chest reads as a real
@@ -19377,15 +19457,93 @@ function updatePoolScene(deltaTime) {
   }
 }
 
+// CONFIRMED CHANGE ("lets make it look like we are up high, see some
+// canopy at the top, maybe more distant rocks etc"): the strip of screen
+// above the water line (roughly y 0-70, between the rock rim at the very
+// top and where the water fill begins) used to be a flat sky-blue fill
+// with a solid dark ceiling bar -- nowhere near enough room to read as
+// "high up in the rocks." Rebuilt as a compact layered backdrop instead:
+// a hazy sky gradient, a soft distant rock-peak silhouette layer, a
+// nearer jagged rock rim (replacing the old flat ceiling bar, with a
+// couple of real gaps for the light shafts below to visibly originate
+// from), and a thin hazy green canopy smudge low in the strip where it
+// meets the water -- glimpsed forest, not literal ground-level trees,
+// since there's only ~70px of screen to work with here. Screen-fixed
+// (not parallax) given how little depth the strip actually has to sell
+// motion in.
+function drawPoolSkyBackdrop() {
+  const bandBottom = 70; // matches gy(300) - 30 + POOL_CAMERA_Y(-200), where the water fill actually begins
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, bandBottom);
+  skyGrad.addColorStop(0, "#c7e6ea");
+  skyGrad.addColorStop(0.6, "#a9d4e0");
+  skyGrad.addColorStop(1, "#7fb6c4");
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, canvas.width, bandBottom);
+
+  // distant hazy rock peaks -- soft, low-contrast, receding into the sky
+  // (aerial-perspective muted blue-grey) so they read as far away, not
+  // part of the immediate rim
+  ctx.fillStyle = "rgba(130,150,155,0.4)";
+  [0.1, 0.35, 0.62, 0.85].forEach((frac, i) => {
+    const px = frac * canvas.width;
+    const peakH = 16 + pseudoRandom(i * 4.1 + 900) * 10;
+    ctx.beginPath();
+    ctx.moveTo(px - 45, bandBottom - 6);
+    ctx.quadraticCurveTo(px, bandBottom - 6 - peakH, px + 45, bandBottom - 6);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // hazy green canopy smudge, low in the band right where it meets the
+  // water -- glimpsed treetops rather than literal trees, per how little
+  // vertical room there is to work with
+  ctx.fillStyle = "rgba(70,110,60,0.28)";
+  for (let i = 0; i < 7; i++) {
+    const px = (i / 6) * canvas.width + (pseudoRandom(i * 3.3 + 910) - 0.5) * 40;
+    const r = 22 + pseudoRandom(i * 5.7 + 911) * 14;
+    ctx.beginPath();
+    ctx.arc(px, bandBottom - 4, r, Math.PI, 0);
+    ctx.fill();
+  }
+
+  // the rock rim itself -- jagged (not a flat bar), with two real gaps
+  // left unfilled so the light shafts drawn later visibly originate from
+  // openings in the rock rather than just appearing mid-water with no
+  // source
+  const rimH = 24;
+  ctx.fillStyle = "#443f37";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, rimH * 0.7);
+  const gapFracs = [0.28, 0.68]; // matches the light-shaft fracs below closely enough to read as their source
+  let cx = 0;
+  const rimPoints = [];
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    const jag = (pseudoRandom(i * 2.7 + 920) - 0.5) * (rimH * 0.5);
+    rimPoints.push({ x: t * canvas.width, y: rimH * 0.55 + jag });
+  }
+  rimPoints.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(canvas.width, 0);
+  ctx.closePath();
+  ctx.fill();
+  // punch the two light-shaft gaps out of the rim with a couple of soft
+  // sky-colored notches, so they read as real openings, not just holes
+  gapFracs.forEach(frac => {
+    const gx = frac * canvas.width;
+    ctx.fillStyle = "rgba(199,230,234,0.9)";
+    ctx.beginPath();
+    ctx.ellipse(gx, rimH * 0.4, 14, rimH * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawPoolScene(camX) {
   // thin fixed sky/ceiling backdrop -- deliberately NOT wrapped in the
   // cameraY translate below (screen-fixed, like sandbox's own sky rect),
   // so it stays a small strip pinned to the top of the canvas no matter
   // how the water shifts underneath it.
-  ctx.fillStyle = "#a9d4e0";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#443f37";
-  ctx.fillRect(0, 0, canvas.width, 26);
+  drawPoolSkyBackdrop();
 
   // everything below is genuine world-space content (water, walls, light
   // shafts), authored in the same gy-relative coordinates every other
