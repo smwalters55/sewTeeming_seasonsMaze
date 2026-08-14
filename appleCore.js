@@ -19119,61 +19119,131 @@ const POOL_TREASURE_GOLD_COUNT = 6;
 let poolTreasureSparkles = [];
 const POOL_TREASURE_SPARKLE_DURATION_MS = 1100;
 
+// CONFIRMED CHANGE ("make treasure chest larger and more interesting and
+// old lookin w some moss on it or soemthing"): scaled up substantially
+// (w/h roughly doubled) and redesigned as a real old sunken chest --
+// visible wood grain planks, rusted (not shiny) iron bands/studs, and a
+// handful of seeded moss patches (deterministic via pseudoRandom, same
+// "don't animate/shimmer decor noise" convention as the rock caps/pond
+// edge elsewhere in the pool) clinging to the top and corners like it's
+// been down here a long while.
+const POOL_TREASURE_CHEST_MOSS = Array.from({ length: 6 }, (_, i) => ({
+  // spread across the lid/body in normalized -1..1 local space, seeded
+  frac: pseudoRandom(i * 7.7 + 500),
+  side: pseudoRandom(i * 3.3 + 501) < 0.5 ? -1 : 1,
+  r: 3 + pseudoRandom(i * 5.1 + 502) * 4,
+  onLid: pseudoRandom(i * 9.2 + 503) < 0.6
+}));
+
 function drawPoolTreasureChest(camX) {
   const chest = POOL_TREASURE_CHEST;
   const sx = chest.x - camX;
   const sy = gy - chest.y;
-  if (sx < -40 || sx > canvas.width + 40) return;
+  if (sx < -60 || sx > canvas.width + 60) return;
 
-  const w = 26, h = 18;
+  const w = 46, h = 32; // roughly doubled from the original 26x18 first pass
   const lidOpenP = chest.opened ? 1 : 0;
 
   ctx.save();
   ctx.translate(sx, sy);
 
-  // a small resting shadow so it reads as sitting ON the sand, not
-  // floating just above it -- same idea as the pebbles' own placement
-  ctx.fillStyle = "rgba(10,20,25,0.3)";
+  // a wider resting shadow to match the bigger footprint
+  ctx.fillStyle = "rgba(10,20,25,0.32)";
   ctx.beginPath();
-  ctx.ellipse(0, h * 0.42, w * 0.6, 4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, h * 0.44, w * 0.62, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // body
-  ctx.fillStyle = "#6b4a2c";
-  ctx.fillRect(-w / 2, -h * 0.1, w, h * 0.5);
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(-w / 2, -h * 0.1, w, h * 0.5);
-  // metal bands
-  ctx.fillStyle = "rgba(200,190,160,0.55)";
-  ctx.fillRect(-w / 2, h * 0.05, w, 2);
-  ctx.fillRect(-2, -h * 0.1, 4, h * 0.5);
+  // body -- a weathered wood-grain fill instead of a flat color, same
+  // "aged planks" read as the rock climb's own broken-stone facets
+  const bodyGrad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  bodyGrad.addColorStop(0, "#5c3f26");
+  bodyGrad.addColorStop(0.5, "#6f4c2e");
+  bodyGrad.addColorStop(1, "#553a23");
+  ctx.fillStyle = bodyGrad;
+  ctx.fillRect(-w / 2, -h * 0.08, w, h * 0.52);
+  ctx.strokeStyle = "#382412";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-w / 2, -h * 0.08, w, h * 0.52);
+  // vertical plank seams
+  for (let i = 1; i < 4; i++) {
+    const px = -w / 2 + (w / 4) * i;
+    ctx.strokeStyle = "rgba(30,18,8,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, -h * 0.08);
+    ctx.lineTo(px, h * 0.44);
+    ctx.stroke();
+  }
+  // rusted iron bands (dulled, mottled -- not the bright polished metal
+  // the first-pass chest used, so it reads as old/sunken rather than new)
+  ctx.fillStyle = "rgba(120,110,95,0.6)";
+  ctx.fillRect(-w / 2, h * 0.08, w, 3);
+  ctx.fillRect(-3, -h * 0.08, 6, h * 0.52);
+  ctx.fillStyle = "rgba(90,70,55,0.5)"; // rust streaks over the bands
+  ctx.fillRect(-w / 2, h * 0.08, w, 3);
+  // corner rivets
+  [[-w / 2 + 4, -h * 0.02], [w / 2 - 4, -h * 0.02], [-w / 2 + 4, h * 0.36], [w / 2 - 4, h * 0.36]].forEach(([rx, ry]) => {
+    ctx.fillStyle = "rgba(150,140,120,0.7)";
+    ctx.beginPath();
+    ctx.arc(rx, ry, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // lid -- swings open (rotated back on its hinge) once opened, per the
   // chest.opened flag; drawn from the SAME hinge point (back-top edge of
   // the body) either way so it reads as one continuous piece
   ctx.save();
-  ctx.translate(0, -h * 0.1);
+  ctx.translate(0, -h * 0.08);
   ctx.rotate(-lidOpenP * (Math.PI / 2.3));
-  ctx.fillStyle = "#7a5535";
+  const lidGrad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  lidGrad.addColorStop(0, "#6a4830");
+  lidGrad.addColorStop(0.5, "#7d5638");
+  lidGrad.addColorStop(1, "#634430");
+  ctx.fillStyle = lidGrad;
   ctx.beginPath();
   ctx.moveTo(-w / 2, 0);
-  ctx.quadraticCurveTo(0, -h * 0.85, w / 2, 0);
+  ctx.quadraticCurveTo(0, -h * 0.8, w / 2, 0);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#4a3018";
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#382412";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // a rusted arch band over the top of the lid, matching the body's bands
+  ctx.strokeStyle = "rgba(120,110,95,0.55)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 0);
+  ctx.quadraticCurveTo(0, -h * 0.8, w / 2, 0);
   ctx.stroke();
   if (!chest.opened) {
     // gold latch, with a slow idle glint so the chest reads as a real
     // interactive find sitting quietly at the bottom, not just more decor
     const glint = 0.5 + Math.sin(fireflyT * 0.0025) * 0.5;
-    ctx.fillStyle = `rgba(255,215,110,${0.7 + glint * 0.3})`;
+    ctx.fillStyle = `rgba(215,180,95,${0.65 + glint * 0.3})`; // duller, tarnished gold rather than bright new
     ctx.beginPath();
-    ctx.arc(0, h * 0.02, 2.4, 0, Math.PI * 2);
+    ctx.arc(0, h * 0.03, 3.6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "rgba(90,70,45,0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
   ctx.restore();
+
+  // moss patches -- seeded, static placement (see POOL_TREASURE_CHEST_MOSS),
+  // clustered soft blobs with a slightly darker core so they read as real
+  // growth rather than flat green dots
+  POOL_TREASURE_CHEST_MOSS.forEach(m => {
+    const mx = m.side * m.frac * (w / 2 - m.r * 0.5);
+    const my = m.onLid ? -h * 0.32 - m.r * 0.3 : h * 0.2;
+    ctx.fillStyle = "rgba(70,105,55,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(mx, my, m.r, m.r * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(95,135,70,0.6)";
+    ctx.beginPath();
+    ctx.ellipse(mx - m.r * 0.2, my - m.r * 0.15, m.r * 0.45, m.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // warm interior glow + a few loose gold flecks, once opened
   if (chest.opened) {
@@ -19184,10 +19254,10 @@ function drawPoolTreasureChest(camX) {
     ctx.beginPath();
     ctx.arc(0, -h * 0.15, w * 0.9, 0, Math.PI * 2);
     ctx.fill();
-    [-1, 0, 1].forEach(i => {
+    [-1.6, -0.5, 0.6, 1.6].forEach(i => {
       ctx.fillStyle = "#e8b830";
       ctx.beginPath();
-      ctx.arc(i * 5, h * 0.08, 2, 0, Math.PI * 2);
+      ctx.arc(i * 5, h * 0.1, 2.2, 0, Math.PI * 2);
       ctx.fill();
     });
   }
@@ -19298,7 +19368,7 @@ function updatePoolScene(deltaTime) {
   // already shares with every other scene -- no gy/cameraY conversion
   // needed here at all, unlike the flying-collect-animation system,
   // which assumes plain screen-space and would have needed one).
-  if (!POOL_TREASURE_CHEST.opened && pressedDownNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 40, 22, 22)) {
+  if (!POOL_TREASURE_CHEST.opened && pressedDownNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 46, 26, 26)) {
     POOL_TREASURE_CHEST.opened = true;
     POOL_TREASURE_CHEST.openedAt = performance.now();
     for (let i = 0; i < POOL_TREASURE_GOLD_COUNT; i++) addToInventory("goldPile");
