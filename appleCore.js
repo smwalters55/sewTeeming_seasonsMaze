@@ -3048,6 +3048,30 @@ function applyPhysics(){
   const fungusHit = currentScene === "forest" && player.vy < -1 &&
     forestFungusClimb.levels[0].mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < FOREST_FUNGUS_RADIUS);
 
+  // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
+  // between thi and ruhshing river" -> scoped as "tiny real hop -- taps
+  // you upward slightly"): plain ordinary jump physics, same shape as the
+  // sandbox ground trampoline's own vy kick just below -- no launched-
+  // flight arc, no tiers, no chaining, just a small satisfying tap upward
+  // as you walk through. Deliberately its own separate, much smaller
+  // MIN_VY/MAX_VY/BOUNCE_MULT range than the sandbox trampoline (7/15/1.15
+  // vs 11/30/1.35) so it reads as undergrowth giving a little spring, not
+  // an actual trampoline.
+  // CONFIRMED BUG FIX (found via a real held-key playtest, not a forced-
+  // state check): first pass copied the sandbox trampoline's own
+  // `player.vy < -1` gate, which only ever fires after a real fall --
+  // plain ground gravity resets vy to 0 every single grounded frame, so
+  // simple walking through the patch never actually reaches -1 and the
+  // mushrooms silently never triggered at all. That gate makes sense for
+  // the trampoline (a deliberate jump-onto-it toy) but not for these,
+  // which are supposed to react to just walking over them. Dropped the
+  // velocity requirement entirely -- being grounded and in range is
+  // enough. No re-trigger spam risk: the moment it fires, the kick
+  // itself lifts player.y off 0, which is what gates this whole block,
+  // so it can't fire again until a later frame actually lands again.
+  const mushroomHit = currentScene === "forest" &&
+    FOREST_GROUND_MUSHROOMS.find(m => Math.abs(player.x + player.width / 2 - m.x) < FOREST_GROUND_MUSHROOM_RADIUS);
+
   if (player.y <= 0) {
     if (currentScene === "sandbox" && player.vy < -1 &&
         Math.abs(player.x + player.width / 2 - sandboxTrampoline.x) < SANDBOX_TRAMPOLINE_RADIUS) {
@@ -3075,6 +3099,13 @@ function applyPhysics(){
       sandboxTrampolineDuoLaunch(duoHit, 0);
     } else if (fungusHit) {
       forestFungusLaunch(fungusHit, 0);
+    } else if (mushroomHit) {
+      const fallSpeed = Math.abs(player.vy);
+      player.y = 0;
+      player.vy = Math.min(FOREST_GROUND_MUSHROOM_MAX_VY, Math.max(FOREST_GROUND_MUSHROOM_MIN_VY, fallSpeed * FOREST_GROUND_MUSHROOM_BOUNCE_MULT));
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      mushroomHit.squishT = 0;
     } else {
       player.y = 0;
       player.jumping = false;
@@ -15222,6 +15253,32 @@ function drawForestScene(camX) {
   drawForestBreatherDuckBranch(camX); // moved here from just before the bridge -- see its own comment
   drawForestBreatherDuckSign(camX); // "DUCK!" sign with lead distance ahead of the tree -- see its own comment
   drawForestFloatZone(camX);
+  // CONFIRMED BUG FIX ("i tree disappears after first fungus hop"): this
+  // used to be the last statement inside drawForestFloatZone itself,
+  // tacked on right after the lilypads/return lever. drawForestFloatZone
+  // opens with its own off-screen cull check for the FLOAT ZONE
+  // (`if (zoneEndPx < -50 || zoneStartPx - 120 > canvas.width + 50) return;`)
+  // -- appropriate for the water/obstacles it actually owns, but the
+  // fungus tree sits 420px further right (FOREST_FUNGUS_TREE_X =
+  // FOREST_FLOAT_RETURN_LEVER_X + 420), well past where the float zone
+  // itself scrolls off-screen. As soon as the player bounced up the tree
+  // enough to drift the camera past that cutoff, the float zone's own
+  // early return fired and silently skipped every draw call after it in
+  // that function -- including the tree, even though the tree was still
+  // fully on-screen. That's exactly why it "disappeared after the first
+  // hop and never came back": climbing the tree is what pushes the
+  // camera past the float zone's own cutoff in the first place. Real
+  // per-frame repro (seeding a genuine catch, then letting real physics
+  // run) confirmed the trunk WAS being filled correctly every frame
+  // (pixel-sampled right after ctx.fill()) but was gone by the time the
+  // frame finished -- traced to drawForestFloatZone's cull return firing
+  // before ever reaching this call. Moved out here so the climb renders
+  // independent of the float zone's own visibility.
+  drawForestFungusClimb(camX);
+  // scattered ground-hopping mushrooms between the return lever and the
+  // fungus tree -- called directly here (not tucked inside some other
+  // culled sub-function) per the lesson just above.
+  drawForestGroundMushrooms(camX);
   drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
   drawForestRiverBoatPiles(camX); // the boat pickup spots -- one at the zone's calm start, one at each lily pad
@@ -16552,6 +16609,76 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // own separate idea, not built yet, just noted so this gap stays
 // available for it).
 const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 420;
+
+// CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
+// between thi and ruhshing river" -> scoped as "tiny real hop -- taps you
+// upward slightly" + "a scattered handful"): small ground-level mushrooms
+// filling the walking gap between the return lever and the fungus tree.
+// Unlike the fungus tree's own caps, these are plain, ordinary jump
+// physics (a fixed-position vy kick on landing, same shape as the
+// original sandbox ground trampoline) -- no launched-flight arc, no
+// tiers, no chaining, just a small satisfying tap upward as you walk
+// through. 6 of them, deliberately uneven spacing/size/offset from the
+// path's centerline so it reads as scattered undergrowth rather than a
+// deliberate row of pads.
+const FOREST_GROUND_MUSHROOMS = [
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 70, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 140, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 195, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 260, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 320, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 370, scale: 1.2, squishT: 9999 }
+];
+const FOREST_GROUND_MUSHROOM_RADIUS = 20;
+// noticeably smaller range than SANDBOX_TRAMPOLINE_MIN_VY/MAX_VY (11/30)
+// -- "taps you upward slightly", not a real bounce toy
+const FOREST_GROUND_MUSHROOM_MIN_VY = 7;
+const FOREST_GROUND_MUSHROOM_MAX_VY = 15;
+const FOREST_GROUND_MUSHROOM_BOUNCE_MULT = 1.15;
+const FOREST_GROUND_MUSHROOM_SQUISH_MS = 200;
+
+function updateForestGroundMushrooms(deltaTime) {
+  FOREST_GROUND_MUSHROOMS.forEach(m => {
+    if (m.squishT < FOREST_GROUND_MUSHROOM_SQUISH_MS) m.squishT += deltaTime * 1000;
+  });
+}
+
+// a small round cap on a short stem -- deliberately simple/tiny (this is
+// scattered undergrowth, not a landmark like the fungus tree), same
+// compress-then-spring squish language as everything else in this family
+function drawForestGroundMushroom(camX, m) {
+  const sx = m.x - camX;
+  const capR = 11 * m.scale, stemH = 7 * m.scale, stemW = 4 * m.scale;
+
+  const squishP = Math.min(m.squishT / FOREST_GROUND_MUSHROOM_SQUISH_MS, 1);
+  const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
+  const capRy = Math.max(2, capR * 0.68 - squish * 3);
+  const cy = gy - stemH - capRy * 0.4 + squish * 2;
+
+  ctx.fillStyle = "#c9c2a8";
+  ctx.fillRect(sx - stemW / 2, gy - stemH, stemW, stemH);
+
+  const capGrad = ctx.createRadialGradient(sx - capR * 0.3, cy - capRy * 0.3, 1, sx, cy, capR * 1.2);
+  capGrad.addColorStop(0, "#d9895c");
+  capGrad.addColorStop(0.6, "#b45a3a");
+  capGrad.addColorStop(1, "#7a3a24");
+  ctx.fillStyle = capGrad;
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, capR, capRy, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  [-0.4, 0, 0.45].forEach(o => {
+    ctx.beginPath();
+    ctx.arc(sx + o * capR, cy - capRy * 0.5, 1.1 * m.scale, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawForestGroundMushrooms(camX) {
+  FOREST_GROUND_MUSHROOMS.forEach(m => drawForestGroundMushroom(camX, m));
+}
+
 // CONFIRMED BUG FIX (found via a real held-key playtest): the tiers/
 // promotion physics below were tuned for a 60px MAT-TO-MAT gap (the
 // actual travel distance a bounce needs to cover), but the two caps were
@@ -18024,7 +18151,6 @@ function drawForestFloatZone(camX) {
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
   drawForestFloatReturnSign(camX);
   drawForestFloatReturnLever(camX);
-  drawForestFungusClimb(camX);
 
   FOREST_FLOAT_OBSTACLES.forEach(ob => {
     const ox = floatObstacleX(ob) - camX;
@@ -21933,6 +22059,7 @@ function updateForestScene(deltaTime) {
   updateForestRiverBoatPileNotice(deltaTime);
   updateForestFloatReturnLever(deltaTime);
   updateForestFungusClimb(deltaTime);
+  updateForestGroundMushrooms(deltaTime);
 
   // ZEN SAND RAKE -- diorama-style open, same trigger pattern as the
   // sandbox wig stand: walk up, press space, open the contained inset.
