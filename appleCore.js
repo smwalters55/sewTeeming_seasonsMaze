@@ -16895,13 +16895,21 @@ function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
   // way in (0.83 -> 0.95, so it's now a slim ~5% rim) and muted the color
   // itself down from a bright cream toward a duller tan so what's left
   // reads as a highlight, not a dominant band.
+  // CONFIRMED CHANGE ("tone down the brightness of the turkey tails, they
+  // stand out way too much still"): the earlier pass only fixed the pale
+  // edge band's SIZE, but the rest of the palette was still too vivid
+  // against the dark forest background -- the rust/orange band especially
+  // was popping like a warning color, and the grey-green band read too
+  // light/cool. Desaturated and darkened every band across the board
+  // (not just the pale edge) so the whole cluster reads as muted natural
+  // fungus coloring instead of drawing the eye from a distance.
   const bands = [
-    { frac: 1.00, color: "#c9bb95" }, // thin, muted tan growing edge (newest growth) -- much less of it now
-    { frac: 0.95, color: "#8fa07d" }, // muted grey-green band
-    { frac: 0.66, color: "#b06f3c" }, // rust/orange band
-    { frac: 0.49, color: "#8a5a30" }, // mid brown band
-    { frac: 0.30, color: "#4a3018" }, // dark brown band
-    { frac: 0.14, color: "#211409" }  // near-black attachment core
+    { frac: 1.00, color: "#a89876" }, // thin, muted tan growing edge (newest growth) -- darkened/desaturated further
+    { frac: 0.95, color: "#6f7c62" }, // muted grey-green band -- darkened, less cool/bright
+    { frac: 0.66, color: "#8a5a35" }, // rust/orange band -- pulled way back from vivid orange toward muted brown-rust
+    { frac: 0.49, color: "#6f4a28" }, // mid brown band -- darkened
+    { frac: 0.30, color: "#3d2814" }, // dark brown band -- darkened slightly
+    { frac: 0.14, color: "#1a0f06" }  // near-black attachment core -- darkened slightly
   ];
   bands.forEach((b, i) => {
     const rr = r * b.frac;
