@@ -186,7 +186,18 @@ const player = {
   onBallPitLadder: false, // CONFIRMED CHANGE: true while climbing the sandbox ball pit's outer ladder -- position driven entirely by updateSandboxBallPit
   onBallPitRim: false,    // CONFIRMED BUG FIX: true while standing at the top of the ladder, protected from gravity until a deliberate drop-in or walk-off -- see applyPhysics' guard chain
   inBallPit: false,       // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
-  inAntFarm: false        // CONFIRMED CHANGE: true while shrunk down navigating the sandbox ant farm's tunnel maze -- unlike the ball pit, the real player.x/y stay parked at the mount spot the whole visit; only a small drawn icon moves, tracked by sandboxAntFarm.localX/localY
+  inAntFarm: false,       // CONFIRMED CHANGE: true while shrunk down navigating the sandbox ant farm's tunnel maze -- unlike the ball pit, the real player.x/y stay parked at the mount spot the whole visit; only a small drawn icon moves, tracked by sandboxAntFarm.localX/localY
+  // CONFIRMED CHANGE ("takes a little too long to build up... walked
+  // across the ground mushrooms you would keep doing that cute little
+  // hop down the line"): true for the brief window after a ground
+  // mushroom hop, during which gravity is stronger than normal (see
+  // FOREST_GROUND_MUSHROOM_GRAVITY) -- keeps the SAME peak height
+  // (vy is boosted to match, see forestGroundMushroomHop) but gets the
+  // player back down and into the next mushroom much faster, so walking
+  // across the patch reads as a quick chained hop-hop-hop instead of one
+  // slow floaty bounce at a time. Cleared the moment a plain (non-
+  // mushroom) ground landing happens.
+  mushroomHopActive: false
 };
 
 /* ======================================================
@@ -3015,7 +3026,8 @@ function applyPhysics(){
   // real repro ("flies into oblivion... disappeared for a sec").
   player.vy -= giantPileCollapse.phase === "falling" ? 0.12 :
     (snakeState.knockbackFlightMs > 0 ? 0.22 :
-    ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 : 0.8));
+    ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 :
+    (player.mushroomHopActive ? FOREST_GROUND_MUSHROOM_GRAVITY : 0.8)));
 
   // ground collision -- with a special case for the sandbox trampoline:
   // landing on its mat while genuinely falling launches the player back
@@ -3105,12 +3117,14 @@ function applyPhysics(){
       player.vy = Math.min(FOREST_GROUND_MUSHROOM_MAX_VY, Math.max(FOREST_GROUND_MUSHROOM_MIN_VY, fallSpeed * FOREST_GROUND_MUSHROOM_BOUNCE_MULT));
       player.jumping = true;
       player.usedDoubleJump = false;
+      player.mushroomHopActive = true; // stronger gravity kicks in above until a plain landing clears this
       mushroomHit.squishT = 0;
     } else {
       player.y = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
       player.vy = 0;
+      player.mushroomHopActive = false;
       // CONFIRMED CHANGE: any plain ground landing ends a duo run -- the
       // next catch starts back at the base speed, same "escalation resets
       // once you touch down" idea the ground trampoline's own escalating
@@ -15133,7 +15147,16 @@ function drawForestScene(camX) {
   sky.addColorStop(0.75, "#4a5c38");
   sky.addColorStop(1, "#5a6a42");
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  // CONFIRMED BUG FIX (found while testing the new cameraY follow just
+  // below): this sky fill is drawn in plain screen space, BEFORE the
+  // ctx.translate(0, cameraY) that shifts everything ground-level
+  // downward while climbing. Left at a fixed height of just `gy`, it
+  // stopped exactly where the ground USED to start -- once cameraY
+  // pushed the (translated) ground further down the screen, the gap
+  // between the sky's own bottom edge and the ground's new position
+  // showed through as a stark blank white band. Extending the sky fill
+  // by cameraY closes that gap; a no-op everywhere cameraY is 0.
+  ctx.fillRect(0, 0, canvas.width, gy + cameraY);
 
   // dappled light -- a few soft, irregular pale patches, like sun
   // breaking weakly through a canopy rather than an open sky
@@ -15184,6 +15207,20 @@ function drawForestScene(camX) {
     ctx.arc(tx + 80, gy - 100, 50, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // CONFIRMED BUG FIX ("and cameray isnt following"): everything from
+  // here down is ground-level (or reaches up from it, like the fungus
+  // tree) -- translating the whole block by cameraY in one shot keeps
+  // every element's position relative to each other exactly as authored,
+  // without threading a manual +cameraY into dozens of individual draw
+  // calls. Same pattern drawSpringScene's own vine-climb block already
+  // uses. A no-op except while climbing the fungus tree past the 150px
+  // threshold (see updateForestScene's own cameraY line). The sky/
+  // distant-background layers just above stay OUTSIDE this translate on
+  // purpose, same as spring -- they're already far-back parallax layers
+  // that don't need to shift with a ground-level camera follow.
+  ctx.save();
+  ctx.translate(0, cameraY);
 
   // ground -- mossy green, lightened a touch per feedback, no
   // grass-blade texture yet, kept simple for this base pass
@@ -15291,6 +15328,7 @@ function drawForestScene(camX) {
   // near FOREST_PLATFORM_DROP_GRACE_MS)
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
+  ctx.restore();
 }
 
 /* ======================================================
@@ -16602,13 +16640,26 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // (FOREST_FLOAT_RETURN_LEVER_X) with real breathing room, in open space
 // past the end of the float zone -- nothing else is built out here yet.
 // CONFIRMED CHANGE ("move to right ... i think i might have some ground
-// hooping mushrooms between thi and ruhshing river"): pushed further
-// right than the first pass, opening up real walking distance between
-// the return lever and the tree -- exactly the space Sam's now thinking
-// about filling with small ground mushrooms along the path (that's its
-// own separate idea, not built yet, just noted so this gap stays
-// available for it).
-const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 420;
+// hooping mushrooms between thi and ruhshing river", then again "move all
+// more right"): pushed right twice now (+200 -> +420 -> +560), opening up
+// real walking distance between the return lever and the tree for the
+// ground mushrooms, which shifted along with it (see FOREST_GROUND_
+// MUSHROOMS' own comment).
+//
+// CONFIRMED CHANGE ("and cameray isnt following"): the note that used to
+// live here about staying within the ~300px headroom specifically to
+// avoid forest-wide vertical camera-scroll support is now OUT OF DATE --
+// the tree got noticeably taller per direct feedback, and Sam correctly
+// flagged that the camera doesn't follow the climb at all, so the top of
+// a real climb (or even just the taller trunk) scrolls off the top of
+// the canvas. Added real cameraY tracking to the forest scene (see
+// updateForestScene's own `cameraY = Math.max(0, player.y - 150);` line
+// and drawForestScene's `ctx.translate(0, cameraY)` wrap), same pattern
+// oak's book-pile climb and the sandbox tower already use. The 150
+// threshold keeps ordinary forest jumping (well under 150px high)
+// completely unaffected -- only climbing the fungus tree past that
+// height starts moving the camera.
+const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 560;
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
 // between thi and ruhshing river" -> scoped as "tiny real hop -- taps you
@@ -16621,20 +16672,35 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 420;
 // through. 6 of them, deliberately uneven spacing/size/offset from the
 // path's centerline so it reads as scattered undergrowth rather than a
 // deliberate row of pads.
+// CONFIRMED CHANGE ("move all more right"): shifted +140 along with the
+// fungus tree below, keeping the same relative spacing/uneven-scatter
+// layout, just further out past the return lever.
 const FOREST_GROUND_MUSHROOMS = [
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 70, scale: 0.85, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 140, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 195, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 260, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 320, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 370, scale: 1.2, squishT: 9999 }
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 210, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 280, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 335, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 400, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 460, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 510, scale: 1.2, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
-// noticeably smaller range than SANDBOX_TRAMPOLINE_MIN_VY/MAX_VY (11/30)
-// -- "taps you upward slightly", not a real bounce toy
-const FOREST_GROUND_MUSHROOM_MIN_VY = 7;
-const FOREST_GROUND_MUSHROOM_MAX_VY = 15;
-const FOREST_GROUND_MUSHROOM_BOUNCE_MULT = 1.15;
+// CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
+// little too long to build up... walked across the ground mushrooms you
+// would keep doing that cute little hop down the line"): the hop HEIGHT
+// was already right, but plain shared gravity (0.8) made each hop's
+// round trip slow enough that walking speed rarely carried the player
+// into the next mushroom's radius while still mid-arc, so it read as one
+// bounce at a time rather than a chained hop-hop-hop. Fixed with a
+// dedicated stronger gravity (see FOREST_GROUND_MUSHROOM_GRAVITY, used
+// only while player.mushroomHopActive) instead of just cranking
+// velocity -- MIN/MAX_VY scaled up by sqrt(new_g/old_g) so the actual
+// peak height each hop reaches is essentially unchanged (min ~31px,
+// max ~138px, matching the original 7/15-at-0.8 numbers), it just gets
+// there and back down noticeably faster.
+const FOREST_GROUND_MUSHROOM_MIN_VY = 10;
+const FOREST_GROUND_MUSHROOM_MAX_VY = 21;
+const FOREST_GROUND_MUSHROOM_BOUNCE_MULT = 1.6;
+const FOREST_GROUND_MUSHROOM_GRAVITY = 1.6; // 2x the shared 0.8 -- see the MIN/MAX_VY comment above for why
 const FOREST_GROUND_MUSHROOM_SQUISH_MS = 200;
 
 function updateForestGroundMushrooms(deltaTime) {
@@ -16648,7 +16714,10 @@ function updateForestGroundMushrooms(deltaTime) {
 // compress-then-spring squish language as everything else in this family
 function drawForestGroundMushroom(camX, m) {
   const sx = m.x - camX;
-  const capR = 11 * m.scale, stemH = 7 * m.scale, stemW = 4 * m.scale;
+  // CONFIRMED CHANGE ("mushrooms on ground bigger"): base cap/stem size
+  // bumped up (was 11/7/4) -- still scaled per-mushroom by m.scale so the
+  // scattered size variation is preserved, just all noticeably bigger.
+  const capR = 15 * m.scale, stemH = 9 * m.scale, stemW = 5 * m.scale;
 
   const squishP = Math.min(m.squishT / FOREST_GROUND_MUSHROOM_SQUISH_MS, 1);
   const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
@@ -16775,90 +16844,118 @@ function updateForestFungusClimb(deltaTime) {
   });
 }
 
-// CONFIRMED CHANGE ("make fungus look better"): layered bracket-fungus
-// cap instead of a flat single ellipse -- a darker outer rim, a lighter
-// inner face, a soft highlight catching the light from above, and gill
-// lines that fan out from the trunk attachment point rather than running
-// in flat parallel rows, closer to how a real shelf fungus's pore
-// surface actually radiates. Still keeps the same "compress toward the
-// trunk on impact, spring back over SQUISH_MS" language the sandbox mats
-// use, and still always faces outward from the trunk rather than tilting
-// with a launch angle -- the trunk itself reads as "in front of/behind"
-// the player, so the cap doesn't need to lean.
+// a single turkey-tail fan lobe -- thin, wavy-edged, with the
+// characteristic concentric growth rings (dark near the attachment
+// point, lightening band by band out to a pale cream growing edge).
+// Drawn largest-band-first, each smaller band painted on top, so the
+// overlap naturally leaves a ring of the previous (larger, paler) band
+// showing around each subsequent one -- no clipping needed. `angle` is
+// the fan's own outward-facing rotation (radians); `wobbleSeed` gives
+// each lobe's outer edge its own fixed jitter so lobes in the same
+// cluster don't read as identical stamps.
+function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
+  ctx.save();
+  ctx.translate(baseX, baseY);
+  ctx.rotate(angle);
+  const bands = [
+    { frac: 1.00, color: "#e9ddbe" }, // pale cream growing edge (newest growth)
+    { frac: 0.83, color: "#8fa07d" }, // muted grey-green band
+    { frac: 0.66, color: "#b06f3c" }, // rust/orange band
+    { frac: 0.49, color: "#8a5a30" }, // mid brown band
+    { frac: 0.30, color: "#4a3018" }, // dark brown band
+    { frac: 0.14, color: "#211409" }  // near-black attachment core
+  ];
+  bands.forEach((b, i) => {
+    const rr = r * b.frac;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    // a slightly wavy outer edge (only on the outermost band, where it's
+    // visible) instead of a perfectly smooth arc -- real turkey tail has
+    // an irregular, faintly ruffled rim
+    if (i === 0) {
+      const segs = 7;
+      ctx.moveTo(-rr, 0);
+      for (let s = 1; s <= segs; s++) {
+        const t = s / segs;
+        const a = Math.PI - t * Math.PI;
+        const wobble = 1 + (pseudoRandom(wobbleSeed + s * 2.7) - 0.5) * 0.14;
+        ctx.lineTo(Math.cos(a) * rr * wobble, -Math.abs(Math.sin(a)) * rr * wobble);
+      }
+      ctx.lineTo(rr, 0);
+    } else {
+      ctx.moveTo(-rr, 0);
+      ctx.arc(0, 0, rr, Math.PI, 0, true);
+      ctx.lineTo(rr, 0);
+    }
+    ctx.closePath();
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+// CONFIRMED CHANGE ("make the tree fungus look more like a semi
+// realistic turkey tail fungus", also fixing "it look like on tree there
+// are two fungusses per jump step"): replaced the single bracket-fungus
+// ellipse per catch point with a tight shingled CLUSTER of several small
+// turkey-tail fan lobes -- real turkey tail (Trametes versicolor) grows
+// as dense overlapping shelves, not one big cap, and clustering several
+// small fans per attachment point also directly answers the "two
+// fungusses" read: each catch point now reads as one dense fungal colony
+// climbing the bark rather than a single distinct mushroom-shaped blob,
+// so the two catch points per level no longer look like "two mushrooms"
+// sitting side by side. Still keeps the same "compress toward the trunk
+// on impact, spring back over SQUISH_MS" language the sandbox mats use
+// (applied here as a uniform scale pulse across the whole cluster), and
+// the cluster still always faces outward from the trunk rather than
+// tilting with a launch angle.
 function drawForestFungusCap(camX, t) {
   const sx = t.x - camX;
   const cy = gy - t.height;
-  const side = t.dir; // 1 = cap sits to the +x side of the trunk, -1 = to the -x side
-  const capRx = 27, capRy = 16;
+  const side = t.dir; // 1 = cluster sits to the +x side of the trunk, -1 = to the -x side
 
   const squishP = Math.min(t.squishT / FOREST_FUNGUS_SQUISH_MS, 1);
   const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
-  const rx = capRx - squish * 4;
-  const ry = Math.max(3, capRy - squish * 5);
-  // offset toward the trunk's own edge (roughly +/-16 at this height) so
-  // the cap visibly attaches to the bark rather than floating over it
-  const capCx = sx + side * (17 + rx * 0.6);
+  const squishScale = 1 - squish * 0.16;
 
-  // slight per-cap color variation (seeded by its own world position, so
-  // it's fixed forever rather than flickering) -- reads as a cluster of
-  // real, slightly-different growths rather than 6 identical stamps
+  // attach point on the trunk's own edge at this height
+  const attachX = sx + side * 15;
+  const attachY = cy;
+
   const tone = pseudoRandom(t.x * 3.1 + t.height * 7.7);
-
-  // outer rim -- a touch darker and slightly larger than the inner face,
-  // gives the cap real edge thickness instead of reading as paper-flat
-  ctx.fillStyle = `rgba(${58 + tone * 10},${34 + tone * 6},${16 + tone * 4},0.9)`;
-  ctx.beginPath();
-  ctx.ellipse(capCx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const innerRx = rx * 0.86, innerRy = ry * 0.82;
-  const capGrad = ctx.createRadialGradient(capCx - side * innerRx * 0.35, cy - innerRy * 0.4, 2, capCx, cy, innerRx * 1.3);
-  capGrad.addColorStop(0, `rgb(${222 + tone * 15},${162 + tone * 12},${92 + tone * 10})`);
-  capGrad.addColorStop(0.55, "#b97a3f");
-  capGrad.addColorStop(1, "#7a4f28");
-  ctx.fillStyle = capGrad;
-  ctx.beginPath();
-  ctx.ellipse(capCx, cy - 1, innerRx, innerRy, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // soft highlight, like light catching the top curve of the shelf
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(capCx, cy - 1, innerRx, innerRy, 0, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillStyle = "rgba(255,240,210,0.22)";
-  ctx.beginPath();
-  ctx.ellipse(capCx - side * innerRx * 0.3, cy - innerRy * 0.5, innerRx * 0.5, innerRy * 0.35, -0.3 * side, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // gill underside -- fans out from the trunk attachment point instead
-  // of running in flat parallel rows, closer to a real pore surface
-  ctx.strokeStyle = "rgba(55,32,16,0.4)";
-  ctx.lineWidth = 1;
-  const attachX = capCx - side * innerRx * 0.85;
-  for (let i = -2; i <= 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(attachX, cy + i * 1.6);
-    ctx.lineTo(capCx + side * innerRx * 0.75, cy + i * 2.6);
-    ctx.stroke();
+  const LOBES = 4;
+  for (let i = 0; i < LOBES; i++) {
+    const seed = tone * 31 + i * 9.7 + t.height * 0.4;
+    const lobeR = (17 + pseudoRandom(seed) * 9) * squishScale;
+    // shingled, slightly climbing up and further out from the trunk for
+    // each successive lobe in the cluster, with a little vertical jitter
+    // so they don't line up in a mechanical row
+    const lobeOutward = side * (i * 8 + pseudoRandom(seed + 1) * 5);
+    const lobeUp = -i * 6 - pseudoRandom(seed + 2) * 6;
+    const lobeX = attachX + lobeOutward;
+    const lobeY = attachY + lobeUp;
+    // fan angle sweeps outward from the trunk, tilted per-lobe so the
+    // cluster reads as a natural irregular fan rather than a stack of
+    // identically-angled copies
+    const baseAngle = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    const angle = baseAngle + (pseudoRandom(seed + 3) - 0.5) * 0.7 - i * 0.12 * side;
+    drawTurkeyTailFan(lobeX, lobeY, lobeR, angle, seed + 4);
   }
 }
 
 // CONFIRMED CHANGE ("make tree look better and a little gnarled ...
-// make taller"): the trunk went from a plain straight-sided wedge to a
+// make taller", then again "it is not tlal;er" -> pushed noticeably
+// further this round, was 150px of headroom above the top fungus level,
+// now 260): the trunk went from a plain straight-sided wedge to a
 // genuinely gnarled silhouette -- an irregular wavy outline (both edges
 // bow in and out independently rather than tapering evenly), a flared
 // root base where it meets the ground, a couple of small knot/burl bumps,
 // and a rough broken-looking top instead of a clean flat cut. A modest
 // leaf canopy caps it so it still reads as a living tree, not a bare
-// pole. Made noticeably taller too -- the trunk now extends well above
-// the top fungus level (150px of clear headroom instead of 40), rather
-// than stopping right at it.
+// pole.
 function drawForestFungusClimb(camX) {
   const sx = FOREST_FUNGUS_TREE_X - camX;
   const topLevelHeight = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height;
-  const topHeight = topLevelHeight + 150;
+  const topHeight = topLevelHeight + 260;
   const seed = FOREST_FUNGUS_TREE_X * 1.7;
 
   // gnarled outline -- each edge is its own wavy path built from a few
@@ -18148,7 +18245,17 @@ function drawForestFloatZone(camX) {
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_3);
-  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
+  // CONFIRMED CHANGE ("is the last lili pad rushing river thats on land
+  // just there to have tthe dragonfly. i like the dragon fly there but i
+  // dont want the lilipad that is on land there"): FOREST_FLOAT_LILYPAD_END
+  // sits right at the edge where the float zone lets out onto dry land,
+  // so its lilypad graphic was reading as sitting on grass rather than
+  // water. Dropped just the draw call -- the underlying pad object still
+  // exists and still does its real job (landOnFloatPad(FOREST_FLOAT_
+  // LILYPAD_END) below, which keeps the player from drifting once they've
+  // stepped that far), and its own dragonfly (anchored to the same x,
+  // pushed just above) is untouched and keeps flying there.
+  // drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_END);
   drawForestFloatReturnSign(camX);
   drawForestFloatReturnLever(camX);
 
@@ -22060,6 +22167,20 @@ function updateForestScene(deltaTime) {
   updateForestFloatReturnLever(deltaTime);
   updateForestFungusClimb(deltaTime);
   updateForestGroundMushrooms(deltaTime);
+
+  // CONFIRMED BUG FIX ("and cameray isnt following"): forest never
+  // tracked cameraY before -- fine while the fungus climb stayed within
+  // gy's own ~300px headroom, but the tree's since gotten taller and Sam
+  // correctly flagged the camera not following it. Same pattern as oak's
+  // book-pile jump run (see updateOakScene's own cameraY line) and the
+  // sandbox tower/chain: only kicks in once player.y clears 150, so
+  // ordinary forest jumping (well under that) is completely unaffected,
+  // and resets to 0 automatically on any scene change (see the shared
+  // scene-transition reset). drawForestScene applies this via a single
+  // `ctx.translate(0, cameraY)` wrapping its whole body, rather than
+  // threading `+ cameraY` into every one of its many gy-relative draw
+  // calls individually.
+  cameraY = Math.max(0, player.y - 150);
 
   // ZEN SAND RAKE -- diorama-style open, same trigger pattern as the
   // sandbox wig stand: walk up, press space, open the contained inset.
