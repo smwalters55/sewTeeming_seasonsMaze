@@ -886,6 +886,20 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // map-only entry — forest<->pool travel is handled by walking off the
+    // rock climb's own landing ledge (and swimming back to the entry edge
+    // to climb out), same pattern as forest-molehole/oak-ratroom above,
+    // not a standard door pair.
+    id: "forest-pool",
+    doors: {
+      forest: { leadsTo: "pool" },
+      pool: { leadsTo: "forest" }
+    },
+    acceptsItemType: null,
+    filled: true,
+    filledItemType: null
   }
 ];
 
@@ -913,7 +927,8 @@ const sceneMapInfo = {
   oak:    { label: "Oak",    x: 40,  y: 20 },  // above autumn, not on the main line -- reached via the seesaw, a branch off autumn
   ratroom: { label: "Ratroom", x: 95, y: 100, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- was y:65 (touching/overlapping oak's own box), now sits with a clean 20px gap above and below in the widened oak-to-autumn space. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
   molehole: { label: "Mole Hole", x: 400, y: 250, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node. Was y:180 (only a 10px gap below the old forest row); now a full 40px clear of forest's new position.
-  tunneltown: { label: "Tunnel Town", x: 460, y: 320, w: 82, h: 30 } // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width. Was y:250; shifted down to keep the same clean 40px gap below mole hole's new position.
+  tunneltown: { label: "Tunnel Town", x: 460, y: 320, w: 82, h: 30 }, // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width. Was y:250; shifted down to keep the same clean 40px gap below mole hole's new position.
+  pool: { label: "Pool", x: 460, y: 90, w: 50, h: 30 } // small side room off forest, same half-size-node treatment as ratroom/mole hole -- reached by walking off the rock climb's own landing ledge, not a standard door pair. Sits above-right of forest's main-line node, mirroring how ratroom sits diagonally off oak.
 };
 
 const discoveredScenes = { autumn: true };
@@ -1056,7 +1071,8 @@ const sceneSpawns = {
   ratroom: { x: 310 }, // arrives via the trap door, lands near the base of the stairs
   molehole: { x: 150 }, // arrives via the ground hole, lands a little in from the entrance
   tunneltown: { x: 150 }, // arrives via the second hole, lands a little in from that entrance
-  sandbox: { x: 200 } // arrives via the sand mound in spring -- see the special-case landing override too
+  sandbox: { x: 200 }, // arrives via the sand mound in spring -- see the special-case landing override too
+  pool: { x: 80 } // arrives by walking off the rock climb's ledge -- kept in sync with POOL_SPAWN_X below (can't reference it directly here, this object is built before that const is declared). This fallback is essentially unused, same as sandbox's own, since the real arrival always goes through the previousScene==="forest" branch below.
 };
 
 /* ======================================================
@@ -1260,11 +1276,25 @@ function updateSeasonTransition(deltaTime) {
         player.x = sandboxReturnMound.x + 40;
       } else if (currentScene === "spring" && previousScene === "sandbox") {
         player.x = sandboxEntranceMound.x + 40; // same, landing back out in spring
+      } else if (currentScene === "pool" && previousScene === "forest") {
+        player.x = POOL_SPAWN_X; // walked off the ledge into the water right at the pool's entry edge
+      } else if (currentScene === "forest" && previousScene === "pool") {
+        player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20; // climb back out onto the ledge itself, clear of the edge you walked off from
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
       }
       player.y = 0;
+      // CONFIRMED CHANGE: the generic player.y=0 above means "true ground
+      // level" everywhere else, but climbing back out of the pool needs to
+      // land back UP on the rock climb's ledge (height 580), not fall all
+      // the way down to the forest's actual ground -- same idea as every
+      // other "arrive somewhere specific, not the generic spawn" override
+      // just above, just needing its own y (every other override only
+      // ever needed a custom x).
+      if (currentScene === "forest" && previousScene === "pool") {
+        player.y = FOREST_ROCK_LEDGE.height;
+      }
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
@@ -2426,7 +2456,7 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool") {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2766,6 +2796,37 @@ function applyPhysics(){
   // see forestRockClimbRelease and the grab branch in the input handler
   // above.
   if (player.rockClingIndex !== -1) return;
+
+  // POOL SCENE -- free swim movement, entirely separate from the normal
+  // run/jump/gravity physics every other scene shares. No ground, no
+  // gravity at all here: held arrows accelerate in whichever direction is
+  // held, drag eases speed back down (water resistance) rather than
+  // instant stop/start like ordinary walking. Reuses player.x/y/vx/vy
+  // directly (same convention as everywhere else -- y=0 is "ground
+  // level," here meaning the surface; negative y is underwater depth) so
+  // no new player fields were needed. See the movement-gating block in
+  // handleInput -- currentScene==="pool" is excluded there so the normal
+  // walk/jump input never fights with this.
+  if (currentScene === "pool") {
+    if (keys.left) player.vx -= POOL_SWIM_ACCEL;
+    if (keys.right) player.vx += POOL_SWIM_ACCEL;
+    if (keys.up) player.vy += POOL_SWIM_ACCEL;
+    if (keys.down) player.vy -= POOL_SWIM_ACCEL;
+    player.vx *= POOL_SWIM_DRAG;
+    player.vy *= POOL_SWIM_DRAG;
+    player.vx = Math.max(-POOL_SWIM_MAX_SPEED, Math.min(POOL_SWIM_MAX_SPEED, player.vx));
+    player.vy = Math.max(-POOL_SWIM_MAX_SPEED, Math.min(POOL_SWIM_MAX_SPEED, player.vy));
+    player.x += player.vx;
+    player.y += player.vy;
+    if (player.x < 0) { player.x = 0; player.vx = 0; }
+    if (player.x > POOL_WIDTH - player.width) { player.x = POOL_WIDTH - player.width; player.vx = 0; }
+    if (player.y > 0) { player.y = 0; player.vy = 0; } // the surface is a real ceiling -- can't swim up out of the water
+    if (player.y < -POOL_MAX_DEPTH) { player.y = -POOL_MAX_DEPTH; player.vy = 0; }
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    return;
+  }
 
   // CONFIRMED CHANGE ("if fall down and overlap a grab band, land player
   // on it"): every grab elsewhere on this climb requires a deliberate
@@ -3301,6 +3362,24 @@ function applyPhysics(){
       player.usedDoubleJump = false;
       player.launched = false;
       player.launchSteerable = false;
+    } else if (
+      player.y <= platformTop &&
+      player.y >= platformTop - 14 &&
+      player.vy <= 0 &&
+      player.x >= ledge.x + ledge.width / 2 &&
+      seasonTransition.phase === "idle"
+    ) {
+      // CONFIRMED CHANGE ("then lets start on the pool"): walking straight
+      // off the ledge's own right edge -- while still up at ledge height,
+      // not after falling -- is the entry into the new pool scene, same
+      // "walk off the edge" trigger discussed and picked over a button
+      // press. Deliberately checked in the same in-band-and-descending
+      // shape as the ledge-stand check right above it (not a one-time
+      // crossing check), so it reliably catches the single frame the
+      // player's x crosses past the edge while still at ledge height,
+      // before gravity has a chance to carry them down off the cliff face
+      // instead.
+      startSeasonTransition("pool");
     }
   }
 
@@ -17682,6 +17761,107 @@ function drawForestRockClimb(camX) {
   drawForestRockWall(camX);
   FOREST_ROCK_HANDHOLDS.forEach((h, idx) => drawForestRockHandhold(camX, h, idx));
   drawForestRockLedge(camX);
+}
+
+/* ======================================================
+   POOL SCENE -- its own small separate scene (mirroring how
+   ratroom/molehole are their own rooms off oak/forest), reached by
+   walking straight off the right edge of FOREST_ROCK_LEDGE. Deliberately
+   built as a real dedicated scene (not more forest terrain) since Sam's
+   also planning a separate ocean scene for a future summer zone -- this
+   establishes the reusable "own contained water scene" pattern that can
+   be leaned on again there. "Mini world," a little smaller than ratroom.
+
+   First pass, per direct scoping ("no this is the pool yeah. we will be
+   jumping into water into the scene", "idk yet, lets start with all
+   water though"): all water, no land yet, free swim movement in every
+   direction. What's actually findable in it is still an open question
+   (same "not sure yet" the tower/fungus-tree/ledge itself all got) --
+   this just builds the space and the ability to move around in it.
+   ====================================================== */
+const POOL_WIDTH = 1100; // a little smaller than ratroom's own 1500-wide room, per direct request ("a little smaller than rat room is what im thinking. mini world")
+const POOL_MAX_DEPTH = 260; // how far below the surface (y=0) you can dive -- shares player.y/vy with the rest of the game, just inverted: 0 is the surface, negative is underwater, same as everywhere else in this file player.y means "height above ground"
+const POOL_SPAWN_X = 80; // right where you land in the water, at the entry edge nearest the climb
+const POOL_EXIT_X = 90; // press up near here, at the surface, to climb back out onto the rock ledge
+const POOL_SWIM_ACCEL = 0.45;
+const POOL_SWIM_MAX_SPEED = 4;
+const POOL_SWIM_DRAG = 0.9; // velocity damping every frame -- water resistance, so movement eases in/out instead of snapping like ordinary ground running
+
+function updatePoolScene(deltaTime) {
+  // exit: swim back to the entry edge, get near the surface, press up --
+  // deliberate button press to leave (mirrors the deliberate manual-grab
+  // climb mechanic), rather than just touching the edge, so a player
+  // exploring near the entry wall doesn't accidentally pop back out.
+  if (keys.upJustPressed && player.x < POOL_EXIT_X + 40 && player.y > -40 && seasonTransition.phase === "idle") {
+    startSeasonTransition("forest");
+  }
+}
+
+function drawPoolScene(camX) {
+  // deep water gradient -- darker with depth, same visual language as the
+  // float zone's own submerged tint, just permanent here instead of eased
+  // in/out by a submerge amount
+  ctx.fillStyle = "#a9d4e0";
+  ctx.fillRect(0, 0, canvas.width, gy - 30);
+
+  // a thin strip of visible cliff/rock at the very top edges, selling
+  // "you're inside a walled-in mountain pool," not open sky
+  ctx.fillStyle = "#443f37";
+  ctx.fillRect(0, 0, canvas.width, 26);
+
+  const waterGrad = ctx.createLinearGradient(0, gy - 30, 0, gy + POOL_MAX_DEPTH + 60);
+  waterGrad.addColorStop(0, "rgba(90,170,190,0.9)");
+  waterGrad.addColorStop(0.4, "rgba(45,120,145,0.95)");
+  waterGrad.addColorStop(1, "rgba(12,45,60,1)");
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(0, gy - 30, canvas.width, POOL_MAX_DEPTH + 90);
+
+  // the surface line itself -- a bright, slightly wobbling highlight so
+  // "this is the top of the water" reads clearly at a glance
+  const wobble = Math.sin(fireflyT * 0.0018) * 2;
+  ctx.strokeStyle = "rgba(220,245,250,0.6)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, gy - 30 + wobble);
+  ctx.lineTo(canvas.width, gy - 30 - wobble);
+  ctx.stroke();
+
+  // rock walls bounding the pool at both ends -- reuses the same jagged
+  // edge noise the climb's own cliff face uses, just mirrored inward on
+  // both sides so the pool reads as enclosed by real stone, not just an
+  // abrupt world edge
+  [0, POOL_WIDTH].forEach((edgeX, i) => {
+    const side = i === 0 ? 1 : -1;
+    const sx = edgeX - camX;
+    ctx.fillStyle = "#3d372f";
+    ctx.beginPath();
+    for (let d = 0; d <= 10; d++) {
+      const depth = -30 + (POOL_MAX_DEPTH + 90) * (d / 10);
+      const jag = (pseudoRandom(i * 5.1 + d * 2.3) - 0.5) * 22;
+      ctx.lineTo(sx + side * (30 + jag), gy + depth);
+    }
+    for (let d = 10; d >= 0; d--) {
+      const depth = -30 + (POOL_MAX_DEPTH + 90) * (d / 10);
+      ctx.lineTo(sx + side * -10, gy + depth);
+    }
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // a few slow-drifting light shafts through the water, same idea as
+  // ratroom's stair-top light shaft -- sells depth/atmosphere in an
+  // otherwise empty scene
+  ctx.fillStyle = "rgba(220,245,250,0.08)";
+  [0.2, 0.5, 0.8].forEach((frac, i) => {
+    const sx = frac * POOL_WIDTH - camX + Math.sin(fireflyT * 0.0006 + i * 2) * 20;
+    ctx.beginPath();
+    ctx.moveTo(sx - 18, gy - 28);
+    ctx.lineTo(sx + 18, gy - 28);
+    ctx.lineTo(sx + 40, gy + POOL_MAX_DEPTH);
+    ctx.lineTo(sx - 40, gy + POOL_MAX_DEPTH);
+    ctx.closePath();
+    ctx.fill();
+  });
 }
 
 // leaf/bark boats -- launched right where the current starts, well
@@ -52036,6 +52216,8 @@ if (currentScene === "autumn") {
   drawTunnelTownScene(camX);
 } else if (currentScene === "sandbox") {
   drawSandboxScene(camX);
+} else if (currentScene === "pool") {
+  drawPoolScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -53431,6 +53613,8 @@ if (currentScene === "autumn") {
   updateTunnelTownScene(deltaTime);
 } else if (currentScene === "sandbox") {
   updateSandboxScene(deltaTime);
+} else if (currentScene === "pool") {
+  updatePoolScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
@@ -53561,6 +53745,8 @@ updateSeasonTransition(deltaTime);
   // molehole's own right-side camera clamp, same small-room pattern
   if (currentScene === "molehole" && cameraX > MOLEHOLE_WIDTH - canvas.width + 40) cameraX = Math.max(0, MOLEHOLE_WIDTH - canvas.width + 40);
   if (currentScene === "tunneltown" && cameraX > TUNNELTOWN_WIDTH - canvas.width + 40) cameraX = Math.max(0, TUNNELTOWN_WIDTH - canvas.width + 40);
+  // pool's own right-side camera clamp, same small-room pattern as molehole
+  if (currentScene === "pool" && cameraX > POOL_WIDTH - canvas.width + 40) cameraX = Math.max(0, POOL_WIDTH - canvas.width + 40);
   // oak's left side has its own tall bookshelf (x:192) that should be
   // visible/reachable from directly left of the entrance door (x:294) --
   // clamped a little past the shelf's own left edge (~157) so there's a
