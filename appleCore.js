@@ -2797,36 +2797,14 @@ function applyPhysics(){
   // above.
   if (player.rockClingIndex !== -1) return;
 
-  // POOL SCENE -- free swim movement, entirely separate from the normal
-  // run/jump/gravity physics every other scene shares. No ground, no
-  // gravity at all here: held arrows accelerate in whichever direction is
-  // held, drag eases speed back down (water resistance) rather than
-  // instant stop/start like ordinary walking. Reuses player.x/y/vx/vy
-  // directly (same convention as everywhere else -- y=0 is "ground
-  // level," here meaning the surface; negative y is underwater depth) so
-  // no new player fields were needed. See the movement-gating block in
-  // handleInput -- currentScene==="pool" is excluded there so the normal
-  // walk/jump input never fights with this.
-  if (currentScene === "pool") {
-    if (keys.left) player.vx -= POOL_SWIM_ACCEL;
-    if (keys.right) player.vx += POOL_SWIM_ACCEL;
-    if (keys.up) player.vy += POOL_SWIM_ACCEL;
-    if (keys.down) player.vy -= POOL_SWIM_ACCEL;
-    player.vx *= POOL_SWIM_DRAG;
-    player.vy *= POOL_SWIM_DRAG;
-    player.vx = Math.max(-POOL_SWIM_MAX_SPEED, Math.min(POOL_SWIM_MAX_SPEED, player.vx));
-    player.vy = Math.max(-POOL_SWIM_MAX_SPEED, Math.min(POOL_SWIM_MAX_SPEED, player.vy));
-    player.x += player.vx;
-    player.y += player.vy;
-    if (player.x < 0) { player.x = 0; player.vx = 0; }
-    if (player.x > POOL_WIDTH - player.width) { player.x = POOL_WIDTH - player.width; player.vx = 0; }
-    if (player.y > 0) { player.y = 0; player.vy = 0; } // the surface is a real ceiling -- can't swim up out of the water
-    if (player.y < -POOL_MAX_DEPTH) { player.y = -POOL_MAX_DEPTH; player.vy = 0; }
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    return;
-  }
+  // POOL SCENE -- position is fully driven by updatePoolScene(deltaTime)
+  // instead, same split as the sandbox ball pit (see
+  // player.onBallPitLadder/inBallPit/onBallPitRim's own early return just
+  // below): swim movement needs deltaTime for a real px/s speed, which
+  // this function doesn't receive, so it lives in the scene's own update
+  // function (called later in the frame with deltaTime in hand) rather
+  // than here.
+  if (currentScene === "pool") return;
 
   // CONFIRMED CHANGE ("if fall down and overlap a grab band, land player
   // on it"): every grab elsewhere on this climb requires a deliberate
@@ -17783,11 +17761,67 @@ const POOL_WIDTH = 1100; // a little smaller than ratroom's own 1500-wide room, 
 const POOL_MAX_DEPTH = 260; // how far below the surface (y=0) you can dive -- shares player.y/vy with the rest of the game, just inverted: 0 is the surface, negative is underwater, same as everywhere else in this file player.y means "height above ground"
 const POOL_SPAWN_X = 80; // right where you land in the water, at the entry edge nearest the climb
 const POOL_EXIT_X = 90; // press up near here, at the surface, to climb back out onto the rock ledge
-const POOL_SWIM_ACCEL = 0.45;
-const POOL_SWIM_MAX_SPEED = 4;
-const POOL_SWIM_DRAG = 0.9; // velocity damping every frame -- water resistance, so movement eases in/out instead of snapping like ordinary ground running
+// CONFIRMED CHANGE ("and we will want movement like in ball pit"): swapped
+// the original accel+drag free-swim feel for the sandbox ball pit's own
+// model instead -- direct, constant px/s speed while a direction is held
+// (no momentum/inertia at all), exactly like SANDBOX_BALL_PIT_SWIM_SPEED_X/Y
+// and their use in updateSandboxBallPit. Reusing those same numbers rather
+// than inventing new ones, since "like in ball pit" means the feel itself,
+// not just the shape of the code.
+// Hardcoded (not referencing SANDBOX_BALL_PIT_SWIM_SPEED_X/Y directly) --
+// those consts are declared much later in the file, and this object is
+// evaluated at load time, before that declaration runs. Keep these two
+// numbers in sync with SANDBOX_BALL_PIT_SWIM_SPEED_X/Y (currently 34/60)
+// if that speed is ever retuned.
+const POOL_SWIM_SPEED_X = 34; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_X
+const POOL_SWIM_SPEED_Y = 60; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_Y
+// CONFIRMED CHANGE ("so the water sshould almost go to the top"): the
+// water's own screen position is anchored to the shared gy constant (300,
+// same "ground level" every scene draws from) via the player's own shared
+// draw math (py = gy + cameraY - height - player.y, see the big comment on
+// that line) -- so raising the water on screen without breaking that
+// shared formula means shifting cameraY itself, the exact same technique
+// forest's own rock climb and tunnel town already use to keep a tall climb
+// on-screen (see their own `cameraY = Math.max(0, player.y - 150)` lines
+// and the `ctx.translate(0, cameraY)` wraps around their world content).
+// Pool doesn't need a DYNAMIC camera like those (nothing to keep pinned as
+// you climb) -- just a fixed shift, set once per frame in updatePoolScene
+// below, so the surface sits close to the top of the canvas instead of
+// down near gy itself. Chosen so the surface (player.y=0) draws at roughly
+// screen y=46 (gy + POOL_CAMERA_Y - player.height - 0 = 300-200-54=46),
+// leaving just a small ceiling margin above the water line.
+const POOL_CAMERA_Y = -200;
 
 function updatePoolScene(deltaTime) {
+  // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
+  // exact shape as updateSandboxBallPit's own swim block -- a direction
+  // held sets a flat unit velocity, multiplied by a px/s speed and
+  // deltaTime (frame-rate independent, unlike the rest of this game's
+  // per-frame-fixed physics), no momentum carried between frames at all.
+  // Released keys stop movement on that axis instantly, same as ball pit.
+  let vx = 0, vy = 0;
+  if (keys.left) vx = -1;
+  if (keys.right) vx = 1;
+  if (keys.up) vy = 1;
+  if (keys.down) vy = -1;
+  player.x += vx * POOL_SWIM_SPEED_X * deltaTime;
+  player.y += vy * POOL_SWIM_SPEED_Y * deltaTime;
+  player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
+
+  player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
+  player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
+  player.vx = 0;
+  player.vy = 0;
+  player.jumping = false;
+  player.usedDoubleJump = false;
+  player.launched = false;
+
+  // fixed camera shift so the water reads as filling most of the screen --
+  // see POOL_CAMERA_Y's own comment above. Set every frame (not just once
+  // on entry), same pattern forest/sandbox/tunnel town all use for their
+  // own cameraY.
+  cameraY = POOL_CAMERA_Y;
+
   // exit: swim back to the entry edge, get near the surface, press up --
   // deliberate button press to leave (mirrors the deliberate manual-grab
   // climb mechanic), rather than just touching the edge, so a player
@@ -17798,16 +17832,25 @@ function updatePoolScene(deltaTime) {
 }
 
 function drawPoolScene(camX) {
-  // deep water gradient -- darker with depth, same visual language as the
-  // float zone's own submerged tint, just permanent here instead of eased
-  // in/out by a submerge amount
+  // thin fixed sky/ceiling backdrop -- deliberately NOT wrapped in the
+  // cameraY translate below (screen-fixed, like sandbox's own sky rect),
+  // so it stays a small strip pinned to the top of the canvas no matter
+  // how the water shifts underneath it.
   ctx.fillStyle = "#a9d4e0";
-  ctx.fillRect(0, 0, canvas.width, gy - 30);
-
-  // a thin strip of visible cliff/rock at the very top edges, selling
-  // "you're inside a walled-in mountain pool," not open sky
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#443f37";
   ctx.fillRect(0, 0, canvas.width, 26);
+
+  // everything below is genuine world-space content (water, walls, light
+  // shafts), authored in the same gy-relative coordinates every other
+  // scene's ground-level content uses -- translating the whole block by
+  // cameraY in one shot (same technique drawSandboxScene/drawForestScene
+  // use for their own ground-level blocks) is what actually moves the
+  // water up near the top of the screen, in sync with the player's own
+  // draw math (which bakes in cameraY the same way). See POOL_CAMERA_Y's
+  // own comment for why a fixed (not dynamic) shift is enough here.
+  ctx.save();
+  ctx.translate(0, cameraY);
 
   const waterGrad = ctx.createLinearGradient(0, gy - 30, 0, gy + POOL_MAX_DEPTH + 60);
   waterGrad.addColorStop(0, "rgba(90,170,190,0.9)");
@@ -17862,6 +17905,8 @@ function drawPoolScene(camX) {
     ctx.closePath();
     ctx.fill();
   });
+
+  ctx.restore();
 }
 
 // leaf/bark boats -- launched right where the current starts, well
