@@ -16640,10 +16640,15 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // (FOREST_FLOAT_RETURN_LEVER_X) with real breathing room, in open space
 // past the end of the float zone -- nothing else is built out here yet.
 // CONFIRMED CHANGE ("move to right ... i think i might have some ground
-// hooping mushrooms between thi and ruhshing river", then again "move all
-// more right"): pushed right twice now (+200 -> +420 -> +560), opening up
-// real walking distance between the return lever and the tree for the
-// ground mushrooms, which shifted along with it (see FOREST_GROUND_
+// hooping mushrooms between thi and ruhshing river", then "move all more
+// right", then again "move all over right. breathing room man. not have
+// the last on ground mushroom like touching the bottom of the tree"):
+// pushed right three times now (+200 -> +420 -> +560 -> +800). This last
+// jump was a much bigger one specifically to open real clear space
+// between the last ground mushroom (now ending around leverX+608) and
+// the trunk's own left mat (treeX-30 = leverX+770) -- about 160px of
+// open walking gap, not the near-touching spacing the tree had before.
+// The ground mushrooms shifted along with it too (see FOREST_GROUND_
 // MUSHROOMS' own comment).
 //
 // CONFIRMED CHANGE ("and cameray isnt following"): the note that used to
@@ -16659,7 +16664,7 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // threshold keeps ordinary forest jumping (well under 150px high)
 // completely unaffected -- only climbing the fungus tree past that
 // height starts moving the camera.
-const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 560;
+const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 800;
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
 // between thi and ruhshing river" -> scoped as "tiny real hop -- taps you
@@ -16675,32 +16680,45 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 560;
 // CONFIRMED CHANGE ("move all more right"): shifted +140 along with the
 // fungus tree below, keeping the same relative spacing/uneven-scatter
 // layout, just further out past the return lever.
+// CONFIRMED CHANGE ("move all over right. breathing room man. not have
+// the last on ground mushroom like touching the bottom of the tree"):
+// shifted another +80 (on top of the earlier +140), and -- more
+// importantly -- the tree itself moved a lot further this time (see
+// FOREST_FUNGUS_TREE_X below) so there's real clear space between the
+// last mushroom and the trunk instead of them nearly touching.
 const FOREST_GROUND_MUSHROOMS = [
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 210, scale: 0.85, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 280, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 335, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 400, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 460, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 510, scale: 1.2, squishT: 9999 }
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 290, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 360, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 415, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 480, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 540, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 590, scale: 1.2, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
 // CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
 // little too long to build up... walked across the ground mushrooms you
 // would keep doing that cute little hop down the line"): the hop HEIGHT
-// was already right, but plain shared gravity (0.8) made each hop's
-// round trip slow enough that walking speed rarely carried the player
-// into the next mushroom's radius while still mid-arc, so it read as one
-// bounce at a time rather than a chained hop-hop-hop. Fixed with a
-// dedicated stronger gravity (see FOREST_GROUND_MUSHROOM_GRAVITY, used
-// only while player.mushroomHopActive) instead of just cranking
-// velocity -- MIN/MAX_VY scaled up by sqrt(new_g/old_g) so the actual
-// peak height each hop reaches is essentially unchanged (min ~31px,
-// max ~138px, matching the original 7/15-at-0.8 numbers), it just gets
-// there and back down noticeably faster.
-const FOREST_GROUND_MUSHROOM_MIN_VY = 10;
-const FOREST_GROUND_MUSHROOM_MAX_VY = 21;
-const FOREST_GROUND_MUSHROOM_BOUNCE_MULT = 1.6;
-const FOREST_GROUND_MUSHROOM_GRAVITY = 1.6; // 2x the shared 0.8 -- see the MIN/MAX_VY comment above for why
+// was already right at that point, but plain shared gravity (0.8) made
+// each hop's round trip slow enough that walking speed rarely carried
+// the player into the next mushroom's radius while still mid-arc, so it
+// read as one bounce at a time rather than a chained hop-hop-hop. Fixed
+// with a dedicated stronger gravity (see FOREST_GROUND_MUSHROOM_GRAVITY,
+// used only while player.mushroomHopActive) instead of just cranking
+// velocity, so hops complete their round trip noticeably faster.
+//
+// CONFIRMED CHANGE ("tone down the ground mushroom hop height to what it
+// was just before"): that first pass scaled MIN/MAX_VY UP alongside the
+// new gravity specifically to preserve the exact same peak height while
+// only speeding up the arc -- but it read as too much once actually
+// played. Reverted MIN/MAX_VY back to their original pre-chain-hop
+// values (7/15) while KEEPING the stronger gravity, which nets out to a
+// noticeably lower hop than before (roughly half the old peak height)
+// while still keeping the snappier, faster-cycling arc that made the
+// chained hop-hop-hop across the patch actually work.
+const FOREST_GROUND_MUSHROOM_MIN_VY = 7;
+const FOREST_GROUND_MUSHROOM_MAX_VY = 15;
+const FOREST_GROUND_MUSHROOM_BOUNCE_MULT = 1.15;
+const FOREST_GROUND_MUSHROOM_GRAVITY = 1.6; // 2x the shared 0.8 -- keeps the chained-hop timing fix from the comment above
 const FOREST_GROUND_MUSHROOM_SQUISH_MS = 200;
 
 function updateForestGroundMushrooms(deltaTime) {
@@ -16762,21 +16780,33 @@ function forestFungusLevelMats(height) {
     { x: FOREST_FUNGUS_TREE_X + FOREST_FUNGUS_DX / 2, height, dir: -1, squishT: 9999 }
   ];
 }
+// CONFIRMED CHANGE ("add another hop level on the tree"): a 4th level at
+// height 300. The promotion arc (FOREST_FUNGUS_PROMOTE_TILT/SPEED) is
+// translation-invariant -- tuned for the fixed 100px gap BETWEEN levels,
+// not any absolute height -- so it works unchanged for this new top
+// level exactly like it already does for the other three; no physics
+// retuning needed, just one more levels entry.
 const forestFungusClimb = {
   levels: [
     { height: 0, mats: forestFungusLevelMats(0) },
     { height: 100, mats: forestFungusLevelMats(100) },
-    { height: 200, mats: forestFungusLevelMats(200) }
+    { height: 200, mats: forestFungusLevelMats(200) },
+    { height: 300, mats: forestFungusLevelMats(300) }
   ],
   streak: 0, // consecutive fungus catches at the CURRENT level, same shape as sandboxTrampolineDuo.streak -- indexes FOREST_FUNGUS_TIERS
   level: 0   // which level of forestFungusClimb.levels the player is currently chaining bounces on
 };
-// wider than the sandbox tower's own SANDBOX_TRAMPOLINE_DUO_RADIUS (40)
-// and SANDBOX_TRAMPOLINE_TOWER_BAND (45) -- the direct ask was for this
-// to be a gentler, more forgiving climb, and a wider catch window is the
-// most direct way to make that true regardless of skill.
-const FOREST_FUNGUS_RADIUS = 55;
-const FOREST_FUNGUS_BAND = 65;
+// CONFIRMED BUG FIX ("the jumping is almost too generous radii like i was
+// trying to get off an kept jumpingg"): the original 55/65 (wider than
+// even the sandbox tower's own 40/45, meant to make the climb gentler)
+// turned out too generous in the other direction -- it kept re-catching
+// jumps that were meant to leave the tree entirely, not bounce again.
+// Pulled in tighter than the tower now, not wider: 30/35. Mat spacing
+// (FOREST_FUNGUS_DX, 60 -- 30px each side of the trunk) still comfortably
+// clears this radius without the two same-level mats' catch zones
+// overlapping.
+const FOREST_FUNGUS_RADIUS = 30;
+const FOREST_FUNGUS_BAND = 35;
 // CONFIRMED CHANGE: only 2 tiers (not the tower's 4) -- fewer required
 // back-and-forth bounces before a level promotes, since the tower
 // feedback was specifically about the CLIMB feeling hard, not just any
@@ -16857,9 +16887,17 @@ function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
   ctx.save();
   ctx.translate(baseX, baseY);
   ctx.rotate(angle);
+  // CONFIRMED BUG FIX ("waaaya too much of this light color take that
+  // out"): the pale growing-edge band was taking up a full 17% of each
+  // lobe's radius, and with 4 overlapping lobes per cluster that cream
+  // ring was compounding into way more pale area than intended -- real
+  // turkey tail's pale edge is a thin final rim, not a wide band. Pulled
+  // way in (0.83 -> 0.95, so it's now a slim ~5% rim) and muted the color
+  // itself down from a bright cream toward a duller tan so what's left
+  // reads as a highlight, not a dominant band.
   const bands = [
-    { frac: 1.00, color: "#e9ddbe" }, // pale cream growing edge (newest growth)
-    { frac: 0.83, color: "#8fa07d" }, // muted grey-green band
+    { frac: 1.00, color: "#c9bb95" }, // thin, muted tan growing edge (newest growth) -- much less of it now
+    { frac: 0.95, color: "#8fa07d" }, // muted grey-green band
     { frac: 0.66, color: "#b06f3c" }, // rust/orange band
     { frac: 0.49, color: "#8a5a30" }, // mid brown band
     { frac: 0.30, color: "#4a3018" }, // dark brown band
@@ -17021,18 +17059,37 @@ function drawForestFungusClimb(camX) {
     ctx.stroke();
   }
 
-  // a modest leaf canopy at the top so this still reads as a living tree
-  ctx.fillStyle = "rgba(58,78,42,0.85)";
-  const canopyCy = gy - topHeight - 6;
-  [[-22, 6], [0, -10], [24, 8], [8, 22], [-14, 22]].forEach(([ox, oy]) => {
+  // CONFIRMED CHANGE ("make the top better"): the canopy was a thin,
+  // modest cluster that read fine on the earlier, shorter trunk but got
+  // lost now that the tree's grown considerably taller -- rebuilt as a
+  // fuller, more layered crown: a wide dark back layer establishes the
+  // overall silhouette, a mid layer of bigger overlapping lobes fills it
+  // in, and a brighter front layer catches the light on top, closer to
+  // how the rest of the game's other full trees (the flanking background
+  // ones) actually read.
+  const canopyCy = gy - topHeight - 10;
+  // back layer -- widest, darkest, establishes the full silhouette
+  ctx.fillStyle = "rgba(38,54,28,0.9)";
+  [[-30, 10], [30, 10], [0, -18], [-14, 30], [16, 30]].forEach(([ox, oy]) => {
+    ctx.beginPath();
+    ctx.arc(sx + ox, canopyCy + oy, 34, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // mid layer -- the main body of foliage
+  ctx.fillStyle = "rgba(58,78,42,0.9)";
+  [[-24, 4], [22, 6], [0, -16], [10, 22], [-16, 20], [2, 4]].forEach(([ox, oy]) => {
     ctx.beginPath();
     ctx.arc(sx + ox, canopyCy + oy, 30, 0, Math.PI * 2);
     ctx.fill();
   });
-  ctx.fillStyle = "rgba(78,102,56,0.5)";
-  ctx.beginPath();
-  ctx.arc(sx - 10, canopyCy - 4, 26, 0, Math.PI * 2);
-  ctx.fill();
+  // front highlight layer -- brighter, smaller, offset toward one side
+  // like light catching the top/near side of the crown
+  ctx.fillStyle = "rgba(94,122,64,0.55)";
+  [[-12, -10], [8, -2], [-2, 14]].forEach(([ox, oy]) => {
+    ctx.beginPath();
+    ctx.arc(sx + ox, canopyCy + oy, 22, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   forestFungusClimb.levels.forEach(level => {
     level.mats.forEach(t => drawForestFungusCap(camX, t));
