@@ -17792,6 +17792,56 @@ const POOL_SWIM_SPEED_Y = 60; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_Y
 // leaving just a small ceiling margin above the water line.
 const POOL_CAMERA_Y = -200;
 
+// CONFIRMED CHANGE ("add neat water plants to the bottom"): procedurally
+// placed seaweed tufts along the pool floor, deterministic (seeded off
+// index via pseudoRandom, same convention as the rock wall's own jagged
+// texture) so they don't jitter frame to frame -- only their gentle sway
+// animates, driven by fireflyT like every other ambient sway in this file
+// (dust motes, light shafts, etc.). Spread evenly across the floor with a
+// little per-plant jitter so they read as "neat" (an even little garden
+// along the bottom) rather than randomly scattered clumps, and kept clear
+// of both side walls with a margin.
+const POOL_PLANTS = Array.from({ length: 13 }, (_, i) => {
+  const span = POOL_WIDTH - 160;
+  const x = 80 + (i / 12) * span + (pseudoRandom(i * 3.3) - 0.5) * 26;
+  return {
+    x,
+    height: 34 + pseudoRandom(i * 7.1) * 46,
+    bladeCount: 3 + Math.floor(pseudoRandom(i * 5.5) * 2), // 3-4 blades per tuft
+    seed: i * 11.7,
+    dark: pseudoRandom(i * 2.2) > 0.5
+  };
+});
+
+function drawPoolPlants(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  POOL_PLANTS.forEach(p => {
+    const sx = p.x - camX;
+    if (sx < -60 || sx > canvas.width + 60) return; // cheap off-screen cull
+
+    // a small rounded base the blades emerge from, grounding them to the
+    // floor rather than looking like they're just floating above it
+    ctx.fillStyle = "rgba(35,42,32,0.55)";
+    ctx.beginPath();
+    ctx.ellipse(sx, floorY, 11, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let b = 0; b < p.bladeCount; b++) {
+      const bladeSeed = p.seed + b * 3.9;
+      const bladeHeight = p.height * (0.7 + pseudoRandom(bladeSeed) * 0.5);
+      const baseX = sx + (b - (p.bladeCount - 1) / 2) * 7;
+      const sway = Math.sin(fireflyT * 0.0011 + bladeSeed) * (6 + bladeHeight * 0.1);
+      ctx.strokeStyle = p.dark ? "rgba(38,90,64,0.85)" : "rgba(58,120,84,0.85)";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(baseX, floorY + 1);
+      ctx.quadraticCurveTo(baseX + sway * 0.5, floorY - bladeHeight * 0.55, baseX + sway, floorY - bladeHeight);
+      ctx.stroke();
+    }
+  });
+}
+
 function updatePoolScene(deltaTime) {
   // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
   // exact shape as updateSandboxBallPit's own swim block -- a direction
@@ -17905,6 +17955,8 @@ function drawPoolScene(camX) {
     ctx.closePath();
     ctx.fill();
   });
+
+  drawPoolPlants(camX);
 
   ctx.restore();
 }
