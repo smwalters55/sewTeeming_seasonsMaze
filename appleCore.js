@@ -197,7 +197,43 @@ const player = {
   // across the patch reads as a quick chained hop-hop-hop instead of one
   // slow floaty bounce at a time. Cleared the moment a plain (non-
   // mushroom) ground landing happens.
-  mushroomHopActive: false
+  mushroomHopActive: false,
+  // CONFIRMED CHANGE ("should this even be the entryway to the rock pool
+  // ... it could be climbing up rocks instead"): the fungus tree stays
+  // its own standalone toy -- THIS is the real connector to the still-
+  // unbuilt swim hole, a separate rock climb further out past the tree.
+  // -1 when not gripping anything; otherwise the index into
+  // FOREST_ROCK_HANDHOLDS currently held. Manual grab (per direct
+  // request: "lets try manual") -- unlike every other catch/mount system
+  // in this game (which all auto-trigger on simple proximity/touch), the
+  // player must deliberately press up while in range to grab a handhold,
+  // and press up again while gripping it to let go and launch toward the
+  // next one. While clinging, position is fully frozen (see applyPhysics'
+  // early return, same pattern as peanutVine.mounted/swing.mounted/etc)
+  // and normal movement/jump input is excluded (see the big movement gate
+  // this flag was added to).
+  rockClingIndex: -1,
+  // CONFIRMED BUG FIX (found via a real handleInput()/applyPhysics()
+  // frame-step test): the grab branch and the release check both read
+  // the SAME un-consumed keys.upJustPressed this frame (upJustPressed
+  // isn't consumed until the very end of the frame -- same reason
+  // moleholeRoot needs its own justMounted flag), so without this a
+  // single grab press was immediately un-gripping itself in the same
+  // frame it grabbed -- rockClingIndex went from -1 to i and straight
+  // back to -1 before a single frame of actually clinging ever rendered.
+  rockJustGrabbed: false,
+  // CONFIRMED BUG FIX (same class of same-frame double-fire, caught by
+  // the same full-chain test): the mid-flight grab check (applyPhysics)
+  // ALSO reads the same un-consumed keys.upJustPressed as a release that
+  // just fired earlier the same frame in handleInput() -- and right at
+  // the moment of release, position hasn't moved yet (the launched-
+  // flight's own position update happens further down in that SAME
+  // applyPhysics call), so the player is technically still standing
+  // exactly on the handhold they just let go of. Without this guard, the
+  // mid-flight check immediately re-grabbed that same handhold in the
+  // same frame, undoing the release before a single frame of flight ever
+  // happened.
+  rockJustReleased: false
 };
 
 /* ======================================================
@@ -2390,7 +2426,7 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2415,6 +2451,18 @@ function handleInput(){
       const nearMoleholeRoot = currentScene === "molehole" &&
         moleholeRoots.find(r => !r.mounted && isPlayerNear(r.x, r.anchorHeight - r.length, 55, 35, 35));
 
+      // CONFIRMED CHANGE ("lets try manual"): the rock climb's own grab --
+      // deliberately checked as its own priority branch here (same shape
+      // as nearSwing/nearVine/nearMoleholeRoot above), not folded into the
+      // jump/double-jump branches below, so a press can grab a handhold at
+      // ANY point mid-air, not just when double-jump-eligible. Requires
+      // actually being airborne (player.jumping) and not already gripping
+      // something -- grabbing itself is what freezes the player in place,
+      // so this can never re-trigger on the same press.
+      const nearRockHandhold = currentScene === "forest" && player.jumping && player.rockClingIndex === -1 &&
+        FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
+          Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
+
       if (nearSwing) {
         // jumping onto the swing takes priority over a normal jump here
         swing.mounted = true;
@@ -2437,6 +2485,18 @@ function handleInput(){
         // request and instantly kicks the player back off with near-zero
         // swing built up, reading as if the grab silently failed
         nearMoleholeRoot.justMounted = true;
+      } else if (nearRockHandhold) {
+        // grab -- snap to the handhold and freeze here (see applyPhysics'
+        // own early return for player.rockClingIndex, which is what
+        // actually stops gravity/position updates while gripping)
+        player.rockClingIndex = FOREST_ROCK_HANDHOLDS.indexOf(nearRockHandhold);
+        player.x = nearRockHandhold.x - player.width / 2;
+        player.y = nearRockHandhold.height;
+        player.vx = 0;
+        player.vy = 0;
+        player.launched = false;
+        player.launchSteerable = false;
+        player.rockJustGrabbed = true; // see this flag's own comment on the player object
       } else if (!player.jumping) {
         // first jump -- but if you're currently standing on an actively
         // spinning forest clockwork gear, this becomes a real launch
@@ -2514,6 +2574,24 @@ function handleInput(){
   // NOTE: upJustPressed is NOT consumed here — updateSwing() (called later
   // this same frame, for the release action) still needs to see it. It gets
   // consumed once, at the very end of the frame, alongside left/right.
+
+  // CONFIRMED CHANGE: the rock climb's own release -- deliberately OUTSIDE
+  // the big movement-gating block above, since that block now excludes
+  // player.rockClingIndex !== -1 entirely (same as every other mounted
+  // state), which means the grab-handling branch up there never runs
+  // while already gripping. A clinging player still needs to see this
+  // same upJustPressed press to let go, so it gets its own small
+  // unconditional check here instead.
+  if (currentScene === "forest" && player.rockClingIndex !== -1 && keys.upJustPressed) {
+    if (player.rockJustGrabbed) {
+      // this is the SAME press that just grabbed -- don't also let go
+      // this same frame, or a grab could never actually hold for even
+      // one rendered frame (see rockJustGrabbed's own comment)
+      player.rockJustGrabbed = false;
+    } else {
+      forestRockClimbRelease();
+    }
+  }
 
   // hard left world boundary — the camera also clamps at 0, so this keeps
   // "camera stops" and "character stops" happening at the same moment
@@ -2682,6 +2760,13 @@ function applyPhysics(){
   // the canvas.
   if (peanutVine.mounted) return;
 
+  // same idea for the rock climb's manual grab -- while gripping a
+  // handhold, position is fully frozen (no gravity, no movement) until a
+  // deliberate release press launches the player toward the next one --
+  // see forestRockClimbRelease and the grab branch in the input handler
+  // above.
+  if (player.rockClingIndex !== -1) return;
+
   // while mid-bounce off the seesaw, gravity is handled inside updateSeesaw
   // itself (slower descent than standard) — skip normal gravity here
   if (player.onSeesawBounce) return;
@@ -2723,6 +2808,49 @@ function applyPhysics(){
 
   // frozen in place during the brief "settled on the cloud" beat
   if (cloudLanding.active) return;
+
+  // CONFIRMED BUG FIX (found via a real handleInput()/applyPhysics()
+  // full-chain climb test -- grabbing handhold 0 worked, but every
+  // handhold after that never grabbed at all): the manual grab check in
+  // handleInput() lives inside the big movement-gating block, which
+  // explicitly excludes `!player.launched` -- correct for every OTHER
+  // system there, but it meant a grab press could never be seen at all
+  // during the release-launch flight BETWEEN handholds (player.launched
+  // is true for that entire flight), since handleInput's whole gate skips
+  // over it. Every other launched system with a mid-flight catch (the
+  // fungus tree's elevated re-catch, the trampoline tower's own) solves
+  // this the same way -- by checking from INSIDE this launched-flight
+  // branch instead of the gated input handler. This is that same check,
+  // just gated on a real keypress (manual) rather than simple proximity.
+  if (player.launched && currentScene === "forest" && keys.upJustPressed && player.rockClingIndex === -1) {
+    if (player.rockJustReleased) {
+      // this is the SAME press that just released -- don't immediately
+      // re-grab the handhold just let go of, before the flight has even
+      // moved (see rockJustReleased's own comment on the player object)
+      player.rockJustReleased = false;
+    } else {
+      const midFlightHit = FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
+        Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
+      if (midFlightHit) {
+        player.rockClingIndex = FOREST_ROCK_HANDHOLDS.indexOf(midFlightHit);
+        player.x = midFlightHit.x - player.width / 2;
+        player.y = midFlightHit.height;
+        player.vx = 0;
+        player.vy = 0;
+        player.launched = false;
+        player.launchSteerable = false;
+        // CONFIRMED BUG FIX (found via the full-chain climb test): unlike
+        // the handleInput() grab branch, this one does NOT need to set
+        // rockJustGrabbed -- handleInput's own release-check already ran
+        // earlier THIS SAME frame (and saw rockClingIndex === -1, so it
+        // was a no-op), so there's no same-frame double-fire risk here to
+        // guard against. Setting it anyway left it dangling true into
+        // FUTURE frames, where it wrongly ate the very next real release
+        // press as if it were an echo of this grab.
+        return;
+      }
+    }
+  }
 
   if (player.launched) {
     // horizontal momentum from the swing release, plus gravity that's
@@ -2864,6 +2992,42 @@ function applyPhysics(){
           checkSandboxPendulumGoalHit(player.x + player.width / 2);
           return;
         }
+      }
+    }
+
+    // CONFIRMED BUG FIX (found via a real full-chain climb test -- every
+    // handhold-to-handhold grab worked, but the very last release onto
+    // FOREST_ROCK_LEDGE never landed): the persistent ledge-stand check
+    // added down near the ground-collision code (mushroomHit etc.) only
+    // ever runs for ORDINARY, non-launched physics -- this whole launched-
+    // flight branch has its own separate landing handling and never falls
+    // through to that later code while player.launched is true, same
+    // reason the sandbox pile-landing check just above needs its OWN
+    // dedicated block here rather than relying on the generic one. Uses a
+    // band (not the sandbox check's strict prevY>top/newY<=top crossing)
+    // because the release arc's own peak height (~715, a few px shy of
+    // the ledge's 720) never actually EXCEEDS the platform height -- it
+    // just approaches from below and starts to sink back down without
+    // ever crossing above it, so a crossing check could never catch it at
+    // all. This is the same in-band-and-descending shape the elevated
+    // mid-flight fungus/tower catches already use above.
+    if (currentScene === "forest" && player.vy <= 0) {
+      const ledge = FOREST_ROCK_LEDGE;
+      const platformTop = ledge.height;
+      if (
+        player.x + player.width > ledge.x - ledge.width / 2 &&
+        player.x < ledge.x + ledge.width / 2 &&
+        player.y <= platformTop &&
+        player.y >= platformTop - 14
+      ) {
+        player.y = platformTop;
+        player.vx = 0;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.launched = false;
+        player.launchSteerable = false;
+        return;
       }
     }
 
@@ -3083,6 +3247,33 @@ function applyPhysics(){
   // so it can't fire again until a later frame actually lands again.
   const mushroomHit = currentScene === "forest" &&
     FOREST_GROUND_MUSHROOMS.find(m => Math.abs(player.x + player.width / 2 - m.x) < FOREST_GROUND_MUSHROOM_RADIUS);
+
+  // CONFIRMED CHANGE ("i just want there to be enough room to swim in
+  // there and find some stuff"): the rock climb's landing platform at the
+  // top -- same persistent "are you currently standing on it" check as
+  // sandbox's block-pile steps (see that block's own comment), since this
+  // sits well above y=0 and needs to be re-checked every frame -- not
+  // just as a one-time landing event -- to actually hold the player up
+  // there instead of falling straight through immediately after arriving.
+  if (currentScene === "forest") {
+    const ledge = FOREST_ROCK_LEDGE;
+    const platformTop = ledge.height;
+    if (
+      player.x + player.width > ledge.x - ledge.width / 2 &&
+      player.x < ledge.x + ledge.width / 2 &&
+      player.y <= platformTop &&
+      player.y >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.vx = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.launched = false;
+      player.launchSteerable = false;
+    }
+  }
 
   if (player.y <= 0) {
     if (currentScene === "sandbox" && player.vy < -1 &&
@@ -15313,9 +15504,13 @@ function drawForestScene(camX) {
   // independent of the float zone's own visibility.
   drawForestFungusClimb(camX);
   // scattered ground-hopping mushrooms between the return lever and the
-  // fungus tree -- called directly here (not tucked inside some other
-  // culled sub-function) per the lesson just above.
+  // fungus tree (now two patches -- see FOREST_GROUND_MUSHROOMS) -- called
+  // directly here (not tucked inside some other culled sub-function) per
+  // the lesson just above.
   drawForestGroundMushrooms(camX);
+  // the rock climb, further out past the tree -- same reasoning, called
+  // directly rather than nested in anything else that could cull it off.
+  drawForestRockClimb(camX);
   drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
   drawForestRiverBoatPiles(camX); // the boat pickup spots -- one at the zone's calm start, one at each lily pad
@@ -16686,13 +16881,26 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 800;
 // importantly -- the tree itself moved a lot further this time (see
 // FOREST_FUNGUS_TREE_X below) so there's real clear space between the
 // last mushroom and the trunk instead of them nearly touching.
+// CONFIRMED CHANGE ("lets also spread the mushrooms on ground out a
+// little more"): widened the gaps between all 6 of the first patch (was
+// a 300px total span, now 380) while pulling the start point back in a
+// touch (290 -> 260) so the last one still lands well clear of the
+// tree's own left mat (770) instead of eating into that breathing room.
 const FOREST_GROUND_MUSHROOMS = [
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 290, scale: 0.85, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 360, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 415, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 480, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 540, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 590, scale: 1.2, squishT: 9999 }
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 260, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 350, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 430, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 505, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 575, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 640, scale: 1.2, squishT: 9999 },
+  // CONFIRMED CHANGE ("after a few more hoppy fround mushrooms"): a
+  // second, smaller patch past the fungus tree -- same exact mechanic,
+  // just continuing the walking path out toward the new rock climb. Well
+  // clear of the tree's own right mat (FOREST_FUNGUS_TREE_X + 30).
+  { x: FOREST_FUNGUS_TREE_X + 90, scale: 1.0, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 160, scale: 0.75, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 225, scale: 1.1, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 285, scale: 0.9, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
 // CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
@@ -17102,6 +17310,283 @@ function drawForestFungusClimb(camX) {
   forestFungusClimb.levels.forEach(level => {
     level.mats.forEach(t => drawForestFungusCap(camX, t));
   });
+}
+
+// CONFIRMED CHANGE ("should this even be the entryway to the rock pool.
+// i am kind of liking this as its own thing... it could be climbing up
+// rocks instead"): the fungus tree above stays its own standalone toy --
+// this rock climb, further out past it, is the REAL connector to the
+// still-unbuilt swim hole. Deliberately a different mechanical feel than
+// every other climb built this session (fungus tree, sandbox trampoline
+// tower/duo/chain) -- all of those auto-catch on simple touch/proximity
+// and chain via bounce physics. This one is manual grab-and-cling (per
+// direct request, "lets try manual"): press up while in range of a
+// handhold to grab and freeze there, press up again to let go and launch
+// toward the next one. Miss the grab window and you just fall -- no
+// special catch/rescue state, same as any ordinary missed jump (per
+// direct request, "default miss state i might want to change later").
+//
+// Sits past a second, smaller patch of the same ground-hopping mushrooms
+// from before the tree (same mechanic, just more of them -- "start
+// shaping it now. it will be a lot more right, and after a few more
+// hoppy fround mushrooms"), well clear of the tree's own catch radius.
+// CONFIRMED CHANGE ("more breathing room"): the wall's own base (see
+// drawForestRockWall, ~95px half-width) was landing only ~25px clear of
+// the second mushroom patch's last mushroom -- nowhere near the ~130-
+// 160px gaps established elsewhere this session. Pushed +115 further
+// right for real clearance.
+const FOREST_ROCK_CLIMB_X = FOREST_FUNGUS_TREE_X + 520;
+
+// vertical/horizontal gap between consecutive handholds -- numerically
+// swept (same technique as FOREST_FUNGUS_PROMOTE_TILT/SPEED) so the fixed
+// release tilt/speed below lands almost exactly on the next handhold's
+// x/height every time, not just close enough to be caught by a generous
+// band.
+// CONFIRMED CHANGE ("oh i can climb it but it really hard", "without
+// double jump working while on it, it feels like the second hold is
+// impossible to get"): the very first handhold sat at exactly 90px --
+// the EXACT peak height of an ordinary single jump (vy=12, g=0.8 ->
+// 12^2/1.6=90), meaning it could only ever be grabbed in the single
+// instant the jump arc was at its absolute apex, no margin either side.
+// Dropped to 55 (well inside a normal jump's max reach, so there's a
+// real multi-frame window to press up, not a knife's edge) and the
+// gap between every later handhold shrunk 90 -> 75 (re-swept release
+// arc below) so each hop asks less both vertically and of timing.
+const FOREST_ROCK_HANDHOLD_DX = 70; // full x gap between consecutive handholds (alternating +/-35 from center)
+const FOREST_ROCK_HANDHOLD_FIRST_HEIGHT = 55; // reachable by a plain single jump with real margin to spare
+const FOREST_ROCK_HANDHOLD_DY = 75; // vertical rise per handhold after the first
+const FOREST_ROCK_HANDHOLD_COUNT = 7; // still "relatively tall" -- 505px of climb, real cameraY-follow territory
+const FOREST_ROCK_HANDHOLDS = Array.from({ length: FOREST_ROCK_HANDHOLD_COUNT }, (_, i) => ({
+  x: FOREST_ROCK_CLIMB_X + (i % 2 === 0 ? -FOREST_ROCK_HANDHOLD_DX / 2 : FOREST_ROCK_HANDHOLD_DX / 2),
+  height: FOREST_ROCK_HANDHOLD_FIRST_HEIGHT + i * FOREST_ROCK_HANDHOLD_DY,
+  dir: i % 2 === 0 ? 1 : -1 // which way the release launch pushes FROM this handhold (toward the next one's side)
+}));
+// CONFIRMED CHANGE ("really hard"): loosened from 40/45 -- this isn't
+// trying to be hard to grab the way the fungus tree's tight catch radius
+// is (that one had to guard against UNWANTED re-catches during a bouncy
+// auto-chain; this one only grabs on a real deliberate button press, so
+// there's no equivalent risk in being generous here).
+const FOREST_ROCK_HANDHOLD_RADIUS = 48;
+const FOREST_ROCK_HANDHOLD_BAND = 58;
+// CONFIRMED BUG FIX (found via a real handleInput()/applyPhysics()
+// frame-step test, tracing an unexpectedly floaty release): the first
+// sweep assumed the same flat 0.8 gravity the fungus tree's own ground-
+// level catches use, but any player.launched=true flight (which this is,
+// same as every other launch/catch system) actually runs through a
+// completely separate, much floatier physics branch in applyPhysics --
+// LAUNCH_GRAVITY=0.3 while ascending, FLOATY_FALL_GRAVITY=0.13 while
+// descending, not 0.8 at all. Re-swept against that real asymmetric
+// model, then re-swept AGAIN for the new, shorter DY (90 -> 75, see
+// FOREST_ROCK_HANDHOLD_DY's own comment) -- lands within a few px of the
+// target, comfortably inside FOREST_ROCK_HANDHOLD_RADIUS/BAND. See
+// /home/claude/sim_rock_arc3.js for the sweep itself.
+const FOREST_ROCK_CLIMB_TILT = 14.5;
+const FOREST_ROCK_CLIMB_SPEED = 6.5;
+
+// CONFIRMED CHANGE ("i just want there to be enough room to swim in
+// there and find some stuff"): the actual pool/what's-findable-in-it is
+// still an open decision (same "not sure yet" answer the tower and the
+// fungus tree's own top both got) -- but the climb needs SOMEWHERE to
+// land at the top regardless, so this is a real standing platform (same
+// persistent stand-on-it pattern as sandbox's block-pile steps), wide
+// enough to be a genuine landing/staging area rather than a single-point
+// cap. Reached via the exact same release arc as every other handhold-
+// to-handhold hop (the ledge sits exactly one more DX/DY step past the
+// final handhold), so no new physics tuning was needed for this last
+// stretch either.
+const FOREST_ROCK_LEDGE = {
+  x: FOREST_ROCK_CLIMB_X + (FOREST_ROCK_HANDHOLD_COUNT % 2 === 0 ? -FOREST_ROCK_HANDHOLD_DX / 2 : FOREST_ROCK_HANDHOLD_DX / 2),
+  height: FOREST_ROCK_HANDHOLD_FIRST_HEIGHT + FOREST_ROCK_HANDHOLD_COUNT * FOREST_ROCK_HANDHOLD_DY,
+  width: 260
+};
+
+// shared by the grab branch (input handler, above) and the release
+// below -- freezes/launches using whichever handhold player.rockClingIndex
+// currently points at.
+function forestRockClimbRelease() {
+  const idx = player.rockClingIndex;
+  const hold = FOREST_ROCK_HANDHOLDS[idx];
+  const rad = FOREST_ROCK_CLIMB_TILT * Math.PI / 180;
+  player.vx = Math.sin(rad) * FOREST_ROCK_CLIMB_SPEED * hold.dir;
+  player.vy = Math.cos(rad) * FOREST_ROCK_CLIMB_SPEED;
+  player.launched = true;
+  player.launchGravityMult = 1;
+  // deliberately NOT steerable -- a precise, deterministic arc from grip
+  // to grip is the point of this climb being more "climby" and less
+  // "bouncy" than the fungus tree/trampolines; letting held-direction
+  // steering nudge it would make the same grab sometimes miss the next
+  // handhold's band for reasons that don't trace back to timing at all.
+  player.launchSteerable = false;
+  player.jumping = true;
+  player.usedDoubleJump = false;
+  player.rockClingIndex = -1;
+  player.rockJustReleased = true; // guards applyPhysics' mid-flight grab check for this same frame -- see that flag's own comment
+}
+
+// CONFIRMED CHANGE ("make it look like a raggeeeeddy rock wall like it
+// looks like a smooth pip right now"): the wall's silhouette used to be
+// a perfectly straight-edged tapered trapezoid -- reads as a smooth pipe,
+// not weathered rock. This computes a jagged world-space edge x at any
+// height, built from two layered noise octaves (a coarse jag + a finer
+// one on top) added to the same tapered base half-width the old
+// trapezoid used, so it keeps roughly the same silhouette but with a
+// genuinely irregular, chunky outline. Deterministic (seeded off height
+// and side, not random per frame), so the face doesn't shimmer.
+function forestRockWallEdgeX(t, side) {
+  const baseHalfW = 95 - t * 25;
+  const coarse = (pseudoRandom(side * 3.17 + t * 9.7) - 0.5) * 30;
+  const fine = (pseudoRandom(side * 7.31 + t * 23.5 + 50) - 0.5) * 14;
+  return side * baseHalfW + coarse + fine;
+}
+function forestRockWallTopHeight() {
+  return FOREST_ROCK_LEDGE.height + 40; // a little proud of the ledge itself, like the cliff continues past where you climb onto it
+}
+// world-space left/right edge x of the wall at a given height above
+// ground -- shared by the wall's own outline AND each handhold's outcrop
+// below, so the ledges always bridge to wherever the jagged edge
+// actually is at that height, not a guessed fixed offset.
+function forestRockWallEdgesAt(height) {
+  const t = Math.max(0, Math.min(1, height / forestRockWallTopHeight()));
+  return {
+    left: FOREST_ROCK_CLIMB_X + forestRockWallEdgeX(t, -1),
+    right: FOREST_ROCK_CLIMB_X + forestRockWallEdgeX(t, 1)
+  };
+}
+
+// CONFIRMED CHANGE ("put the grab holds in realistic looking places
+// given the texture of the rock"): rather than a floating grip blob near
+// the wall, each handhold now draws an actual jagged chunk of rock
+// BRIDGING from the wall's own real jagged edge (via
+// forestRockWallEdgesAt, so it's always anchored to wherever the rock
+// face actually is at that height) out to the grip point -- reads as a
+// real outcropping ledge the rock face happens to have there, with the
+// grip knob sitting on the end of it, rather than a separate object.
+function drawForestRockHandhold(camX, h, idx) {
+  const sy = gy - h.height;
+  const sx = h.x - camX;
+  const edges = forestRockWallEdgesAt(h.height);
+  // h.dir===1 handholds sit on the LEFT of the wall (see FOREST_ROCK_
+  // HANDHOLDS' own x formula) and push right on release; dir===-1 sit on
+  // the right and push left. So the wall edge to bridge FROM is the
+  // opposite side from where the release pushes TO.
+  const wallEdgeX = h.dir === 1 ? edges.left : edges.right;
+  const wallSx = wallEdgeX - camX;
+  const seed = idx * 17.37;
+
+  // the outcrop itself -- a jagged quad from the wall edge to the grip
+  ctx.fillStyle = "#524e44";
+  ctx.beginPath();
+  ctx.moveTo(wallSx, sy - 17 - (pseudoRandom(seed) - 0.5) * 10);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 7, sy - 9);
+  ctx.lineTo(sx + (pseudoRandom(seed + 2) - 0.5) * 7, sy + 10);
+  ctx.lineTo(wallSx, sy + 16 + (pseudoRandom(seed + 3) - 0.5) * 10);
+  ctx.closePath();
+  ctx.fill();
+  // a lighter top-facing edge, like the outcrop catching a little light
+  ctx.fillStyle = "rgba(150,145,130,0.22)";
+  ctx.beginPath();
+  ctx.moveTo(wallSx, sy - 17 - (pseudoRandom(seed) - 0.5) * 10);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 7, sy - 9);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 7 - 4, sy - 5);
+  ctx.lineTo(wallSx, sy - 10 - (pseudoRandom(seed) - 0.5) * 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // the actual grip knob at the tip
+  ctx.fillStyle = "#5c5850";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 19, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#726c60";
+  ctx.beginPath();
+  ctx.ellipse(sx - 4, sy - 4, 12, 7, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(30,28,24,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(sx + 5, sy + 3, 3.5, 2.2, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawForestRockLedge(camX) {
+  const l = FOREST_ROCK_LEDGE;
+  const sx = l.x - camX;
+  const sy = gy - l.height;
+  ctx.fillStyle = "#6b665c";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 6, l.width / 2, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#847d6e";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, l.width / 2, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(sx - l.width * 0.18, sy - 4, l.width * 0.22, 6, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// CONFIRMED BUG FIX (caught via a visual screenshot check before
+// shipping): without an actual rock FACE behind them, the handholds read
+// as a scatter of disconnected grey pebbles floating in mid-air -- there
+// was nothing telling the eye "this is a cliff you climb," just isolated
+// blobs at increasing heights. A tapered, jagged cliff silhouette right
+// behind the handhold line, spanning the full climb height, gives the
+// whole thing an actual surface to be climbing (see forestRockWallEdgeX
+// for the jaggedness itself, per "make it look like a raggeeeeddy rock
+// wall... it looks like a smooth pip right now").
+function drawForestRockWall(camX) {
+  const topHeight = forestRockWallTopHeight();
+  const baseX = FOREST_ROCK_CLIMB_X - camX;
+  const bottomY = gy;
+
+  const grad = ctx.createLinearGradient(baseX - 95, 0, baseX + 95, 0);
+  grad.addColorStop(0, "#453f37");
+  grad.addColorStop(0.42, "#665f52");
+  grad.addColorStop(0.55, "#726a5a");
+  grad.addColorStop(1, "#332e27");
+  ctx.fillStyle = grad;
+
+  const STEPS = 16;
+  ctx.beginPath();
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const y = bottomY - topHeight * t;
+    const x = baseX + forestRockWallEdgeX(t, -1);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  for (let i = STEPS; i >= 0; i--) {
+    const t = i / STEPS;
+    const y = bottomY - topHeight * t;
+    const x = baseX + forestRockWallEdgeX(t, 1);
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // a handful of darker crack lines and lighter texture patches, fixed
+  // (not random per frame) so the face doesn't shimmer
+  ctx.strokeStyle = "rgba(20,18,14,0.35)";
+  ctx.lineWidth = 2;
+  [0.15, 0.4, 0.62, 0.82].forEach((t, i) => {
+    const y = bottomY - topHeight * t;
+    const xOff = (i % 2 === 0 ? -1 : 1) * (18 + i * 6);
+    ctx.beginPath();
+    ctx.moveTo(baseX + xOff, y);
+    ctx.lineTo(baseX + xOff * 0.4, y - 45);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "rgba(150,145,130,0.18)";
+  [0.2, 0.45, 0.7].forEach(t => {
+    ctx.beginPath();
+    ctx.ellipse(baseX + (t > 0.4 ? 30 : -25), bottomY - topHeight * t, 26, 16, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawForestRockClimb(camX) {
+  drawForestRockWall(camX);
+  FOREST_ROCK_HANDHOLDS.forEach((h, idx) => drawForestRockHandhold(camX, h, idx));
+  drawForestRockLedge(camX);
 }
 
 // leaf/bark boats -- launched right where the current starts, well
