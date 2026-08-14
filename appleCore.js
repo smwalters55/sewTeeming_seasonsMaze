@@ -268,7 +268,6 @@ const ITEM_ICONS = {
   stone: "🪨",
   aragonite: "🟠",
   geode: "🪨",
-  cloudBlossom: "🌸",
   windSeed: "🍃"
 };
 
@@ -540,10 +539,6 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "bridgePiece");
   },
-  cloudBlossom: (iconCtx) => {
-    iconCtx.clearRect(0, 0, 20, 20);
-    drawCloudBlossomShape(iconCtx, 10, 11, 7, 0);
-  },
   windSeed: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "windSeed");
@@ -566,7 +561,7 @@ const ITEM_CANVAS_RENDER = {
 // aragonite and geode both added -- neither is a stackable pickup, each
 // is exactly one unique found mineral (with its own permanent shine/crack
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "cloudBlossom"];
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode"];
 
 // CONFIRMED CHANGE: items that only ever do anything in a couple of
 // specific "home" scenes (see the matching heldItem safety nets near
@@ -6236,64 +6231,11 @@ function drawExtravagantGoldPileShape(ctx, x, y, size, rotation) {
   ctx.restore();
 }
 
-// the vine-top reward -- replaces the old gold pile now that tunnel
-// town's mine cart has its own real gold-collecting minigame (see
-// drawExtravagantGoldPileShape above). A single pale blossom that only
-// grows this high up: soft glow, radiating translucent petals, a
-// glinting center, a few drifting sparkle motes. Deliberately not
-// naming anything specific about it -- same fairytale-vague spirit as
-// the squirrel's own "something huge and gold is slowly becoming
-// itself" hint elsewhere, just for the vine's own secret instead.
-function drawCloudBlossomShape(ctx, x, y, size, rotation) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rotation);
-
-  const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
-
-  // soft glow
-  ctx.fillStyle = `rgba(255,250,230,${0.18 + pulse * 0.18})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, size * 1.7, 0, Math.PI * 2);
-  ctx.fill();
-
-  // petals -- six, pale and slightly translucent, radiating from center
-  const petalCount = 6;
-  for (let i = 0; i < petalCount; i++) {
-    const a = (i / petalCount) * Math.PI * 2;
-    ctx.save();
-    ctx.rotate(a);
-    ctx.fillStyle = i % 2 === 0 ? "#f6ecff" : "#eaf6ff";
-    ctx.strokeStyle = "rgba(150,140,180,0.35)";
-    ctx.lineWidth = 0.7;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.quadraticCurveTo(size * 0.35, -size * 0.55, 0, -size * 1.05);
-    ctx.quadraticCurveTo(-size * 0.35, -size * 0.55, 0, 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // glowing center
-  ctx.fillStyle = `rgba(255,224,140,${0.85 + pulse * 0.15})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, size * 0.32, 0, Math.PI * 2);
-  ctx.fill();
-
-  // a few drifting sparkle motes
-  for (let i = 0; i < 4; i++) {
-    const a = performance.now() * 0.0015 + i * (Math.PI / 2);
-    const r = size * 1.3 + Math.sin(performance.now() * 0.002 + i) * 3;
-    ctx.fillStyle = `rgba(255,255,240,${0.5 + pulse * 0.4})`;
-    ctx.beginPath();
-    ctx.arc(Math.cos(a) * r, Math.sin(a) * r * 0.7, 1.1, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.restore();
-}
+// CONFIRMED CHANGE ("oh yeah delete cloudblossom"): drawCloudBlossomShape
+// used to live here -- it was a leftover vine-top-reward icon with no code
+// path that ever actually granted it (confirmed via the inventory audit).
+// Removed outright rather than left dead, along with every reference to
+// the "cloudBlossom" itemType elsewhere in the file.
 
 // dispatcher: draws the right shape for any collectible by itemType
 function drawCollectible(ctx, x, y, size, rotation, itemType) {
@@ -6449,8 +6391,6 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawStickShape(ctx, x, y, size * 1.3, rotation + 0.5, sticks[treeType].color);
   } else if (itemType === "goldPile") {
     drawGoldPileShape(ctx, x, y, size, rotation);
-  } else if (itemType === "cloudBlossom") {
-    drawCloudBlossomShape(ctx, x, y, size, rotation);
   } else if (itemType === "cloudPiece") {
     drawCloudPieceShape(ctx, x, y, size, rotation);
   } else if (itemType === "peanut") {
@@ -19156,6 +19096,129 @@ function drawPoolLoopSparkles(camX, opts) {
   });
 }
 
+/* ======================================================
+   POOL TREASURE CHEST -- direct request ("what do you mean by pay off.
+   i mean like add the gold to the treasure chest"): a single one-time
+   chest sitting past the last loop, near the floor, that pays out in
+   `goldPile` -- the mine cart ride's own gold, which the inventory audit
+   found had no use anywhere else in the game. Deliberately the simplest
+   possible shape (one chest, one open, per direct confirmation) -- no
+   scattered piles, no re-lock/refill.
+   ====================================================== */
+const POOL_TREASURE_CHEST = {
+  x: 1010, // past POOL_LOOPS' own last loop (x:950), clear of the right wall's jagged edge (~30px average)
+  y: -240, // near the floor (POOL_MAX_DEPTH=260) but not jammed right against it
+  opened: false,
+  openedAt: 0
+};
+const POOL_TREASURE_GOLD_COUNT = 6;
+
+// gold sparkle burst on open -- same {x, y, startedAt} shell as
+// poolLoopSparkles, just gold-toned and triggered once rather than per
+// loop pass.
+let poolTreasureSparkles = [];
+const POOL_TREASURE_SPARKLE_DURATION_MS = 1100;
+
+function drawPoolTreasureChest(camX) {
+  const chest = POOL_TREASURE_CHEST;
+  const sx = chest.x - camX;
+  const sy = gy - chest.y;
+  if (sx < -40 || sx > canvas.width + 40) return;
+
+  const w = 26, h = 18;
+  const lidOpenP = chest.opened ? 1 : 0;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // a small resting shadow so it reads as sitting ON the sand, not
+  // floating just above it -- same idea as the pebbles' own placement
+  ctx.fillStyle = "rgba(10,20,25,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.42, w * 0.6, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body
+  ctx.fillStyle = "#6b4a2c";
+  ctx.fillRect(-w / 2, -h * 0.1, w, h * 0.5);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-w / 2, -h * 0.1, w, h * 0.5);
+  // metal bands
+  ctx.fillStyle = "rgba(200,190,160,0.55)";
+  ctx.fillRect(-w / 2, h * 0.05, w, 2);
+  ctx.fillRect(-2, -h * 0.1, 4, h * 0.5);
+
+  // lid -- swings open (rotated back on its hinge) once opened, per the
+  // chest.opened flag; drawn from the SAME hinge point (back-top edge of
+  // the body) either way so it reads as one continuous piece
+  ctx.save();
+  ctx.translate(0, -h * 0.1);
+  ctx.rotate(-lidOpenP * (Math.PI / 2.3));
+  ctx.fillStyle = "#7a5535";
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 0);
+  ctx.quadraticCurveTo(0, -h * 0.85, w / 2, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  if (!chest.opened) {
+    // gold latch, with a slow idle glint so the chest reads as a real
+    // interactive find sitting quietly at the bottom, not just more decor
+    const glint = 0.5 + Math.sin(fireflyT * 0.0025) * 0.5;
+    ctx.fillStyle = `rgba(255,215,110,${0.7 + glint * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(0, h * 0.02, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // warm interior glow + a few loose gold flecks, once opened
+  if (chest.opened) {
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.9);
+    glow.addColorStop(0, "rgba(255,220,140,0.55)");
+    glow.addColorStop(1, "rgba(255,220,140,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, -h * 0.15, w * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    [-1, 0, 1].forEach(i => {
+      ctx.fillStyle = "#e8b830";
+      ctx.beginPath();
+      ctx.arc(i * 5, h * 0.08, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  ctx.restore();
+}
+
+function drawPoolTreasureSparkles(camX) {
+  const now = performance.now();
+  poolTreasureSparkles.forEach(s => {
+    const age = now - s.startedAt;
+    const p = age / POOL_TREASURE_SPARKLE_DURATION_MS;
+    if (p >= 1) return;
+    const sx = s.x - camX;
+    const sy = gy - s.y;
+    const alpha = 1 - p;
+    const count = 10;
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2 + p * 2;
+      const r = 6 + p * 46;
+      const px = sx + Math.cos(ang) * r;
+      const py = sy + Math.sin(ang) * r * 0.6 - p * 14; // drifts upward slightly, like coins catching the light on the way up
+      ctx.fillStyle = `rgba(255,210,100,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, 2 + (1 - p) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  poolTreasureSparkles = poolTreasureSparkles.filter(s => now - s.startedAt < POOL_TREASURE_SPARKLE_DURATION_MS);
+}
+
 function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
 
@@ -19227,6 +19290,20 @@ function updatePoolScene(deltaTime) {
   // exploring near the entry wall doesn't accidentally pop back out.
   if (keys.upJustPressed && player.x < POOL_EXIT_X + 40 && player.y > -40 && seasonTransition.phase === "idle") {
     startSeasonTransition("forest");
+  }
+
+  // TREASURE CHEST -- same press-space-near-it shape every other simple
+  // ground pickup in the game already uses (pressedDownNear/isPlayerNear
+  // both compare directly against player.y's own units, which the pool
+  // already shares with every other scene -- no gy/cameraY conversion
+  // needed here at all, unlike the flying-collect-animation system,
+  // which assumes plain screen-space and would have needed one).
+  if (!POOL_TREASURE_CHEST.opened && pressedDownNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 40, 22, 22)) {
+    POOL_TREASURE_CHEST.opened = true;
+    POOL_TREASURE_CHEST.openedAt = performance.now();
+    for (let i = 0; i < POOL_TREASURE_GOLD_COUNT; i++) addToInventory("goldPile");
+    updateInventoryUI();
+    poolTreasureSparkles.push({ x: POOL_TREASURE_CHEST.x, y: POOL_TREASURE_CHEST.y, startedAt: performance.now() });
   }
 }
 
@@ -19311,6 +19388,8 @@ function drawPoolScene(camX) {
   drawPoolCritters(camX);
   drawPoolLoops(camX);
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
+  drawPoolTreasureChest(camX);
+  drawPoolTreasureSparkles(camX);
 
   ctx.restore();
 }
@@ -34390,7 +34469,7 @@ function startGeodeBreakerDialogue() {
     geodeBreakerDialogue.lines = geodeBreakerCrystalLines;
   } else if (heldItem === "cushionPart") {
     geodeBreakerDialogue.lines = geodeBreakerGearLines;
-  } else if (heldItem === "goldPile" || heldItem === "marble" || heldItem === "cloudBlossom") {
+  } else if (heldItem === "goldPile" || heldItem === "marble") {
     geodeBreakerDialogue.lines = geodeBreakerTooShinyLines;
   } else if (heldItem === null) {
     geodeBreakerDialogue.lines = geodeBreakerNoStoneLines;
