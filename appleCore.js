@@ -17836,26 +17836,56 @@ function drawForestSwimHoleRocks(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // rock mass on the RIGHT side, flanking the pool the way the real
-  // climbable cliff already flanks its left
+  // CONFIRMED VISUAL FIX ("make this right part look waaay better. make
+  // it a full rock side that goes all the way down, not floating in the
+  // air with an odd shape"): this used to be a small isolated chunk
+  // (rightBottom = poolY + h*0.5) that stopped well above true ground,
+  // reading as a random floating shape rather than actual rock. Rebuilt
+  // as a real cliff face flanking the pool's right side, running the full
+  // height from above the pool all the way down to true ground level --
+  // same bottom (`belowBottom`, gy+40) the below-pool mass already
+  // reaches, so the two now read as one continuous outcrop instead of two
+  // disconnected pieces. A wider inner/outer jag spread (34 vs the old
+  // 18/22) sells the taller span as real broken rock, not a thin sliver.
   const rightInner = px + w * 0.38;
-  const rightOuter = px + w * 0.68;
+  const rightOuter = px + w * 0.72;
   const rightTop = poolY - h * 0.7;
-  const rightBottom = poolY + h * 0.5;
-  const rightSteps = 8;
+  const rightBottom = belowBottom;
+  const rightSteps = 16;
   ctx.beginPath();
   for (let i = 0; i <= rightSteps; i++) {
     const t = i / rightSteps;
     const y = rightTop + (rightBottom - rightTop) * t;
-    ctx.lineTo(rightInner + forestSwimHoleRockJag(23.1, t, 18), y);
+    ctx.lineTo(rightInner + forestSwimHoleRockJag(23.1, t, 20), y);
   }
   for (let i = rightSteps; i >= 0; i--) {
     const t = i / rightSteps;
     const y = rightTop + (rightBottom - rightTop) * t;
-    ctx.lineTo(rightOuter + forestSwimHoleRockJag(61.4, t, 22), y);
+    ctx.lineTo(rightOuter + forestSwimHoleRockJag(61.4, t, 34), y);
   }
   ctx.closePath();
   ctx.fill();
+
+  // a few crack lines + moss patches on the right face too, echoing the
+  // treatment the below-pool mass gets just below, so it doesn't read as
+  // a flatter/less-detailed slab next to it
+  ctx.strokeStyle = "rgba(20,16,10,0.32)";
+  ctx.lineWidth = 1.3;
+  [0.15, 0.4, 0.65, 0.85].forEach((t, i) => {
+    const y0 = rightTop + (rightBottom - rightTop) * t;
+    const x0 = rightInner + 12 + i * 6;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + pseudoRandom(i * 4.7 + 9) * 16 - 8, y0 + 26);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "rgba(70,90,50,0.24)";
+  [0.35, 0.7].forEach((t, i) => {
+    const y0 = rightTop + (rightBottom - rightTop) * t;
+    ctx.beginPath();
+    ctx.ellipse(rightInner + 18 + i * 14, y0, 7, 3.6, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // a few restrained crack lines + moss patches, lighter-touch than the
   // main climbable wall since this is just a background decoration
@@ -18188,8 +18218,12 @@ const POOL_EXIT_X = 90; // press up near here, at the surface, to climb back out
 // evaluated at load time, before that declaration runs. Keep these two
 // numbers in sync with SANDBOX_BALL_PIT_SWIM_SPEED_X/Y (currently 34/60)
 // if that speed is ever retuned.
-const POOL_SWIM_SPEED_X = 34; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_X
-const POOL_SWIM_SPEED_Y = 60; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_Y
+// CONFIRMED CHANGE ("i think i wanna swim a lil faster"): bumped ~30%
+// past the ball-pit-matching speeds above -- no longer kept in exact
+// parity with SANDBOX_BALL_PIT_SWIM_SPEED_X/Y, a deliberate pool-specific
+// deviation per direct request, not a bug.
+const POOL_SWIM_SPEED_X = 44; // px/s
+const POOL_SWIM_SPEED_Y = 78; // px/s
 // CONFIRMED CHANGE ("so the water sshould almost go to the top"): the
 // water's own screen position is anchored to the shared gy constant (300,
 // same "ground level" every scene draws from) via the player's own shared
@@ -18631,12 +18665,17 @@ function drawPoolTadpoles(camX) {
       // px). Legs and the toe fan both scaled up substantially, and the
       // two legs pushed further apart vertically so they read as two
       // distinct limbs instead of overlapping into one blob.
+      // CONFIRMED VISUAL FIX ROUND 3 ("the tapool frog feet are great!
+      // but pls shorten the legs"): kept the foot/toe fan exactly as-is
+      // (that part landed) and just pulled the thigh+shin segments in
+      // shorter -- less reach on both bones, feet now sit closer to the
+      // body instead of trailing far behind it.
       const legWag = Math.sin(fireflyT * 0.01 + t.seed + 2) * 1.6;
       ctx.lineCap = "round";
       [-1, 1].forEach(side => {
-        const hipX = sx - t.dir * 1, hipY = sy + side * 3;
-        const kneeX = hipX - t.dir * 6, kneeY = hipY + side * 6 + legWag * 0.5;
-        const footX = kneeX - t.dir * 3.5 + legWag * side, footY = kneeY + side * 5.5;
+        const hipX = sx - t.dir * 1, hipY = sy + side * 2.4;
+        const kneeX = hipX - t.dir * 3.5, kneeY = hipY + side * 3.5 + legWag * 0.4;
+        const footX = kneeX - t.dir * 2 + legWag * side * 0.6, footY = kneeY + side * 3.2;
 
         ctx.strokeStyle = "rgba(46,58,34,0.9)";
         ctx.lineWidth = 2.1;
@@ -18853,6 +18892,12 @@ const POOL_LOOP_SPARKLE_DURATION_MS = 700;
 // loop can be swum through again and it sparkles again every time.
 let poolLoopSparkles = [];
 
+// last real nonzero swim direction (world-space vx/vy, same -1/0/1 units
+// updatePoolScene itself uses) -- drives which half of a loop's ring
+// counts as the "entry" side for drawPoolLoopOcclusion's directional
+// split. See that function's own comment.
+let poolLastSwimDir = { x: 1, y: 0 };
+
 // checks the player's own center against each loop's oval (in the same
 // player.y-convention depth units), same shape of test the sandbox
 // pendulum's own checkSandboxPendulumGoalHit uses (normalized
@@ -18904,16 +18949,49 @@ function drawPoolLoops(camX) {
 // translate block, since post-player draws happen after that's already
 // restored) -- so cameraY has to be added back in by hand here, same as
 // the peanut vine occlusion segment's own bottomY does.
+// CONFIRMED CHANGE ("i should go in one side, whichever side i am coming
+// from and facing, and then go under out the other side, which i think
+// isnt exactly happening yet"): the old version redrew the WHOLE ring on
+// top the instant the player was inside it -- so the entire loop always
+// looked like it was in front, with no sense of swimming INTO one side
+// and passing UNDER/behind the other. Real fix: split the ring in half
+// along the player's own current travel direction (poolLastSwimDir) and
+// only redraw the "entry" half (the side behind the player, where they
+// swam in from) on top. The "exit" half (ahead of them, where they're
+// heading) is left alone -- it only ever appears in the normal pre-player
+// pass, so it stays visually behind the player the whole way through,
+// like swimming under the far side of a real hoop.
+//
+// Technique: rotate the drawing context so the travel direction aligns
+// with local +x, clip to the local x<0 half-plane (the entry side, i.e.
+// BEHIND the travel direction), then reset the transform back to plain
+// screen space before actually stroking the (unrotated) ellipse -- the
+// clip region is computed in device pixels at clip()-time and stays
+// fixed even after the transform is reset, so the ellipse itself never
+// visually rotates, only the mask restricting which half of it draws.
 function drawPoolLoopOcclusion(camX) {
+  // world vy>0 means swimming toward the surface (up), which is a
+  // DECREASING screen y -- same sign flip drawPoolLoops/drawPoolCritters
+  // apply between world y and screen y everywhere else in the pool.
+  const travelAngle = Math.atan2(-poolLastSwimDir.y, poolLastSwimDir.x);
   POOL_LOOPS.forEach(loop => {
     if (!loop.inside) return;
     const sx = loop.x - camX;
     const sy = gy + cameraY - loop.y;
+    const R = Math.max(loop.rx, loop.ry) + 20;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(travelAngle);
+    ctx.beginPath();
+    ctx.rect(-R, -R, R, R * 2); // local x in [-R, 0] -- the entry-side half-plane, opposite the travel direction
+    ctx.clip();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // clip stays applied (device-space); draw the ellipse unrotated in plain screen coords
     ctx.strokeStyle = "rgba(255,255,255,0.75)";
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.ellipse(sx, sy, loop.rx, loop.ry, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
   });
 }
 
@@ -18961,6 +19039,17 @@ function updatePoolScene(deltaTime) {
   player.x += vx * POOL_SWIM_SPEED_X * deltaTime;
   player.y += vy * POOL_SWIM_SPEED_Y * deltaTime;
   player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
+
+  // CONFIRMED CHANGE ("i should go in one side, whichever side i am
+  // coming from and facing, and then go under out the other side"): the
+  // loop occlusion needs to know which way the player is actually
+  // traveling to split the ring into a near half (in front of them, the
+  // side they entered from) and a far half (behind them, the side
+  // they're exiting toward) -- see drawPoolLoopOcclusion's own comment
+  // for the full split logic. Only overwritten on a real nonzero swim
+  // input so it holds the last real heading if the player stops mid-loop,
+  // rather than snapping to some default the moment they let go of a key.
+  if (vx !== 0 || vy !== 0) poolLastSwimDir = { x: vx, y: vy };
 
   player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
   player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
