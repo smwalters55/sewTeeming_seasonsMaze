@@ -33475,7 +33475,6 @@ function updateRatRoomScene(deltaTime) {
   updateRatRoomEyes(deltaTime);
   updateSpider(deltaTime);
   updateMoth(deltaTime);
-  updateFireflies(deltaTime);
   updateShelfTierUnlocks();
   updateSnake(deltaTime);
   updateMarble();
@@ -54957,6 +54956,20 @@ if (currentScene === "autumn") {
   if (player.cloudLandingImmunity > 0) player.cloudLandingImmunity -= deltaTime * 1000;
 
   updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
+  // CONFIRMED BUG FIX ("i dont see any tail movements"): fireflyT is the
+  // shared time source behind a LOT of ambient wiggle/sway/drift across
+  // the game (firefly float, tadpole tails, the water snake's whole
+  // body, pool plant sway, the pool's own surface wobble/light shafts,
+  // snail creep, and more) -- but it was only ever advanced from inside
+  // updateRatRoomScene, so it stayed completely frozen in every other
+  // scene, including the pool. The tail-wave amplitude fix earlier this
+  // session was correct in shape but pointless in practice: fireflyT
+  // never actually ticked while swimming, so every animation keyed to it
+  // just held still at whatever value it had the last time (if ever) the
+  // player visited ratroom. Moved here so it's a real, always-ticking
+  // clock like fireflyT's own name implies, same as updateSeasonTransition/
+  // updatePoolDive just below it.
+  updateFireflies(deltaTime);
 
 updateSeasonTransition(deltaTime);
   updatePoolDive(deltaTime); // runs regardless of scene -- spans the forest/pool cut mid-splash, see its own comment
