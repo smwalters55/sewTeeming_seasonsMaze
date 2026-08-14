@@ -2456,7 +2456,7 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool") {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2796,6 +2796,12 @@ function applyPhysics(){
   // see forestRockClimbRelease and the grab branch in the input handler
   // above.
   if (player.rockClingIndex !== -1) return;
+
+  // POOL DIVE -- scripted jump-off-the-ledge + splash sequence owns the
+  // player's position entirely for its short duration (see updatePoolDive
+  // and startPoolDive's own comments). Same early-return shape as the
+  // pool's own free-swim below.
+  if (poolDive.active) return;
 
   // POOL SCENE -- position is fully driven by updatePoolScene(deltaTime)
   // instead, same split as the sandbox ball pit (see
@@ -3357,7 +3363,14 @@ function applyPhysics(){
       // player's x crosses past the edge while still at ledge height,
       // before gravity has a chance to carry them down off the cliff face
       // instead.
-      startSeasonTransition("pool");
+      // CONFIRMED CHANGE ("show animation of player jumping in and a nice
+      // good splash... pool world transformation looks like it happens
+      // mid splash"): the instant generic fade-wash transition used to
+      // fire directly from here -- replaced with startPoolDive(), a
+      // bespoke scripted dive+splash sequence (see its own comment) that
+      // does the actual scene swap itself, mid-splash, once its own
+      // timing says to.
+      startPoolDive();
     }
   }
 
@@ -15596,6 +15609,7 @@ function drawForestScene(camX) {
   drawForestGroundMushrooms(camX);
   // the rock climb, further out past the tree -- same reasoning, called
   // directly rather than nested in anything else that could cull it off.
+  drawForestSwimHolePreview(camX);
   drawForestRockClimb(camX);
   drawForestSandBankTrail(camX); // more sand continuing along the shore past the bank, thick near it and thinning out further along
   drawForestRiverFrog(camX); // occasional ambient frog swimming across the calm lead-in, before the busy obstacle stretch starts
@@ -17741,6 +17755,294 @@ function drawForestRockClimb(camX) {
   drawForestRockLedge(camX);
 }
 
+// CONFIRMED CHANGE ("show the pool that we will be jumping into before we
+// walk off like we dont even know there is water there yet"): a visible
+// preview of the actual pool, below/right of the ledge's own walk-off
+// edge -- so it's visible the whole time you're climbing (and while
+// standing on the ledge deciding to jump), not a total surprise the
+// instant you step off. Purely a forest-side decoration (the real pool
+// scene is a separate space, per the pool's own architecture doc comment)
+// -- same water gradient/wobble-line treatment as the real pool's own
+// surface, so it visually reads as "the same water."
+// past the ledge's own right/walk-off edge (ledge.x + ledge.width/2), by
+// roughly the same distance the dive's own scripted forward hop travels
+// (see updatePoolDive's +60 x nudge) -- so the splash actually lands
+// right where the dive visually ends, not off to one side of it.
+const FOREST_SWIM_HOLE_X = FOREST_ROCK_LEDGE.x + FOREST_ROCK_LEDGE.width / 2 + 60;
+const FOREST_SWIM_HOLE_WIDTH = 360;
+const FOREST_SWIM_HOLE_HEIGHT = 76;
+// CONFIRMED BUG FIX (caught via screenshot before shipping -- "does this
+// actually read as visible from the ledge?"): true ground level (0) is
+// NOT visible while standing on the ledge itself. Forest's cameraY
+// dynamically follows the climb (cameraY = max(0, player.y-150), see
+// updateForestScene), so standing at the ledge's own height (580) pushes
+// cameraY to 430 -- true ground then renders at screen y = gy+cameraY =
+// 730, well below the canvas entirely. A height comfortably inside the
+// camera's own follow window (not true ground) is what actually stays
+// on-screen the whole time you're up there -- picked so it's visible from
+// partway up the climb through standing on the ledge, real jumping
+// distance below the ledge (580-420=160px), without needing to touch the
+// climb's own camera-follow formula.
+const FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND = 420;
+function drawForestSwimHolePreview(camX) {
+  const px = FOREST_SWIM_HOLE_X - camX;
+  const w = FOREST_SWIM_HOLE_WIDTH, h = FOREST_SWIM_HOLE_HEIGHT;
+  if (px < -w || px > canvas.width + w) return;
+  const poolY = gy - FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND; // see FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND's own comment for why this isn't true ground level
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(px, poolY, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  // same three-stop water gradient the real pool scene uses, so this
+  // reads as a preview of the exact same water rather than a different
+  // generic pond color
+  const grad = ctx.createLinearGradient(0, poolY - h / 2, 0, poolY + h / 2 + 40);
+  grad.addColorStop(0, "rgba(90,170,190,0.9)");
+  grad.addColorStop(0.5, "rgba(45,120,145,0.95)");
+  grad.addColorStop(1, "rgba(12,45,60,1)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(px - w, poolY - h, w * 2, h * 2);
+
+  const wobble = Math.sin(fireflyT * 0.0018) * 2.5;
+  ctx.strokeStyle = "rgba(220,245,250,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - w / 2 + 10, poolY - h / 2 + 8 + wobble);
+  ctx.lineTo(px + w / 2 - 10, poolY - h / 2 + 8 - wobble);
+  ctx.stroke();
+  ctx.restore();
+
+  // a soft dirt/moss rim so it reads as set into the ground, not a flat
+  // decal floating on top of the grass
+  ctx.strokeStyle = "rgba(80,64,36,0.4)";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.ellipse(px, poolY, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/* ======================================================
+   POOL DIVE -- the bespoke walk-off-the-ledge entry sequence, replacing a
+   plain instant startSeasonTransition("pool") call. Per direct request
+   ("show animation of player jumping in and a nice good splash. then one
+   in water, show player half in water like it already does with the end
+   of the splash calming down. so like 'pool' world transformation looks
+   like it happens mid splash"):
+
+   phase "jump"   -- still in the FOREST scene, a short scripted forward
+                     dive arc off the ledge's edge, ending right at the
+                     preview swim hole's own water line.
+   phase "splash" -- a droplet burst + ripple fires at the dive's landing
+                     point. Partway through THIS phase (not at the very
+                     start or end) the actual scene swap to "pool" happens
+                     -- the splash is still actively animating on both
+                     sides of that swap, so the world change is masked by
+                     (and reads as part of) one continuous splash rather
+                     than a hard cut.
+   phase "idle"   -- back to normal; updatePoolScene takes over immediately
+                     on arrival, with a fading poolDiveSettle overlay (see
+                     the shared player draw code) giving the "half in
+                     water, calming down" tail end for a beat after.
+   ====================================================== */
+const POOL_DIVE_JUMP_MS = 380;
+const POOL_DIVE_SPLASH_MS = 650;
+const POOL_DIVE_SWAP_AT_MS = 190; // mid-splash, not at either end
+const POOL_DIVE_SETTLE_MS = 750; // post-arrival half-submerged calm-down tail
+
+let poolDive = {
+  active: false,
+  phase: "idle", // "jump" -> "splash" -> "idle"
+  startedAt: 0,
+  splashStartedAt: 0,
+  swapped: false,
+  startX: 0,
+  startY: 0,
+  tiltAngle: 0
+};
+
+// active droplet/ripple state for the splash -- deliberately simple
+// (position + spawn time only), reused across the scene swap by just
+// re-anchoring x/y to the pool's own spawn point the moment the swap
+// happens (see updatePoolDive) rather than trying to physically carry
+// forest-space coordinates into the pool's own separate coordinate system.
+let poolDiveSplashDroplets = [];
+let poolDiveSplashRipple = { x: 0, y: 0, startedAt: -1e9 };
+// eases from 1 -> 0 right after arrival in the pool -- drives the "half
+// in water, calming down" wet-tint overlay in the shared player draw code
+let poolDiveSettleAmount = 0;
+
+function startPoolDive() {
+  poolDive.active = true;
+  poolDive.phase = "jump";
+  poolDive.startedAt = performance.now();
+  poolDive.swapped = false;
+  poolDive.startX = player.x;
+  poolDive.startY = player.y;
+  poolDive.tiltAngle = 0;
+  player.vx = 0;
+  player.vy = 0;
+  player.jumping = false;
+}
+
+function spawnPoolDiveSplash(x, y) {
+  const count = 14;
+  poolDiveSplashDroplets = Array.from({ length: count }, (_, i) => {
+    const ang = (i / count) * Math.PI * 2;
+    const speed = 55 + pseudoRandom(i * 3.7) * 65;
+    return {
+      x, y,
+      vx: Math.cos(ang) * speed * 0.7, // flattened wider than tall -- a real splash reads more horizontal than vertical
+      vy: -Math.abs(Math.sin(ang)) * speed - 50,
+      startedAt: performance.now()
+    };
+  });
+  poolDiveSplashRipple = { x, y, startedAt: performance.now() };
+}
+
+function updatePoolDiveSplashDroplets(deltaTime) {
+  const g = 220;
+  poolDiveSplashDroplets.forEach(d => {
+    d.vy += g * deltaTime;
+    d.x += d.vx * deltaTime;
+    d.y += d.vy * deltaTime;
+  });
+}
+
+function updatePoolDive(deltaTime) {
+  if (!poolDive.active) {
+    // decay the post-arrival settle tail whether or not a dive is
+    // currently active -- it's purely cosmetic and outlives poolDive.active
+    if (poolDiveSettleAmount > 0.001) {
+      poolDiveSettleAmount -= deltaTime * (1000 / POOL_DIVE_SETTLE_MS);
+      if (poolDiveSettleAmount < 0) poolDiveSettleAmount = 0;
+    }
+    // drawPoolDiveSplash already skips fully-aged droplets, but the array
+    // itself was otherwise never cleared out -- once every droplet has
+    // aged past its own lifetime, drop them for real instead of iterating
+    // 14 permanently-invisible objects every frame forever.
+    if (poolDiveSplashDroplets.length > 0 && performance.now() - poolDiveSplashRipple.startedAt >= POOL_DIVE_SPLASH_MS) {
+      poolDiveSplashDroplets = [];
+    }
+    return;
+  }
+
+  const now = performance.now();
+
+  if (poolDive.phase === "jump") {
+    const elapsed = now - poolDive.startedAt;
+    const p = Math.min(1, elapsed / POOL_DIVE_JUMP_MS);
+    // a small forward hop that rises briefly then dives down toward the
+    // preview swim hole's own water line -- purely scripted (eased
+    // position, not real gravity), since this only has to look right
+    // once, not hold up under arbitrary input
+    const arcUp = 34 * Math.sin(p * Math.PI);
+    // ends exactly at the visible swim hole's own water height (see
+    // FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND's own comment for why that's
+    // not true ground level) -- same units as player.y throughout, so
+    // this also stays comfortably positive the whole dive, sidestepping
+    // the shared player-draw code's "ground is always at a fixed screen
+    // position" assumption (see the pool's own visibility-gate/ground-
+    // clip fixes) without needing a matching exemption for the forest
+    // scene too.
+    const totalDrop = poolDive.startY - FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND;
+    player.x = poolDive.startX + p * 60;
+    player.y = poolDive.startY - arcUp - p * p * totalDrop;
+    // tucks into a head-first dive by the end of the arc
+    poolDive.tiltAngle = p * (Math.PI / 2) * 1.15;
+
+    if (p >= 1) {
+      poolDive.phase = "splash";
+      poolDive.splashStartedAt = now;
+      // splash lands right at the preview swim hole's own water line --
+      // same player.y-style "height above ground" units the draw code
+      // expects (see drawPoolDiveSplash's own gy+cameraY-y math), not the
+      // static-feature "gy - H" convention drawForestSwimHolePreview uses
+      // internally (that one gets cameraY added via the ctx.translate
+      // wrapping it; this fires from the post-player screen-space section
+      // and has to add cameraY back in by hand, same as the pool loops'
+      // own occlusion/sparkle draws).
+      spawnPoolDiveSplash(FOREST_SWIM_HOLE_X, FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND);
+    }
+  } else if (poolDive.phase === "splash") {
+    const elapsed = now - poolDive.splashStartedAt;
+    updatePoolDiveSplashDroplets(deltaTime);
+
+    if (!poolDive.swapped && elapsed >= POOL_DIVE_SWAP_AT_MS) {
+      poolDive.swapped = true;
+      // the actual scene swap -- mid-splash, per direct request. Same
+      // bookkeeping startSeasonTransition's own fadeOut phase normally
+      // does for this specific arrival (see updateSeasonTransition's own
+      // forest/pool spawn-override chain), just done by hand here since
+      // this bypasses the generic transition entirely.
+      currentScene = "pool";
+      discoveredScenes.pool = true;
+      updateMapUI();
+      cameraX = 0;
+      cameraY = POOL_CAMERA_Y;
+      player.x = POOL_SPAWN_X;
+      player.y = -18; // right at the surface -- mostly emerged, per "show player half in water"
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      poolSwimTiltAngle = 0;
+      poolDiveSettleAmount = 1;
+      // re-anchor the still-animating splash into the pool's own spawn
+      // point (a different coordinate system/camera than the forest) so
+      // it visually continues right where the player now is, rather than
+      // trying to carry forest-space coordinates across the cut
+      const dx = POOL_SPAWN_X - poolDiveSplashRipple.x;
+      const dy = -18 - poolDiveSplashRipple.y;
+      poolDiveSplashDroplets.forEach(d => { d.x += dx; d.y += dy; });
+      poolDiveSplashRipple.x += dx;
+      poolDiveSplashRipple.y += dy;
+    }
+
+    if (elapsed >= POOL_DIVE_SPLASH_MS) {
+      poolDive.active = false;
+      poolDive.phase = "idle";
+    }
+  }
+}
+
+// splash droplets + expanding ripple ring -- drawn from the shared post-
+// player section of the main draw() function so it layers over whichever
+// scene (forest pre-swap, pool post-swap) is currently showing. Plain
+// screen space, same "add cameraY back in by hand" reasoning as the pool
+// loops' own occlusion/sparkle draws.
+function drawPoolDiveSplash(camX) {
+  const now = performance.now();
+
+  const rippleAge = now - poolDiveSplashRipple.startedAt;
+  if (rippleAge >= 0 && rippleAge < POOL_DIVE_SPLASH_MS) {
+    const p = rippleAge / POOL_DIVE_SPLASH_MS;
+    const sx = poolDiveSplashRipple.x - camX;
+    const sy = gy + cameraY - poolDiveSplashRipple.y;
+    const alpha = Math.max(0, 1 - p);
+    const rr = 10 + p * 60;
+    ctx.strokeStyle = `rgba(230,248,250,${alpha * 0.7})`;
+    ctx.lineWidth = 3 - p * 2;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, rr, rr * 0.32, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  poolDiveSplashDroplets.forEach(d => {
+    const age = now - d.startedAt;
+    if (age < 0 || age >= POOL_DIVE_SPLASH_MS) return;
+    const p = age / POOL_DIVE_SPLASH_MS;
+    const alpha = Math.max(0, 1 - p * 1.3);
+    if (alpha <= 0) return;
+    const sx = d.x - camX;
+    const sy = gy + cameraY - d.y;
+    ctx.fillStyle = `rgba(225,245,250,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2.4 - p * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 /* ======================================================
    POOL SCENE -- its own small separate scene (mirroring how
    ratroom/molehole are their own rooms off oak/forest), reached by
@@ -18141,12 +18443,20 @@ function drawPoolSnails(camX) {
 // staying pinned to the bottom like everything else so far, cruising back
 // and forth and flipping direction at the pool's own bounds (or randomly,
 // so a whole cluster doesn't all turn in lockstep).
+// CONFIRMED CHANGE ("also make tadpools... move like they should. make
+// one tadpool partly changing into a frog"): one tadpole in the school
+// (index 0) is designated the "morphing" one -- drawn with tiny sprouting
+// hind legs and a shorter, stubbier tail (the real look of a tadpole
+// partway through metamorphosis, still tailed but already growing legs),
+// per direct request. It swims with the same school behavior as the
+// other four, just drawn differently.
 let POOL_TADPOLES = Array.from({ length: 5 }, (_, i) => ({
   x: 60 + pseudoRandom(i * 6.6 + 60) * (POOL_WIDTH - 120),
   depth: 40 + pseudoRandom(i * 3.3 + 61) * (POOL_MAX_DEPTH - 80), // how far below the surface this one cruises
   speed: 14 + pseudoRandom(i * 5.5 + 62) * 12,
   dir: pseudoRandom(i * 7.7 + 63) > 0.5 ? 1 : -1,
-  seed: i * 6.2
+  seed: i * 6.2,
+  morphing: i === 0
 }));
 
 function updatePoolTadpoles(deltaTime) {
@@ -18162,20 +18472,54 @@ function drawPoolTadpoles(camX) {
     const sx = t.x - camX;
     if (sx < -20 || sx > canvas.width + 20) return;
     const sy = gy + t.depth + Math.sin(fireflyT * 0.0025 + t.seed) * 5;
-    const tailWag = Math.sin(fireflyT * 0.012 + t.seed) * 4;
     ctx.fillStyle = "rgba(45,55,35,0.8)";
     // round head
     ctx.beginPath();
     ctx.ellipse(sx, sy, 3.4, 3, 0, 0, Math.PI * 2);
     ctx.fill();
-    // thin wiggling tail, trailing opposite the direction of travel
+
+    // CONFIRMED BUG FIX ("make tadpools... move like they should"): the
+    // old tail was a single wag value stroked straight to a fixed-negated
+    // endpoint -- both ends of the curve moved in lockstep (just
+    // opposite sign), which reads as a stiff kink snapping back and
+    // forth rather than a wave actually traveling down the tail. Same
+    // "phase lags further from the body, amplitude grows toward the tip"
+    // shape the water snake's own segments already use below, just with
+    // fewer points for a tail this small -- now a real wave visibly
+    // propagates from body to tip instead of the whole tail flexing as
+    // one rigid unit.
+    const tailLen = t.morphing ? 8 : 13; // shorter tail mid-metamorphosis
+    const tp1x = sx - t.dir * (t.morphing ? 4 : 5);
+    const tp1y = sy + Math.sin(fireflyT * 0.012 + t.seed) * 2.5;
+    const tp2x = sx - t.dir * tailLen;
+    const tp2y = sy + Math.sin(fireflyT * 0.012 + t.seed - 1.1) * 5;
     ctx.strokeStyle = "rgba(45,55,35,0.65)";
     ctx.lineWidth = 1.6;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(sx - t.dir * 3, sy);
-    ctx.quadraticCurveTo(sx - t.dir * 8, sy + tailWag, sx - t.dir * 13, sy - tailWag * 0.4);
+    ctx.quadraticCurveTo(tp1x, tp1y, tp2x, tp2y);
     ctx.stroke();
+
+    if (t.morphing) {
+      // two tiny sprouting hind legs, trailing off the lower body just
+      // ahead of the shortened tail -- the real telltale sign of a
+      // tadpole partway through turning into a frog, well before the
+      // front legs or the tail fully disappear
+      const legWag = Math.sin(fireflyT * 0.01 + t.seed + 2) * 1.2;
+      ctx.strokeStyle = "rgba(45,55,35,0.75)";
+      ctx.lineWidth = 1.3;
+      [-1, 1].forEach(side => {
+        ctx.beginPath();
+        ctx.moveTo(sx - t.dir * 1.5, sy + side * 1.8);
+        ctx.lineTo(sx - t.dir * 4.5 + legWag * side, sy + side * 3.6);
+        ctx.stroke();
+        // tiny webbed foot at the tip
+        ctx.beginPath();
+        ctx.ellipse(sx - t.dir * 4.5 + legWag * side, sy + side * 3.6, 1, 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
   });
 }
 
@@ -18254,9 +18598,17 @@ function drawPoolWaterSnake(camX) {
   if (headSx < -100 || headSx > canvas.width + 100) return;
   const baseY = gy + s.depth;
   const points = [];
+  // CONFIRMED BUG FIX ("make... snake tail move like it should"): every
+  // segment used to swing with the exact same amplitude (9), just phase-
+  // shifted -- reads as a stiff chain rattling side to side rather than a
+  // real swim, where the head barely moves and the undulation genuinely
+  // GROWS toward the tail tip (real anguilliform swimming). Amplitude now
+  // scales from a small 3px right at the head up to a real 15px whip at
+  // the very tip, on top of the same per-segment phase lag as before.
   for (let i = 0; i < POOL_WATER_SNAKE_SEGMENTS; i++) {
     const segX = s.headX - s.dir * i * 9;
-    const wiggle = Math.sin(fireflyT * 0.006 - i * 0.7) * 9;
+    const amp = 3 + (i / (POOL_WATER_SNAKE_SEGMENTS - 1)) * 12;
+    const wiggle = Math.sin(fireflyT * 0.006 - i * 0.7) * amp;
     points.push({ x: segX - camX, y: baseY + wiggle });
   }
   ctx.strokeStyle = "rgba(72,86,46,0.82)";
@@ -53108,8 +53460,10 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   const ballPitSwimTilt = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
   // the pool's own lying-down swim tilt, same idea -- see getPoolSwimTilt's own comment
   const poolSwimTilt = getPoolSwimTilt();
+  // the ledge dive's own forward tuck, mid-jump-arc only -- see startPoolDive/updatePoolDive
+  const poolDiveTilt = (typeof poolDive !== "undefined" && poolDive.active && poolDive.phase === "jump") ? poolDive.tiltAngle : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -53277,6 +53631,41 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
     for (let i = 0; i <= 6; i++) {
       const wx = px - 2 + (player.width + 4) * (i / 6);
       const wy = waterLineY + Math.sin(wobbleT2 + i * 1.1) * 1.3;
+      if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // CONFIRMED CHANGE ("then one in water, show player half in water like
+  // it already does with the end of the splash calming down"): same
+  // translucent wet-tint technique as the float-zone submersion just
+  // above, but driven by poolDiveSettleAmount (eases 1 -> 0 over
+  // POOL_DIVE_SETTLE_MS right after landing from the ledge dive, see
+  // updatePoolDive) instead of a held state -- a brief "just landed,
+  // mostly at the surface" beat that fades into the pool's own normal
+  // depth-based look rather than lasting the whole swim.
+  if (currentScene === "pool" && poolDiveSettleAmount > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, px, drawPy, player.width, player.height, 8);
+    ctx.clip();
+    // starts right at the midline (genuinely "half in water") and eases
+    // down toward the feet as the settle amount decays, so it reads as
+    // rising back to the surface/calming down rather than snapping off
+    const waterLineY = drawPy + player.height * (0.5 + (1 - poolDiveSettleAmount) * 0.4);
+    const wetGrad = ctx.createLinearGradient(0, waterLineY - 6, 0, waterLineY + 6);
+    wetGrad.addColorStop(0, "rgba(20,55,68,0)");
+    wetGrad.addColorStop(1, `rgba(20,55,68,${0.7 * poolDiveSettleAmount})`);
+    ctx.fillStyle = wetGrad;
+    ctx.fillRect(px - 2, waterLineY - 6, player.width + 4, player.height - (waterLineY - 6 - drawPy));
+    const wobbleT3 = performance.now() * 0.005;
+    ctx.strokeStyle = `rgba(210,240,245,${0.8 * poolDiveSettleAmount})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const wx = px - 2 + (player.width + 4) * (i / 6);
+      const wy = waterLineY + Math.sin(wobbleT3 + i * 1.1) * 1.6 * poolDiveSettleAmount;
       if (i === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
     }
     ctx.stroke();
@@ -53465,6 +53854,12 @@ if (currentScene === "pool") {
   drawPoolLoopOcclusion(camX);
   drawPoolLoopSparkles(camX);
 }
+
+// pool dive splash -- droplets + ripple, drawn regardless of which scene
+// is currently showing (spans the forest->pool cut mid-splash, see
+// updatePoolDive's own comment). The functions themselves are no-ops once
+// every droplet/ripple has aged out.
+drawPoolDiveSplash(camX);
 
 // CONFIRMED CHANGE ("make it look like player is inside nest not floating
 // above it") -- the nest's first pass only ever drew once, as part of the
@@ -54440,6 +54835,7 @@ if (currentScene === "autumn") {
   updateFlyingItems(deltaTime, cameraX); // shared system, runs in any scene
 
 updateSeasonTransition(deltaTime);
+  updatePoolDive(deltaTime); // runs regardless of scene -- spans the forest/pool cut mid-splash, see its own comment
 
   draw();
 
