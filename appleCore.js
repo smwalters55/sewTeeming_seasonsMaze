@@ -17791,25 +17791,47 @@ const POOL_SWIM_SPEED_Y = 60; // px/s -- matches SANDBOX_BALL_PIT_SWIM_SPEED_Y
 // screen y=46 (gy + POOL_CAMERA_Y - player.height - 0 = 300-200-54=46),
 // leaving just a small ceiling margin above the water line.
 const POOL_CAMERA_Y = -200;
+// CONFIRMED CHANGE ("player doesnt turn sidewides for horiz movement they
+// should"): "turn sideways" in this game's own established swim
+// vocabulary isn't a left/right mirror-flip (the base sprite doesn't have
+// one at all) -- it's the sandbox ball pit's lying-flat swim tilt (see
+// getSandboxBallPitSwimTilt/sandboxBallPit.swimTiltAngle and their own
+// comments: "i want player to be in a laying down pose... head bee in the
+// direction of where it going"). "Movement like in ball pit" from the
+// prior round covered the raw speed/feel; this is the other half of that
+// same reuse -- same eased tilt state shape, just its own variable (not
+// reusing sandboxBallPit's, since that object is genuinely scoped to the
+// ball pit toy) and its own accessor, summed into the shared player
+// totalTilt the exact same way ballPitSwimTilt already is.
+let poolSwimTiltAngle = 0;
+function getPoolSwimTilt() {
+  return currentScene === "pool" ? poolSwimTiltAngle : 0;
+}
 
-// CONFIRMED CHANGE ("add neat water plants to the bottom"): procedurally
-// placed seaweed tufts along the pool floor, deterministic (seeded off
-// index via pseudoRandom, same convention as the rock wall's own jagged
-// texture) so they don't jitter frame to frame -- only their gentle sway
-// animates, driven by fireflyT like every other ambient sway in this file
-// (dust motes, light shafts, etc.). Spread evenly across the floor with a
-// little per-plant jitter so they read as "neat" (an even little garden
-// along the bottom) rather than randomly scattered clumps, and kept clear
-// of both side walls with a margin.
-const POOL_PLANTS = Array.from({ length: 13 }, (_, i) => {
+// CONFIRMED CHANGE ("make the plants at the bottom a lot more interesting"):
+// round 2 on the pool floor's planting -- round 1 was a single repeated
+// "tuft of straight blades" shape; this replaces it with three genuinely
+// different plant silhouettes (tall tapered blades, a broad fanned leaf
+// cluster, and a bushier round frond) cycled deterministically by index so
+// the floor reads as a real little variety of pond plant life, not one
+// shape copy-pasted at different heights. Still "neat" per the original
+// request -- evenly spaced with only a little per-plant jitter, same as
+// round 1 -- just each one is more detailed up close now: tapered (not
+// flat-width) blades, a soft vein/highlight down each leaf, and a couple
+// of tiny round buds on the bushier type for a little extra character.
+const POOL_PLANT_TYPES = ["blade", "leafy", "bushy"];
+const POOL_PLANTS = Array.from({ length: 15 }, (_, i) => {
   const span = POOL_WIDTH - 160;
-  const x = 80 + (i / 12) * span + (pseudoRandom(i * 3.3) - 0.5) * 26;
+  const x = 80 + (i / 14) * span + (pseudoRandom(i * 3.3) - 0.5) * 24;
   return {
     x,
-    height: 34 + pseudoRandom(i * 7.1) * 46,
-    bladeCount: 3 + Math.floor(pseudoRandom(i * 5.5) * 2), // 3-4 blades per tuft
+    type: POOL_PLANT_TYPES[Math.floor(pseudoRandom(i * 9.4) * 3) % 3],
+    height: 30 + pseudoRandom(i * 7.1) * 50,
+    bladeCount: 3 + Math.floor(pseudoRandom(i * 5.5) * 3), // 3-5 fronds/blades/leaves
     seed: i * 11.7,
-    dark: pseudoRandom(i * 2.2) > 0.5
+    // three muted underwater greens instead of the old plain light/dark
+    // split, so neighboring plants read as more distinct from each other
+    hue: ["rgba(38,90,64,0.88)", "rgba(58,120,84,0.88)", "rgba(70,102,58,0.88)"][Math.floor(pseudoRandom(i * 6.6) * 3) % 3]
   };
 });
 
@@ -17817,32 +17839,469 @@ function drawPoolPlants(camX) {
   const floorY = gy + POOL_MAX_DEPTH;
   POOL_PLANTS.forEach(p => {
     const sx = p.x - camX;
-    if (sx < -60 || sx > canvas.width + 60) return; // cheap off-screen cull
+    if (sx < -70 || sx > canvas.width + 70) return; // cheap off-screen cull
 
-    // a small rounded base the blades emerge from, grounding them to the
-    // floor rather than looking like they're just floating above it
-    ctx.fillStyle = "rgba(35,42,32,0.55)";
+    // a small rounded base every plant emerges from, grounding it to the
+    // floor rather than looking like it's just floating above it
+    ctx.fillStyle = "rgba(30,36,26,0.5)";
     ctx.beginPath();
-    ctx.ellipse(sx, floorY, 11, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, floorY, 13, 4.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    for (let b = 0; b < p.bladeCount; b++) {
-      const bladeSeed = p.seed + b * 3.9;
-      const bladeHeight = p.height * (0.7 + pseudoRandom(bladeSeed) * 0.5);
-      const baseX = sx + (b - (p.bladeCount - 1) / 2) * 7;
-      const sway = Math.sin(fireflyT * 0.0011 + bladeSeed) * (6 + bladeHeight * 0.1);
-      ctx.strokeStyle = p.dark ? "rgba(38,90,64,0.85)" : "rgba(58,120,84,0.85)";
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(baseX, floorY + 1);
-      ctx.quadraticCurveTo(baseX + sway * 0.5, floorY - bladeHeight * 0.55, baseX + sway, floorY - bladeHeight);
-      ctx.stroke();
+    if (p.type === "blade") {
+      // tall tapered blades -- same swaying-quadratic idea as round 1, but
+      // each one is now a real filled tapered shape (wide at the root,
+      // narrowing to a point) instead of a flat-width stroked line, plus a
+      // thin lighter vein down the middle for a little more definition.
+      for (let b = 0; b < p.bladeCount; b++) {
+        const bladeSeed = p.seed + b * 3.9;
+        const bladeHeight = p.height * (0.7 + pseudoRandom(bladeSeed) * 0.5);
+        const baseX = sx + (b - (p.bladeCount - 1) / 2) * 7;
+        const sway = Math.sin(fireflyT * 0.0011 + bladeSeed) * (6 + bladeHeight * 0.1);
+        const tipX = baseX + sway, tipY = floorY - bladeHeight;
+        const midX = baseX + sway * 0.5, midY = floorY - bladeHeight * 0.55;
+        const w = 2.4;
+        ctx.fillStyle = p.hue;
+        ctx.beginPath();
+        ctx.moveTo(baseX - w, floorY + 1);
+        ctx.quadraticCurveTo(midX - w * 0.5, midY, tipX, tipY);
+        ctx.quadraticCurveTo(midX + w * 0.5, midY, baseX + w, floorY + 1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(220,240,225,0.18)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(baseX, floorY);
+        ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+        ctx.stroke();
+      }
+    } else if (p.type === "leafy") {
+      // a broad fanned cluster of teardrop leaves, splayed out from the
+      // base like pondweed rather than growing straight up -- each leaf is
+      // a filled teardrop (two mirrored quadratic curves meeting at a
+      // point), angled outward more the further it is from center.
+      for (let b = 0; b < p.bladeCount; b++) {
+        const leafSeed = p.seed + b * 4.4;
+        const leafLen = p.height * (0.55 + pseudoRandom(leafSeed) * 0.4);
+        const spread = (b - (p.bladeCount - 1) / 2) / Math.max(1, p.bladeCount - 1); // -0.5..0.5
+        const baseAngle = -Math.PI / 2 + spread * 1.5; // fan around straight-up
+        const sway = Math.sin(fireflyT * 0.0009 + leafSeed) * 0.18;
+        const ang = baseAngle + sway;
+        const tipX = sx + Math.cos(ang) * leafLen, tipY = floorY + Math.sin(ang) * leafLen;
+        const perpX = -Math.sin(ang), perpY = Math.cos(ang);
+        const leafW = 5 + pseudoRandom(leafSeed + 1) * 3;
+        const midX = sx + Math.cos(ang) * leafLen * 0.55, midY = floorY + Math.sin(ang) * leafLen * 0.55;
+        ctx.fillStyle = p.hue;
+        ctx.beginPath();
+        ctx.moveTo(sx, floorY);
+        ctx.quadraticCurveTo(midX + perpX * leafW, midY + perpY * leafW, tipX, tipY);
+        ctx.quadraticCurveTo(midX - perpX * leafW, midY - perpY * leafW, sx, floorY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(220,240,225,0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx, floorY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+      }
+    } else {
+      // bushy: a dense round frond -- lots of short curved fronds packed
+      // into a rounded cluster, like a little underwater shrub, with a
+      // couple of small round buds/berries tucked in for character.
+      const bushH = p.height * 0.55;
+      for (let b = 0; b < p.bladeCount + 2; b++) {
+        const frondSeed = p.seed + b * 2.7;
+        const frondLen = bushH * (0.5 + pseudoRandom(frondSeed) * 0.6);
+        const ang = -Math.PI / 2 + (pseudoRandom(frondSeed + 1) - 0.5) * 2.1;
+        const sway = Math.sin(fireflyT * 0.0013 + frondSeed) * 0.12;
+        const a = ang + sway;
+        const tipX = sx + Math.cos(a) * frondLen, tipY = floorY + Math.sin(a) * frondLen * 0.9;
+        const ctrlX = sx + Math.cos(a) * frondLen * 0.5 + (pseudoRandom(frondSeed + 2) - 0.5) * 8;
+        const ctrlY = floorY + Math.sin(a) * frondLen * 0.5;
+        ctx.strokeStyle = p.hue;
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(sx, floorY);
+        ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+        ctx.stroke();
+      }
+      // small round buds, tucked partway up a couple of the fronds
+      [0.4, 0.62].forEach((f, bi) => {
+        const budSeed = p.seed + 50 + bi * 5.3;
+        const budAng = -Math.PI / 2 + (pseudoRandom(budSeed) - 0.5) * 1.4;
+        const bx = sx + Math.cos(budAng) * bushH * f;
+        const by = floorY + Math.sin(budAng) * bushH * f * 0.9;
+        ctx.fillStyle = "rgba(150,170,90,0.85)";
+        ctx.beginPath();
+        ctx.ellipse(bx, by, 2.6, 2.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
     }
   });
 }
 
+// CONFIRMED CHANGE ("idk what is in pond water at the bottom. more
+// grandulated texture of sand probs"): a scattering of small rounded
+// pebbles along the floor, same "what's actually down there" instinct as
+// the plants -- simple two-tone shaded ellipses (a soft top-left
+// highlight, a darker underside) so they read as real rounded stones
+// resting on the floor rather than flat dots.
+const POOL_PEBBLES = Array.from({ length: 18 }, (_, i) => ({
+  x: pseudoRandom(i * 4.1 + 5) * POOL_WIDTH,
+  r: 3 + pseudoRandom(i * 6.3 + 6) * 5,
+  tone: pseudoRandom(i * 2.9 + 7)
+}));
+
+function drawPoolPebbles(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  POOL_PEBBLES.forEach(peb => {
+    const sx = peb.x - camX;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    const base = peb.tone > 0.5 ? [90, 88, 78] : [58, 60, 54];
+    ctx.fillStyle = `rgba(${base[0]},${base[1]},${base[2]},0.7)`;
+    ctx.beginPath();
+    ctx.ellipse(sx, floorY + 1, peb.r, peb.r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(210,205,190,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(sx - peb.r * 0.3, floorY + 1 - peb.r * 0.25, peb.r * 0.45, peb.r * 0.28, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// CONFIRMED CHANGE (same request, "more grandulated texture of sand"): the
+// floor itself gets a real sandy-silt texture, same two-layer approach
+// (soft coarse clumps, then a dense field of tiny individual grains) the
+// sandbox's own ground floor already established -- just recolored toward
+// a muted underwater silt tone (dim olive-tan, not bright dry beach sand)
+// and confined to a shallow band right at the floor rather than covering
+// the whole vertical drop, since only the actual floor should look grainy.
+const POOL_SAND_CLUMPS = Array.from({ length: 26 }, (_, i) => ({
+  xFrac: pseudoRandom(i * 11.3 + 300),
+  yOff: pseudoRandom(i * 6.7 + 301) * 46,
+  r: 3 + pseudoRandom(i * 3.1 + 302) * 5
+}));
+const POOL_SAND_GRAINS = Array.from({ length: 90 }, (_, i) => ({
+  xFrac: pseudoRandom(i * 3.7 + 310),
+  yOff: pseudoRandom(i * 5.1 + 311) * 50,
+  light: pseudoRandom(i * 2.2 + 319) < 0.5,
+  size: 1 + pseudoRandom(i * 8.8 + 320) * 1.6
+}));
+
+function drawPoolFloorTexture(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  ctx.fillStyle = "rgba(120,110,80,0.16)";
+  POOL_SAND_CLUMPS.forEach(c => {
+    const sx = c.xFrac * POOL_WIDTH - camX;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    ctx.beginPath();
+    ctx.ellipse(sx, floorY + c.yOff - 6, c.r, c.r * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  POOL_SAND_GRAINS.forEach(g => {
+    const sx = g.xFrac * POOL_WIDTH - camX;
+    if (sx < -10 || sx > canvas.width + 10) return;
+    ctx.fillStyle = g.light ? "rgba(215,200,160,0.3)" : "rgba(60,55,40,0.28)";
+    ctx.fillRect(sx, floorY + g.yOff - 4, g.size, g.size);
+  });
+}
+
+/* ======================================================
+   POOL CRITTERS -- "what ground pond critters should we add" -- five
+   gently animated ambient inhabitants (per direct request: "gently
+   animated", not fully static decor and not a real interactive mechanic).
+   None of these block movement, react to the player, or are collectible
+   -- purely life on the floor/in the water, same spirit as the plants.
+   Each gets its own small `let` state array (not const, since these
+   actually move over time) and its own update+draw pair, all called
+   together from updatePoolScene/drawPoolScene.
+   ====================================================== */
+
+// CRAYFISH -- scuttles in short bursts within a small home range along the
+// floor, then pauses, rather than drifting continuously -- reads as a
+// real skittish bottom-dweller instead of something gliding on rails.
+let POOL_CRAYFISH = Array.from({ length: 3 }, (_, i) => ({
+  homeX: 140 + i * (POOL_WIDTH - 280) / 2 + (pseudoRandom(i * 8.8 + 40) - 0.5) * 60,
+  offset: 0,
+  targetOffset: 0,
+  pauseT: 1000 + pseudoRandom(i * 5.5 + 41) * 2000,
+  facing: 1,
+  seed: i * 13.3
+}));
+
+// a slowly incrementing counter fed into pseudoRandom wherever a critter
+// needs a fresh "random" choice (a new scuttle target, etc.) -- plain
+// pseudoRandom(fixedSeed) would return the exact same value forever since
+// its seed never changes, so this gives each such call a different input
+// each time it's used while staying deterministic (no Math.random, same
+// convention as everything else procedurally placed in this file).
+let poolCrittersTick = 0;
+function poolNextRandSeed() {
+  poolCrittersTick += 0.7;
+  return poolCrittersTick;
+}
+
+function updatePoolCrayfish(deltaTime) {
+  POOL_CRAYFISH.forEach(c => {
+    c.pauseT -= deltaTime * 1000;
+    if (c.pauseT <= 0) {
+      if (Math.abs(c.offset - c.targetOffset) < 1) {
+        // reached the last target (or just started) -- pick a new one and
+        // pause again once it's reached
+        c.targetOffset = (pseudoRandom(c.seed + poolNextRandSeed()) - 0.5) * 50;
+        c.facing = c.targetOffset > c.offset ? 1 : -1;
+        c.pauseT = 900 + pseudoRandom(c.seed + poolNextRandSeed()) * 1800;
+      } else {
+        c.offset += (c.targetOffset - c.offset) * Math.min(1, deltaTime * 4);
+      }
+    }
+  });
+}
+
+function drawPoolCrayfish(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  POOL_CRAYFISH.forEach(c => {
+    const sx = c.homeX + c.offset - camX;
+    if (sx < -30 || sx > canvas.width + 30) return;
+    const s = c.facing;
+    ctx.fillStyle = "rgba(150,70,55,0.9)";
+    ctx.beginPath();
+    ctx.ellipse(sx, floorY - 3, 8, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // tail fan
+    ctx.beginPath();
+    ctx.moveTo(sx - s * 8, floorY - 3);
+    ctx.lineTo(sx - s * 13, floorY - 6);
+    ctx.lineTo(sx - s * 13, floorY);
+    ctx.closePath();
+    ctx.fill();
+    // two small claws out front
+    ctx.strokeStyle = "rgba(150,70,55,0.9)";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(sx + s * 7, floorY - 3 + side * 2.5);
+      ctx.lineTo(sx + s * 12, floorY - 4 + side * 4);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "rgba(20,15,12,0.7)";
+    ctx.beginPath();
+    ctx.ellipse(sx + s * 7, floorY - 5, 1, 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// SNAILS -- barely move at all, a slow perpetual creep rather than any
+// kind of burst -- sitting on the floor near a plant/pebble is enough
+// life for something this unhurried.
+const POOL_SNAILS = Array.from({ length: 3 }, (_, i) => ({
+  x: 100 + i * (POOL_WIDTH - 200) / 2 + (pseudoRandom(i * 4.4 + 50) - 0.5) * 70,
+  seed: i * 9.1,
+  dark: pseudoRandom(i * 2.7 + 51) > 0.5
+}));
+
+function drawPoolSnails(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  POOL_SNAILS.forEach(s => {
+    // a near-imperceptible creep -- just enough that it's not a frozen prop
+    const creep = Math.sin(fireflyT * 0.00007 + s.seed) * 14;
+    const sx = s.x + creep - camX;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    const dir = Math.cos(fireflyT * 0.00007 + s.seed) >= 0 ? 1 : -1;
+    ctx.fillStyle = s.dark ? "rgba(70,55,42,0.85)" : "rgba(120,95,70,0.85)";
+    // body
+    ctx.beginPath();
+    ctx.ellipse(sx + dir * 5, floorY - 1.5, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // shell -- a small spiral, drawn as a few nested arcs
+    ctx.strokeStyle = s.dark ? "rgba(40,32,24,0.9)" : "rgba(80,62,44,0.9)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(sx - dir * 1.5, floorY - 5, 5, 0.4, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx - dir * 1.5, floorY - 5, 2.6, 0.6, Math.PI * 1.7);
+    ctx.stroke();
+    // two tiny antennae
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    [0.6, 1.3].forEach(a => {
+      ctx.beginPath();
+      ctx.moveTo(sx + dir * 9, floorY - 2);
+      ctx.lineTo(sx + dir * (11 + a), floorY - 4 - a);
+      ctx.stroke();
+    });
+  });
+}
+
+// TADPOLES -- drift/dart between the floor and mid-water rather than
+// staying pinned to the bottom like everything else so far, cruising back
+// and forth and flipping direction at the pool's own bounds (or randomly,
+// so a whole cluster doesn't all turn in lockstep).
+let POOL_TADPOLES = Array.from({ length: 5 }, (_, i) => ({
+  x: 60 + pseudoRandom(i * 6.6 + 60) * (POOL_WIDTH - 120),
+  depth: 40 + pseudoRandom(i * 3.3 + 61) * (POOL_MAX_DEPTH - 80), // how far below the surface this one cruises
+  speed: 14 + pseudoRandom(i * 5.5 + 62) * 12,
+  dir: pseudoRandom(i * 7.7 + 63) > 0.5 ? 1 : -1,
+  seed: i * 6.2
+}));
+
+function updatePoolTadpoles(deltaTime) {
+  POOL_TADPOLES.forEach(t => {
+    t.x += t.dir * t.speed * deltaTime;
+    if (t.x < 30) { t.x = 30; t.dir = 1; }
+    if (t.x > POOL_WIDTH - 30) { t.x = POOL_WIDTH - 30; t.dir = -1; }
+  });
+}
+
+function drawPoolTadpoles(camX) {
+  POOL_TADPOLES.forEach(t => {
+    const sx = t.x - camX;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    const sy = gy + t.depth + Math.sin(fireflyT * 0.0025 + t.seed) * 5;
+    const tailWag = Math.sin(fireflyT * 0.012 + t.seed) * 4;
+    ctx.fillStyle = "rgba(45,55,35,0.8)";
+    // round head
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 3.4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // thin wiggling tail, trailing opposite the direction of travel
+    ctx.strokeStyle = "rgba(45,55,35,0.65)";
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(sx - t.dir * 3, sy);
+    ctx.quadraticCurveTo(sx - t.dir * 8, sy + tailWag, sx - t.dir * 13, sy - tailWag * 0.4);
+    ctx.stroke();
+  });
+}
+
+// SALAMANDER -- a slow continuous creep along the floor (not the
+// crayfish's burst-and-pause), body + 4 tiny legs + a long gently waving
+// tail, so it reads distinctly from the crayfish's own skittish movement.
+let POOL_SALAMANDER = { x: POOL_WIDTH * 0.42, dir: 1, speed: 7 };
+
+function updatePoolSalamander(deltaTime) {
+  const s = POOL_SALAMANDER;
+  s.x += s.dir * s.speed * deltaTime;
+  const rangeMin = POOL_WIDTH * 0.25, rangeMax = POOL_WIDTH * 0.6;
+  if (s.x < rangeMin) { s.x = rangeMin; s.dir = 1; }
+  if (s.x > rangeMax) { s.x = rangeMax; s.dir = -1; }
+}
+
+function drawPoolSalamander(camX) {
+  const floorY = gy + POOL_MAX_DEPTH;
+  const s = POOL_SALAMANDER;
+  const sx = s.x - camX;
+  if (sx < -40 || sx > canvas.width + 40) return;
+  const d = s.dir;
+  const legWag = Math.sin(performance.now() * 0.008) * 2;
+  ctx.fillStyle = "rgba(80,60,90,0.85)"; // muted purple-brown, distinct from the greens/reds already down here
+  // tail -- long, gently waving
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx - d * 8, floorY - 3);
+  ctx.quadraticCurveTo(sx - d * 16, floorY - 3 + legWag, sx - d * 24, floorY - 3 - legWag * 0.6);
+  ctx.stroke();
+  // body
+  ctx.beginPath();
+  ctx.ellipse(sx, floorY - 3, 9, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // 4 short legs, front/back pairs alternating with the wag
+  [[-4, 1], [4, -1]].forEach(([dx, phase]) => {
+    [-1, 1].forEach(side => {
+      const wag = Math.sin(performance.now() * 0.008 + phase * 1.5) * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sx + dx * d, floorY - 1 + side * 2);
+      ctx.lineTo(sx + (dx + phase * wag) * d, floorY + 2 + side * 2.5);
+      ctx.stroke();
+    });
+  });
+  // small round head with two dot eyes
+  ctx.beginPath();
+  ctx.ellipse(sx + d * 9, floorY - 3, 3.2, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(15,10,15,0.8)";
+  ctx.beginPath();
+  ctx.ellipse(sx + d * 10.5, floorY - 4, 0.8, 0.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// RIVER SNAKE -- a slow S-curve swim through open water, distinct from
+// the existing FOREST_SNAKE toll-gate obstacle elsewhere in the game
+// (different name on purpose -- poolWaterSnake -- so it's never confused
+// with that real gameplay mechanic; this one is purely ambient, no
+// collision, no blocking). Body is a chain of segments trailing a moving
+// head, each one offset along a sine wave for the classic swimming wiggle.
+const POOL_WATER_SNAKE_SEGMENTS = 9;
+let poolWaterSnake = { headX: POOL_WIDTH * 0.65, depth: 90, dir: -1, speed: 10 };
+
+function updatePoolWaterSnake(deltaTime) {
+  const s = poolWaterSnake;
+  s.headX += s.dir * s.speed * deltaTime;
+  if (s.headX < 60) { s.headX = 60; s.dir = 1; }
+  if (s.headX > POOL_WIDTH - 60) { s.headX = POOL_WIDTH - 60; s.dir = -1; }
+}
+
+function drawPoolWaterSnake(camX) {
+  const s = poolWaterSnake;
+  const headSx = s.headX - camX;
+  if (headSx < -100 || headSx > canvas.width + 100) return;
+  const baseY = gy + s.depth;
+  const points = [];
+  for (let i = 0; i < POOL_WATER_SNAKE_SEGMENTS; i++) {
+    const segX = s.headX - s.dir * i * 9;
+    const wiggle = Math.sin(fireflyT * 0.006 - i * 0.7) * 9;
+    points.push({ x: segX - camX, y: baseY + wiggle });
+  }
+  ctx.strokeStyle = "rgba(72,86,46,0.82)";
+  ctx.lineCap = "round";
+  for (let i = 0; i < points.length - 1; i++) {
+    ctx.lineWidth = 6 - (i / points.length) * 4; // tapers toward the tail
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    ctx.lineTo(points[i + 1].x, points[i + 1].y);
+    ctx.stroke();
+  }
+  // head, with two tiny eyes
+  ctx.fillStyle = "rgba(72,86,46,0.9)";
+  ctx.beginPath();
+  ctx.ellipse(points[0].x, points[0].y, 4.5, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(15,15,10,0.85)";
+  const eyeDx = s.dir * 2.2;
+  [-1.4, 1.4].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(points[0].x + eyeDx, points[0].y + side, 0.7, 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function updatePoolCritters(deltaTime) {
+  updatePoolCrayfish(deltaTime);
+  updatePoolTadpoles(deltaTime);
+  updatePoolSalamander(deltaTime);
+  updatePoolWaterSnake(deltaTime);
+  // snails have no discrete update step -- their creep is computed purely
+  // from fireflyT at draw time, same pattern as the light shafts/plants
+}
+
+function drawPoolCritters(camX) {
+  drawPoolSnails(camX);
+  drawPoolCrayfish(camX);
+  drawPoolSalamander(camX);
+  drawPoolTadpoles(camX);
+  drawPoolWaterSnake(camX);
+}
+
 function updatePoolScene(deltaTime) {
+  updatePoolCritters(deltaTime);
+
   // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
   // exact shape as updateSandboxBallPit's own swim block -- a direction
   // held sets a flat unit velocity, multiplied by a px/s speed and
@@ -17865,6 +18324,15 @@ function updatePoolScene(deltaTime) {
   player.jumping = false;
   player.usedDoubleJump = false;
   player.launched = false;
+
+  // CONFIRMED CHANGE ("player doesnt turn sidewides for horiz movement
+  // they should"): same tilt-target shape as the ball pit's own swim
+  // tilt -- lying flat, head leading whichever way is held horizontally,
+  // takes priority over vertical; upside-down while diving straight down;
+  // upright otherwise (including holding still). Eased toward that target
+  // rather than snapping, same easing rate as ball pit's own.
+  const poolSwimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0);
+  poolSwimTiltAngle += (poolSwimTiltTarget - poolSwimTiltAngle) * Math.min(1, deltaTime * 6);
 
   // fixed camera shift so the water reads as filling most of the screen --
   // see POOL_CAMERA_Y's own comment above. Set every frame (not just once
@@ -17956,7 +18424,10 @@ function drawPoolScene(camX) {
     ctx.fill();
   });
 
+  drawPoolFloorTexture(camX);
+  drawPoolPebbles(camX);
   drawPoolPlants(camX);
+  drawPoolCritters(camX);
 
   ctx.restore();
 }
@@ -52436,7 +52907,19 @@ ctx.beginPath();
 ctx.ellipse(px + player.width/2, gy + cameraY + 6, 22, 8, 0, 0, Math.PI*2);
 ctx.fill();
 
-if (drawPy < gy + cameraY) { // still at least partly above ground — worth drawing
+// CONFIRMED BUG FIX ("player dissappears and only shadow is visible after
+// going a little lower in the water"): this gate was written assuming
+// player.y never goes negative (true in every other scene -- ground level
+// is the floor, not something you can swim past). The pool is the first
+// scene where player.y is deliberately negative (0=surface, down to
+// -POOL_MAX_DEPTH=underwater), and once it's negative enough that
+// drawPy = gy+cameraY-height-player.y climbs back ABOVE gy+cameraY, this
+// check silently skipped the entire body-drawing block -- leaving only
+// the unconditional shadow ellipse above, which is exactly what read as
+// "player disappears, only shadow visible." The pool has no ground-level
+// hole-fall concept this clip was protecting against, so it's simply
+// exempted outright rather than trying to extend the height math.
+if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly above ground — worth drawing
   ctx.save();
   ctx.beginPath();
   // widened well past the sprite's own bounding box -- the clip only
@@ -52491,8 +52974,10 @@ if (drawPy < gy + cameraY) { // still at least partly above ground — worth dra
   const balanceBallFallTilt = (typeof sandboxBalanceBall !== "undefined") ? getSandboxBalanceBallFallTilt() : 0;
   // the ball pit's own lying-down swim tilt -- see getSandboxBallPitSwimTilt's own comment
   const ballPitSwimTilt = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
+  // the pool's own lying-down swim tilt, same idea -- see getPoolSwimTilt's own comment
+  const poolSwimTilt = getPoolSwimTilt();
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
