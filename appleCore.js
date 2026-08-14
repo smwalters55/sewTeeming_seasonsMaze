@@ -16544,7 +16544,14 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // Positioned well clear of the float zone's own return lever
 // (FOREST_FLOAT_RETURN_LEVER_X) with real breathing room, in open space
 // past the end of the float zone -- nothing else is built out here yet.
-const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 200;
+// CONFIRMED CHANGE ("move to right ... i think i might have some ground
+// hooping mushrooms between thi and ruhshing river"): pushed further
+// right than the first pass, opening up real walking distance between
+// the return lever and the tree -- exactly the space Sam's now thinking
+// about filling with small ground mushrooms along the path (that's its
+// own separate idea, not built yet, just noted so this gap stays
+// available for it).
+const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 420;
 // CONFIRMED BUG FIX (found via a real held-key playtest): the tiers/
 // promotion physics below were tuned for a 60px MAT-TO-MAT gap (the
 // actual travel distance a bounce needs to cover), but the two caps were
@@ -16641,18 +16648,21 @@ function updateForestFungusClimb(deltaTime) {
   });
 }
 
-// a rounded bracket-fungus cap growing straight out of the trunk, same
-// "compress toward the trunk right on impact, spring back over
-// SQUISH_MS" language the sandbox mats already use, just shelf-fungus
-// shaped (a flattened dome, no rim/springs) instead of a stretched mat in
-// a ring, and always facing outward from the trunk rather than tilting
-// with a launch angle -- the trunk itself, not the cap, reads as "in
-// front of/behind" the player, so the cap doesn't need to lean.
+// CONFIRMED CHANGE ("make fungus look better"): layered bracket-fungus
+// cap instead of a flat single ellipse -- a darker outer rim, a lighter
+// inner face, a soft highlight catching the light from above, and gill
+// lines that fan out from the trunk attachment point rather than running
+// in flat parallel rows, closer to how a real shelf fungus's pore
+// surface actually radiates. Still keeps the same "compress toward the
+// trunk on impact, spring back over SQUISH_MS" language the sandbox mats
+// use, and still always faces outward from the trunk rather than tilting
+// with a launch angle -- the trunk itself reads as "in front of/behind"
+// the player, so the cap doesn't need to lean.
 function drawForestFungusCap(camX, t) {
   const sx = t.x - camX;
   const cy = gy - t.height;
   const side = t.dir; // 1 = cap sits to the +x side of the trunk, -1 = to the -x side
-  const capRx = 24, capRy = 14;
+  const capRx = 27, capRy = 16;
 
   const squishP = Math.min(t.squishT / FOREST_FUNGUS_SQUISH_MS, 1);
   const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
@@ -16660,58 +16670,145 @@ function drawForestFungusCap(camX, t) {
   const ry = Math.max(3, capRy - squish * 5);
   // offset toward the trunk's own edge (roughly +/-16 at this height) so
   // the cap visibly attaches to the bark rather than floating over it
-  const capCx = sx + side * (16 + rx * 0.6);
+  const capCx = sx + side * (17 + rx * 0.6);
 
-  const capGrad = ctx.createRadialGradient(capCx - side * rx * 0.3, cy - ry * 0.3, 2, capCx, cy, rx * 1.3);
-  capGrad.addColorStop(0, "#d9a25c");
-  capGrad.addColorStop(0.55, "#b97a3f");
-  capGrad.addColorStop(1, "#7a4f28");
-  ctx.fillStyle = capGrad;
+  // slight per-cap color variation (seeded by its own world position, so
+  // it's fixed forever rather than flickering) -- reads as a cluster of
+  // real, slightly-different growths rather than 6 identical stamps
+  const tone = pseudoRandom(t.x * 3.1 + t.height * 7.7);
+
+  // outer rim -- a touch darker and slightly larger than the inner face,
+  // gives the cap real edge thickness instead of reading as paper-flat
+  ctx.fillStyle = `rgba(${58 + tone * 10},${34 + tone * 6},${16 + tone * 4},0.9)`;
   ctx.beginPath();
   ctx.ellipse(capCx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // gill underside -- a few dark parallel lines, like a real bracket
-  // fungus's pore surface, reads as organic rather than a plain blob
-  ctx.strokeStyle = "rgba(60,36,18,0.35)";
+  const innerRx = rx * 0.86, innerRy = ry * 0.82;
+  const capGrad = ctx.createRadialGradient(capCx - side * innerRx * 0.35, cy - innerRy * 0.4, 2, capCx, cy, innerRx * 1.3);
+  capGrad.addColorStop(0, `rgb(${222 + tone * 15},${162 + tone * 12},${92 + tone * 10})`);
+  capGrad.addColorStop(0.55, "#b97a3f");
+  capGrad.addColorStop(1, "#7a4f28");
+  ctx.fillStyle = capGrad;
+  ctx.beginPath();
+  ctx.ellipse(capCx, cy - 1, innerRx, innerRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // soft highlight, like light catching the top curve of the shelf
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(capCx, cy - 1, innerRx, innerRy, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "rgba(255,240,210,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(capCx - side * innerRx * 0.3, cy - innerRy * 0.5, innerRx * 0.5, innerRy * 0.35, -0.3 * side, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // gill underside -- fans out from the trunk attachment point instead
+  // of running in flat parallel rows, closer to a real pore surface
+  ctx.strokeStyle = "rgba(55,32,16,0.4)";
   ctx.lineWidth = 1;
+  const attachX = capCx - side * innerRx * 0.85;
   for (let i = -2; i <= 2; i++) {
     ctx.beginPath();
-    ctx.moveTo(capCx - rx * 0.7, cy + i * 2.2);
-    ctx.lineTo(capCx + rx * 0.7, cy + i * 2.4);
+    ctx.moveTo(attachX, cy + i * 1.6);
+    ctx.lineTo(capCx + side * innerRx * 0.75, cy + i * 2.6);
     ctx.stroke();
   }
 }
 
+// CONFIRMED CHANGE ("make tree look better and a little gnarled ...
+// make taller"): the trunk went from a plain straight-sided wedge to a
+// genuinely gnarled silhouette -- an irregular wavy outline (both edges
+// bow in and out independently rather than tapering evenly), a flared
+// root base where it meets the ground, a couple of small knot/burl bumps,
+// and a rough broken-looking top instead of a clean flat cut. A modest
+// leaf canopy caps it so it still reads as a living tree, not a bare
+// pole. Made noticeably taller too -- the trunk now extends well above
+// the top fungus level (150px of clear headroom instead of 40), rather
+// than stopping right at it.
 function drawForestFungusClimb(camX) {
   const sx = FOREST_FUNGUS_TREE_X - camX;
-  const topHeight = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height + 40;
+  const topLevelHeight = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height;
+  const topHeight = topLevelHeight + 150;
+  const seed = FOREST_FUNGUS_TREE_X * 1.7;
 
-  // trunk -- a simple tapered wedge, dark bark tone matching the forest's
-  // own muted palette, tall enough to back every fungus level plus a
-  // little headroom above the top one
-  const trunkGrad = ctx.createLinearGradient(sx - 22, 0, sx + 22, 0);
-  trunkGrad.addColorStop(0, "#2c2016");
-  trunkGrad.addColorStop(0.5, "#4a3521");
-  trunkGrad.addColorStop(1, "#241a11");
+  // gnarled outline -- each edge is its own wavy path built from a few
+  // quadratic bows with alternating direction, not a straight taper, plus
+  // a wide flared base and a ragged top
+  const leftPts = [
+    { x: sx - 34, y: gy },
+    { x: sx - 24, y: gy - topHeight * 0.22 },
+    { x: sx - 30, y: gy - topHeight * 0.48 },
+    { x: sx - 20, y: gy - topHeight * 0.74 },
+    { x: sx - 15, y: gy - topHeight * 0.95 },
+    { x: sx - 10, y: gy - topHeight }
+  ];
+  const rightPts = [
+    { x: sx + 10, y: gy - topHeight },
+    { x: sx + 16, y: gy - topHeight * 0.94 },
+    { x: sx + 19, y: gy - topHeight * 0.72 },
+    { x: sx + 27, y: gy - topHeight * 0.46 },
+    { x: sx + 22, y: gy - topHeight * 0.2 },
+    { x: sx + 34, y: gy }
+  ];
+
+  const trunkGrad = ctx.createLinearGradient(sx - 30, 0, sx + 30, 0);
+  trunkGrad.addColorStop(0, "#241a11");
+  trunkGrad.addColorStop(0.45, "#4a3521");
+  trunkGrad.addColorStop(0.6, "#5a4128");
+  trunkGrad.addColorStop(1, "#201710");
   ctx.fillStyle = trunkGrad;
   ctx.beginPath();
-  ctx.moveTo(sx - 26, gy);
-  ctx.lineTo(sx - 16, gy - topHeight);
-  ctx.lineTo(sx + 16, gy - topHeight);
-  ctx.lineTo(sx + 26, gy);
+  ctx.moveTo(leftPts[0].x, leftPts[0].y);
+  for (let i = 1; i < leftPts.length; i++) {
+    const mx = (leftPts[i - 1].x + leftPts[i].x) / 2, my = (leftPts[i - 1].y + leftPts[i].y) / 2;
+    ctx.quadraticCurveTo(leftPts[i - 1].x, leftPts[i - 1].y, mx, my);
+  }
+  ctx.lineTo(leftPts[leftPts.length - 1].x, leftPts[leftPts.length - 1].y);
+  for (let i = 0; i < rightPts.length; i++) {
+    ctx.lineTo(rightPts[i].x, rightPts[i].y);
+  }
   ctx.closePath();
   ctx.fill();
 
-  // a few bark ridge lines for texture, nothing elaborate
-  ctx.strokeStyle = "rgba(20,14,8,0.4)";
-  ctx.lineWidth = 2;
-  for (let i = -1; i <= 1; i++) {
+  // a couple of small knot/burl bumps -- fixed positions (seeded), reads
+  // as real bark character rather than a smooth cylinder
+  ctx.fillStyle = "rgba(20,14,8,0.55)";
+  [0.32, 0.68].forEach((t, i) => {
+    const kx = sx + (i === 0 ? -19 : 21);
+    const ky = gy - topHeight * t;
     ctx.beginPath();
-    ctx.moveTo(sx + i * 10, gy);
-    ctx.quadraticCurveTo(sx + i * 12 + i * 6, gy - topHeight * 0.5, sx + i * 8, gy - topHeight);
+    ctx.ellipse(kx, ky, 6, 4.5, i === 0 ? -0.4 : 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // irregular bark ridge lines, more of them and less uniform than a
+  // plain straight taper would need, each with its own jitter so no two
+  // read as copies of each other
+  ctx.strokeStyle = "rgba(15,10,6,0.42)";
+  ctx.lineWidth = 2;
+  for (let i = -2; i <= 2; i++) {
+    const jitter = (pseudoRandom(seed + i * 3.3) - 0.5) * 14;
+    ctx.beginPath();
+    ctx.moveTo(sx + i * 9, gy - 4);
+    ctx.quadraticCurveTo(sx + i * 11 + jitter, gy - topHeight * 0.5, sx + i * 7 + jitter * 0.4, gy - topHeight * 0.9);
     ctx.stroke();
   }
+
+  // a modest leaf canopy at the top so this still reads as a living tree
+  ctx.fillStyle = "rgba(58,78,42,0.85)";
+  const canopyCy = gy - topHeight - 6;
+  [[-22, 6], [0, -10], [24, 8], [8, 22], [-14, 22]].forEach(([ox, oy]) => {
+    ctx.beginPath();
+    ctx.arc(sx + ox, canopyCy + oy, 30, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "rgba(78,102,56,0.5)";
+  ctx.beginPath();
+  ctx.arc(sx - 10, canopyCy - 4, 26, 0, Math.PI * 2);
+  ctx.fill();
 
   forestFungusClimb.levels.forEach(level => {
     level.mats.forEach(t => drawForestFungusCap(camX, t));
