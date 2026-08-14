@@ -17804,6 +17804,52 @@ function forestSwimHoleRockJag(seed, t, spread) {
   return (pseudoRandom(seed + Math.floor(t * 10) * 3.7) - 0.5) * spread +
     Math.sin(t * 7 + seed) * spread * 0.35;
 }
+
+// CONFIRMED VISUAL FIX ("make the tops of the rocks not be flat lines,
+// more ralistic rock shapes"): both rock masses below used to close their
+// path with a single straight ctx.closePath() across the top, from one
+// jagged side straight to the other -- jagged flanks, but a dead flat cap.
+// This inserts a handful of extra points between those two known top
+// corners, each pushed further up by a random (but seeded/deterministic,
+// not per-frame) amount, so the top reads as an irregular ridge of rock
+// peaks/valleys instead of a table-flat cut. Caller is expected to have
+// already placed (xFrom, baseY) as the current path point; this only adds
+// the INTERIOR points, leaving the path open to be closed/lineTo'd to
+// (xTo, baseY) by the caller same as before.
+function forestSwimHoleRockCap(xFrom, xTo, baseY, seed, jag) {
+  const steps = 6;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = xFrom + (xTo - xFrom) * t;
+    const y = baseY - jag * (0.25 + pseudoRandom(seed + i * 3.1) * 0.95);
+    ctx.lineTo(x, y);
+  }
+}
+
+// CONFIRMED VISUAL FIX ("same w pool not just oval, make it more
+// organically shaped"): the ledge-side water preview used to be a perfect
+// ctx.ellipse -- reads as a clean geometric shape sitting oddly inside
+// visibly uneven, jagged rock. Walks the ellipse's own parametric angle
+// and perturbs each point's radius by a seeded (deterministic, no
+// per-frame shimmer) irregular amount, so the pond's own edge reads as
+// organically worn into the rock rather than a stamped-out oval. Shared
+// by the clip (water fill + plants) and the rim stroke so both trace the
+// exact same boundary.
+function forestSwimHolePondRMul(angle, seed, spread) {
+  return 1 + (pseudoRandom(seed + Math.floor(angle * 5) * 3.1) - 0.5) * spread +
+    Math.sin(angle * 3 + seed) * spread * 0.4;
+}
+function buildForestSwimHolePondPath(px, poolY, w, h) {
+  const steps = 32;
+  for (let i = 0; i <= steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    const rMul = forestSwimHolePondRMul(angle, 14.7, 0.12);
+    const x = px + Math.cos(angle) * (w / 2) * rMul;
+    const y = poolY + Math.sin(angle) * (h / 2) * rMul;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
 function drawForestSwimHoleRocks(camX) {
   const px = FOREST_SWIM_HOLE_X - camX;
   const w = FOREST_SWIM_HOLE_WIDTH, h = FOREST_SWIM_HOLE_HEIGHT;
@@ -17833,6 +17879,15 @@ function drawForestSwimHoleRocks(camX) {
     const y = belowTop + (belowBottom - belowTop) * t;
     ctx.lineTo(px + w * 0.42 + forestSwimHoleRockJag(47.9, t, 26), y);
   }
+  // CONFIRMED VISUAL FIX ("make the tops of the rocks not be flat lines,
+  // more ralistic rock shapes"): without this, ctx.closePath() below would
+  // just draw one straight line from this right-top corner back to the
+  // left-top corner -- see forestSwimHoleRockCap's own comment.
+  forestSwimHoleRockCap(
+    px + w * 0.42 + forestSwimHoleRockJag(47.9, 0, 26),
+    px - w * 0.42 + forestSwimHoleRockJag(11.3, 0, 26),
+    belowTop, 71.2, 16
+  );
   ctx.closePath();
   ctx.fill();
 
@@ -17863,6 +17918,14 @@ function drawForestSwimHoleRocks(camX) {
     const y = rightTop + (rightBottom - rightTop) * t;
     ctx.lineTo(rightOuter + forestSwimHoleRockJag(61.4, t, 34), y);
   }
+  // same jagged-cap treatment as the below-pool mass above -- this face is
+  // the more visible one (it stands taller above the water line), so a
+  // slightly bigger jag reads as a real broken ridge rather than a dip.
+  forestSwimHoleRockCap(
+    rightOuter + forestSwimHoleRockJag(61.4, 0, 34),
+    rightInner + forestSwimHoleRockJag(23.1, 0, 20),
+    rightTop, 88.4, 22
+  );
   ctx.closePath();
   ctx.fill();
 
@@ -17915,7 +17978,7 @@ function drawForestSwimHolePreview(camX) {
 
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(px, poolY, w / 2, h / 2, 0, 0, Math.PI * 2);
+  buildForestSwimHolePondPath(px, poolY, w, h); // organic edge, not a perfect ellipse -- see its own comment
   ctx.clip();
   // same three-stop water gradient the real pool scene uses, so this
   // reads as a preview of the exact same water rather than a different
@@ -17961,7 +18024,7 @@ function drawForestSwimHolePreview(camX) {
   ctx.strokeStyle = "rgba(80,64,36,0.4)";
   ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.ellipse(px, poolY, w / 2, h / 2, 0, 0, Math.PI * 2);
+  buildForestSwimHolePondPath(px, poolY, w, h);
   ctx.stroke();
 }
 
@@ -18999,14 +19062,39 @@ function drawPoolLoopOcclusion(camX) {
 // reasoning as drawPoolLoopOcclusion above. Deliberately simple (a ring of
 // small dots expanding and fading out) -- first pass, not the pendulum
 // goal ring's full tiered flourish.
-function drawPoolLoopSparkles(camX) {
+//
+// CONFIRMED BUG FIX ("this shouldnt happen", screenshots showing a stray
+// bright fragment poking through the player on the ring's supposedly-
+// hidden far side): this used to be called ONLY from the post-player
+// section, unconditionally -- every particle in the burst, all the way
+// around the loop, always drew on top of the player no matter which side
+// of the now-directional ring occlusion they landed on. That read as
+// fine before the ring itself got a real front/back split, but once the
+// ring started properly hiding its far side, sparkles still punching
+// through anywhere looked like a genuine rendering glitch. Fixed the same
+// way the ring itself works: called ONCE from the normal pre-player pass
+// (drawPoolLoops' own call site) with clipToEntrySide=false, so the full
+// burst renders normally and gets naturally hidden by the player's own
+// opaque body wherever they overlap -- then called AGAIN from the post-
+// player section with clipToEntrySide=true, redrawing only the entry-side
+// particles (behind the player's own travel direction) on top, exactly
+// mirroring the ring's own pre-player/post-player split.
+function drawPoolLoopSparkles(camX, opts) {
+  const clipToEntrySide = opts && opts.clipToEntrySide;
+  // worldSpace=true is for the new pre-player call, made from INSIDE
+  // drawPoolScene's own ctx.translate(0, cameraY) block (same reason
+  // drawPoolLoops itself never adds cameraY by hand) -- the original
+  // post-player call stays plain-screen-space (cameraY added by hand)
+  // exactly as before.
+  const worldSpace = opts && opts.worldSpace;
   const now = performance.now();
+  const travelDirX = poolLastSwimDir.x, travelDirY = -poolLastSwimDir.y; // screen-space sign flip, same convention drawPoolLoopOcclusion uses
   poolLoopSparkles.forEach(s => {
     const age = now - s.startedAt;
     const p = age / POOL_LOOP_SPARKLE_DURATION_MS;
     if (p >= 1) return;
     const sx = s.x - camX;
-    const sy = gy + cameraY - s.y;
+    const sy = worldSpace ? (gy - s.y) : (gy + cameraY - s.y);
     const alpha = 1 - p;
     const sparkleCount = 7;
     for (let i = 0; i < sparkleCount; i++) {
@@ -19014,6 +19102,10 @@ function drawPoolLoopSparkles(camX) {
       const r = 10 + p * 32;
       const px = sx + Math.cos(ang) * r;
       const py = sy + Math.sin(ang) * r * 0.5;
+      if (clipToEntrySide) {
+        const dot = (px - sx) * travelDirX + (py - sy) * travelDirY;
+        if (dot >= 0) continue; // exit/ahead side -- already handled by the pre-player pass
+      }
       ctx.fillStyle = `rgba(255,255,240,${alpha})`;
       ctx.beginPath();
       ctx.arc(px, py, 2 + (1 - p) * 1.5, 0, Math.PI * 2);
@@ -19176,6 +19268,7 @@ function drawPoolScene(camX) {
   drawPoolPlants(camX);
   drawPoolCritters(camX);
   drawPoolLoops(camX);
+  drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
 
   ctx.restore();
 }
@@ -54138,7 +54231,7 @@ if (currentScene === "spring" && peanutVine.mounted && !peanutVineAtTop() && pea
 // drawPoolLoopOcclusion/drawPoolLoopSparkles' own comments.
 if (currentScene === "pool") {
   drawPoolLoopOcclusion(camX);
-  drawPoolLoopSparkles(camX);
+  drawPoolLoopSparkles(camX, { clipToEntrySide: true }); // only the entry-side half redraws on top here -- see that function's own comment
 
   // CONFIRMED CHANGE ("make the animals have the occlusions oto"):
   // critters (crayfish/snails/tadpoles/salamander/water snake) were only
