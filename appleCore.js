@@ -159,6 +159,20 @@ const player = {
   vx: 0,               // horizontal momentum — only used during a swing launch
   launched: false,     // true while mid-flight from a swing release
   launchPeakHeight: 0, // tracks how high THIS launch has reached, for the cloud threshold check
+  // CONFIRMED CHANGE ("give a little more power to the player when in air
+  // w the other angled bounces w steering"): true only for the sandbox
+  // angled-trampoline flights (the 4-trampoline field, and the new inward
+  // duo below) -- lets held left/right nudge vx mid-flight in the shared
+  // launched-physics block. Left false/default for every other launched
+  // system (pendulum throw, forest gears, swing release) so none of them
+  // pick up steering they were never asked for.
+  launchSteerable: false,
+  // CONFIRMED FIX: the raw vx captured at launch, before any steering is
+  // applied -- steering nudges launchSteerOffset (clamped), never this
+  // value directly, so a held direction key can't accumulate without
+  // bound over a long flight and blow past the tuned trajectory.
+  launchBaseVx: 0,
+  launchSteerOffset: 0,
   vineFlying: false,   // true while mid-flight from a vine release — real horizontal+vertical momentum, checks for grabbing the NEXT vine
   onSeesawBounce: false, // true while airborne from a seesaw jump-pump — uses its own slower gravity instead of standard physics
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
@@ -1062,6 +1076,7 @@ function startSeasonTransition(targetScene) {
   vines.forEach(v => { v.mounted = false; });
   swing.mounted = false;
   player.launched = false;
+  player.launchSteerable = false;
   player.vineFlying = false;
   player.vineFlyingSource = null;
   player.onSeesawBounce = false;
@@ -2702,6 +2717,24 @@ function applyPhysics(){
     // horizontal momentum from the swing release, plus gravity that's
     // stricter on the way up (normal jump feel) and floatier on the way
     // down if the launch didn't reach the goal cloud
+    // CONFIRMED CHANGE ("give a little more power to the player when in
+    // air w the other angled bounces w steering"): while
+    // player.launchSteerable is set (the angled trampoline field and the
+    // new inward-facing duo below), held left/right nudges a CLAMPED
+    // offset on top of the launch's own base vx -- lets you actively
+    // aim/correct your arc without the push being able to accumulate
+    // without bound over a long flight (a first pass mutated player.vx
+    // directly and forever, which let a held key send the player flying
+    // hundreds of px past any intended trajectory -- confirmed via a real
+    // per-frame test holding Right for 100 frames). Every other launched
+    // system (pendulum throw, forest gears, swing release) leaves
+    // launchSteerable false, so they're completely unaffected.
+    if (player.launchSteerable) {
+      if (keys.left) player.launchSteerOffset -= SANDBOX_LAUNCH_STEER_ACCEL;
+      if (keys.right) player.launchSteerOffset += SANDBOX_LAUNCH_STEER_ACCEL;
+      player.launchSteerOffset = Math.max(-SANDBOX_LAUNCH_STEER_MAX, Math.min(SANDBOX_LAUNCH_STEER_MAX, player.launchSteerOffset));
+      player.vx = player.launchBaseVx + player.launchSteerOffset;
+    }
     player.x += player.vx;
 
     const ascending = player.vy > 0;
@@ -2742,6 +2775,7 @@ function applyPhysics(){
           player.jumping = false;
           player.usedDoubleJump = false;
           player.launched = false;
+          player.launchSteerable = false;
           // CONFIRMED BUG FIX ("goals... dont come up again"): the
           // farthest right-side goal circle sits right at the pile's own
           // front edge by design (see SANDBOX_PENDULUM_GOALS comment),
@@ -2772,6 +2806,7 @@ function applyPhysics(){
     if (hitGoalCloud && seasonTransition.phase === "idle" && !cloudLanding.active && player.cloudLandingImmunity <= 0) {
       // land ON the cloud, don't just clip through it — freeze here briefly
       player.launched = false;
+      player.launchSteerable = false;
       player.vx = 0;
       player.vy = 0;
       player.y = goalCloud.height;
@@ -2781,12 +2816,31 @@ function applyPhysics(){
     }
 
     if (player.y <= 0) {
+      // CONFIRMED BUG FIX ("bounce on them going up... using arrow keys"
+      // -- the duo's whole point is chaining consecutive bounces): this
+      // landing check runs for EVERY launched flight's touchdown, INCLUDING
+      // one that started on a duo mat -- and it always unconditionally
+      // reset/cleared the flight right here, before the separate ground-
+      // collision trampoline code further down in this function ever got a
+      // chance to run (that code only fires for a player who ISN'T already
+      // launched). So a flight landing back on -- or near -- the other duo
+      // mat could never actually re-trigger a second bounce; it just
+      // landed normally every time, no matter how perfectly aimed. Checking
+      // for a duo mat right here, before the unconditional reset, lets a
+      // mid-flight landing re-launch instead of ending the flight.
+      const duoRelandHit = currentScene === "sandbox" && player.launchSteerable &&
+        sandboxTrampolineDuo.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
+      if (duoRelandHit) {
+        sandboxTrampolineDuoLaunch(duoRelandHit);
+        return;
+      }
       player.y = 0;
       player.vy = 0;
       player.vx = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
       player.launched = false;
+      player.launchSteerable = false;
       // CONFIRMED CHANGE ("goal circles... glow green for a moment when
       // u land in them") -- the only source of a launched flight inside
       // the sandbox scene is the pendulum throw, so checking landing
@@ -2903,6 +2957,11 @@ function applyPhysics(){
   const angledHit = currentScene === "sandbox" && player.vy < -1 &&
     SANDBOX_ANGLED_TRAMPOLINES.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_ANGLED_TRAMPOLINE_RADIUS);
 
+  // the inward-facing duo, right next to the angled field -- see
+  // sandboxTrampolineDuo's own comment for the full design rationale
+  const duoHit = currentScene === "sandbox" && player.vy < -1 &&
+    sandboxTrampolineDuo.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < SANDBOX_TRAMPOLINE_DUO_RADIUS);
+
   if (player.y <= 0) {
     if (currentScene === "sandbox" && player.vy < -1 &&
         Math.abs(player.x + player.width / 2 - sandboxTrampoline.x) < SANDBOX_TRAMPOLINE_RADIUS) {
@@ -2920,14 +2979,25 @@ function applyPhysics(){
       player.launched = true;
       player.launchGravityMult = 1;
       player.launchPeakHeight = player.y;
+      player.launchSteerable = true; // CONFIRMED CHANGE: held left/right now nudges the flight, see SANDBOX_LAUNCH_STEER_ACCEL
+      player.launchBaseVx = player.vx;
+      player.launchSteerOffset = 0;
       player.jumping = true;
       player.usedDoubleJump = false;
       angledHit.squishT = 0;
+    } else if (duoHit) {
+      sandboxTrampolineDuoLaunch(duoHit);
     } else {
       player.y = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
       player.vy = 0;
+      // CONFIRMED CHANGE: any plain ground landing ends a duo run -- the
+      // next catch starts back at the base speed, same "escalation resets
+      // once you touch down" idea the ground trampoline's own escalating
+      // bounce doesn't have to worry about (this is a fixed ladder, not a
+      // fall-speed multiplier, so it needs an explicit reset point).
+      sandboxTrampolineDuo.streak = 0;
     }
   }
 
@@ -6867,6 +6937,22 @@ const SWING_PUMP_MULT_RANGE = 2.0;   // grows up to (MIN_MULT + this) at max mom
 const SWING_PUMP_COOLDOWN = 6;       // frames between pumps, so holding doesn't spam
 const LAUNCH_GRAVITY = 0.3;          // ascent — lighter than a normal jump; you're being FLUNG, not hopping
 const FLOATY_FALL_GRAVITY = 0.13;    // descent, if under threshold — the "slow drop"
+// CONFIRMED CHANGE ("give a little more power to the player when in air
+// w the other angled bounces w steering") -- per-frame nudge to the
+// clamped launchSteerOffset while player.launchSteerable is set. A first
+// pass (0.32, applied as unbounded direct vx accumulation) let a held key
+// fly the player hundreds of px past any intended trajectory over a long
+// flight -- confirmed via a real per-frame test. Now paired with
+// SANDBOX_LAUNCH_STEER_MAX below, so the total steering contribution is
+// capped instead of growing forever; the accel can stay reasonably snappy
+// since the cap does the safety work.
+const SANDBOX_LAUNCH_STEER_ACCEL = 0.18;
+// Hard cap on |launchSteerOffset| -- a full flight held in one direction
+// tops out at this much extra vx on top of the launch's own base speed.
+// Sized to feel like real "power" (a meaningful nudge to the arc) without
+// being able to override the duo's tiny tuned base vx values (~1-1.5) or
+// blow the angled field's landing zone.
+const SANDBOX_LAUNCH_STEER_MAX = 1.8;
 
 const swing = {
   pivotX: 1975,
@@ -42557,6 +42643,86 @@ function drawSandboxAngledTrampolineField(camX) {
   SANDBOX_ANGLED_TRAMPOLINES.forEach(t => drawSandboxAngledTrampoline(camX, t));
 }
 
+// CONFIRMED CHANGE ("for the trampolines i was thinking maybe ones that
+// angle inwards and upwards towards each other so you bounce on them
+// going up kinda also using arrow keys"): a facing pair right next to the
+// angled field -- landing on one flings you up-and-toward the other, and
+// each consecutive catch (without touching plain ground in between) is a
+// little more powerful than the last, so a clean back-and-forth run
+// climbs higher each bounce. Reuses the exact same mat/post visual
+// (drawSandboxAngledTrampoline) and launched-flight physics as the angled
+// field, just with tiltDeg pointed at EACH OTHER instead of a fixed
+// diagonal, and player.launchSteerable on (see SANDBOX_LAUNCH_STEER_ACCEL)
+// so held left/right actively aims the crossing instead of a fixed arc --
+// genuinely useful here since a real gap has to be cleared each bounce,
+// not just an open field to land anywhere in.
+const sandboxTrampolineDuo = {
+  mats: [
+    { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },   // left mat -- visually leans right, flings toward the right mat
+    { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }  // right mat -- visually leans left, flings toward the left mat
+  ],
+  streak: 0 // consecutive duo catches without a plain-ground landing in between -- indexes SANDBOX_TRAMPOLINE_DUO_TIERS
+};
+const SANDBOX_TRAMPOLINE_DUO_RADIUS = 40;
+// CONFIRMED BUG FIX (found via a real per-frame physics simulation, not a
+// guess): a first pass reused a single steep tiltDeg (55) for the actual
+// launch, matching the mat's own visual lean -- but under this floaty
+// launched-flight physics that sent the player sailing ~300px past the
+// other mat entirely (this system's horizontal velocity never decays, so
+// distance = vx * total airtime, and airtime here is long). The mats'
+// VISUAL tilt (above, `tiltDeg`/`dir`) is kept moderate for a readable
+// "leaning toward each other" look, but the actual FLIGHT angle is a
+// separate, much shallower tuned value per tier -- swept numerically
+// against the real gravity constants until each tier's landing x reliably
+// falls within SANDBOX_TRAMPOLINE_DUO_RADIUS of the other mat. Speed
+// still escalates per consecutive catch (same "fixed ladder, not a
+// self-reinforcing multiplier" lesson the trampoline chain learned), but
+// tiltDeg shrinks alongside it so the horizontal distance stays roughly
+// constant across all 4 tiers while the peak height climbs a lot
+// (~107 -> ~153 -> ~205 -> ~265 in the simulation) -- a real "bounce
+// higher each time without missing the next mat" feel.
+const SANDBOX_TRAMPOLINE_DUO_TIERS = [
+  { tiltDeg: 10.5, speed: 8 },
+  { tiltDeg: 7.5, speed: 9.5 },
+  { tiltDeg: 5.5, speed: 11 },
+  { tiltDeg: 4.5, speed: 12.5 }
+];
+const SANDBOX_TRAMPOLINE_DUO_SQUISH_MS = 260;
+
+// shared by both the normal (not-yet-launched) ground-collision catch AND
+// the mid-flight re-catch inside applyPhysics' own launched-block landing
+// handler (see that handler's own comment for why a second call site was
+// needed at all) -- keeping the actual launch math in one place so the
+// two triggers can never drift out of sync with each other.
+function sandboxTrampolineDuoLaunch(mat) {
+  const idx = Math.min(sandboxTrampolineDuo.streak, SANDBOX_TRAMPOLINE_DUO_TIERS.length - 1);
+  const tier = SANDBOX_TRAMPOLINE_DUO_TIERS[idx];
+  const rad = tier.tiltDeg * Math.PI / 180;
+  player.y = 0;
+  player.vx = Math.sin(rad) * tier.speed * mat.dir;
+  player.vy = Math.cos(rad) * tier.speed;
+  player.launched = true;
+  player.launchGravityMult = 1;
+  player.launchPeakHeight = player.y;
+  player.launchSteerable = true;
+  player.launchBaseVx = player.vx;
+  player.launchSteerOffset = 0;
+  player.jumping = true;
+  player.usedDoubleJump = false;
+  mat.squishT = 0;
+  sandboxTrampolineDuo.streak++;
+}
+
+function updateSandboxTrampolineDuo(deltaTime) {
+  sandboxTrampolineDuo.mats.forEach(t => {
+    if (t.squishT < SANDBOX_TRAMPOLINE_DUO_SQUISH_MS) t.squishT += deltaTime * 1000;
+  });
+}
+
+function drawSandboxTrampolineDuo(camX) {
+  sandboxTrampolineDuo.mats.forEach(t => drawSandboxAngledTrampoline(camX, t));
+}
+
 // dark stretched mat inside a metal ring, short angled legs, springs
 // evenly spaced around the rim -- reads as an actual classic trampoline,
 // not just a colored ellipse. The mat visibly dips (compresses toward
@@ -50045,6 +50211,7 @@ function drawSandboxScene(camX) {
   drawSandboxTrampolineChain(camX);
   drawSandboxTrampolineChainPerch(camX);
   drawSandboxAngledTrampolineField(camX);
+  drawSandboxTrampolineDuo(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
@@ -50088,6 +50255,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxTrampoline(deltaTime);
   updateSandboxTrampolineChain(deltaTime);
   updateSandboxAngledTrampolineField(deltaTime);
+  updateSandboxTrampolineDuo(deltaTime);
 
   // CONFIRMED CHANGE: radiusYUp bumped 15 -> 26, same fix as the entrance
   // mound got -- now that its top is a real jumpable platform, standing on
