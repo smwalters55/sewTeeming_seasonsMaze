@@ -18299,8 +18299,127 @@ function drawPoolCritters(camX) {
   drawPoolWaterSnake(camX);
 }
 
+// SWIM-THROUGH LOOPS -- first pass ("lets just start witht hat to get a
+// feel for it"): a single winding course of ovals through the pool, no
+// inventory/streak/HUD tracking at all, purely a sparkle-on-pass visual
+// payoff per direct request ("not inventory, but maybe the ovals sparkle
+// when you go through them at least"). y here uses the SAME convention as
+// player.y (0 = surface, -POOL_MAX_DEPTH = floor), NOT the critters'
+// positive-depth convention above, since loop position is checked directly
+// against the player's own y every frame. Positions deliberately zigzag in
+// both x AND y between consecutive loops (never just a flat horizontal or
+// vertical hop) so at least some transitions genuinely require diagonal
+// swimming, per direct request ("some requireing diagonal moovement").
+const POOL_LOOPS = [
+  { x: 220, y: -50 },
+  { x: 380, y: -170 },
+  { x: 520, y: -70 },
+  { x: 660, y: -210 },
+  { x: 800, y: -90 },
+  { x: 950, y: -190 }
+].map((l, i) => ({ x: l.x, y: l.y, rx: 34, ry: 44, seed: i * 7.3, inside: false }));
+
+const POOL_LOOP_SPARKLE_DURATION_MS = 700;
+// active sparkle bursts, {x, y, startedAt} -- pruned as they age out. This
+// is the ONLY state the pass triggers, deliberately -- no counter, no
+// per-loop "cleared" flag kept around, nothing written to inventory. A
+// loop can be swum through again and it sparkles again every time.
+let poolLoopSparkles = [];
+
+// checks the player's own center against each loop's oval (in the same
+// player.y-convention depth units), same shape of test the sandbox
+// pendulum's own checkSandboxPendulumGoalHit uses (normalized
+// distance-from-center vs. radius) but simpler -- no tiering, just
+// inside/outside. loop.inside is latched so a pass only fires once per
+// entry rather than spamming every frame while lingering inside.
+function updatePoolLoops() {
+  const centerX = player.x + player.width / 2;
+  const centerY = player.y + player.height / 2;
+  POOL_LOOPS.forEach(loop => {
+    const dx = (centerX - loop.x) / loop.rx;
+    const dy = (centerY - loop.y) / loop.ry;
+    const isInside = dx * dx + dy * dy < 0.5; // well inside the ring, not just grazing its edge -- a clean pass
+    if (isInside && !loop.inside) {
+      poolLoopSparkles.push({ x: loop.x, y: loop.y, startedAt: performance.now() });
+    }
+    loop.inside = isInside;
+  });
+  const now = performance.now();
+  poolLoopSparkles = poolLoopSparkles.filter(s => now - s.startedAt < POOL_LOOP_SPARKLE_DURATION_MS);
+}
+
+// world-space pass, drawn INSIDE drawPoolScene's own cameraY-translated
+// block (see its ctx.translate(0, cameraY) above) -- so screenY here is
+// just gy - loop.y, matching every other world-space draw in that block.
+function drawPoolLoops(camX) {
+  POOL_LOOPS.forEach(loop => {
+    const sx = loop.x - camX;
+    const sy = gy - loop.y;
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, loop.rx, loop.ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(120,210,230,0.4)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, loop.rx - 5, loop.ry - 5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+// occlusion -- same technique as drawPeanutVineOcclusionSegment (see its
+// own comment for the full explanation): redraw the loop a second time,
+// over the player, from the shared POST-PLAYER section of the main draw()
+// function, so a loop the player is currently inside visually wraps in
+// front of them instead of the player always flatly rendering on top of
+// everything. Called from plain screen space (NOT inside drawPoolScene's
+// translate block, since post-player draws happen after that's already
+// restored) -- so cameraY has to be added back in by hand here, same as
+// the peanut vine occlusion segment's own bottomY does.
+function drawPoolLoopOcclusion(camX) {
+  POOL_LOOPS.forEach(loop => {
+    if (!loop.inside) return;
+    const sx = loop.x - camX;
+    const sy = gy + cameraY - loop.y;
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, loop.rx, loop.ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+// sparkle burst draw -- also plain screen space, same cameraY-by-hand
+// reasoning as drawPoolLoopOcclusion above. Deliberately simple (a ring of
+// small dots expanding and fading out) -- first pass, not the pendulum
+// goal ring's full tiered flourish.
+function drawPoolLoopSparkles(camX) {
+  const now = performance.now();
+  poolLoopSparkles.forEach(s => {
+    const age = now - s.startedAt;
+    const p = age / POOL_LOOP_SPARKLE_DURATION_MS;
+    if (p >= 1) return;
+    const sx = s.x - camX;
+    const sy = gy + cameraY - s.y;
+    const alpha = 1 - p;
+    const sparkleCount = 7;
+    for (let i = 0; i < sparkleCount; i++) {
+      const ang = (i / sparkleCount) * Math.PI * 2 + p * 3;
+      const r = 10 + p * 32;
+      const px = sx + Math.cos(ang) * r;
+      const py = sy + Math.sin(ang) * r * 0.5;
+      ctx.fillStyle = `rgba(255,255,240,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, 2 + (1 - p) * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
+  updatePoolLoops();
 
   // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
   // exact shape as updateSandboxBallPit's own swim block -- a direction
@@ -18428,6 +18547,7 @@ function drawPoolScene(camX) {
   drawPoolPebbles(camX);
   drawPoolPlants(camX);
   drawPoolCritters(camX);
+  drawPoolLoops(camX);
 
   ctx.restore();
 }
@@ -53323,6 +53443,15 @@ if (currentScene === "forest") {
 // spiral depth phase no longer means anything.
 if (currentScene === "spring" && peanutVine.mounted && !peanutVineAtTop() && peanutVineDepthAt(peanutVine.playerClimbHeight) < 0) {
   drawPeanutVineOcclusionSegment(camX);
+}
+
+// pool swim-through loops -- same occlusion technique as the peanut vine
+// segment just above (redraw over the player from this shared post-player
+// section), plus the sparkle burst from a clean pass. See
+// drawPoolLoopOcclusion/drawPoolLoopSparkles' own comments.
+if (currentScene === "pool") {
+  drawPoolLoopOcclusion(camX);
+  drawPoolLoopSparkles(camX);
 }
 
 // CONFIRMED CHANGE ("make it look like player is inside nest not floating
