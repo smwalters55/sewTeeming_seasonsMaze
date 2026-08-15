@@ -83,6 +83,17 @@ window.addEventListener("keydown", e => {
   if ((e.key==="c" || e.key==="C") && !e.repeat) keys.cJustPressed = true;
   if ((e.key==="b" || e.key==="B") && !e.repeat) selectBoomerangIfAvailable();
   if ((e.key==="r" || e.key==="R") && !e.repeat) keys.rJustPressed = true; // zen sand rake: clear/start over -- see updateZenRakeUI
+  // DEBUG CHEAT ("how do i give gold to chest. debug spawn w mine gold"):
+  // Shift+G instantly tops off inventory.goldPile to the treasure chest's
+  // own cap, so the pool chest deposit can be tested without riding the
+  // full mine cart track to farm real gold first. Not reachable by
+  // accident (needs Shift held), and easy to strip back out later if this
+  // was only ever meant for testing.
+  if ((e.key==="g" || e.key==="G") && e.shiftKey && !e.repeat) {
+    inventory.goldPile = POOL_TREASURE_CHEST_CAP;
+    touchInventoryOrder("goldPile");
+    updateInventoryUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
