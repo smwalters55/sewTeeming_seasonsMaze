@@ -15414,35 +15414,65 @@ function drawForestScene(camX) {
   // than the layer below (barely darker than the sky itself) and barely
   // moves with the camera, so it reads as sitting well behind everything
   // else instead of just being a paler copy of the next layer in.
-  ctx.fillStyle = "rgba(58,74,50,0.22)";
+  // CONFIRMED CHANGE ("this canopy is kinda crap...make just a little
+  // better at least"): every circle in all three of these layers used to
+  // be the exact same flat color/size on an almost-perfectly-even spacing
+  // -- from anywhere high up (a tabletop, a climb) where the ground/trunks
+  // scroll out of view and only this canopy stack is left on screen, that
+  // reads as a mechanical stamped-out repeat rather than real treetops.
+  // Each circle now gets its own small seeded tint and size jitter (still
+  // fixed per-index, not re-randomized every frame) so no two clumps match
+  // exactly, same fix already applied to the pool's own canopy backdrop.
   for (let i = 0; i < 9; i++) {
     const tx = i * 210 - camX * 0.18 + Math.sin(i * 1.6) * 40;
     const th = 170 + Math.sin(i * 0.8) * 30;
+    const tone = pseudoRandom(i * 3.7 + 700);
+    ctx.fillStyle = `rgba(${Math.round(52 + tone * 14)},${Math.round(68 + tone * 14)},${Math.round(45 + tone * 10)},${0.16 + tone * 0.12})`;
     ctx.beginPath();
-    ctx.arc(tx, gy - th, 82 + Math.sin(i * 1.1) * 14, 0, Math.PI * 2);
+    ctx.arc(tx, gy - th, 78 + tone * 20, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // dense background tree silhouettes, tall and close together --
   // reads as thicker, more enclosed than spring's open orchard feel
-  ctx.fillStyle = "rgba(20,28,16,0.5)";
   for (let i = 0; i < 10; i++) {
     const tx = i * 150 - camX * 0.4 + Math.sin(i * 2.3) * 30;
     const th = 220 + Math.sin(i * 1.1) * 40;
+    const tone = pseudoRandom(i * 5.2 + 710);
+    ctx.fillStyle = `rgba(${Math.round(16 + tone * 10)},${Math.round(24 + tone * 10)},${Math.round(13 + tone * 8)},${0.42 + tone * 0.14})`;
     ctx.fillRect(tx - 9, gy - th, 18, th);
     ctx.beginPath();
-    ctx.arc(tx, gy - th, 48 + Math.sin(i * 0.7) * 10, 0, Math.PI * 2);
+    ctx.arc(tx, gy - th, 44 + tone * 14, 0, Math.PI * 2);
     ctx.fill();
+    // a couple of small darker leaf-cluster dots per crown so it reads as
+    // textured foliage rather than one smooth silhouette blob
+    for (let k = 0; k < 2; k++) {
+      const seed = i * 8.4 + k * 4.1 + 720;
+      const dx = (pseudoRandom(seed) - 0.5) * 60;
+      const dy = -pseudoRandom(seed + 1) * 30;
+      ctx.fillStyle = `rgba(10,15,8,${0.2 + pseudoRandom(seed + 2) * 0.15})`;
+      ctx.beginPath();
+      ctx.ellipse(tx + dx, gy - th + dy, 16, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // mid-distance foliage clusters, a touch warmer/lighter so the
   // background doesn't read as one flat wall of dark green
-  ctx.fillStyle = "rgba(70,95,45,0.4)";
   for (let i = 0; i < 6; i++) {
     const tx = i * 240 - camX * 0.55;
+    const tone = pseudoRandom(i * 4.4 + 730);
+    ctx.fillStyle = `rgba(${Math.round(62 + tone * 22)},${Math.round(86 + tone * 24)},${Math.round(38 + tone * 16)},${0.32 + tone * 0.16})`;
     ctx.beginPath();
-    ctx.arc(tx + 30, gy - 90, 55, 0, Math.PI * 2);
-    ctx.arc(tx + 80, gy - 100, 50, 0, Math.PI * 2);
+    ctx.arc(tx + 30, gy - 90 - tone * 8, 52 + tone * 10, 0, Math.PI * 2);
+    ctx.arc(tx + 80, gy - 100 + tone * 6, 47 + tone * 10, 0, Math.PI * 2);
+    ctx.fill();
+    // small brighter highlight dabs, catching a bit of light on top of
+    // each clump instead of the whole thing reading as one flat tone
+    ctx.fillStyle = `rgba(140,165,90,${0.14 + tone * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(tx + 30 + (pseudoRandom(i * 6.6 + 740) - 0.5) * 20, gy - 100, 14, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx + 80 + (pseudoRandom(i * 6.6 + 741) - 0.5) * 20, gy - 108, 12, 7, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
