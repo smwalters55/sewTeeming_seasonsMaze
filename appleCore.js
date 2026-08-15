@@ -17714,16 +17714,28 @@ function drawForestRockWall(camX) {
   // faceted shading -- a loose grid of irregular quads, each own-shade
   // (seeded, not random per frame), reading as broken/cut rock planes
   // rather than one smooth surface
+  // CONFIRMED BUG FIX ("these horizontal straight lines of the climbing
+  // wall where there is one section per climb node"): every column in a
+  // given row shared the exact same y0/y1 -- only the x corners got any
+  // jitter. That left a dead straight seam running the full width of the
+  // face at every row boundary, evenly spaced (one per handhold, since
+  // FACET_ROWS roughly matches the climb's own node spacing), which is
+  // exactly what read as mechanical "sections" instead of broken stone.
+  // Each facet's own y0/y1 now get their own small per-corner jitter too
+  // (same shape as the existing x jitter), so no two columns' row
+  // boundaries land at the same height anymore.
   const FACET_ROWS = 9, FACET_COLS = 4;
   for (let row = 0; row < FACET_ROWS; row++) {
     const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
-    const y0 = bottomY - topHeight * t0, y1 = bottomY - topHeight * t1;
+    const rowY0 = bottomY - topHeight * t0, rowY1 = bottomY - topHeight * t1;
     const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
     const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
     for (let col = 0; col < FACET_COLS; col++) {
       const seed = row * 31.7 + col * 5.3;
       const cf0 = col / FACET_COLS, cf1 = (col + 1) / FACET_COLS;
       const jx = k => (pseudoRandom(seed + k) - 0.5) * 10; // small per-corner jitter, breaks up the grid regularity
+      const jy = k => (pseudoRandom(seed + k) - 0.5) * 16; // same idea, vertically -- breaks the row boundary out of a straight line
+      const y0 = rowY0 + jy(15), y1 = rowY1 + jy(16);
       const x00 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf0 + jx(1);
       const x01 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf1 + jx(2);
       const x10 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf0 + jx(3);
@@ -17898,28 +17910,41 @@ function drawForestLedgeSkyBackdrop(camX) {
   const baseY = gy - (FOREST_ROCK_LEDGE.height + 70); // sits in the open sky just above the ledge/preview area
   if (centerX < -400 || centerX > canvas.width + 400) return;
 
-  // distant hazy rock peaks -- same soft, low-contrast, receding look as
-  // the pool's own version, just laid out across a wider world-space span
+  // CONFIRMED BUG FIX ("things are beautiful besides this horiz straight
+  // line still there" -- traced to this function specifically, floating
+  // in open sky above the climb ledge): every peak bump used to start and
+  // end at the exact same shared baseY+10 anchor -- with nothing physical
+  // (like the pool's own real rock rim) justifying a shared baseline here,
+  // that connecting line between peaks read as a ruled edge cutting
+  // straight across open air. Each peak now gets its own independently
+  // jittered anchor height instead of sharing one fixed y, so there's no
+  // longer a common line for adjacent peaks to line up against.
   ctx.fillStyle = "rgba(130,150,155,0.32)";
   [-1.6, -0.9, -0.2, 0.5, 1.2].forEach((frac, i) => {
     const px = centerX + frac * 220;
     const peakH = 50 + pseudoRandom(i * 4.1 + 950) * 34;
+    const anchorY = baseY + 10 + (pseudoRandom(i * 6.6 + 955) - 0.5) * 30;
     ctx.beginPath();
-    ctx.moveTo(px - 90, baseY + 10);
-    ctx.quadraticCurveTo(px, baseY + 10 - peakH, px + 90, baseY + 10);
+    ctx.moveTo(px - 90, anchorY);
+    ctx.quadraticCurveTo(px, anchorY - peakH, px + 90, anchorY);
     ctx.closePath();
     ctx.fill();
   });
 
   // hazy green canopy smudges up near the top of this same band, reading
   // as distant treetops glimpsed from up on the ledge -- matching the
-  // pool's own canopy smudge, just scaled up for forest's world-space
-  ctx.fillStyle = "rgba(70,110,60,0.22)";
+  // pool's own canopy smudge, just scaled up for forest's world-space.
+  // CONFIRMED BUG FIX (same straight-line family): pushed near-opaque and
+  // given real per-clump height variation so overlapping circles can't
+  // stack into another flat plateau line, same fix as the main canopy
+  // layers in drawForestScene above.
   for (let i = 0; i < 8; i++) {
     const px = centerX + (i - 3.5) * 90 + (pseudoRandom(i * 3.3 + 960) - 0.5) * 50;
     const r = 40 + pseudoRandom(i * 5.7 + 961) * 26;
+    const hJitter = (pseudoRandom(i * 8.8 + 962) - 0.5) * 40;
+    ctx.fillStyle = `rgba(70,110,60,${0.7 + pseudoRandom(i * 5.7 + 963) * 0.2})`;
     ctx.beginPath();
-    ctx.arc(px, baseY - 26, r, 0, Math.PI * 2);
+    ctx.arc(px, baseY - 26 + hJitter, r, 0, Math.PI * 2);
     ctx.fill();
   }
 }
