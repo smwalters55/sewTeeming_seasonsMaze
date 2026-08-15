@@ -17916,20 +17916,35 @@ function drawForestLedgeSkyBackdrop(camX) {
   // end at the exact same shared baseY+10 anchor -- with nothing physical
   // (like the pool's own real rock rim) justifying a shared baseline here,
   // that connecting line between peaks read as a ruled edge cutting
-  // straight across open air. Each peak now gets its own independently
-  // jittered anchor height instead of sharing one fixed y, so there's no
-  // longer a common line for adjacent peaks to line up against.
+  // straight across open air.
+  // CONFIRMED FOLLOW-UP FIX ("it wierdly stops on the left side tho"):
+  // giving each of the 5 fixed peaks its own jittered anchor helped, but
+  // they're still only 5 fixed shapes spanning a fixed world-space range
+  // -- scroll far enough and you run off the end of that range entirely,
+  // which reads as the line/silhouette just abruptly stopping rather than
+  // fading out naturally. Rebuilt as one continuous wavy silhouette (same
+  // technique as the main canopy's own far-distance layer above), sampled
+  // across however much world-space width is actually on screen for the
+  // current camX -- there's no fixed-length list to run out of, so it
+  // always spans the full visible width no matter how far the camera
+  // scrolls.
   ctx.fillStyle = "rgba(130,150,155,0.32)";
-  [-1.6, -0.9, -0.2, 0.5, 1.2].forEach((frac, i) => {
-    const px = centerX + frac * 220;
-    const peakH = 50 + pseudoRandom(i * 4.1 + 950) * 34;
-    const anchorY = baseY + 10 + (pseudoRandom(i * 6.6 + 955) - 0.5) * 30;
-    ctx.beginPath();
-    ctx.moveTo(px - 90, anchorY);
-    ctx.quadraticCurveTo(px, anchorY - peakH, px + 90, anchorY);
-    ctx.closePath();
-    ctx.fill();
-  });
+  ctx.beginPath();
+  const PEAK_STEP = 70;
+  const peakStartI = Math.floor((-centerX - 100) / PEAK_STEP);
+  const peakEndI = Math.ceil((canvas.width - centerX + 100) / PEAK_STEP);
+  for (let i = peakStartI; i <= peakEndI; i++) {
+    const worldX = i * PEAK_STEP;
+    const sx = centerX + worldX;
+    const coarse = (pseudoRandom(i * 0.91 + 950) - 0.5) * 64;
+    const fine = (pseudoRandom(i * 3.1 + 951) - 0.5) * 22;
+    const topY = baseY + 10 - 30 + coarse + fine;
+    if (i === peakStartI) ctx.moveTo(sx, topY); else ctx.lineTo(sx, topY);
+  }
+  ctx.lineTo(centerX + peakEndI * PEAK_STEP, baseY + 200);
+  ctx.lineTo(centerX + peakStartI * PEAK_STEP, baseY + 200);
+  ctx.closePath();
+  ctx.fill();
 
   // hazy green canopy smudges up near the top of this same band, reading
   // as distant treetops glimpsed from up on the ledge -- matching the
