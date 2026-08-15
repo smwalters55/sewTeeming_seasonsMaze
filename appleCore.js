@@ -18272,8 +18272,13 @@ function updatePoolDive(deltaTime) {
     const totalDrop = poolDive.startY - FOREST_SWIM_HOLE_HEIGHT_ABOVE_GROUND;
     player.x = poolDive.startX + p * 60;
     player.y = poolDive.startY - arcUp - p * p * totalDrop;
-    // tucks into a head-first dive by the end of the arc
-    poolDive.tiltAngle = p * (Math.PI / 2) * 1.15;
+    // CONFIRMED CHANGE ("make it go upside down and then when get to
+    // in-pool splash, briefly land upside down before naturally turning
+    // rightside up"): used to only tuck forward to about 102 degrees
+    // (PI/2 * 1.15) -- close to a head-first dive tuck, but not fully
+    // inverted. Now rotates all the way to a full 180 by the end of the
+    // arc, landing genuinely upside down right as the splash hits.
+    poolDive.tiltAngle = p * Math.PI;
 
     if (p >= 1) {
       poolDive.phase = "splash";
@@ -18310,7 +18315,19 @@ function updatePoolDive(deltaTime) {
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
-      poolSwimTiltAngle = 0;
+      // CONFIRMED CHANGE ("briefly land upside down before naturally
+      // turning rightside up (unless player moves sideways on purpose
+      // etc)"): used to snap straight to 0 (upright) the instant the scene
+      // swapped, throwing away the dive's own upside-down tuck the moment
+      // it would actually land. Starting from Math.PI (upside down,
+      // matching where the dive's own tiltAngle just left off) instead
+      // and letting updatePoolScene's existing per-frame easing carry it
+      // toward whatever the player's current input target is (0 if idle,
+      // +-PI/2 if they immediately swim sideways) gives the landing a real
+      // "flips over and rights itself" beat for free -- no new easing
+      // logic needed, just a different starting value for the one that
+      // already existed.
+      poolSwimTiltAngle = Math.PI;
       poolDiveSettleAmount = 1;
       // re-anchor the still-animating splash into the pool's own spawn
       // point (a different coordinate system/camera than the forest) so
