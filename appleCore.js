@@ -18279,8 +18279,10 @@ const POOL_EXIT_X = 90; // press up near here, at the surface, to climb back out
 // past the ball-pit-matching speeds above -- no longer kept in exact
 // parity with SANDBOX_BALL_PIT_SWIM_SPEED_X/Y, a deliberate pool-specific
 // deviation per direct request, not a bug.
-const POOL_SWIM_SPEED_X = 44; // px/s
-const POOL_SWIM_SPEED_Y = 78; // px/s
+// CONFIRMED CHANGE ("sswim a little faster"): bumped again, ~20% past the
+// above.
+const POOL_SWIM_SPEED_X = 53; // px/s
+const POOL_SWIM_SPEED_Y = 94; // px/s
 // CONFIRMED CHANGE ("so the water sshould almost go to the top"): the
 // water's own screen position is anchored to the shared gy constant (300,
 // same "ground level" every scene draws from) via the player's own shared
@@ -19166,25 +19168,36 @@ function drawPoolLoopSparkles(camX, opts) {
 }
 
 /* ======================================================
-   POOL TREASURE CHEST -- direct request ("what do you mean by pay off.
-   i mean like add the gold to the treasure chest"): a single one-time
-   chest sitting past the last loop, near the floor, that pays out in
-   `goldPile` -- the mine cart ride's own gold, which the inventory audit
-   found had no use anywhere else in the game. Deliberately the simplest
-   possible shape (one chest, one open, per direct confirmation) -- no
-   scattered piles, no re-lock/refill.
+   POOL TREASURE CHEST -- direct request ("what do you mean by pay off. i
+   mean like add the gold to the treasure chest"): a single chest sitting
+   past the last loop, near the floor.
+   CONFIRMED REDESIGN ("but wait what is going on w chest. did i just get
+   gold from there? i was wondering if we should put the gold in there tht
+   we already have, to use it up as inventory cleaning" / "i meant more
+   offering the gold to the chest like, it is missing somethiing"): the
+   first pass had this backwards -- it GRANTED gold on open, when
+   goldPile's whole problem (per the inventory audit that led to this
+   feature existing at all) was that it had nowhere to GO. Flipped to a
+   deposit sink: the chest starts empty, and pressing near it with any
+   goldPile in inventory empties your whole current stack into it in one
+   go. Capped at 11 -- POOL_TREASURE_CHEST_CAP -- matching MINE_CART_GOLD's
+   own length (every gold piece the game contains), so filling the chest
+   all the way is a real "found every piece of gold in the game" milestone
+   rather than an arbitrary number.
    ====================================================== */
 const POOL_TREASURE_CHEST = {
   x: 1010, // past POOL_LOOPS' own last loop (x:950), clear of the right wall's jagged edge (~30px average)
   y: -240, // near the floor (POOL_MAX_DEPTH=260) but not jammed right against it
-  opened: false,
-  openedAt: 0
+  depositedGold: 0
 };
-const POOL_TREASURE_GOLD_COUNT = 6;
+// hardcoded (not MINE_CART_GOLD.length directly) -- MINE_CART_GOLD is
+// declared much later in the file, after this const already runs. Keep in
+// sync with MINE_CART_GOLD's own entry count if that ever changes.
+const POOL_TREASURE_CHEST_CAP = 11;
 
-// gold sparkle burst on open -- same {x, y, startedAt} shell as
-// poolLoopSparkles, just gold-toned and triggered once rather than per
-// loop pass.
+// gold sparkle burst on deposit -- same {x, y, startedAt} shell as
+// poolLoopSparkles, just gold-toned and triggered once per deposit rather
+// than per loop pass.
 let poolTreasureSparkles = [];
 const POOL_TREASURE_SPARKLE_DURATION_MS = 1100;
 
@@ -19211,7 +19224,15 @@ function drawPoolTreasureChest(camX) {
   if (sx < -60 || sx > canvas.width + 60) return;
 
   const w = 46, h = 32; // roughly doubled from the original 26x18 first pass
-  const lidOpenP = chest.opened ? 1 : 0;
+  // CONFIRMED REDESIGN: opened is now just "has anything been deposited
+  // yet" rather than a one-time flag -- the lid pops open on the first
+  // deposit and stays open afterward (so the growing pile inside stays
+  // visible), and the fill fraction (0..1) drives both the interior glow's
+  // strength and how many gold flecks show, so the chest visibly reads as
+  // "getting fuller" on the way to POOL_TREASURE_CHEST_CAP.
+  const fillFrac = Math.min(1, chest.depositedGold / POOL_TREASURE_CHEST_CAP);
+  const opened = chest.depositedGold > 0;
+  const lidOpenP = opened ? 1 : 0;
 
   ctx.save();
   ctx.translate(sx, sy);
@@ -19295,7 +19316,7 @@ function drawPoolTreasureChest(camX) {
   ctx.moveTo(-domeSpread, liftY);
   ctx.quadraticCurveTo(0, liftY - domeHeight, domeSpread, liftY);
   ctx.stroke();
-  if (!chest.opened) {
+  if (!opened) {
     // gold latch, with a slow idle glint so the chest reads as a real
     // interactive find sitting quietly at the bottom, not just more decor
     const glint = 0.5 + Math.sin(fireflyT * 0.0025) * 0.5;
@@ -19325,21 +19346,50 @@ function drawPoolTreasureChest(camX) {
     ctx.fill();
   });
 
-  // warm interior glow + a few loose gold flecks, once opened
-  if (chest.opened) {
+  // warm interior glow + a growing pile of gold flecks, scaled by how full
+  // the chest actually is -- CONFIRMED CHANGE (deposit redesign): used to
+  // be a fixed 4-fleck flourish that fired once on open; now it grows from
+  // a couple of coins toward a real little pile as depositedGold climbs
+  // toward POOL_TREASURE_CHEST_CAP, so the chest visibly fills up over
+  // repeated deposits instead of just switching to one static "open" look.
+  if (opened) {
+    // CONFIRMED VISUAL FIX (caught before shipping -- a barely-full chest
+    // and a completely-full one rendered almost identically): the glow's
+    // own opacity was strong enough at low fill that it washed out the
+    // handful of small flecks sitting inside it, so "a little gold" and
+    // "totally full" both just read as the same soft yellow blob. Toned
+    // the glow way down at low fill (so it stays out of the flecks' way)
+    // and ramps up harder toward full, and the flecks themselves grow both
+    // in count AND size as the pile builds, so the two states are
+    // unmistakably different at a glance.
     const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.9);
-    glow.addColorStop(0, "rgba(255,220,140,0.55)");
+    glow.addColorStop(0, `rgba(255,220,140,${0.12 + fillFrac * fillFrac * 0.55})`);
     glow.addColorStop(1, "rgba(255,220,140,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(0, -h * 0.15, w * 0.9, 0, Math.PI * 2);
     ctx.fill();
-    [-1.6, -0.5, 0.6, 1.6].forEach(i => {
+    const fleckCount = 2 + Math.round(fillFrac * 11); // 2 up to 13 as the chest fills
+    const fleckR = 1.8 + fillFrac * 1.4; // individual coins grow slightly too, reads as a chunkier pile once full
+    for (let i = 0; i < fleckCount; i++) {
+      const seed = i * 6.3 + 600;
+      const fx = (pseudoRandom(seed) - 0.5) * w * 0.68;
+      // higher fill = pile sits higher/more piled, not just spread flat
+      const fy = h * 0.18 - fillFrac * h * 0.3 - pseudoRandom(seed + 1) * (3 + fillFrac * 9);
       ctx.fillStyle = "#e8b830";
       ctx.beginPath();
-      ctx.arc(i * 5, h * 0.1, 2.2, 0, Math.PI * 2);
+      ctx.arc(fx, fy, fleckR, 0, Math.PI * 2);
       ctx.fill();
-    });
+      ctx.fillStyle = "rgba(255,240,190,0.6)"; // small highlight so each coin reads as round/metallic rather than a flat dot
+      ctx.beginPath();
+      ctx.arc(fx - fleckR * 0.3, fy - fleckR * 0.3, fleckR * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(140,100,30,0.5)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.arc(fx, fy, fleckR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -19442,16 +19492,25 @@ function updatePoolScene(deltaTime) {
     startSeasonTransition("forest");
   }
 
-  // TREASURE CHEST -- same press-space-near-it shape every other simple
-  // ground pickup in the game already uses (pressedDownNear/isPlayerNear
-  // both compare directly against player.y's own units, which the pool
-  // already shares with every other scene -- no gy/cameraY conversion
-  // needed here at all, unlike the flying-collect-animation system,
-  // which assumes plain screen-space and would have needed one).
-  if (!POOL_TREASURE_CHEST.opened && pressedDownNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 46, 26, 26)) {
-    POOL_TREASURE_CHEST.opened = true;
-    POOL_TREASURE_CHEST.openedAt = performance.now();
-    for (let i = 0; i < POOL_TREASURE_GOLD_COUNT; i++) addToInventory("goldPile");
+  // TREASURE CHEST -- CONFIRMED REDESIGN (deposit sink, not a one-time
+  // grant -- see the chest's own top-of-section comment): pressing near it
+  // while carrying any goldPile deposits your whole current stack in one
+  // go, up to POOL_TREASURE_CHEST_CAP. isPlayerNear's own player.y-native
+  // units still apply here (see the old comment this replaced), so no gy/
+  // cameraY conversion is needed. Uses spaceJustPressed rather than
+  // pressedDownNear's held-key check -- a deliberate single press per
+  // deposit, matching every other one-shot interaction in the game
+  // (wormRock, snail, squirrel, etc.), rather than draining continuously
+  // for as long as space happens to be held.
+  if (inventory.goldPile > 0 && POOL_TREASURE_CHEST.depositedGold < POOL_TREASURE_CHEST_CAP &&
+      keys.spaceJustPressed && isPlayerNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 46, 26, 26)) {
+    const deposit = Math.min(inventory.goldPile, POOL_TREASURE_CHEST_CAP - POOL_TREASURE_CHEST.depositedGold);
+    inventory.goldPile -= deposit;
+    if (inventory.goldPile <= 0) {
+      delete inventory.goldPile;
+      if (heldItem === "goldPile") heldItem = null;
+    }
+    POOL_TREASURE_CHEST.depositedGold += deposit;
     updateInventoryUI();
     poolTreasureSparkles.push({ x: POOL_TREASURE_CHEST.x, y: POOL_TREASURE_CHEST.y, startedAt: performance.now() });
   }
@@ -19494,16 +19553,45 @@ function drawPoolSkyBackdrop() {
     ctx.fill();
   });
 
-  // hazy green canopy smudge, low in the band right where it meets the
-  // water -- glimpsed treetops rather than literal trees, per how little
-  // vertical room there is to work with
-  ctx.fillStyle = "rgba(70,110,60,0.28)";
+  // CONFIRMED CHANGE ("make trees in background of pool the canopy look
+  // more interesting for sure"): the old canopy was a single row of flat,
+  // identically-colored semicircle smudges -- reads as a plain scalloped
+  // hill line rather than actual treetops. Rebuilt in three layers: a
+  // hazier, slightly bigger back layer (kept from before, muted/receding),
+  // a nearer mid layer of individually-toned tree crowns (each its own
+  // seeded shade of green so no two clumps match exactly), and a scatter
+  // of small darker leaf-cluster dots over the mid layer so the crowns
+  // read as textured foliage instead of smooth blobs.
+  ctx.fillStyle = "rgba(65,100,58,0.22)";
   for (let i = 0; i < 7; i++) {
     const px = (i / 6) * canvas.width + (pseudoRandom(i * 3.3 + 910) - 0.5) * 40;
-    const r = 22 + pseudoRandom(i * 5.7 + 911) * 14;
+    const r = 24 + pseudoRandom(i * 5.7 + 911) * 16;
     ctx.beginPath();
-    ctx.arc(px, bandBottom - 4, r, Math.PI, 0);
+    ctx.arc(px, bandBottom - 2, r, Math.PI, 0);
     ctx.fill();
+  }
+  for (let i = 0; i < 9; i++) {
+    const px = (i / 8) * canvas.width + (pseudoRandom(i * 4.6 + 930) - 0.5) * 36;
+    const r = 15 + pseudoRandom(i * 6.2 + 931) * 11;
+    const tone = pseudoRandom(i * 2.9 + 932);
+    // a spread of crown colors -- deeper mossy greens through a couple of
+    // warmer olive/lighter ones, so the treeline isn't visually flat
+    const g = 88 + tone * 46, rC = 50 + tone * 30, bC = 40 + tone * 18;
+    ctx.fillStyle = `rgba(${Math.round(rC)},${Math.round(g)},${Math.round(bC)},0.42)`;
+    const cy = bandBottom - 6 - pseudoRandom(i * 7.3 + 933) * 5;
+    ctx.beginPath();
+    ctx.arc(px, cy, r, Math.PI * 0.95, Math.PI * 0.05, true);
+    ctx.fill();
+    // a couple of small darker leaf-cluster dots per crown for texture
+    for (let k = 0; k < 3; k++) {
+      const seed = i * 11.1 + k * 3.7 + 940;
+      const dx = (pseudoRandom(seed) - 0.5) * r * 1.3;
+      const dy = -pseudoRandom(seed + 1) * r * 0.7;
+      ctx.fillStyle = `rgba(${Math.round(rC * 0.6)},${Math.round(g * 0.7)},${Math.round(bC * 0.6)},0.35)`;
+      ctx.beginPath();
+      ctx.ellipse(px + dx, cy + dy, r * 0.22, r * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // the rock rim itself -- jagged (not a flat bar), with two real gaps
@@ -19577,22 +19665,120 @@ function drawPoolScene(camX) {
   // edge noise the climb's own cliff face uses, just mirrored inward on
   // both sides so the pool reads as enclosed by real stone, not just an
   // abrupt world edge
+  // CONFIRMED BUG FIX (screenshot -- "should be no water on the right of
+  // rock, jsut more rock"): the outward edge of each wall used to sit only
+  // 10px past the pool's own edgeX. At/near max camera scroll (the pool's
+  // right wall, standing near the treasure chest) that left a sliver of
+  // canvas past the wall's outward edge with nothing drawn there at all --
+  // open water showing right through where solid stone should continue
+  // off toward the world edge. Pushed way out (400px, comfortably past any
+  // possible camera position) so the wall always reads as continuing solid
+  // rock all the way to the edge of the screen, never a thin fin with
+  // water leaking around its far side.
+  // CONFIRMED CHANGE ("and rise a little over the pool's top"): starts at
+  // depth -70 instead of -30, so the wall pokes up above the surface line
+  // itself (screen space, that's the same "bandBottom" the fixed sky
+  // backdrop rim sits at -- see drawPoolSkyBackdrop's own comment) rather
+  // than stopping flush at the waterline, reading as an outcrop that
+  // actually breaks the surface instead of a wall that conveniently ends
+  // right at water level.
   [0, POOL_WIDTH].forEach((edgeX, i) => {
     const side = i === 0 ? 1 : -1;
     const sx = edgeX - camX;
-    ctx.fillStyle = "#3d372f";
+    const topDepth = -70;
+    const bottomDepth = POOL_MAX_DEPTH + 60;
+    const leftAt = t => sx + side * (30 + (pseudoRandom(i * 5.1 + Math.floor(t * 10) * 2.3) - 0.5) * 22);
+    const rightAt = () => sx + side * -400;
+
+    const grad = ctx.createLinearGradient(sx - side * 50, 0, sx + side * 10, 0);
+    grad.addColorStop(0, "#332e27");
+    grad.addColorStop(0.5, "#4a4338");
+    grad.addColorStop(0.75, "#5a5245");
+    grad.addColorStop(1, "#332e27");
+    ctx.fillStyle = grad;
     ctx.beginPath();
     for (let d = 0; d <= 10; d++) {
-      const depth = -30 + (POOL_MAX_DEPTH + 90) * (d / 10);
-      const jag = (pseudoRandom(i * 5.1 + d * 2.3) - 0.5) * 22;
-      ctx.lineTo(sx + side * (30 + jag), gy + depth);
+      const t = d / 10;
+      const depth = topDepth + (bottomDepth - topDepth) * t;
+      ctx.lineTo(leftAt(t), gy + depth);
     }
     for (let d = 10; d >= 0; d--) {
-      const depth = -30 + (POOL_MAX_DEPTH + 90) * (d / 10);
-      ctx.lineTo(sx + side * -10, gy + depth);
+      const t = d / 10;
+      const depth = topDepth + (bottomDepth - topDepth) * t;
+      ctx.lineTo(rightAt(), gy + depth);
     }
     ctx.closePath();
     ctx.fill();
+
+    // CONFIRMED CHANGE ("this rock on the right have more texture too"):
+    // the wall used to be a single flat fill -- real rock reads as an
+    // uneven patchwork, not one smooth color. Same layered technique as
+    // drawForestRockWall (faceted shading, crack lines, moss patches),
+    // scaled down to this narrower strip and clipped to its own silhouette
+    // so nothing spills past the jagged edge.
+    ctx.save();
+    ctx.beginPath();
+    for (let d = 0; d <= 10; d++) {
+      const t = d / 10;
+      const depth = topDepth + (bottomDepth - topDepth) * t;
+      ctx.lineTo(leftAt(t), gy + depth);
+    }
+    for (let d = 10; d >= 0; d--) {
+      const t = d / 10;
+      const depth = topDepth + (bottomDepth - topDepth) * t;
+      ctx.lineTo(rightAt(), gy + depth);
+    }
+    ctx.closePath();
+    ctx.clip();
+
+    const FACET_ROWS = 10;
+    for (let row = 0; row < FACET_ROWS; row++) {
+      const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
+      const y0 = gy + topDepth + (bottomDepth - topDepth) * t0;
+      const y1 = gy + topDepth + (bottomDepth - topDepth) * t1;
+      const seed = i * 41.3 + row * 7.1;
+      const shade = pseudoRandom(seed + 9);
+      ctx.fillStyle = shade > 0.5
+        ? `rgba(170,162,142,${0.05 + (shade - 0.5) * 0.22})`
+        : `rgba(15,13,10,${0.05 + (0.5 - shade) * 0.28})`;
+      ctx.beginPath();
+      ctx.moveTo(leftAt(t0), y0);
+      ctx.lineTo(rightAt(), y0);
+      ctx.lineTo(rightAt(), y1);
+      ctx.lineTo(leftAt(t1), y1);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = "rgba(12,10,8,0.4)";
+    ctx.lineWidth = 2;
+    [0.12, 0.3, 0.46, 0.6, 0.74, 0.88].forEach((t, k) => {
+      const y = gy + topDepth + (bottomDepth - topDepth) * t;
+      const seed = i * 6.6 + k * 3.3;
+      ctx.beginPath();
+      ctx.moveTo(leftAt(t), y);
+      ctx.lineTo(sx + side * (14 + (pseudoRandom(seed) - 0.5) * 10), y + 18);
+      ctx.lineTo(sx + side * (6 + (pseudoRandom(seed + 1) - 0.5) * 10), y + 36);
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = "rgba(90,102,68,0.38)";
+    [[0.08, 10], [0.22, 18], [0.5, 14], [0.7, 20], [0.85, 12]].forEach(([t, r]) => {
+      const y = gy + topDepth + (bottomDepth - topDepth) * t;
+      ctx.beginPath();
+      ctx.ellipse(sx + side * 6, y, r, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.fillStyle = "rgba(150,145,130,0.14)";
+    [0.15, 0.4, 0.65].forEach(t => {
+      const y = gy + topDepth + (bottomDepth - topDepth) * t;
+      ctx.beginPath();
+      ctx.ellipse(sx + side * 15, y, 20, 12, side * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.restore();
   });
 
   // a few slow-drifting light shafts through the water, same idea as
