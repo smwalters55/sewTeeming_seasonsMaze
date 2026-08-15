@@ -15423,23 +15423,55 @@ function drawForestScene(camX) {
   // Each circle now gets its own small seeded tint and size jitter (still
   // fixed per-index, not re-randomized every frame) so no two clumps match
   // exactly, same fix already applied to the pool's own canopy backdrop.
-  for (let i = 0; i < 9; i++) {
-    const tx = i * 210 - camX * 0.18 + Math.sin(i * 1.6) * 40;
-    const th = 170 + Math.sin(i * 0.8) * 30;
-    const tone = pseudoRandom(i * 3.7 + 700);
-    ctx.fillStyle = `rgba(${Math.round(52 + tone * 14)},${Math.round(68 + tone * 14)},${Math.round(45 + tone * 10)},${0.16 + tone * 0.12})`;
-    ctx.beginPath();
-    ctx.arc(tx, gy - th, 78 + tone * 20, 0, Math.PI * 2);
-    ctx.fill();
+  // CONFIRMED BUG FIX ("having thesse horizontal straight lines...for
+  // bottom of the canopy...does not make sense...straight lines are
+  // verrrry rarely the way to go for any background thing"): stacking a
+  // row of same-size full circles like this had a hidden flat edge baked
+  // in -- below the shortest circle's own lowest point, literally every
+  // x position was covered by at least one overlapping circle, so the
+  // color stopped varying right at that common lower-tangent height and
+  // read as a ruled line, not a treeline. Rebuilt as one continuous wavy
+  // silhouette (two noise octaves, same technique as forestRockWallEdgeX)
+  // filled straight down to well below the canvas instead of stopping at
+  // a fixed radius -- there's no shared bottom edge left for a flat line
+  // to hide in.
+  ctx.fillStyle = "rgba(58,74,50,0.22)";
+  ctx.beginPath();
+  const FAR_STEP = 55;
+  const farOffset = camX * 0.18;
+  const farStartI = Math.floor((farOffset - 100) / FAR_STEP);
+  const farEndI = Math.ceil((farOffset + canvas.width + 100) / FAR_STEP);
+  for (let i = farStartI; i <= farEndI; i++) {
+    const worldX = i * FAR_STEP;
+    const sx = worldX - farOffset;
+    const coarse = (pseudoRandom(i * 0.83 + 750) - 0.5) * 90;
+    const fine = (pseudoRandom(i * 2.9 + 751) - 0.5) * 26;
+    const topY = gy - 150 + coarse + fine;
+    if (i === farStartI) ctx.moveTo(sx, topY); else ctx.lineTo(sx, topY);
   }
+  ctx.lineTo(farEndI * FAR_STEP - farOffset, canvas.height + 20);
+  ctx.lineTo(farStartI * FAR_STEP - farOffset, canvas.height + 20);
+  ctx.closePath();
+  ctx.fill();
 
   // dense background tree silhouettes, tall and close together --
   // reads as thicker, more enclosed than spring's open orchard feel
+  // CONFIRMED BUG FIX (same "horizontal straight lines" complaint --
+  // this layer had the same hidden cause as the far-distance layer just
+  // above, just less obvious): with these semi-transparent circles
+  // overlapping their neighbors, once enough of them stacked at a given
+  // height the blended alpha simply maxed out and stopped changing --
+  // that saturation plateau read as a crisp horizontal edge right where
+  // most circles' mid-height happened to line up, even though each
+  // circle's own individual top was already nicely varied. Bumped these
+  // near-opaque (only the seeded tone varies now, not the alpha) so
+  // overlap can't compound into a flat plateau -- painter's-order simply
+  // shows whichever tree is drawn last, no blending seam.
   for (let i = 0; i < 10; i++) {
     const tx = i * 150 - camX * 0.4 + Math.sin(i * 2.3) * 30;
-    const th = 220 + Math.sin(i * 1.1) * 40;
+    const th = 220 + (pseudoRandom(i * 6.9 + 705) - 0.5) * 90;
     const tone = pseudoRandom(i * 5.2 + 710);
-    ctx.fillStyle = `rgba(${Math.round(16 + tone * 10)},${Math.round(24 + tone * 10)},${Math.round(13 + tone * 8)},${0.42 + tone * 0.14})`;
+    ctx.fillStyle = `rgba(${Math.round(16 + tone * 10)},${Math.round(24 + tone * 10)},${Math.round(13 + tone * 8)},${0.88 + tone * 0.12})`;
     ctx.fillRect(tx - 9, gy - th, 18, th);
     ctx.beginPath();
     ctx.arc(tx, gy - th, 44 + tone * 14, 0, Math.PI * 2);
@@ -15459,13 +15491,17 @@ function drawForestScene(camX) {
 
   // mid-distance foliage clusters, a touch warmer/lighter so the
   // background doesn't read as one flat wall of dark green
+  // CONFIRMED BUG FIX (same overlap-saturation cause as the two layers
+  // above): pushed near-opaque and given more per-clump height spread so
+  // neighboring clumps can't stack into a flat plateau line either.
   for (let i = 0; i < 6; i++) {
     const tx = i * 240 - camX * 0.55;
     const tone = pseudoRandom(i * 4.4 + 730);
-    ctx.fillStyle = `rgba(${Math.round(62 + tone * 22)},${Math.round(86 + tone * 24)},${Math.round(38 + tone * 16)},${0.32 + tone * 0.16})`;
+    const hJitter = (pseudoRandom(i * 7.7 + 735) - 0.5) * 36;
+    ctx.fillStyle = `rgba(${Math.round(62 + tone * 22)},${Math.round(86 + tone * 24)},${Math.round(38 + tone * 16)},${0.82 + tone * 0.16})`;
     ctx.beginPath();
-    ctx.arc(tx + 30, gy - 90 - tone * 8, 52 + tone * 10, 0, Math.PI * 2);
-    ctx.arc(tx + 80, gy - 100 + tone * 6, 47 + tone * 10, 0, Math.PI * 2);
+    ctx.arc(tx + 30, gy - 90 - tone * 8 + hJitter, 52 + tone * 10, 0, Math.PI * 2);
+    ctx.arc(tx + 80, gy - 100 + tone * 6 + hJitter, 47 + tone * 10, 0, Math.PI * 2);
     ctx.fill();
     // small brighter highlight dabs, catching a bit of light on top of
     // each clump instead of the whole thing reading as one flat tone
@@ -17642,6 +17678,24 @@ function drawForestRockWall(camX) {
     const y = bottomY - topHeight * t;
     const x = baseX + forestRockWallEdgeX(t, -1);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  // CONFIRMED BUG FIX ("top of the rocks you climb...having these
+  // horizontal straight lines...does not make sense...make these fluid/
+  // organic"): the left and right jagged edge loops used to meet via one
+  // direct line straight across from the left edge's topmost point to the
+  // right edge's, at the exact same y -- a dead flat cap over an
+  // otherwise all-jagged cliff face. A few extra peak points across the
+  // top (still anchored to those same two edge endpoints, so the outline
+  // stays closed) breaks that into an uneven, weathered ridge instead.
+  const topY = bottomY - topHeight;
+  const leftTopX = baseX + forestRockWallEdgeX(1, -1);
+  const rightTopX = baseX + forestRockWallEdgeX(1, 1);
+  const RIDGE_POINTS = 4;
+  for (let k = 1; k < RIDGE_POINTS; k++) {
+    const rt = k / RIDGE_POINTS;
+    const rx = leftTopX + (rightTopX - leftTopX) * rt;
+    const jag = 6 + pseudoRandom(rt * 17.3 + 61) * 24; // always pokes upward, never dips back down into the wall
+    ctx.lineTo(rx, topY - jag);
   }
   for (let i = STEPS; i >= 0; i--) {
     const t = i / STEPS;
