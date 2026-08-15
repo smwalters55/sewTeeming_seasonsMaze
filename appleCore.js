@@ -19398,15 +19398,19 @@ function drawPoolTreasureChest(camX) {
   if (sx < -60 || sx > canvas.width + 60) return;
 
   const w = 46, h = 32; // roughly doubled from the original 26x18 first pass
-  // CONFIRMED REDESIGN: opened is now just "has anything been deposited
-  // yet" rather than a one-time flag -- the lid pops open on the first
-  // deposit and stays open afterward (so the growing pile inside stays
-  // visible), and the fill fraction (0..1) drives both the interior glow's
-  // strength and how many gold flecks show, so the chest visibly reads as
-  // "getting fuller" on the way to POOL_TREASURE_CHEST_CAP.
+  // CONFIRMED CHANGE ("chest should prob be open and empty and wanting
+  // gold"): used to sit closed (with a latch) until the first deposit,
+  // only popping open once something had already gone in. Read backwards
+  // for a deposit SINK -- an empty closed chest looks like there's
+  // nothing to do with it yet, not like it's actively waiting for gold.
+  // Now it's always open, lid permanently lifted, so it reads as "empty
+  // and wanting gold" from the moment the player first finds it. The fill
+  // fraction (0..1) still drives the interior glow's strength and how
+  // many gold flecks show, so it visibly reads as "getting fuller" on the
+  // way to POOL_TREASURE_CHEST_CAP -- genuinely zero flecks at zero gold
+  // now too (see fleckCount below), not the old fixed 2-coin floor.
   const fillFrac = Math.min(1, chest.depositedGold / POOL_TREASURE_CHEST_CAP);
-  const opened = chest.depositedGold > 0;
-  const lidOpenP = opened ? 1 : 0;
+  const lidOpenP = 1;
 
   ctx.save();
   ctx.translate(sx, sy);
@@ -19490,18 +19494,6 @@ function drawPoolTreasureChest(camX) {
   ctx.moveTo(-domeSpread, liftY);
   ctx.quadraticCurveTo(0, liftY - domeHeight, domeSpread, liftY);
   ctx.stroke();
-  if (!opened) {
-    // gold latch, with a slow idle glint so the chest reads as a real
-    // interactive find sitting quietly at the bottom, not just more decor
-    const glint = 0.5 + Math.sin(fireflyT * 0.0025) * 0.5;
-    ctx.fillStyle = `rgba(215,180,95,${0.65 + glint * 0.3})`; // duller, tarnished gold rather than bright new
-    ctx.beginPath();
-    ctx.arc(0, h * 0.03, 3.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(90,70,45,0.6)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
   ctx.restore();
 
   // moss patches -- seeded, static placement (see POOL_TREASURE_CHEST_MOSS),
@@ -19526,7 +19518,7 @@ function drawPoolTreasureChest(camX) {
   // a couple of coins toward a real little pile as depositedGold climbs
   // toward POOL_TREASURE_CHEST_CAP, so the chest visibly fills up over
   // repeated deposits instead of just switching to one static "open" look.
-  if (opened) {
+  {
     // CONFIRMED VISUAL FIX (caught before shipping -- a barely-full chest
     // and a completely-full one rendered almost identically): the glow's
     // own opacity was strong enough at low fill that it washed out the
@@ -19535,7 +19527,10 @@ function drawPoolTreasureChest(camX) {
     // the glow way down at low fill (so it stays out of the flecks' way)
     // and ramps up harder toward full, and the flecks themselves grow both
     // in count AND size as the pile builds, so the two states are
-    // unmistakably different at a glance.
+    // unmistakably different at a glance. Kept a faint glow even at
+    // fillFrac 0 (the 0.12 floor below) -- the empty, always-open chest
+    // still gets a soft warm interior instead of a flat dark box, so it
+    // reads as "waiting for gold" rather than just an empty hole.
     const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.9);
     glow.addColorStop(0, `rgba(255,220,140,${0.12 + fillFrac * fillFrac * 0.55})`);
     glow.addColorStop(1, "rgba(255,220,140,0)");
@@ -19543,7 +19538,11 @@ function drawPoolTreasureChest(camX) {
     ctx.beginPath();
     ctx.arc(0, -h * 0.15, w * 0.9, 0, Math.PI * 2);
     ctx.fill();
-    const fleckCount = 2 + Math.round(fillFrac * 11); // 2 up to 13 as the chest fills
+    // CONFIRMED CHANGE: used to floor at 2 flecks even with nothing
+    // deposited (an "empty" chest that still had 2 coins in it, left over
+    // from when the lid only opened after a first deposit). Now genuinely
+    // 0 flecks at fillFrac 0, so a fresh chest actually reads as empty.
+    const fleckCount = fillFrac <= 0 ? 0 : 2 + Math.round(fillFrac * 11); // 2 up to 13 as the chest fills
     const fleckR = 1.8 + fillFrac * 1.4; // individual coins grow slightly too, reads as a chunkier pile once full
     for (let i = 0; i < fleckCount; i++) {
       const seed = i * 6.3 + 600;
