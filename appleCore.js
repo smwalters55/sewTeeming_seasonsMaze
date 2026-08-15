@@ -19247,6 +19247,28 @@ function drawPoolLoopOcclusion(camX) {
     ctx.rect(-R, -R, R, R * 2); // local x in [-R, 0] -- the entry-side half-plane, opposite the travel direction, through the player's own center
     ctx.clip();
     ctx.setTransform(1, 0, 0, 1, 0, 0); // clip stays applied (device-space); draw the ellipse unrotated (except its own tiltAngle) in plain screen coords
+    // CONFIRMED BUG FIX ("this doesnt seem right occlusion...he not
+    // leaning back...so its in or out", screenshot showing a bright arc
+    // slicing diagonally straight across the player's face): the
+    // half-plane split above is a straight line through the player's own
+    // center -- so by construction it always passes right through the
+    // middle of their own silhouette, not around its edge. Whenever the
+    // ring's own curve happens to pass near that center point (very
+    // common -- the player is usually sitt-ing close to the loop's
+    // middle while swimming through it), the clipped "entry" arc is free
+    // to redraw right across the player's face, since the half-plane
+    // clip alone has no idea where the player's actual silhouette is.
+    // Fix: punch the player's own rounded-rect shape out of the clip
+    // region too (even-odd rule: outer giant rect minus the player's
+    // shape), so the redrawn ring can only ever land at/beyond their
+    // silhouette edge -- never inside it -- regardless of how the ring's
+    // curve happens to sit relative to the travel-direction split.
+    const holePx = player.x - camX;
+    const holePy = gy + cameraY - player.height - player.y;
+    ctx.beginPath();
+    ctx.rect(-10000, -10000, 20000, 20000);
+    roundRect(ctx, holePx, holePy, player.width, player.height, 8);
+    ctx.clip("evenodd");
     drawPoolLoopRingTube(sx, sy, loop);
     ctx.restore();
   });
@@ -54515,8 +54537,19 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   const ballPitSwimTilt = (typeof sandboxBallPit !== "undefined") ? getSandboxBallPitSwimTilt() : 0;
   // the pool's own lying-down swim tilt, same idea -- see getPoolSwimTilt's own comment
   const poolSwimTilt = getPoolSwimTilt();
-  // the ledge dive's own forward tuck, mid-jump-arc only -- see startPoolDive/updatePoolDive
-  const poolDiveTilt = (typeof poolDive !== "undefined" && poolDive.active && poolDive.phase === "jump") ? poolDive.tiltAngle : 0;
+  // the ledge dive's own forward tuck -- see startPoolDive/updatePoolDive.
+  // Covers both "jump" (tucking from 0 to PI over the arc) and "splash"
+  // (holding at PI) while still in the forest scene, so the upside-down
+  // landing actually reads as upside-down through the splash instead of
+  // snapping back upright the instant the jump phase ends -- there's a
+  // real gap of up to POOL_DIVE_SWAP_AT_MS between "splash" starting and
+  // the scene swap to "pool" actually happening, and poolDive.tiltAngle
+  // itself stays frozen at PI that whole time with nothing else picking
+  // up the rotation until then. Scoped to currentScene === "forest" so it
+  // hands off cleanly to poolSwimTilt (which starts at PI too) right at
+  // the swap instead of the two ever stacking.
+  const poolDiveTilt = (typeof poolDive !== "undefined" && poolDive.active &&
+    (poolDive.phase === "jump" || poolDive.phase === "splash") && currentScene === "forest") ? poolDive.tiltAngle : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
     (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
