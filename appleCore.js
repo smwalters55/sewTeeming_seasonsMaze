@@ -116,6 +116,28 @@ window.addEventListener("keydown", e => {
     seasonTransition.phase = "idle";
     updateMapUI();
   }
+  // DEBUG CHEAT ("debug spawn sandbox"): Shift+S drops the player straight
+  // into the sandbox scene, right at its own entrance mound, for quickly
+  // testing sandbox toys (fan, trampolines, ant farm, etc.) without
+  // walking there from spring every time. Same full state-reset shape as
+  // Shift+H above, just landing in a different scene/spot.
+  if ((e.key==="s" || e.key==="S") && e.shiftKey && !e.repeat) {
+    currentScene = "sandbox";
+    player.x = 200;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.launchSteerable = false;
+    player.onFan = false;
+    player.onFan2 = false;
+    cameraX = 0;
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
