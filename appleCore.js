@@ -19032,11 +19032,40 @@ function drawPoolSalamander(camX) {
 const POOL_WATER_SNAKE_SEGMENTS = 9;
 let poolWaterSnake = { headX: POOL_WIDTH * 0.65, depth: 90, dir: -1, speed: 10 };
 
+// CONFIRMED CHANGE ("water snake isnt going throiugh the hoops"): the
+// snake used to swim at one fixed depth the whole time, so it only ever
+// passed through a loop by pure coincidence (POOL_LOOPS' own zigzag means
+// most loops sit at a different depth than wherever the snake happens to
+// be). Now its depth actively targets whichever loop it's currently
+// nearest in x, interpolating smoothly between neighboring loops' depths
+// as it swims past their x positions -- so its path genuinely threads
+// through the ring of each loop along the way, not just alongside it.
+function poolWaterSnakeTargetDepth(headX) {
+  // POOL_LOOPS.y uses the player.y convention (0 = surface, negative =
+  // deeper); the snake's own depth is measured the opposite way (positive
+  // = deeper, same convention drawPoolWaterSnake's baseY uses), hence -y.
+  const sorted = POOL_LOOPS; // already x-ascending in their own declaration order
+  if (headX <= sorted[0].x) return -sorted[0].y;
+  if (headX >= sorted[sorted.length - 1].x) return -sorted[sorted.length - 1].y;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i + 1];
+    if (headX >= a.x && headX <= b.x) {
+      const t = (headX - a.x) / (b.x - a.x);
+      return -a.y + (-b.y - (-a.y)) * t;
+    }
+  }
+  return -sorted[sorted.length - 1].y;
+}
+
 function updatePoolWaterSnake(deltaTime) {
   const s = poolWaterSnake;
   s.headX += s.dir * s.speed * deltaTime;
   if (s.headX < 60) { s.headX = 60; s.dir = 1; }
   if (s.headX > POOL_WIDTH - 60) { s.headX = POOL_WIDTH - 60; s.dir = -1; }
+  // eased, not snapped -- reads as a real swimming dive/rise through each
+  // loop rather than teleporting depth the instant it crosses a loop's x
+  const targetDepth = poolWaterSnakeTargetDepth(s.headX);
+  s.depth += (targetDepth - s.depth) * Math.min(1, deltaTime * 1.2);
 }
 
 function drawPoolWaterSnake(camX) {
@@ -19697,8 +19726,17 @@ function updatePoolScene(deltaTime) {
   // deposit, matching every other one-shot interaction in the game
   // (wormRock, snail, squirrel, etc.), rather than draining continuously
   // for as long as space happens to be held.
+  // CONFIRMED BUG FIX ("still cant put gold in the chest"): the old
+  // radiusX (46) meant the reachable window ended at player-center x 1056
+  // -- but the pool's own right-wall clamp lets the player swim all the
+  // way to x 1080 (POOL_WIDTH - player.width + player.width/2). Swimming
+  // straight to the wall, the single most natural way to reach a chest
+  // sitting right near it, overshot the interaction zone by 24px and
+  // never registered as "near" at all. Widened to comfortably cover the
+  // full reachable range (including sitting flush against the wall) with
+  // margin to spare.
   if (inventory.goldPile > 0 && POOL_TREASURE_CHEST.depositedGold < POOL_TREASURE_CHEST_CAP &&
-      keys.spaceJustPressed && isPlayerNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 46, 26, 26)) {
+      keys.spaceJustPressed && isPlayerNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 90, 26, 26)) {
     const deposit = Math.min(inventory.goldPile, POOL_TREASURE_CHEST_CAP - POOL_TREASURE_CHEST.depositedGold);
     inventory.goldPile -= deposit;
     if (inventory.goldPile <= 0) {
