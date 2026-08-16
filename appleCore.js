@@ -7575,7 +7575,22 @@ const acorns = [
   { x: 2180, heightAboveGround: 220, collected: false, collecting: false } // double-jump straight up from platform 5 (h:90), verified 130-unit gap -- unrelated to vines, keeps the original spatial-proximity collection
 ];
 
-const vinePumpkin = { x: 2641, heightAboveGround: 232, collected: false, collecting: false }; // genuinely requires the vine now — previous position (h:102) was comfortably within double-jump range (140.6), reachable by simply walking up and jumping, never checked against that. This one is safely beyond it (232), verified with a real generous margin: moderate-strong swing closest approach 0.4, weak swing closest approach 26.2
+// CONFIRMED BUG FIX ("this acorn to my top right has forever been
+// impossible to reach" -- this is that item, the small round shape a lot
+// like an acorn at this zoom, hanging just past the LAST vine in the
+// gauntlet): the old spot (2641, h:232) sat right at the very edge of
+// what the last vine (x:2610, length:65) can sweep through even at its
+// hard angle cap (1.1 rad) -- real per-frame math puts the vine's own
+// max reach at (2668.6, 228.5), only ~28px horizontally short of this
+// old radiusX (24), meaning it needed the swing pinned at essentially
+// its absolute maximum angle with almost no margin for error, AND it's
+// the last of a 3-hop vine-to-vine chain (2360->2430->2520->2610) where
+// missing any single earlier hop dumps you back on the ground to start
+// over. Moved to a spot the vine sweeps through at a much more moderate,
+// reliably-hittable angle (~0.75 rad, comfortably inside "moderate-
+// strong," not the hard cap) -- see the isPlayerNear call just below for
+// the widened pickup tolerance that goes with this.
+const vinePumpkin = { x: 2654, heightAboveGround: 210, collected: false, collecting: false };
 
 // hay bales -- right of the spring door (x=3400), visible early as a
 // standing pile that blocks passage entirely. Once the player has
@@ -10063,7 +10078,12 @@ function drawAcornShape(ctx, x, y, size, rotation) {
 
 function updateVinePumpkin() {
   if (vinePumpkin.collected || vinePumpkin.collecting) return;
-  const inRange = isPlayerNear(vinePumpkin.x, vinePumpkin.heightAboveGround, 24, 20, 20);
+  // CONFIRMED BUG FIX ("acorn... forever been impossible to reach"):
+  // widened alongside the repositioning above (24/20/20 -> 32/28/28) --
+  // real extra margin so a genuinely moderate-strong swing (not a
+  // pixel-perfect max-angle one) reliably registers, whether caught
+  // mid-swing while still mounted or during the release flight.
+  const inRange = isPlayerNear(vinePumpkin.x, vinePumpkin.heightAboveGround, 32, 28, 28);
   if (player.vineFlying && inRange) {
     // auto-collect on contact, matching the acorns — no space press needed
     vinePumpkin.collecting = true;
@@ -44832,11 +44852,15 @@ const sandboxEntranceMound = { x: 2860, width: 40 }; // in SPRING -- walk up, sp
 const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual, space to climb back out to spring
 // second exit back to the same spring area, per direct request ("put
 // another sandbox exit to same spring area on the right of the ant
-// farm") -- sits just past the ant farm case's right edge (4290 + 456 =
-// 4746, see sandboxAntFarm's own comment), with SANDBOX_WIDTH widened
+// farm") -- sits just past the ant farm case's right edge (4550 + 456 =
+// 5006, see sandboxAntFarm's own comment), with SANDBOX_WIDTH widened
 // alongside it below so there's real breathing room on both sides of
 // the mound instead of it crowding the world's edge.
-const sandboxReturnMound2 = { x: 4790, width: 40 };
+// CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"):
+// shifted +260, alongside the ant farm's own move, when the trampoline
+// cluster got pushed off of sandboxFan2's spot -- see the trampoline
+// field's own comment for the actual bug this fixes.
+const sandboxReturnMound2 = { x: 5050, width: 40 };
 
 // CONFIRMED CHANGE: rebuilt with an ACTUAL 3/4 angled top face this
 // time, not a flat head-on rectangle -- per direct feedback across
@@ -44980,7 +45004,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 4900; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge.
+const SANDBOX_WIDTH = 5160; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"): widened another +260 alongside the trampoline cluster's own rightward shift off of sandboxFan2's spot -- see that shift's own comment.
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -45080,9 +45104,26 @@ function updateSandboxFanInstance(fan, onFanKey, deltaTime) {
   if (!player[onFanKey]) {
     // trigger: land on it like any other ground contact, no separate
     // button -- "jump on it and it throws you up" per direct request
+    // CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"
+    // -- player getting stuck): this trigger used to fire off of ANY
+    // grounded-ish moment (y<=4, vy<=0), including mid-flight passes
+    // through a launched trampoline arc (the sandbox angled/duo
+    // trampolines' shallow low arcs cross y<=4 with vy<=0 well before
+    // actually landing). Since sandboxFan2 sits close to the trampoline
+    // field, a trampoline throw could get hijacked mid-arc into fan-hover
+    // mode without player.launched ever getting cleared -- then the fan's
+    // own hover logic (which unconditionally overwrites player.y every
+    // frame) fought the still-active launched physics for control of
+    // player.y, and releasing from the fan dropped the player right back
+    // onto the SAME trampoline that flung them here, creating a genuine
+    // infinite stuck loop between the two toys (confirmed via a real
+    // held-key playtest walking through the field). Added the
+    // !player.launched guard so the fan only ever grabs a player who's
+    // actually walked/jumped onto it normally, never one mid-flight from
+    // another system.
     const centerX = player.x + player.width / 2;
     const nearX = Math.abs(centerX - fan.x) < 26;
-    if (nearX && player.y <= 4 && player.vy <= 0 && !player.onFan && !player.onFan2) {
+    if (nearX && player.y <= 4 && player.vy <= 0 && !player.onFan && !player.onFan2 && !player.launched) {
       player[onFanKey] = true;
       player.jumping = true;
       player.usedDoubleJump = false;
@@ -46205,11 +46246,42 @@ function drawSandboxTrampolineChainPerch(camX) {
    (right wall at 3320+320=3640) and the ant farm (starts ~4290), with
    real breathing room on both sides.
    ====================================================== */
+// CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines" --
+// player getting stuck): this field's own comment claimed it sat in "the
+// open gap between the ball pit and the ant farm," but that gap wasn't
+// actually open -- sandboxFan2 (x:3890, wind cone reaching to 3890+85=
+// 3975) sat almost exactly on top of this field's first two mats (3820
+// and 3900). Walking through here could get grabbed by the fan's
+// land-on-contact trigger (any grounded crossing within 26px of 3890),
+// which then released the player right back into the trampoline field's
+// hit radius, bouncing them right back toward the fan -- a genuine stuck
+// loop between the two toys, not a "float as designed" moment. Shifted
+// the whole field +260 right so its nearest mat's own edge (4080-40=4040)
+// clears the fan's cone edge (3975) by a real ~65px, same real-clearance
+// standard every other sandbox toy in this file already gets.
+//
+// CONFIRMED BUG FIX #2 (found via a real held-key playtest AFTER the
+// spacing fix above -- simply widening the gap wasn't enough on its own):
+// this launched-flight system's horizontal velocity never decays (see
+// this file's own note on that, near the duo trampoline's tuning
+// comment), and with the long floaty airtime these mats' launch speed
+// produces (~framerate-scale of 60-70 frames per flight), a full-strength
+// LEFT-flinging mat covers ~350-400px horizontally -- easily far enough
+// to sail every leftward bounce here right back onto the fan, no matter
+// how much extra spacing this cluster gets shifted by. The original
+// design had two mats flinging left and two flinging right (a genuine
+// "bounce around both ways" physics playground), which only ever worked
+// because nothing occupied the space to the left -- now that the fan
+// lives there, ANY mat flinging left is a guaranteed path back into the
+// exact stuck loop this whole fix is for. Made every mat fling RIGHT
+// (deeper into the field, toward the duo trampolines beyond) instead --
+// still four different angles/feels per direct request, just no longer
+// any that can carry the player backward into the fan.
 const SANDBOX_ANGLED_TRAMPOLINES = [
-  { x: 3820, tiltDeg: -35, squishT: 9999 },
-  { x: 3900, tiltDeg: -13, squishT: 9999 },
-  { x: 3980, tiltDeg: 13, squishT: 9999 },
-  { x: 4060, tiltDeg: 35, squishT: 9999 }
+  { x: 4080, tiltDeg: 15, squishT: 9999 },
+  { x: 4160, tiltDeg: 22, squishT: 9999 },
+  { x: 4240, tiltDeg: 28, squishT: 9999 },
+  { x: 4320, tiltDeg: 35, squishT: 9999 }
 ];
 const SANDBOX_ANGLED_TRAMPOLINE_RADIUS = 40;
 // CONFIRMED CHANGE: reuses player.launched -- the same launched-flight
@@ -46313,10 +46385,15 @@ function drawSandboxAngledTrampolineField(camX) {
 // so held left/right actively aims the crossing instead of a fixed arc --
 // genuinely useful here since a real gap has to be cleared each bounce,
 // not just an open field to land anywhere in.
+// CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"):
+// shifted +260 alongside the angled field just above, same fan2-overlap
+// fix -- kept at the same relative offset from the angled field (was
+// 4140/4240 right after 3820-4060, now 4400/4500 right after 4080-4320)
+// so the whole trampoline cluster still reads as one connected layout.
 const sandboxTrampolineDuo = {
   mats: [
-    { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },   // left mat -- visually leans right, flings toward the right mat
-    { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }  // right mat -- visually leans left, flings toward the left mat
+    { x: 4400, tiltDeg: 30, dir: 1, squishT: 9999 },   // left mat -- visually leans right, flings toward the right mat
+    { x: 4500, tiltDeg: -30, dir: -1, squishT: 9999 }  // right mat -- visually leans left, flings toward the left mat
   ],
   streak: 0, // consecutive duo catches at the CURRENT level without a plain-ground landing in between -- indexes SANDBOX_TRAMPOLINE_DUO_TIERS
   // CONFIRMED CHANGE ("ok now lets do tower w more going up" -> "stack
@@ -46338,12 +46415,12 @@ const sandboxTrampolineTower = {
   levels: [
     { height: 0, mats: sandboxTrampolineDuo.mats },
     { height: 230, mats: [
-      { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },
-      { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }
+      { x: 4400, tiltDeg: 30, dir: 1, squishT: 9999 },
+      { x: 4500, tiltDeg: -30, dir: -1, squishT: 9999 }
     ] },
     { height: 460, mats: [
-      { x: 4140, tiltDeg: 30, dir: 1, squishT: 9999 },
-      { x: 4240, tiltDeg: -30, dir: -1, squishT: 9999 }
+      { x: 4400, tiltDeg: 30, dir: 1, squishT: 9999 },
+      { x: 4500, tiltDeg: -30, dir: -1, squishT: 9999 }
     ] }
   ]
 };
@@ -51254,7 +51331,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
-  x: 4290, // CONFIRMED CHANGE ("move the ant farm mooore to the right"): pushed further right again (was 4140), widening the gap to fan2 (was a symmetric 250/250 around fan2, now 250 before / 400 after) -- SANDBOX_WIDTH bumped +150 alongside this to keep the same clearance past the case's right edge
+  x: 4550, // CONFIRMED CHANGE ("move the ant farm mooore to the right"): pushed further right again (was 4140), widening the gap to fan2 (was a symmetric 250/250 around fan2, now 250 before / 400 after) -- SANDBOX_WIDTH bumped +150 alongside this to keep the same clearance past the case's right edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines" -- player getting stuck): pushed another +260 right, alongside the trampoline duo's own move -- the angled trampoline field and duo mats had since been added directly on top of/right up against sandboxFan2 (x:3890) despite that field's own comment claiming this was "the open gap" between the ball pit and here, which it no longer was. Shifting this whole cluster (angled field, duo, this case, and sandboxReturnMound2) right gives the fan real clearance again -- see SANDBOX_ANGLED_TRAMPOLINES' own comment for the actual repro this fixes.
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL_W + ANT_FARM_MARGIN_X * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL_H + ANT_FARM_MARGIN_Y * 2,
   // local pixel position within the grid interior, only meaningful
