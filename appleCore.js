@@ -56113,51 +56113,20 @@ updateSeasonTransition(deltaTime);
   requestAnimationFrame(update);
 }
 
-// TEMPORARY debug spawn -- per direct request, unconditional again (no
-// URL param, no extra steps). Now in the FOREST, standing on top of the
-// rock climb's own landing ledge (was in front of the fungus tree before
-// that, and the sandbox duo trampolines before that). Remove/move this
-// block again once done testing -- it overrides every load, same as
-// every earlier round of this.
-//
-// The rock climb (and the ledge past it, and the pool past THAT) sits
-// past the river-crossing log bridge, and that bridge normally has to be
-// built segment by segment before you can walk past x~4340-4800 at all
-// (see forestRiverSegmentsStrung/Decked) -- without also marking it built
-// here, spawning past it would just get silently snapped back to the near
-// bank every frame (found this exact behavior while testing the fungus
-// climb itself). Marking it built is debug-spawn-only; the real in-game
-// crossing still has to be earned normally, this just skips it for
-// testing what's beyond it.
-currentScene = "forest";
-forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-// same landing spot the pool's own exit transition uses (see
-// updateSeasonTransition's forest/pool spawn-override chain) -- clear of
-// the ledge's own left edge, so you're not immediately standing right at
-// the walk-off-into-the-pool trigger zone.
-player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20;
-player.y = FOREST_ROCK_LEDGE.height;
-player.vy = 0;
-cameraX = Math.max(0, player.x - canvas.width * 0.4);
-discoveredScenes.autumn = true;
-discoveredScenes.spring = true;
-discoveredScenes.forest = true;
-// CONFIRMED BUG FIX ("tab through inventory... doesn't seem to
-// [work]"): setting inventory[type] directly bypasses
-// addToInventory/touchInventoryOrder, so these items never actually
-// land in inventoryOrder -- the array Tab's own cycleHeldItem reads to
-// build its cycle list. touchInventoryOrder() (the same call
-// addToInventory makes) fixes it for good.
-inventory.marble = 1;
-touchInventoryOrder("marble");
-inventory.acorn = 3;
-touchInventoryOrder("acorn");
-inventory.shovel = 1;
-touchInventoryOrder("shovel");
-updateMapUI();
-updateInventoryUI();
-
+// CONFIRMED BUG FIX ("dude. i just did this" -- fresh tab, fresh load,
+// still dropped in the pool/forest ledge instead of the real start): a
+// leftover debug-spawn override from an old testing round was sitting
+// right here, completely unconditionally overwriting currentScene (and
+// player position, camera, inventory) EVERY single page load -- no flag,
+// no URL param gating it, nothing. It silently out-ran the real
+// `currentScene = "autumn"` initial declaration up top on every load,
+// which is exactly why nothing else (Shift+H, hard-refreshing, closing
+// and reopening the tab) could ever have fixed this -- the real starting
+// state was always correct, this block just stomped it right back to the
+// forest ledge a moment later, unconditionally, before the player ever
+// saw the first frame. Deleted for good -- the game now actually starts
+// where currentScene's own declaration already says it should: the
+// orchard, at the real beginning.
 update();
 
 });
