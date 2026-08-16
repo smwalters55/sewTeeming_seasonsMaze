@@ -94,6 +94,28 @@ window.addEventListener("keydown", e => {
     touchInventoryOrder("goldPile");
     updateInventoryUI();
   }
+  // DEBUG CHEAT ("can you spawn me at thr befinning"): Shift+H yanks the
+  // player straight back to the game's actual starting spot -- the
+  // orchard/autumn scene, at the same x/y the player object itself starts
+  // at (see its own declaration up top) -- for quickly retesting the
+  // intro without closing the tab / clearing state by hand. Also resets
+  // the camera and clears any mid-flight physics/transition state so this
+  // can't leave the player stuck mid-air or mid-fade from wherever they
+  // were before pressing it.
+  if ((e.key==="h" || e.key==="H") && e.shiftKey && !e.repeat) {
+    currentScene = "autumn";
+    player.x = 400;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    cameraX = 0;
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
