@@ -46491,6 +46491,18 @@ const sandboxTrampolineTower = {
     ] }
   ]
 };
+// CONFIRMED CHANGE ("trampoline tower top payoff" -- the top level just
+// capped out with repeat max-tier bouncing before, no charm moment up
+// there): a small pennant flag planted between the top level's two mats
+// (x=4450, the midpoint of 4400/4500). raiseAnim eases 0->1 the first
+// time the player ever hits the top level's own max tier bounce, and
+// stays raised for the rest of the session once that happens (a real,
+// visible "you conquered the tower" marker, not a one-frame flash that's
+// gone the instant you bounce again). celebrateAt is retriggerable
+// though -- every subsequent max-tier top bounce still fires a fresh
+// sparkle burst, so repeat visits still feel rewarded, not just the
+// first one.
+const sandboxTowerTopFlag = { raised: false, raiseAnim: 0, celebrateAt: -1e9 };
 // vertical catch tolerance for the elevated levels' mats -- these aren't
 // caught by the normal y<=0 ground-collision path at all (nothing ever
 // falls TO them from rest), only by the mid-flight mat-proximity check
@@ -46570,6 +46582,16 @@ function sandboxTrampolineDuoLaunch(mat, levelIdx) {
     player.vy = Math.cos(rad) * tier.speed;
     sandboxTrampolineDuo.streak++;
     sandboxTrampolineDuo.level = levelIdx;
+
+    // CONFIRMED CHANGE ("trampoline tower top payoff"): nothing to
+    // promote INTO up here (levelIdx is already the last level), so
+    // maxing the tier ladder at the very top is itself the payoff
+    // moment -- raise the flag (first time only) and fire a fresh
+    // sparkle burst (every time, including repeat visits).
+    if (atMaxTier && levelIdx === levels.length - 1) {
+      sandboxTowerTopFlag.raised = true;
+      sandboxTowerTopFlag.celebrateAt = performance.now();
+    }
   }
 
   player.launched = true;
@@ -46589,12 +46611,66 @@ function updateSandboxTrampolineDuo(deltaTime) {
       if (t.squishT < SANDBOX_TRAMPOLINE_DUO_SQUISH_MS) t.squishT += deltaTime * 1000;
     });
   });
+  // eases the flag up its pole over ~700ms the first time the top level
+  // gets maxed out -- stays fully raised forever after (see the trigger
+  // in sandboxTrampolineDuoLaunch), never eases back down
+  if (sandboxTowerTopFlag.raised && sandboxTowerTopFlag.raiseAnim < 1) {
+    sandboxTowerTopFlag.raiseAnim = Math.min(1, sandboxTowerTopFlag.raiseAnim + deltaTime / 0.7);
+  }
 }
 
 function drawSandboxTrampolineDuo(camX) {
   sandboxTrampolineTower.levels.forEach(level => {
     level.mats.forEach(t => drawSandboxAngledTrampoline(camX, t, level.height));
   });
+}
+
+// CONFIRMED CHANGE ("trampoline tower top payoff"): a small pennant flag
+// planted between the top level's two mats, on its own short pole. Stays
+// completely absent until the player first maxes out the tier ladder up
+// there -- then eases up the pole with a back-ease "pop" (same curve
+// family as the ant farm mini-me's own entry pop) and stays raised for
+// good. A gentle sparkle burst refires from the pole's own base on every
+// later max-tier bounce up here too, not just the first one.
+function drawSandboxTrampolineTowerTopFlag(camX) {
+  if (!sandboxTowerTopFlag.raised) return;
+  const topLevel = sandboxTrampolineTower.levels[sandboxTrampolineTower.levels.length - 1];
+  const poleX = (topLevel.mats[0].x + topLevel.mats[1].x) / 2 - camX;
+  const poleBaseY = gy - 26 - topLevel.height; // same pivotY math as drawSandboxAngledTrampoline's own mat post
+  const poleHeight = 70;
+
+  const backC1 = 1.70158, backC3 = backC1 + 1;
+  const raiseP = sandboxTowerTopFlag.raiseAnim;
+  const eased = raiseP >= 1 ? 1 : 1 - (backC3 * Math.pow(1 - raiseP, 3) + backC1 * Math.pow(1 - raiseP, 2));
+  const poleTopY = poleBaseY - poleHeight * Math.max(0, Math.min(1, eased));
+
+  ctx.strokeStyle = "#7a6248";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(poleX, poleBaseY);
+  ctx.lineTo(poleX, poleTopY);
+  ctx.stroke();
+
+  // small pennant, gently fluttering -- flutter driven by the shared
+  // fireflyT clock, same ambient-motion source everything else in the
+  // game already ties into
+  const flutter = Math.sin(fireflyT * 0.003) * 4;
+  ctx.fillStyle = "#e8b64a";
+  ctx.beginPath();
+  ctx.moveTo(poleX, poleTopY);
+  ctx.lineTo(poleX + 22 + flutter, poleTopY + 7);
+  ctx.lineTo(poleX, poleTopY + 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#a87a2a";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const sinceCelebrate = performance.now() - sandboxTowerTopFlag.celebrateAt;
+  const celebrateP = sinceCelebrate / 900;
+  if (celebrateP >= 0 && celebrateP < 1) {
+    drawSparkleBurst(poleX, poleBaseY - 10, celebrateP, 1.6);
+  }
 }
 
 // dark stretched mat inside a metal ring, short angled legs, springs
@@ -54114,6 +54190,7 @@ function drawSandboxScene(camX) {
   drawSandboxTrampolineChainPerch(camX);
   drawSandboxAngledTrampolineField(camX);
   drawSandboxTrampolineDuo(camX);
+  drawSandboxTrampolineTowerTopFlag(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
   drawBlockPile(camX);
