@@ -136,6 +136,20 @@ window.addEventListener("keydown", e => {
     cameraX = 0;
     cameraY = 0;
     seasonTransition.phase = "idle";
+    // CONFIRMED BUG FIX ("when i come back to spring from sandbox, i want
+    // to still see the sandbox in spring"): the entrance mound in spring
+    // (sandboxEntranceMound, a real little red sandbox, not just a plain
+    // dirt pile) only draws -- and can only be walked back INTO -- while
+    // discoveredScenes.clouds && peanutVine.grown are both true. Debug-
+    // spawning straight into the sandbox skips the real clouds/peanut-vine
+    // progression entirely, so those flags were still false the whole
+    // time -- meaning a debug session could walk sandbox -> spring and
+    // find the entrance had silently never been there at all, same "debug
+    // spawn shouldn't leave other assumptions broken" fix already applied
+    // to the rock climb's own debug spawn. Auto-marking both here so
+    // debug testing sees the same spring the mound expects.
+    discoveredScenes.clouds = true;
+    peanutVine.grown = true;
     updateMapUI();
   }
 });
@@ -12291,6 +12305,20 @@ const peanutVine = {
   mounted: false,
   playerClimbHeight: 0
 };
+// CONFIRMED BUG FIX ("when i come back to spring from sandbox, i want to
+// still see the sandbox in spring"): DEBUG_START_SCENE dropping straight
+// into the sandbox on load skips the real clouds/peanut-vine progression
+// entirely -- discoveredScenes.clouds and peanutVine.grown both stayed
+// false, and the spring entrance mound only draws (or can be walked back
+// into) while both are true. Same auto-mark the Shift+S debug hotkey now
+// does, applied here too so leaving the sandbox on a debug-started session
+// lands in a spring that still has its entrance visible. Only engages for
+// the sandbox debug-start case -- every other DEBUG_START_SCENE value is
+// unaffected.
+if (DEBUG_START_SCENE === "sandbox") {
+  discoveredScenes.clouds = true;
+  peanutVine.grown = true;
+}
 const VINE_GROW_DURATION = 4000;
 const VINE_CLIMB_SPEED = 100; // units/sec while holding up -- raised alongside climbHeight so the taller climb doesn't just take proportionally longer
 
@@ -55402,13 +55430,25 @@ if (currentScene === "forest") {
   // unconditional and is untouched). This SEPARATE call is a different
   // thing: drawing that same front-flagged 18% a SECOND time, layered
   // ON TOP of the player sprite, so the player visually reads as
-  // surrounded/submerged. That only makes sense while the player is
-  // actually behind the glass (swimming, climbing the ladder, or
-  // standing on the rim) -- with no gate at all it drew over anyone
+  // surrounded/submerged. With no gate at all it drew over anyone
   // anywhere in the sandbox scene, including just walking past on open
-  // ground nowhere near the pit. Restored the gate, scoped to the same
-  // three pit-interaction states the wig clip above already uses.
-  if (player.inBallPit || player.onBallPitLadder || player.onBallPitRim) {
+  // ground nowhere near the pit.
+  // CONFIRMED BUG FIX ("wig hair is like inside the ball pit when i just
+  // going up ladder"): the gate here used to also include
+  // onBallPitLadder/onBallPitRim, on the assumption that both of those
+  // states already have the player standing behind the glass. That
+  // assumption was wrong -- SANDBOX_BALL_PIT_LADDER_OFFSET is -16
+  // ("ladder sits just outside the left wall," per its own comment), and
+  // player.x is pinned to that same outside-the-wall ladderX for BOTH
+  // the whole climb AND the rim stand at the top (only actually dropping
+  // in, via space at the rim, moves x inside the pit's real interior
+  // bounds). So this was drawing the "surrounded by balls" front layer
+  // over a player who was still standing outside the glass the entire
+  // time -- reading exactly like the report, hair appearing to sit
+  // inside a pit the player hasn't actually entered yet. Narrowed to
+  // just player.inBallPit, the only one of the three states where the
+  // player is genuinely behind the glass.
+  if (player.inBallPit) {
     ctx.save();
     ctx.translate(0, cameraY);
     drawSandboxBallPitBalls(camX, true);
