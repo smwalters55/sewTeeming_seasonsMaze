@@ -46357,6 +46357,111 @@ function updateSandboxAngledTrampolineField(deltaTime) {
   SANDBOX_ANGLED_TRAMPOLINES.forEach(t => {
     if (t.squishT < SANDBOX_ANGLED_TRAMPOLINE_SQUISH_MS) t.squishT += deltaTime * 1000;
   });
+  updateSandboxAngledTargets();
+}
+
+// CONFIRMED CHANGE ("angled trampoline field targets" -- physics-only
+// pass shipped a while back, scoped as "add targets later, same shape as
+// the pendulum's own goal rings"): unlike the pendulum's rings, these
+// aren't ground-landing spots -- the field's mats auto-catch almost the
+// entire ground span between them (mat radius 40, mat spacing 80, so the
+// catch zones already touch edge-to-edge with zero gap), and the field's
+// right side butts almost directly against the trampoline duo with no
+// room at all. There's nowhere on the ground to actually miss into.
+// Instead, these are airborne fly-THROUGH rings you catch mid-arc, same
+// "pass through it while launched" shape as the pool's own swim-through
+// loops (POOL_LOOPS) -- verified reachable via a real per-frame physics
+// simulation of mat1's rightward arc and mat4's leftward arc (the field's
+// two long cross-field bounces, the ones that actually carry you across
+// the whole cluster rather than just hopping to the next mat over):
+// mat1's arc runs (4080,0)->(4176,146 peak)->(4315,0), mat4's mirrors it
+// (4320,0)->(4219,144 peak)->(4073,0). The near/easy ring sits where both
+// arcs pass close together early/late in their flight; the two mid rings
+// sit one on each arc's own ascending stretch (they diverge too far apart
+// there to share one ring); the peak ring sits where both arcs' actual
+// peaks land within a tight shared radius of each other -- the tallest,
+// hardest catch, right at the top of a big bounce.
+const SANDBOX_ANGLED_TARGETS = [
+  { x: 4118, y: 84, radius: 32, tier: 0 },  // near/easy -- both mat1 and mat4's arcs pass close to here
+  { x: 4152, y: 136, radius: 24, tier: 1 }, // mid, mat1's (rightward) ascending stretch
+  { x: 4248, y: 136, radius: 24, tier: 1 }, // mid, mat4's (leftward) ascending stretch -- mirrored
+  { x: 4197, y: 145, radius: 25, tier: 2 }  // peak -- both arcs' actual apex lands within this ring, hardest catch
+];
+const sandboxAngledTargetHitFlash = SANDBOX_ANGLED_TARGETS.map(() => -1e9); // timestamp of last pass, drives the hit animation
+const sandboxAngledTargetInside = SANDBOX_ANGLED_TARGETS.map(() => false); // latched per-target, same shape as the pool loops' own `inside` flag -- a pass only fires once per entry, re-armed once you fly back out of the ring
+const SANDBOX_ANGLED_TARGET_ANIM_MS = 900;
+
+function updateSandboxAngledTargets() {
+  if (!(currentScene === "sandbox" && player.launched)) {
+    // not mid-flight -- clear every latch so the next real flight always
+    // starts fresh rather than carrying a stale "already inside" from
+    // wherever the player happened to land last time
+    for (let i = 0; i < sandboxAngledTargetInside.length; i++) sandboxAngledTargetInside[i] = false;
+    return;
+  }
+  const px = player.x + player.width / 2, py = player.y;
+  SANDBOX_ANGLED_TARGETS.forEach((target, i) => {
+    const dx = px - target.x, dy = py - target.y;
+    const inside = Math.sqrt(dx * dx + dy * dy) <= target.radius;
+    if (inside && !sandboxAngledTargetInside[i]) {
+      sandboxAngledTargetHitFlash[i] = performance.now();
+    }
+    sandboxAngledTargetInside[i] = inside;
+  });
+}
+
+// CONFIRMED CHANGE: same gold-spark -> green-flash -> fade language as
+// the pendulum's own goal-ring hit anim (drawSandboxPendulumGoalHitAnim),
+// just drawn as a real circle in open air instead of a flattened ellipse
+// pinned to the ground -- these aren't landing spots, they're things you
+// fly through.
+function drawSandboxAngledTargetHitAnim(gx, gy2, i) {
+  const now = performance.now();
+  const flashAge = now - sandboxAngledTargetHitFlash[i];
+  if (flashAge >= SANDBOX_ANGLED_TARGET_ANIM_MS) return false;
+  const p = flashAge / SANDBOX_ANGLED_TARGET_ANIM_MS;
+  const tier = SANDBOX_ANGLED_TARGETS[i].tier;
+  const tierBoost = tier / 2; // 0..1 across the 3 tiers
+  const mixT = Math.min(1, p / 0.6);
+  const rC = Math.round(255 + (35 - 255) * mixT);
+  const gC = Math.round(210 + (165 - 210) * mixT);
+  const bC = Math.round(110 + (60 - 110) * mixT);
+  const alpha = p < 0.7 ? 0.9 : 0.9 * (1 - (p - 0.7) / 0.3);
+  const ringR = (10 + p * 14) * (1 + tierBoost * 0.5);
+  ctx.strokeStyle = `rgba(20,35,15,${alpha * 0.5})`;
+  ctx.lineWidth = 3.4 + tierBoost * 2;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+  ctx.lineWidth = 2 + tierBoost * 1.5;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  if (p < 0.6) drawSparkleBurst(gx, gy2, p / 0.6, 1 + tierBoost * 0.6);
+  return true;
+}
+
+// idle rings only show while actually mid-flight in the field -- same
+// visibility rule the pendulum's own goals use (otherwise these would
+// just be permanent floating decor hanging in the sky at all times)
+function drawSandboxAngledTargets(camX) {
+  const showLive = player.launched && currentScene === "sandbox";
+  SANDBOX_ANGLED_TARGETS.forEach((target, i) => {
+    const gx = target.x - camX, gy2 = gy - target.y;
+    if (drawSandboxAngledTargetHitAnim(gx, gy2, i)) return;
+    if (!showLive) return;
+    ctx.strokeStyle = "rgba(40,30,15,0.4)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(gx, gy2, target.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,225,150,0.55)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(gx, gy2, target.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  });
 }
 
 // same ring/springs/mat construction as the chain trampolines, on a
@@ -54189,6 +54294,7 @@ function drawSandboxScene(camX) {
   drawSandboxTrampolineChain(camX);
   drawSandboxTrampolineChainPerch(camX);
   drawSandboxAngledTrampolineField(camX);
+  drawSandboxAngledTargets(camX);
   drawSandboxTrampolineDuo(camX);
   drawSandboxTrampolineTowerTopFlag(camX);
   drawSandboxPendulum(camX);
