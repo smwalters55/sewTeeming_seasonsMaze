@@ -172,7 +172,16 @@ const camera = { topDown:false, locked:false };
 /* ======================================================
    SCENE STATE (which world the player is currently in)
    ====================================================== */
-let currentScene = "autumn";
+// CONFIRMED CHANGE ("why arent you able to make this change right now?
+// on my machine" -- wanted the game to just open straight into the
+// sandbox while testing sandbox stuff, no keypress needed): flip this to
+// "sandbox" to have the game open directly there every time, instead of
+// the real starting scene. Flip it back to "autumn" (the actual game
+// start) once you're done testing sandbox things -- this is a testing
+// convenience, not the real game's intro, so it shouldn't stay on
+// "sandbox" for normal play.
+const DEBUG_START_SCENE = "sandbox";
+let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
 /* ======================================================
@@ -44882,7 +44891,10 @@ const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual
 // shifted +260, alongside the ant farm's own move, when the trampoline
 // cluster got pushed off of sandboxFan2's spot -- see the trampoline
 // field's own comment for the actual bug this fixes.
-const sandboxReturnMound2 = { x: 5050, width: 40 };
+// CONFIRMED CHANGE ("move the exit out a bit to the right"): the old
+// 44px gap to the ant farm case's right edge (5006) read as crowded --
+// pushed further out for real breathing room.
+const sandboxReturnMound2 = { x: 5200, width: 40 };
 
 // CONFIRMED CHANGE: rebuilt with an ACTUAL 3/4 angled top face this
 // time, not a flat head-on rectangle -- per direct feedback across
@@ -45026,7 +45038,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 5160; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"): widened another +260 alongside the trampoline cluster's own rightward shift off of sandboxFan2's spot -- see that shift's own comment.
+const SANDBOX_WIDTH = 5310; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"): widened another +260 alongside the trampoline cluster's own rightward shift off of sandboxFan2's spot -- see that shift's own comment. CONFIRMED CHANGE ("move the exit out a bit to the right"): widened another +150 alongside sandboxReturnMound2's own move, same real-clearance idea.
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -46162,11 +46174,16 @@ function drawSandboxTrampolineChainOne(camX, t) {
   const matRy = Math.max(2, (outerRy - 2) - squish * 5);
   const matRx = outerRx * 0.62;
 
+  // CONFIRMED BUG FIX ("i reeeeally dont likte these verticale line pole
+  // things at all"): same fix as the angled trampoline field's post --
+  // a fixed-length local stand under the mat instead of a line running
+  // all the way down to true ground, which for the higher chain platforms
+  // (up to 450 height) read as a long thin spear through the whole scene.
   ctx.strokeStyle = "rgba(150,130,180,0.45)";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(sx, ringCy + outerRy * 0.6);
-  ctx.lineTo(sx, gy);
+  ctx.lineTo(sx, ringCy + outerRy * 0.6 + 26);
   ctx.stroke();
 
   ctx.strokeStyle = "#8a8f96";
@@ -46220,11 +46237,14 @@ function drawSandboxTrampolineChainPerch(camX) {
   const sx = p.x - camX;
   const topY = gy - p.heightAboveGround;
 
+  // CONFIRMED BUG FIX ("i reeeeally dont likte these verticale line pole
+  // things at all"): same fix as the trampoline posts just above -- a
+  // fixed-length local stand instead of a full-height line down to gy.
   ctx.strokeStyle = "rgba(150,130,180,0.45)";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(sx, topY + 9);
-  ctx.lineTo(sx, gy);
+  ctx.lineTo(sx, topY + 9 + 26);
   ctx.stroke();
 
   const grad = ctx.createRadialGradient(sx, topY, 2, sx, topY, 30);
@@ -46299,11 +46319,23 @@ function drawSandboxTrampolineChainPerch(camX) {
 // (deeper into the field, toward the duo trampolines beyond) instead --
 // still four different angles/feels per direct request, just no longer
 // any that can carry the player backward into the fan.
+// CONFIRMED BUG FIX ("why are they all almost right facing"): making
+// every mat fling rightward (the earlier fan-stuck-loop fix) killed the
+// visual variety the field is supposed to have -- all four read as
+// nearly the same angle. Restored alternating directions, but verified
+// per-mat via real flight-distance math (this launched system's vx never
+// decays, so a flight covers vx * total-airtime no matter what) that
+// none of these leftward launches can travel far enough to land back
+// anywhere near the fan (x:3890, mount radius 26) -- each mat's leftward
+// magnitude is capped by how much real room it has behind it before the
+// fan, with a comfortable safety margin, not just "however far looks
+// good": mat1 has no room at all (stays rightward-only), the other three
+// get real room the further right they sit.
 const SANDBOX_ANGLED_TRAMPOLINES = [
-  { x: 4080, tiltDeg: 15, squishT: 9999 },
-  { x: 4160, tiltDeg: 22, squishT: 9999 },
-  { x: 4240, tiltDeg: 28, squishT: 9999 },
-  { x: 4320, tiltDeg: 35, squishT: 9999 }
+  { x: 4080, tiltDeg: 18, squishT: 9999 },
+  { x: 4160, tiltDeg: -9, squishT: 9999 },
+  { x: 4240, tiltDeg: 22, squishT: 9999 },
+  { x: 4320, tiltDeg: -19, squishT: 9999 }
 ];
 const SANDBOX_ANGLED_TRAMPOLINE_RADIUS = 40;
 // CONFIRMED CHANGE: reuses player.launched -- the same launched-flight
@@ -46341,11 +46373,21 @@ function drawSandboxAngledTrampoline(camX, t, heightAboveGround) {
   const postHeight = 26;
   const pivotY = gy - postHeight - elevated;
 
+  // CONFIRMED BUG FIX ("i reeeeally dont likte these verticale line pole
+  // things at all"): this used to draw a straight line from the mat all
+  // the way down to true ground (gy), which reads fine for the ground-
+  // level mats (a real ~26px stand) but for the tower's elevated levels
+  // (heightAboveGround up to 460) it stretched into a long, thin,
+  // unbroken line spearing straight through the whole scene -- looked
+  // like a laser/antenna, not a support post. Drawing a fixed-length
+  // local stand under the mat instead (same idea as the ground version)
+  // reads as "propped on something" without needing an actual visible
+  // connection all the way down to the sand.
   ctx.strokeStyle = "rgba(150,130,180,0.5)";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(sx, pivotY);
-  ctx.lineTo(sx, gy);
+  ctx.lineTo(sx, pivotY + postHeight);
   ctx.stroke();
 
   const rad = t.tiltDeg * Math.PI / 180;
@@ -54993,17 +55035,20 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
       ctx.save();
       ctx.resetTransform();
       const pitClipRight = pit.x - camX + pit.width - 14;
-      // CONFIRMED BUG FIX ("the left wall was also still messed up") --
-      // only the right wall was ever constrained (it's the one the
-      // ladder sits against, which is what the original ladder/bottom-
-      // of-ladder reports were about), but the interior has a real LEFT
-      // wall too (matches drawSandboxBallPitBalls' own interior clip,
-      // pit.x+14) that a wig can just as easily poke through while
-      // actually swimming over near that side. Only relevant while
-      // genuinely inBallPit -- on the ladder/rim the player stands
-      // OUTSIDE/left of the pit on purpose (that's the open sand side,
-      // not a wall), so no left constraint there.
-      const pitClipLeft = player.inBallPit ? (pit.x - camX + 14) : 0;
+      // CONFIRMED BUG FIX ("wig shouldnt be chopped like this in ball pit
+      // side edge"): the left-wall clip added below (round 2 of "the left
+      // wall was also still messed up") swapped one visual problem for a
+      // worse one -- a hard ctx.clip() rectangle doesn't taper the wig
+      // off, it slices it with a dead-flat vertical edge the instant the
+      // player is against the interior wall, which reads as the hair
+      // being amputated rather than just contained. The body itself is
+      // NEVER clipped against this same wall (see this whole block's own
+      // comment) and looks completely normal overlapping it by a few px
+      // -- there's no actual visual problem with a little geometry
+      // resting against a wall, only with a hard rectangular slice
+      // through it. Left clip removed entirely; right/top clips (for
+      // their own separately-reported issues) are untouched.
+      const pitClipLeft = 0;
       // CONFIRMED BUG FIX ("disappears going to top of ball pit still
       // swimming") -- round 1 used the INTERIOR's ceiling (gy -
       // rimHeight), round 2 tried the rim lid's own top edge (gy -
@@ -55079,13 +55124,29 @@ if (currentScene === "forest") {
   // onBallPitLadder flipping on at the bottom of the ladder -- no
   // climbing involved). That's the "flash" -- not new balls appearing,
   // the same balls suddenly repainting brighter. Sam wants that brighter
-  // look to just always be there, not gated behind any player state, so
-  // the gate is removed entirely -- this now draws every frame the scene
-  // is sandbox, same as the back layer's own unconditional draw.
-  ctx.save();
-  ctx.translate(0, cameraY);
-  drawSandboxBallPitBalls(camX, true);
-  ctx.restore();
+  // look to just always be there -- but the fix that shipped for that
+  // went too far and removed the gate on the WRONG thing.
+  //
+  // CONFIRMED BUG FIX ("walking on ground not in ball pit balls drawn on
+  // top of player"): the extra-bright LOOK of the pit's own balls should
+  // always be there (drawSandboxBallPit already draws every ball,
+  // front-flagged or not, every frame as part of the normal pit
+  // rendering below/behind the player -- that part was always
+  // unconditional and is untouched). This SEPARATE call is a different
+  // thing: drawing that same front-flagged 18% a SECOND time, layered
+  // ON TOP of the player sprite, so the player visually reads as
+  // surrounded/submerged. That only makes sense while the player is
+  // actually behind the glass (swimming, climbing the ladder, or
+  // standing on the rim) -- with no gate at all it drew over anyone
+  // anywhere in the sandbox scene, including just walking past on open
+  // ground nowhere near the pit. Restored the gate, scoped to the same
+  // three pit-interaction states the wig clip above already uses.
+  if (player.inBallPit || player.onBallPitLadder || player.onBallPitRim) {
+    ctx.save();
+    ctx.translate(0, cameraY);
+    drawSandboxBallPitBalls(camX, true);
+    ctx.restore();
+  }
 }
 
 
