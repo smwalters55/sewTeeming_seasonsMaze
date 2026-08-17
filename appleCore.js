@@ -237,6 +237,18 @@ const player = {
   // bound over a long flight and blow past the tuned trajectory.
   launchBaseVx: 0,
   launchSteerOffset: 0,
+  // CONFIRMED CHANGE ("i want a lil more control when on the trampos"):
+  // per-launch steering strength, set fresh at each individual launch
+  // site rather than one shared global -- lets the angled field (a pure
+  // physics playground, no precision catch to protect) get a genuinely
+  // stronger nudge, while the duo/tower's tight aim-for-the-other-mat
+  // catch mechanic keeps its original, more conservative strength so
+  // strong steering can't be used to blow past the mat you're supposed
+  // to be aiming back at. Defaults match the original shared constants;
+  // see SANDBOX_LAUNCH_STEER_ACCEL/MAX's own comment for why those
+  // specific numbers were chosen in the first place.
+  launchSteerAccel: 0.18,
+  launchSteerMax: 1.8,
   vineFlying: false,   // true while mid-flight from a vine release — real horizontal+vertical momentum, checks for grabbing the NEXT vine
   onSeesawBounce: false, // true while airborne from a seesaw jump-pump — uses its own slower gravity instead of standard physics
   facing: 1,           // 1 = right, -1 = left — last direction moved, used to aim thrown items
@@ -3010,9 +3022,9 @@ function applyPhysics(){
     // system (pendulum throw, forest gears, swing release) leaves
     // launchSteerable false, so they're completely unaffected.
     if (player.launchSteerable) {
-      if (keys.left) player.launchSteerOffset -= SANDBOX_LAUNCH_STEER_ACCEL;
-      if (keys.right) player.launchSteerOffset += SANDBOX_LAUNCH_STEER_ACCEL;
-      player.launchSteerOffset = Math.max(-SANDBOX_LAUNCH_STEER_MAX, Math.min(SANDBOX_LAUNCH_STEER_MAX, player.launchSteerOffset));
+      if (keys.left) player.launchSteerOffset -= player.launchSteerAccel;
+      if (keys.right) player.launchSteerOffset += player.launchSteerAccel;
+      player.launchSteerOffset = Math.max(-player.launchSteerMax, Math.min(player.launchSteerMax, player.launchSteerOffset));
       player.vx = player.launchBaseVx + player.launchSteerOffset;
     }
     player.x += player.vx;
@@ -3461,6 +3473,19 @@ function applyPhysics(){
       player.launchSteerable = true; // CONFIRMED CHANGE: held left/right now nudges the flight, see SANDBOX_LAUNCH_STEER_ACCEL
       player.launchBaseVx = player.vx;
       player.launchSteerOffset = 0;
+      // CONFIRMED CHANGE ("i want a lil more control when on the
+      // trampos"): the angled field is a pure physics playground with no
+      // precision catch to protect (unlike the duo just below, which
+      // needs its steering kept gentle so you can't blow past the mat
+      // you're aiming back at) -- boosted to a genuinely strong nudge,
+      // roughly double the original shared strength. Verified via a real
+      // per-frame flight simulation across every mat, both held
+      // directions, that even a full hold-left the whole flight (the
+      // strongest possible pull toward the fan) still lands clear of or
+      // past sandboxFan2's own mount zone, same safety check the tilt
+      // variety fix used.
+      player.launchSteerAccel = 0.36;
+      player.launchSteerMax = 3.6;
       player.jumping = true;
       player.usedDoubleJump = false;
       angledHit.squishT = 0;
@@ -7389,16 +7414,25 @@ const FLOATY_FALL_GRAVITY = 0.13;    // descent, if under threshold — the "slo
 // clamped launchSteerOffset while player.launchSteerable is set. A first
 // pass (0.32, applied as unbounded direct vx accumulation) let a held key
 // fly the player hundreds of px past any intended trajectory over a long
-// flight -- confirmed via a real per-frame test. Now paired with
-// SANDBOX_LAUNCH_STEER_MAX below, so the total steering contribution is
-// capped instead of growing forever; the accel can stay reasonably snappy
-// since the cap does the safety work.
+// flight -- confirmed via a real per-frame test. Paired with a matching
+// hard cap so the total steering contribution stays bounded instead of
+// growing forever.
+// CONFIRMED CHANGE ("i want a lil more control when on the trampos"):
+// these two are no longer read directly -- steering strength now lives
+// on player.launchSteerAccel/launchSteerMax, set fresh at each launch
+// site (see sandboxTrampolineDuoLaunch, drawSandboxAngledTrampoline's own
+// launch block, and forestFungusClimb's launch) so the angled field's
+// pure-playground bounces can get a genuinely stronger nudge without
+// also loosening the duo/tower's tight aim-for-the-other-mat catch. Kept
+// here as the documented ORIGINAL/default values every launch site but
+// the angled field still resets to.
 const SANDBOX_LAUNCH_STEER_ACCEL = 0.18;
 // Hard cap on |launchSteerOffset| -- a full flight held in one direction
 // tops out at this much extra vx on top of the launch's own base speed.
 // Sized to feel like real "power" (a meaningful nudge to the arc) without
 // being able to override the duo's tiny tuned base vx values (~1-1.5) or
-// blow the angled field's landing zone.
+// blow the angled field's landing zone. See the comment above -- this is
+// the shared DEFAULT; the angled field now uses a stronger value.
 const SANDBOX_LAUNCH_STEER_MAX = 1.8;
 
 const swing = {
@@ -17269,6 +17303,15 @@ function forestFungusLaunch(mat, levelIdx) {
   player.launchSteerable = true;
   player.launchBaseVx = player.vx;
   player.launchSteerOffset = 0;
+  // CONFIRMED CHANGE ("i want a lil more control when on the trampos" --
+  // the angled sandbox field got a stronger steering boost, see its own
+  // launch site): explicitly reset back to the original, gentler shared
+  // strength here every time -- otherwise a boosted value left over from
+  // a previous angled-field flight would silently carry over into this
+  // climb's own catch-focused bounces, which were never meant to get the
+  // stronger pull.
+  player.launchSteerAccel = 0.18;
+  player.launchSteerMax = 1.8;
   player.jumping = true;
   player.usedDoubleJump = false;
   mat.squishT = 0;
@@ -46705,6 +46748,16 @@ function sandboxTrampolineDuoLaunch(mat, levelIdx) {
   player.launchSteerable = true;
   player.launchBaseVx = player.vx;
   player.launchSteerOffset = 0;
+  // CONFIRMED CHANGE ("i want a lil more control when on the trampos" --
+  // the angled sandbox field got a stronger steering boost, see its own
+  // launch site): explicitly reset back to the original, gentler shared
+  // strength here every time -- the duo/tower's whole game is catching
+  // the OTHER mat, which needs steering kept gentle enough that it can't
+  // be used to blow straight past it; otherwise a boosted value left
+  // over from a previous angled-field flight would silently carry over
+  // into this catch mechanic.
+  player.launchSteerAccel = 0.18;
+  player.launchSteerMax = 1.8;
   player.jumping = true;
   player.usedDoubleJump = false;
   mat.squishT = 0;
