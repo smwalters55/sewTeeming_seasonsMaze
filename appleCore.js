@@ -44894,7 +44894,10 @@ const sandboxReturnMound = { x: 130, width: 40 };   // in SANDBOX -- same visual
 // CONFIRMED CHANGE ("move the exit out a bit to the right"): the old
 // 44px gap to the ant farm case's right edge (5006) read as crowded --
 // pushed further out for real breathing room.
-const sandboxReturnMound2 = { x: 5200, width: 40 };
+// CONFIRMED CHANGE ("move ant farm to right a bit"): shifted +300 right
+// alongside the ant farm case's own move, keeping the same gap past its
+// new right edge (5306) instead of the case sliding out from under it.
+const sandboxReturnMound2 = { x: 5500, width: 40 };
 
 // CONFIRMED CHANGE: rebuilt with an ACTUAL 3/4 angled top face this
 // time, not a flat head-on rectangle -- per direct feedback across
@@ -45038,7 +45041,7 @@ function drawSandMound(x, camX, label) {
 // actually matches between the two.
 const SANDBOX_RED = "#c0392b";
 const SANDBOX_RED_DARK = "#8f2a20";
-const SANDBOX_WIDTH = 5310; // CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"): widened another +260 alongside the trampoline cluster's own rightward shift off of sandboxFan2's spot -- see that shift's own comment. CONFIRMED CHANGE ("move the exit out a bit to the right"): widened another +150 alongside sandboxReturnMound2's own move, same real-clearance idea.
+const SANDBOX_WIDTH = 5610; // CONFIRMED CHANGE ("move ant farm to right a bit its like adjacent to the trampolines"): widened +300 alongside the ant farm case and sandboxReturnMound2's own +300 rightward shift, keeping the same real clearance past the world edge. CONFIRMED CHANGE ("move the ant farm mooore to the right"): widened +150 alongside the ant farm's own rightward move just below, keeping the same ~45px of breathing room past the case's new right edge (4290 + 456 = 4746). Widened another +100 to make room for the new second return-to-spring mound just past the case (see sandboxReturnMound2), keeping real clearance on both sides of it instead of crowding the world's edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines"): widened another +260 alongside the trampoline cluster's own rightward shift off of sandboxFan2's spot -- see that shift's own comment. CONFIRMED CHANGE ("move the exit out a bit to the right"): widened another +150 alongside sandboxReturnMound2's own move, same real-clearance idea.
 
 // a plank of red wood-panel siding, used for both end walls -- vertical
 // seam lines and a lighter top edge sell "wood," not just a flat red block
@@ -51395,7 +51398,7 @@ const ANT_FARM_GRID = [
 ];
 const ANT_FARM_ENTRANCE = { row: 0, col: 8 };
 const sandboxAntFarm = {
-  x: 4550, // CONFIRMED CHANGE ("move the ant farm mooore to the right"): pushed further right again (was 4140), widening the gap to fan2 (was a symmetric 250/250 around fan2, now 250 before / 400 after) -- SANDBOX_WIDTH bumped +150 alongside this to keep the same clearance past the case's right edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines" -- player getting stuck): pushed another +260 right, alongside the trampoline duo's own move -- the angled trampoline field and duo mats had since been added directly on top of/right up against sandboxFan2 (x:3890) despite that field's own comment claiming this was "the open gap" between the ball pit and here, which it no longer was. Shifting this whole cluster (angled field, duo, this case, and sandboxReturnMound2) right gives the fan real clearance again -- see SANDBOX_ANGLED_TRAMPOLINES' own comment for the actual repro this fixes.
+  x: 4850, // CONFIRMED CHANGE ("move ant farm to right a bit its like adjacent to the trampolines"): the trampoline duo/tower mats sit at x:4400/4500, so the case's old left edge (4550) was only ~50px past the rightmost mat (4500) -- read as crowded/adjacent. Pushed +300 right for real separation (now ~350px of clearance past the mats). sandboxReturnMound2 and SANDBOX_WIDTH both shifted +300 alongside this to keep the same relative layout past the case. CONFIRMED CHANGE ("move the ant farm mooore to the right"): pushed further right again (was 4140), widening the gap to fan2 (was a symmetric 250/250 around fan2, now 250 before / 400 after) -- SANDBOX_WIDTH bumped +150 alongside this to keep the same clearance past the case's right edge. CONFIRMED BUG FIX ("floating/bouncing on the fan slash trampolines" -- player getting stuck): pushed another +260 right, alongside the trampoline duo's own move -- the angled trampoline field and duo mats had since been added directly on top of/right up against sandboxFan2 (x:3890) despite that field's own comment claiming this was "the open gap" between the ball pit and here, which it no longer was. Shifting this whole cluster (angled field, duo, this case, and sandboxReturnMound2) right gives the fan real clearance again -- see SANDBOX_ANGLED_TRAMPOLINES' own comment for the actual repro this fixes.
   caseWidth: ANT_FARM_COLS * ANT_FARM_CELL_W + ANT_FARM_MARGIN_X * 2,
   caseHeight: ANT_FARM_ROWS * ANT_FARM_CELL_H + ANT_FARM_MARGIN_Y * 2,
   // local pixel position within the grid interior, only meaningful
@@ -52689,8 +52692,16 @@ function updateSandboxAntFarm(deltaTime) {
       farm.teleportT = 0;
       if (farm.teleportMode === "enter") {
         player.inAntFarm = true;
+        // CONFIRMED BUG FIX ("player looks like they're standing outside
+        // the tunnels, not in them") -- this used to land at row*CELL_H+2,
+        // just under the cell's TOP edge. The tunnel itself is drawn as a
+        // thick stroke centered on the cell's actual center (see
+        // antFarmCellCenter / drawSandboxAntFarm), so landing 2px from the
+        // top put the mini-me above the tunnel's drawn band on arrival --
+        // exactly the "standing outside it" look. Centering on mount fixes
+        // the very first thing you see after teleporting in.
         farm.localX = (ANT_FARM_ENTRANCE.col + 0.5) * ANT_FARM_CELL_W;
-        farm.localY = ANT_FARM_ENTRANCE.row * ANT_FARM_CELL_H + 2;
+        farm.localY = (ANT_FARM_ENTRANCE.row + 0.5) * ANT_FARM_CELL_H;
         farm.enterAnim = 0; // kicks off the existing shrink-in visual, now acting as the "landing" half of the teleport
         // CONFIRMED CHANGE (ant farm food-unlock workshop -- "start timer
         // only once player first sees ant farm"): only ever set once,
@@ -52771,6 +52782,21 @@ function updateSandboxAntFarm(deltaTime) {
       const row = Math.floor(farm.localY / ANT_FARM_CELL_H);
       if (antFarmCellOpen(row, col)) farm.localX = tryX;
       else blockedTarget = { row, col };
+      // CONFIRMED BUG FIX ("player looks like they're standing outside the
+      // tunnels, not in them") -- free vertical movement let localY drift
+      // anywhere across the full CELL_H of a row, but the tunnel itself is
+      // only drawn as a much thinner stroke centered on the row's middle
+      // (see drawSandboxAntFarm). Walking horizontally could leave the
+      // mini-me above or below that drawn band, poking out into the plain
+      // dirt background. Gently pull it back onto the corridor's actual
+      // centerline (not a hard snap -- dy===0 check below still lets a
+      // real vertical move override this, e.g. turning a corner) while
+      // moving straight along it, same as if it were riding down the
+      // middle of the tunnel rather than anywhere inside its grid cell.
+      if (dy === 0) {
+        const rowCenterY = (row + 0.5) * ANT_FARM_CELL_H;
+        farm.localY += (rowCenterY - farm.localY) * Math.min(1, deltaTime * 12);
+      }
     }
     if (dy !== 0) {
       const tryY = farm.localY + dy * speed * deltaTime;
@@ -52778,6 +52804,11 @@ function updateSandboxAntFarm(deltaTime) {
       const col = Math.floor(farm.localX / ANT_FARM_CELL_W);
       if (antFarmCellOpen(row, col)) farm.localY = tryY;
       else if (!blockedTarget) blockedTarget = { row, col };
+      // same corridor-centering fix as above, for the vertical tunnels
+      if (dx === 0) {
+        const colCenterX = (col + 0.5) * ANT_FARM_CELL_W;
+        farm.localX += (colCenterX - farm.localX) * Math.min(1, deltaTime * 12);
+      }
     }
     farm.localX = Math.max(0, Math.min(ANT_FARM_COLS * ANT_FARM_CELL_W - 1, farm.localX));
     farm.localY = Math.max(0, Math.min(ANT_FARM_ROWS * ANT_FARM_CELL_H - 1, farm.localY));
