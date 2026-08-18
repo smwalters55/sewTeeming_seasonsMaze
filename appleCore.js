@@ -152,6 +152,30 @@ window.addEventListener("keydown", e => {
     peanutVine.grown = true;
     updateMapUI();
   }
+  // DEBUG CHEAT ("place me in graft tree zone"): Shift+T drops the player
+  // in spring right at the plum graft tree (the leftmost of the three,
+  // GRAFT_TREE_X.plum), for quickly testing the honey/stick/boomerang
+  // graft flow without walking there each time. Same full state-reset
+  // shape as Shift+H/Shift+S above. Also tops off honeyScoops if you're
+  // currently out, so testing isn't blocked behind a detour to autumn to
+  // knock the beehive first -- doesn't touch honeyScoops if you already
+  // have some, so it won't quietly overwrite a real in-progress test.
+  if ((e.key==="t" || e.key==="T") && e.shiftKey && !e.repeat) {
+    currentScene = "spring";
+    player.x = GRAFT_TREE_X.plum - player.width / 2;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    cameraX = Math.max(0, GRAFT_TREE_X.plum - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    if (honeyScoops <= 0) honeyScoops = 8;
+    updateInventoryUI();
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
@@ -7343,13 +7367,21 @@ function updateTreeSticks(deltaTime) {
     }
     if (stick.noticeWiggle > 0) stick.noticeWiggle--;
 
-    // CONFIRMED CHANGE ("initially got feedback they really wanted to knock
-    // down the fruits" -- extended to sticks): collection used to also fire
-    // off a walk+jump+press-down here, same as the honey/hybrid-fruit pickup
-    // gesture. That's removed now that a boomerang throw (see the flight-hit
-    // check in updateBoomerangThrow) knocks the stick down -- only the
-    // TRIGGER moved from a press to a hit; everything after (crack/wiggle/
-    // burst/grant-to-inventory) is unchanged, still driven by stick.cracking.
+    // CONFIRMED CHANGE ("i should be able to jump to get the branches like.
+    // now its a lot quicker to just jump for both the branches and the
+    // honey"): the boomerang-knock added right after this (see
+    // updateBoomerangThrow's spring branch) was extra spectacle per tester
+    // feedback wanting a knock-down moment, matching the hybrid fruit --
+    // but it briefly REPLACED the original walk+jump+press-down grab
+    // instead of just adding to it, and direct aim+throw turned out slower
+    // than the honey step right next to it, which still just needs a jump.
+    // Restoring jump+press-down here so both routes work: whichever's
+    // faster in the moment (a quick jump-and-grab, or throwing the
+    // boomerang for the fun of it) gets you the same result.
+    if (player.jumping && pressedDownNear(stick.x, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
+      stick.cracking = true;
+      stick.crackT = 0;
+    }
   });
 }
 
@@ -7367,11 +7399,12 @@ function updateTreeSticks(deltaTime) {
 // steps are really one continuous action; it retires once honey is
 // actually placed for the first time.
 const graftStickPromptState = { promptEverShown: false, promptAnimT: 9999 };
-// CONFIRMED CHANGE ("initially got feedback they really wanted to knock
-// down the fruits" -- extended to the sticks too): reworded from the old
-// jump-then-press-down instructions now that a thrown boomerang knocks
-// the stick down instead, same action the hybrid fruit already uses.
-const GRAFT_STICK_PROMPT_LINES = ["Throw your boomerang at it", "to knock the branch down."];
+// CONFIRMED CHANGE ("i should be able to jump to get the branches like. now
+// its a lot quicker to just jump for both the branches and the honey"):
+// back to leading with jump+press (fastest, matches the honey step right
+// next to it) -- the boomerang throw still works too, just not called out
+// as the primary instruction anymore.
+const GRAFT_STICK_PROMPT_LINES = ["Jump up to it, then press ↓", "to snap off a branch."];
 const graftHoneyPromptState = { promptEverShown: false, promptAnimT: 9999 };
 const GRAFT_HONEY_PROMPT_LINES = ["Jump up, then press ↓ to dab honey —", "then bring a different tree's own stick, same way."];
 
@@ -19321,11 +19354,41 @@ const POOL_LOOPS = [
 }));
 
 const POOL_LOOP_SPARKLE_DURATION_MS = 700;
-// active sparkle bursts, {x, y, startedAt} -- pruned as they age out. This
-// is the ONLY state the pass triggers, deliberately -- no counter, no
-// per-loop "cleared" flag kept around, nothing written to inventory. A
-// loop can be swum through again and it sparkles again every time.
+const POOL_LOOP_BIG_SPARKLE_DURATION_MS = 1300; // completion burst -- lingers noticeably longer than a normal pass-through sparkle
+// active sparkle bursts, {x, y, startedAt, big} -- pruned as they age out.
+// `big` marks the completion burst on clearing the whole timed course (see
+// poolLoopChallenge below); everything else about a plain pass-through
+// sparkle is unchanged -- no counter, no per-loop "cleared" flag kept
+// around, nothing written to inventory. A loop can be swum through again
+// and it sparkles again every time.
 let poolLoopSparkles = [];
+
+// TIMED LOOP CHALLENGE -- direct request ("something more with loops" /
+// "maybe timed" / "i just want this to feel more like an activity to do
+// that has engagement"): the 6 loops were pure ambient decoration before
+// this -- swim through one, it sparkles, nothing else ever happens, and
+// there was no real reason to come back to them. This turns them into an
+// actual timed course: swim loop 0 first (in the order they're laid out,
+// left to right, per direct confirmation) to start the clock, then hit
+// the rest of them in that same order before doubling back -- a completion
+// burst + a carved-plank result banner shows your time and whether it's a
+// new best. Deliberately forgiving: swimming loop 0 at any point (mid-run
+// or not) just (re)starts a fresh attempt -- there's no separate reset
+// button and no fail state -- and hitting a loop out of sequence is simply
+// ignored (doesn't end the run), so a missed hoop just means try that one
+// again, not start over from scratch. bestTimeMs is in-memory only (this
+// game has nowhere durable to persist it), so it resets on reload same as
+// everything else -- still gives a same-session "beat your last run" hook.
+const poolLoopChallenge = {
+  active: false,
+  startedAt: 0,
+  nextIndex: 0,
+  bestTimeMs: null,
+  resultMs: null,
+  resultIsBest: false,
+  resultShownUntil: -1e9,
+};
+const POOL_LOOP_RESULT_BANNER_MS = 2600;
 
 // last real nonzero swim direction (world-space vx/vy, same -1/0/1 units
 // updatePoolScene itself uses) -- drives which half of a loop's ring
@@ -19342,17 +19405,43 @@ let poolLastSwimDir = { x: 1, y: 0 };
 function updatePoolLoops() {
   const centerX = player.x + player.width / 2;
   const centerY = player.y + player.height / 2;
-  POOL_LOOPS.forEach(loop => {
+  const ch = poolLoopChallenge;
+  POOL_LOOPS.forEach((loop, i) => {
     const dx = (centerX - loop.x) / loop.rx;
     const dy = (centerY - loop.y) / loop.ry;
     const isInside = dx * dx + dy * dy < 0.5; // well inside the ring, not just grazing its edge -- a clean pass
     if (isInside && !loop.inside) {
-      poolLoopSparkles.push({ x: loop.x, y: loop.y, startedAt: performance.now() });
+      poolLoopSparkles.push({ x: loop.x, y: loop.y, startedAt: performance.now(), big: false });
+
+      // timed challenge progression -- see poolLoopChallenge's own comment
+      // for the full design. Loop 0 always (re)starts a fresh attempt;
+      // every other loop only advances the run if it's the next one in
+      // sequence, and is silently ignored otherwise (no penalty).
+      if (i === 0) {
+        ch.active = true;
+        ch.startedAt = performance.now();
+        ch.nextIndex = 1;
+      } else if (ch.active && i === ch.nextIndex) {
+        ch.nextIndex++;
+        if (ch.nextIndex >= POOL_LOOPS.length) {
+          const elapsedMs = performance.now() - ch.startedAt;
+          ch.active = false;
+          ch.resultMs = elapsedMs;
+          ch.resultIsBest = ch.bestTimeMs === null || elapsedMs < ch.bestTimeMs;
+          if (ch.resultIsBest) ch.bestTimeMs = elapsedMs;
+          ch.resultShownUntil = performance.now() + POOL_LOOP_RESULT_BANNER_MS;
+          // bigger, longer-lingering completion burst at the final loop --
+          // same shell as a normal pass sparkle, just marked `big` so the
+          // draw/prune logic gives it its own look and lifetime.
+          poolLoopSparkles.push({ x: loop.x, y: loop.y, startedAt: performance.now(), big: true });
+        }
+      }
     }
     loop.inside = isInside;
   });
   const now = performance.now();
-  poolLoopSparkles = poolLoopSparkles.filter(s => now - s.startedAt < POOL_LOOP_SPARKLE_DURATION_MS);
+  poolLoopSparkles = poolLoopSparkles.filter(s =>
+    now - s.startedAt < (s.big ? POOL_LOOP_BIG_SPARKLE_DURATION_MS : POOL_LOOP_SPARKLE_DURATION_MS));
 }
 
 // CONFIRMED CHANGE ("make the ovals in pool look more 3d. like they are
@@ -19395,10 +19484,24 @@ function drawPoolLoopRingTube(sx, sy, loop) {
 // block (see its ctx.translate(0, cameraY) above) -- so screenY here is
 // just gy - loop.y, matching every other world-space draw in that block.
 function drawPoolLoops(camX) {
-  POOL_LOOPS.forEach(loop => {
+  POOL_LOOPS.forEach((loop, i) => {
     const sx = loop.x - camX;
     const sy = gy - loop.y;
     drawPoolLoopRingTube(sx, sy, loop);
+
+    // "which loop is next" cue for the timed challenge (see
+    // poolLoopChallenge's own comment) -- without this the order
+    // requirement would be invisible; a soft pulsing gold outline on
+    // whichever loop is next makes the course readable at a glance
+    // instead of something you have to already know or guess at.
+    if (poolLoopChallenge.active && i === poolLoopChallenge.nextIndex) {
+      const pulse = 0.55 + Math.sin(fireflyT * 0.006) * 0.25;
+      ctx.strokeStyle = `rgba(255,210,90,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, loop.rx + 6, loop.ry + 6, loop.tiltAngle, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   });
 }
 
@@ -19534,25 +19637,31 @@ function drawPoolLoopSparkles(camX, opts) {
   const now = performance.now();
   const travelDirX = poolLastSwimDir.x, travelDirY = -poolLastSwimDir.y; // screen-space sign flip, same convention drawPoolLoopOcclusion uses
   poolLoopSparkles.forEach(s => {
+    const duration = s.big ? POOL_LOOP_BIG_SPARKLE_DURATION_MS : POOL_LOOP_SPARKLE_DURATION_MS;
     const age = now - s.startedAt;
-    const p = age / POOL_LOOP_SPARKLE_DURATION_MS;
+    const p = age / duration;
     if (p >= 1) return;
     const sx = s.x - camX;
     const sy = worldSpace ? (gy - s.y) : (gy + cameraY - s.y);
     const alpha = 1 - p;
-    const sparkleCount = 7;
+    // completion burst (clearing the whole timed course) reads as a real
+    // payoff -- more particles, wider spread, gold instead of the plain
+    // pass-through's pale white -- matching the weight of other course-
+    // clear moments elsewhere (trampoline tower flag, treasure chest fill).
+    const sparkleCount = s.big ? 14 : 7;
+    const maxR = s.big ? 60 : 32;
     for (let i = 0; i < sparkleCount; i++) {
       const ang = (i / sparkleCount) * Math.PI * 2 + p * 3;
-      const r = 10 + p * 32;
+      const r = 10 + p * maxR;
       const px = sx + Math.cos(ang) * r;
       const py = sy + Math.sin(ang) * r * 0.5;
       if (clipToEntrySide) {
         const dot = (px - sx) * travelDirX + (py - sy) * travelDirY;
         if (dot >= 0) continue; // exit/ahead side -- already handled by the pre-player pass
       }
-      ctx.fillStyle = `rgba(255,255,240,${alpha})`;
+      ctx.fillStyle = s.big ? `rgba(255,215,120,${alpha})` : `rgba(255,255,240,${alpha})`;
       ctx.beginPath();
-      ctx.arc(px, py, 2 + (1 - p) * 1.5, 0, Math.PI * 2);
+      ctx.arc(px, py, (s.big ? 3 : 2) + (1 - p) * (s.big ? 2.2 : 1.5), 0, Math.PI * 2);
       ctx.fill();
     }
   });
@@ -20205,6 +20314,48 @@ function drawPoolScene(camX) {
   drawPoolTreasureSparkles(camX);
 
   ctx.restore();
+
+  // screen-fixed HUD (live timer while a run is active, result banner
+  // right after finishing) -- deliberately drawn AFTER the cameraY
+  // restore, same as the sky backdrop before ctx.save() above, so it
+  // stays pinned to the same spot on screen regardless of where the
+  // water's shifted to.
+  drawPoolLoopChallengeHUD();
+}
+
+// see poolLoopChallenge's own comment (up near POOL_LOOPS) for the full
+// design. Two independent things drawn here, never both at once: a small
+// running clock while a timed attempt is in progress, or a carved-plank
+// result banner for a few seconds right after one finishes.
+function drawPoolLoopChallengeHUD() {
+  const ch = poolLoopChallenge;
+  const fmt = ms => (ms / 1000).toFixed(1) + "s";
+
+  if (ch.active) {
+    const elapsed = performance.now() - ch.startedAt;
+    ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "center";
+    const label = fmt(elapsed);
+    const cx = canvas.width / 2, cy = 34;
+    ctx.fillStyle = "rgba(10,30,40,0.55)";
+    ctx.fillRect(cx - 34, cy - 16, 68, 24);
+    ctx.fillStyle = "#eaf7fb";
+    ctx.fillText(label, cx, cy);
+    return;
+  }
+
+  if (performance.now() < ch.resultShownUntil && ch.resultMs !== null) {
+    const p = 1 - Math.max(0, ch.resultShownUntil - performance.now()) / POOL_LOOP_RESULT_BANNER_MS;
+    const fadeOut = Math.min(1, (ch.resultShownUntil - performance.now()) / 400); // quick fade right at the end, not an abrupt cut
+    const cx = canvas.width / 2, cy = 50;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, p * 6) * fadeOut; // quick fade IN too, matches the carved-prompt materialize feel elsewhere
+    const lines = ch.resultIsBest
+      ? [`Cleared in ${fmt(ch.resultMs)} -- new best!`]
+      : [`Cleared in ${fmt(ch.resultMs)} (best: ${fmt(ch.bestTimeMs)})`];
+    drawCarvedWoodPrompt(cx, cy, 9999, lines); // animT=9999 -- always fully materialized, this banner's own alpha handles fade instead
+    ctx.restore();
+  }
 }
 
 // leaf/bark boats -- launched right where the current starts, well
