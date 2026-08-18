@@ -18689,8 +18689,18 @@ const POOL_EXIT_X = 90; // press up near here, at the surface, to climb back out
 // deviation per direct request, not a bug.
 // CONFIRMED CHANGE ("sswim a little faster"): bumped again, ~20% past the
 // above.
-const POOL_SWIM_SPEED_X = 53; // px/s
-const POOL_SWIM_SPEED_Y = 94; // px/s
+// CONFIRMED CHANGE ("like cus you already swim so slow so it doesnt feel
+// like a challenge at all... maybe we swim faster at minimum" -- re: the
+// new timed loop course): a bigger jump than the two tweaks above, not
+// another small nudge -- the two previous bumps kept the SAME sluggish
+// feel, just slightly less sluggish, which is exactly why it still read
+// as slow enough to flatten the timed course into a boring float instead
+// of a real fast-paced dash. X bumped further than Y proportionally (was
+// noticeably the slower of the two, ~56% of Y's speed -- now ~64%) so
+// diagonal swimming toward a loop doesn't feel as horizontally sluggish
+// as before.
+const POOL_SWIM_SPEED_X = 90; // px/s
+const POOL_SWIM_SPEED_Y = 140; // px/s
 // CONFIRMED CHANGE ("so the water sshould almost go to the top"): the
 // water's own screen position is anchored to the shared gy constant (300,
 // same "ground level" every scene draws from) via the player's own shared
@@ -19444,7 +19454,13 @@ function updatePoolLoops() {
   POOL_LOOPS.forEach((loop, i) => {
     const dx = (centerX - loop.x) / loop.rx;
     const dy = (centerY - loop.y) / loop.ry;
-    const isInside = dx * dx + dy * dy < 0.5; // well inside the ring, not just grazing its edge -- a clean pass
+    // CONFIRMED CHANGE ("potetnially its too generous radius wise"): tightened
+    // from 0.5 -- combined with the faster swim speed above (see
+    // POOL_SWIM_SPEED_X/Y's own comment), a loose radius would've meant you
+    // could just barrel roughly toward each loop and still clip it without
+    // really aiming, which defeats the point of making the course feel like
+    // a real skill-based dash instead of an easy float-through.
+    const isInside = dx * dx + dy * dy < 0.32; // well inside the ring, not just grazing its edge -- a clean pass
     if (isInside && !loop.inside) {
       poolLoopSparkles.push({ x: loop.x, y: loop.y, startedAt: performance.now(), big: false });
 
