@@ -2181,6 +2181,32 @@ function updateBoomerangThrow(deltaTime) {
       }
     }
 
+    // GRAFT STICKS -- knocked down by a thrown boomerang, same request as
+    // the hybrid fruit above ("initially got feedback they really wanted
+    // to knock down the fruits" -- extended to sticks too). Deliberately
+    // NOT using the shared withinPeakWindow gate the fruit/hive/etc. use:
+    // those targets all sit high (heightAboveGround ~120-190), right where
+    // a ground-level throw's arc peaks (~90-122 at p=0.5). Sticks sit low,
+    // at STICK_HEIGHT_ABOVE_GROUND=65 -- a throw never reaches down that
+    // low AT the peak, only while rising just after launch (~p=0.12) and
+    // again while falling just before the catch (~p=0.88), verified via
+    // the b.y formula (startY + sin(p*pi)*90). So this checks the whole
+    // "out" leg instead of just the peak window, same tight
+    // BOOMERANG_HIT_RADIUS, letting the two natural low points in the
+    // real arc register a hit instead of a height that's structurally
+    // unreachable under the peak-only gate.
+    if (b.phase === "out" && currentScene === "spring") {
+      Object.entries(sticks).forEach(([treeType, stick]) => {
+        if (stick.collected || stick.cracking) return;
+        const dx = b.x - stick.x;
+        const dy = b.y - STICK_HEIGHT_ABOVE_GROUND;
+        if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+          stick.cracking = true;
+          stick.crackT = 0;
+        }
+      });
+    }
+
     if (b.phase === "out" && p >= 1) {
       b.phase = "returning";
       b.t = 0;
@@ -7317,10 +7343,13 @@ function updateTreeSticks(deltaTime) {
     }
     if (stick.noticeWiggle > 0) stick.noticeWiggle--;
 
-    if (player.jumping && pressedDownNear(stick.x, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
-      stick.cracking = true;
-      stick.crackT = 0;
-    }
+    // CONFIRMED CHANGE ("initially got feedback they really wanted to knock
+    // down the fruits" -- extended to sticks): collection used to also fire
+    // off a walk+jump+press-down here, same as the honey/hybrid-fruit pickup
+    // gesture. That's removed now that a boomerang throw (see the flight-hit
+    // check in updateBoomerangThrow) knocks the stick down -- only the
+    // TRIGGER moved from a press to a hit; everything after (crack/wiggle/
+    // burst/grant-to-inventory) is unchanged, still driven by stick.cracking.
   });
 }
 
@@ -7338,11 +7367,11 @@ function updateTreeSticks(deltaTime) {
 // steps are really one continuous action; it retires once honey is
 // actually placed for the first time.
 const graftStickPromptState = { promptEverShown: false, promptAnimT: 9999 };
-// CONFIRMED CHANGE: reworded per direct feedback -- "press down while
-// jumping" read as two contradictory directions happening at once.
-// Framing it as two sequential steps (jump, THEN press down) instead
-// of one simultaneous action matches how the mechanic actually plays.
-const GRAFT_STICK_PROMPT_LINES = ["Jump up to it, then press ↓", "to snap off a branch."];
+// CONFIRMED CHANGE ("initially got feedback they really wanted to knock
+// down the fruits" -- extended to the sticks too): reworded from the old
+// jump-then-press-down instructions now that a thrown boomerang knocks
+// the stick down instead, same action the hybrid fruit already uses.
+const GRAFT_STICK_PROMPT_LINES = ["Throw your boomerang at it", "to knock the branch down."];
 const graftHoneyPromptState = { promptEverShown: false, promptAnimT: 9999 };
 const GRAFT_HONEY_PROMPT_LINES = ["Jump up, then press ↓ to dab honey —", "then bring a different tree's own stick, same way."];
 
@@ -7358,7 +7387,11 @@ function updateGraftPrompts(deltaTime) {
   }
   if (!graftHoneyPromptState.promptEverShown) {
     if (graftHoneyPromptState.promptAnimT >= 9999) {
-      const nearAnyTree = heldItem === "honey" && Object.values(GRAFT_TREE_X).some(x => Math.abs(player.x + player.width / 2 - x) < 45);
+      // CONFIRMED CHANGE (honey no longer needs to be the actively held
+      // item to apply, see updateGraftTrees' own comment): trigger off
+      // actually having scoops left instead of heldItem, so the tip still
+      // surfaces even if honey isn't the selected item.
+      const nearAnyTree = honeyScoops > 0 && Object.values(GRAFT_TREE_X).some(x => Math.abs(player.x + player.width / 2 - x) < 45);
       if (nearAnyTree) graftHoneyPromptState.promptAnimT = 0;
     }
     if (graftHoneyPromptState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
@@ -12711,8 +12744,19 @@ function updateGraftTrees(deltaTime) {
       return;
     }
 
-    // honey placement — requires the reusable pot, still has scoops left
-    if (!state.honeyGloop && heldItem === "honey" && honeyScoops > 0 && player.jumping &&
+    // honey placement — requires the reusable pot, still has scoops left.
+    // CONFIRMED BUG FIX ("a bit part of the blah is physically walking to
+    // each tree and then having to search all the way through the
+    // inventory to get to each thing each time"): this used to also
+    // require heldItem === "honey" -- meaning every single graft attempt
+    // started with a Tab-cycle hunt through however much of the rest of
+    // the inventory had piled up since honey was last selected. There's
+    // no actual CHOICE being expressed by holding honey specifically (it's
+    // the only thing this step could ever use), so gating on heldItem here
+    // was pure friction with no gameplay meaning behind it -- dropped
+    // entirely. Stick placement just below still requires heldItem, since
+    // which stick you're holding is a real choice (it picks the hybrid).
+    if (!state.honeyGloop && honeyScoops > 0 && player.jumping &&
         pressedDownNear(treeX, STICK_HEIGHT_ABOVE_GROUND, 26, 20, 20)) {
       state.honeyGloop = true;
       honeyScoops--;
