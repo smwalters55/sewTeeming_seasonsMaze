@@ -19768,6 +19768,31 @@ const POOL_TREASURE_CHEST_MOSS = Array.from({ length: 6 }, (_, i) => ({
   onLid: pseudoRandom(i * 9.2 + 503) < 0.6
 }));
 
+// CHEST CLARITY PROMPT -- direct report ("why cant i open the treasure
+// chest"), turned out to be working as designed (it's a DEPOSIT sink, no
+// gold in inventory yet means pressing space near it does nothing) but
+// this is now the SECOND time this exact confusion has come up (see the
+// "still cant put gold in the chest" radius fix above) -- clearly not
+// discoverable enough on the chest's own visuals alone. Same one-time
+// carved-wood callout pattern as the graft honey/stick prompts: fires the
+// first time the player gets near the chest, retires for good the moment
+// gold is actually deposited for the first time (so it never comes back
+// once the player's already figured it out).
+const poolChestPromptState = { promptEverShown: false, promptAnimT: 9999 };
+const POOL_CHEST_PROMPT_LINES = ["Bring gold from the mine cart", "to fill this chest."];
+
+function updatePoolChestPrompt(deltaTime) {
+  if (poolChestPromptState.promptEverShown) return;
+  if (poolChestPromptState.promptAnimT >= 9999) {
+    if (isPlayerNear(POOL_TREASURE_CHEST.x, POOL_TREASURE_CHEST.y, 90, 40, 40)) {
+      poolChestPromptState.promptAnimT = 0;
+    }
+  }
+  if (poolChestPromptState.promptAnimT < CROWN_PROMPT_MATERIALIZE_DURATION) {
+    poolChestPromptState.promptAnimT += deltaTime * 1000;
+  }
+}
+
 function drawPoolTreasureChest(camX) {
   const chest = POOL_TREASURE_CHEST;
   const sx = chest.x - camX;
@@ -20013,6 +20038,7 @@ function updatePoolScene(deltaTime) {
   // it read as the wrong part of the ring flickering in front/behind.
   // Moved here, after movement, so it reflects this frame's real position.
   updatePoolLoops();
+  updatePoolChestPrompt(deltaTime);
   player.vx = 0;
   player.vy = 0;
   player.jumping = false;
@@ -20072,6 +20098,7 @@ function updatePoolScene(deltaTime) {
     POOL_TREASURE_CHEST.depositedGold += deposit;
     updateInventoryUI();
     poolTreasureSparkles.push({ x: POOL_TREASURE_CHEST.x, y: POOL_TREASURE_CHEST.y, startedAt: performance.now() });
+    poolChestPromptState.promptEverShown = true; // real first use -- retire the carved prompt for good
   }
 }
 
@@ -20363,6 +20390,18 @@ function drawPoolScene(camX) {
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
   drawPoolTreasureChest(camX);
   drawPoolTreasureSparkles(camX);
+  if (!poolChestPromptState.promptEverShown && poolChestPromptState.promptAnimT < 9999) {
+    // CONFIRMED BUG FIX (found while verifying this): the chest sits close
+    // to the pool's right wall (x=1010 of POOL_WIDTH=1100), and the pool's
+    // own camera clamp caps out with the chest riding right near the edge
+    // of the canvas -- drawCarvedWoodPrompt's plank is 260px wide, so drawn
+    // dead-centered on the chest it ran straight off the right edge of the
+    // canvas and got clipped mid-sentence. Clamped the plank's own center x
+    // to stay fully on-screen with a little margin, same idea as any
+    // other screen-anchored UI that has to account for its own width.
+    const promptSx = Math.max(140, Math.min(canvas.width - 140, POOL_TREASURE_CHEST.x - camX));
+    drawCarvedWoodPrompt(promptSx, gy - POOL_TREASURE_CHEST.y - 55, poolChestPromptState.promptAnimT, POOL_CHEST_PROMPT_LINES);
+  }
 
   ctx.restore();
 
