@@ -176,6 +176,41 @@ window.addEventListener("keydown", e => {
     updateInventoryUI();
     updateMapUI();
   }
+  // DEBUG CHEAT ("debug spawn me on cliff to jump into pool"): Shift+P
+  // drops the player standing on the rock climb's own ledge
+  // (FOREST_ROCK_LEDGE, forest scene), a short walk back from its right
+  // edge -- walking right from here off the edge triggers the real
+  // startPoolDive() dive-into-the-pool sequence exactly like actually
+  // climbing up there and walking off would, no separate pool-entry
+  // shortcut needed. Same full state-reset shape as the other debug
+  // spawns above.
+  // CONFIRMED BUG FIX (found while building this): the rock ledge sits
+  // PAST the river-building invisible wall (see updateForestScene's own
+  // "riverWallX" clamp) -- a debug-spawned player who hasn't actually
+  // strung/decked the bridge gets silently snapped back to the wall's
+  // edge the very next frame, thousands of px away, with no visible
+  // cause (this is exactly the pre-existing "[teleport-watchdog]"
+  // diagnostic further down was trying to catch -- turns out it's this
+  // debug spawn's own doing, not a real play bug). Auto-completing the
+  // bridge here, same "don't leave other real-progression assumptions
+  // broken" fix already applied to the sandbox/graft debug spawns above.
+  if ((e.key==="p" || e.key==="P") && e.shiftKey && !e.repeat) {
+    currentScene = "forest";
+    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+    player.x = FOREST_ROCK_LEDGE.x + FOREST_ROCK_LEDGE.width / 2 - 30;
+    player.y = FOREST_ROCK_LEDGE.height;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    cameraX = Math.max(0, FOREST_ROCK_LEDGE.x - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
