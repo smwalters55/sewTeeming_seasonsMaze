@@ -18109,13 +18109,35 @@ function drawForestSlideChute(camX) {
   // second disconnected rock) so the seam where the ribbon emerges from the
   // real rock still tapers smoothly rather than starting at a hard edge.
   const anchorFrac = 0.22;
+  // CONFIRMED CHANGE ("make rock slide not a straight slide more, like a
+  // little wavy at points and steeper at some points, shallower at
+  // others"): the descent used to drop through one fixed smoothstep ease
+  // (steep -> shallow -> steep, same shape every time). Building the
+  // vertical drop from a seeded per-segment random weight profile instead
+  // -- normalized so the total still spans the exact START_Y->END_Y drop --
+  // means neighboring stretches end up genuinely steeper or shallower than
+  // each other (since horizontal position still advances at a roughly
+  // even rate while vertical drop doesn't), rather than one symmetric
+  // ease. A second, higher-frequency wobble layered on top of the
+  // existing wide S-wobble adds smaller wavy kinks along the way too.
+  const dropWeights = [];
+  let dropWeightSum = 0;
+  for (let i = 0; i < steps; i++) {
+    const w = 0.35 + pseudoRandom(i * 13.7 + 2) * 1.4;
+    dropWeights.push(w);
+    dropWeightSum += w;
+  }
+  const dropCum = [0];
+  for (let i = 0; i < steps; i++) dropCum.push(dropCum[i] + dropWeights[i] / dropWeightSum);
+
   const left = [], right = [], mid = [], halfWidths = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const ease = t * t * (3 - 2 * t);
-    const wobble = Math.sin(t * Math.PI * 3) * 16 * (1 - t);
-    const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble - camX;
-    const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease);
+    const dropT = dropCum[i];
+    const wobble = Math.sin(t * Math.PI * 3 + 0.6) * 16 * (1 - t) +
+      Math.sin(t * Math.PI * 7.5 + 2.1) * 6 * (1 - t * 0.6);
+    const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble - camX;
+    const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT);
     const anchorT = Math.max(0, 1 - t / anchorFrac);
     const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
     // jagged edges -- per-point noise offset (coarse + fine octave, same
@@ -18147,6 +18169,31 @@ function drawForestSlideChute(camX) {
   // chute's own jagged silhouette
   ctx.save();
   ctx.clip();
+
+  // CONFIRMED CHANGE ("make it look more 3d idk how but can you try"): a
+  // bright band riding the inner-left edge (the side that'd catch light)
+  // and a dark band riding the inner-right edge (in shadow) the whole
+  // length of the chute -- reads as a concave carved channel rather than a
+  // flat painted ribbon, same "raking light across a groove" idea a real
+  // worn rock slide would show.
+  ctx.strokeStyle = "rgba(255,248,225,0.24)";
+  ctx.lineWidth = 6;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  left.forEach((p, i) => {
+    const inX = p.x + halfWidths[i] * 0.4;
+    i === 0 ? ctx.moveTo(inX, p.y) : ctx.lineTo(inX, p.y);
+  });
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(8,7,5,0.34)";
+  ctx.lineWidth = 7;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  right.forEach((p, i) => {
+    const inX = p.x - halfWidths[i] * 0.35;
+    i === 0 ? ctx.moveTo(inX, p.y) : ctx.lineTo(inX, p.y);
+  });
+  ctx.stroke();
 
   // loose irregular shading patches -- broken-rock planes, not a smooth fill
   [[0.08, -6, 0.55, "rgba(20,17,13,0.28)"], [0.22, 5, 0.4, "rgba(120,112,96,0.22)"],
@@ -18609,8 +18656,14 @@ const POOL_SLIDE_EXIT_X = 960; // near the pool's far (right) wall, clear of the
 // wired into any new physics/state -- just a second small press-Up spot
 // that plays a quick hop-up flourish and lets go, since the pool scene has
 // no standing/platform state to build on top of yet.
-const POOL_SLIDE_STEP_X = 880; // a bit before the main lip (x:960) with a smaller trigger radius than it, so the two press-Up zones don't overlap
-const POOL_SLIDE_STEP_HOP_MS = 260;
+// CONFIRMED REMOVAL ("remove that rando rock floating that does nothing"):
+// there used to be a small stepping-stone rock + scripted hop
+// (POOL_SLIDE_STEP_X/poolSlideStepHop) a bit before the real exit lip --
+// meant to read as a two-hop climb-out, but in practice it just sat alone
+// in open water with nothing tying it to anything, same disconnected-prop
+// problem the forest chute's own anchor blobs had. Removed entirely rather
+// than reworked -- the single exit lip trigger below is the whole
+// interaction now.
 const POOL_SLIDE_RISE_MS = 320; // pop up out of the water onto the rock lip
 // CONFIRMED CHANGE ("slow it down a lot"): first pass (900ms) read as way
 // too quick a cut to actually register as riding a slide down -- tripled
@@ -18662,12 +18715,6 @@ let poolSlideExit = {
 };
 let poolSlideDust = [];
 let poolSlideSettleAmount = 0; // brief post-landing settle tail, mirrors poolDiveSettleAmount
-
-// the mini stepping-stone rock's own hop -- deliberately lightweight (no
-// lasting "standing on the rock" state, see POOL_SLIDE_STEP_X's own
-// comment): a brief scripted rise-then-settle over POOL_SLIDE_STEP_HOP_MS,
-// after which normal swim control just resumes as if nothing happened.
-let poolSlideStepHop = { active: false, startedAt: 0, startY: 0 };
 
 function startPoolDive() {
   poolDive.active = true;
@@ -20541,17 +20588,18 @@ function updatePoolChestPrompt(deltaTime) {
 // that same gap).
 // CONFIRMED CHANGE ("i dotn want slide entrance like that. i mean a little
 // rock coming out of the right walk wall that you hop onto and then hop up
-// onto that rock platform and then jump down the slide"): used to be a
-// smooth free-floating ellipse sitting alone in open water with a visible
-// gap between it and the pool's actual right wall -- read as an
-// unattached prop rather than something coming out of the cliff. Rebuilt
-// as a jagged, flatter-topped platform that physically spans from here
-// over to the real wall face (wallFaceX, matching the wall-drawing
-// forEach's own ~30px-in-from-edge baseline), so it now reads as a slab
-// of rock emerging FROM the wall rather than floating independently of
-// it. The two-trigger hop-then-slide mechanic itself (POOL_SLIDE_STEP_X's
-// mini rock, then this real exit) is unchanged -- this is a visual-only
-// rework.
+// onto that rock platform and then jump down the slide"), then CONFIRMED
+// BUG FIX ("remove these straight lines make organic shaped/looking. this
+// 'ledge' looks fully pasted on"): the first rework replaced a smooth
+// floating ellipse with a hand-picked 9-point polygon spanning to the real
+// wall -- fixed the "floating in open water" problem, but the straight
+// ruler-edge segments between those points read as a pasted-on sticker
+// rather than real rock (same category of mistake as the forest chute's
+// own "widen a clean shape" attempt). Rebuilt the same way the rest of the
+// game's broken-rock props do it (drawForestRockWall, the pool's own
+// walls, drawPoolSlideStepRock's old jagged-knob technique): a smooth
+// underlying silhouette curve, then EVERY point on it perturbed by seeded
+// noise, so no edge is ever a straight line for more than a few px.
 function drawPoolSlideExitLip(camX) {
   const wallFaceX = POOL_WIDTH - 30;
   const sx = POOL_SLIDE_EXIT_X - camX;
@@ -20560,87 +20608,78 @@ function drawPoolSlideExitLip(camX) {
   if (sx < -80 || sx > canvas.width + 80) return;
   ctx.save();
 
-  const points = [
-    { x: sx - 30, y: sy + 6 },
-    { x: sx - 34, y: sy - 4 },
-    { x: sx - 14, y: sy - 15 },
-    { x: sx + 10, y: sy - 17 },
-    { x: sx + 30, y: sy - 14 },
-    { x: wallSx - 10, y: sy - 10 },
-    { x: wallSx + 30, y: sy - 6 }, // runs into/behind the wall itself so no seam shows
-    { x: wallSx + 30, y: sy + 22 },
-    { x: sx - 10, y: sy + 20 },
-  ];
-  const grad = ctx.createLinearGradient(sx - 34, 0, wallSx, 0);
+  // top and bottom silhouette curves, each built from many small jagged
+  // segments rather than a handful of straight-line vertices -- runs from
+  // a rounded outer (left, water-facing) tip all the way into/behind the
+  // wall face on the right so the seam never shows.
+  const spanL = sx - 34, spanR = wallSx + 30;
+  const steps = 18;
+  const top = [], bottom = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = spanL + (spanR - spanL) * t;
+    // base curve: dips down a bit at the outer tip, rises to the flat
+    // standing surface, then runs level into the wall
+    const baseTop = sy - 6 - Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5) * 11;
+    const baseBottom = sy + 10 + Math.sin(Math.min(1, t * 1.3) * Math.PI * 0.5) * 12;
+    const jagT = (pseudoRandom(i * 3.7 + 1) - 0.5) * 7 + (pseudoRandom(i * 9.1 + 4) - 0.5) * 3;
+    const jagB = (pseudoRandom(i * 4.9 + 8) - 0.5) * 7 + (pseudoRandom(i * 8.3 + 11) - 0.5) * 3;
+    top.push({ x, y: baseTop + jagT });
+    bottom.push({ x, y: baseBottom + jagB });
+  }
+
+  const grad = ctx.createLinearGradient(spanL, 0, spanR, 0);
   grad.addColorStop(0, "#4a4338");
   grad.addColorStop(0.6, "#5a5245");
   grad.addColorStop(1, "#665f52");
   ctx.fillStyle = grad;
   ctx.beginPath();
-  points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  top.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i].x, bottom[i].y);
   ctx.closePath();
   ctx.fill();
 
-  // darker facet band along the flat standing surface -- same broken-rock
-  // shading idea drawForestRockWall/the pool walls use, so this doesn't
-  // read as a flatter, less-detailed prop next to them
-  ctx.fillStyle = "#332e27";
+  // clip so all the shading/crack/moss detail below stays inside the same
+  // jagged silhouette, same pattern the forest chute/pool walls both use
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(sx - 26, sy + 2);
-  ctx.lineTo(sx + 6, sy - 10);
-  ctx.lineTo(wallSx - 4, sy - 4);
-  ctx.lineTo(wallSx - 4, sy + 10);
-  ctx.lineTo(sx - 10, sy + 12);
+  top.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i].x, bottom[i].y);
   ctx.closePath();
-  ctx.fill();
+  ctx.clip();
 
-  // a crack line + moss patches, echoing the wall's own rock treatment
+  // loose irregular shading patches -- broken-rock planes, not a flat fill
+  [[0.1, -4, "rgba(20,17,13,0.26)"], [0.3, 5, "rgba(120,112,96,0.2)"],
+   [0.5, -5, "rgba(20,17,13,0.22)"], [0.7, 4, "rgba(120,112,96,0.18)"],
+   [0.9, -3, "rgba(20,17,13,0.24)"]].forEach(([t, yo, color]) => {
+    const idx = Math.round(t * steps);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(top[idx].x, (top[idx].y + bottom[idx].y) / 2 + yo, 22, 12, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // a couple of crack lines + moss patches, echoing the wall's own rock
+  // treatment
   ctx.strokeStyle = "rgba(20,17,13,0.4)";
   ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(sx - 6, sy - 10);
-  ctx.lineTo(sx + 2, sy + 4);
-  ctx.stroke();
+  [0.25, 0.6].forEach((t, i) => {
+    const idx = Math.round(t * steps);
+    const p0 = top[idx];
+    ctx.beginPath();
+    ctx.moveTo(p0.x - 4, p0.y + 4);
+    ctx.lineTo(p0.x + 6 + pseudoRandom(i * 5.1) * 6, p0.y + 14);
+    ctx.stroke();
+  });
   ctx.fillStyle = "rgba(120,160,90,0.5)";
-  ctx.beginPath();
-  ctx.ellipse(sx - 20, sy - 8, 7, 3.5, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(wallSx - 20, sy - 2, 6, 3, -0.2, 0, Math.PI * 2);
-  ctx.fill();
+  [0.15, 0.75].forEach(t => {
+    const idx = Math.round(t * steps);
+    ctx.beginPath();
+    ctx.ellipse(top[idx].x, top[idx].y + 5, 7, 3.5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
-  ctx.restore();
-}
-
-// mini stepping-stone rock -- see POOL_SLIDE_STEP_X's own comment. Smaller
-// and more irregular than the main lip just above (a jagged little knob,
-// not another smooth ellipse), so it reads as a rougher, more "organic"
-// outcrop you'd hop onto on your way to the real ledge.
-function drawPoolSlideStepRock(camX) {
-  const sx = POOL_SLIDE_STEP_X - camX;
-  const sy = gy - 14;
-  if (sx < -50 || sx > canvas.width + 50) return;
-  ctx.save();
-  const points = 9;
-  ctx.fillStyle = "#4a4338";
-  ctx.beginPath();
-  for (let i = 0; i <= points; i++) {
-    const a = (i / points) * Math.PI * 2;
-    const r = 16 + pseudoRandom(i * 3.7) * 7;
-    const px2 = sx + Math.cos(a) * r;
-    const py2 = sy + Math.sin(a) * r * 0.55;
-    if (i === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#332e27";
-  ctx.beginPath();
-  ctx.ellipse(sx, sy + 1, 9, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(120,160,90,0.45)";
-  ctx.beginPath();
-  ctx.ellipse(sx + 8, sy - 4, 5, 3, -0.3, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.restore(); // undo clip
   ctx.restore();
 }
 
@@ -21047,17 +21086,7 @@ function updatePoolScene(deltaTime) {
   // dive), so all of the normal free-swim movement below is skipped, same
   // "own the player's position entirely" early-exclusion shape poolDive
   // already uses elsewhere (see applyPhysics's own poolDive.active check).
-  // mini stepping-stone rock's own hop -- see poolSlideStepHop's own
-  // comment. Runs its brief scripted rise regardless of the main guard
-  // below (same shape as poolSlideExit's own phases), then just lets go.
-  if (poolSlideStepHop.active) {
-    const hopElapsed = performance.now() - poolSlideStepHop.startedAt;
-    const hopP = Math.min(1, hopElapsed / POOL_SLIDE_STEP_HOP_MS);
-    player.y = poolSlideStepHop.startY + 18 * Math.sin(hopP * Math.PI);
-    if (hopP >= 1) poolSlideStepHop.active = false;
-  }
-
-  if (!poolSlideExit.active && !poolSlideStepHop.active) {
+  if (!poolSlideExit.active) {
     // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
     // exact shape as updateSandboxBallPit's own swim block -- a direction
     // held sets a flat unit velocity, multiplied by a px/s speed and
@@ -21130,16 +21159,6 @@ function updatePoolScene(deltaTime) {
   // exploring near the entry wall doesn't accidentally pop back out.
   if (!poolSlideExit.active && keys.upJustPressed && player.x < POOL_EXIT_X + 40 && player.y > -40 && seasonTransition.phase === "idle") {
     startSeasonTransition("forest");
-  }
-
-  // mini stepping-stone rock trigger -- see POOL_SLIDE_STEP_X's own
-  // comment. Smaller radius than the real exit lip just below so the two
-  // press-Up zones don't overlap.
-  if (!poolSlideExit.active && !poolSlideStepHop.active && keys.upJustPressed &&
-      Math.abs(player.x - POOL_SLIDE_STEP_X) < 25 && player.y > -40 && seasonTransition.phase === "idle") {
-    poolSlideStepHop.active = true;
-    poolSlideStepHop.startedAt = performance.now();
-    poolSlideStepHop.startY = player.y;
   }
 
   // ROCK SLIDE EXIT trigger -- second, more fun way out, ADDED alongside
@@ -21493,7 +21512,6 @@ function drawPoolScene(camX) {
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
   drawPoolTreasureChest(camX);
   drawPoolTreasureSparkles(camX);
-  drawPoolSlideStepRock(camX);
   drawPoolSlideExitLip(camX);
   if (!poolChestPromptState.promptEverShown && poolChestPromptState.promptAnimT < 9999) {
     // CONFIRMED CHANGE ("dont have gold sign follow player camera, it
