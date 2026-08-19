@@ -19008,6 +19008,16 @@ const POOL_SLIDE_RISE_MS = 320; // pop up out of the water onto the rock lip
 // to a real leisurely descent.
 const POOL_SLIDE_MS = 2700; // forest-side chute descent, ledge height down to true ground
 const POOL_SLIDE_SWAP_AT_MS = 120; // scene swap fires shortly after the slide starts, same "mid-animation, not at either end" idea as the dive's own swap
+// CONFIRMED CHANGE ("if this is the best can do then at least wait like
+// 2-3 beats before player actually goes down the slide when they are
+// standing at the top of it while 'in forest'"): direct fallback ask after
+// the pool-side opening preview still didn't land for Sam as "seeing the
+// slide first." This is a much blunter but guaranteed-legible fix -- once
+// the scene swap lands the player standing at the actual top of the real
+// forest chute (not a preview, the real thing), hold there for a beat
+// before the scripted descent starts, instead of continuing straight into
+// the ease the same frame the swap happens.
+const FOREST_SLIDE_TOP_PAUSE_MS = 2200;
 const POOL_SLIDE_LAND_MS = 260; // brief settle beat once grounded before handing control back
 
 // CONFIRMED CHANGE ("i was rock slide to go down on the right side"): first
@@ -19047,6 +19057,7 @@ let poolSlideExit = {
   slideStartedAt: 0,
   landedAt: 0,
   swapped: false,
+  swappedAt: 0, // when the forest-side scene swap actually landed -- used to hold the player at the chute's top for a beat before the descent starts
   startX: 0,
   startY: 0,
   ledgeX: 0, // held position while standing on the platform in "onLedge", waiting for a manual jump
@@ -19404,6 +19415,7 @@ function updatePoolSlideExit(deltaTime) {
 
     if (!poolSlideExit.swapped && elapsed >= POOL_SLIDE_SWAP_AT_MS) {
       poolSlideExit.swapped = true;
+      poolSlideExit.swappedAt = now;
       currentScene = "forest";
       cameraX = Math.max(0, FOREST_SLIDE_START_X - 400);
       cameraY = Math.max(0, FOREST_SLIDE_START_Y - 150); // matches updateForestScene's own cameraY formula so nothing snaps once its per-frame line picks back up next frame
@@ -19415,21 +19427,40 @@ function updatePoolSlideExit(deltaTime) {
       player.usedDoubleJump = false;
     }
 
-    const p = Math.min(1, elapsed / POOL_SLIDE_MS);
-    if (poolSlideExit.swapped) {
+    // CONFIRMED CHANGE ("wait like 2-3 beats before player actually goes
+    // down the slide when they are standing at the top of it while 'in
+    // forest'"): the descent used to continue on the SAME elapsed-since-
+    // slideStartedAt timer the swap itself used, so the player started
+    // moving down the chute the instant the scene finished swapping --
+    // never actually stood at the top of the real slide for a beat.
+    // postSwapElapsed restarts a fresh clock at the moment of the swap;
+    // the ease/movement below is held back until FOREST_SLIDE_TOP_PAUSE_MS
+    // of it has passed, during which the player just stands at
+    // FOREST_SLIDE_START_X/Y -- genuinely visible at the top of the real
+    // chute, not a preview, before it actually starts.
+    const postSwapElapsed = poolSlideExit.swapped ? now - poolSlideExit.swappedAt : 0;
+    if (poolSlideExit.swapped && postSwapElapsed < FOREST_SLIDE_TOP_PAUSE_MS) {
+      player.x = FOREST_SLIDE_START_X;
+      player.y = FOREST_SLIDE_START_Y;
+      player.vx = 0;
+      player.vy = 0;
+      poolSlideExit.tiltAngle = 0;
+    } else if (poolSlideExit.swapped) {
+      const descentElapsed = postSwapElapsed - FOREST_SLIDE_TOP_PAUSE_MS;
+      const p = Math.min(1, descentElapsed / POOL_SLIDE_MS);
       const ease = p * p * (3 - 2 * p); // smoothstep -- accelerates into the chute, settles toward the bottom
       const wobble = Math.sin(p * Math.PI * 3) * 16 * (1 - p); // side-to-side chute wobble, damping out by the landing -- matches drawForestSlideChute's own visual curve
       player.x = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble;
       player.y = FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease;
       poolSlideExit.tiltAngle = Math.sin(p * Math.PI * 3) * 0.3; // gentle lean side to side riding the chute, not a full tumble
-    }
 
-    if (p >= 1) {
-      poolSlideExit.phase = "land";
-      poolSlideExit.landedAt = now;
-      poolSlideSettleAmount = 1;
-      player.jumping = false;
-      player.usedDoubleJump = false;
+      if (p >= 1) {
+        poolSlideExit.phase = "land";
+        poolSlideExit.landedAt = now;
+        poolSlideSettleAmount = 1;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+      }
     }
   } else if (poolSlideExit.phase === "land") {
     const elapsed = now - poolSlideExit.landedAt;
