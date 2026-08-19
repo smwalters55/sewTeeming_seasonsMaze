@@ -55,7 +55,7 @@ const lowfog = {
 /* ======================================================
    INPUT
    ====================================================== */
-const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false };
+const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false, downJustPressed:false };
 
 window.addEventListener("keydown", e => {
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Control","Tab"].includes(e.key)) {
@@ -73,7 +73,10 @@ window.addEventListener("keydown", e => {
     if (!keys.up) keys.upJustPressed = true; // edge only — ignore key-repeat while held
     keys.up = true;
   }
-  if (e.key==="ArrowDown") keys.down=true;
+  if (e.key==="ArrowDown") {
+    if (!keys.down) keys.downJustPressed = true; // edge only, matches upJustPressed's own pattern -- used by the rock climb's own "press down to let go and fall" release
+    keys.down=true;
+  }
   if (e.key===" ") {
     if (!keys.space) keys.spaceJustPressed = true;
     keys.space=true;
@@ -2799,6 +2802,42 @@ function handleInput(){
     } else {
       forestRockClimbRelease();
     }
+  }
+
+  // CONFIRMED CHANGE ("need to be able to press down while climbing rock
+  // wall to dismantle"): the only release that existed was Up, which
+  // launches toward the NEXT handhold up (see forestRockClimbRelease's own
+  // comment) -- there was no way to bail out of the climb and drop back
+  // down if you changed your mind partway up. Down does the opposite: lets
+  // go and falls, rather than launching toward the next grip. Same
+  // rockJustGrabbed guard as the Up release, so the same press that just
+  // grabbed a handhold can't also immediately drop it.
+  // CONFIRMED BUG FIX (found via testing): applyPhysics' own "soft catch
+  // while falling" (see its own comment, a few hundred lines down) auto-
+  // re-grabs ANY handhold whose band the player is currently inside
+  // whenever vy<=0 -- since letting go leaves the player sitting at that
+  // exact handhold's own coordinates with vy=0, that same-frame check
+  // instantly re-caught the very hold just released, so the drop silently
+  // did nothing. A downward nudge alone doesn't reliably fix this --
+  // FOREST_ROCK_HANDHOLD_BAND (58) is taller than the lowest handhold's
+  // own height (55), so nudging down far enough to clear the band would
+  // push y below 0 (true ground), which gets clamped straight back up
+  // into the same band. Pushing sideways out of FOREST_ROCK_HANDHOLD_RADIUS
+  // instead (in that handhold's own outward-facing dir, same field
+  // forestRockClimbRelease already uses) reliably clears the catch check
+  // regardless of height, and reads as pushing off the wall as you let go
+  // rather than an arbitrary teleport.
+  if (currentScene === "forest" && player.rockClingIndex !== -1 && keys.downJustPressed && !player.rockJustGrabbed) {
+    const releasedHold = FOREST_ROCK_HANDHOLDS[player.rockClingIndex];
+    player.rockClingIndex = -1;
+    player.x += releasedHold.dir * (FOREST_ROCK_HANDHOLD_RADIUS + 16);
+    player.vx = 0;
+    player.vy = -2;
+    player.launched = false;
+    player.launchSteerable = false;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    player.rockJustReleased = true; // same guard forestRockClimbRelease uses, see that flag's own comment
   }
 
   // hard left world boundary — the camera also clamps at 0, so this keeps
@@ -17981,6 +18020,23 @@ function drawForestRockWall(camX) {
     const x = baseX + forestRockWallEdgeX(t, 1);
     ctx.lineTo(x, y);
   }
+  // CONFIRMED CHANGE ("all the corners on the vertical rock climb like
+  // some corners are good but not in this generic unorganic way"): same
+  // "flat cap" issue the top ridge fix above already solved, mirrored at
+  // the bottom -- without this, closePath() draws one dead-straight line
+  // from this right-bottom corner directly back to the left-bottom
+  // moveTo point (both sit at the exact same bottomY). A few jittered
+  // points along the base, still anchored to those same two real corners
+  // so the outline stays closed, breaks that into an uneven ground line.
+  const leftBottomX = baseX + forestRockWallEdgeX(0, -1);
+  const rightBottomX = baseX + forestRockWallEdgeX(0, 1);
+  const BASE_POINTS = 4;
+  for (let k = 1; k < BASE_POINTS; k++) {
+    const bt = k / BASE_POINTS;
+    const bx = rightBottomX + (leftBottomX - rightBottomX) * bt;
+    const jag = (pseudoRandom(bt * 21.9 + 67) - 0.5) * 14;
+    ctx.lineTo(bx, bottomY + jag);
+  }
   ctx.closePath();
   ctx.fill();
 
@@ -18073,8 +18129,39 @@ function drawForestRockWall(camX) {
   ctx.restore();
 }
 
+// CONFIRMED CHANGE ("why are these at two dif levels on the ground. i
+// actually like that but. they shouldnt have like corners to the bottom
+// line. more organic pls"): the main climb wall's own base sits flush at
+// true ground while drawForestSwimHoleRocks' below-pool mass extends a bit
+// further down right where the two masses meet, right around where the
+// wall's own right edge is -- Sam liked the two-level look, just not the
+// hard right-angle corner where they join. Bridges that seam with a
+// cluster of soft, rounded, overlapping rubble blobs in the same rock
+// tones both masses already use, so the join reads as a natural uneven
+// pile of broken rock instead of a stair-step corner.
+function drawForestRockGroundSeamBlend(camX) {
+  const seamX = FOREST_ROCK_CLIMB_X + 96 - camX;
+  const baseY = gy;
+  if (seamX < -60 || seamX > canvas.width + 60) return;
+  ctx.fillStyle = "#4a4338";
+  const blobs = [[-14, 6, 24], [12, 16, 22], [32, 28, 19], [2, 24, 17], [-26, 18, 15], [-6, 34, 16]];
+  blobs.forEach(([xo, yo, r], i) => {
+    const jag = pseudoRandom(i * 5.3 + 77) * 6;
+    ctx.beginPath();
+    ctx.ellipse(seamX + xo, baseY + yo, r + jag, (r + jag) * 0.68, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#332e27";
+  blobs.slice(0, 4).forEach(([xo, yo, r], i) => {
+    ctx.beginPath();
+    ctx.ellipse(seamX + xo, baseY + yo + 5, r * 0.5, r * 0.3, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawForestRockClimb(camX) {
   drawForestRockWall(camX);
+  drawForestRockGroundSeamBlend(camX);
   FOREST_ROCK_HANDHOLDS.forEach((h, idx) => drawForestRockHandhold(camX, h, idx));
   drawForestRockLedge(camX);
   drawForestSlideChute(camX);
@@ -18231,6 +18318,24 @@ function drawForestSlideChute(camX) {
   });
 
   ctx.restore(); // undo clip
+
+  // CONFIRMED CHANGE ("and same witht he bottom corners on the ground of
+  // the slide"): the chute's own ribbon is jagged along its length, but
+  // where it meets flat ground at the very bottom it still ended in two
+  // hard corner points against the grass. A small cluster of rounded,
+  // overlapping rubble blobs (same idea as the climb wall's own ground-
+  // seam blend) spreads the base out into an uneven pile of scree instead
+  // of a clean two-point corner.
+  const baseP = mid[mid.length - 1];
+  ctx.fillStyle = "#453f37";
+  const scree = [[-18, 4, 16], [10, 8, 18], [26, 2, 14], [-2, 10, 15], [-30, -2, 12]];
+  scree.forEach(([xo, yo, r], i) => {
+    const jag = pseudoRandom(i * 6.1 + 51) * 5;
+    ctx.beginPath();
+    ctx.ellipse(baseP.x + xo, baseP.y + yo, r + jag, (r + jag) * 0.55, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   ctx.restore();
 }
 
@@ -18704,13 +18809,15 @@ const FOREST_SLIDE_END_Y = 0; // true forest ground -- the whole point, vs. the 
 
 let poolSlideExit = {
   active: false,
-  phase: "idle", // "rise" -> "slide" -> "land" -> "idle"
+  phase: "idle", // "rise" -> "onLedge" -> "slide" -> "land" -> "idle"
   startedAt: 0,
   slideStartedAt: 0,
   landedAt: 0,
   swapped: false,
   startX: 0,
   startY: 0,
+  ledgeX: 0, // held position while standing on the platform in "onLedge", waiting for a manual jump
+  ledgeY: 0,
   tiltAngle: 0
 };
 let poolSlideDust = [];
@@ -18950,11 +19057,15 @@ function updatePoolSlideDust(deltaTime) {
 
 // ROCK SLIDE EXIT sequence -- runs regardless of scene, same as
 // updatePoolDive just above (spans the pool->forest cut partway through
-// the "slide" phase). Three phases: "rise" (pop out of the water onto the
-// rock lip, still in the pool scene), "slide" (the scripted chute
-// descent -- the scene swap fires early in this phase, then position
-// interpolates from the ledge-height start down to true forest ground),
-// "land" (brief settle + dust burst before handing control back).
+// the "slide" phase). Four phases: "rise" (pop out of the water onto the
+// rock lip, still in the pool scene), "onLedge" (CONFIRMED CHANGE, "let
+// player jump on the slide manually, not auto throw them down it" --
+// holds here standing on the platform until the player presses jump,
+// rather than auto-continuing straight into the slide), "slide" (the
+// scripted chute descent -- the scene swap fires early in this phase,
+// then position interpolates from the ledge-height start down to true
+// forest ground), "land" (brief settle + dust burst before handing
+// control back).
 function updatePoolSlideExit(deltaTime) {
   if (!poolSlideExit.active) {
     if (poolSlideSettleAmount > 0.001) {
@@ -18975,6 +19086,22 @@ function updatePoolSlideExit(deltaTime) {
     player.x = poolSlideExit.startX + p * 18;
     player.y = poolSlideExit.startY + arcUp + p * 10;
     if (p >= 1) {
+      poolSlideExit.phase = "onLedge";
+      poolSlideExit.ledgeX = player.x;
+      poolSlideExit.ledgeY = player.y;
+    }
+  } else if (poolSlideExit.phase === "onLedge") {
+    // CONFIRMED CHANGE ("also let player jump on the slide manually, not
+    // auto throw them down it"): used to chain straight from the rise
+    // arc into the scripted slide with no further input -- read as being
+    // thrown down the chute rather than choosing to go. Now holds here,
+    // standing on the platform, until the player actually presses jump
+    // -- a real deliberate hop onto the slide, not an automatic handoff.
+    player.x = poolSlideExit.ledgeX;
+    player.y = poolSlideExit.ledgeY;
+    player.vx = 0;
+    player.vy = 0;
+    if (keys.spaceJustPressed) {
       poolSlideExit.phase = "slide";
       poolSlideExit.slideStartedAt = now;
     }
@@ -21231,15 +21358,33 @@ function drawPoolSkyBackdrop() {
   // distant hazy rock peaks -- soft, low-contrast, receding into the sky
   // (aerial-perspective muted blue-grey) so they read as far away, not
   // part of the immediate rim
-  ctx.fillStyle = "rgba(130,150,155,0.4)";
+  // CONFIRMED BUG FIX ("what are these lights coming down"): these used to
+  // be smooth, pale, low-contrast domes (one soft quadratic curve each) --
+  // against the light hazy sky gradient they read as glowing pale circles/
+  // moons instead of distant rock, which is exactly what got mistaken for
+  // unexplained lights. Rebuilt as real jagged multi-point peak silhouettes
+  // with a darker, more rock-toned fill and a thin defining edge stroke, so
+  // they read unambiguously as far-off mountains.
+  ctx.fillStyle = "rgba(95,100,98,0.55)";
+  ctx.strokeStyle = "rgba(60,62,58,0.35)";
+  ctx.lineWidth = 1;
   [0.1, 0.35, 0.62, 0.85].forEach((frac, i) => {
     const px = frac * canvas.width;
-    const peakH = 16 + pseudoRandom(i * 4.1 + 900) * 10;
+    const peakH = 18 + pseudoRandom(i * 4.1 + 900) * 12;
+    const jagPoints = 5;
     ctx.beginPath();
-    ctx.moveTo(px - 45, bandBottom - 6);
-    ctx.quadraticCurveTo(px, bandBottom - 6 - peakH, px + 45, bandBottom - 6);
+    ctx.moveTo(px - 46, bandBottom - 6);
+    for (let k = 0; k <= jagPoints; k++) {
+      const kt = k / jagPoints;
+      const x = px - 46 + kt * 92;
+      const ridge = Math.sin(kt * Math.PI) * peakH;
+      const jag = (pseudoRandom(i * 7.3 + k * 2.9 + 901) - 0.5) * 8;
+      ctx.lineTo(x, bandBottom - 6 - ridge + jag);
+    }
+    ctx.lineTo(px + 46, bandBottom - 6);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
   });
 
   // CONFIRMED CHANGE ("make trees in background of pool the canopy look
@@ -21283,34 +21428,39 @@ function drawPoolSkyBackdrop() {
     }
   }
 
-  // the rock rim itself -- jagged (not a flat bar), with two real gaps
-  // left unfilled so the light shafts drawn later visibly originate from
-  // openings in the rock rather than just appearing mid-water with no
-  // source
-  const rimH = 24;
+  // CONFIRMED BUG FIX ("is this supposed to be rock above me even though we
+  // jumped in an open pool"): the old rim was one continuous bar spanning
+  // the full width with just two small punched-out ellipses -- read as a
+  // solid cave ceiling directly overhead with a couple of skylights, which
+  // contradicts this being an open-air pool up in the rocks (the original
+  // design intent per this function's own top comment was glimpses of
+  // nearby cliff edges, not an enclosing roof). Rebuilt as several
+  // separate jagged rock outcrop chunks hanging in from the very top edge,
+  // with real open sky gaps between them (not tiny punched holes in an
+  // otherwise solid bar) -- reads as "the tops of nearby rock formations
+  // poking into frame" rather than a ceiling.
+  const rimH = 22;
   ctx.fillStyle = "#443f37";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, rimH * 0.7);
-  const gapFracs = [0.28, 0.68]; // matches the light-shaft fracs below closely enough to read as their source
-  let cx = 0;
-  const rimPoints = [];
-  for (let i = 0; i <= 20; i++) {
-    const t = i / 20;
-    const jag = (pseudoRandom(i * 2.7 + 920) - 0.5) * (rimH * 0.5);
-    rimPoints.push({ x: t * canvas.width, y: rimH * 0.55 + jag });
-  }
-  rimPoints.forEach(p => ctx.lineTo(p.x, p.y));
-  ctx.lineTo(canvas.width, 0);
-  ctx.closePath();
-  ctx.fill();
-  // punch the two light-shaft gaps out of the rim with a couple of soft
-  // sky-colored notches, so they read as real openings, not just holes
-  gapFracs.forEach(frac => {
-    const gx = frac * canvas.width;
-    ctx.fillStyle = "rgba(199,230,234,0.9)";
+  const rimChunks = [
+    { from: 0, to: 0.22 }, { from: 0.34, to: 0.52 },
+    { from: 0.62, to: 0.8 }, { from: 0.9, to: 1 },
+  ];
+  rimChunks.forEach((chunk, ci) => {
+    const x0 = chunk.from * canvas.width, x1 = chunk.to * canvas.width;
+    const steps = 8;
     ctx.beginPath();
-    ctx.ellipse(gx, rimH * 0.4, 14, rimH * 0.5, 0, 0, Math.PI * 2);
+    ctx.moveTo(x0, 0);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = x0 + (x1 - x0) * t;
+      // each chunk dips down unevenly then rises back up toward its own
+      // edges, so it reads as a hanging rock mass, not a flat-bottomed bar
+      const dip = Math.sin(t * Math.PI) * (rimH * 0.7);
+      const jag = (pseudoRandom(ci * 13.1 + i * 2.7 + 920) - 0.5) * (rimH * 0.35);
+      ctx.lineTo(x, dip + jag);
+    }
+    ctx.lineTo(x1, 0);
+    ctx.closePath();
     ctx.fill();
   });
 }
@@ -21402,13 +21552,21 @@ function drawPoolScene(camX) {
     grad.addColorStop(1, "#332e27");
     ctx.fillStyle = grad;
     ctx.beginPath();
-    for (let d = 0; d <= 10; d++) {
-      const t = d / 10;
+    // CONFIRMED BUG FIX ("there are still horizontal and vertical straight
+    // lines in this rock section"): the overhang curve above (leftAt) is
+    // smooth, but sampling it at only 10 points made the poke-above-water
+    // portion (where the curve swings furthest, near t=0) look like a
+    // blocky rectangular notch rather than a real curve -- too coarse to
+    // resolve the sharpest part of the bend. Bumped to 28 samples so the
+    // same curve actually renders smoothly instead of faceted.
+    const WALL_STEPS = 28;
+    for (let d = 0; d <= WALL_STEPS; d++) {
+      const t = d / WALL_STEPS;
       const depth = topDepth + (bottomDepth - topDepth) * t;
       ctx.lineTo(leftAt(t), gy + depth);
     }
-    for (let d = 10; d >= 0; d--) {
-      const t = d / 10;
+    for (let d = WALL_STEPS; d >= 0; d--) {
+      const t = d / WALL_STEPS;
       const depth = topDepth + (bottomDepth - topDepth) * t;
       ctx.lineTo(rightAt(), gy + depth);
     }
@@ -21423,13 +21581,21 @@ function drawPoolScene(camX) {
     // so nothing spills past the jagged edge.
     ctx.save();
     ctx.beginPath();
-    for (let d = 0; d <= 10; d++) {
-      const t = d / 10;
+    // CONFIRMED BUG FIX ("there are still horizontal and vertical straight
+    // lines in this rock section"): the overhang curve above (leftAt) is
+    // smooth, but sampling it at only 10 points made the poke-above-water
+    // portion (where the curve swings furthest, near t=0) look like a
+    // blocky rectangular notch rather than a real curve -- too coarse to
+    // resolve the sharpest part of the bend. Bumped to 28 samples so the
+    // same curve actually renders smoothly instead of faceted.
+    const WALL_CLIP_STEPS = 28;
+    for (let d = 0; d <= WALL_CLIP_STEPS; d++) {
+      const t = d / WALL_CLIP_STEPS;
       const depth = topDepth + (bottomDepth - topDepth) * t;
       ctx.lineTo(leftAt(t), gy + depth);
     }
-    for (let d = 10; d >= 0; d--) {
-      const t = d / 10;
+    for (let d = WALL_CLIP_STEPS; d >= 0; d--) {
+      const t = d / WALL_CLIP_STEPS;
       const depth = topDepth + (bottomDepth - topDepth) * t;
       ctx.lineTo(rightAt(), gy + depth);
     }
@@ -57991,6 +58157,7 @@ updateSeasonTransition(deltaTime);
   keys.leftJustPressed = false;
   keys.rightJustPressed = false;
   keys.upJustPressed = false;
+  keys.downJustPressed = false;
   keys.spaceJustPressed = false;
   keys.cJustPressed = false;
   keys.rJustPressed = false;
