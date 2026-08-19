@@ -19472,6 +19472,7 @@ const POOL_CHASE_FISH_CATCH_RADIUS = 24;
 const POOL_CHASE_FISH_FLEE_SPEED = 115; // px/s -- faster than the player's own X swim speed (90) so it can't just be walked down in a straight line, but slower than the player's Y speed (140) so a diagonal cutoff can actually win
 const POOL_CHASE_FISH_RESPAWN_MS = 2200;
 const POOL_CHASE_FISH_CAUGHT_BANNER_MS = 1400;
+const POOL_CHASE_FISH_WALL_PEEL_MS = 550; // how long a fish has to be pressed against a pool boundary before it peels off along the wall (toward whichever side has more room) instead of just sitting pinned there
 
 function poolChaseFishRandomSpot(seed) {
   return {
@@ -19486,6 +19487,7 @@ let poolChaseFish = Array.from({ length: POOL_CHASE_FISH_COUNT }, (_, i) => {
     x: spot.x, y: spot.y, dir: 1, seed: i * 4.7,
     wobblePhase: i * 2.1,
     caughtAt: -1e9, respawnAt: -1e9,
+    wallPressedSince: -1,
   };
 });
 
@@ -19519,13 +19521,43 @@ function updatePoolChaseFish(deltaTime) {
       return;
     }
 
+    const poolMinX = 60, poolMaxX = POOL_WIDTH - 60;
+    const poolMinY = -(POOL_MAX_DEPTH - 20), poolMaxY = -15;
+
     if (dist < POOL_CHASE_FISH_FLEE_RADIUS && dist > 0.001) {
       // flee directly away from the player, with a little perpendicular
       // wobble so it doesn't read as a perfectly straight, robotic dash
       const awayX = -dx / dist, awayY = -dy / dist;
       const perpX = -awayY, perpY = awayX;
       const wobble = Math.sin(now * 0.006 + f.wobblePhase) * 0.35;
-      const moveX = awayX + perpX * wobble, moveY = awayY + perpY * wobble;
+      let moveX = awayX + perpX * wobble, moveY = awayY + perpY * wobble;
+
+      // a cornered fish shouldn't just sit vibrating against the boundary --
+      // if it's been pressed into a wall for a beat, peel off along that
+      // wall (toward whichever side has more room) so the chase keeps going
+      // instead of ending in a free, no-effort catch every time
+      const pressingWallX = (f.x <= poolMinX + 1 && moveX < 0) || (f.x >= poolMaxX - 1 && moveX > 0);
+      const pressingWallY = (f.y <= poolMinY + 1 && moveY < 0) || (f.y >= poolMaxY - 1 && moveY > 0);
+
+      if (pressingWallX || pressingWallY) {
+        if (f.wallPressedSince < 0) f.wallPressedSince = now;
+      } else {
+        f.wallPressedSince = -1;
+      }
+
+      if (f.wallPressedSince > 0 && now - f.wallPressedSince > POOL_CHASE_FISH_WALL_PEEL_MS) {
+        if (pressingWallX) {
+          const roomUp = poolMaxY - f.y, roomDown = f.y - poolMinY;
+          moveX *= 0.3;
+          moveY += (roomUp > roomDown ? 1 : -1) * 0.9;
+        }
+        if (pressingWallY) {
+          const roomRight = poolMaxX - f.x, roomLeft = f.x - poolMinX;
+          moveY *= 0.3;
+          moveX += (roomRight > roomLeft ? 1 : -1) * 0.9;
+        }
+      }
+
       const moveLen = Math.sqrt(moveX * moveX + moveY * moveY) || 1;
       f.x += (moveX / moveLen) * POOL_CHASE_FISH_FLEE_SPEED * deltaTime;
       f.y += (moveY / moveLen) * POOL_CHASE_FISH_FLEE_SPEED * deltaTime;
@@ -19535,10 +19567,11 @@ function updatePoolChaseFish(deltaTime) {
       f.x += Math.cos(now * 0.0009 + f.wobblePhase) * 10 * deltaTime;
       f.y += Math.sin(now * 0.0013 + f.wobblePhase) * 6 * deltaTime;
       f.dir = Math.cos(now * 0.0009 + f.wobblePhase) >= 0 ? 1 : -1;
+      f.wallPressedSince = -1;
     }
 
-    f.x = Math.max(60, Math.min(POOL_WIDTH - 60, f.x));
-    f.y = Math.max(-(POOL_MAX_DEPTH - 20), Math.min(-15, f.y));
+    f.x = Math.max(poolMinX, Math.min(poolMaxX, f.x));
+    f.y = Math.max(poolMinY, Math.min(poolMaxY, f.y));
   });
 
   poolFishCatchSparkles = poolFishCatchSparkles.filter(s => now - s.startedAt < 900);
