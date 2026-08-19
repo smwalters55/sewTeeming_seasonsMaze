@@ -21141,7 +21141,7 @@ function drawPoolSlideExitLip(camX) {
   // disc.
   const openingCx = POOL_SLIDE_OPENING_X - camX;
   const openingCy = sy - 4;
-  const mouthGrad = ctx.createRadialGradient(openingCx, openingCy, 4, openingCx, openingCy, 44);
+  const mouthGrad = ctx.createRadialGradient(openingCx, openingCy, 6, openingCx, openingCy, 74);
   mouthGrad.addColorStop(0, "rgba(6,5,4,0.96)");
   mouthGrad.addColorStop(0.65, "rgba(18,15,11,0.85)");
   mouthGrad.addColorStop(1, "rgba(40,35,27,0.35)");
@@ -21150,7 +21150,7 @@ function drawPoolSlideExitLip(camX) {
   const mouthPts = 16;
   for (let k = 0; k <= mouthPts; k++) {
     const ang = (k / mouthPts) * Math.PI * 2;
-    const baseR = 32 + Math.sin(ang * 2.1 + 1) * 7;
+    const baseR = 54 + Math.sin(ang * 2.1 + 1) * 11;
     const jagCoarse = (pseudoRandom(k * 5.7 + 500) - 0.5) * 9;
     const jagFine = (pseudoRandom(k * 11.3 + 540) - 0.5) * 4;
     const rx = baseR + jagCoarse + jagFine, ry = (baseR + jagCoarse + jagFine) * 0.6;
@@ -21161,20 +21161,84 @@ function drawPoolSlideExitLip(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // a hint of the chute's own rock just visible past the rim, so the
-  // opening reads as a real passage rather than a flat hole painted on
-  ctx.strokeStyle = "rgba(70,64,54,0.55)";
+  // CONFIRMED CHANGE ("i still cant see the slide before i am forced down
+  // it"): a flat dark hole plus two decorative rim strokes still didn't
+  // actually show the slide -- the real chute only exists in the FOREST
+  // scene, which doesn't render until after the scene swap already
+  // happens mid-descent. Same problem, same fix as the pool's own preview
+  // seen from the forest side before diving in (drawForestSwimHolePreview)
+  // -- a real, simplified render of the destination visible through the
+  // opening, clipped to the same jagged mouth shape, so there's something
+  // actually true to look at before committing, not just implied by a
+  // dark hole.
+  ctx.save();
+  ctx.beginPath();
+  for (let k = 0; k <= mouthPts; k++) {
+    const ang = (k / mouthPts) * Math.PI * 2;
+    const baseR = 54 + Math.sin(ang * 2.1 + 1) * 11;
+    const jagCoarse = (pseudoRandom(k * 5.7 + 500) - 0.5) * 9;
+    const jagFine = (pseudoRandom(k * 11.3 + 540) - 0.5) * 4;
+    const rx = baseR + jagCoarse + jagFine, ry = (baseR + jagCoarse + jagFine) * 0.6;
+    const px2 = openingCx + Math.cos(ang) * rx;
+    const py2 = openingCy + Math.sin(ang) * ry;
+    if (k === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+  }
+  ctx.closePath();
+  ctx.clip();
+
+  // a simplified chute ribbon, angled down and away (matching the real
+  // forest chute's own down-right descent), rock-toned and narrowing/
+  // darkening toward the far end so it reads as a real passage receding
+  // into the rock rather than a flat picture painted on the back wall
+  const previewSteps = 9;
+  const pv0x = openingCx - 50, pv0y = openingCy - 34;
+  const pv1x = openingCx + 58, pv1y = openingCy + 40;
+  const left = [], right = [];
+  for (let i = 0; i <= previewSteps; i++) {
+    const t = i / previewSteps;
+    const cx = pv0x + (pv1x - pv0x) * t;
+    const cy = pv0y + (pv1y - pv0y) * t;
+    const halfW = 22 * (1 - t * 0.55);
+    const jagL = (pseudoRandom(i * 4.3 + 600) - 0.5) * 8;
+    const jagR = (pseudoRandom(i * 5.9 + 620) - 0.5) * 8;
+    left.push({ x: cx - halfW + jagL, y: cy - halfW * 0.4 });
+    right.push({ x: cx + halfW + jagR, y: cy + halfW * 0.4 });
+  }
+  // CONFIRMED CHANGE (same "i still cant see the slide" follow-up): first
+  // pass at this preview used muted rock tones that barely stood out
+  // against the already-dark mouth background -- brightened and fully
+  // opaqued the near end, and added a bright rim-light stroke along the
+  // ribbon's own near edge, so it reads as a lit passage catching the eye
+  // immediately instead of blending into the shadow around it.
+  const pvGrad = ctx.createLinearGradient(pv0x, pv0y, pv1x, pv1y);
+  pvGrad.addColorStop(0, "rgba(146,135,112,1)");
+  pvGrad.addColorStop(0.5, "rgba(96,88,72,0.95)");
+  pvGrad.addColorStop(1, "rgba(8,7,6,0.92)");
+  ctx.fillStyle = pvGrad;
+  ctx.beginPath();
+  left.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+  ctx.closePath();
+  ctx.fill();
+  // a couple of small facet-shade patches along the ribbon so it doesn't
+  // read as one flat gradient strip
+  [0.25, 0.6].forEach((t, i) => {
+    const idx = Math.round(t * previewSteps);
+    const p0 = left[idx], p1 = right[idx];
+    ctx.fillStyle = i % 2 === 0 ? "rgba(180,170,146,0.35)" : "rgba(15,13,10,0.35)";
+    ctx.beginPath();
+    ctx.ellipse((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, 8, 4.5, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // bright rim-light along the ribbon's near (upper-left) edge -- the
+  // single strongest cue that this is a lit, real passage rather than a
+  // dark smudge in the rock
+  ctx.strokeStyle = "rgba(220,210,185,0.7)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(openingCx - 20, openingCy - 12);
-  ctx.lineTo(openingCx - 6, openingCy - 3);
-  ctx.lineTo(openingCx + 12, openingCy - 9);
+  left.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
   ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(openingCx - 14, openingCy + 10);
-  ctx.lineTo(openingCx + 4, openingCy + 4);
-  ctx.lineTo(openingCx + 18, openingCy + 11);
-  ctx.stroke();
+  ctx.restore();
 
   ctx.restore();
 }
