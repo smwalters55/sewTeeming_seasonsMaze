@@ -19994,6 +19994,92 @@ function drawPoolTreasureSparkles(camX) {
   poolTreasureSparkles = poolTreasureSparkles.filter(s => now - s.startedAt < POOL_TREASURE_SPARKLE_DURATION_MS);
 }
 
+// WHIRLPOOL -- direct request ("something more fun to play inside" ->
+// "1 and 2!" picking a whirlpool + chase fish out of a brainstormed list).
+// A swirling patch of water off the main loop line (between loop 2 and
+// loop 3, down near the floor -- clear of every loop's own radius) that
+// gently sweeps the player around it while they're inside, on top of
+// their own normal swim input rather than instead of it. Deliberately NOT
+// a fight-the-controls obstacle: the push is TANGENTIAL (perpendicular to
+// the radius from the whirlpool's center), so holding straight away from
+// the center barely fights it at all -- swimming out is always just "keep
+// holding away," never a struggle. The small inward pull is what actually
+// catches you if you wander in without meaning to; the spin itself is the
+// payoff, not a punishment.
+const POOL_WHIRLPOOL = { x: 470, y: -232, radius: 75, strength: 95 };
+
+function updatePoolWhirlpool(deltaTime) {
+  const centerX = player.x + player.width / 2;
+  const centerY = player.y + player.height / 2;
+  const dx = centerX - POOL_WHIRLPOOL.x;
+  const dy = centerY - POOL_WHIRLPOOL.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist >= POOL_WHIRLPOOL.radius || dist < 1) return;
+  const falloff = 1 - dist / POOL_WHIRLPOOL.radius; // stronger near the center, zero at the rim
+  // tangential unit vector -- rotate the radius vector 90°, fixed spin
+  // direction (clockwise) so the swirl reads as one continuous current
+  // rather than randomly reversing
+  const tx = -dy / dist, ty = dx / dist;
+  player.x += tx * POOL_WHIRLPOOL.strength * falloff * deltaTime;
+  player.y += ty * POOL_WHIRLPOOL.strength * falloff * deltaTime;
+  // gentle inward pull -- much weaker than the tangential sweep, just
+  // enough to actually catch a player who drifts in without fighting it,
+  // not strong enough to fight someone who's holding straight outward
+  player.x -= (dx / dist) * POOL_WHIRLPOOL.strength * 0.18 * falloff * deltaTime;
+  player.y -= (dy / dist) * POOL_WHIRLPOOL.strength * 0.18 * falloff * deltaTime;
+}
+
+// world-space, pre-player pass (same call shape as drawPoolPlants/drawPoolPebbles
+// right next to it) -- purely a background/floor-level effect, nothing about
+// it needs the loops' own front/back occlusion split.
+function drawPoolWhirlpool(camX) {
+  const wp = POOL_WHIRLPOOL;
+  const sx = wp.x - camX;
+  const sy = gy - wp.y;
+  if (sx < -wp.radius - 20 || sx > canvas.width + wp.radius + 20) return;
+  const t = performance.now() * 0.001;
+
+  // soft dark disc -- reads as a real depression/eddy in the water before
+  // any of the moving detail on top is even noticed
+  const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, wp.radius);
+  grad.addColorStop(0, "rgba(10,40,55,0.5)");
+  grad.addColorStop(0.7, "rgba(15,55,70,0.28)");
+  grad.addColorStop(1, "rgba(20,70,85,0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(sx, sy, wp.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // rotating spiral arcs -- 3 rings at different radii/speeds so it reads
+  // as genuinely swirling, not one static ring spinning as a rigid whole
+  [0.4, 0.65, 0.9].forEach((frac, i) => {
+    const r = wp.radius * frac;
+    const spin = t * (1.4 - i * 0.3) + i * 2;
+    ctx.strokeStyle = `rgba(210,240,245,${0.35 - i * 0.08})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, spin, spin + Math.PI * 1.3);
+    ctx.stroke();
+  });
+
+  // small bubbles spiraling in toward the center, continuously looping --
+  // pure function of time + a per-bubble seed, no stored particle array to
+  // manage (same "decor, not real particle state" approach as the sky
+  // motes/dust elsewhere in the game)
+  for (let i = 0; i < 6; i++) {
+    const seed = i * 3.7;
+    const cycle = (t * 0.35 + pseudoRandom(seed)) % 1;
+    const rr = wp.radius * (1 - cycle) * 0.95;
+    const ang = t * 2.2 * (i % 2 === 0 ? 1 : -1) + seed * 6;
+    const bx = sx + Math.cos(ang) * rr;
+    const by = sy + Math.sin(ang) * rr * 0.6;
+    ctx.fillStyle = `rgba(255,255,255,${0.55 * Math.sin(cycle * Math.PI)})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.6 + cycle * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
 
@@ -20022,6 +20108,8 @@ function updatePoolScene(deltaTime) {
   // input so it holds the last real heading if the player stops mid-loop,
   // rather than snapping to some default the moment they let go of a key.
   if (vx !== 0 || vy !== 0) poolLastSwimDir = { x: vx, y: vy };
+
+  updatePoolWhirlpool(deltaTime);
 
   player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
   player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
@@ -20385,6 +20473,7 @@ function drawPoolScene(camX) {
   drawPoolFloorTexture(camX);
   drawPoolPebbles(camX);
   drawPoolPlants(camX);
+  drawPoolWhirlpool(camX);
   drawPoolCritters(camX);
   drawPoolLoops(camX);
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
