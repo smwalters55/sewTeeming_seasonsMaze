@@ -18076,6 +18076,40 @@ function drawForestRockWall(camX) {
   ctx.save();
   ctx.clip();
 
+  // CONFIRMED CHANGE ("make this big rock more rocky"): the fine facet grid
+  // below was tuned for a normal play-distance view -- at a close zoom it's
+  // too low-contrast and too small-grained to read as anything but a
+  // smooth gradient with a couple of thin scratches. Added a coarser,
+  // higher-contrast slab layer underneath it first: a handful of large
+  // irregular rock-plane shapes (not a uniform grid -- deliberately uneven
+  // sizes/positions) so the wall reads as "made of distinct rock" at a
+  // glance, before the finer facet grid adds the closer-up detail on top.
+  const SLAB_COUNT = 7;
+  for (let s = 0; s < SLAB_COUNT; s++) {
+    const seed = s * 23.1 + 300;
+    const t0 = Math.max(0, (s / SLAB_COUNT) - 0.04 + pseudoRandom(seed) * 0.06);
+    const t1 = Math.min(1, ((s + 1) / SLAB_COUNT) + 0.05 + pseudoRandom(seed + 1) * 0.06);
+    const y0 = bottomY - topHeight * t0, y1 = bottomY - topHeight * t1;
+    const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
+    const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
+    const cf0 = pseudoRandom(seed + 2) * 0.35, cf1 = 0.65 + pseudoRandom(seed + 3) * 0.35;
+    const x00 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf0;
+    const x01 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf1;
+    const x10 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf0;
+    const x11 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf1;
+    const shade = pseudoRandom(seed + 4);
+    ctx.fillStyle = shade > 0.5
+      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.4})`
+      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.42})`;
+    ctx.beginPath();
+    ctx.moveTo(x00, y0);
+    ctx.lineTo(x01, y0);
+    ctx.lineTo(x11, y1);
+    ctx.lineTo(x10, y1);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   // faceted shading -- a loose grid of irregular quads, each own-shade
   // (seeded, not random per frame), reading as broken/cut rock planes
   // rather than one smooth surface
@@ -18089,7 +18123,11 @@ function drawForestRockWall(camX) {
   // Each facet's own y0/y1 now get their own small per-corner jitter too
   // (same shape as the existing x jitter), so no two columns' row
   // boundaries land at the same height anymore.
-  const FACET_ROWS = 9, FACET_COLS = 4;
+  // CONFIRMED CHANGE ("make this big rock more rocky"): finer grid (was
+  // 9x4) plus stronger per-facet contrast (see shade fillStyle below) so
+  // the close-up detail actually reads instead of blending into a smooth
+  // gradient.
+  const FACET_ROWS = 14, FACET_COLS = 6;
   for (let row = 0; row < FACET_ROWS; row++) {
     const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
     const rowY0 = bottomY - topHeight * t0, rowY1 = bottomY - topHeight * t1;
@@ -18107,11 +18145,14 @@ function drawForestRockWall(camX) {
       const x11 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf1 + jx(4);
       const shade = pseudoRandom(seed + 9);
       // alternates between a darker recessed facet and a lighter one
-      // catching more light, weighted toward subtle so it reads as
-      // texture, not a checkerboard
+      // catching more light.
+      // CONFIRMED CHANGE ("make this big rock more rocky"): contrast bumped
+      // (0.22/0.26 -> 0.32/0.36) alongside the finer grid above -- the old
+      // subtle range was tuned to avoid a checkerboard look at normal play
+      // distance, but reads as almost no texture at all once zoomed in.
       ctx.fillStyle = shade > 0.5
-        ? `rgba(160,152,132,${0.05 + (shade - 0.5) * 0.22})`
-        : `rgba(20,17,13,${0.05 + (0.5 - shade) * 0.26})`;
+        ? `rgba(160,152,132,${0.06 + (shade - 0.5) * 0.32})`
+        : `rgba(20,17,13,${0.06 + (0.5 - shade) * 0.36})`;
       ctx.beginPath();
       ctx.moveTo(x00, y0);
       ctx.lineTo(x01, y0);
@@ -18156,6 +18197,25 @@ function drawForestRockWall(camX) {
     ctx.ellipse(baseX + xo, bottomY - topHeight * t, r, r * 0.55, 0.2, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  // CONFIRMED CHANGE ("make this big rock more rocky"): a scatter of small
+  // dark pockmarks/divots across the face -- real weathered rock is
+  // pitted, not just gradient-shaded, and this is the detail that reads
+  // clearest at a close zoom (the slab/facet layers above mostly help at
+  // a normal play distance). Two sizes mixed together so it doesn't read
+  // as one uniform polka-dot pattern.
+  const PIT_COUNT = 22;
+  for (let p = 0; p < PIT_COUNT; p++) {
+    const seed = p * 13.7 + 700;
+    const t = pseudoRandom(seed);
+    const xo = (pseudoRandom(seed + 1) - 0.5) * 170;
+    const r = 2.5 + pseudoRandom(seed + 2) * 5;
+    const shade = pseudoRandom(seed + 3);
+    ctx.fillStyle = shade > 0.3 ? "rgba(10,9,7,0.3)" : "rgba(190,182,160,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(baseX + xo, bottomY - topHeight * t, r, r * 0.8, pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.restore();
 }
@@ -18617,6 +18677,40 @@ function drawForestSwimHoleRocks(camX) {
   ctx.closePath();
   ctx.fill();
 
+  // CONFIRMED CHANGE ("make this big rock more rocky"): lighter version of
+  // the right face's own slab+pockmark fix just below, applied here too so
+  // the below-pool mass doesn't read as a flatter, less-detailed slab next
+  // to it (path is still current from the fill just above).
+  ctx.save();
+  ctx.clip();
+  const bpSlabCount = 4;
+  for (let s = 0; s < bpSlabCount; s++) {
+    const seed = s * 27.1 + 850;
+    const t0 = Math.max(0, s / bpSlabCount - 0.05 + pseudoRandom(seed) * 0.06);
+    const t1 = Math.min(1, (s + 1) / bpSlabCount + 0.05 + pseudoRandom(seed + 1) * 0.06);
+    const y0 = belowTop + (belowBottom - belowTop) * t0;
+    const y1 = belowTop + (belowBottom - belowTop) * t1;
+    const leftAt = t => px - w * 0.42 + forestSwimHoleRockJag(11.3, t, 26);
+    const rightAtX = t => px + w * 0.42 + forestSwimHoleRockJag(47.9, t, 26);
+    const cf0 = pseudoRandom(seed + 2) * 0.3, cf1 = 0.7 + pseudoRandom(seed + 3) * 0.3;
+    const x00 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf0;
+    const x01 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf1;
+    const x10 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf0;
+    const x11 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf1;
+    const shade = pseudoRandom(seed + 4);
+    ctx.fillStyle = shade > 0.5
+      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.36})`
+      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.38})`;
+    ctx.beginPath();
+    ctx.moveTo(x00, y0);
+    ctx.lineTo(x01, y0);
+    ctx.lineTo(x11, y1);
+    ctx.lineTo(x10, y1);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
   // CONFIRMED VISUAL FIX ("make this right part look waaay better. make
   // it a full rock side that goes all the way down, not floating in the
   // air with an odd shape"): this used to be a small isolated chunk
@@ -18654,6 +18748,59 @@ function drawForestSwimHoleRocks(camX) {
   );
   ctx.closePath();
   ctx.fill();
+
+  // CONFIRMED CHANGE ("make this big rock more rocky"): this face only had
+  // a handful of thin crack lines before -- reads as one big flat gradient
+  // slab rather than broken stone, especially at a close zoom (this is the
+  // mass the "big rock" screenshot was actually pointing at). Same coarse
+  // slab + pockmark treatment used to fix the identical complaint on
+  // drawForestRockWall, clipped to this mass's own jagged silhouette (the
+  // path is still current from the fill just above, no need to rebuild it).
+  ctx.save();
+  ctx.clip();
+  const rfSlabCount = 6;
+  for (let s = 0; s < rfSlabCount; s++) {
+    const seed = s * 19.3 + 800;
+    const t0 = Math.max(0, s / rfSlabCount - 0.05 + pseudoRandom(seed) * 0.06);
+    const t1 = Math.min(1, (s + 1) / rfSlabCount + 0.05 + pseudoRandom(seed + 1) * 0.06);
+    const y0 = rightTop + (rightBottom - rightTop) * t0;
+    const y1 = rightTop + (rightBottom - rightTop) * t1;
+    const leftAt = t => rightInner + forestSwimHoleRockJag(23.1, t, 20);
+    const rightAtX = t => rightOuter + forestSwimHoleRockJag(61.4, t, 34);
+    const cf0 = pseudoRandom(seed + 2) * 0.3, cf1 = 0.7 + pseudoRandom(seed + 3) * 0.3;
+    const x00 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf0;
+    const x01 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf1;
+    const x10 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf0;
+    const x11 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf1;
+    const shade = pseudoRandom(seed + 4);
+    ctx.fillStyle = shade > 0.5
+      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.4})`
+      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.42})`;
+    ctx.beginPath();
+    ctx.moveTo(x00, y0);
+    ctx.lineTo(x01, y0);
+    ctx.lineTo(x11, y1);
+    ctx.lineTo(x10, y1);
+    ctx.closePath();
+    ctx.fill();
+  }
+  const rfPitCount = 16;
+  for (let p = 0; p < rfPitCount; p++) {
+    const seed = p * 11.3 + 900;
+    const t = pseudoRandom(seed);
+    const xr = pseudoRandom(seed + 1);
+    const leftX = rightInner + forestSwimHoleRockJag(23.1, t, 20);
+    const rightX = rightOuter + forestSwimHoleRockJag(61.4, t, 34);
+    const px = leftX + (rightX - leftX) * xr;
+    const py = rightTop + (rightBottom - rightTop) * t;
+    const r = 2.5 + pseudoRandom(seed + 2) * 5;
+    const shade = pseudoRandom(seed + 3);
+    ctx.fillStyle = shade > 0.3 ? "rgba(10,9,7,0.28)" : "rgba(190,182,160,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(px, py, r, r * 0.8, pseudoRandom(seed + 4) * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 
   // a few crack lines + moss patches on the right face too, echoing the
   // treatment the below-pool mass gets just below, so it doesn't read as
