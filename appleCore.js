@@ -18459,6 +18459,13 @@ let poolDive = {
 // forest-space coordinates into the pool's own separate coordinate system.
 let poolDiveSplashDroplets = [];
 let poolDiveSplashRipple = { x: 0, y: 0, startedAt: -1e9 };
+// CONFIRMED CHANGE ("more water splash, just a beter animation"): a second,
+// weaker ripple ring fired slightly after the first (the way a real splash's
+// crater rebounds and sends out a smaller secondary wave), plus a short-
+// lived foam/crown burst right at the impact point -- neither existed
+// before, both are purely additive to the droplet system below.
+let poolDiveSplashRipple2 = { x: 0, y: 0, startedAt: -1e9 };
+let poolDiveSplashFoam = [];
 // eases from 1 -> 0 right after arrival in the pool -- drives the "half
 // in water, calming down" wet-tint overlay in the shared player draw code
 let poolDiveSettleAmount = 0;
@@ -18476,19 +18483,55 @@ function startPoolDive() {
   player.jumping = false;
 }
 
+// CONFIRMED CHANGE ("more water splash, just a beter animation"): went from
+// one flat ring of 14 same-size droplets to two distinct layers -- a
+// smaller count of big chunky droplets that arc high and hang in the air
+// (the "you can see individual water chunks fly" read of a real dive) plus
+// a denser fan of small fast mist droplets that stay low and fade quick
+// (the "spray" read) -- real splashes are visibly both at once, not one
+// uniform size. Also fires a foam/crown burst and a delayed second ripple
+// (see their own draw-side comments) so the impact has more than a single
+// ring of dots to sell it.
 function spawnPoolDiveSplash(x, y) {
-  const count = 14;
-  poolDiveSplashDroplets = Array.from({ length: count }, (_, i) => {
-    const ang = (i / count) * Math.PI * 2;
-    const speed = 55 + pseudoRandom(i * 3.7) * 65;
+  const now = performance.now();
+  const bigCount = 11;
+  const mistCount = 26;
+  const bigDroplets = Array.from({ length: bigCount }, (_, i) => {
+    const ang = (i / bigCount) * Math.PI * 2 + pseudoRandom(i * 1.7) * 0.3;
+    const speed = 85 + pseudoRandom(i * 3.7) * 95;
     return {
       x, y,
-      vx: Math.cos(ang) * speed * 0.7, // flattened wider than tall -- a real splash reads more horizontal than vertical
-      vy: -Math.abs(Math.sin(ang)) * speed - 50,
-      startedAt: performance.now()
+      vx: Math.cos(ang) * speed * 0.75,
+      vy: -Math.abs(Math.sin(ang)) * speed - 70,
+      startedAt: now, big: true,
+      size: 3.2 + pseudoRandom(i * 5.3) * 1.6,
     };
   });
-  poolDiveSplashRipple = { x, y, startedAt: performance.now() };
+  const mistDroplets = Array.from({ length: mistCount }, (_, i) => {
+    const ang = (i / mistCount) * Math.PI * 2 + pseudoRandom(i * 2.9 + 9) * 0.5;
+    const speed = 40 + pseudoRandom(i * 4.1 + 3) * 110;
+    return {
+      x, y,
+      vx: Math.cos(ang) * speed * 0.8,
+      vy: -Math.abs(Math.sin(ang)) * speed - 35,
+      startedAt: now, big: false,
+      size: 1.1 + pseudoRandom(i * 6.1 + 5) * 1.1,
+    };
+  });
+  poolDiveSplashDroplets = bigDroplets.concat(mistDroplets);
+  poolDiveSplashRipple = { x, y, startedAt: now };
+  poolDiveSplashRipple2 = { x, y, startedAt: now + 140 };
+  const foamCount = 9;
+  poolDiveSplashFoam = Array.from({ length: foamCount }, (_, i) => {
+    const ang = (i / foamCount) * Math.PI * 2 + pseudoRandom(i * 8.3) * 0.4;
+    const dist = 6 + pseudoRandom(i * 2.3) * 14;
+    return {
+      x: x + Math.cos(ang) * dist * 0.9,
+      y: y + Math.sin(ang) * dist * 0.35,
+      startedAt: now,
+      size: 5 + pseudoRandom(i * 7.7) * 5,
+    };
+  });
 }
 
 function updatePoolDiveSplashDroplets(deltaTime) {
@@ -18514,6 +18557,7 @@ function updatePoolDive(deltaTime) {
     // 14 permanently-invisible objects every frame forever.
     if (poolDiveSplashDroplets.length > 0 && performance.now() - poolDiveSplashRipple.startedAt >= POOL_DIVE_SPLASH_MS) {
       poolDiveSplashDroplets = [];
+      poolDiveSplashFoam = [];
     }
     return;
   }
@@ -18605,6 +18649,9 @@ function updatePoolDive(deltaTime) {
       poolDiveSplashDroplets.forEach(d => { d.x += dx; d.y += dy; });
       poolDiveSplashRipple.x += dx;
       poolDiveSplashRipple.y += dy;
+      poolDiveSplashRipple2.x += dx;
+      poolDiveSplashRipple2.y += dy;
+      poolDiveSplashFoam.forEach(f => { f.x += dx; f.y += dy; });
     }
 
     if (elapsed >= POOL_DIVE_SPLASH_MS) {
@@ -18619,34 +18666,63 @@ function updatePoolDive(deltaTime) {
 // scene (forest pre-swap, pool post-swap) is currently showing. Plain
 // screen space, same "add cameraY back in by hand" reasoning as the pool
 // loops' own occlusion/sparkle draws.
+function drawPoolDiveSplashRippleOne(ripple, camX, strengthMult) {
+  const now = performance.now();
+  const rippleAge = now - ripple.startedAt;
+  if (rippleAge < 0 || rippleAge >= POOL_DIVE_SPLASH_MS) return;
+  const p = rippleAge / POOL_DIVE_SPLASH_MS;
+  const sx = ripple.x - camX;
+  const sy = gy + cameraY - ripple.y;
+  const alpha = Math.max(0, 1 - p) * strengthMult;
+  const rr = 10 + p * 60;
+  ctx.strokeStyle = `rgba(230,248,250,${alpha * 0.7})`;
+  ctx.lineWidth = (3 - p * 2) * strengthMult;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, rr, rr * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function drawPoolDiveSplash(camX) {
   const now = performance.now();
 
-  const rippleAge = now - poolDiveSplashRipple.startedAt;
-  if (rippleAge >= 0 && rippleAge < POOL_DIVE_SPLASH_MS) {
-    const p = rippleAge / POOL_DIVE_SPLASH_MS;
-    const sx = poolDiveSplashRipple.x - camX;
-    const sy = gy + cameraY - poolDiveSplashRipple.y;
-    const alpha = Math.max(0, 1 - p);
-    const rr = 10 + p * 60;
-    ctx.strokeStyle = `rgba(230,248,250,${alpha * 0.7})`;
-    ctx.lineWidth = 3 - p * 2;
+  drawPoolDiveSplashRippleOne(poolDiveSplashRipple, camX, 1);
+  // CONFIRMED CHANGE ("more water splash, just a beter animation"): second,
+  // weaker ripple fired slightly after the first -- reads as the crater
+  // rebounding and sending out a smaller trailing wave, instead of just one
+  // flat ring.
+  drawPoolDiveSplashRippleOne(poolDiveSplashRipple2, camX, 0.55);
+
+  // foam/crown burst right at the impact point -- short-lived soft white
+  // blobs that expand and fade fast, filling in the moment before the
+  // droplets have visibly separated out
+  poolDiveSplashFoam.forEach(f => {
+    const age = now - f.startedAt;
+    const dur = 380;
+    if (age < 0 || age >= dur) return;
+    const p = age / dur;
+    const alpha = Math.max(0, 1 - p * 1.4);
+    if (alpha <= 0) return;
+    const sx = f.x - camX;
+    const sy = gy + cameraY - f.y;
+    ctx.fillStyle = `rgba(235,250,252,${alpha * 0.8})`;
     ctx.beginPath();
-    ctx.ellipse(sx, sy, rr, rr * 0.32, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+    ctx.arc(sx, sy, f.size * (0.6 + p * 0.7), 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   poolDiveSplashDroplets.forEach(d => {
     const age = now - d.startedAt;
     if (age < 0 || age >= POOL_DIVE_SPLASH_MS) return;
     const p = age / POOL_DIVE_SPLASH_MS;
-    const alpha = Math.max(0, 1 - p * 1.3);
+    // big chunky droplets hang around a little longer than the fine mist,
+    // which fades out fast right after the initial burst
+    const alpha = d.big ? Math.max(0, 1 - p * 1.1) : Math.max(0, 1 - p * 1.7);
     if (alpha <= 0) return;
     const sx = d.x - camX;
     const sy = gy + cameraY - d.y;
-    ctx.fillStyle = `rgba(225,245,250,${alpha})`;
+    ctx.fillStyle = d.big ? `rgba(210,238,245,${alpha})` : `rgba(230,248,252,${alpha * 0.85})`;
     ctx.beginPath();
-    ctx.arc(sx, sy, 2.4 - p * 1.2, 0, Math.PI * 2);
+    ctx.arc(sx, sy, d.size * (1 - p * 0.4), 0, Math.PI * 2);
     ctx.fill();
   });
 }
@@ -19964,6 +20040,108 @@ const POOL_TREASURE_CHEST_MOSS = Array.from({ length: 6 }, (_, i) => ({
 const poolChestPromptState = { promptEverShown: false, promptAnimT: 9999 };
 const POOL_CHEST_PROMPT_LINES = ["Bring gold from the mine cart", "to fill this chest."];
 
+// CONFIRMED CHANGE ("make the gold sign a lot smaller" + "instead of the
+// word 'gold', use the gold inventory image there"): a dedicated smaller
+// draw for this one prompt instead of reusing drawCarvedWoodPrompt at full
+// size -- that shared function is still used as-is by the graft/crown
+// prompts elsewhere, this only touches the chest's own sign. Same carved-
+// wood materialize/plank/nail visual language, just scaled down (~0.62x)
+// and with the word "gold" on the first line swapped for the actual gold
+// inventory icon (drawGoldPileShape, the same shape shown in the inventory
+// bar) so it reads at a glance instead of needing the word at all.
+const POOL_CHEST_PROMPT_SCALE = 0.62;
+
+function drawPoolChestPrompt(px, py, animT) {
+  const S = POOL_CHEST_PROMPT_SCALE;
+  const p = Math.min(animT / CROWN_PROMPT_MATERIALIZE_DURATION, 1);
+  const ease = 1 - Math.pow(1 - p, 2);
+
+  if (p < 1) {
+    ctx.fillStyle = "rgba(120,84,50,0.85)";
+    for (let i = 0; i < 14; i++) {
+      const seed = i * 7.3;
+      const startX = px + (pseudoRandom(seed) - 0.5) * 160 * S;
+      const startY = py + (pseudoRandom(seed + 1) - 0.5) * 70 * S;
+      const endX = px + (pseudoRandom(seed + 2) - 0.5) * 200 * S;
+      const endY = py + (pseudoRandom(seed + 3) - 0.5) * 30 * S;
+      const cx2 = startX + (endX - startX) * ease;
+      const cy2 = startY + (endY - startY) * ease;
+      ctx.beginPath();
+      ctx.arc(cx2, cy2, 1.5 * S, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (p < 0.25) return;
+
+  const plankAlpha = Math.min((p - 0.25) / 0.5, 1);
+  ctx.save();
+  ctx.globalAlpha = plankAlpha;
+
+  ctx.font = `${Math.round(10 * S)}px sans-serif`;
+  const iconSize = 12 * S;
+  const gapAroundIcon = 3 * S;
+  const bringW = ctx.measureText("Bring ").width;
+  const restW = ctx.measureText(" from the mine cart").width;
+  const line1W = bringW + iconSize + gapAroundIcon * 2 + restW;
+  const line2W = ctx.measureText("to fill this chest.").width;
+  const plankW = Math.max(line1W, line2W) + 44 * S;
+  const plankH = 38 * S;
+
+  ctx.fillStyle = "#8a6a45";
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = 1.5 * S;
+  ctx.beginPath();
+  const rx = px - plankW / 2, ry = py - plankH / 2 + 2 * S;
+  ctx.roundRect ? ctx.roundRect(rx, ry, plankW, plankH, 4 * S) : ctx.rect(rx, ry, plankW, plankH);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(90,64,32,0.35)";
+  ctx.lineWidth = 0.7 * S;
+  ctx.beginPath();
+  ctx.moveTo(rx + 12 * S, ry + 8 * S); ctx.lineTo(rx + plankW - 12 * S, ry + 10 * S);
+  ctx.moveTo(rx + 30 * S, ry + plankH - 8 * S); ctx.lineTo(rx + plankW - 8 * S, ry + plankH - 6 * S);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(60,42,20,0.4)";
+  ctx.beginPath();
+  ctx.arc(rx + 4 * S, ry + 6 * S, 2 * S, 0, Math.PI * 2);
+  ctx.arc(rx + plankW - 4 * S, ry + plankH - 5 * S, 1.6 * S, 0, Math.PI * 2);
+  ctx.fill();
+
+  // line 1 -- "Bring " + gold icon + " from the mine cart", built as three
+  // pieces glued together and centered as one group (can't just fillText a
+  // single centered string once the middle piece is a drawn icon, not text)
+  const line1StartX = px - line1W / 2;
+  const line1Y = py - 4 * S;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(30,18,8,0.6)";
+  ctx.fillText("Bring", line1StartX + 1, line1Y + 1);
+  ctx.fillStyle = "#2e2010";
+  ctx.fillText("Bring", line1StartX, line1Y);
+
+  const iconCenterX = line1StartX + bringW + gapAroundIcon + iconSize / 2;
+  drawGoldPileShape(ctx, iconCenterX, line1Y - 3 * S, iconSize * 0.55, 0);
+
+  const restStartX = line1StartX + bringW + gapAroundIcon * 2 + iconSize;
+  ctx.fillStyle = "rgba(30,18,8,0.6)";
+  ctx.fillText("from the mine cart", restStartX + 1, line1Y + 1);
+  ctx.fillStyle = "#2e2010";
+  ctx.fillText("from the mine cart", restStartX, line1Y);
+
+  // line 2, plain centered text same as before
+  ctx.textAlign = "center";
+  const line2Y = py - 4 * S + 13 * S;
+  ctx.fillStyle = "rgba(30,18,8,0.6)";
+  ctx.fillText("to fill this chest.", px + 1, line2Y + 1);
+  ctx.fillStyle = "#2e2010";
+  ctx.fillText("to fill this chest.", px, line2Y);
+  ctx.textAlign = "left";
+
+  ctx.restore();
+}
+
 function updatePoolChestPrompt(deltaTime) {
   if (poolChestPromptState.promptEverShown) return;
   if (poolChestPromptState.promptAnimT >= 9999) {
@@ -20198,34 +20376,51 @@ function drawPoolTreasureSparkles(camX) {
 // enough that a normal swim between them never came close. Moved onto that
 // line's own midpoint so it's now a real obstacle along the direct route
 // between the two loops, not an easily-missed detour below it.
-const POOL_WHIRLPOOL = { x: 450, y: -120, radius: 75, strength: 95 };
+// CONFIRMED CHANGE ("lets make the whirlpool stronger and add another one
+// in between loops"): strength bumped 95->160 (+68%, both the tangential
+// sweep and the inward catch-pull below scale off this one number) --
+// noticeably more of a real current now, not just a light nudge. Also went
+// from a single POOL_WHIRLPOOL to a POOL_WHIRLPOOLS array, second one added
+// on the straight line between loop 4 (x:660,y:-210) and loop 5 (x:800,y:-90)
+// -- same "sits directly in the swim between two loops" placement logic as
+// the first one's own midpoint fix, so both whirlpools are real obstacles
+// along the course rather than off to one side.
+const POOL_WHIRLPOOLS = [
+  { x: 450, y: -120, radius: 75, strength: 160 },
+  { x: 730, y: -150, radius: 75, strength: 160 },
+];
 
 function updatePoolWhirlpool(deltaTime) {
-  const centerX = player.x + player.width / 2;
-  const centerY = player.y + player.height / 2;
-  const dx = centerX - POOL_WHIRLPOOL.x;
-  const dy = centerY - POOL_WHIRLPOOL.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist >= POOL_WHIRLPOOL.radius || dist < 1) return;
-  const falloff = 1 - dist / POOL_WHIRLPOOL.radius; // stronger near the center, zero at the rim
-  // tangential unit vector -- rotate the radius vector 90°, fixed spin
-  // direction (clockwise) so the swirl reads as one continuous current
-  // rather than randomly reversing
-  const tx = -dy / dist, ty = dx / dist;
-  player.x += tx * POOL_WHIRLPOOL.strength * falloff * deltaTime;
-  player.y += ty * POOL_WHIRLPOOL.strength * falloff * deltaTime;
-  // gentle inward pull -- much weaker than the tangential sweep, just
-  // enough to actually catch a player who drifts in without fighting it,
-  // not strong enough to fight someone who's holding straight outward
-  player.x -= (dx / dist) * POOL_WHIRLPOOL.strength * 0.18 * falloff * deltaTime;
-  player.y -= (dy / dist) * POOL_WHIRLPOOL.strength * 0.18 * falloff * deltaTime;
+  POOL_WHIRLPOOLS.forEach(wp => {
+    const centerX = player.x + player.width / 2;
+    const centerY = player.y + player.height / 2;
+    const dx = centerX - wp.x;
+    const dy = centerY - wp.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist >= wp.radius || dist < 1) return;
+    const falloff = 1 - dist / wp.radius; // stronger near the center, zero at the rim
+    // tangential unit vector -- rotate the radius vector 90°, fixed spin
+    // direction (clockwise) so the swirl reads as one continuous current
+    // rather than randomly reversing
+    const tx = -dy / dist, ty = dx / dist;
+    player.x += tx * wp.strength * falloff * deltaTime;
+    player.y += ty * wp.strength * falloff * deltaTime;
+    // gentle inward pull -- much weaker than the tangential sweep, just
+    // enough to actually catch a player who drifts in without fighting it,
+    // not strong enough to fight someone who's holding straight outward
+    player.x -= (dx / dist) * wp.strength * 0.18 * falloff * deltaTime;
+    player.y -= (dy / dist) * wp.strength * 0.18 * falloff * deltaTime;
+  });
 }
 
 // world-space, pre-player pass (same call shape as drawPoolPlants/drawPoolPebbles
 // right next to it) -- purely a background/floor-level effect, nothing about
 // it needs the loops' own front/back occlusion split.
 function drawPoolWhirlpool(camX) {
-  const wp = POOL_WHIRLPOOL;
+  POOL_WHIRLPOOLS.forEach(wp => drawPoolWhirlpoolOne(wp, camX));
+}
+
+function drawPoolWhirlpoolOne(wp, camX) {
   const sx = wp.x - camX;
   const sy = gy - wp.y;
   if (sx < -wp.radius - 20 || sx > canvas.width + wp.radius + 20) return;
@@ -20675,16 +20870,18 @@ function drawPoolScene(camX) {
   drawPoolTreasureChest(camX);
   drawPoolTreasureSparkles(camX);
   if (!poolChestPromptState.promptEverShown && poolChestPromptState.promptAnimT < 9999) {
-    // CONFIRMED BUG FIX (found while verifying this): the chest sits close
-    // to the pool's right wall (x=1010 of POOL_WIDTH=1100), and the pool's
-    // own camera clamp caps out with the chest riding right near the edge
-    // of the canvas -- drawCarvedWoodPrompt's plank is 260px wide, so drawn
-    // dead-centered on the chest it ran straight off the right edge of the
-    // canvas and got clipped mid-sentence. Clamped the plank's own center x
-    // to stay fully on-screen with a little margin, same idea as any
-    // other screen-anchored UI that has to account for its own width.
-    const promptSx = Math.max(140, Math.min(canvas.width - 140, POOL_TREASURE_CHEST.x - camX));
-    drawCarvedWoodPrompt(promptSx, gy - POOL_TREASURE_CHEST.y - 55, poolChestPromptState.promptAnimT, POOL_CHEST_PROMPT_LINES);
+    // CONFIRMED CHANGE ("dont have gold sign follow player camera, it
+    // should stay with the chest"): the screen-edge clamp added back when
+    // this sign used the full-size shared plank (see the 8/18 clip-fix this
+    // used to be) meant the sign's on-screen x could snap to a fixed
+    // screen position instead of tracking the chest's own world x whenever
+    // the camera hadn't yet fully scrolled to its max -- reading as the
+    // sign "following the camera" rather than staying put above the chest.
+    // Now that the sign draws much smaller (POOL_CHEST_PROMPT_SCALE), it
+    // comfortably fits on-screen at every camera position the chest is
+    // ever actually visible at, so the clamp is gone -- pure world-anchored
+    // position, same as the chest itself and every other world-space prop.
+    drawPoolChestPrompt(POOL_TREASURE_CHEST.x - camX, gy - POOL_TREASURE_CHEST.y - 55, poolChestPromptState.promptAnimT);
   }
 
   ctx.restore();
