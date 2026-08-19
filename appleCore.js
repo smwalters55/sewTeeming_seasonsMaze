@@ -18183,7 +18183,18 @@ function drawForestRockClimb(camX) {
 // irregular shading patches for broken-rock planes, a few short angled
 // crack strokes instead of one continuous groove, and moss patches.
 function drawForestSlideChute(camX) {
-  const steps = 24;
+  // CONFIRMED BUG FIX ("there are still too many long straight lines here
+  // in the rock slide"): repeated passes at this kept the underlying path
+  // itself too smooth (few steps, small jag amplitude) and then papered
+  // over that with a pair of continuous highlight/shadow "groove" strokes
+  // running the FULL length -- which are themselves long straight-ish
+  // lines, exactly what kept getting flagged. This pass: many more steps,
+  // much stronger per-point jag (matching forestRockWallEdgeX's own
+  // coarse+fine amplitude, not a token wobble), and the groove strokes
+  // replaced entirely with per-facet random-shaded quads (same technique
+  // drawForestRockWall's own FACET_ROWS uses) -- shading that reads as
+  // broken rock catching light unevenly, not as drawn lines.
+  const steps = 40;
   const baseHalfWidth = 16;
   // CONFIRMED CHANGE ("connect it fully to the rock wall there not stick up
   // as a wierd pointy thing"), then CONFIRMED BUG FIX ("what is this second
@@ -18228,9 +18239,11 @@ function drawForestSlideChute(camX) {
     const anchorT = Math.max(0, 1 - t / anchorFrac);
     const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
     // jagged edges -- per-point noise offset (coarse + fine octave, same
-    // idea as forestRockWallEdgeX), not a clean parallel-line ribbon
-    const jagL = (pseudoRandom(i * 3.1) - 0.5) * 10 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 4;
-    const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 10 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 4;
+    // idea as forestRockWallEdgeX), not a clean parallel-line ribbon. Bumped
+    // amplitude well past the old ±5/±2px wobble -- that was too subtle to
+    // read as broken rock at this ribbon's own scale.
+    const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
+    const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
     left.push({ x: cx - halfWidth + jagL, y: cy });
     right.push({ x: cx + halfWidth + jagR, y: cy });
     mid.push({ x: cx, y: cy });
@@ -18257,39 +18270,49 @@ function drawForestSlideChute(camX) {
   ctx.save();
   ctx.clip();
 
-  // CONFIRMED CHANGE ("make it look more 3d idk how but can you try"): a
-  // bright band riding the inner-left edge (the side that'd catch light)
-  // and a dark band riding the inner-right edge (in shadow) the whole
-  // length of the chute -- reads as a concave carved channel rather than a
-  // flat painted ribbon, same "raking light across a groove" idea a real
-  // worn rock slide would show.
-  ctx.strokeStyle = "rgba(255,248,225,0.24)";
-  ctx.lineWidth = 6;
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  left.forEach((p, i) => {
-    const inX = p.x + halfWidths[i] * 0.4;
-    i === 0 ? ctx.moveTo(inX, p.y) : ctx.lineTo(inX, p.y);
-  });
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(8,7,5,0.34)";
-  ctx.lineWidth = 7;
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  right.forEach((p, i) => {
-    const inX = p.x - halfWidths[i] * 0.35;
-    i === 0 ? ctx.moveTo(inX, p.y) : ctx.lineTo(inX, p.y);
-  });
-  ctx.stroke();
+  // CONFIRMED BUG FIX ("there are still too many long straight lines
+  // here in the rock slide"): the "make it look more 3d" pass added two
+  // continuous highlight/shadow strokes running the chute's FULL length --
+  // exactly the kind of long straight-ish line that kept getting flagged,
+  // even though the underlying path itself is now much jaggier. Replaced
+  // with a row-by-row grid of small independently-shaded facet quads (same
+  // technique drawForestRockWall's own FACET_ROWS uses) -- broken-rock
+  // shading that varies constantly along the length instead of two clean
+  // parallel bands.
+  const FACET_ROWS = 26;
+  for (let row = 0; row < FACET_ROWS; row++) {
+    const idx0 = Math.floor((row / FACET_ROWS) * steps);
+    const idx1 = Math.min(steps, Math.ceil(((row + 1) / FACET_ROWS) * steps));
+    if (idx0 >= left.length || idx1 >= left.length) continue;
+    const seed = row * 17.3 + 4;
+    const shade = pseudoRandom(seed);
+    ctx.fillStyle = shade > 0.5
+      ? `rgba(180,172,150,${0.05 + (shade - 0.5) * 0.3})`
+      : `rgba(15,13,10,${0.05 + (0.5 - shade) * 0.34})`;
+    const splitL = pseudoRandom(seed + 1); // each facet only spans a random fraction of the ribbon's width, not the full width every time
+    const splitR = pseudoRandom(seed + 2);
+    const p0l = left[idx0], p0r = right[idx0], p1l = left[idx1], p1r = right[idx1];
+    ctx.beginPath();
+    ctx.moveTo(p0l.x + (p0r.x - p0l.x) * splitL * 0.4, p0l.y);
+    ctx.lineTo(p0l.x + (p0r.x - p0l.x) * (1 - splitR * 0.4), p0l.y);
+    ctx.lineTo(p1l.x + (p1r.x - p1l.x) * (1 - splitR * 0.4), p1l.y);
+    ctx.lineTo(p1l.x + (p1r.x - p1l.x) * splitL * 0.4, p1l.y);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-  // loose irregular shading patches -- broken-rock planes, not a smooth fill
-  [[0.08, -6, 0.55, "rgba(20,17,13,0.28)"], [0.22, 5, 0.4, "rgba(120,112,96,0.22)"],
-   [0.4, -4, 0.5, "rgba(20,17,13,0.24)"], [0.58, 6, 0.45, "rgba(120,112,96,0.2)"],
-   [0.75, -5, 0.5, "rgba(20,17,13,0.26)"], [0.9, 4, 0.4, "rgba(120,112,96,0.2)"]].forEach(([t, xo, sizeMul, color]) => {
-    const idx = Math.round(t * steps);
+  // loose irregular shading patches on top -- broken-rock planes, not a
+  // smooth fill
+  [[0.08, -6, 0.55, "rgba(20,17,13,0.28)"], [0.16, 4, 0.4, "rgba(120,112,96,0.2)"],
+   [0.22, 5, 0.4, "rgba(120,112,96,0.22)"], [0.3, -3, 0.4, "rgba(20,17,13,0.2)"],
+   [0.4, -4, 0.5, "rgba(20,17,13,0.24)"], [0.5, 5, 0.35, "rgba(120,112,96,0.2)"],
+   [0.58, 6, 0.45, "rgba(120,112,96,0.2)"], [0.66, -4, 0.4, "rgba(20,17,13,0.22)"],
+   [0.75, -5, 0.5, "rgba(20,17,13,0.26)"], [0.83, 3, 0.35, "rgba(120,112,96,0.18)"],
+   [0.9, 4, 0.4, "rgba(120,112,96,0.2)"], [0.96, -3, 0.4, "rgba(20,17,13,0.22)"]].forEach(([t, xo, sizeMul, color]) => {
+    const idx = Math.min(steps, Math.round(t * steps));
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.ellipse(mid[idx].x + xo, mid[idx].y, (halfWidths[idx] + 6) * sizeMul, 14, 0.15, 0, Math.PI * 2);
+    ctx.ellipse(mid[idx].x + xo, mid[idx].y, (halfWidths[idx] + 6) * sizeMul, 12, 0.15, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -18320,19 +18343,39 @@ function drawForestSlideChute(camX) {
   ctx.restore(); // undo clip
 
   // CONFIRMED CHANGE ("and same witht he bottom corners on the ground of
-  // the slide"): the chute's own ribbon is jagged along its length, but
-  // where it meets flat ground at the very bottom it still ended in two
-  // hard corner points against the grass. A small cluster of rounded,
-  // overlapping rubble blobs (same idea as the climb wall's own ground-
-  // seam blend) spreads the base out into an uneven pile of scree instead
-  // of a clean two-point corner.
+  // the slide"), then CONFIRMED BUG FIX ("gravel looks like a brown cloud
+  // just pasted on top"): the first pass was flat solid-color ellipses with
+  // no internal shading -- reads as a smudge, not rock. Rebuilt as a
+  // cluster of real jagged rock-chunk polygons (same multi-point
+  // technique the old stepping-stone rock used), each with its own darker
+  // base shadow + a lighter facet catching light, so the pile reads as
+  // individual broken rocks rather than one blurry blob.
   const baseP = mid[mid.length - 1];
-  ctx.fillStyle = "#453f37";
-  const scree = [[-18, 4, 16], [10, 8, 18], [26, 2, 14], [-2, 10, 15], [-30, -2, 12]];
-  scree.forEach(([xo, yo, r], i) => {
-    const jag = pseudoRandom(i * 6.1 + 51) * 5;
+  const scree = [[-20, 2, 15], [8, 6, 17], [26, 0, 13], [-4, 8, 14], [-32, -4, 11], [16, -6, 10]];
+  scree.forEach(([xo, yo, r], si) => {
+    const cx = baseP.x + xo, cy = baseP.y + yo;
+    const pts = 8;
+    const seed = si * 9.7 + 200;
+    ctx.fillStyle = pseudoRandom(seed) > 0.5 ? "#4a4338" : "#403a32";
     ctx.beginPath();
-    ctx.ellipse(baseP.x + xo, baseP.y + yo, r + jag, (r + jag) * 0.55, 0.15, 0, Math.PI * 2);
+    for (let k = 0; k <= pts; k++) {
+      const ang = (k / pts) * Math.PI * 2;
+      const rr = r * (0.75 + pseudoRandom(seed + k * 2.3) * 0.5);
+      const px = cx + Math.cos(ang) * rr;
+      const py = cy + Math.sin(ang) * rr * 0.5;
+      if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // darker underside shadow
+    ctx.fillStyle = "rgba(20,17,13,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + r * 0.25, r * 0.7, r * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // small lighter facet catching light on top
+    ctx.fillStyle = "rgba(150,145,130,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(cx - r * 0.2, cy - r * 0.18, r * 0.35, r * 0.18, 0.2, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -19092,12 +19135,24 @@ function updatePoolSlideExit(deltaTime) {
     }
   } else if (poolSlideExit.phase === "onLedge") {
     // CONFIRMED CHANGE ("also let player jump on the slide manually, not
-    // auto throw them down it"): used to chain straight from the rise
-    // arc into the scripted slide with no further input -- read as being
-    // thrown down the chute rather than choosing to go. Now holds here,
-    // standing on the platform, until the player actually presses jump
-    // -- a real deliberate hop onto the slide, not an automatic handoff.
-    player.x = poolSlideExit.ledgeX;
+    // auto throw them down it"), then CONFIRMED BUG FIX ("player gets full
+    // frozen here unless press space bar. i want to jump on the rock part
+    // just above me... and walk the few steps to then click spacebar to go
+    // down the slide... right now it just happens out of nowhere and is
+    // jarring"): the first pass held the player completely still here,
+    // which read as a freeze rather than actually standing on solid rock.
+    // Now the player can walk left/right along the platform (real x
+    // movement, clamped to the platform's own footprint, y pinned to the
+    // ledge height so it reads as standing on ground) while waiting for the
+    // jump that actually starts the slide -- so there's a real "I'm
+    // standing here, I can see the slide, I choose to jump" beat instead of
+    // an inexplicable pause.
+    let vx = 0;
+    if (keys.left) vx = -1;
+    if (keys.right) vx = 1;
+    player.x += vx * 70 * deltaTime;
+    player.x = Math.max(POOL_SLIDE_EXIT_X - 30, Math.min(POOL_WIDTH - 40, player.x));
+    player.facing = vx !== 0 ? vx : player.facing;
     player.y = poolSlideExit.ledgeY;
     player.vx = 0;
     player.vy = 0;
@@ -20739,7 +20794,17 @@ function drawPoolSlideExitLip(camX) {
   // segments rather than a handful of straight-line vertices -- runs from
   // a rounded outer (left, water-facing) tip all the way into/behind the
   // wall face on the right so the seam never shows.
-  const spanL = sx - 34, spanR = wallSx + 30;
+  // CONFIRMED BUG FIX ("there are still straight horizontal and vertical
+  // lines while looking inside the pool at the right wall area"): the top
+  // and bottom curves used to both terminate at the same fixed x (wallSx+
+  // 30), which is well within the canvas at some camera positions -- the
+  // implicit closing segment between those two same-x points is a hard
+  // vertical line, exactly what kept getting flagged. Pushed the merge
+  // point much further into the wall (wallSx+170, matching the wall's own
+  // "always past any possible camera position" reasoning for its rightAt()
+  // edge) so the seam is never actually on-screen to begin with, rather
+  // than trying to disguise it while still visible.
+  const spanL = sx - 34, spanR = wallSx + 170;
   const steps = 18;
   const top = [], bottom = [];
   for (let i = 0; i <= steps; i++) {
@@ -21536,11 +21601,19 @@ function drawPoolScene(camX) {
     // recedes as it goes deeper -- echoing the exterior forest-side view
     // where the cliff face overhangs and dips down at an angle to meet the
     // water rather than dropping straight down as a sheer flat face.
+    // CONFIRMED BUG FIX ("there are still straight horizontal and vertical
+    // lines while looking inside the pool at the right wall area"): this
+    // curve's own steepness was the real problem, not sampling resolution
+    // -- the old overhang term swung ~90px over just the top ~15% of the
+    // wall's height, which reads as a blocky near-horizontal step no
+    // matter how many points sample it. Lower peak amplitude + a slower
+    // falloff spreads the same "bulges near the surface, recedes deeper
+    // down" idea over a much gentler slope.
     const leftAt = t => {
       const fine = (pseudoRandom(i * 5.1 + Math.floor(t * 10) * 2.3) - 0.5) * 22;
       if (i !== 1) return sx + side * (30 + fine);
-      const bigCurve = Math.sin(t * Math.PI * 1.6 + 2.3) * 34 + Math.sin(t * Math.PI * 3.4 + 0.7) * 16;
-      const overhang = Math.pow(Math.max(0, 1 - t * 1.4), 1.6) * 44;
+      const bigCurve = Math.sin(t * Math.PI * 1.6 + 2.3) * 20 + Math.sin(t * Math.PI * 3.4 + 0.7) * 9;
+      const overhang = Math.pow(Math.max(0, 1 - t * 0.8), 2) * 24;
       return sx + side * (30 + bigCurve + overhang + fine);
     };
     const rightAt = () => sx + side * -400;
