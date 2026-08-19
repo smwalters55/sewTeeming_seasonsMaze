@@ -18097,14 +18097,27 @@ function drawForestRockClimb(camX) {
 // crack strokes instead of one continuous groove, and moss patches.
 function drawForestSlideChute(camX) {
   const steps = 24;
-  const halfWidth = 16;
-  const left = [], right = [], mid = [];
+  const baseHalfWidth = 16;
+  // CONFIRMED CHANGE ("connect it fully to the rock wall there not stick up
+  // as a wierd pointy thing"), then CONFIRMED BUG FIX ("what is this second
+  // rock floating it doesnt do anything"): the chute's top now starts
+  // nested INSIDE the pre-existing drawForestSwimHoleRocks right-face mass
+  // (see FOREST_SLIDE_START_Y's own comment), so it no longer needs to
+  // invent its own separate anchor rock to avoid looking like a floating
+  // point -- the real cliff face already does that job. Keeping only a
+  // gentle widen (not the old 60px flare + 3 extra blobs, which read as a
+  // second disconnected rock) so the seam where the ribbon emerges from the
+  // real rock still tapers smoothly rather than starting at a hard edge.
+  const anchorFrac = 0.22;
+  const left = [], right = [], mid = [], halfWidths = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const ease = t * t * (3 - 2 * t);
     const wobble = Math.sin(t * Math.PI * 3) * 16 * (1 - t);
     const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble - camX;
     const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease);
+    const anchorT = Math.max(0, 1 - t / anchorFrac);
+    const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
     // jagged edges -- per-point noise offset (coarse + fine octave, same
     // idea as forestRockWallEdgeX), not a clean parallel-line ribbon
     const jagL = (pseudoRandom(i * 3.1) - 0.5) * 10 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 4;
@@ -18112,12 +18125,13 @@ function drawForestSlideChute(camX) {
     left.push({ x: cx - halfWidth + jagL, y: cy });
     right.push({ x: cx + halfWidth + jagR, y: cy });
     mid.push({ x: cx, y: cy });
+    halfWidths.push(halfWidth);
   }
-  if (left[0].x < -100 && left[left.length - 1].x < -100) return; // fully off-screen either side, skip the fill work
-  if (left[0].x > canvas.width + 100 && left[left.length - 1].x > canvas.width + 100) return;
+  if (left[0].x < -150 && left[left.length - 1].x < -150) return; // fully off-screen either side, skip the fill work
+  if (left[0].x > canvas.width + 150 && left[left.length - 1].x > canvas.width + 150) return;
 
   ctx.save();
-  const grad = ctx.createLinearGradient(mid[0].x - halfWidth - 10, 0, mid[0].x + halfWidth + 10, 0);
+  const grad = ctx.createLinearGradient(mid[0].x - halfWidths[0] - 10, 0, mid[0].x + halfWidths[0] + 10, 0);
   grad.addColorStop(0, "#3a352c");
   grad.addColorStop(0.45, "#5a5245");
   grad.addColorStop(0.6, "#665f52");
@@ -18141,7 +18155,7 @@ function drawForestSlideChute(camX) {
     const idx = Math.round(t * steps);
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.ellipse(mid[idx].x + xo, mid[idx].y, (halfWidth + 6) * sizeMul, 14, 0.15, 0, Math.PI * 2);
+    ctx.ellipse(mid[idx].x + xo, mid[idx].y, (halfWidths[idx] + 6) * sizeMul, 14, 0.15, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -18611,9 +18625,28 @@ const POOL_SLIDE_LAND_MS = 260; // brief settle beat once grounded before handin
 // side per direct correction, positioned past the swim hole's own right
 // edge (FOREST_SWIM_HOLE_X + FOREST_SWIM_HOLE_WIDTH/2 = climb.x+405) so the
 // chute and the water preview still don't visually collide.
-const FOREST_SLIDE_START_X = FOREST_ROCK_CLIMB_X + 470;
-const FOREST_SLIDE_START_Y = FOREST_ROCK_LEDGE.height - 40;
-const FOREST_SLIDE_END_X = FOREST_ROCK_CLIMB_X + 560;
+// CONFIRMED CHANGE ("make the rock slide a little more horizontal, connect
+// it fully to the rock wall there not stick up as a wierd pointy thing"):
+// the first pass ran almost straight down (a 90px horizontal run over a
+// 540px drop) which is both why it read as steep, and why its narrow top
+// point sat alone in open air with nothing tying it to any rock mass. The
+// horizontal run is now much wider relative to the drop (see
+// drawForestSlideChute's own widened top-anchor fix for the "pointy thing"
+// half of this).
+// CONFIRMED BUG FIX ("what is this second rock floating it doesnt do
+// anything"): the widen-the-anchor attempt above didn't fix the floating
+// look because the real root cause was height, not width -- this start
+// point (540 above ground) sat ABOVE the top of the pre-existing right-face
+// rock mass drawForestSwimHoleRocks already draws flanking the pool
+// (rightTop = poolY - h*0.7 ~= 473 above ground), so the invented anchor
+// blobs never actually touched any real rock and just floated in open air
+// next to it. Dropping the start height to nest inside that existing mass
+// (well below its 473 top, comfortably above its ground-level bottom) means
+// the chute now visibly emerges FROM the real cliff face instead of
+// inventing a second disconnected one.
+const FOREST_SLIDE_START_X = FOREST_ROCK_CLIMB_X + 440;
+const FOREST_SLIDE_START_Y = 420;
+const FOREST_SLIDE_END_X = FOREST_ROCK_CLIMB_X + 780;
 const FOREST_SLIDE_END_Y = 0; // true forest ground -- the whole point, vs. the ledge-climb exit landing back up at ledge height
 
 let poolSlideExit = {
@@ -20506,24 +20539,76 @@ function updatePoolChestPrompt(deltaTime) {
 // POOL_EXIT_X has no marker at all, which is exactly why it went unnoticed
 // -- this new exit gets at least a real physical prop instead of repeating
 // that same gap).
+// CONFIRMED CHANGE ("i dotn want slide entrance like that. i mean a little
+// rock coming out of the right walk wall that you hop onto and then hop up
+// onto that rock platform and then jump down the slide"): used to be a
+// smooth free-floating ellipse sitting alone in open water with a visible
+// gap between it and the pool's actual right wall -- read as an
+// unattached prop rather than something coming out of the cliff. Rebuilt
+// as a jagged, flatter-topped platform that physically spans from here
+// over to the real wall face (wallFaceX, matching the wall-drawing
+// forEach's own ~30px-in-from-edge baseline), so it now reads as a slab
+// of rock emerging FROM the wall rather than floating independently of
+// it. The two-trigger hop-then-slide mechanic itself (POOL_SLIDE_STEP_X's
+// mini rock, then this real exit) is unchanged -- this is a visual-only
+// rework.
 function drawPoolSlideExitLip(camX) {
+  const wallFaceX = POOL_WIDTH - 30;
   const sx = POOL_SLIDE_EXIT_X - camX;
+  const wallSx = wallFaceX - camX;
   const sy = gy - 18;
-  if (sx < -60 || sx > canvas.width + 60) return;
+  if (sx < -80 || sx > canvas.width + 80) return;
   ctx.save();
-  ctx.fillStyle = "#5a5245";
+
+  const points = [
+    { x: sx - 30, y: sy + 6 },
+    { x: sx - 34, y: sy - 4 },
+    { x: sx - 14, y: sy - 15 },
+    { x: sx + 10, y: sy - 17 },
+    { x: sx + 30, y: sy - 14 },
+    { x: wallSx - 10, y: sy - 10 },
+    { x: wallSx + 30, y: sy - 6 }, // runs into/behind the wall itself so no seam shows
+    { x: wallSx + 30, y: sy + 22 },
+    { x: sx - 10, y: sy + 20 },
+  ];
+  const grad = ctx.createLinearGradient(sx - 34, 0, wallSx, 0);
+  grad.addColorStop(0, "#4a4338");
+  grad.addColorStop(0.6, "#5a5245");
+  grad.addColorStop(1, "#665f52");
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.ellipse(sx, sy, 34, 16, 0, 0, Math.PI * 2);
+  points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.closePath();
   ctx.fill();
+
+  // darker facet band along the flat standing surface -- same broken-rock
+  // shading idea drawForestRockWall/the pool walls use, so this doesn't
+  // read as a flatter, less-detailed prop next to them
   ctx.fillStyle = "#332e27";
   ctx.beginPath();
-  ctx.ellipse(sx, sy + 2, 20, 9, 0, 0, Math.PI * 2);
+  ctx.moveTo(sx - 26, sy + 2);
+  ctx.lineTo(sx + 6, sy - 10);
+  ctx.lineTo(wallSx - 4, sy - 4);
+  ctx.lineTo(wallSx - 4, sy + 10);
+  ctx.lineTo(sx - 10, sy + 12);
+  ctx.closePath();
   ctx.fill();
-  // a little moss so it doesn't read as identical grey rock as the plain walls
+
+  // a crack line + moss patches, echoing the wall's own rock treatment
+  ctx.strokeStyle = "rgba(20,17,13,0.4)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(sx - 6, sy - 10);
+  ctx.lineTo(sx + 2, sy + 4);
+  ctx.stroke();
   ctx.fillStyle = "rgba(120,160,90,0.5)";
   ctx.beginPath();
-  ctx.ellipse(sx - 16, sy - 6, 8, 4, 0.4, 0, Math.PI * 2);
+  ctx.ellipse(sx - 20, sy - 8, 7, 3.5, 0.3, 0, Math.PI * 2);
   ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(wallSx - 20, sy - 2, 6, 3, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.restore();
 }
 
@@ -21272,7 +21357,23 @@ function drawPoolScene(camX) {
     const sx = edgeX - camX;
     const topDepth = -70;
     const bottomDepth = POOL_MAX_DEPTH + 60;
-    const leftAt = t => sx + side * (30 + (pseudoRandom(i * 5.1 + Math.floor(t * 10) * 2.3) - 0.5) * 22);
+    // CONFIRMED CHANGE ("make the right rock wall not flat while youre
+    // inside the pool... reflect the shape of from the outside where the
+    // right rock wall comes over and directly touches the water a bit"):
+    // the right wall (i===1) used to be near-flat -- only the small per-row
+    // fine noise below. Added a big sweeping curve plus an "overhang" term
+    // that's largest right at the surface/top (t near 0) and tapers away
+    // with depth, so the wall bulges out over the water near the top and
+    // recedes as it goes deeper -- echoing the exterior forest-side view
+    // where the cliff face overhangs and dips down at an angle to meet the
+    // water rather than dropping straight down as a sheer flat face.
+    const leftAt = t => {
+      const fine = (pseudoRandom(i * 5.1 + Math.floor(t * 10) * 2.3) - 0.5) * 22;
+      if (i !== 1) return sx + side * (30 + fine);
+      const bigCurve = Math.sin(t * Math.PI * 1.6 + 2.3) * 34 + Math.sin(t * Math.PI * 3.4 + 0.7) * 16;
+      const overhang = Math.pow(Math.max(0, 1 - t * 1.4), 1.6) * 44;
+      return sx + side * (30 + bigCurve + overhang + fine);
+    };
     const rightAt = () => sx + side * -400;
 
     const grad = ctx.createLinearGradient(sx - side * 50, 0, sx + side * 10, 0);
