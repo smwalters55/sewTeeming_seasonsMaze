@@ -2634,7 +2634,7 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -2980,6 +2980,10 @@ function applyPhysics(){
   // and startPoolDive's own comments). Same early-return shape as the
   // pool's own free-swim below.
   if (poolDive.active) return;
+
+  // ROCK SLIDE EXIT -- same reasoning as the dive just above, own early-
+  // return shape (see updatePoolSlideExit/startPoolSlideExit's own comments).
+  if (poolSlideExit.active) return;
 
   // POOL SCENE -- position is fully driven by updatePoolScene(deltaTime)
   // instead, same split as the sandbox ball pit (see
@@ -18066,6 +18070,58 @@ function drawForestRockClimb(camX) {
   drawForestRockWall(camX);
   FOREST_ROCK_HANDHOLDS.forEach((h, idx) => drawForestRockHandhold(camX, h, idx));
   drawForestRockLedge(camX);
+  drawForestSlideChute(camX);
+}
+
+// forest-side half of the rock slide exit -- a worn stone chute running
+// down the left face of the outcrop (opposite side from the climb/swim
+// hole, which sit to the right), from up near ledge height down to true
+// ground. Always visible (same "part of the physical cliff, not gated on
+// having used it yet" reasoning as the swim hole preview), even though it
+// only actually does anything once startPoolSlideExit fires. Traces the
+// exact same ease/wobble shape updatePoolSlideExit uses for the real
+// descent so the animated slide visually rides along this same track.
+function drawForestSlideChute(camX) {
+  const steps = 20;
+  const halfWidth = 14;
+  const left = [], right = [], mid = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const ease = t * t * (3 - 2 * t);
+    const wobble = Math.sin(t * Math.PI * 3) * 16 * (1 - t);
+    const x = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble - camX;
+    const y = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease);
+    left.push({ x: x - halfWidth, y });
+    right.push({ x: x + halfWidth, y });
+    mid.push({ x, y });
+  }
+  if (left[0].x < -80 && left[left.length - 1].x < -80) return; // fully off-screen either side, skip the fill work
+  if (left[0].x > canvas.width + 80 && left[left.length - 1].x > canvas.width + 80) return;
+
+  ctx.save();
+  ctx.fillStyle = "#4a4338";
+  ctx.beginPath();
+  left.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+  ctx.closePath();
+  ctx.fill();
+
+  // darker worn groove down the middle
+  ctx.strokeStyle = "rgba(30,26,20,0.5)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  mid.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+
+  // a little moss along the edges, matching the climb wall's own patches
+  ctx.fillStyle = "rgba(90,102,68,0.4)";
+  [0.15, 0.45, 0.75].forEach(t => {
+    const idx = Math.round(t * steps);
+    ctx.beginPath();
+    ctx.ellipse(left[idx].x - 4, left[idx].y, 7, 4, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
 }
 
 // CONFIRMED CHANGE ("show the pool that we will be jumping into before we
@@ -18470,6 +18526,41 @@ let poolDiveSplashFoam = [];
 // in water, calming down" wet-tint overlay in the shared player draw code
 let poolDiveSettleAmount = 0;
 
+// ROCK SLIDE EXIT -- a second, more fun way out of the pool, per direct
+// request ("lets start working on the rock slide out"). Confirmed ADDED
+// alongside the existing swim-up-and-press-Up exit near POOL_EXIT_X, not
+// replacing it, when asked directly which. Same "own the player's position
+// for a short scripted sequence, swap scene mid-animation" shape as
+// startPoolDive/updatePoolDive above, just running pool-side first with the
+// swap happening partway through the slide itself -- and landing at forest
+// GROUND level near the base of the rock climb rather than back up on the
+// ledge, which is the actual point of a second exit at all: skips the
+// climb-down every dive currently requires to get back to the forest floor.
+const POOL_SLIDE_EXIT_X = 960; // near the pool's far (right) wall, clear of the treasure chest's own column (x:1010) so the two don't read as stacked
+const POOL_SLIDE_RISE_MS = 320; // pop up out of the water onto the rock lip
+const POOL_SLIDE_MS = 900; // forest-side chute descent, ledge height down to true ground
+const POOL_SLIDE_SWAP_AT_MS = 120; // scene swap fires shortly after the slide starts, same "mid-animation, not at either end" idea as the dive's own swap
+const POOL_SLIDE_LAND_MS = 260; // brief settle beat once grounded before handing control back
+
+const FOREST_SLIDE_START_X = FOREST_ROCK_CLIMB_X - 130; // opposite side of the outcrop from the swim hole/splash (which sits to the right), so the two don't visually collide
+const FOREST_SLIDE_START_Y = FOREST_ROCK_LEDGE.height - 40;
+const FOREST_SLIDE_END_X = FOREST_ROCK_CLIMB_X - 220; // clear of the climb's own handholds (they sit within about +-35px of FOREST_ROCK_CLIMB_X)
+const FOREST_SLIDE_END_Y = 0; // true forest ground -- the whole point, vs. the ledge-climb exit landing back up at ledge height
+
+let poolSlideExit = {
+  active: false,
+  phase: "idle", // "rise" -> "slide" -> "land" -> "idle"
+  startedAt: 0,
+  slideStartedAt: 0,
+  landedAt: 0,
+  swapped: false,
+  startX: 0,
+  startY: 0,
+  tiltAngle: 0
+};
+let poolSlideDust = [];
+let poolSlideSettleAmount = 0; // brief post-landing settle tail, mirrors poolDiveSettleAmount
+
 function startPoolDive() {
   poolDive.active = true;
   poolDive.phase = "jump";
@@ -18659,6 +18750,145 @@ function updatePoolDive(deltaTime) {
       poolDive.phase = "idle";
     }
   }
+}
+
+function startPoolSlideExit() {
+  poolSlideExit.active = true;
+  poolSlideExit.phase = "rise";
+  poolSlideExit.startedAt = performance.now();
+  poolSlideExit.swapped = false;
+  poolSlideExit.startX = player.x;
+  poolSlideExit.startY = player.y;
+  poolSlideExit.tiltAngle = 0;
+  poolSwimTiltAngle = 0; // reset to upright -- getPoolSwimTilt() still reads this while currentScene stays "pool" through the rise phase, so this keeps that contribution from stacking with poolSlideExit's own tilt below
+  player.vx = 0;
+  player.vy = 0;
+  player.jumping = false;
+}
+
+// dust puff kicked up at the bottom of the chute on landing -- same
+// "distinct small burst right on arrival" idea as the dive's own foam
+// burst, just a dry/rocky palette instead of a watery one
+function spawnPoolSlideDust(x, y) {
+  const now = performance.now();
+  const count = 10;
+  poolSlideDust = Array.from({ length: count }, (_, i) => {
+    const ang = Math.PI + (i / count - 0.5) * Math.PI * 0.9 + pseudoRandom(i * 3.1) * 0.3;
+    const speed = 40 + pseudoRandom(i * 2.3) * 70;
+    return {
+      x, y,
+      vx: Math.cos(ang) * speed,
+      vy: -Math.abs(Math.sin(ang)) * speed * 0.6,
+      startedAt: now,
+      size: 3 + pseudoRandom(i * 4.7) * 4,
+    };
+  });
+}
+function updatePoolSlideDust(deltaTime) {
+  const g = 260;
+  poolSlideDust.forEach(d => {
+    d.vy += g * deltaTime;
+    d.x += d.vx * deltaTime;
+    d.y += d.vy * deltaTime;
+  });
+}
+
+// ROCK SLIDE EXIT sequence -- runs regardless of scene, same as
+// updatePoolDive just above (spans the pool->forest cut partway through
+// the "slide" phase). Three phases: "rise" (pop out of the water onto the
+// rock lip, still in the pool scene), "slide" (the scripted chute
+// descent -- the scene swap fires early in this phase, then position
+// interpolates from the ledge-height start down to true forest ground),
+// "land" (brief settle + dust burst before handing control back).
+function updatePoolSlideExit(deltaTime) {
+  if (!poolSlideExit.active) {
+    if (poolSlideSettleAmount > 0.001) {
+      poolSlideSettleAmount -= deltaTime * (1000 / POOL_SLIDE_LAND_MS);
+      if (poolSlideSettleAmount < 0) poolSlideSettleAmount = 0;
+    }
+    return;
+  }
+
+  const now = performance.now();
+
+  if (poolSlideExit.phase === "rise") {
+    const elapsed = now - poolSlideExit.startedAt;
+    const p = Math.min(1, elapsed / POOL_SLIDE_RISE_MS);
+    // small forward-and-up hop out of the water onto the rock lip --
+    // inverse shape of the dive's own jump arc
+    const arcUp = 22 * Math.sin(p * Math.PI);
+    player.x = poolSlideExit.startX + p * 18;
+    player.y = poolSlideExit.startY + arcUp + p * 10;
+    if (p >= 1) {
+      poolSlideExit.phase = "slide";
+      poolSlideExit.slideStartedAt = now;
+    }
+  } else if (poolSlideExit.phase === "slide") {
+    const elapsed = now - poolSlideExit.slideStartedAt;
+
+    if (!poolSlideExit.swapped && elapsed >= POOL_SLIDE_SWAP_AT_MS) {
+      poolSlideExit.swapped = true;
+      currentScene = "forest";
+      cameraX = Math.max(0, FOREST_SLIDE_START_X - 400);
+      cameraY = Math.max(0, FOREST_SLIDE_START_Y - 150); // matches updateForestScene's own cameraY formula so nothing snaps once its per-frame line picks back up next frame
+      player.x = FOREST_SLIDE_START_X;
+      player.y = FOREST_SLIDE_START_Y;
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+
+    const p = Math.min(1, elapsed / POOL_SLIDE_MS);
+    if (poolSlideExit.swapped) {
+      const ease = p * p * (3 - 2 * p); // smoothstep -- accelerates into the chute, settles toward the bottom
+      const wobble = Math.sin(p * Math.PI * 3) * 16 * (1 - p); // side-to-side chute wobble, damping out by the landing -- matches drawForestSlideChute's own visual curve
+      player.x = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble;
+      player.y = FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease;
+      poolSlideExit.tiltAngle = Math.sin(p * Math.PI * 3) * 0.3; // gentle lean side to side riding the chute, not a full tumble
+    }
+
+    if (p >= 1) {
+      poolSlideExit.phase = "land";
+      poolSlideExit.landedAt = now;
+      spawnPoolSlideDust(FOREST_SLIDE_END_X, FOREST_SLIDE_END_Y);
+      poolSlideSettleAmount = 1;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  } else if (poolSlideExit.phase === "land") {
+    const elapsed = now - poolSlideExit.landedAt;
+    poolSlideExit.tiltAngle += (0 - poolSlideExit.tiltAngle) * Math.min(1, deltaTime * 10);
+    updatePoolSlideDust(deltaTime);
+    if (elapsed >= POOL_SLIDE_LAND_MS) {
+      poolSlideExit.active = false;
+      poolSlideExit.phase = "idle";
+      poolSlideExit.tiltAngle = 0;
+      player.x = FOREST_SLIDE_END_X;
+      player.y = FOREST_SLIDE_END_Y;
+    }
+  }
+}
+
+// dust particles -- drawn regardless of scene, same reasoning as
+// drawPoolDiveSplash below (the "add cameraY back in by hand" screen-space
+// section). No-op once every particle has aged out.
+function drawPoolSlideDust(camX) {
+  const now = performance.now();
+  const dur = 500;
+  poolSlideDust.forEach(d => {
+    const age = now - d.startedAt;
+    if (age < 0 || age >= dur) return;
+    const p = age / dur;
+    const alpha = Math.max(0, 1 - p * 1.3);
+    if (alpha <= 0) return;
+    const sx = d.x - camX;
+    const sy = gy + cameraY - d.y;
+    ctx.fillStyle = `rgba(196,178,150,${alpha * 0.75})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, d.size * (1 + p * 0.6), 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 // splash droplets + expanding ripple ring -- drawn from the shared post-
@@ -19472,7 +19702,7 @@ const POOL_CHASE_FISH_CATCH_RADIUS = 24;
 const POOL_CHASE_FISH_FLEE_SPEED = 115; // px/s -- faster than the player's own X swim speed (90) so it can't just be walked down in a straight line, but slower than the player's Y speed (140) so a diagonal cutoff can actually win
 const POOL_CHASE_FISH_RESPAWN_MS = 2200;
 const POOL_CHASE_FISH_CAUGHT_BANNER_MS = 1400;
-const POOL_CHASE_FISH_WALL_PEEL_MS = 550; // how long a fish has to be pressed against a pool boundary before it peels off along the wall (toward whichever side has more room) instead of just sitting pinned there
+const POOL_CHASE_FISH_WALL_PEEL_MS = 1100; // how long a fish has to be pressed against a pool boundary before it peels off along the wall (toward whichever side has more room) instead of just sitting pinned there -- bumped from the initial 550ms per direct follow-up ("make the fish hold another beat before leaving")
 
 function poolChaseFishRandomSpot(seed) {
   return {
@@ -20187,6 +20417,33 @@ function updatePoolChestPrompt(deltaTime) {
   }
 }
 
+// the pool-side half of the rock slide exit -- a small rock lip jutting
+// out of the wall right at the surface, so there's something visually
+// distinct to swim up to and press Up near (the existing swim-up exit near
+// POOL_EXIT_X has no marker at all, which is exactly why it went unnoticed
+// -- this new exit gets at least a real physical prop instead of repeating
+// that same gap).
+function drawPoolSlideExitLip(camX) {
+  const sx = POOL_SLIDE_EXIT_X - camX;
+  const sy = gy - 18;
+  if (sx < -60 || sx > canvas.width + 60) return;
+  ctx.save();
+  ctx.fillStyle = "#5a5245";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 34, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#332e27";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 2, 20, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a little moss so it doesn't read as identical grey rock as the plain walls
+  ctx.fillStyle = "rgba(120,160,90,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(sx - 16, sy - 6, 8, 4, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPoolTreasureChest(camX) {
   const chest = POOL_TREASURE_CHEST;
   const sx = chest.x - camX;
@@ -20585,36 +20842,58 @@ function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
   updatePoolChaseFish(deltaTime);
 
-  // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
-  // exact shape as updateSandboxBallPit's own swim block -- a direction
-  // held sets a flat unit velocity, multiplied by a px/s speed and
-  // deltaTime (frame-rate independent, unlike the rest of this game's
-  // per-frame-fixed physics), no momentum carried between frames at all.
-  // Released keys stop movement on that axis instantly, same as ball pit.
-  let vx = 0, vy = 0;
-  if (keys.left) vx = -1;
-  if (keys.right) vx = 1;
-  if (keys.up) vy = 1;
-  if (keys.down) vy = -1;
-  player.x += vx * POOL_SWIM_SPEED_X * deltaTime;
-  player.y += vy * POOL_SWIM_SPEED_Y * deltaTime;
-  player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
+  // ROCK SLIDE EXIT -- while it's active, position/camera/tilt are fully
+  // owned by updatePoolSlideExit (called regardless of scene, same as the
+  // dive), so all of the normal free-swim movement below is skipped, same
+  // "own the player's position entirely" early-exclusion shape poolDive
+  // already uses elsewhere (see applyPhysics's own poolDive.active check).
+  if (!poolSlideExit.active) {
+    // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
+    // exact shape as updateSandboxBallPit's own swim block -- a direction
+    // held sets a flat unit velocity, multiplied by a px/s speed and
+    // deltaTime (frame-rate independent, unlike the rest of this game's
+    // per-frame-fixed physics), no momentum carried between frames at all.
+    // Released keys stop movement on that axis instantly, same as ball pit.
+    let vx = 0, vy = 0;
+    if (keys.left) vx = -1;
+    if (keys.right) vx = 1;
+    if (keys.up) vy = 1;
+    if (keys.down) vy = -1;
+    player.x += vx * POOL_SWIM_SPEED_X * deltaTime;
+    player.y += vy * POOL_SWIM_SPEED_Y * deltaTime;
+    player.facing = vx !== 0 ? Math.sign(vx) : player.facing;
 
-  // CONFIRMED CHANGE ("i should go in one side, whichever side i am
-  // coming from and facing, and then go under out the other side"): the
-  // loop occlusion needs to know which way the player is actually
-  // traveling to split the ring into a near half (in front of them, the
-  // side they entered from) and a far half (behind them, the side
-  // they're exiting toward) -- see drawPoolLoopOcclusion's own comment
-  // for the full split logic. Only overwritten on a real nonzero swim
-  // input so it holds the last real heading if the player stops mid-loop,
-  // rather than snapping to some default the moment they let go of a key.
-  if (vx !== 0 || vy !== 0) poolLastSwimDir = { x: vx, y: vy };
+    // CONFIRMED CHANGE ("i should go in one side, whichever side i am
+    // coming from and facing, and then go under out the other side"): the
+    // loop occlusion needs to know which way the player is actually
+    // traveling to split the ring into a near half (in front of them, the
+    // side they entered from) and a far half (behind them, the side
+    // they're exiting toward) -- see drawPoolLoopOcclusion's own comment
+    // for the full split logic. Only overwritten on a real nonzero swim
+    // input so it holds the last real heading if the player stops mid-loop,
+    // rather than snapping to some default the moment they let go of a key.
+    if (vx !== 0 || vy !== 0) poolLastSwimDir = { x: vx, y: vy };
 
-  updatePoolWhirlpool(deltaTime);
+    updatePoolWhirlpool(deltaTime);
 
-  player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
-  player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
+    player.x = Math.max(0, Math.min(POOL_WIDTH - player.width, player.x));
+    player.y = Math.max(-POOL_MAX_DEPTH, Math.min(0, player.y)); // can't swim up out of the water, can't dive past the floor
+
+    // CONFIRMED CHANGE ("player doesnt turn sidewides for horiz movement
+    // they should"): same tilt-target shape as the ball pit's own swim
+    // tilt -- lying flat, head leading whichever way is held horizontally,
+    // takes priority over vertical; upside-down while diving straight down;
+    // upright otherwise (including holding still). Eased toward that target
+    // rather than snapping, same easing rate as ball pit's own.
+    const poolSwimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0);
+    poolSwimTiltAngle += (poolSwimTiltTarget - poolSwimTiltAngle) * Math.min(1, deltaTime * 6);
+
+    // fixed camera shift so the water reads as filling most of the screen --
+    // see POOL_CAMERA_Y's own comment above. Set every frame (not just once
+    // on entry), same pattern forest/sandbox/tunnel town all use for their
+    // own cameraY.
+    cameraY = POOL_CAMERA_Y;
+  }
 
   // CONFIRMED BUG FIX ("there is lag for when which part of player is
   // occluded while going through ovals"): this used to run at the TOP of
@@ -20635,27 +20914,22 @@ function updatePoolScene(deltaTime) {
   player.usedDoubleJump = false;
   player.launched = false;
 
-  // CONFIRMED CHANGE ("player doesnt turn sidewides for horiz movement
-  // they should"): same tilt-target shape as the ball pit's own swim
-  // tilt -- lying flat, head leading whichever way is held horizontally,
-  // takes priority over vertical; upside-down while diving straight down;
-  // upright otherwise (including holding still). Eased toward that target
-  // rather than snapping, same easing rate as ball pit's own.
-  const poolSwimTiltTarget = vx !== 0 ? (Math.PI / 2) * vx : (vy === -1 ? Math.PI : 0);
-  poolSwimTiltAngle += (poolSwimTiltTarget - poolSwimTiltAngle) * Math.min(1, deltaTime * 6);
-
-  // fixed camera shift so the water reads as filling most of the screen --
-  // see POOL_CAMERA_Y's own comment above. Set every frame (not just once
-  // on entry), same pattern forest/sandbox/tunnel town all use for their
-  // own cameraY.
-  cameraY = POOL_CAMERA_Y;
-
   // exit: swim back to the entry edge, get near the surface, press up --
   // deliberate button press to leave (mirrors the deliberate manual-grab
   // climb mechanic), rather than just touching the edge, so a player
   // exploring near the entry wall doesn't accidentally pop back out.
-  if (keys.upJustPressed && player.x < POOL_EXIT_X + 40 && player.y > -40 && seasonTransition.phase === "idle") {
+  if (!poolSlideExit.active && keys.upJustPressed && player.x < POOL_EXIT_X + 40 && player.y > -40 && seasonTransition.phase === "idle") {
     startSeasonTransition("forest");
+  }
+
+  // ROCK SLIDE EXIT trigger -- second, more fun way out, ADDED alongside
+  // the swim-up exit just above (confirmed, not replacing it, per direct
+  // ask). Same deliberate press-Up-near-the-spot shape; lands at forest
+  // GROUND level near the base of the rock climb instead of back up on the
+  // ledge -- see startPoolSlideExit's own top-of-section comment for why.
+  if (!poolSlideExit.active && keys.upJustPressed && Math.abs(player.x - POOL_SLIDE_EXIT_X) < 40 &&
+      player.y > -40 && seasonTransition.phase === "idle") {
+    startPoolSlideExit();
   }
 
   // TREASURE CHEST -- CONFIRMED REDESIGN (deposit sink, not a one-time
@@ -20983,6 +21257,7 @@ function drawPoolScene(camX) {
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
   drawPoolTreasureChest(camX);
   drawPoolTreasureSparkles(camX);
+  drawPoolSlideExitLip(camX);
   if (!poolChestPromptState.promptEverShown && poolChestPromptState.promptAnimT < 9999) {
     // CONFIRMED CHANGE ("dont have gold sign follow player camera, it
     // should stay with the chest"): the screen-edge clamp added back when
@@ -55937,8 +56212,14 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   // the swap instead of the two ever stacking.
   const poolDiveTilt = (typeof poolDive !== "undefined" && poolDive.active &&
     (poolDive.phase === "jump" || poolDive.phase === "splash") && currentScene === "forest") ? poolDive.tiltAngle : 0;
+  // the rock slide exit's own lean -- covers all three of its phases
+  // ("rise" is still in the pool scene, "slide"/"land" span/follow the
+  // swap to forest), same "own tiltAngle field, additive here" shape as
+  // poolDiveTilt just above. getPoolSwimTilt() is reset to 0 the instant
+  // the slide starts (see startPoolSlideExit) so the two never stack.
+  const poolSlideTilt = (typeof poolSlideExit !== "undefined" && poolSlideExit.active) ? poolSlideExit.tiltAngle : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -56387,6 +56668,7 @@ if (currentScene === "pool") {
 // updatePoolDive's own comment). The functions themselves are no-ops once
 // every droplet/ripple has aged out.
 drawPoolDiveSplash(camX);
+drawPoolSlideDust(camX);
 
 // CONFIRMED CHANGE ("make it look like player is inside nest not floating
 // above it") -- the nest's first pass only ever drew once, as part of the
@@ -57377,6 +57659,7 @@ if (currentScene === "autumn") {
 
 updateSeasonTransition(deltaTime);
   updatePoolDive(deltaTime); // runs regardless of scene -- spans the forest/pool cut mid-splash, see its own comment
+  updatePoolSlideExit(deltaTime); // runs regardless of scene -- spans the pool/forest cut mid-slide, see its own comment
 
   draw();
 
