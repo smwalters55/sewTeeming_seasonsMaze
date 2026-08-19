@@ -3024,6 +3024,10 @@ function applyPhysics(){
   // return shape (see updatePoolSlideExit/startPoolSlideExit's own comments).
   if (poolSlideExit.active) return;
 
+  // FOREST SLIDE BASE IMPACT -- same reasoning, own early-return shape (see
+  // updateForestSlideBaseImpact's own comment above its declaration).
+  if (forestSlideBaseImpact.active) return;
+
   // POOL SCENE -- position is fully driven by updatePoolScene(deltaTime)
   // instead, same split as the sandbox ball pit (see
   // player.onBallPitLadder/inBallPit/onBallPitRim's own early return just
@@ -3045,6 +3049,28 @@ function applyPhysics(){
   // Checked here, before both the launched-flight branch and the plain
   // ground-fall physics below, so it applies whether the fall started
   // from a release (player.launched) or from just stepping off a ledge.
+  // CONFIRMED CHANGE ("if you jump/double jump near the slide at the
+  // bottom, you should get impact and slide down that little part"): checked
+  // before the handhold soft-catch below (both are "what happens while
+  // falling" checks, this one just for a different piece of forest rock).
+  // Only fires while airborne from a real jump (player.jumping), not while
+  // just walking through the zone -- landing near FOREST_SLIDE_END_X while
+  // still descending (vy<=0) triggers the impact+mini-slide.
+  if (currentScene === "forest" && player.jumping && player.vy <= 0 &&
+      !forestSlideBaseImpact.active && !poolSlideExit.active) {
+    const feetX = player.x + player.width / 2;
+    if (feetX >= FOREST_SLIDE_END_X - FOREST_SLIDE_BASE_IMPACT_ZONE && feetX <= FOREST_SLIDE_END_X + 20 &&
+        player.y >= -10 && player.y <= 90) {
+      forestSlideBaseImpact.active = true;
+      forestSlideBaseImpact.startedAt = performance.now();
+      forestSlideBaseImpact.fromX = player.x;
+      forestSlideBaseImpact.fromY = Math.max(0, player.y);
+      player.vx = 0;
+      player.vy = 0;
+      spawnPoolSlideDust(player.x + player.width / 2, Math.max(0, player.y));
+    }
+  }
+
   if (currentScene === "forest" && player.vy <= 0) {
     const fallCatch = FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
       Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
@@ -18866,6 +18892,46 @@ let poolSlideExit = {
 let poolSlideDust = [];
 let poolSlideSettleAmount = 0; // brief post-landing settle tail, mirrors poolDiveSettleAmount
 
+// CONFIRMED CHANGE ("if you jump/double jump near the slide at the bottom,
+// you should get impact and slide down that little part"): a completely
+// separate, much shorter payoff from the pool-side poolSlideExit sequence
+// above -- this one fires from the FOREST side, for a player who's just
+// walking/jumping around near the chute's own base rather than coming down
+// it from the pool. Landing a jump (or double jump) on the lower stretch of
+// the chute now gives a real "you hit solid rock, and it's sloped" beat: a
+// dust puff at the landing point, then a brief eased slide the rest of the
+// way down to true ground, instead of either sailing through the chute's
+// visual with no collision at all or just stopping dead wherever the jump
+// happened to land.
+const FOREST_SLIDE_BASE_IMPACT_ZONE = 130; // how far back up the chute (from FOREST_SLIDE_END_X) counts as "the bottom"
+const FOREST_SLIDE_BASE_IMPACT_MS = 420;
+let forestSlideBaseImpact = {
+  active: false,
+  startedAt: 0,
+  fromX: 0,
+  fromY: 0
+};
+
+function updateForestSlideBaseImpact(deltaTime) {
+  if (!forestSlideBaseImpact.active) return;
+  const now = performance.now();
+  const elapsed = now - forestSlideBaseImpact.startedAt;
+  const p = Math.min(1, elapsed / FOREST_SLIDE_BASE_IMPACT_MS);
+  const ease = p * p * (3 - 2 * p);
+  player.x = forestSlideBaseImpact.fromX + (FOREST_SLIDE_END_X - forestSlideBaseImpact.fromX) * ease;
+  player.y = forestSlideBaseImpact.fromY + (FOREST_SLIDE_END_Y - forestSlideBaseImpact.fromY) * ease;
+  player.vx = 0;
+  player.vy = 0;
+  if (p >= 1) {
+    forestSlideBaseImpact.active = false;
+    player.x = FOREST_SLIDE_END_X;
+    player.y = FOREST_SLIDE_END_Y;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    spawnPoolSlideDust(FOREST_SLIDE_END_X, FOREST_SLIDE_END_Y);
+  }
+}
+
 function startPoolDive() {
   poolDive.active = true;
   poolDive.phase = "jump";
@@ -20800,12 +20866,30 @@ function drawPoolSlideExitLip(camX) {
   // 30), which is well within the canvas at some camera positions -- the
   // implicit closing segment between those two same-x points is a hard
   // vertical line, exactly what kept getting flagged. Pushed the merge
-  // point much further into the wall (wallSx+170, matching the wall's own
-  // "always past any possible camera position" reasoning for its rightAt()
-  // edge) so the seam is never actually on-screen to begin with, rather
-  // than trying to disguise it while still visible.
-  const spanL = sx - 34, spanR = wallSx + 170;
-  const steps = 18;
+  // point further into the wall so the seam is never actually on-screen to
+  // begin with, rather than trying to disguise it while still visible.
+  // CONFIRMED BUG FIX ROUND 2 (screenshot right after the onLedge camera-
+  // follow fix let the camera track right up next to the wall): a fixed
+  // +170 was only "always off-screen" relative to the OLD camera clamp
+  // (max camX 340, so wallSx never dropped below ~730). Once the camera can
+  // legitimately close in to ~745 while walking the ledge (POOL_SLIDE_EXIT_X
+  // to POOL_WIDTH-40 puts the follow target as high as ~740), wallSx itself
+  // can drop as low as ~325, and +170 landed the merge point squarely
+  // on-screen again. 520 comfortably covers that real worst case with
+  // margin to spare, without ballooning the total span the way a blanket
+  // canvas.width-sized offset would (see the steps note just below for why
+  // that matters).
+  const spanL = sx - 34, spanR = wallSx + 520;
+  // CONFIRMED BUG FIX (same screenshot): steps was a flat 18 regardless of
+  // how far apart spanL/spanR are. Pushing spanR out to cover the worst-
+  // case close-up camera widened the total span a lot, which -- at a fixed
+  // step count -- means fewer of those 18 points land in the part that's
+  // actually visible, i.e. bigger gaps between them right where the player
+  // can see them. Exactly the same "straight segments" complaint, just
+  // reintroduced through low sampling density instead of a bad seam
+  // position. Scales with the span instead, so visible resolution stays
+  // roughly constant (~1 point per 14px) no matter how far spanR reaches.
+  const steps = Math.max(18, Math.ceil((spanR - spanL) / 14));
   const top = [], bottom = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
@@ -21433,17 +21517,25 @@ function drawPoolSkyBackdrop() {
   ctx.fillStyle = "rgba(95,100,98,0.55)";
   ctx.strokeStyle = "rgba(60,62,58,0.35)";
   ctx.lineWidth = 1;
+  // CONFIRMED BUG FIX (repeated "still straight lines" report, screenshot
+  // zoomed in close on this same backdrop area): 5 points spread over a
+  // 92px span with only +/-8px jitter is dominated by the smooth sine ridge
+  // shape -- reads as a clean triangle/trapezoid, not broken rock, once
+  // you're this close. More points (9) plus a second, finer noise octave
+  // on top of the original jitter breaks up every individual segment
+  // instead of just the overall silhouette.
   [0.1, 0.35, 0.62, 0.85].forEach((frac, i) => {
     const px = frac * canvas.width;
     const peakH = 18 + pseudoRandom(i * 4.1 + 900) * 12;
-    const jagPoints = 5;
+    const jagPoints = 9;
     ctx.beginPath();
     ctx.moveTo(px - 46, bandBottom - 6);
     for (let k = 0; k <= jagPoints; k++) {
       const kt = k / jagPoints;
       const x = px - 46 + kt * 92;
       const ridge = Math.sin(kt * Math.PI) * peakH;
-      const jag = (pseudoRandom(i * 7.3 + k * 2.9 + 901) - 0.5) * 8;
+      const jag = (pseudoRandom(i * 7.3 + k * 2.9 + 901) - 0.5) * 9 +
+        (pseudoRandom(i * 5.9 + k * 6.1 + 950) - 0.5) * 5;
       ctx.lineTo(x, bandBottom - 6 - ridge + jag);
     }
     ctx.lineTo(px + 46, bandBottom - 6);
@@ -21510,9 +21602,15 @@ function drawPoolSkyBackdrop() {
     { from: 0, to: 0.22 }, { from: 0.34, to: 0.52 },
     { from: 0.62, to: 0.8 }, { from: 0.9, to: 1 },
   ];
+  // CONFIRMED BUG FIX (repeated "still straight lines" report, same
+  // screenshot): only 8 samples across a chunk up to ~176px wide left each
+  // segment ~22px long with a single jag term -- the smooth "dip" sine still
+  // read as the dominant shape, i.e. a few straight-ish facets rather than
+  // broken rock. Bumped resolution and added a second, finer jag octave so
+  // the bottom silhouette breaks up at both a coarse and a fine scale.
   rimChunks.forEach((chunk, ci) => {
     const x0 = chunk.from * canvas.width, x1 = chunk.to * canvas.width;
-    const steps = 8;
+    const steps = 20;
     ctx.beginPath();
     ctx.moveTo(x0, 0);
     for (let i = 0; i <= steps; i++) {
@@ -21521,7 +21619,8 @@ function drawPoolSkyBackdrop() {
       // each chunk dips down unevenly then rises back up toward its own
       // edges, so it reads as a hanging rock mass, not a flat-bottomed bar
       const dip = Math.sin(t * Math.PI) * (rimH * 0.7);
-      const jag = (pseudoRandom(ci * 13.1 + i * 2.7 + 920) - 0.5) * (rimH * 0.35);
+      const jag = (pseudoRandom(ci * 13.1 + i * 2.7 + 920) - 0.5) * (rimH * 0.3) +
+        (pseudoRandom(ci * 8.9 + i * 5.3 + 960) - 0.5) * (rimH * 0.18);
       ctx.lineTo(x, dip + jag);
     }
     ctx.lineTo(x1, 0);
@@ -21609,14 +21708,41 @@ function drawPoolScene(camX) {
     // matter how many points sample it. Lower peak amplitude + a slower
     // falloff spreads the same "bulges near the surface, recedes deeper
     // down" idea over a much gentler slope.
+    // CONFIRMED BUG FIX (repeated report: "still straight horizontal and
+    // vertical lines... right wall area" -- a screenshot zoomed in close on
+    // this exact spot after the two fixes above had already shipped): the
+    // real culprit was `fine`'s own quantization, not curve steepness or
+    // sample count. `Math.floor(t*10)` only ever produces 10 distinct noise
+    // values across the whole wall, so within each of those 10 buckets
+    // (~2.8 of the 28 samples) `fine` was a flat CONSTANT -- the wall only
+    // moved there because of the smooth bigCurve/overhang terms, then
+    // jumped to a new constant at each bucket edge. That reads exactly as
+    // "straight segment, then a little step" close up, which is the
+    // straight-line complaint. Switched to per-sample (not bucketed) two-
+    // octave noise -- a coarser organic wave plus fine jitter, both varying
+    // continuously with every one of the 28 samples -- so there's no longer
+    // any flat run at all.
     const leftAt = t => {
-      const fine = (pseudoRandom(i * 5.1 + Math.floor(t * 10) * 2.3) - 0.5) * 22;
+      const fineCoarse = (pseudoRandom(i * 5.1 + t * 14) - 0.5) * 14;
+      const fineFine = (pseudoRandom(i * 11.3 + t * 37 + 3) - 0.5) * 10;
+      const fine = fineCoarse + fineFine;
       if (i !== 1) return sx + side * (30 + fine);
       const bigCurve = Math.sin(t * Math.PI * 1.6 + 2.3) * 20 + Math.sin(t * Math.PI * 3.4 + 0.7) * 9;
       const overhang = Math.pow(Math.max(0, 1 - t * 0.8), 2) * 24;
       return sx + side * (30 + bigCurve + overhang + fine);
     };
-    const rightAt = () => sx + side * -400;
+    // CONFIRMED BUG FIX (screenshot from onLedge, right after the camera-
+    // follow fix above let the camera track the player right up next to
+    // this wall instead of staying clamped well back from it): a fixed
+    // -400 offset was only ever "comfortably past any possible camera
+    // position" relative to the OLD clamp's max camX (340). Once the
+    // camera can legitimately reach ~740+ while the player's walking the
+    // slide-exit ledge, that same fixed 400px stopped being enough margin
+    // and a sliver of unfilled canvas could show past the wall's own
+    // right edge. Made the margin canvas-width-relative instead of a
+    // magic number, so it's safely past the screen's edge at ANY camera
+    // position, not just the ones that happened to be reachable before.
+    const rightAt = () => sx + side * -(canvas.width + 80);
 
     const grad = ctx.createLinearGradient(sx - side * 50, 0, sx + side * 10, 0);
     grad.addColorStop(0, "#332e27");
@@ -58154,6 +58280,7 @@ if (currentScene === "autumn") {
 updateSeasonTransition(deltaTime);
   updatePoolDive(deltaTime); // runs regardless of scene -- spans the forest/pool cut mid-splash, see its own comment
   updatePoolSlideExit(deltaTime); // runs regardless of scene -- spans the pool/forest cut mid-slide, see its own comment
+  updateForestSlideBaseImpact(deltaTime); // forest-side jump-onto-the-chute-base impact/mini-slide, see its own comment
 
   draw();
 
@@ -58182,8 +58309,20 @@ updateSeasonTransition(deltaTime);
   // molehole's own right-side camera clamp, same small-room pattern
   if (currentScene === "molehole" && cameraX > MOLEHOLE_WIDTH - canvas.width + 40) cameraX = Math.max(0, MOLEHOLE_WIDTH - canvas.width + 40);
   if (currentScene === "tunneltown" && cameraX > TUNNELTOWN_WIDTH - canvas.width + 40) cameraX = Math.max(0, TUNNELTOWN_WIDTH - canvas.width + 40);
-  // pool's own right-side camera clamp, same small-room pattern as molehole
-  if (currentScene === "pool" && cameraX > POOL_WIDTH - canvas.width + 40) cameraX = Math.max(0, POOL_WIDTH - canvas.width + 40);
+  // pool's own right-side camera clamp, same small-room pattern as molehole.
+  // CONFIRMED BUG FIX ("i want the slide exit ledge walkable as in, the
+  // camera follows you so that you can see the slide while youre still up
+  // there"): this cap (340 at the current POOL_WIDTH/canvas.width) sits well
+  // short of the ~610-740 the normal follow formula targets while standing
+  // anywhere on the slide-exit ledge (x:930-1060) -- so the camera was
+  // completely frozen at its cap for the entire onLedge walk, never actually
+  // following the player over there, which read as "the camera isn't
+  // following me" because it genuinely wasn't. Skipped entirely while the
+  // slide-exit sequence is active (rise/onLedge/slide) so the normal easing
+  // formula above is free to center on the player right up next to the
+  // wall/chute; resumes its normal swim-course framing once the sequence
+  // ends (scene swaps to forest before the pool clamp would even apply again).
+  if (currentScene === "pool" && !poolSlideExit.active && cameraX > POOL_WIDTH - canvas.width + 40) cameraX = Math.max(0, POOL_WIDTH - canvas.width + 40);
   // oak's left side has its own tall bookshelf (x:192) that should be
   // visible/reachable from directly left of the entrance door (x:294) --
   // clamped a little past the shelf's own left edge (~157) so there's a
