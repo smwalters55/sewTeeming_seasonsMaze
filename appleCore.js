@@ -19371,6 +19371,189 @@ function drawPoolCritters(camX) {
   drawPoolWaterSnake(camX);
 }
 
+/* ======================================================
+   CHASE-AND-CATCH FISH -- direct request ("what else would be fun in a
+   pond" -> picked "chase fish" alongside the whirlpool, whirlpool built
+   first; this is the second half of that round). Unlike every other pool
+   critter above (pure ambient, no collision, no reaction to the player),
+   these actively flee once you get close and reward a real catch -- per
+   the same "keep using existing inventory / don't add new one-off sinks"
+   discipline as the rest of this game, a catch does NOT grant an
+   inventory item (there's nowhere for a "fish" item to go yet, and this
+   game already has enough uncommitted no-sink items sitting in the audit
+   doc). Instead a catch is its own instant payoff -- a sparkle burst plus
+   a transient carved-plank readout, same "activity that has engagement"
+   shape as the loop course's own timed-run banner -- and the fish itself
+   respawns elsewhere after a short delay so it's a repeatable arcade
+   moment, not a one-time collectible.
+   Uses player.y's own convention (0=surface, negative=deeper), same as
+   POOL_LOOPS/POOL_WHIRLPOOL, since it needs to measure distance to the
+   player directly every frame.
+   ====================================================== */
+const POOL_CHASE_FISH_COUNT = 3;
+const POOL_CHASE_FISH_FLEE_RADIUS = 130;
+const POOL_CHASE_FISH_CATCH_RADIUS = 24;
+const POOL_CHASE_FISH_FLEE_SPEED = 115; // px/s -- faster than the player's own X swim speed (90) so it can't just be walked down in a straight line, but slower than the player's Y speed (140) so a diagonal cutoff can actually win
+const POOL_CHASE_FISH_RESPAWN_MS = 2200;
+const POOL_CHASE_FISH_CAUGHT_BANNER_MS = 1400;
+
+function poolChaseFishRandomSpot(seed) {
+  return {
+    x: 140 + pseudoRandom(seed) * (POOL_WIDTH - 280),
+    y: -30 - pseudoRandom(seed + 11.3) * (POOL_MAX_DEPTH - 60),
+  };
+}
+
+let poolChaseFish = Array.from({ length: POOL_CHASE_FISH_COUNT }, (_, i) => {
+  const spot = poolChaseFishRandomSpot(i * 5.1 + 2);
+  return {
+    x: spot.x, y: spot.y, dir: 1, seed: i * 4.7,
+    wobblePhase: i * 2.1,
+    caughtAt: -1e9, respawnAt: -1e9,
+  };
+});
+
+const poolFishCatchState = { count: 0, lastCaughtAt: -1e9 };
+let poolFishCatchSparkles = [];
+
+function updatePoolChaseFish(deltaTime) {
+  const now = performance.now();
+  const centerX = player.x + player.width / 2;
+  const centerY = player.y + player.height / 2;
+
+  poolChaseFish.forEach(f => {
+    if (now < f.respawnAt) return; // currently hidden, waiting to reappear
+    if (f.respawnAt > -1e8 && now >= f.respawnAt) {
+      // just finished its respawn wait -- pop back in fresh, away from wherever it was caught
+      const spot = poolChaseFishRandomSpot(f.seed + now * 0.00001);
+      f.x = spot.x; f.y = spot.y;
+      f.respawnAt = -1e9;
+    }
+
+    const dx = centerX - f.x, dy = centerY - f.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < POOL_CHASE_FISH_CATCH_RADIUS) {
+      // caught! sparkle burst, bump the session counter, send it away to
+      // respawn elsewhere rather than just vanishing outright
+      poolFishCatchState.count++;
+      poolFishCatchState.lastCaughtAt = now;
+      poolFishCatchSparkles.push({ x: f.x, y: f.y, startedAt: now });
+      f.respawnAt = now + POOL_CHASE_FISH_RESPAWN_MS;
+      return;
+    }
+
+    if (dist < POOL_CHASE_FISH_FLEE_RADIUS && dist > 0.001) {
+      // flee directly away from the player, with a little perpendicular
+      // wobble so it doesn't read as a perfectly straight, robotic dash
+      const awayX = -dx / dist, awayY = -dy / dist;
+      const perpX = -awayY, perpY = awayX;
+      const wobble = Math.sin(now * 0.006 + f.wobblePhase) * 0.35;
+      const moveX = awayX + perpX * wobble, moveY = awayY + perpY * wobble;
+      const moveLen = Math.sqrt(moveX * moveX + moveY * moveY) || 1;
+      f.x += (moveX / moveLen) * POOL_CHASE_FISH_FLEE_SPEED * deltaTime;
+      f.y += (moveY / moveLen) * POOL_CHASE_FISH_FLEE_SPEED * deltaTime;
+      f.dir = moveX >= 0 ? 1 : -1;
+    } else {
+      // gentle idle wander when the player's not nearby
+      f.x += Math.cos(now * 0.0009 + f.wobblePhase) * 10 * deltaTime;
+      f.y += Math.sin(now * 0.0013 + f.wobblePhase) * 6 * deltaTime;
+      f.dir = Math.cos(now * 0.0009 + f.wobblePhase) >= 0 ? 1 : -1;
+    }
+
+    f.x = Math.max(60, Math.min(POOL_WIDTH - 60, f.x));
+    f.y = Math.max(-(POOL_MAX_DEPTH - 20), Math.min(-15, f.y));
+  });
+
+  poolFishCatchSparkles = poolFishCatchSparkles.filter(s => now - s.startedAt < 900);
+}
+
+function drawPoolChaseFishOne(f, camX) {
+  const now = performance.now();
+  if (now < f.respawnAt) return; // hidden, mid-respawn
+  const sx = f.x - camX;
+  const sy = gy - f.y;
+  if (sx < -30 || sx > canvas.width + 30) return;
+  const d = f.dir;
+  const tailWag = Math.sin(now * 0.012 + f.wobblePhase) * 3;
+
+  ctx.fillStyle = "rgba(255,150,60,0.92)"; // bright orange -- reads clearly against the teal water, distinct from every other critter's muted palette
+  // tail fin
+  ctx.beginPath();
+  ctx.moveTo(sx - d * 7, sy);
+  ctx.lineTo(sx - d * 13, sy - 4 + tailWag);
+  ctx.lineTo(sx - d * 13, sy + 4 + tailWag);
+  ctx.closePath();
+  ctx.fill();
+  // body
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 8, 4.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // dorsal fin
+  ctx.beginPath();
+  ctx.moveTo(sx - 1, sy - 4);
+  ctx.lineTo(sx + 2, sy - 8);
+  ctx.lineTo(sx + 4, sy - 4);
+  ctx.closePath();
+  ctx.fill();
+  // eye
+  ctx.fillStyle = "rgba(20,15,10,0.85)";
+  ctx.beginPath();
+  ctx.ellipse(sx + d * 4.5, sy - 0.8, 1, 1, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawPoolChaseFish(camX) {
+  poolChaseFish.forEach(f => drawPoolChaseFishOne(f, camX));
+}
+
+function drawPoolFishCatchSparkles(camX) {
+  const now = performance.now();
+  poolFishCatchSparkles.forEach(s => {
+    const age = now - s.startedAt;
+    const p = age / 900;
+    if (p >= 1) return;
+    const sx = s.x - camX, sy = gy - s.y;
+    const alpha = 1 - p;
+    for (let i = 0; i < 9; i++) {
+      const ang = (i / 9) * Math.PI * 2 + p * 4;
+      const r = 6 + p * 34;
+      const px = sx + Math.cos(ang) * r;
+      const py = sy + Math.sin(ang) * r * 0.55;
+      ctx.fillStyle = `rgba(255,190,110,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, 2 + (1 - p) * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+// Screen-fixed catch readout, same fade-in/out shape as the loop course's
+// result banner -- called post-restore in drawPoolScene so it stays put
+// on screen rather than scrolling with the camera.
+function drawPoolFishCatchHUD() {
+  const now = performance.now();
+  const age = now - poolFishCatchState.lastCaughtAt;
+  if (age >= POOL_CHASE_FISH_CAUGHT_BANNER_MS) return;
+  const p = age / POOL_CHASE_FISH_CAUGHT_BANNER_MS;
+  const alpha = p < 0.15 ? p / 0.15 : (1 - (p - 0.15) / 0.85);
+  const text = `Caught! (${poolFishCatchState.count} this swim)`;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.font = "bold 15px monospace";
+  ctx.textAlign = "center";
+  const boxW = ctx.measureText(text).width + 28;
+  const boxX = canvas.width / 2 - boxW / 2, boxY = 46, boxH = 26;
+  ctx.fillStyle = "rgba(60,42,26,0.85)";
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = "rgba(255,210,140,0.9)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillStyle = "rgba(255,225,180,0.95)";
+  ctx.fillText(text, canvas.width / 2, boxY + boxH / 2 + 5);
+  ctx.restore();
+}
+
 // SWIM-THROUGH LOOPS -- first pass ("lets just start witht hat to get a
 // feel for it"): a single winding course of ovals through the pool, no
 // inventory/streak/HUD tracking at all, purely a sparkle-on-pass visual
@@ -20006,7 +20189,16 @@ function drawPoolTreasureSparkles(camX) {
 // holding away," never a struggle. The small inward pull is what actually
 // catches you if you wander in without meaning to; the spin itself is the
 // payoff, not a punishment.
-const POOL_WHIRLPOOL = { x: 470, y: -232, radius: 75, strength: 95 };
+// CONFIRMED CHANGE ("whirlpool should be higher cus rn dont touch it going
+// from loop 2 to 3"): confirmed with Sam this meant the OPPOSITE of what a
+// first read suggests -- the whirlpool should be higher so it actually sits
+// IN the loop2->loop3 swim and gets encountered, not so it stays clear of
+// it. The original placement (x:470, y:-232) sat well below the straight
+// line between loop 2 (x:380, y:-170) and loop 3 (x:520, y:-70), deep
+// enough that a normal swim between them never came close. Moved onto that
+// line's own midpoint so it's now a real obstacle along the direct route
+// between the two loops, not an easily-missed detour below it.
+const POOL_WHIRLPOOL = { x: 450, y: -120, radius: 75, strength: 95 };
 
 function updatePoolWhirlpool(deltaTime) {
   const centerX = player.x + player.width / 2;
@@ -20082,6 +20274,7 @@ function drawPoolWhirlpool(camX) {
 
 function updatePoolScene(deltaTime) {
   updatePoolCritters(deltaTime);
+  updatePoolChaseFish(deltaTime);
 
   // CONFIRMED CHANGE ("and we will want movement like in ball pit"): same
   // exact shape as updateSandboxBallPit's own swim block -- a direction
@@ -20475,6 +20668,8 @@ function drawPoolScene(camX) {
   drawPoolPlants(camX);
   drawPoolWhirlpool(camX);
   drawPoolCritters(camX);
+  drawPoolChaseFish(camX);
+  drawPoolFishCatchSparkles(camX);
   drawPoolLoops(camX);
   drawPoolLoopSparkles(camX, { worldSpace: true }); // full burst, normal pass -- see that function's own comment for why this half of the split now exists
   drawPoolTreasureChest(camX);
@@ -20500,6 +20695,7 @@ function drawPoolScene(camX) {
   // stays pinned to the same spot on screen regardless of where the
   // water's shifted to.
   drawPoolLoopChallengeHUD();
+  drawPoolFishCatchHUD();
 }
 
 // see poolLoopChallenge's own comment (up near POOL_LOOPS) for the full
@@ -55871,6 +56067,7 @@ if (currentScene === "pool") {
   ctx.save();
   ctx.translate(0, cameraY);
   drawPoolCritters(camX);
+  drawPoolChaseFish(camX); // same reasoning as the critters just above -- a fleeing fish swimming past/through the player should wrap in front, not always render flat behind
   ctx.restore();
 }
 
