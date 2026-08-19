@@ -20385,31 +20385,67 @@ function drawPoolTreasureSparkles(camX) {
 // -- same "sits directly in the swim between two loops" placement logic as
 // the first one's own midpoint fix, so both whirlpools are real obstacles
 // along the course rather than off to one side.
+// CONFIRMED CHANGE ("make them a little stronger.. the whirls"): another
+// bump, 160->210 (+31%) on both -- smaller step than the first strength
+// bump on purpose, matching "a little stronger" rather than another big
+// jump.
 const POOL_WHIRLPOOLS = [
-  { x: 450, y: -120, radius: 75, strength: 160 },
-  { x: 730, y: -150, radius: 75, strength: 160 },
+  { x: 450, y: -120, radius: 75, strength: 210 },
+  { x: 730, y: -150, radius: 75, strength: 210 },
 ];
 
+// shared force calc -- same tangential-sweep-plus-weak-inward-pull shape
+// used for both the player and (see below) the chase fish, factored out so
+// both targets get identical physics rather than two hand-copied versions
+// drifting apart over time. Returns null outside the radius (dead zone).
+function poolWhirlpoolForceAt(wp, cx, cy) {
+  const dx = cx - wp.x, dy = cy - wp.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist >= wp.radius || dist < 1) return null;
+  const falloff = 1 - dist / wp.radius; // stronger near the center, zero at the rim
+  // tangential unit vector -- rotate the radius vector 90°, fixed spin
+  // direction (clockwise) so the swirl reads as one continuous current
+  // rather than randomly reversing
+  const tx = -dy / dist, ty = dx / dist;
+  return {
+    fx: tx * wp.strength * falloff - (dx / dist) * wp.strength * 0.18 * falloff,
+    fy: ty * wp.strength * falloff - (dy / dist) * wp.strength * 0.18 * falloff,
+  };
+}
+
+// CONFIRMED CHANGE ("maybe they should affect the other animals in there
+// too" -> "do you think that might add too much visual noise"): only the
+// chase fish get swept, not the ambient critters (crayfish/salamander/
+// snails/water snake). Those all move along fixed, scripted paths with no
+// free x/y of their own to nudge (the salamander/crayfish patrol a floor
+// range, snails/the water snake compute their position straight from
+// fireflyT each frame rather than storing drifting state) -- perturbing
+// them would either do nothing or fight their own animation and look
+// glitchy, not "caught in a current." The chase fish already have real,
+// unconstrained x/y and their own per-frame movement (wander/flee), so a
+// whirlpool tug composes naturally with that, same as it does with the
+// player's own swim input. Weighted down to 55% strength for fish -- full
+// strength reads right for the player (who's actively fighting/steering
+// against it) but sent a fish's much lighter movement into a flung-around
+// blur that looked like noise rather than "caught in a current."
+const POOL_WHIRLPOOL_FISH_STRENGTH_MULT = 0.55;
+
 function updatePoolWhirlpool(deltaTime) {
+  const now = performance.now();
   POOL_WHIRLPOOLS.forEach(wp => {
-    const centerX = player.x + player.width / 2;
-    const centerY = player.y + player.height / 2;
-    const dx = centerX - wp.x;
-    const dy = centerY - wp.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist >= wp.radius || dist < 1) return;
-    const falloff = 1 - dist / wp.radius; // stronger near the center, zero at the rim
-    // tangential unit vector -- rotate the radius vector 90°, fixed spin
-    // direction (clockwise) so the swirl reads as one continuous current
-    // rather than randomly reversing
-    const tx = -dy / dist, ty = dx / dist;
-    player.x += tx * wp.strength * falloff * deltaTime;
-    player.y += ty * wp.strength * falloff * deltaTime;
-    // gentle inward pull -- much weaker than the tangential sweep, just
-    // enough to actually catch a player who drifts in without fighting it,
-    // not strong enough to fight someone who's holding straight outward
-    player.x -= (dx / dist) * wp.strength * 0.18 * falloff * deltaTime;
-    player.y -= (dy / dist) * wp.strength * 0.18 * falloff * deltaTime;
+    const pf = poolWhirlpoolForceAt(wp, player.x + player.width / 2, player.y + player.height / 2);
+    if (pf) {
+      player.x += pf.fx * deltaTime;
+      player.y += pf.fy * deltaTime;
+    }
+    poolChaseFish.forEach(fish => {
+      if (now < fish.respawnAt) return; // hidden mid-respawn, nothing to push
+      const ff = poolWhirlpoolForceAt(wp, fish.x, fish.y);
+      if (ff) {
+        fish.x += ff.fx * POOL_WHIRLPOOL_FISH_STRENGTH_MULT * deltaTime;
+        fish.y += ff.fy * POOL_WHIRLPOOL_FISH_STRENGTH_MULT * deltaTime;
+      }
+    });
   });
 }
 
@@ -20449,6 +20485,35 @@ function drawPoolWhirlpoolOne(wp, camX) {
     ctx.stroke();
   });
 
+  // CONFIRMED CHANGE ("make the whirlpools just slightly visually more
+  // interesting"): three additions on top of the existing disc/arcs/bubbles
+  // -- a slowly pulsing outer rim ring so the whole thing reads as "alive"
+  // even at a glance from a distance, a rotating brighter sheen wedge
+  // across the disc (like light catching the water's own motion, not a
+  // static flat fill), and a handful of small tan sediment flecks mixed in
+  // with the existing white bubbles so the spiral isn't one uniform color.
+  const rimPulse = 0.5 + Math.sin(t * 1.8) * 0.5;
+  ctx.strokeStyle = `rgba(225,245,248,${0.18 + rimPulse * 0.22})`;
+  ctx.lineWidth = 1.5 + rimPulse * 1.2;
+  ctx.beginPath();
+  ctx.arc(sx, sy, wp.radius - 1.5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(sx, sy, wp.radius, 0, Math.PI * 2);
+  ctx.clip();
+  const sheenAng = t * 1.1;
+  const sheenGrad = ctx.createRadialGradient(
+    sx + Math.cos(sheenAng) * wp.radius * 0.35, sy + Math.sin(sheenAng) * wp.radius * 0.35 * 0.6, 0,
+    sx + Math.cos(sheenAng) * wp.radius * 0.35, sy + Math.sin(sheenAng) * wp.radius * 0.35 * 0.6, wp.radius * 0.7
+  );
+  sheenGrad.addColorStop(0, "rgba(200,235,245,0.16)");
+  sheenGrad.addColorStop(1, "rgba(200,235,245,0)");
+  ctx.fillStyle = sheenGrad;
+  ctx.fillRect(sx - wp.radius, sy - wp.radius, wp.radius * 2, wp.radius * 2);
+  ctx.restore();
+
   // small bubbles spiraling in toward the center, continuously looping --
   // pure function of time + a per-bubble seed, no stored particle array to
   // manage (same "decor, not real particle state" approach as the sky
@@ -20463,6 +20528,22 @@ function drawPoolWhirlpoolOne(wp, camX) {
     ctx.fillStyle = `rgba(255,255,255,${0.55 * Math.sin(cycle * Math.PI)})`;
     ctx.beginPath();
     ctx.arc(bx, by, 1.6 + cycle * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // sediment flecks -- same spiral-in motion as the bubbles above but
+  // slower, tan-colored, and on their own independent seed/cycle so they
+  // don't just look like recolored copies moving in lockstep
+  for (let i = 0; i < 4; i++) {
+    const seed = i * 5.9 + 40;
+    const cycle = (t * 0.22 + pseudoRandom(seed)) % 1;
+    const rr = wp.radius * (1 - cycle) * 0.9;
+    const ang = t * 1.5 * (i % 2 === 0 ? -1 : 1) + seed * 4;
+    const bx = sx + Math.cos(ang) * rr;
+    const by = sy + Math.sin(ang) * rr * 0.6;
+    ctx.fillStyle = `rgba(190,160,110,${0.4 * Math.sin(cycle * Math.PI)})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1 + cycle * 1, 0, Math.PI * 2);
     ctx.fill();
   }
 }
