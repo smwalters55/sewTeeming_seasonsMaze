@@ -3067,7 +3067,12 @@ function applyPhysics(){
       forestSlideBaseImpact.fromY = Math.max(0, player.y);
       player.vx = 0;
       player.vy = 0;
-      spawnPoolSlideDust(player.x + player.width / 2, Math.max(0, player.y));
+      // CONFIRMED CHANGE ("whats up with the beige-ish circle that forms...
+      // remove that"): the shared dust-puff effect (also used by the pool
+      // slide's own landing, see updatePoolSlideExit/updateForestSlideBaseImpact
+      // below) reads as a flat beige circle rather than a real dust cloud --
+      // removed here and at both of its other call sites rather than trying
+      // to reshape it, per direct request.
     }
   }
 
@@ -18940,7 +18945,6 @@ function updateForestSlideBaseImpact(deltaTime) {
     player.y = FOREST_SLIDE_END_Y;
     player.jumping = false;
     player.usedDoubleJump = false;
-    spawnPoolSlideDust(FOREST_SLIDE_END_X, FOREST_SLIDE_END_Y);
   }
 }
 
@@ -19276,7 +19280,6 @@ function updatePoolSlideExit(deltaTime) {
     if (p >= 1) {
       poolSlideExit.phase = "land";
       poolSlideExit.landedAt = now;
-      spawnPoolSlideDust(FOREST_SLIDE_END_X, FOREST_SLIDE_END_Y);
       poolSlideSettleAmount = 1;
       player.jumping = false;
       player.usedDoubleJump = false;
