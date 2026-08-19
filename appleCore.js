@@ -18821,6 +18821,18 @@ let poolDiveSettleAmount = 0;
 // ledge, which is the actual point of a second exit at all: skips the
 // climb-down every dive currently requires to get back to the forest floor.
 const POOL_SLIDE_EXIT_X = 960; // near the pool's far (right) wall, clear of the treasure chest's own column (x:1010) so the two don't read as stacked
+// CONFIRMED CHANGE ("would add real jump on the ledge allow me to walk to
+// where the slide is. if so then that" -- talked through in chat and
+// landed on mirroring the pool DIVE's own "walk off the edge" pattern
+// instead of adding real jump physics to a scripted platform): the ledge
+// used to be a dead-end that only ever went anywhere via a space-press
+// from wherever you happened to be standing -- there was nothing to
+// actually walk TO. This is the x position of a real carved-open "mouth"
+// in the rock (see drawPoolSlideExitLip) that the player can see and walk
+// toward, and crossing it while on the ledge is what actually starts the
+// slide now, same "walk off the edge" trigger shape as startPoolDive's own
+// ledge check.
+const POOL_SLIDE_OPENING_X = POOL_SLIDE_EXIT_X + 70;
 // CONFIRMED CHANGE ("from inside the rock pool have like a little mini rock
 // thats sticking out organically... to kind of jump onto to then jump onto
 // that ledge"): a smaller stepping-stone rock a bit before the main exit
@@ -19209,10 +19221,20 @@ function updatePoolSlideExit(deltaTime) {
     // which read as a freeze rather than actually standing on solid rock.
     // Now the player can walk left/right along the platform (real x
     // movement, clamped to the platform's own footprint, y pinned to the
-    // ledge height so it reads as standing on ground) while waiting for the
-    // jump that actually starts the slide -- so there's a real "I'm
-    // standing here, I can see the slide, I choose to jump" beat instead of
-    // an inexplicable pause.
+    // ledge height so it reads as standing on ground).
+    // CONFIRMED CHANGE ("would add real jump on the ledge allow me to walk
+    // to where the slide is. if so then that"): talked through in chat --
+    // adding real jump wouldn't have actually gotten anywhere new, since
+    // there was nothing built to jump UP to. What actually answers "let me
+    // walk to where the slide is and see it before going down" is treating
+    // the platform's far end the same way the pool DIVE's own ledge already
+    // works: there's now a real carved-open mouth in the rock (see
+    // POOL_SLIDE_OPENING_X / drawPoolSlideExitLip) to walk toward, and
+    // crossing into it while still at ledge height is what starts the
+    // slide -- a deliberate "walk off the edge" trigger, same shape as
+    // startPoolDive's own check, not an instant/arbitrary one. Space still
+    // works too as a backup from anywhere on the platform, so nothing that
+    // already relied on it breaks.
     let vx = 0;
     if (keys.left) vx = -1;
     if (keys.right) vx = 1;
@@ -19222,7 +19244,7 @@ function updatePoolSlideExit(deltaTime) {
     player.y = poolSlideExit.ledgeY;
     player.vx = 0;
     player.vy = 0;
-    if (keys.spaceJustPressed) {
+    if (keys.spaceJustPressed || player.x >= POOL_SLIDE_OPENING_X) {
       poolSlideExit.phase = "slide";
       poolSlideExit.slideStartedAt = now;
     }
@@ -20956,6 +20978,54 @@ function drawPoolSlideExitLip(camX) {
   });
 
   ctx.restore(); // undo clip
+
+  // CONFIRMED CHANGE ("would add real jump on the ledge allow me to walk to
+  // where the slide is. if so then that"): a real carved-open mouth in the
+  // rock at POOL_SLIDE_OPENING_X, drawn on top of the platform's own rock
+  // fill above -- gives the player something to actually see and walk
+  // toward, instead of the platform just dead-ending into solid wall with
+  // no visible destination. Jagged, irregular framing (two-octave noise,
+  // matching every other rock treatment in this file) so the opening
+  // itself doesn't read as a smooth punched-out circle, and a radial dark
+  // gradient so it reads as receding into shadow rather than a flat black
+  // disc.
+  const openingCx = POOL_SLIDE_OPENING_X - camX;
+  const openingCy = sy - 4;
+  const mouthGrad = ctx.createRadialGradient(openingCx, openingCy, 4, openingCx, openingCy, 44);
+  mouthGrad.addColorStop(0, "rgba(6,5,4,0.96)");
+  mouthGrad.addColorStop(0.65, "rgba(18,15,11,0.85)");
+  mouthGrad.addColorStop(1, "rgba(40,35,27,0.35)");
+  ctx.fillStyle = mouthGrad;
+  ctx.beginPath();
+  const mouthPts = 16;
+  for (let k = 0; k <= mouthPts; k++) {
+    const ang = (k / mouthPts) * Math.PI * 2;
+    const baseR = 32 + Math.sin(ang * 2.1 + 1) * 7;
+    const jagCoarse = (pseudoRandom(k * 5.7 + 500) - 0.5) * 9;
+    const jagFine = (pseudoRandom(k * 11.3 + 540) - 0.5) * 4;
+    const rx = baseR + jagCoarse + jagFine, ry = (baseR + jagCoarse + jagFine) * 0.6;
+    const px = openingCx + Math.cos(ang) * rx;
+    const py = openingCy + Math.sin(ang) * ry;
+    if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // a hint of the chute's own rock just visible past the rim, so the
+  // opening reads as a real passage rather than a flat hole painted on
+  ctx.strokeStyle = "rgba(70,64,54,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(openingCx - 20, openingCy - 12);
+  ctx.lineTo(openingCx - 6, openingCy - 3);
+  ctx.lineTo(openingCx + 12, openingCy - 9);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(openingCx - 14, openingCy + 10);
+  ctx.lineTo(openingCx + 4, openingCy + 4);
+  ctx.lineTo(openingCx + 18, openingCy + 11);
+  ctx.stroke();
+
   ctx.restore();
 }
 
