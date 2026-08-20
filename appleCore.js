@@ -18007,6 +18007,39 @@ function drawForestRockLedge(camX) {
 // seeded lighter or darker, laid over the base so the face reads as cut/
 // broken stone rather than a smooth wash; (3) the crack lines, moss
 // patches, and highlight blotches from before, kept and expanded.
+// CONFIRMED BUG FIX ("why are you using literal RECTANGLES to make the rock
+// holding the pool more rocky when i asked for no straight lines horiz or
+// vertical anywhere as that is not organic at all"): the slab/facet texture
+// layers below used to be 4-point quads (moveTo/lineTo x4) -- jittering the
+// corners doesn't change that a quad's own edges are always dead-straight
+// lines between exactly two points, which at a close zoom reads as literal
+// rectangles, exactly what got flagged. This draws a genuinely irregular
+// many-sided "rock chip" polygon instead: each vertex sits at its own
+// jittered angle AND jittered radius from a center point, so every edge is
+// a short jagged segment at a random slope -- no edge is ever a long
+// straight horizontal or vertical run, and the shape itself is never a
+// quad/rectangle. Reused by every "make this rock more rocky" texture layer
+// below instead of each one hand-rolling its own quad.
+function drawRockFacetChip(cx, cy, avgR, seed, shade) {
+  const N = 7 + Math.floor(pseudoRandom(seed + 50) * 4); // 7-10 vertices, never a quad
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const baseAngle = (i / N) * Math.PI * 2;
+    // angle jitter keeps vertices from landing in a perfectly even ring
+    // (which would still read as a regular polygon, not broken rock)
+    const angle = baseAngle + (pseudoRandom(seed + i * 3.7 + 1) - 0.5) * (Math.PI * 2 / N) * 0.9;
+    const r = avgR * (0.5 + pseudoRandom(seed + i * 5.1 + 2) * 0.9);
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r * 0.78; // slightly flattened -- real rock chips aren't circular
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = shade > 0.5
+    ? `rgba(175,166,144,${0.07 + (shade - 0.5) * 0.4})`
+    : `rgba(15,13,10,${0.07 + (0.5 - shade) * 0.42})`;
+  ctx.fill();
+}
+
 function drawForestRockWall(camX) {
   const topHeight = forestRockWallTopHeight();
   const baseX = FOREST_ROCK_CLIMB_X - camX;
@@ -18076,91 +18109,39 @@ function drawForestRockWall(camX) {
   ctx.save();
   ctx.clip();
 
-  // CONFIRMED CHANGE ("make this big rock more rocky"): the fine facet grid
-  // below was tuned for a normal play-distance view -- at a close zoom it's
-  // too low-contrast and too small-grained to read as anything but a
-  // smooth gradient with a couple of thin scratches. Added a coarser,
-  // higher-contrast slab layer underneath it first: a handful of large
-  // irregular rock-plane shapes (not a uniform grid -- deliberately uneven
-  // sizes/positions) so the wall reads as "made of distinct rock" at a
-  // glance, before the finer facet grid adds the closer-up detail on top.
-  const SLAB_COUNT = 7;
-  for (let s = 0; s < SLAB_COUNT; s++) {
-    const seed = s * 23.1 + 300;
-    const t0 = Math.max(0, (s / SLAB_COUNT) - 0.04 + pseudoRandom(seed) * 0.06);
-    const t1 = Math.min(1, ((s + 1) / SLAB_COUNT) + 0.05 + pseudoRandom(seed + 1) * 0.06);
-    const y0 = bottomY - topHeight * t0, y1 = bottomY - topHeight * t1;
-    const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
-    const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
-    const cf0 = pseudoRandom(seed + 2) * 0.35, cf1 = 0.65 + pseudoRandom(seed + 3) * 0.35;
-    const x00 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf0;
-    const x01 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf1;
-    const x10 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf0;
-    const x11 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf1;
-    const shade = pseudoRandom(seed + 4);
-    ctx.fillStyle = shade > 0.5
-      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.4})`
-      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.42})`;
-    ctx.beginPath();
-    ctx.moveTo(x00, y0);
-    ctx.lineTo(x01, y0);
-    ctx.lineTo(x11, y1);
-    ctx.lineTo(x10, y1);
-    ctx.closePath();
-    ctx.fill();
+  // CONFIRMED BUG FIX ("why are you using literal RECTANGLES to make the
+  // rock holding the pool more rocky...no straight lines horiz or vertical
+  // anywhere as that is not organic at all"): the old slab-quad layer (a
+  // handful of large 4-point trapezoids) and the facet-grid layer (a strict
+  // FACET_ROWS x FACET_COLS grid of small 4-point quads, jittered corners or
+  // not) are BOTH gone -- a quad's own edges are always two dead-straight
+  // lines no matter how the corners are jittered, and a grid of them is
+  // still visibly a grid up close, which is exactly what the screenshot
+  // caught. Replaced with two size-tiers of drawRockFacetChip scatter
+  // (many-sided, angle+radius-jittered polygons -- see that function's own
+  // comment) at random positions across the face instead of a fixed
+  // row/column layout, so there's no grid structure left to read as boxes.
+  const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
+  const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
+  const COARSE_CHIPS = 16;
+  for (let c = 0; c < COARSE_CHIPS; c++) {
+    const seed = c * 23.1 + 300;
+    const t = pseudoRandom(seed);
+    const cf = 0.1 + pseudoRandom(seed + 1) * 0.8;
+    const cx = leftAt(t) + (rightAt(t) - leftAt(t)) * cf;
+    const cy = bottomY - topHeight * t;
+    const avgR = 20 + pseudoRandom(seed + 2) * 16;
+    drawRockFacetChip(cx, cy, avgR, seed, pseudoRandom(seed + 4));
   }
-
-  // faceted shading -- a loose grid of irregular quads, each own-shade
-  // (seeded, not random per frame), reading as broken/cut rock planes
-  // rather than one smooth surface
-  // CONFIRMED BUG FIX ("these horizontal straight lines of the climbing
-  // wall where there is one section per climb node"): every column in a
-  // given row shared the exact same y0/y1 -- only the x corners got any
-  // jitter. That left a dead straight seam running the full width of the
-  // face at every row boundary, evenly spaced (one per handhold, since
-  // FACET_ROWS roughly matches the climb's own node spacing), which is
-  // exactly what read as mechanical "sections" instead of broken stone.
-  // Each facet's own y0/y1 now get their own small per-corner jitter too
-  // (same shape as the existing x jitter), so no two columns' row
-  // boundaries land at the same height anymore.
-  // CONFIRMED CHANGE ("make this big rock more rocky"): finer grid (was
-  // 9x4) plus stronger per-facet contrast (see shade fillStyle below) so
-  // the close-up detail actually reads instead of blending into a smooth
-  // gradient.
-  const FACET_ROWS = 14, FACET_COLS = 6;
-  for (let row = 0; row < FACET_ROWS; row++) {
-    const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
-    const rowY0 = bottomY - topHeight * t0, rowY1 = bottomY - topHeight * t1;
-    const leftAt = t => baseX + forestRockWallEdgeX(t, -1);
-    const rightAt = t => baseX + forestRockWallEdgeX(t, 1);
-    for (let col = 0; col < FACET_COLS; col++) {
-      const seed = row * 31.7 + col * 5.3;
-      const cf0 = col / FACET_COLS, cf1 = (col + 1) / FACET_COLS;
-      const jx = k => (pseudoRandom(seed + k) - 0.5) * 10; // small per-corner jitter, breaks up the grid regularity
-      const jy = k => (pseudoRandom(seed + k) - 0.5) * 16; // same idea, vertically -- breaks the row boundary out of a straight line
-      const y0 = rowY0 + jy(15), y1 = rowY1 + jy(16);
-      const x00 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf0 + jx(1);
-      const x01 = leftAt(t0) + (rightAt(t0) - leftAt(t0)) * cf1 + jx(2);
-      const x10 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf0 + jx(3);
-      const x11 = leftAt(t1) + (rightAt(t1) - leftAt(t1)) * cf1 + jx(4);
-      const shade = pseudoRandom(seed + 9);
-      // alternates between a darker recessed facet and a lighter one
-      // catching more light.
-      // CONFIRMED CHANGE ("make this big rock more rocky"): contrast bumped
-      // (0.22/0.26 -> 0.32/0.36) alongside the finer grid above -- the old
-      // subtle range was tuned to avoid a checkerboard look at normal play
-      // distance, but reads as almost no texture at all once zoomed in.
-      ctx.fillStyle = shade > 0.5
-        ? `rgba(160,152,132,${0.06 + (shade - 0.5) * 0.32})`
-        : `rgba(20,17,13,${0.06 + (0.5 - shade) * 0.36})`;
-      ctx.beginPath();
-      ctx.moveTo(x00, y0);
-      ctx.lineTo(x01, y0);
-      ctx.lineTo(x11, y1);
-      ctx.lineTo(x10, y1);
-      ctx.closePath();
-      ctx.fill();
-    }
+  const FINE_CHIPS = 80;
+  for (let c = 0; c < FINE_CHIPS; c++) {
+    const seed = c * 11.3 + 1300;
+    const t = pseudoRandom(seed);
+    const cf = 0.04 + pseudoRandom(seed + 1) * 0.92;
+    const cx = leftAt(t) + (rightAt(t) - leftAt(t)) * cf;
+    const cy = bottomY - topHeight * t;
+    const avgR = 7 + pseudoRandom(seed + 2) * 9;
+    drawRockFacetChip(cx, cy, avgR, seed + 9, pseudoRandom(seed + 4));
   }
 
   // a handful of darker crack lines, more of them now and reaching
@@ -18311,8 +18292,8 @@ function computeForestSlideChuteGeometry(camX) {
     const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
     const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
     const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
-    left.push({ x: cx - halfWidth + jagL, y: cy });
-    right.push({ x: cx + halfWidth + jagR, y: cy });
+    let outerLeftX = cx - halfWidth + jagL;
+    let outerRightX = cx + halfWidth + jagR;
     mid.push({ x: cx, y: cy });
     halfWidths.push(halfWidth);
     // CONFIRMED CHANGE: the actual riding surface -- a narrower band down
@@ -18322,8 +18303,26 @@ function computeForestSlideChuteGeometry(camX) {
     const trackHalfWidth = Math.max(6, halfWidth * 0.42);
     const trackJagL = (pseudoRandom(i * 6.1 + 300) - 0.5) * 2.5;
     const trackJagR = (pseudoRandom(i * 7.3 + 320) - 0.5) * 2.5;
-    trackLeft.push({ x: cx - trackHalfWidth + trackJagL, y: cy });
-    trackRight.push({ x: cx + trackHalfWidth + trackJagR, y: cy });
+    const trackLeftX = cx - trackHalfWidth + trackJagL;
+    const trackRightX = cx + trackHalfWidth + trackJagR;
+    // CONFIRMED BUG FIX ("player rando pokes out of it...doesnt look 3d at
+    // all"): the outer rock edge's own jag (up to +-15.5px) could swing far
+    // enough inward to land CLOSER to center than the track edge, especially
+    // near the chute's bottom where halfWidth narrows -- flipping the near
+    // rail's own fill polygon (built from trackRight -> right) inside out
+    // into a self-intersecting bowtie shape wherever that happened. That's
+    // what read as the player sprite getting jaggedly eaten into mid-ride --
+    // it wasn't the player being clipped, it was the rail polygon itself
+    // twisting across the player's body. Clamping a guaranteed minimum gap
+    // between each track edge and its matching outer edge keeps both rail
+    // polygons simple (non-self-intersecting) at every single step.
+    const MIN_RAIL_GAP = 8;
+    if (outerLeftX > trackLeftX - MIN_RAIL_GAP) outerLeftX = trackLeftX - MIN_RAIL_GAP;
+    if (outerRightX < trackRightX + MIN_RAIL_GAP) outerRightX = trackRightX + MIN_RAIL_GAP;
+    left.push({ x: outerLeftX, y: cy });
+    right.push({ x: outerRightX, y: cy });
+    trackLeft.push({ x: trackLeftX, y: cy });
+    trackRight.push({ x: trackRightX, y: cy });
     trackHalfWidths.push(trackHalfWidth);
   }
   return { steps, left, right, mid, halfWidths, trackLeft, trackRight, trackHalfWidths };
@@ -18537,17 +18536,33 @@ function drawForestSlideChute(camX) {
   for (let i = trackRight.length - 1; i >= 0; i--) ctx.lineTo(trackRight[i].x, trackRight[i].y);
   ctx.closePath();
   ctx.fill();
-  // a soft shadow line right where each rail meets the smooth track, so
-  // the track reads as a real groove worn INTO the rock, not a strip
-  // pasted on top of it
-  ctx.strokeStyle = "rgba(20,17,13,0.3)";
-  ctx.lineWidth = 1.5;
+  // CONFIRMED BUG FIX ("it doesnt look 3d at all"): a 1.5px stroke reads as
+  // a drawn LINE, not a shadow cast by something with real height -- doesn't
+  // sell the rails as raised at all. Widened into a real soft-edged shadow
+  // BAND (a filled strip fading from dark at the rail seam out to fully
+  // transparent a few px into the track), on both edges, so the track reads
+  // as sitting a little BELOW the rails, catching their shadow -- the same
+  // "occluding object casts a shadow on what's behind/below it" cue real
+  // depth relies on, which the old flat single-alpha stroke never gave.
+  const SHADOW_W = 7;
   ctx.beginPath();
   trackLeft.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-  ctx.stroke();
+  for (let i = trackLeft.length - 1; i >= 0; i--) ctx.lineTo(trackLeft[i].x + SHADOW_W, trackLeft[i].y);
+  ctx.closePath();
+  const leftShadowGrad = ctx.createLinearGradient(trackLeft[0].x, 0, trackLeft[0].x + SHADOW_W, 0);
+  leftShadowGrad.addColorStop(0, "rgba(15,13,10,0.4)");
+  leftShadowGrad.addColorStop(1, "rgba(15,13,10,0)");
+  ctx.fillStyle = leftShadowGrad;
+  ctx.fill();
   ctx.beginPath();
   trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-  ctx.stroke();
+  for (let i = trackRight.length - 1; i >= 0; i--) ctx.lineTo(trackRight[i].x - SHADOW_W, trackRight[i].y);
+  ctx.closePath();
+  const rightShadowGrad = ctx.createLinearGradient(trackRight[0].x, 0, trackRight[0].x - SHADOW_W, 0);
+  rightShadowGrad.addColorStop(0, "rgba(15,13,10,0.4)");
+  rightShadowGrad.addColorStop(1, "rgba(15,13,10,0)");
+  ctx.fillStyle = rightShadowGrad;
+  ctx.fill();
 
   // CONFIRMED CHANGE ("and same witht he bottom corners on the ground of
   // the slide"), then CONFIRMED BUG FIX ("gravel looks like a brown cloud
@@ -18799,31 +18814,21 @@ function drawForestSwimHoleRocks(camX) {
   // to it (path is still current from the fill just above).
   ctx.save();
   ctx.clip();
-  const bpSlabCount = 4;
-  for (let s = 0; s < bpSlabCount; s++) {
-    const seed = s * 27.1 + 850;
-    const t0 = Math.max(0, s / bpSlabCount - 0.05 + pseudoRandom(seed) * 0.06);
-    const t1 = Math.min(1, (s + 1) / bpSlabCount + 0.05 + pseudoRandom(seed + 1) * 0.06);
-    const y0 = belowTop + (belowBottom - belowTop) * t0;
-    const y1 = belowTop + (belowBottom - belowTop) * t1;
-    const leftAt = t => px - w * 0.42 + forestSwimHoleRockJag(11.3, t, 26);
-    const rightAtX = t => px + w * 0.42 + forestSwimHoleRockJag(47.9, t, 26);
-    const cf0 = pseudoRandom(seed + 2) * 0.3, cf1 = 0.7 + pseudoRandom(seed + 3) * 0.3;
-    const x00 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf0;
-    const x01 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf1;
-    const x10 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf0;
-    const x11 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf1;
-    const shade = pseudoRandom(seed + 4);
-    ctx.fillStyle = shade > 0.5
-      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.36})`
-      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.38})`;
-    ctx.beginPath();
-    ctx.moveTo(x00, y0);
-    ctx.lineTo(x01, y0);
-    ctx.lineTo(x11, y1);
-    ctx.lineTo(x10, y1);
-    ctx.closePath();
-    ctx.fill();
+  // CONFIRMED BUG FIX ("why are you using literal RECTANGLES...no straight
+  // lines horiz or vertical anywhere"): same fix as drawForestRockWall's own
+  // chip-scatter -- a scatter of irregular many-sided rock chips instead of
+  // 4-point quads, so no edge is ever a straight horizontal/vertical run.
+  const bpLeftAt = t => px - w * 0.42 + forestSwimHoleRockJag(11.3, t, 26);
+  const bpRightAt = t => px + w * 0.42 + forestSwimHoleRockJag(47.9, t, 26);
+  const BP_CHIPS = 12;
+  for (let c = 0; c < BP_CHIPS; c++) {
+    const seed = c * 27.1 + 850;
+    const t = pseudoRandom(seed);
+    const cf = 0.08 + pseudoRandom(seed + 1) * 0.84;
+    const cx = bpLeftAt(t) + (bpRightAt(t) - bpLeftAt(t)) * cf;
+    const cy = belowTop + (belowBottom - belowTop) * t;
+    const avgR = 10 + pseudoRandom(seed + 2) * 14;
+    drawRockFacetChip(cx, cy, avgR, seed, pseudoRandom(seed + 4));
   }
   ctx.restore();
 
@@ -18874,31 +18879,20 @@ function drawForestSwimHoleRocks(camX) {
   // path is still current from the fill just above, no need to rebuild it).
   ctx.save();
   ctx.clip();
-  const rfSlabCount = 6;
-  for (let s = 0; s < rfSlabCount; s++) {
-    const seed = s * 19.3 + 800;
-    const t0 = Math.max(0, s / rfSlabCount - 0.05 + pseudoRandom(seed) * 0.06);
-    const t1 = Math.min(1, (s + 1) / rfSlabCount + 0.05 + pseudoRandom(seed + 1) * 0.06);
-    const y0 = rightTop + (rightBottom - rightTop) * t0;
-    const y1 = rightTop + (rightBottom - rightTop) * t1;
-    const leftAt = t => rightInner + forestSwimHoleRockJag(23.1, t, 20);
-    const rightAtX = t => rightOuter + forestSwimHoleRockJag(61.4, t, 34);
-    const cf0 = pseudoRandom(seed + 2) * 0.3, cf1 = 0.7 + pseudoRandom(seed + 3) * 0.3;
-    const x00 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf0;
-    const x01 = leftAt(t0) + (rightAtX(t0) - leftAt(t0)) * cf1;
-    const x10 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf0;
-    const x11 = leftAt(t1) + (rightAtX(t1) - leftAt(t1)) * cf1;
-    const shade = pseudoRandom(seed + 4);
-    ctx.fillStyle = shade > 0.5
-      ? `rgba(175,166,144,${0.08 + (shade - 0.5) * 0.4})`
-      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.42})`;
-    ctx.beginPath();
-    ctx.moveTo(x00, y0);
-    ctx.lineTo(x01, y0);
-    ctx.lineTo(x11, y1);
-    ctx.lineTo(x10, y1);
-    ctx.closePath();
-    ctx.fill();
+  // CONFIRMED BUG FIX ("why are you using literal RECTANGLES...no straight
+  // lines horiz or vertical anywhere"): same chip-scatter fix as the two
+  // masses above -- no more 4-point quads.
+  const rfLeftAt = t => rightInner + forestSwimHoleRockJag(23.1, t, 20);
+  const rfRightAt = t => rightOuter + forestSwimHoleRockJag(61.4, t, 34);
+  const RF_CHIPS = 18;
+  for (let c = 0; c < RF_CHIPS; c++) {
+    const seed = c * 19.3 + 800;
+    const t = pseudoRandom(seed);
+    const cf = 0.06 + pseudoRandom(seed + 1) * 0.88;
+    const cx = rfLeftAt(t) + (rfRightAt(t) - rfLeftAt(t)) * cf;
+    const cy = rightTop + (rightBottom - rightTop) * t;
+    const avgR = 12 + pseudoRandom(seed + 2) * 15;
+    drawRockFacetChip(cx, cy, avgR, seed, pseudoRandom(seed + 4));
   }
   const rfPitCount = 16;
   for (let p = 0; p < rfPitCount; p++) {
