@@ -18267,7 +18267,16 @@ function drawForestRockClimb(camX) {
 // the same camX always returns identical arrays.
 function computeForestSlideChuteGeometry(camX) {
   const steps = 40;
-  const baseHalfWidth = 16;
+  // CONFIRMED BUG FIX ("play body still sticks out of the bottom a
+  // little"): at 16 the chute's minimum width (~32px, near the bottom
+  // where the anchor-taper bonus below has faded out) was narrower than
+  // the player's own ~40px width, PLUS its rotated bounding box during the
+  // tilt-angle slide -- there was never enough room for the whole sprite
+  // to sit inside the ribbon down there, so a strip of it always hung off
+  // the side with nothing (rail or otherwise) drawn over it. Widened so
+  // the chute's narrowest point is comfortably wider than the player even
+  // rotated.
+  const baseHalfWidth = 30;
   const anchorFrac = 0.22;
   const dropWeights = [];
   let dropWeightSum = 0;
@@ -18289,7 +18298,7 @@ function computeForestSlideChuteGeometry(camX) {
     const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble - camX;
     const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT);
     const anchorT = Math.max(0, 1 - t / anchorFrac);
-    const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
+    const halfWidth = baseHalfWidth + anchorT * anchorT * 12;
     const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
     const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
     let outerLeftX = cx - halfWidth + jagL;
@@ -18440,6 +18449,29 @@ function drawForestSlideChute(camX) {
   for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
   ctx.closePath();
   ctx.fill();
+
+  // CONFIRMED BUG FIX ("at the top the slide side isnt connected so it
+  // reads pasted on"): the ribbon's own fill above has a hard, straight-
+  // sided silhouette right from its very first step -- butting it flush
+  // against the swim-hole rock mass' own SEPARATE silhouette always left a
+  // visible seam where the two shapes' edges didn't quite match, no matter
+  // how well the start point itself was positioned. A scatter of the same
+  // irregular rock-chip polygons used to texture both masses, centered on
+  // the ribbon's own top point and spilling out past its silhouette in
+  // every direction (unclipped, so chips land both inside AND outside the
+  // ribbon edge), blends the two into one continuous outcrop instead of a
+  // ribbon glued on top of a separate rock.
+  const anchorPt = mid[0];
+  const ANCHOR_CHIPS = 16;
+  for (let c = 0; c < ANCHOR_CHIPS; c++) {
+    const seed = c * 16.7 + 5100;
+    const ang = pseudoRandom(seed) * Math.PI * 2;
+    const dist = pseudoRandom(seed + 1) * 50;
+    const cx = anchorPt.x + Math.cos(ang) * dist;
+    const cy = anchorPt.y + Math.sin(ang) * dist * 0.7 - 12;
+    const avgR = 14 + pseudoRandom(seed + 2) * 18;
+    drawRockFacetChip(cx, cy, avgR, seed, pseudoRandom(seed + 4));
+  }
 
   // clip so every shading patch/crack/moss detail below stays inside the
   // chute's own jagged silhouette
