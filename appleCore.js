@@ -18343,6 +18343,24 @@ function computeForestSlideChuteGeometry(camX) {
     const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
     let outerLeftX = cx - halfWidth + jagL;
     let outerRightX = cx + halfWidth + jagR;
+    // CONFIRMED BUG FIX ("make SURE player parts dont go between slide and
+    // slide side closest to human"): widening the AVERAGE chute width
+    // earlier wasn't actually enough -- the outer rock edge's own jag can
+    // swing inward by up to ~15.5px at any given point regardless of the
+    // nominal halfWidth, so the rock could still locally pinch narrower
+    // than the player's own rotated width at specific spots along the ride
+    // even though it was comfortably wide everywhere else. That's the real
+    // reason the player kept visibly poking past the rock into open
+    // background instead of being contained by it. This is a hard floor,
+    // not another average/typical-case widening: the outer edge is never
+    // allowed inward of a safe minimum half-width from centerline no
+    // matter what the jag rolls, so there is ALWAYS enough rock on both
+    // sides to contain the player at EVERY single point, guaranteed, not
+    // just on average. Jag can still push the edge further OUTWARD for
+    // organic variety -- only the inward pinch is clamped.
+    const SAFE_HALF_WIDTH = 36; // comfortably exceeds the player's own rotated bounding box (~40w x 54h, up to a real +-0.3rad tilt) at every point
+    if (cx - outerLeftX < SAFE_HALF_WIDTH) outerLeftX = cx - SAFE_HALF_WIDTH;
+    if (outerRightX - cx < SAFE_HALF_WIDTH) outerRightX = cx + SAFE_HALF_WIDTH;
     mid.push({ x: cx, y: cy });
     halfWidths.push(halfWidth);
     // CONFIRMED CHANGE: the actual riding surface -- a narrower band down
@@ -20518,7 +20536,10 @@ const POOL_CHASE_FISH_FLEE_RADIUS = 130;
 const POOL_CHASE_FISH_CATCH_RADIUS = 24;
 const POOL_CHASE_FISH_FLEE_SPEED = 115; // px/s -- faster than the player's own X swim speed (90) so it can't just be walked down in a straight line, but slower than the player's Y speed (140) so a diagonal cutoff can actually win
 const POOL_CHASE_FISH_RESPAWN_MS = 2200;
-const POOL_CHASE_FISH_CAUGHT_BANNER_MS = 1400;
+// CONFIRMED CHANGE ("leave the 'number fish caught this round' up for a
+// beat longer"): 1400ms read as too quick to actually register the count
+// before it faded back out.
+const POOL_CHASE_FISH_CAUGHT_BANNER_MS = 2400;
 const POOL_CHASE_FISH_WALL_PEEL_MS = 1100; // how long a fish has to be pressed against a pool boundary before it peels off along the wall (toward whichever side has more room) instead of just sitting pinned there -- bumped from the initial 550ms per direct follow-up ("make the fish hold another beat before leaving")
 
 function poolChaseFishRandomSpot(seed) {
