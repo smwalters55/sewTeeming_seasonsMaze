@@ -18265,8 +18265,59 @@ function drawForestRockClimb(camX) {
 // of two hand-copied versions drifting apart. Same deterministic
 // pseudoRandom seeds as before, so calling this twice in one frame with
 // the same camX always returns identical arrays.
+const FOREST_SLIDE_PATH_STEPS = 40;
+let _forestSlideDropCumCache = null;
+// CONFIRMED BUG FIX ("movement starting from exactly slide beginning all
+// the way down is still very messy"): the player's own position during the
+// ride used to come from a SEPARATE, hand-approximated formula (plain
+// smoothstep depth + a single-sine wobble) that was never actually the
+// same math as the one drawing the chute itself (this weighted-random drop
+// curve + double-sine wobble, below) -- they were always going to drift
+// apart, and the more the ribbon's own visual got jaggier/wavier across
+// past rounds, the more visibly the player rode somewhere OTHER than the
+// drawn path instead of on it. No amount of rail/occlusion tuning can fix
+// a fundamental mismatch between where the character actually is and
+// where the path is drawn -- the two have to share one real source of
+// truth. This caches the same deterministic weighted drop-cumulative
+// array computeForestSlideChuteGeometry uses for its own y-depth curve, so
+// both the visuals AND the player's real position (see
+// forestSlideChuteWorldPointAt below) sample from the exact same data.
+function forestSlideChuteDropCum() {
+  if (_forestSlideDropCumCache) return _forestSlideDropCumCache;
+  const weights = [];
+  let sum = 0;
+  for (let i = 0; i < FOREST_SLIDE_PATH_STEPS; i++) {
+    const w = 0.35 + pseudoRandom(i * 13.7 + 2) * 1.4;
+    weights.push(w);
+    sum += w;
+  }
+  const cum = [0];
+  for (let i = 0; i < FOREST_SLIDE_PATH_STEPS; i++) cum.push(cum[i] + weights[i] / sum);
+  _forestSlideDropCumCache = cum;
+  return cum;
+}
+// world-space point (same coordinate system as player.x/player.y, no
+// camX/gy screen conversion) on the chute's own centerline at progress t
+// (0 = top, 1 = bottom) -- identical wobble/drop math to
+// computeForestSlideChuteGeometry's own `mid` points, just not yet
+// converted to screen space, so the player's real position during the
+// ride can sample the EXACT same curve the visuals draw.
+function forestSlideChuteWorldPointAt(t) {
+  const cum = forestSlideChuteDropCum();
+  const fi = Math.max(0, Math.min(FOREST_SLIDE_PATH_STEPS, t * FOREST_SLIDE_PATH_STEPS));
+  const i0 = Math.floor(fi), i1 = Math.min(FOREST_SLIDE_PATH_STEPS, Math.ceil(fi));
+  const frac = fi - i0;
+  const dropT = cum[i0] + (cum[i1] - cum[i0]) * frac;
+  const wobble = Math.sin(t * Math.PI * 3 + 0.6) * 16 * (1 - t) +
+    Math.sin(t * Math.PI * 7.5 + 2.1) * 6 * (1 - t * 0.6);
+  return {
+    x: FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble,
+    y: FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT
+  };
+}
+
 function computeForestSlideChuteGeometry(camX) {
-  const steps = 40;
+  const steps = FOREST_SLIDE_PATH_STEPS;
   // CONFIRMED BUG FIX ("play body still sticks out of the bottom a
   // little"): at 16 the chute's minimum width (~32px, near the bottom
   // where the anchor-taper bonus below has faded out) was narrower than
@@ -18278,25 +18329,14 @@ function computeForestSlideChuteGeometry(camX) {
   // rotated.
   const baseHalfWidth = 30;
   const anchorFrac = 0.22;
-  const dropWeights = [];
-  let dropWeightSum = 0;
-  for (let i = 0; i < steps; i++) {
-    const w = 0.35 + pseudoRandom(i * 13.7 + 2) * 1.4;
-    dropWeights.push(w);
-    dropWeightSum += w;
-  }
-  const dropCum = [0];
-  for (let i = 0; i < steps; i++) dropCum.push(dropCum[i] + dropWeights[i] / dropWeightSum);
 
   const left = [], right = [], mid = [], halfWidths = [];
   const trackLeft = [], trackRight = [], trackHalfWidths = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const dropT = dropCum[i];
-    const wobble = Math.sin(t * Math.PI * 3 + 0.6) * 16 * (1 - t) +
-      Math.sin(t * Math.PI * 7.5 + 2.1) * 6 * (1 - t * 0.6);
-    const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble - camX;
-    const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT);
+    const worldPt = forestSlideChuteWorldPointAt(t);
+    const cx = worldPt.x - camX;
+    const cy = gy - worldPt.y;
     const anchorT = Math.max(0, 1 - t / anchorFrac);
     const halfWidth = baseHalfWidth + anchorT * anchorT * 12;
     const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
@@ -19144,6 +19184,19 @@ const POOL_SLIDE_OPENING_X = POOL_SLIDE_EXIT_X + 70;
 // problem the forest chute's own anchor blobs had. Removed entirely rather
 // than reworked -- the single exit lip trigger below is the whole
 // interaction now.
+// CONFIRMED BUG FIX ("player shouldnt be sitting below visually when its
+// actually resting on the ledge"): the ledge-standing height used to just
+// be whatever player.y happened to land on at the end of the rise arc
+// (startY + a fixed +10 nudge) -- since startY is wherever the player
+// happened to be swimming when they pressed Up, that could land noticeably
+// lower than the lip's own actual rendered standing surface (drawPoolSlide
+// ExitLip's flat top curve sits at screen y = sy-17 = (gy-18)-17 = gy-35,
+// i.e. player.y should be 35 to visually rest ON it), so the player's feet
+// consistently rendered BELOW the platform's real surface instead of on
+// top of it. This is the lip's own real standing height, used as the
+// rise phase's actual TARGET now (see updatePoolSlideExit) instead of an
+// incidental byproduct of wherever the swim happened to start.
+const POOL_SLIDE_LEDGE_Y = 35;
 const POOL_SLIDE_RISE_MS = 320; // pop up out of the water onto the rock lip
 // CONFIRMED CHANGE ("slow it down a lot"): first pass (900ms) read as way
 // too quick a cut to actually register as riding a slide down -- tripled
@@ -19508,8 +19561,16 @@ function updatePoolSlideExit(deltaTime) {
     // small forward-and-up hop out of the water onto the rock lip --
     // inverse shape of the dive's own jump arc
     const arcUp = 22 * Math.sin(p * Math.PI);
+    // CONFIRMED BUG FIX ("player shouldnt be sitting below visually when
+    // its actually resting on the ledge"): eases from wherever the swim
+    // happened to start toward the lip's own real standing height
+    // (POOL_SLIDE_LEDGE_Y) instead of just nudging +10 off of startY --
+    // the arc's peak still adds the little hop-up bump on top, but the
+    // LANDING height is now always the actual platform surface regardless
+    // of how deep the player was swimming when they pressed Up.
+    const eased = p * p * (3 - 2 * p);
     player.x = poolSlideExit.startX + p * 18;
-    player.y = poolSlideExit.startY + arcUp + p * 10;
+    player.y = poolSlideExit.startY + (POOL_SLIDE_LEDGE_Y - poolSlideExit.startY) * eased + arcUp;
     if (p >= 1) {
       poolSlideExit.phase = "onLedge";
       poolSlideExit.ledgeX = player.x;
@@ -19591,10 +19652,18 @@ function updatePoolSlideExit(deltaTime) {
       const descentElapsed = postSwapElapsed - FOREST_SLIDE_TOP_PAUSE_MS;
       const p = Math.min(1, descentElapsed / POOL_SLIDE_MS);
       const ease = p * p * (3 - 2 * p); // smoothstep -- accelerates into the chute, settles toward the bottom
-      const wobble = Math.sin(p * Math.PI * 3) * 16 * (1 - p); // side-to-side chute wobble, damping out by the landing -- matches drawForestSlideChute's own visual curve
-      player.x = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * ease + wobble;
-      player.y = FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * ease;
-      poolSlideExit.tiltAngle = Math.sin(p * Math.PI * 3) * 0.3; // gentle lean side to side riding the chute, not a full tumble
+      // CONFIRMED BUG FIX ("movement starting from exactly slide beginning
+      // all the way down is still very messy"): used to compute x/y here
+      // with its own separate smoothstep+single-sine formula instead of
+      // the chute's own real path -- see forestSlideChuteWorldPointAt's own
+      // comment. Now samples the exact same curve the ribbon is drawn
+      // with, at the same eased progress, so the player is mathematically
+      // pinned to the drawn chute's centerline at every point, not just
+      // approximately near it.
+      const pt = forestSlideChuteWorldPointAt(ease);
+      player.x = pt.x;
+      player.y = pt.y;
+      poolSlideExit.tiltAngle = Math.sin(ease * Math.PI * 3 + 0.6) * 0.3; // same phase as the position wobble above, so the lean visually matches the direction the path is actually curving
 
       if (p >= 1) {
         poolSlideExit.phase = "land";
