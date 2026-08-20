@@ -18273,6 +18273,123 @@ function drawForestRockClimb(camX) {
 // perpendicular-offset edges instead of straight ones, a handful of loose
 // irregular shading patches for broken-rock planes, a few short angled
 // crack strokes instead of one continuous groove, and moss patches.
+// CONFIRMED CHANGE ("some of the rocks facing the top of the slide that
+// player is riding down are real pointy? the actual slide part should be
+// smooth. but... a slight little edge on each side of the slide like a
+// normal slide has, carve in rock. the edge of the side closest most to
+// human would partly occlude player sliding down"): shared geometry
+// builder so the background rock/rail mass and the foreground near-rail
+// occlusion overlay (drawn after the player during the actual ride, see
+// drawForestSlideChuteNearRail below) use the exact same numbers instead
+// of two hand-copied versions drifting apart. Same deterministic
+// pseudoRandom seeds as before, so calling this twice in one frame with
+// the same camX always returns identical arrays.
+function computeForestSlideChuteGeometry(camX) {
+  const steps = 40;
+  const baseHalfWidth = 16;
+  const anchorFrac = 0.22;
+  const dropWeights = [];
+  let dropWeightSum = 0;
+  for (let i = 0; i < steps; i++) {
+    const w = 0.35 + pseudoRandom(i * 13.7 + 2) * 1.4;
+    dropWeights.push(w);
+    dropWeightSum += w;
+  }
+  const dropCum = [0];
+  for (let i = 0; i < steps; i++) dropCum.push(dropCum[i] + dropWeights[i] / dropWeightSum);
+
+  const left = [], right = [], mid = [], halfWidths = [];
+  const trackLeft = [], trackRight = [], trackHalfWidths = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const dropT = dropCum[i];
+    const wobble = Math.sin(t * Math.PI * 3 + 0.6) * 16 * (1 - t) +
+      Math.sin(t * Math.PI * 7.5 + 2.1) * 6 * (1 - t * 0.6);
+    const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble - camX;
+    const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT);
+    const anchorT = Math.max(0, 1 - t / anchorFrac);
+    const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
+    const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
+    const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
+    left.push({ x: cx - halfWidth + jagL, y: cy });
+    right.push({ x: cx + halfWidth + jagR, y: cy });
+    mid.push({ x: cx, y: cy });
+    halfWidths.push(halfWidth);
+    // CONFIRMED CHANGE: the actual riding surface -- a narrower band down
+    // the center with only a faint hint of noise (worn-smooth stone, not
+    // the rocky ±22/±9 jag the outer rails keep), so the part the player
+    // visibly slides along reads as smooth rather than "pointy."
+    const trackHalfWidth = Math.max(6, halfWidth * 0.42);
+    const trackJagL = (pseudoRandom(i * 6.1 + 300) - 0.5) * 2.5;
+    const trackJagR = (pseudoRandom(i * 7.3 + 320) - 0.5) * 2.5;
+    trackLeft.push({ x: cx - trackHalfWidth + trackJagL, y: cy });
+    trackRight.push({ x: cx + trackHalfWidth + trackJagR, y: cy });
+    trackHalfWidths.push(trackHalfWidth);
+  }
+  return { steps, left, right, mid, halfWidths, trackLeft, trackRight, trackHalfWidths };
+}
+
+// CONFIRMED CHANGE (same request as computeForestSlideChuteGeometry above):
+// the near-side rail -- the raised rock lip between the smooth track's own
+// right edge and the outer rock wall -- redrawn as its own pass so it can
+// be called again AFTER the player is drawn during the actual ride,
+// partially covering the player sprite wherever the rail's own jagged
+// height happens to reach further in at that point along the slide. Only
+// meaningful during the ride itself (see the call site in the main draw
+// loop) -- during normal exploration the single background pass in
+// drawForestSlideChute already paints this same rock, so there's nothing
+// new to occlude.
+function drawForestSlideChuteNearRail(camX) {
+  const geo = computeForestSlideChuteGeometry(camX);
+  const { steps, right, trackRight, halfWidths } = geo;
+  if (right[0].x < -150 && right[right.length - 1].x < -150) return;
+  if (right[0].x > canvas.width + 150 && right[right.length - 1].x > canvas.width + 150) return;
+
+  ctx.save();
+  const grad = ctx.createLinearGradient(trackRight[0].x, 0, right[0].x + 10, 0);
+  grad.addColorStop(0, "#4a4338");
+  grad.addColorStop(0.5, "#5a5245");
+  grad.addColorStop(1, "#332e27");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  // a bright highlight right along the inner (track-facing) edge of the
+  // rail, catching the light like a real raised lip would
+  ctx.strokeStyle = "rgba(200,190,164,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+  // a few small facet shades so the rail itself doesn't read as one flat
+  // gradient strip
+  const RAIL_FACETS = 10;
+  for (let f = 0; f < RAIL_FACETS; f++) {
+    const idx0 = Math.floor((f / RAIL_FACETS) * steps);
+    const idx1 = Math.min(steps, Math.ceil(((f + 1) / RAIL_FACETS) * steps));
+    if (idx0 >= right.length || idx1 >= right.length) continue;
+    const seed = f * 21.7 + 400;
+    const shade = pseudoRandom(seed);
+    ctx.fillStyle = shade > 0.5
+      ? `rgba(170,162,142,${0.08 + (shade - 0.5) * 0.3})`
+      : `rgba(15,13,10,${0.08 + (0.5 - shade) * 0.32})`;
+    ctx.beginPath();
+    ctx.moveTo(trackRight[idx0].x, trackRight[idx0].y);
+    ctx.lineTo(right[idx0].x, right[idx0].y);
+    ctx.lineTo(right[idx1].x, right[idx1].y);
+    ctx.lineTo(trackRight[idx1].x, trackRight[idx1].y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawForestSlideChute(camX) {
   // CONFIRMED BUG FIX ("there are still too many long straight lines here
   // in the rock slide"): repeated passes at this kept the underlying path
@@ -18298,48 +18415,17 @@ function drawForestSlideChute(camX) {
   // second disconnected rock) so the seam where the ribbon emerges from the
   // real rock still tapers smoothly rather than starting at a hard edge.
   const anchorFrac = 0.22;
-  // CONFIRMED CHANGE ("make rock slide not a straight slide more, like a
-  // little wavy at points and steeper at some points, shallower at
-  // others"): the descent used to drop through one fixed smoothstep ease
-  // (steep -> shallow -> steep, same shape every time). Building the
-  // vertical drop from a seeded per-segment random weight profile instead
-  // -- normalized so the total still spans the exact START_Y->END_Y drop --
-  // means neighboring stretches end up genuinely steeper or shallower than
-  // each other (since horizontal position still advances at a roughly
-  // even rate while vertical drop doesn't), rather than one symmetric
-  // ease. A second, higher-frequency wobble layered on top of the
-  // existing wide S-wobble adds smaller wavy kinks along the way too.
-  const dropWeights = [];
-  let dropWeightSum = 0;
-  for (let i = 0; i < steps; i++) {
-    const w = 0.35 + pseudoRandom(i * 13.7 + 2) * 1.4;
-    dropWeights.push(w);
-    dropWeightSum += w;
-  }
-  const dropCum = [0];
-  for (let i = 0; i < steps; i++) dropCum.push(dropCum[i] + dropWeights[i] / dropWeightSum);
-
-  const left = [], right = [], mid = [], halfWidths = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const dropT = dropCum[i];
-    const wobble = Math.sin(t * Math.PI * 3 + 0.6) * 16 * (1 - t) +
-      Math.sin(t * Math.PI * 7.5 + 2.1) * 6 * (1 - t * 0.6);
-    const cx = FOREST_SLIDE_START_X + (FOREST_SLIDE_END_X - FOREST_SLIDE_START_X) * t + wobble - camX;
-    const cy = gy - (FOREST_SLIDE_START_Y + (FOREST_SLIDE_END_Y - FOREST_SLIDE_START_Y) * dropT);
-    const anchorT = Math.max(0, 1 - t / anchorFrac);
-    const halfWidth = baseHalfWidth + anchorT * anchorT * 18;
-    // jagged edges -- per-point noise offset (coarse + fine octave, same
-    // idea as forestRockWallEdgeX), not a clean parallel-line ribbon. Bumped
-    // amplitude well past the old ±5/±2px wobble -- that was too subtle to
-    // read as broken rock at this ribbon's own scale.
-    const jagL = (pseudoRandom(i * 3.1) - 0.5) * 22 + (pseudoRandom(i * 9.7 + 5) - 0.5) * 9;
-    const jagR = (pseudoRandom(i * 4.3 + 20) - 0.5) * 22 + (pseudoRandom(i * 8.1 + 25) - 0.5) * 9;
-    left.push({ x: cx - halfWidth + jagL, y: cy });
-    right.push({ x: cx + halfWidth + jagR, y: cy });
-    mid.push({ x: cx, y: cy });
-    halfWidths.push(halfWidth);
-  }
+  // CONFIRMED CHANGE ("some of the rocks facing the top of the slide...are
+  // real pointy? the actual slide part should be smooth. but... a slight
+  // little edge on each side...carve in rock"): geometry now comes from
+  // the shared computeForestSlideChuteGeometry helper (also used by
+  // drawForestSlideChuteNearRail's own foreground occlusion pass during
+  // the ride) instead of being computed inline here -- same numbers, one
+  // source of truth. Adds `trackLeft`/`trackRight`/`trackHalfWidths`, the
+  // narrower smooth riding-surface band drawn on top of this rocky outer
+  // mass further down.
+  const geo = computeForestSlideChuteGeometry(camX);
+  const { steps: geoSteps, left, right, mid, halfWidths, trackLeft, trackRight } = geo;
   if (left[0].x < -150 && left[left.length - 1].x < -150) return; // fully off-screen either side, skip the fill work
   if (left[0].x > canvas.width + 150 && left[left.length - 1].x > canvas.width + 150) return;
 
@@ -18432,6 +18518,36 @@ function drawForestSlideChute(camX) {
   });
 
   ctx.restore(); // undo clip
+
+  // CONFIRMED CHANGE ("some of the rocks facing the top of the slide...are
+  // real pointy? the actual slide part should be smooth. but... a slight
+  // little edge on each side of the slide like a normal slide has"): the
+  // actual riding surface -- a narrower, much smoother band down the
+  // center (see trackLeft/trackRight in computeForestSlideChuteGeometry),
+  // drawn on top of the rocky outer mass so it visibly reads as worn,
+  // slide-able stone with the jagged "carved rock" edges as raised rails
+  // on either side, not one uniformly pointy ribbon.
+  const trackGrad = ctx.createLinearGradient(trackLeft[0].x, 0, trackRight[0].x, 0);
+  trackGrad.addColorStop(0, "#8c8270");
+  trackGrad.addColorStop(0.5, "#a89c86");
+  trackGrad.addColorStop(1, "#8c8270");
+  ctx.fillStyle = trackGrad;
+  ctx.beginPath();
+  trackLeft.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = trackRight.length - 1; i >= 0; i--) ctx.lineTo(trackRight[i].x, trackRight[i].y);
+  ctx.closePath();
+  ctx.fill();
+  // a soft shadow line right where each rail meets the smooth track, so
+  // the track reads as a real groove worn INTO the rock, not a strip
+  // pasted on top of it
+  ctx.strokeStyle = "rgba(20,17,13,0.3)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  trackLeft.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+  ctx.beginPath();
+  trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
 
   // CONFIRMED CHANGE ("and same witht he bottom corners on the ground of
   // the slide"), then CONFIRMED BUG FIX ("gravel looks like a brown cloud
@@ -57604,6 +57720,30 @@ if (currentScene === "pool") {
 // every droplet/ripple has aged out.
 drawPoolDiveSplash(camX);
 drawPoolSlideDust(camX);
+
+// CONFIRMED CHANGE ("a slight little edge on each side of the slide like
+// a normal slide has, carve in rock. the edge of the side closest most to
+// human would partly occlude player sliding down depending on shape of
+// that slide side at each timepoint"): same "redraw the same asset over
+// the player" technique as the pool critters/nest just above -- the near
+// (right) side rail is drawn a second time here, after the player, so its
+// own jagged height wraps back in front of the sprite wherever the rail
+// happens to reach further in at that point along the chute. Gated tight
+// to the actual ride (real forest scene, real chute descent already
+// swapped in) so normal exploration near the chute isn't affected -- the
+// single background pass in drawForestSlideChute already covers that.
+if (currentScene === "forest" && poolSlideExit.active && poolSlideExit.swapped &&
+    poolSlideExit.phase === "slide") {
+  // drawForestSlideChute (and this shared-geometry near-rail twin) both
+  // use bare `gy` and expect to run inside drawForestScene's own
+  // ctx.translate(0, cameraY) wrapper -- this post-player section runs
+  // outside that wrapper (same reasoning as the pool critters redraw
+  // just above), so it has to be reapplied by hand here too.
+  ctx.save();
+  ctx.translate(0, cameraY);
+  drawForestSlideChuteNearRail(camX);
+  ctx.restore();
+}
 
 // CONFIRMED CHANGE ("make it look like player is inside nest not floating
 // above it") -- the nest's first pass only ever drew once, as part of the
