@@ -22327,23 +22327,38 @@ function drawPoolScene(camX) {
     ctx.closePath();
     ctx.clip();
 
-    const FACET_ROWS = 10;
-    for (let row = 0; row < FACET_ROWS; row++) {
-      const t0 = row / FACET_ROWS, t1 = (row + 1) / FACET_ROWS;
-      const y0 = gy + topDepth + (bottomDepth - topDepth) * t0;
-      const y1 = gy + topDepth + (bottomDepth - topDepth) * t1;
-      const seed = i * 41.3 + row * 7.1;
-      const shade = pseudoRandom(seed + 9);
-      ctx.fillStyle = shade > 0.5
-        ? `rgba(170,162,142,${0.05 + (shade - 0.5) * 0.22})`
-        : `rgba(15,13,10,${0.05 + (0.5 - shade) * 0.28})`;
-      ctx.beginPath();
-      ctx.moveTo(leftAt(t0), y0);
-      ctx.lineTo(rightAt(), y0);
-      ctx.lineTo(rightAt(), y1);
-      ctx.lineTo(leftAt(t1), y1);
-      ctx.closePath();
-      ctx.fill();
+    // CONFIRMED BUG FIX ("why are there still straight horizontal rock
+    // lines for like the 6th time"): every previous round of fixes here
+    // targeted the wall's own OUTLINE curve (leftAt) -- steepness, noise
+    // quantization, sample density -- and never touched this facet-shading
+    // layer underneath it, which was still the exact same flat-row anti-
+    // pattern already fixed on the forest rock wall: y0/y1 constant across
+    // the FULL row width (leftAt(t) all the way out to the offscreen
+    // rightAt()), no per-corner jitter at all, so each of the 10 rows drew
+    // one dead-straight horizontal boundary spanning the entire visible
+    // face. That's exactly what kept getting flagged -- it was never the
+    // outline, it was this shading grid on top of it. Replaced with the
+    // same irregular rock-chip scatter (drawRockFacetChip) used to fix the
+    // identical bug on the forest wall/swim-hole rocks -- no more straight
+    // edges anywhere, on either wall.
+    const CHIP_DEPTH = 160; // how far past the visible edge chips still need to scatter -- rightAt() itself is way offscreen, texture only needs to cover what's actually visible
+    const COARSE_WALL_CHIPS = 9;
+    for (let c = 0; c < COARSE_WALL_CHIPS; c++) {
+      const seed = i * 71.3 + c * 23.1 + 300;
+      const t = pseudoRandom(seed);
+      const cx = leftAt(t) - side * pseudoRandom(seed + 1) * CHIP_DEPTH;
+      const cy = gy + topDepth + (bottomDepth - topDepth) * t;
+      const avgR = 20 + pseudoRandom(seed + 2) * 16;
+      drawRockFacetChip(cx, cy, avgR, seed, pseudoRandom(seed + 4));
+    }
+    const FINE_WALL_CHIPS = 40;
+    for (let c = 0; c < FINE_WALL_CHIPS; c++) {
+      const seed = i * 53.7 + c * 11.3 + 1300;
+      const t = pseudoRandom(seed);
+      const cx = leftAt(t) - side * pseudoRandom(seed + 1) * CHIP_DEPTH;
+      const cy = gy + topDepth + (bottomDepth - topDepth) * t;
+      const avgR = 8 + pseudoRandom(seed + 2) * 9;
+      drawRockFacetChip(cx, cy, avgR, seed + 9, pseudoRandom(seed + 4));
     }
 
     ctx.strokeStyle = "rgba(12,10,8,0.4)";
