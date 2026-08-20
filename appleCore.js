@@ -3076,7 +3076,19 @@ function applyPhysics(){
     }
   }
 
-  if (currentScene === "forest" && player.vy <= 0) {
+  // CONFIRMED BUG FIX ("if i go left, i need to be able to just walk left,
+  // and not auto be put on the first climb ledge unless i click spacebar or
+  // maybe i need to jump"): this "soft catch while falling" only ever
+  // checked vy<=0, which is ALSO true for a perfectly grounded, standing-
+  // still or walking player (gravity leaves vy at 0 once landed) -- so
+  // just walking left along the ground within reach of the lowest
+  // handhold silently yanked the player up onto the wall, no jump or
+  // space-press involved at all. This is meant to catch a genuinely
+  // AIRBORNE player near a handhold (falling past it, or hanging at a
+  // jump's apex), not grab a grounded one -- added the same player.jumping
+  // requirement the manual mid-air grab above already uses, so walking on
+  // solid ground next to the wall is just walking again.
+  if (currentScene === "forest" && player.jumping && player.vy <= 0) {
     const fallCatch = FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
       Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
     if (fallCatch) {
@@ -19640,8 +19652,22 @@ function updatePoolSlideExit(deltaTime) {
       currentScene = "forest";
       cameraX = Math.max(0, FOREST_SLIDE_START_X - 400);
       cameraY = Math.max(0, FOREST_SLIDE_START_Y - 150); // matches updateForestScene's own cameraY formula so nothing snaps once its per-frame line picks back up next frame
-      player.x = FOREST_SLIDE_START_X;
-      player.y = FOREST_SLIDE_START_Y;
+      // CONFIRMED BUG FIX ("still some player body sticking out under the
+      // slide side, just less"): player.x is the sprite's LEFT edge
+      // everywhere else in this codebase (every distance/center check uses
+      // player.x + player.width/2) -- setting it directly to the chute's
+      // own centerline here put the player's real CENTER a full half-width
+      // (~20px) to the right of where the rock was actually centered, every
+      // single frame. The chute-widening and safety-floor fixes both
+      // assumed the player was centered on the sampled point -- they
+      // weren't wrong, the player just wasn't where they thought it was.
+      // Subtracting player.width/2 (and the matching forestSlideChute
+      // WorldPointAt(0) sample, not the raw START_X constant, since t=0
+      // isn't exactly at wobble=0) actually centers the sprite on the
+      // drawn ribbon.
+      const topPt = forestSlideChuteWorldPointAt(0);
+      player.x = topPt.x - player.width / 2;
+      player.y = topPt.y;
       player.vx = 0;
       player.vy = 0;
       player.jumping = false;
@@ -19661,8 +19687,14 @@ function updatePoolSlideExit(deltaTime) {
     // chute, not a preview, before it actually starts.
     const postSwapElapsed = poolSlideExit.swapped ? now - poolSlideExit.swappedAt : 0;
     if (poolSlideExit.swapped && postSwapElapsed < FOREST_SLIDE_TOP_PAUSE_MS) {
-      player.x = FOREST_SLIDE_START_X;
-      player.y = FOREST_SLIDE_START_Y;
+      // CONFIRMED BUG FIX ("still some player body sticking out under the
+      // slide side, just less"): same left-edge-vs-center fix as the swap
+      // moment above -- see that comment. (topPt from the swap block above
+      // is scoped to that if-block, not visible here, so resampled --
+      // deterministic and cheap, cached dropCum underneath.)
+      const holdPt = forestSlideChuteWorldPointAt(0);
+      player.x = holdPt.x - player.width / 2;
+      player.y = holdPt.y;
       player.vx = 0;
       player.vy = 0;
       poolSlideExit.tiltAngle = 0;
@@ -19679,7 +19711,10 @@ function updatePoolSlideExit(deltaTime) {
       // pinned to the drawn chute's centerline at every point, not just
       // approximately near it.
       const pt = forestSlideChuteWorldPointAt(ease);
-      player.x = pt.x;
+      // CONFIRMED BUG FIX ("still some player body sticking out under the
+      // slide side, just less"): same left-edge-vs-center fix -- see the
+      // swap-moment comment above.
+      player.x = pt.x - player.width / 2;
       player.y = pt.y;
       poolSlideExit.tiltAngle = Math.sin(ease * Math.PI * 3 + 0.6) * 0.3; // same phase as the position wobble above, so the lean visually matches the direction the path is actually curving
 
