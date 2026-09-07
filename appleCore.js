@@ -2746,7 +2746,16 @@ function handleInput(){
   // no way to walk to either edge. Rim now allowed through so ordinary
   // walking works there; ladder/swim stay excluded since those two
   // still drive their own position every frame.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
+  // CONFIRMED BUG FIX ("you shouldnt be able to walk away and then have
+  // the full bucket in play on your head like 5 inches away from well.
+  // maybe it should briefly look out of play while it is being filled"):
+  // the well's own dip animation is anchored at the well, not the
+  // player, so nothing stopped you from walking off mid-fill -- the
+  // "real" bucket stayed behind at the well while the floating held-item
+  // icon (never gated on topsyWell.dipping) kept right on following you.
+  // Frozen here the same way every other scripted "busy" animation in
+  // this list already is, so the whole beat plays out in place.
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -12795,7 +12804,9 @@ const digSite = {
 };
 const PEANUT_PIT_DEPTH = 14; // how far below the flat ground line the peanut/vine base sits
 const PLANT_FALL_DURATION = 700; // ms — gentle fall, not instant
-const DIG_ANIM_DURATION = 1800;
+// CONFIRMED CHANGE ("slow the dig down ... also in spring for all hole
+// related digging stuff"): was 1800.
+const DIG_ANIM_DURATION = 2600;
 
 // climbHeight raised way past a single fixed 400px canvas (per direct
 // request, "make vine grow taller up past normal y... I want it to feel
@@ -18103,7 +18114,11 @@ const topsyCarrySplashes = []; // {age, dx, vy}
 const TOPSY_CARRY_SPLASH_LIFE = 550; // ms
 // CONFIRMED CHANGE ("make the fill animation slowr"): was 1000ms, felt
 // rushed for an "attach, lower, wait, draw back up" beat.
-const TOPSY_WELL_DIP_DURATION = 1900; // ms — attach, dip, draw back up
+// CONFIRMED CHANGE ("i want so see the bucket actually attache to the
+// string, an go down int he well ... slowly let down into the well"):
+// lengthened again (1900 -> 2400) to give the attach + slow-descent beats
+// real room to read clearly instead of feeling rushed/choppy.
+const TOPSY_WELL_DIP_DURATION = 2400; // ms — attach, dip, draw back up
 const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px walked while carrying
 
 // the actual planting spot -- a short, real walk from the well (not
@@ -18126,7 +18141,9 @@ const topsyWindSeedPlot = {
   grown: false,
   growProgress: 0 // 0-1, first-pass sprout only -- the real "grows into an upside-down wind tree" animation is its own separate follow-up (per the earlier windSeed/well scoping talk), not built yet
 };
-const TOPSY_SEEDPLOT_DIG_ANIM_DURATION = 1200;
+// CONFIRMED CHANGE ("slow the dig down"): was 1200, felt rushed next to
+// the well's own already-slowed dip beat.
+const TOPSY_SEEDPLOT_DIG_ANIM_DURATION = 2200;
 const TOPSY_SEEDPLOT_PLANT_FALL_DURATION = 600;
 const TOPSY_SEEDPLOT_GROW_DURATION = 2200;
 
@@ -18199,8 +18216,13 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
   // DIP -- start the attach/rope/draw-up animation. Requires an EMPTY
   // bucket in hand so re-pressing near the well with a full one doesn't
   // just restart the animation and reset the spill clock for no reason.
+  // CONFIRMED CHANGE ("we need to be able to have a little further
+  // radius for interacting in this way"): widened (30 -> 48) -- the well
+  // itself got visually bigger a while back but this trigger radius
+  // never grew to match, so it read as needing to stand unnaturally
+  // close/centered on it.
   if (!topsyWell.dipping && heldItem === "bucket" && !bucketFilled &&
-      keys.spaceJustPressed && isPlayerNear(TOPSY_WELL_X, 0, 30, 15, 15)) {
+      keys.spaceJustPressed && isPlayerNear(TOPSY_WELL_X, 0, 48, 20, 20)) {
     topsyWell.dipping = true;
     topsyWell.dipT = 0;
   }
@@ -19222,17 +19244,19 @@ function drawTopsyTurvyWell(camX) {
   // true -- see updateTopsyWellAndSeedPlot) since at that point it's
   // back in your hand, shown the same way every other held item is (the
   // floating icon above your head).
-  // CONFIRMED CHANGE ("make the rope wiggle a little more, before you
-  // have the bucket mayybee, so it is clear you need to get water"):
-  // dialed up (amplitude 6->11, speed 0.006->0.01) and no longer
-  // requires the bucket to be the CURRENTLY EQUIPPED item -- just
+  // CONFIRMED CHANGE ("the rope shouold do a little wiggle, a lil
+  // slower not this wild side to side thing"): the earlier pass ("make
+  // the rope wiggle a little more") overshot -- amplitude/speed pulled
+  // back down to a gentle, slow sway instead of a fast wide swing. Still
+  // doesn't require the bucket to be the CURRENTLY EQUIPPED item -- just
   // owning one, not yet full, and being nearby is enough to trigger the
-  // hint, so it still catches your eye even if you walked up holding
-  // something else.
+  // hint. CONFIRMED CHANGE ("we need to be able to have a little further
+  // radius for interacting in this way"): widened to match the DIP
+  // trigger radius above (60 -> 78).
   const nearHintingForDip = !topsyWell.dipping && inventory.bucket > 0 && !bucketFilled &&
-    Math.abs((player.x + player.width / 2) - TOPSY_WELL_X) < 60;
-  const swayAmp = nearHintingForDip ? 11 : 1.4;
-  const swaySpeed = nearHintingForDip ? 0.01 : 0.0015;
+    Math.abs((player.x + player.width / 2) - TOPSY_WELL_X) < 78;
+  const swayAmp = nearHintingForDip ? 5 : 1.4;
+  const swaySpeed = nearHintingForDip ? 0.0035 : 0.0015;
   const ropeSwayX = Math.sin(performance.now() * swaySpeed) * swayAmp;
 
   if (!topsyWell.dipping) {
@@ -19251,18 +19275,23 @@ function drawTopsyTurvyWell(camX) {
     return;
   }
 
-  // CONFIRMED CHANGE ("actual animation of the bucket attaching to the
-  // rope, and slowly going down into the well, then take a beat where
-  // its occluded, then slowly come back up filled"): the dip is now four
-  // real phases instead of one continuous sine bob -- ATTACH (the empty
-  // hook closes around your bucket, a quick settle), LOWER (it descends
-  // toward the water), OCCLUDED (a held beat with the bucket fully out of
-  // sight below the water surface -- it's actually filling, not just
-  // hovering at the bottom), then RAISE (it climbs back up, now full).
+  // CONFIRMED CHANGE ("i want so see the bucket actually attache to the
+  // string, an go down int he well ... slowly let down into the well"):
+  // the dip is four real phases -- ATTACH (your bucket visibly slides
+  // DOWN from hand height onto the hook, so the attach itself reads as a
+  // real motion instead of a scale pop-in), LOWER (a slow, real descent
+  // toward the water -- given a full third of the total duration now),
+  // OCCLUDED (a held beat with the bucket fully out of sight below the
+  // water surface -- it's actually filling, not just hovering at the
+  // bottom), then RAISE (it climbs back up, now full).
   const T = Math.min(1, topsyWell.dipT / TOPSY_WELL_DIP_DURATION);
-  const ATTACH_END = 0.12, LOWER_END = 0.42, PAUSE_END = 0.62; // RAISE runs PAUSE_END -> 1
+  const ATTACH_END = 0.16, LOWER_END = 0.62, PAUSE_END = 0.78; // RAISE runs PAUSE_END -> 1
   const easeInOut = (p) => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 
+  // where the bucket starts from -- roughly hand height, right above the
+  // crossbar, same as where the floating held-item icon was hovering
+  // right before this animation took over
+  const handoffTopY = postTopY - 6 * S;
   const restBucketTopY = wallTopY - 7 * S;
   const waterSurfaceY = wallTopY + 1 * S; // matches the water ellipse's own y, below = hidden
   const submergedBucketTopY = wallTopY + 16 * S; // well out of sight, under the water
@@ -19271,8 +19300,8 @@ function drawTopsyTurvyWell(camX) {
   if (T < ATTACH_END) {
     phase = "attach";
     const p = easeInOut(T / ATTACH_END);
-    bucketTopY = restBucketTopY;
-    bucketScale = 0.55 + p * 0.45; // hook closing around it -- pops in from small
+    bucketTopY = handoffTopY + (restBucketTopY - handoffTopY) * p; // slides DOWN onto the hook
+    bucketScale = 0.8 + p * 0.2;
     ropeSettle = 0;
   } else if (T < LOWER_END) {
     phase = "lower";
@@ -19309,12 +19338,13 @@ function drawTopsyTurvyWell(camX) {
   ctx.stroke();
 
   if (bucketVisible) {
-    // a quick "hook closing" flourish right at the very start of ATTACH
-    if (phase === "attach") {
+    // a little metal "clink" flourish right as it settles onto the hook,
+    // at the very end of ATTACH
+    if (phase === "attach" && T / ATTACH_END > 0.7) {
       ctx.strokeStyle = "#6b4a2c";
-      ctx.lineWidth = 1.6 * bucketScale;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.arc(bucketCx, bucketTopY - 2 * S, 3 * S * bucketScale, Math.PI * 0.1, Math.PI * 1.4);
+      ctx.arc(bucketCx, bucketTopY - 2 * S, 3 * S, Math.PI * 0.1, Math.PI * 1.4);
       ctx.stroke();
     }
     // CONFIRMED CHANGE ("make both buckets look the same"): draws the SAME
@@ -19326,7 +19356,7 @@ function drawTopsyTurvyWell(camX) {
   }
 
   // a real splash the instant it crosses the water line on the way down
-  const enterSplashP = phase === "lower" ? Math.max(0, ((T - ATTACH_END) / (LOWER_END - ATTACH_END) - 0.55) / 0.45) : (phase === "occluded" || phase === "raise" ? 1 : 0);
+  const enterSplashP = phase === "lower" ? Math.max(0, ((T - ATTACH_END) / (LOWER_END - ATTACH_END) - 0.7) / 0.3) : (phase === "occluded" || phase === "raise" ? 1 : 0);
   if (phase === "lower" && enterSplashP > 0 && enterSplashP < 1) {
     ctx.strokeStyle = `rgba(210,230,235,${0.55 * (1 - enterSplashP)})`;
     ctx.lineWidth = 1.4;
@@ -19397,6 +19427,51 @@ function drawDisheveledPitPath(cx, cy, rw, rh, seed) {
   ctx.closePath();
 }
 
+// CONFIRMED CHANGE ("make more dirt fly up animation not too fast during
+// dig, slow the dig down, also in spring for all hole related digging
+// stuff. and i want some loose dirt to then be piled around the hole
+// aftewrwards"): shared helpers for BOTH dig sites (this wind seed plot
+// AND the spring peanut dig site, see drawDigSitePlantVine) so the two
+// stay visually consistent. drawDigFlingParticles is a staggered,
+// gravity-arced burst -- each clod launches at its own offset across the
+// first half of the animation (instead of the old single synchronized
+// ring expanding in lockstep) so it reads as several real shovel-fulls
+// being tossed, not one uniform puff. drawDugDirtPile is a small
+// permanent mound flanking the pit -- what actually came OUT of the
+// hole -- drawn any time the site is dug, so it sticks around forever
+// once digging's done rather than only during the animation.
+function drawDigFlingParticles(cx, groundY, animT, duration, seed, count) {
+  const p = animT / duration;
+  for (let i = 0; i < count; i++) {
+    const startFrac = (i / count) * 0.55; // staggered launches, not one synchronized burst
+    const lp = (p - startFrac) / (1 - startFrac);
+    if (lp <= 0 || lp > 1) continue;
+    const angle = pseudoRandom(seed + i * 7.1) * Math.PI * 2;
+    const speed = 16 + pseudoRandom(seed + i * 3.3) * 20;
+    const dist = lp * speed;
+    const arcH = Math.sin(lp * Math.PI) * (12 + pseudoRandom(seed + i * 5.7) * 12); // up then back down, not a flat rise
+    const size = 2 + pseudoRandom(seed + i * 9.1) * 2.4;
+    ctx.fillStyle = i % 2 === 0 ? `rgba(120,88,55,${1 - lp})` : `rgba(90,64,40,${1 - lp})`;
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(angle) * dist, groundY - arcH + Math.sin(angle) * dist * 0.35, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+function drawDugDirtPile(cx, groundY, seed) {
+  const mounds = [
+    { dx: -21, r: 7 }, { dx: -13, r: 5.5 }, { dx: 21, r: 7.5 }, { dx: 13, r: 5.5 },
+    { dx: -26, r: 4.5 }, { dx: 27, r: 4.5 }
+  ];
+  mounds.forEach((m, i) => {
+    const jr = m.r * (0.85 + pseudoRandom(seed + i * 11.3) * 0.3);
+    const jx = m.dx + (pseudoRandom(seed + i * 6.1) - 0.5) * 4;
+    ctx.fillStyle = i % 2 === 0 ? "rgba(110,80,48,0.85)" : "rgba(90,64,38,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(cx + jx, groundY + 1, jr, jr * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawTopsyWindSeedPlot(camX) {
   const dx = TOPSY_SEEDPLOT_X - camX;
 
@@ -19429,16 +19504,12 @@ function drawTopsyWindSeedPlot(camX) {
   drawDisheveledPitPath(dx, gy + 6, 17, 12, TOPSY_SEEDPLOT_X + 401);
   ctx.fill();
 
+  // permanent dirt pile -- what actually came out of the hole, sticks
+  // around forever once dug
+  drawDugDirtPile(dx, gy, TOPSY_SEEDPLOT_X + 811);
+
   if (topsyWindSeedPlot.digAnimT < TOPSY_SEEDPLOT_DIG_ANIM_DURATION) {
-    const p = topsyWindSeedPlot.digAnimT / TOPSY_SEEDPLOT_DIG_ANIM_DURATION;
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const dist = p * 24;
-      ctx.fillStyle = `rgba(120,88,55,${1 - p})`;
-      ctx.beginPath();
-      ctx.arc(dx + Math.cos(angle) * dist, gy - p * 16 + Math.sin(angle) * dist * 0.4, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawDigFlingParticles(dx, gy, topsyWindSeedPlot.digAnimT, TOPSY_SEEDPLOT_DIG_ANIM_DURATION, TOPSY_SEEDPLOT_X + 91, 14);
   }
 
   // water pooled after each successful watering round -- fades back down
@@ -19472,93 +19543,118 @@ function drawTopsyWindSeedPlot(camX) {
     }
   }
 
-  // CONFIRMED CHANGE ("we are going to have it actually grow upside
-  // down. and become.... a tree i think, or maybe a gigantic
-  // dandelion?"): went with the giant dandelion -- it's the seed's own
-  // name talking (a WIND seed), and rather than growing the whole plant
-  // physically inverted (which would fight the pit/ground anchor math
-  // every other planted thing here uses), the "upside down" gag lives in
-  // what the plant SHEDS: its puffball constantly sends individual
-  // seed-parachutes drifting UPWARD and away, never downward, matching
-  // the exact same "loose things float" rule the cart's tomatoes and the
-  // well's water already established. The stalk itself stays rooted
-  // normally, same as the well -- a genuinely planted, growing thing,
-  // not a loose object.
+  // CONFIRMED CHANGE ("the dandelion has to grow upside down!! and make
+  // it gigantic like much larger dandelion flower base on the ground,
+  // tall stem with the gentle roots coming out"): rebuilt as a fully
+  // "already-inverted" structure -- the SAME local-coordinate approach
+  // the topsy-turvy trees/houses use (ly(0) touches the ground, larger
+  // localY is higher up the screen). The puffball flower head sits right
+  // at ground level (where a normal dandelion's root would be), a tall
+  // stem rises from it into the sky, and a fan of fine roots spreads out
+  // near-horizontally (Sam's own guess at "flat rooting") from the very
+  // top -- the exact same "canopy at the ground, roots reaching skyward"
+  // trick the trees already established, just with a dandelion's parts
+  // standing in for a tree's. The seed-parachutes still drift UPWARD off
+  // the flower head once fully grown, never downward, matching the
+  // "loose things float" rule the cart's tomatoes and the well's water
+  // already use.
   if (topsyWindSeedPlot.waterRounds >= TOPSY_SEEDPLOT_WATER_ROUNDS) {
     const gp = topsyWindSeedPlot.growProgress;
-    const stemH = 30 * gp;
-    const sway = Math.sin(performance.now() * 0.0012) * 4 * gp;
-    ctx.strokeStyle = "#4f7a34";
-    ctx.lineWidth = 3.5 + 2 * gp;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(dx, gy);
-    ctx.quadraticCurveTo(dx + sway * 0.5, gy - stemH * 0.6, dx + sway, gy - stemH);
-    ctx.stroke();
-    ctx.lineCap = "butt";
+    const ly = (l) => gy - l;
+    // three overlapping growth beats: the flower head fills in first
+    // (right at the ground), then the stem extends up into the sky, then
+    // the roots fan out at the very top once the stem's done extending
+    const headP = Math.min(1, gp / 0.3);
+    const stemP = Math.min(1, Math.max(0, (gp - 0.15) / 0.6));
+    const rootP = Math.min(1, Math.max(0, (gp - 0.7) / 0.3));
 
-    if (gp > 0.3) {
-      const leafP = Math.min(1, (gp - 0.3) / 0.4);
-      [-1, 1].forEach(side => {
-        ctx.fillStyle = "#5c9440";
-        ctx.beginPath();
-        ctx.ellipse(dx + side * 6 * leafP, gy - stemH * 0.35, 7 * leafP, 3.2 * leafP, side * 0.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
+    const sway = Math.sin(performance.now() * 0.0009) * 5 * stemP;
+    const stemH = 105 * stemP; // "tall stem"
+    const headR = 26 * headP; // "much larger ... flower base"
+    const headBaseLocalY = headR * 0.55;
+
+    // stem -- thick, tapering slightly, rising from the flower head
+    // straight up with a gentle sway near the top
+    if (stemP > 0) {
+      ctx.strokeStyle = "#4f7a34";
+      ctx.lineWidth = 5 + 1.5 * stemP;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(dx, ly(headBaseLocalY));
+      ctx.quadraticCurveTo(dx + sway * 0.5, ly(headBaseLocalY + stemH * 0.6), dx + sway, ly(headBaseLocalY + stemH));
+      ctx.stroke();
+      ctx.lineCap = "butt";
     }
 
-    if (gp > 0.55) {
-      // the puffball itself -- scales in right along with growth, reading
-      // as genuinely "gigantic" by the time it's fully grown
-      const puffP = Math.min(1, (gp - 0.55) / 0.45);
-      const headCx = dx + sway, headCy = gy - stemH - 6 * puffP;
-      const puffR = 9 * puffP + 5;
-      const strands = 22;
+    // the flower head itself -- a genuinely large puffball resting right
+    // on the ground, same radiating-strand construction as the old
+    // placeholder but sized way up ("gigantic")
+    if (headP > 0) {
+      const headCx = dx, headCy = ly(headBaseLocalY);
+      const strands = 30;
       for (let i = 0; i < strands; i++) {
-        const a = (i / strands) * Math.PI * 2 + i * 0.37;
-        const len = puffR * (0.8 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 13) * 0.35);
-        const tx = headCx + Math.cos(a) * len, ty = headCy + Math.sin(a) * len;
+        const a = (i / strands) * Math.PI * 2 + i * 0.29;
+        const len = headR * (0.75 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 17) * 0.35);
+        const tx = headCx + Math.cos(a) * len, ty = headCy - Math.abs(Math.sin(a)) * len * 0.55 - len * 0.15;
         ctx.strokeStyle = "rgba(240,238,225,0.85)";
-        ctx.lineWidth = 0.9;
+        ctx.lineWidth = 1.1;
         ctx.beginPath();
         ctx.moveTo(headCx, headCy);
         ctx.lineTo(tx, ty);
         ctx.stroke();
         ctx.fillStyle = "rgba(250,248,238,0.9)";
         ctx.beginPath();
-        ctx.arc(tx, ty, 1, 0, Math.PI * 2);
+        ctx.arc(tx, ty, 1.3, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.fillStyle = "rgba(235,225,180,0.5)";
+      ctx.fillStyle = "rgba(235,225,180,0.55)";
       ctx.beginPath();
-      ctx.arc(headCx, headCy, puffR * 0.35, 0, Math.PI * 2);
+      ctx.ellipse(headCx, headCy - headR * 0.15, headR * 0.42, headR * 0.3, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
 
-      // a handful of individual seed-parachutes, continuously detaching
-      // and drifting UPWARD into the sky (never down) once it's fully
-      // grown -- looping on a shared time cycle so no per-particle state
-      // is needed
-      if (gp >= 1) {
-        const t = performance.now() * 0.001;
-        for (let i = 0; i < 5; i++) {
-          const cycle = (t * 0.12 + i / 5) % 1;
-          const px = headCx + Math.sin(i * 2.1 + t * 0.3) * (10 + cycle * 30);
-          const py = headCy - cycle * 130;
-          const fade = cycle < 0.12 ? cycle / 0.12 : (cycle > 0.85 ? (1 - cycle) / 0.15 : 1);
-          ctx.strokeStyle = `rgba(240,238,225,${0.7 * fade})`;
-          ctx.lineWidth = 0.8;
-          [0, 1, 2].forEach(f => {
-            const fa = (f / 3) * Math.PI * 2 + t;
-            ctx.beginPath();
-            ctx.moveTo(px, py);
-            ctx.lineTo(px + Math.cos(fa) * 3.5, py + Math.sin(fa) * 3.5);
-            ctx.stroke();
-          });
-          ctx.fillStyle = `rgba(250,248,238,${0.85 * fade})`;
+    // roots -- fan out near-horizontally from the top of the stem, same
+    // dendritic-strand helper the trees use but with a much shallower
+    // angle range so it reads as "flat" spreading roots rather than the
+    // trees' own upward-reaching mass
+    if (rootP > 0) {
+      const topX = dx + sway, topY = ly(headBaseLocalY + stemH);
+      ctx.save();
+      ctx.translate(topX, topY);
+      ctx.scale(1, -1); // local +y now points up the screen, matching drawDendriticRootStrand's own convention
+      const ROOT_ANGLES = [0.12, 0.32, 0.58, Math.PI / 2, Math.PI - 0.58, Math.PI - 0.32, Math.PI - 0.12];
+      ROOT_ANGLES.forEach((angle, i) => {
+        const len = (26 + Math.abs(Math.PI / 2 - angle) * 14) * rootP;
+        drawDendriticRootStrand(0, 0, angle, len, 1, TOPSY_SEEDPLOT_X + i * 233 + 41, 2 * rootP);
+      });
+      ctx.restore();
+    }
+
+    // a handful of individual seed-parachutes, continuously detaching
+    // and drifting UPWARD into the sky (never down) once it's fully
+    // grown -- looping on a shared time cycle so no per-particle state
+    // is needed
+    if (gp >= 1) {
+      const headCx = dx, headCy = ly(headBaseLocalY);
+      const t = performance.now() * 0.001;
+      for (let i = 0; i < 6; i++) {
+        const cycle = (t * 0.1 + i / 6) % 1;
+        const px = headCx + Math.sin(i * 2.1 + t * 0.3) * (12 + cycle * 36);
+        const py = headCy - cycle * 150;
+        const fade = cycle < 0.12 ? cycle / 0.12 : (cycle > 0.85 ? (1 - cycle) / 0.15 : 1);
+        ctx.strokeStyle = `rgba(240,238,225,${0.7 * fade})`;
+        ctx.lineWidth = 0.8;
+        [0, 1, 2].forEach(f => {
+          const fa = (f / 3) * Math.PI * 2 + t;
           ctx.beginPath();
-          ctx.arc(px, py, 0.9, 0, Math.PI * 2);
-          ctx.fill();
-        }
+          ctx.moveTo(px, py);
+          ctx.lineTo(px + Math.cos(fa) * 3.5, py + Math.sin(fa) * 3.5);
+          ctx.stroke();
+        });
+        ctx.fillStyle = `rgba(250,248,238,${0.85 * fade})`;
+        ctx.beginPath();
+        ctx.arc(px, py, 0.9, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }
@@ -31304,17 +31400,14 @@ function drawDigSitePlantVine(camX) {
     drawDisheveledPitPath(dx, gy + 8, 22, 16, digSite.x + 401);
     ctx.fill();
 
-    // one-shot dirt-flourish animation — slower, full circle, bigger and more visible
+    // permanent dirt pile -- what actually came out of the hole, sticks
+    // around forever once dug
+    drawDugDirtPile(dx, gy, digSite.x + 811);
+
+    // one-shot dirt-flourish animation -- staggered, gravity-arced burst
+    // (see drawDigFlingParticles' own comment)
     if (digSite.digAnimT < DIG_ANIM_DURATION) {
-      const p = digSite.digAnimT / DIG_ANIM_DURATION;
-      for (let i = 0; i < 10; i++) {
-        const angle = (i / 10) * Math.PI * 2;
-        const dist = p * 30;
-        ctx.fillStyle = `rgba(120,88,55,${1 - p})`;
-        ctx.beginPath();
-        ctx.arc(dx + Math.cos(angle) * dist, gy - p * 20 + Math.sin(angle) * dist * 0.4, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      drawDigFlingParticles(dx, gy, digSite.digAnimT, DIG_ANIM_DURATION, digSite.x + 91, 16);
     }
 
     // water pooled around the planted peanut, once watered
@@ -60112,7 +60205,11 @@ if (currentScene === "molehole") {
 // mini-me actually moving around inside the case. Hidden here the same
 // way the body is.
 drawAntFarmTeleportSwirl(camX); // the whimsical windup swirl on the real player, right before they shrink into the ant farm case (see updateSandboxAntFarm's `teleporting` block)
-if (heldItem && !fallState.active && !activeDig && !player.inAntFarm) {
+// CONFIRMED BUG FIX ("maybe it should briefly look out of play while it
+// is being filled"): also hidden during the well's own dip animation --
+// see handleInput's matching movement-freeze for why the bucket needs to
+// visually be "at the well, not on your head" for that whole beat.
+if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player.inAntFarm) {
   const heldPos = getHeldItemWorldPos();
   if (heldItem === "honey") {
     drawHoneyPotShape(ctx, heldPos.x - camX, heldPos.y, 10, honeyScoops / 8);
@@ -60127,18 +60224,23 @@ if (heldItem && !fallState.active && !activeDig && !player.inAntFarm) {
   } else {
     drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
   }
-  // CONFIRMED CHANGE ("lets also have animation of the water sloshing
-  // out, not just the line going down of water inside the bucket"): the
-  // droplets themselves are spawned in updateTopsyWellAndSeedPlot (see
-  // topsyCarrySplashes' own comment); this just renders whatever's
-  // currently in flight, anchored to the same floating icon position.
+  // CONFIRMED CHANGE ("i want animation of the water sloshing out but
+  // upwards"): the droplets themselves are spawned in
+  // updateTopsyWellAndSeedPlot (see topsyCarrySplashes' own comment);
+  // this just renders whatever's currently in flight, anchored to the
+  // same floating icon position. Drift UPWARD and fade, never falling
+  // back down -- matches the same "loose things float" rule the cart's
+  // tomatoes, the well's own rising bubbles, and the dandelion's seed-
+  // parachutes all already use in this land.
   if (heldItem === "bucket" && topsyCarrySplashes.length) {
     topsyCarrySplashes.forEach(s => {
       const p = s.age / TOPSY_CARRY_SPLASH_LIFE;
-      const fallY = s.vy * (s.age / 1000) + 340 * (s.age / 1000) * (s.age / 1000); // simple gravity arc
+      const eased = 1 - (1 - p) * (1 - p); // ease-out -- quick initial slosh, drifting to a gentle stop
+      const riseY = -eased * (18 + Math.abs(s.vy) * 0.5);
+      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 1.6;
       ctx.fillStyle = `rgba(120,170,220,${0.65 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(heldPos.x - camX + s.dx, heldPos.y + 8 + fallY, 1.8, 2.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(heldPos.x - camX + s.dx + wobbleX, heldPos.y + 6 + riseY, 1.8, 2.6, 0, 0, Math.PI * 2);
       ctx.fill();
     });
   }
