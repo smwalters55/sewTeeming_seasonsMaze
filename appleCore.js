@@ -19155,26 +19155,42 @@ function drawTopsyTurvyWell(camX) {
   ctx.lineTo(sx - wallHalfW - 2, postTopY + 4 * S);
   ctx.stroke();
 
-  // CONFIRMED CHANGE ("an animation where you attach the bucket to the
-  // rope, maybe the rope is wiggling a bit for attention so player gets
-  // the hint"): the rope+bucket is no longer a static decoration --
-  // while topsyWell.dipping is running (see updateTopsyWellAndSeedPlot)
-  // it genuinely lowers into the water and draws back up, and any time
-  // the player is standing right here holding an empty bucket (the
-  // exact moment they'd want the hint), the idle sway noticeably picks
-  // up to catch the eye. Otherwise it's just a small constant idle
-  // sway, matching this game's usual "everything has a little life in
-  // it" texture rather than sitting perfectly still.
+  // CONFIRMED BUG FIX ("so there is already a bucket attached in the
+  // well, so how do i use my inventory bucket?"): the rope used to
+  // always show a bucket hanging on it, which read as "the well owns
+  // its own bucket" and made it genuinely unclear why you'd need yours.
+  // The whole point per the original ask ("an animation where you
+  // attach the bucket to the rope") is that it's YOUR carried bucket
+  // that gets attached -- so the rope now sits empty (just a hook) any
+  // time topsyWell.dipping isn't actually running, and only shows a
+  // bucket while the attach/dip/draw-up animation is playing. It
+  // disappears again right after (that's the moment bucketFilled flips
+  // true -- see updateTopsyWellAndSeedPlot) since at that point it's
+  // back in your hand, shown the same way every other held item is (the
+  // floating icon above your head).
   const nearHintingForDip = !topsyWell.dipping && heldItem === "bucket" && !bucketFilled &&
     Math.abs((player.x + player.width / 2) - TOPSY_WELL_X) < 60;
   const swayAmp = nearHintingForDip ? 6 : 1.4;
   const swaySpeed = nearHintingForDip ? 0.006 : 0.0015;
   const ropeSwayX = Math.sin(performance.now() * swaySpeed) * swayAmp;
 
-  let dipProgress = 0;
-  if (topsyWell.dipping) {
-    dipProgress = Math.sin(Math.min(1, topsyWell.dipT / TOPSY_WELL_DIP_DURATION) * Math.PI);
+  if (!topsyWell.dipping) {
+    // empty hook, gently swaying -- no bucket permanently parked here
+    ctx.strokeStyle = "#8a7a5a";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(sx, postTopY);
+    ctx.lineTo(sx + ropeSwayX, wallTopY - 9 * S);
+    ctx.stroke();
+    ctx.strokeStyle = "#6b4a2c";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(sx + ropeSwayX, wallTopY - 6 * S, 2.6 * S, Math.PI * 0.15, Math.PI * 0.95);
+    ctx.stroke();
+    return;
   }
+
+  const dipProgress = Math.sin(Math.min(1, topsyWell.dipT / TOPSY_WELL_DIP_DURATION) * Math.PI);
   const restBucketTopY = wallTopY - 7 * S;
   const dippedBucketTopY = wallTopY + 2 * S;
   const bucketTopY = restBucketTopY + (dippedBucketTopY - restBucketTopY) * dipProgress;
@@ -19213,7 +19229,7 @@ function drawTopsyTurvyWell(camX) {
   ctx.stroke();
   // a little splash ring right at the peak of the dip, so the moment it
   // actually touches water reads clearly
-  if (topsyWell.dipping && dipProgress > 0.85) {
+  if (dipProgress > 0.85) {
     const splashP = (dipProgress - 0.85) / 0.15;
     ctx.strokeStyle = `rgba(210,230,235,${0.5 * (1 - splashP)})`;
     ctx.lineWidth = 1.4;
@@ -60907,6 +60923,25 @@ updateSeasonTransition(deltaTime);
 // saw the first frame. Deleted for good -- the game now actually starts
 // where currentScene's own declaration already says it should: the
 // orchard, at the real beginning.
+
+// DEBUG CHEAT ("oh give me bucket and shovel in inventory. and the wind
+// seed"): seeded straight into starting inventory (via the real
+// addToInventory, not a raw inventory[type]=1 -- that would've left
+// them out of inventoryOrder and made Tab-cycle skip right past them)
+// so the new well/windSeed-plot mechanic is immediately testable
+// without first replaying the willow shovel pickup, the peanut-vine
+// bucket, and a clouds-scene windSeed collection. Placed down here,
+// right before the game loop actually starts, since addToInventory
+// pulls in state (CARRYING_ITEM_TYPES, etc.) declared further down the
+// file than the inventory/addToInventory definitions themselves -- any
+// earlier and it throws before the page ever finishes loading. Same
+// "just hardcode it for now" spirit as DEBUG_START_SCENE itself --
+// remove/revert whenever a normal fresh start (nothing pre-collected)
+// is wanted again.
+addToInventory("bucket");
+addToInventory("shovel");
+addToInventory("windSeed");
+
 update();
 
 });
