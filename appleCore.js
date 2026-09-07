@@ -1370,6 +1370,12 @@ function startSeasonTransition(targetScene) {
   player.onFan2 = false;
   player.onPendulum = false;
   player.onSlinky = false;
+  // CONFIRMED CHANGE: same "clear special-movement state on any
+  // transition" reasoning as everything else in this function -- a
+  // transition firing mid-ride on the topsy-turvy cart would otherwise
+  // leave topsyTurvyCartRide.active permanently true, silently driving
+  // player.y every frame in whatever scene comes next.
+  topsyTurvyCartRide.active = false;
 }
 
 function updateSeasonTransition(deltaTime) {
@@ -4287,6 +4293,61 @@ function applyPhysics(){
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+    }
+  }
+
+  // CONFIRMED CHANGE ("if payer jumps onto the cart, player also floats
+  // up and then ddrifts back down like the other contents unless player
+  // jumps out of it", refined to "i want to be able to jump within it so
+  // go higher but still floating upwards, you only go out if you walk or
+  // jump too much left/right out of the range. and yes it resets"): the
+  // cart's own float/boost traversal mechanic. Landing on the cart (like
+  // any other platform) starts the ride instead of just standing on it;
+  // once active, this branch fully drives player.y every frame (same
+  // "position fully driven" shape as poolSlideExit/forestSlideBaseImpact
+  // elsewhere in the game) until the player wanders far enough out of
+  // TOPSY_CART_HALF_RANGE, at which point it just lets go and normal
+  // gravity takes back over from wherever they are.
+  if (!topsyTurvyCartRide.active) {
+    const platformTop = TOPSY_CART_BED_TOP;
+    const playerBottom = player.y;
+    if (
+      Math.abs(player.x + player.width / 2 - TOPSY_CART_X) < 28 &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      topsyTurvyCartRide.active = true;
+      topsyTurvyCartRide.startedAt = performance.now();
+      topsyTurvyCartRide.boost = 0;
+      topsyTurvyCartRide.lastBoostAt = performance.now();
+    }
+  } else {
+    const now = performance.now();
+    const elapsed = (now - topsyTurvyCartRide.startedAt) / 1000;
+    const cyclePhase = (elapsed / TOPSY_CART_FLOAT_PERIOD) * Math.PI * 2;
+    const passive = Math.max(0, Math.sin(cyclePhase)) * TOPSY_CART_FLOAT_AMPLITUDE;
+
+    // boost decays exponentially since it was last topped up -- pressing
+    // jump/up refreshes it with diminishing returns toward the soft cap
+    // (see TOPSY_CART_BOOST_GAIN's own comment above)
+    const boostElapsed = (now - topsyTurvyCartRide.lastBoostAt) / 1000;
+    let boostNow = topsyTurvyCartRide.boost * Math.exp(-TOPSY_CART_BOOST_DECAY * boostElapsed);
+    if (keys.upJustPressed || keys.spaceJustPressed) {
+      boostNow = boostNow + (TOPSY_CART_BOOST_CAP - boostNow) * TOPSY_CART_BOOST_GAIN;
+      topsyTurvyCartRide.boost = boostNow;
+      topsyTurvyCartRide.lastBoostAt = now;
+    }
+
+    player.y = TOPSY_CART_BED_TOP + passive + boostNow;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+
+    // walking (or jumping) far enough out of range is the only way out --
+    // just release control and let normal gravity take over from here
+    if (Math.abs(player.x + player.width / 2 - TOPSY_CART_X) > TOPSY_CART_HALF_RANGE) {
+      topsyTurvyCartRide.active = false;
     }
   }
 
@@ -17847,10 +17908,20 @@ const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same po
 // isn't placed anywhere yet. Add entries back here once buildings (or
 // something else entirely) are actually wanted.
 const topsyTurvyHouses = [];
+// CONFIRMED CHANGE ("the roots of the trees are rlly close to the
+// ground, lets make these trees taller and one p tall where you need to
+// cart hieght boost to get to the roots"): trunk length is now per-tree
+// (`trunk`, the same value the old hardcoded `64` used to be, see
+// drawTopsyTurvyTree/topsyTurvyRootPlatforms below) instead of a single
+// shared constant. The first two trees got a real height bump (roots
+// used to sit right on top of the canopy); the third is deliberately
+// MUCH taller -- its own root platforms sit high enough that reaching
+// them requires the topsyTurvyCart's height boost (see that section
+// below), giving the cart an actual traversal purpose in the land.
 const topsyTurvyTrees = [
-  { x: 280, scale: 0.9 },
-  { x: 540, scale: 1.1 },
-  { x: 800, scale: 0.8 }
+  { x: 280, scale: 0.9, trunk: 100 },
+  { x: 540, scale: 1.1, trunk: 110 },
+  { x: 800, scale: 0.85, trunk: 230 }
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -17899,13 +17970,57 @@ const topsyTurvyRootPlatforms = topsyTurvyTrees.flatMap(t =>
     return {
       x: t.x + end.x * s - 13,
       width: 26,
-      height: s * (64 + end.y)
+      height: s * (t.trunk + end.y)
     };
   })
 );
 // one ambient "topsy-turvy folk" -- walks on their hands, per the book's
 // own description, wandering a short patrol range near the houses
 const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
+
+// CONFIRMED CHANGE ("i like the cart upside down idae thing... option a
+// it is") -- a parked cart, drawn right-side-up (unlike everything else
+// in this land) since the joke here is specifically that GRAVITY is
+// broken for loose objects, not that the cart itself is flipped -- see
+// the scoping discussion in the project doc for why Option A (normal
+// cart, floaty contents) won out over a fully-inverted cart (whose bed
+// opening would face the ground, dumping its contents the instant it
+// flipped, killing the "drift upward" gag entirely).
+// CONFIRMED CHANGE ("if payer jumps onto the cart, player also floats up
+// and then drifts back down like the other contents unless player jumps
+// out of it", then "i want to be able to jump within it so go higher but
+// still floating upwards, you only go out if you walk or jump too much
+// left/right out of the range. and yes it resets"): landing on the cart
+// starts a real traversal mechanic, not just a visual gag -- see
+// topsyTurvyCartRide's own update block in applyPhysics for the actual
+// float/boost logic. Placed right at the base of the land's one very
+// tall tree (see topsyTurvyTrees above) so climbing the cart is a real
+// way to reach that tree's high root platforms.
+const TOPSY_CART_X = 780;
+const TOPSY_CART_HALF_RANGE = 60; // how far you can wander left/right while riding before it lets go
+const TOPSY_CART_BED_TOP = 22;
+// CONFIRMED CHANGE ("jitter the rise of each item too so its in dif
+// phases"): each apple gets its own seeded phase offset so they don't
+// all rise and fall in lockstep.
+const topsyTurvyCartApples = [0, 1, 2].map(i => ({
+  dx: (i - 1) * 10,
+  phase: pseudoRandom(TOPSY_CART_X + i * 71) * Math.PI * 2,
+  seed: TOPSY_CART_X + i * 71
+}));
+// player's own current ride state -- see the float/boost update in
+// applyPhysics for how startedAt/boost/lastBoostAt actually get used.
+const topsyTurvyCartRide = { active: false, startedAt: 0, boost: 0, lastBoostAt: 0 };
+// CONFIRMED CHANGE ("soft cap yeha"): boost is added with diminishing
+// returns toward TOPSY_CART_BOOST_CAP (each press adds a fraction of the
+// REMAINING headroom, not a flat amount, so it converges toward the cap
+// rather than ever hard-stopping at it) and decays exponentially between
+// presses -- so reaching real height takes genuine repeated well-timed
+// jumps, not one press held/mashed instantly to the ceiling.
+const TOPSY_CART_FLOAT_PERIOD = 4.5; // seconds per passive up/down cycle
+const TOPSY_CART_FLOAT_AMPLITUDE = 85; // passive peak height above the cart bed
+const TOPSY_CART_BOOST_CAP = 165;
+const TOPSY_CART_BOOST_GAIN = 0.4;
+const TOPSY_CART_BOOST_DECAY = 0.5; // exponential decay rate per second
 
 let topsyTurvyGrumpyDialogueShown = false;
 let topsyTurvyGrumpyLingerT = 0;
@@ -18099,12 +18214,13 @@ function drawTopsyTurvyTree(camX, t) {
     ctx.fill();
   });
 
-  // trunk, rising from the canopy up to where the roots are
+  // trunk, rising from the canopy up to where the roots are -- length is
+  // per-tree now (t.trunk, see topsyTurvyTrees's own comment on why)
   ctx.strokeStyle = "#4a3222";
   ctx.lineWidth = 5 * s;
   ctx.beginPath();
   ctx.moveTo(sx, y(30 * s));
-  ctx.lineTo(sx, y(64 * s));
+  ctx.lineTo(sx, y(t.trunk * s));
   ctx.stroke();
 
   // roots -- per direct follow-up ("make roots a lot more of them, a lot
@@ -18118,7 +18234,7 @@ function drawTopsyTurvyTree(camX, t) {
   // centered straight up, each forking 2 more times as it grows, varied
   // length/seed per strand (and per tree, via t.x) so the whole mass
   // reads organic rather than symmetric/repeated.
-  const trunkTopY = y(64 * s);
+  const trunkTopY = y(t.trunk * s);
   ctx.save();
   ctx.translate(sx, trunkTopY);
   ctx.scale(s, -s);
@@ -18300,6 +18416,66 @@ function drawTopsyTurvyReturnPortal(camX) {
   }
 }
 
+// the cart -- drawn completely right-side-up (see topsyTurvyCartRide's
+// own placement comment for why), a plain two-wheeled farm cart with a
+// few apples that individually drift up out of the bed and sink back
+// down, each on its own seeded phase so they don't move in lockstep.
+function drawTopsyTurvyCart(camX) {
+  const sx = TOPSY_CART_X - camX, sy = gy;
+
+  // wheels
+  ctx.fillStyle = "#4a3222";
+  ctx.beginPath();
+  ctx.arc(sx - 16, sy - 8, 8, 0, Math.PI * 2);
+  ctx.arc(sx + 16, sy - 8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7a5f3a";
+  ctx.beginPath();
+  ctx.arc(sx - 16, sy - 8, 3, 0, Math.PI * 2);
+  ctx.arc(sx + 16, sy - 8, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // bed
+  ctx.fillStyle = "#8a6a42";
+  ctx.beginPath();
+  ctx.moveTo(sx - 26, sy - 14);
+  ctx.lineTo(sx - 22, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 22, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 26, sy - 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5c4426";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // side rails
+  ctx.beginPath();
+  ctx.moveTo(sx - 22, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx - 20, sy - TOPSY_CART_BED_TOP - 8);
+  ctx.moveTo(sx + 22, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 20, sy - TOPSY_CART_BED_TOP - 8);
+  ctx.stroke();
+
+  // apples -- drift up out of the bed and sink back, each on its own
+  // seeded phase so they read as independently bobbing, not synced
+  const t = performance.now() * 0.001;
+  topsyTurvyCartApples.forEach(a => {
+    const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55)) * Math.PI * 2 + a.phase;
+    const bob = Math.max(0, Math.sin(cyclePhase)) * 30;
+    const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 3;
+    const ay = sy - TOPSY_CART_BED_TOP - 6 - bob;
+    ctx.fillStyle = "#b23a3a";
+    ctx.beginPath();
+    ctx.arc(ax, ay, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5c3a1c";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 5);
+    ctx.lineTo(ax, ay - 8);
+    ctx.stroke();
+  });
+}
+
 function drawTopsyTurvyScene(camX) {
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
   sky.addColorStop(0, "#cdb8e8");
@@ -18330,6 +18506,7 @@ function drawTopsyTurvyScene(camX) {
 
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
+  drawTopsyTurvyCart(camX);
   drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
 }
