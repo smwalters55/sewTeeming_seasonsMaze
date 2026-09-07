@@ -18013,6 +18013,18 @@ const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 // float/boost logic. Placed right at the base of the land's one very
 // tall tree (see topsyTurvyTrees above) so climbing the cart is a real
 // way to reach that tree's high root platforms.
+// CONFIRMED CHANGE ("i think with the well idk i think maybe just build
+// it so i can see it and we can work from there"): a real first-pass
+// well object -- visual only for now, no dig/bucket/plant mechanics
+// wired up yet, just placed so there's something concrete to react to.
+// Kept upright and sitting right on the ground, same "solid objects
+// stay normal, only loose/contained things break gravity" rule the
+// cart itself established (per the earlier scoping talk about where an
+// upside-down well would even sit) -- resolves the "where in the sky
+// would it hang" question by just not putting it in the sky. Placed in
+// the gap between the first and second tree, clear of the pig's own
+// wander range (homeX 520 +/- 60).
+const TOPSY_WELL_X = 400;
 const TOPSY_CART_X = 780;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
@@ -18790,6 +18802,140 @@ function drawTopsyTurvyCart(camX) {
   ctx.stroke();
 }
 
+// CONFIRMED CHANGE ("i think with the well idk i think maybe just build
+// it so i can see it and we can work from there"): first-pass well --
+// stone ring base, two angled support posts, a peaked wood roof, and a
+// bucket hanging from a rope over a crossbar. Visual only for now (see
+// TOPSY_WELL_X's own comment) -- no dig/fill/plant interaction wired up
+// yet, just something concrete to look at and react to.
+function drawTopsyTurvyWell(camX) {
+  const sx = TOPSY_WELL_X - camX, sy = gy;
+  const wallTopY = sy - 26, wallBottomY = sy - 2;
+
+  // soft ground shadow
+  ctx.fillStyle = "rgba(20,20,10,0.15)";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 2, 34, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stone ring wall -- a short cylinder read via a rounded-rect body
+  // plus a top ellipse "mouth" so it reads as a circular opening, not a
+  // flat box
+  ctx.fillStyle = "#8a8577";
+  ctx.beginPath();
+  ctx.moveTo(sx - 26, wallBottomY);
+  ctx.lineTo(sx - 26, wallTopY);
+  ctx.quadraticCurveTo(sx, wallTopY - 8, sx + 26, wallTopY);
+  ctx.lineTo(sx + 26, wallBottomY);
+  ctx.quadraticCurveTo(sx, wallBottomY + 8, sx - 26, wallBottomY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5c584c";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // rough stone-block texture lines
+  ctx.strokeStyle = "rgba(92,88,76,0.55)";
+  ctx.lineWidth = 1.2;
+  [0.3, 0.62].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(sx - 25, wallTopY + (wallBottomY - wallTopY) * f);
+    ctx.lineTo(sx + 25, wallTopY + (wallBottomY - wallTopY) * f + 1.5);
+    ctx.stroke();
+  });
+  [-14, 0, 14].forEach((dx, i) => {
+    ctx.beginPath();
+    ctx.moveTo(sx + dx, wallTopY + 3);
+    ctx.lineTo(sx + dx + (i - 1) * 2, wallBottomY - 3);
+    ctx.stroke();
+  });
+  // the dark open mouth of the well
+  ctx.fillStyle = "#2a2620";
+  ctx.beginPath();
+  ctx.ellipse(sx, wallTopY, 24, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5c584c";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // a hint of water depth, catching a little highlight
+  ctx.fillStyle = "rgba(120,150,170,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(sx, wallTopY + 1, 16, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // two angled support posts, holding up the roof and the crossbar
+  ctx.strokeStyle = "#5a3e26";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(sx - 24, wallTopY + 4);
+  ctx.lineTo(sx - 20, wallTopY - 58);
+  ctx.moveTo(sx + 24, wallTopY + 4);
+  ctx.lineTo(sx + 20, wallTopY - 58);
+  ctx.stroke();
+
+  // peaked wood roof
+  ctx.fillStyle = "#7a4a2e";
+  ctx.beginPath();
+  ctx.moveTo(sx - 32, wallTopY - 54);
+  ctx.lineTo(sx, wallTopY - 76);
+  ctx.lineTo(sx + 32, wallTopY - 54);
+  ctx.lineTo(sx + 24, wallTopY - 50);
+  ctx.lineTo(sx, wallTopY - 68);
+  ctx.lineTo(sx - 24, wallTopY - 50);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2416";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  // a couple of roof-plank lines
+  ctx.strokeStyle = "rgba(58,36,22,0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx - 12, wallTopY - 64);
+  ctx.lineTo(sx - 20, wallTopY - 51);
+  ctx.moveTo(sx + 12, wallTopY - 64);
+  ctx.lineTo(sx + 20, wallTopY - 51);
+  ctx.stroke();
+
+  // crossbar, crank, rope and bucket -- the bucket hangs roughly
+  // halfway down into the well mouth, a still first pass (no fill
+  // animation yet -- that's the actual plant/water mechanic still to
+  // come, per Sam's own "we can work from there")
+  ctx.strokeStyle = "#5a3e26";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(sx - 20, wallTopY - 58);
+  ctx.lineTo(sx + 20, wallTopY - 58);
+  ctx.stroke();
+  ctx.fillStyle = "#6b4a2c";
+  ctx.beginPath();
+  ctx.arc(sx - 20, wallTopY - 58, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2416";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(sx - 20, wallTopY - 58);
+  ctx.lineTo(sx - 26, wallTopY - 54);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#7a6a4a";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(sx, wallTopY - 58);
+  ctx.lineTo(sx, wallTopY - 6);
+  ctx.stroke();
+  ctx.fillStyle = "#6b4a2c";
+  ctx.beginPath();
+  ctx.moveTo(sx - 7, wallTopY - 6);
+  ctx.lineTo(sx + 7, wallTopY - 6);
+  ctx.lineTo(sx + 5, wallTopY + 4);
+  ctx.lineTo(sx - 5, wallTopY + 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2416";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+}
+
 function drawTopsyTurvyScene(camX) {
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
   sky.addColorStop(0, "#cdb8e8");
@@ -18836,6 +18982,7 @@ function drawTopsyTurvyScene(camX) {
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
+  drawTopsyTurvyWell(camX);
   drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
 
