@@ -222,7 +222,7 @@ window.addEventListener("keydown", e => {
   // time. Same full state-reset shape as the other debug spawns above,
   // including auto-completing the river bridge -- the fungus tree sits
   // past it, same reasoning as the Shift+P rock-ledge spawn just above.
-  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.repeat) {
+  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.ctrlKey && !e.repeat) {
     currentScene = "forest";
     forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
     forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
@@ -237,6 +237,33 @@ window.addEventListener("keydown", e => {
     forestFungusClimb.level = 0;
     forestFungusClimb.streak = 0;
     cameraX = Math.max(0, FOREST_FUNGUS_TREE_X - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
+  // DEBUG CHEAT ("can you actually debug spawn me within topsy turvery
+  // land pls can use f still"): Ctrl+Shift+F drops the player straight
+  // into Topsy-Turvy Land itself (right near the trees/pig, not just at
+  // the base of the climb leading up to it), for quickly testing that
+  // scene's own content without bouncing all the way up the fungus climb
+  // first every time. Still F, same mnemonic as the fungus-climb spawn
+  // right above -- Ctrl added since Shift+F was already taken. Same
+  // full state-reset shape as the other debug spawns, plus resets
+  // forestFungusClimb to the top level/streak so a same-session trip
+  // back down through the return portal lands somewhere sane.
+  if ((e.key==="f" || e.key==="F") && e.shiftKey && e.ctrlKey && !e.repeat) {
+    currentScene = "topsyturvy";
+    player.x = topsyTurvyTrees[1].x - 40;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    forestFungusClimb.level = forestFungusClimb.levels.length - 1;
+    forestFungusClimb.streak = 0;
+    cameraX = Math.max(0, topsyTurvyTrees[1].x - 480);
     cameraY = 0;
     seasonTransition.phase = "idle";
     updateMapUI();
