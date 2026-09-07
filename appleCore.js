@@ -640,6 +640,10 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.clearRect(0, 0, 20, 20);
     drawBucketShape(iconCtx, 10, 12, 7, 0);
   },
+  tomato: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawTomatoShape(iconCtx, 10, 10, 7, 0);
+  },
   shovel: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawShovelShape(iconCtx, 10, 12, 7, 0.3);
@@ -4361,7 +4365,16 @@ function applyPhysics(){
   {
     const playerBottom = player.y;
     let bestTop = null;
-    topsyTurvyRootPlatforms.forEach(p => {
+    // CONFIRMED CHANGE ("also lets be able to jump on dandelion roots
+    // too"): the dandelion's own root fan only exists once it's actually
+    // fully grown (topsyWindSeedPlot.grown) -- before that there's
+    // nothing there to land on, same as how the tall tree's own root
+    // platforms only ever existed because the tree itself is already
+    // standing.
+    const allTopsyPlatforms = topsyWindSeedPlot.grown
+      ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms)
+      : topsyTurvyRootPlatforms;
+    allTopsyPlatforms.forEach(p => {
       const platformTop = p.height;
       if (
         player.x + player.width > p.x &&
@@ -6976,6 +6989,8 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawAragoniteShape(ctx, x, y, size, rotation);
   } else if (itemType === "bucket") {
     drawBucketShape(ctx, x, y, size, rotation);
+  } else if (itemType === "tomato") {
+    drawTomatoShape(ctx, x, y, size, rotation);
   } else if (itemType === "honey") {
     drawHoneyShape(ctx, x, y, size, rotation);
   } else if (itemType === "marble") {
@@ -17965,13 +17980,12 @@ const TOPSYTURVY_WIDTH = 1500;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
 
-// CONFIRMED CHANGE ("idk if i want to do buildings in it so far there
-// arent really any manmade items/situations besides in the dev
-// sandbox"): left empty for now, pending that decision -- the drawing
-// code (drawTopsyTurvyHouse below) is fully built and works, it just
-// isn't placed anywhere yet. Add entries back here once buildings (or
-// something else entirely) are actually wanted.
-const topsyTurvyHouses = [];
+// CONFIRMED CHANGE ("i like the grumpy character thing. w tulip ... maybe
+// the grumpy is a chef"): the one house this land actually wanted --
+// the grumpy (secretly a chef) resident's own place. Sat in the real gap
+// between the second tree (x540) and the cart's own wander range (780
+// +/-85, so nothing past ~695), with room to spare on both sides.
+const topsyTurvyHouses = [{ x: 630, scale: 0.85, grumpy: true }];
 // CONFIRMED CHANGE ("the roots of the trees are rlly close to the
 // ground, lets make these trees taller and one p tall where you need to
 // cart hieght boost to get to the roots"): trunk length is now per-tree
@@ -18147,6 +18161,30 @@ const TOPSY_SEEDPLOT_DIG_ANIM_DURATION = 2200;
 const TOPSY_SEEDPLOT_PLANT_FALL_DURATION = 600;
 const TOPSY_SEEDPLOT_GROW_DURATION = 2200;
 
+// CONFIRMED CHANGE ("also lets be able to jump on dandelion roots too"):
+// shared with drawTopsyWindSeedPlot's own fully-grown geometry (headR,
+// stemH) so the jumpable platforms always line up with exactly where the
+// roots are actually drawn, same "hitbox matches the art" approach the
+// tree root platforms use (see topsyTurvyRootPlatforms's own comment).
+const TOPSY_DANDELION_HEAD_R = 26;
+const TOPSY_DANDELION_STEM_H = 105;
+const TOPSY_DANDELION_ROOT_ANGLES = [0.12, 0.32, 0.58, Math.PI / 2, Math.PI - 0.58, Math.PI - 0.32, Math.PI - 0.12];
+// height above ground of the root fan's own anchor point (the top of the
+// fully-grown stem) -- matches drawTopsyWindSeedPlot's stemTopY math
+// exactly: headCy sits headR*0.8 above ground, the stem's base is a
+// further headR above THAT (top of the round head), then the stem itself
+// runs stemH higher still.
+const TOPSY_DANDELION_ROOT_ANCHOR_HEIGHT = TOPSY_DANDELION_HEAD_R * 1.8 + TOPSY_DANDELION_STEM_H;
+const topsyDandelionRootPlatforms = TOPSY_DANDELION_ROOT_ANGLES.map((angle, i) => {
+  const len = 26 + Math.abs(Math.PI / 2 - angle) * 14; // matches the draw call's own len formula at rootP=1 (fully grown)
+  const end = computeDendriticStrandEnd(0, 0, angle, len, TOPSY_SEEDPLOT_X + i * 233 + 41);
+  return {
+    x: TOPSY_SEEDPLOT_X + end.x - 11,
+    width: 22,
+    height: TOPSY_DANDELION_ROOT_ANCHOR_HEIGHT + end.y
+  };
+});
+
 const TOPSY_CART_X = 780;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
@@ -18189,6 +18227,16 @@ const topsyTurvyCartTomatoes = [0, 1, 2, 3, 4, 5, 6].map(i => ({
 // player's own current ride state -- see the float/boost update in
 // applyPhysics for how startedAt/boost/lastBoostAt actually get used.
 const topsyTurvyCartRide = { active: false, startedAt: 0, boost: 0, lastBoostAt: 0 };
+// CONFIRMED CHANGE ("maybe the grumpy is a chef ... needs like 2
+// tomatoes"): a real, ground-level pluck -- standing near the cart
+// (NOT riding it) and pressing space takes one tomato into inventory.
+// Capped so the cart never empties out entirely (keeps at least 2 of the
+// original 7 always visibly left, giving away up to 5 lifetime -- way
+// more than the 2 the chef actually needs, so there's no risk of
+// accidentally plucking the cart bare before figuring out what they're
+// for).
+let topsyCartTomatoesPlucked = 0;
+const TOPSY_CART_TOMATOES_MIN_REMAINING = 2;
 // CONFIRMED CHANGE ("soft cap yeha"): boost is added with diminishing
 // returns toward TOPSY_CART_BOOST_CAP (each press adds a fraction of the
 // REMAINING headroom, not a flat amount, so it converges toward the cap
@@ -18203,6 +18251,36 @@ const TOPSY_CART_BOOST_DECAY = 0.26; // exponential decay rate per second
 
 let topsyTurvyGrumpyDialogueShown = false;
 let topsyTurvyGrumpyLingerT = 0;
+
+// CONFIRMED CHANGE ("i like the grumpy character thing. w tulip. see
+// face change. ... maybe the grumpy is a chef so we have a top hat/chef
+// hat on some upside down npc that needs like 2 tomatoes"): the land's
+// actual second goal, besides growing the dandelion. Two stages --
+// tomatoes first (2, plucked from the cart), which wins them over and
+// reveals the chef hat/happier face; the tulip after that as the small
+// extra touch that fully wins them over and kicks off the door/pig beat.
+const topsyChef = {
+  tomatoesGiven: 0,
+  tulipGiven: false,
+  wonOverByTomatoes: false, // true once tomatoesGiven hits TOPSY_CHEF_TOMATOES_NEEDED
+  fullyWonOver: false, // true once the tulip's ALSO been given
+  // CONFIRMED CHANGE ("the chef noc then opens door and pig then moves
+  // towards and goes inside carrying th pots and pans and then comes out
+  // empty"): a one-time sequence kicked off by fullyWonOver. Phases:
+  // "none" -> "doorOpen" -> "pigIn" -> "inside" -> "pigOut" -> "done".
+  // Simplification from the literal pitch: the house's real door sits
+  // way up at the top of the ladder (per the book's "front door ends up
+  // on top" joke) -- an ordinary ambient pig climbing that convincingly
+  // was more animation than this beat is worth, so the pig instead walks
+  // to the house's base and "goes in" there (vanishing during "inside"),
+  // rather than literally climbing the ladder.
+  sequencePhase: "none",
+  sequenceT: 0
+};
+const TOPSY_CHEF_TOMATOES_NEEDED = 2;
+const TOPSY_CHEF_DOOR_OPEN_DURATION = 700;
+const TOPSY_CHEF_PIG_INSIDE_DURATION = 1000;
+const TOPSY_CHEF_PIG_WALK_SPEED = 70; // px/s, faster than its own idle patrol -- reads as "on a mission"
 
 // CONFIRMED CHANGE (see topsyWell/topsyWindSeedPlot's own comment for
 // the full quote this implements): the well's dip/fill animation, the
@@ -18312,23 +18390,121 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
   }
 }
 
+// CONFIRMED CHANGE (see topsyChef's own comment): drives the one-time
+// door/pig sequence once fullyWonOver flips true. Fully separate from
+// the pig's own normal idle wander -- updateTopsyTurvyScene only runs
+// that wander while this sequence is "none" or "done".
+function updateTopsyChefSequence(deltaTime, grumpyHouse) {
+  if (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done") return;
+  const dt = deltaTime * 1000;
+  topsyChef.sequenceT += dt;
+
+  if (topsyChef.sequencePhase === "doorOpen") {
+    if (topsyChef.sequenceT >= TOPSY_CHEF_DOOR_OPEN_DURATION) {
+      topsyChef.sequencePhase = "pigIn";
+      topsyChef.sequenceT = 0;
+    }
+    return;
+  }
+
+  const houseX = grumpyHouse ? grumpyHouse.x : topsyTurvyPig.homeX;
+
+  if (topsyChef.sequencePhase === "pigIn") {
+    const dir = Math.sign(houseX - topsyTurvyPig.x) || 1;
+    topsyTurvyPig.x += dir * TOPSY_CHEF_PIG_WALK_SPEED * deltaTime;
+    topsyTurvyPig.dir = dir;
+    if (Math.abs(topsyTurvyPig.x - houseX) < 6) {
+      topsyTurvyPig.x = houseX;
+      topsyChef.sequencePhase = "inside";
+      topsyChef.sequenceT = 0;
+    }
+    return;
+  }
+
+  if (topsyChef.sequencePhase === "inside") {
+    // pig is hidden during this phase (see drawTopsyTurvyPig's own gate)
+    if (topsyChef.sequenceT >= TOPSY_CHEF_PIG_INSIDE_DURATION) {
+      topsyChef.sequencePhase = "pigOut";
+      topsyChef.sequenceT = 0;
+    }
+    return;
+  }
+
+  if (topsyChef.sequencePhase === "pigOut") {
+    const dir = Math.sign(topsyTurvyPig.homeX - topsyTurvyPig.x) || -1;
+    topsyTurvyPig.x += dir * TOPSY_CHEF_PIG_WALK_SPEED * deltaTime;
+    topsyTurvyPig.dir = dir;
+    if (Math.abs(topsyTurvyPig.x - topsyTurvyPig.homeX) < 6) {
+      topsyTurvyPig.x = topsyTurvyPig.homeX;
+      topsyChef.sequencePhase = "done"; // normal ambient wander resumes next frame
+    }
+  }
+}
+
 function updateTopsyTurvyScene(deltaTime) {
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+
   // slow hand-walk wander, same shape as any other simple ambient patrol
-  topsyTurvyPig.x += topsyTurvyPig.dir * topsyTurvyPig.speed * deltaTime;
-  if (topsyTurvyPig.x > topsyTurvyPig.homeX + topsyTurvyPig.range) topsyTurvyPig.dir = -1;
-  if (topsyTurvyPig.x < topsyTurvyPig.homeX - topsyTurvyPig.range) topsyTurvyPig.dir = 1;
+  // -- suspended while the chef door/pig sequence is actively driving the
+  // pig's own position (see updateTopsyChefSequence)
+  if (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done") {
+    topsyTurvyPig.x += topsyTurvyPig.dir * topsyTurvyPig.speed * deltaTime;
+    if (topsyTurvyPig.x > topsyTurvyPig.homeX + topsyTurvyPig.range) topsyTurvyPig.dir = -1;
+    if (topsyTurvyPig.x < topsyTurvyPig.homeX - topsyTurvyPig.range) topsyTurvyPig.dir = 1;
+  }
+  updateTopsyChefSequence(deltaTime, grumpyHouse);
 
   // the grumpy resident notices if you linger at their window too long --
   // per the book, they shoo onlookers off rather than making friendly
   // conversation. One-shot, same "everShownThisVisit"-style flag pattern
   // used elsewhere so it doesn't repeat every single frame you're near.
-  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  // CONFIRMED CHANGE ("i like the grumpy character thing"): the shoo
+  // dialogue only makes sense before they're won over at all -- once the
+  // first tomato's landed, lingering at the window is no longer
+  // "peeking", it's just visiting.
   const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x + 14 * grumpyHouse.scale, 34 * grumpyHouse.scale, 30, 25, 20);
-  if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown) {
+  if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
   } else if (!nearGrumpyWindow) {
     topsyTurvyGrumpyLingerT = 0;
+  }
+
+  // CONFIRMED CHANGE ("maybe the grumpy is a chef so we have a top
+  // hat/chef hat on some upside down npc that needs like 2 tomatoes"):
+  // give a tomato while standing at the window, same single-button
+  // pattern as every other give/place interaction in this game.
+  if (grumpyHouse && nearGrumpyWindow && !topsyChef.wonOverByTomatoes &&
+      heldItem === "tomato" && inventory.tomato > 0 && keys.spaceJustPressed) {
+    inventory.tomato--;
+    if (inventory.tomato <= 0) { delete inventory.tomato; heldItem = null; }
+    topsyChef.tomatoesGiven++;
+    if (topsyChef.tomatoesGiven >= TOPSY_CHEF_TOMATOES_NEEDED) topsyChef.wonOverByTomatoes = true;
+    updateInventoryUI();
+  }
+  // the tulip -- the small extra touch after the tomatoes, per "maybe
+  // fumpy neighbor w the tulip. see face change". Fully wins them over
+  // and kicks off the door/pig beat.
+  if (grumpyHouse && nearGrumpyWindow && topsyChef.wonOverByTomatoes && !topsyChef.tulipGiven &&
+      heldItem === "tulip" && inventory.tulip > 0 && keys.spaceJustPressed) {
+    inventory.tulip--;
+    if (inventory.tulip <= 0) { delete inventory.tulip; heldItem = null; }
+    topsyChef.tulipGiven = true;
+    topsyChef.fullyWonOver = true;
+    topsyChef.sequencePhase = "doorOpen";
+    topsyChef.sequenceT = 0;
+    updateInventoryUI();
+  }
+
+  // CONFIRMED CHANGE (see topsyCartTomatoesPlucked's own comment):
+  // plucking a tomato is grounded near the cart, deliberately separate
+  // from the ride trigger (which is a physics landing, not a button
+  // press) so the two never fight over the same space bar press.
+  if (!topsyTurvyCartRide.active &&
+      topsyTurvyCartTomatoes.length - topsyCartTomatoesPlucked > TOPSY_CART_TOMATOES_MIN_REMAINING &&
+      keys.spaceJustPressed && isPlayerNear(TOPSY_CART_X, 0, 55, 15, 15)) {
+    topsyCartTomatoesPlucked++;
+    addToInventory("tomato");
   }
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
@@ -18390,9 +18566,29 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.lineWidth = 2;
   ctx.strokeRect(sx - wallW / 2, y(wallTop), wallW, wallH);
   // door -- "the front door ends up on top" per the book, so it sits
-  // right at the very top edge of the walls
-  ctx.fillStyle = "#5c3a24";
-  ctx.fillRect(sx - 9 * s, y(wallTop + 18 * s), 18 * s, 18 * s);
+  // right at the very top edge of the walls. CONFIRMED CHANGE: once the
+  // chef sequence has ever fired (doorOpen or later), the door stays
+  // open for good -- a simple, permanent "someone's home now" signal
+  // rather than swinging shut again after the pig's one-time trip in.
+  const doorOpen = h.grumpy && topsyChef.sequencePhase !== "none";
+  const doorW = 18 * s, doorH = 18 * s, doorX = sx - doorW / 2, doorY = y(wallTop + 18 * s);
+  if (doorOpen) {
+    // door frame stays put, but the door itself swings inward (drawn
+    // as a thin foreshortened panel) revealing a dark doorway behind it
+    ctx.fillStyle = "#241a10";
+    ctx.fillRect(doorX, doorY, doorW, doorH);
+    ctx.fillStyle = "#4a2e1a";
+    ctx.beginPath();
+    ctx.moveTo(doorX, doorY);
+    ctx.lineTo(doorX + doorW * 0.35, doorY + 1 * s);
+    ctx.lineTo(doorX + doorW * 0.35, doorY + doorH - 1 * s);
+    ctx.lineTo(doorX, doorY + doorH);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "#5c3a24";
+    ctx.fillRect(doorX, doorY, doorW, doorH);
+  }
   // window, off to one side
   const winX = sx + 16 * s, winY = y(wallBottom + 22 * s);
   ctx.fillStyle = "#e8f0d8";
@@ -18417,24 +18613,68 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.stroke();
 
   if (h.grumpy) {
-    // a cranky face peeking from the window
+    // a face peeking from the window -- cranky by default, softening
+    // once the tomatoes have won them over (see topsyChef.wonOverByTomatoes)
+    const won = topsyChef.wonOverByTomatoes;
+    const faceCx = winX + 7 * s, faceCy = winY + 7 * s;
     ctx.fillStyle = "#d8b48a";
     ctx.beginPath();
-    ctx.arc(winX + 7 * s, winY + 7 * s, 5.5 * s, 0, Math.PI * 2);
+    ctx.arc(faceCx, faceCy, 5.5 * s, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#3a2a1a";
     ctx.lineWidth = 1.2;
-    ctx.beginPath(); // furrowed cranky eyebrows
-    ctx.moveTo(winX + 3 * s, winY + 5 * s);
-    ctx.lineTo(winX + 6 * s, winY + 6.5 * s);
-    ctx.moveTo(winX + 11 * s, winY + 5 * s);
-    ctx.lineTo(winX + 8 * s, winY + 6.5 * s);
+    ctx.beginPath();
+    if (won) {
+      // relaxed, faintly pleased eyebrows -- no more furrow
+      ctx.moveTo(winX + 3 * s, winY + 5.5 * s);
+      ctx.lineTo(winX + 6 * s, winY + 5 * s);
+      ctx.moveTo(winX + 11 * s, winY + 5.5 * s);
+      ctx.lineTo(winX + 8 * s, winY + 5 * s);
+      // a small smile
+      ctx.moveTo(winX + 4.5 * s, winY + 9 * s);
+      ctx.quadraticCurveTo(winX + 7 * s, winY + 10.5 * s, winX + 9.5 * s, winY + 9 * s);
+    } else {
+      // furrowed cranky eyebrows
+      ctx.moveTo(winX + 3 * s, winY + 5 * s);
+      ctx.lineTo(winX + 6 * s, winY + 6.5 * s);
+      ctx.moveTo(winX + 11 * s, winY + 5 * s);
+      ctx.lineTo(winX + 8 * s, winY + 6.5 * s);
+    }
     ctx.stroke();
 
-    if (topsyTurvyGrumpyDialogueShown) {
+    // CONFIRMED CHANGE ("top hat/chef hat on some upside down npc"):
+    // a tall white chef's hat appears once they're won over by the
+    // tomatoes -- the secret's out.
+    if (won) {
+      ctx.fillStyle = "#f4f0e8";
+      ctx.beginPath();
+      ctx.ellipse(faceCx, faceCy - 6.5 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(faceCx - 3.6 * s, faceCy - 6.5 * s);
+      ctx.quadraticCurveTo(faceCx - 4.6 * s, faceCy - 12.5 * s, faceCx, faceCy - 13 * s);
+      ctx.quadraticCurveTo(faceCx + 4.6 * s, faceCy - 12.5 * s, faceCx + 3.6 * s, faceCy - 6.5 * s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#c8c2b4";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    if (topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
       drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
         "Shoo! Stop peeking in windows,",
         "whoever-you-are!"
+      ]);
+    } else if (topsyChef.fullyWonOver) {
+      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+        "Ahh, a tulip too? You've got a",
+        "good eye. Come by anytime."
+      ]);
+    } else if (topsyChef.wonOverByTomatoes) {
+      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+        "Mm! Not bad at all. Say... you",
+        "wouldn't happen to have a tulip?"
       ]);
     }
   }
@@ -18647,6 +18887,10 @@ function drawTopsyTurvyTree(camX, t) {
 // moved up and given a slight upward tilt (a flipped chin now pointing
 // skyward), eye nudged to sit between the two.
 function drawTopsyTurvyPig(camX) {
+  // CONFIRMED CHANGE ("goes inside carrying th pots and pans and then
+  // comes out empty"): fully hidden while "inside" the house for the
+  // one-time chef sequence -- see updateTopsyChefSequence.
+  if (topsyChef.sequencePhase === "inside") return;
   const sx = topsyTurvyPig.x - camX, sy = gy;
   const facingLeft = topsyTurvyPig.dir < 0;
   const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 3; // waddle bounce
@@ -18683,7 +18927,12 @@ function drawTopsyTurvyPig(camX) {
   // top-heavy pile wobbles more up top than at its base), and each pot's
   // wobble is phase-offset from the one below so it reads as one
   // continuous teeter rather than everything swaying in lockstep.
-  drawTopsyTurvyPigPots();
+  // CONFIRMED CHANGE ("comes out empty"): once the pig's made its one-time
+  // delivery trip (pigOut/done), it's handed the pots off to the chef and
+  // doesn't carry them anymore -- everywhere else/before, it's carrying
+  // its usual stack.
+  const pigHasPots = topsyChef.sequencePhase !== "pigOut" && topsyChef.sequencePhase !== "done" || !topsyChef.fullyWonOver;
+  if (pigHasPots) drawTopsyTurvyPigPots();
 
   // curly tail near the ground, at the back of the body
   ctx.strokeStyle = "#e8a9bb";
@@ -18990,7 +19239,10 @@ function drawTopsyTurvyCart(camX) {
   // always precisely on the basin floor, not just near it, and the
   // occlusion band right below catches the overlap.
   const t = performance.now() * 0.001;
-  topsyTurvyCartTomatoes.forEach(a => {
+  // CONFIRMED CHANGE ("maybe the grumpy is a chef ... needs like 2
+  // tomatoes"): plucked tomatoes (see topsyCartTomatoesPlucked) are
+  // skipped here so the pile visibly thins out as you take from it.
+  topsyTurvyCartTomatoes.slice(topsyCartTomatoesPlucked).forEach(a => {
     const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55 * a.periodMul)) * Math.PI * 2 + a.phase;
     const bob = Math.max(0, Math.sin(cyclePhase)) * 42 * a.ampMul;
     const settleY = topsyTurvyCartBedSettleY(a.dx);
@@ -19603,33 +19855,43 @@ function drawTopsyWindSeedPlot(camX) {
     const rootP = Math.min(1, Math.max(0, (gp - 0.7) / 0.3));
 
     const sway = Math.sin(performance.now() * 0.0009) * 5 * stemP;
-    const stemH = 105 * stemP; // "tall stem"
-    const headR = 26 * headP; // "much larger ... flower base"
-    const headBaseLocalY = headR * 0.55;
+    const stemH = TOPSY_DANDELION_STEM_H * stemP; // "tall stem"
+    const headR = TOPSY_DANDELION_HEAD_R * headP; // "much larger ... flower base"
+    // CONFIRMED CHANGE ("should the dandelion be more round, no?"):
+    // agreed -- the old strand math only ever pushed points upward
+    // (`-Math.abs(sin(a))`), so it read as a flat fan/hemisphere sitting
+    // on the ground instead of an actual round puffball. Rebuilt as a
+    // true circle around a real center point, with that center raised
+    // mostly (not fully) above the ground so it settles into the dug pit
+    // a little rather than floating -- the same "gently embedded" look
+    // the tree canopies use where THEY meet the ground.
+    const headCx = dx, headCy = gy - headR * 0.8;
+    const stemBaseY = headCy - headR; // the top of the sphere -- where the stem rises from
+    const stemTopY = stemBaseY - stemH;
 
-    // stem -- thick, tapering slightly, rising from the flower head
-    // straight up with a gentle sway near the top
+    // stem -- thick, tapering slightly, rising from the top of the
+    // flower head straight up with a gentle sway near the top
     if (stemP > 0) {
       ctx.strokeStyle = "#4f7a34";
       ctx.lineWidth = 5 + 1.5 * stemP;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(dx, ly(headBaseLocalY));
-      ctx.quadraticCurveTo(dx + sway * 0.5, ly(headBaseLocalY + stemH * 0.6), dx + sway, ly(headBaseLocalY + stemH));
+      ctx.moveTo(dx, stemBaseY);
+      ctx.quadraticCurveTo(dx + sway * 0.5, (stemBaseY + stemTopY) / 2, dx + sway, stemTopY);
       ctx.stroke();
       ctx.lineCap = "butt";
     }
 
-    // the flower head itself -- a genuinely large puffball resting right
-    // on the ground, same radiating-strand construction as the old
-    // placeholder but sized way up ("gigantic")
+    // the flower head itself -- a genuinely large, properly ROUND
+    // puffball, same radiating-strand construction as the old placeholder
+    // but sized way up ("gigantic") and now a real circle all the way
+    // around instead of only the top half
     if (headP > 0) {
-      const headCx = dx, headCy = ly(headBaseLocalY);
-      const strands = 30;
+      const strands = 34;
       for (let i = 0; i < strands; i++) {
         const a = (i / strands) * Math.PI * 2 + i * 0.29;
-        const len = headR * (0.75 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 17) * 0.35);
-        const tx = headCx + Math.cos(a) * len, ty = headCy - Math.abs(Math.sin(a)) * len * 0.55 - len * 0.15;
+        const len = headR * (0.85 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 17) * 0.22);
+        const tx = headCx + Math.cos(a) * len, ty = headCy + Math.sin(a) * len * 0.94;
         ctx.strokeStyle = "rgba(240,238,225,0.85)";
         ctx.lineWidth = 1.1;
         ctx.beginPath();
@@ -19643,7 +19905,7 @@ function drawTopsyWindSeedPlot(camX) {
       }
       ctx.fillStyle = "rgba(235,225,180,0.55)";
       ctx.beginPath();
-      ctx.ellipse(headCx, headCy - headR * 0.15, headR * 0.42, headR * 0.3, 0, 0, Math.PI * 2);
+      ctx.arc(headCx, headCy, headR * 0.32, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -19652,12 +19914,14 @@ function drawTopsyWindSeedPlot(camX) {
     // angle range so it reads as "flat" spreading roots rather than the
     // trees' own upward-reaching mass
     if (rootP > 0) {
-      const topX = dx + sway, topY = ly(headBaseLocalY + stemH);
+      const topX = dx + sway, topY = stemTopY;
       ctx.save();
       ctx.translate(topX, topY);
       ctx.scale(1, -1); // local +y now points up the screen, matching drawDendriticRootStrand's own convention
-      const ROOT_ANGLES = [0.12, 0.32, 0.58, Math.PI / 2, Math.PI - 0.58, Math.PI - 0.32, Math.PI - 0.12];
-      ROOT_ANGLES.forEach((angle, i) => {
+      // CONFIRMED CHANGE ("also lets be able to jump on dandelion roots
+      // too"): angles/lengths shared with topsyDandelionRootPlatforms so
+      // the jumpable hitboxes always line up with the drawn strands.
+      TOPSY_DANDELION_ROOT_ANGLES.forEach((angle, i) => {
         const len = (26 + Math.abs(Math.PI / 2 - angle) * 14) * rootP;
         drawDendriticRootStrand(0, 0, angle, len, 1, TOPSY_SEEDPLOT_X + i * 233 + 41, 2 * rootP);
       });
@@ -19669,7 +19933,6 @@ function drawTopsyWindSeedPlot(camX) {
     // grown -- looping on a shared time cycle so no per-particle state
     // is needed
     if (gp >= 1) {
-      const headCx = dx, headCy = ly(headBaseLocalY);
       const t = performance.now() * 0.001;
       for (let i = 0; i < 6; i++) {
         const cycle = (t * 0.1 + i / 6) % 1;
@@ -19691,6 +19954,139 @@ function drawTopsyWindSeedPlot(camX) {
         ctx.fill();
       }
     }
+  }
+}
+
+// CONFIRMED CHANGE ("do we have it to be windy yet in that area?"): a
+// light, purely atmospheric touch -- faint streak lines drifting across
+// the sky at a steady clip -- so the land reads as genuinely breezy even
+// before the dandelion exists. Screen-space (not tied to world camX),
+// same as the cloud layer above it, since these are meant to read as
+// distant/ambient rather than anchored to anything on the ground. This
+// is NOT a real gust mechanic (nothing pushes the player around, unlike
+// the forest's own gust zone) -- just a visual "it's windy here" cue.
+function drawTopsyWindStreaks() {
+  const t = performance.now() * 0.001;
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 5; i++) {
+    const seed = 7000 + i * 53;
+    const speed = 70 + pseudoRandom(seed) * 45;
+    const range = canvas.width + 260;
+    const sx = ((t * speed + pseudoRandom(seed + 1) * range) % range) - 130;
+    const sy = 30 + pseudoRandom(seed + 2) * (gy - 90);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - 34, sy - 5);
+    ctx.stroke();
+  }
+}
+
+// CONFIRMED CHANGE ("i wanna see the dandelion seeds fying around but
+// you dont be able to catch them"): once the dandelion's fully grown, a
+// handful of its seeds are already loose on the wind across the WHOLE
+// land -- not just right above the plant -- purely ambient/decorative,
+// same as the tomatoes/water/bubbles that already just float around here
+// for atmosphere. No pickup, no collision -- there's nothing to "catch".
+const TOPSY_AMBIENT_SEED_COUNT = 10;
+function drawTopsyAmbientWindSeeds(camX) {
+  if (!topsyWindSeedPlot.grown) return;
+  const t = performance.now() * 0.001;
+  for (let i = 0; i < TOPSY_AMBIENT_SEED_COUNT; i++) {
+    const seed = 5000 + i * 97;
+    const speed = 16 + pseudoRandom(seed) * 12; // px/s, drifting with the wind
+    const range = TOPSYTURVY_WIDTH + 300;
+    const wx = ((t * speed + pseudoRandom(seed + 1) * range) % range) - 100; // loops across the whole land, staggered start per seed
+    const sx = wx - camX;
+    if (sx < -20 || sx > canvas.width + 20) continue; // cheap offscreen cull
+    const baseH = 40 + pseudoRandom(seed + 2) * 150; // height above ground it drifts at
+    const bob = Math.sin(t * (0.5 + pseudoRandom(seed + 3) * 0.4) + i) * 14;
+    const sy = gy - baseH - bob;
+    const spin = t * (0.6 + pseudoRandom(seed + 4) * 0.5) + i;
+    ctx.strokeStyle = "rgba(240,238,225,0.75)";
+    ctx.lineWidth = 0.8;
+    [0, 1, 2].forEach(f => {
+      const fa = (f / 3) * Math.PI * 2 + spin;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(fa) * 3.5, sy + Math.sin(fa) * 3.5);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "rgba(250,248,238,0.85)";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// CONFIRMED CHANGE ("lets also add upside down flying birds"): a small
+// ambient flock, patrolling back and forth across the whole land at
+// varying heights. Drawn as a normal bird (body/head/beak/tail/wings/
+// legs) then flipped with a single scale(dir,-1) -- same trick the
+// houses use (built upright, flipped as a whole) -- so the wings end up
+// flapping BELOW the body and the little tucked legs poke up ABOVE it,
+// reading clearly as "upside-down" rather than just a generic bird
+// silhouette that happens to be vertically mirrored.
+const TOPSY_BIRD_COUNT = 4;
+function drawTopsyUpsideDownBirds(camX) {
+  const t = performance.now() * 0.001;
+  for (let i = 0; i < TOPSY_BIRD_COUNT; i++) {
+    const seed = 9000 + i * 131;
+    const speed = 26 + pseudoRandom(seed) * 20;
+    const range = TOPSYTURVY_WIDTH + 400;
+    const dir = pseudoRandom(seed + 9) < 0.5 ? 1 : -1;
+    const raw = (t * speed + pseudoRandom(seed + 1) * range) % range;
+    const wx = dir > 0 ? raw - 200 : (range - 200) - raw; // flies the opposite way across the loop depending on dir
+    const sx = wx - camX;
+    if (sx < -40 || sx > canvas.width + 40) continue; // cheap offscreen cull
+    const baseH = 160 + pseudoRandom(seed + 2) * 100;
+    const bob = Math.sin(t * (0.7 + pseudoRandom(seed + 3) * 0.3) + i) * 9;
+    const sy = gy - baseH - bob;
+    const flap = Math.sin(t * 9 + i * 2.4);
+    const wingLift = 3 + Math.max(0, flap) * 5;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(dir, -1);
+    ctx.fillStyle = "rgba(50,40,48,0.6)";
+    // body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // head + beak, facing the direction of travel
+    ctx.beginPath();
+    ctx.arc(6, -0.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(8, -0.5);
+    ctx.lineTo(11, 0);
+    ctx.lineTo(8, 1);
+    ctx.closePath();
+    ctx.fill();
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(-10, -2);
+    ctx.lineTo(-9, 1);
+    ctx.closePath();
+    ctx.fill();
+    // flapping wing (local "up") -- ends up drawn BELOW the body once flipped
+    ctx.strokeStyle = "rgba(50,40,48,0.6)";
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-3, -1);
+    ctx.quadraticCurveTo(0, -wingLift - 2, 4, -1);
+    ctx.stroke();
+    // tucked little legs (local "down") -- end up poking up ABOVE the
+    // body once flipped, the clearest "upside-down" tell
+    ctx.strokeStyle = "rgba(50,40,48,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-1, 2.5); ctx.lineTo(-1.5, 4.5);
+    ctx.moveTo(1.5, 2.5); ctx.lineTo(2, 4.5);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -19725,6 +20121,8 @@ function drawTopsyTurvyScene(camX) {
     ctx.fill();
   }
 
+  drawTopsyWindStreaks();
+
   // CONFIRMED BUG FIX ("cameray needs to follow uplayer upwards"):
   // everything from here down is ground-level (or reaches up from it,
   // like the tall tree's roots) -- translating the whole block by
@@ -19753,6 +20151,8 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyTurvyCart(camX);
   drawTopsyTurvyWell(camX);
   drawTopsyWindSeedPlot(camX);
+  drawTopsyAmbientWindSeeds(camX);
+  drawTopsyUpsideDownBirds(camX);
   drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
 
