@@ -3364,6 +3364,35 @@ function applyPhysics(){
       }
     }
 
+    // CONFIRMED CHANGE ("its really hard to get up this tree, we need to
+    // make it more doable"): a miss at the level a flight is actually
+    // targeting used to just fall straight through every level below it
+    // with no chance to catch on the way down (the check right above only
+    // ever tests forestFungusClimb.level, the one specific level this
+    // flight is bound for -- see its own comment for why) -- so one bad
+    // jump near the top threw away the whole climb, all the way back to
+    // the ground. This is a safety net: still falling, still only while
+    // genuinely descending (same vy < 0 guard, so it can't false-catch a
+    // fresh takeoff the way the original bug did), it also checks every
+    // level BELOW the current target for its own mats, same radius/band
+    // as always -- so a missed high catch lands you back on the level
+    // you'd already reached instead of at the bottom. Streak resets to 0
+    // on a safety catch (same as any fresh level-0 landing), it's not a
+    // free promotion, just a softer landing than the ground.
+    if (currentScene === "forest" && player.launchSteerable && player.vy < 0 && forestFungusClimb.level >= 1) {
+      for (let li = forestFungusClimb.level - 1; li >= 0; li--) {
+        const lvl = forestFungusClimb.levels[li];
+        if (Math.abs(player.y - lvl.height) <= FOREST_FUNGUS_BAND) {
+          const safetyHit = lvl.mats.find(t => Math.abs(player.x + player.width / 2 - t.x) < FOREST_FUNGUS_RADIUS);
+          if (safetyHit) {
+            forestFungusClimb.streak = 0;
+            forestFungusLaunch(safetyHit, li);
+            return;
+          }
+        }
+      }
+    }
+
     // CONFIRMED CHANGE ("throwing player on pile"): this generic
     // launched-flight path was built for the spring's cloud-launch (see
     // the goalCloud check just below) and otherwise "ignores platforms/
@@ -17751,16 +17780,16 @@ const topsyTurvyTrees = [
 ];
 // one ambient "topsy-turvy folk" -- walks on their hands, per the book's
 // own description, wandering a short patrol range near the houses
-const topsyTurvyFolk = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
+const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 
 let topsyTurvyGrumpyDialogueShown = false;
 let topsyTurvyGrumpyLingerT = 0;
 
 function updateTopsyTurvyScene(deltaTime) {
   // slow hand-walk wander, same shape as any other simple ambient patrol
-  topsyTurvyFolk.x += topsyTurvyFolk.dir * topsyTurvyFolk.speed * deltaTime;
-  if (topsyTurvyFolk.x > topsyTurvyFolk.homeX + topsyTurvyFolk.range) topsyTurvyFolk.dir = -1;
-  if (topsyTurvyFolk.x < topsyTurvyFolk.homeX - topsyTurvyFolk.range) topsyTurvyFolk.dir = 1;
+  topsyTurvyPig.x += topsyTurvyPig.dir * topsyTurvyPig.speed * deltaTime;
+  if (topsyTurvyPig.x > topsyTurvyPig.homeX + topsyTurvyPig.range) topsyTurvyPig.dir = -1;
+  if (topsyTurvyPig.x < topsyTurvyPig.homeX - topsyTurvyPig.range) topsyTurvyPig.dir = 1;
 
   // the grumpy resident notices if you linger at their window too long --
   // per the book, they shoo onlookers off rather than making friendly
@@ -17788,7 +17817,7 @@ function updateTopsyTurvyScene(deltaTime) {
 // wrong (mirroring around the ground line pushed the whole house
 // underground instead of re-anchoring its new "bottom" -- the chimney --
 // to the ground), so this draws the already-correct shape directly, same
-// approach drawTopsyTurvyFolk below already used successfully.
+// approach drawTopsyTurvyPig below already used successfully.
 function drawTopsyTurvyHouse(camX, h) {
   const sx = h.x - camX, sy = gy;
   const s = h.scale;
@@ -17879,11 +17908,32 @@ function drawTopsyTurvyTree(camX, t) {
   const s = t.scale;
   const y = (localY) => sy - localY;
 
-  // canopy -- the tree's normal top, now resting right on the ground
-  ctx.fillStyle = "#6a8a4a";
+  // canopy -- the tree's normal top, now resting right on the ground.
+  // A cluster of overlapping foliage blobs (varied size/offset/shade,
+  // seeded off the tree's own x so each tree looks a little different)
+  // instead of one flat circle, plus a soft ground shadow.
+  const canopySeed = t.x;
+  ctx.fillStyle = "rgba(20,20,10,0.15)";
   ctx.beginPath();
-  ctx.arc(sx, y(30 * s), 30 * s, 0, Math.PI * 2);
+  ctx.ellipse(sx, sy + 2, 34 * s, 6 * s, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  const canopyBlobs = [
+    { dx: 0, dr: 30, shade: "#4f6b34" },
+    { dx: -18, dr: 20, shade: "#557237" },
+    { dx: 18, dr: 20, shade: "#557237" },
+    { dx: -8, dr: 16, shade: "#6a8a4a" },
+    { dx: 10, dr: 15, shade: "#6a8a4a" },
+    { dx: 1, dr: 13, shade: "#7fa159" }
+  ];
+  canopyBlobs.forEach((b, i) => {
+    const jr = b.dr * s * (0.9 + pseudoRandom(canopySeed + i * 4.1) * 0.2);
+    const jx = b.dx * s + (pseudoRandom(canopySeed + i * 7.3) - 0.5) * 6 * s;
+    ctx.fillStyle = b.shade;
+    ctx.beginPath();
+    ctx.arc(sx + jx, y(jr * 0.85), jr, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // trunk, rising from the canopy up to where the roots are
   ctx.strokeStyle = "#4a3222";
@@ -17893,45 +17943,98 @@ function drawTopsyTurvyTree(camX, t) {
   ctx.lineTo(sx, y(64 * s));
   ctx.stroke();
 
-  // roots -- gnarled branching lines at the very top, reaching skyward
-  ctx.lineWidth = 3 * s;
-  [-1, -0.4, 0.4, 1].forEach(dir => {
-    ctx.beginPath();
-    ctx.moveTo(sx, y(64 * s));
-    ctx.quadraticCurveTo(sx + dir * 10 * s, y(82 * s), sx + dir * 20 * s, y(96 * s));
-    ctx.stroke();
-  });
+  // roots -- gnarled buttress-style roots borrowed from drawBuffressRoot
+  // (the same reusable root renderer used for the forest's own buttress
+  // trees: wobbly tapered centerline, bark-groove lines, rim-light, seeded
+  // knot bumps), drawn inside a flipped+scaled transform so the root's own
+  // "trunk-emergence" end lands exactly at this tree's real trunk top and
+  // its "ground-contact" end becomes the airy splayed tip instead, ~55*s
+  // higher up the screen. Four roots at varied fractional angles/reach and
+  // distinct seeds per tree, so they don't read as mirrored duplicates.
+  const trunkTopY = y(64 * s);
+  ctx.save();
+  ctx.translate(sx, trunkTopY - 50 * s);
+  ctx.scale(s, -s);
+  drawBuffressRoot(0, 0, -1.3, 62, 340 + t.x);
+  drawBuffressRoot(0, 0, -0.6, 48, 890 + t.x);
+  drawBuffressRoot(0, 0, 0.6, 48, 1520 + t.x);
+  drawBuffressRoot(0, 0, 1.3, 62, 2210 + t.x);
+  ctx.restore();
 }
 
-// the ambient topsy-turvy person -- a simple upside-down humanoid
-// silhouette "walking" on their hands, per the book's own description
-function drawTopsyTurvyFolk(camX) {
-  const sx = topsyTurvyFolk.x - camX, sy = gy;
-  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 4; // hand-walk bounce
+// the ambient topsy-turvy critter -- per direct follow-up ("the upside
+// down thing cant be human shaped, looks slightly like a pig, maybe make
+// it a pig") this was reworked from a humanoid into a small pig, flipped
+// onto its back with its trotters kicking up in the air and its snout
+// tipped skyward, waddling back and forth on its patrol range. Same
+// already-established flip trick (translate to ground contact, then
+// scale(1,-1)) as the rest of this scene.
+function drawTopsyTurvyPig(camX) {
+  const sx = topsyTurvyPig.x - camX, sy = gy;
+  const facingLeft = topsyTurvyPig.dir < 0;
+  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 3; // waddle bounce
   ctx.save();
   ctx.translate(sx, sy - bob);
-  ctx.scale(1, -1);
-  // legs up in the air
-  ctx.strokeStyle = "#5a4a6a";
+  ctx.scale(facingLeft ? -1 : 1, -1);
+
+  // trotters kicking up in the air (now drawn "up" by the flip)
+  ctx.strokeStyle = "#c98fa0";
   ctx.lineWidth = 3;
+  ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(-3, 24); ctx.lineTo(-6, 40);
-  ctx.moveTo(3, 24); ctx.lineTo(7, 40);
+  ctx.moveTo(-8, 12); ctx.lineTo(-10, 26);
+  ctx.moveTo(-3, 13); ctx.lineTo(-5, 28);
+  ctx.moveTo(5, 13); ctx.lineTo(7, 28);
+  ctx.moveTo(9, 12); ctx.lineTo(11, 26);
   ctx.stroke();
-  // torso
-  ctx.fillStyle = "#7a6a9a";
-  ctx.fillRect(-6, 8, 12, 18);
-  // arms planted on the ground (now drawn "up" by the flip)
-  ctx.strokeStyle = "#d8b48a";
-  ctx.lineWidth = 3;
+  ctx.fillStyle = "#f2c9d6";
+  [[-10, 26], [-5, 28], [7, 28], [11, 26]].forEach(([hx, hy]) => {
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 2.6, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // curly tail near the ground, at the back of the body
+  ctx.strokeStyle = "#e8a9bb";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(-5, 8); ctx.lineTo(-9, 0);
-  ctx.moveTo(5, 8); ctx.lineTo(9, 0);
+  ctx.arc(11, 6, 3.5, 0, Math.PI * 1.6);
   ctx.stroke();
-  // head, near the ground
-  ctx.fillStyle = "#e0bd94";
+
+  // rounded pink torso, resting on its back on the ground
+  ctx.fillStyle = "#eeb4c4";
   ctx.beginPath();
-  ctx.arc(0, 2, 6, 0, Math.PI * 2);
+  ctx.ellipse(0, 9, 15, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // head + snout, tipped up toward the ground-facing side
+  ctx.fillStyle = "#eeb4c4";
+  ctx.beginPath();
+  ctx.arc(-15, 8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e191a8";
+  ctx.beginPath();
+  ctx.ellipse(-21, 8, 4, 3.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7a3f4d";
+  ctx.beginPath();
+  ctx.ellipse(-22.5, 6.5, 0.9, 0.7, 0, 0, Math.PI * 2);
+  ctx.ellipse(-22.5, 9.5, 0.9, 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // ears
+  ctx.fillStyle = "#e191a8";
+  ctx.beginPath();
+  ctx.moveTo(-11, 14); ctx.lineTo(-9, 20); ctx.lineTo(-15, 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-19, 14); ctx.lineTo(-22, 19); ctx.lineTo(-16, 16);
+  ctx.closePath();
+  ctx.fill();
+  // eye
+  ctx.fillStyle = "#3a2a2a";
+  ctx.beginPath();
+  ctx.arc(-13, 11, 1.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -17986,7 +18089,7 @@ function drawTopsyTurvyScene(camX) {
 
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
-  drawTopsyTurvyFolk(camX);
+  drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
 }
 
