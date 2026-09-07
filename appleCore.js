@@ -4312,7 +4312,7 @@ function applyPhysics(){
     const platformTop = TOPSY_CART_BED_TOP;
     const playerBottom = player.y;
     if (
-      Math.abs(player.x + player.width / 2 - TOPSY_CART_X) < 28 &&
+      Math.abs(player.x + player.width / 2 - TOPSY_CART_X) < 36 &&
       playerBottom <= platformTop &&
       playerBottom >= platformTop - 14 &&
       player.vy <= 0
@@ -17997,13 +17997,30 @@ const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 // tall tree (see topsyTurvyTrees above) so climbing the cart is a real
 // way to reach that tree's high root platforms.
 const TOPSY_CART_X = 780;
-const TOPSY_CART_HALF_RANGE = 60; // how far you can wander left/right while riding before it lets go
-const TOPSY_CART_BED_TOP = 22;
-// CONFIRMED CHANGE ("jitter the rise of each item too so its in dif
-// phases"): each apple gets its own seeded phase offset so they don't
-// all rise and fall in lockstep.
-const topsyTurvyCartApples = [0, 1, 2].map(i => ({
-  dx: (i - 1) * 10,
+// CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
+// trees roots from floating on cart area"): the cart itself got bigger
+// (see drawTopsyTurvyCart below), so its landing hitbox/wander range
+// widened to match (was 60/28) -- and the boost math got a real retune,
+// not just a visual one: BOOST_CAP raised well past the tall tree's own
+// root platforms (~212-232) so TOPSY_CART_BED_TOP+BOOST_CAP alone clears
+// them with real margin even at the passive cycle's lowest point, and
+// BOOST_DECAY slowed down so realistic human jump-mashing (not a
+// scripted rapid-fire test) actually accumulates height instead of
+// mostly decaying away between presses.
+const TOPSY_CART_HALF_RANGE = 85; // how far you can wander left/right while riding before it lets go
+const TOPSY_CART_BED_TOP = 28;
+// CONFIRMED CHANGE ("also you cant reach that taller trees roots...add
+// more apples. or should they be tomatoes? maybe a dif produce item for
+// fun", then confirmed "my gut says TOMATOES!"): switched from plain
+// apples to a new small round tomato shape (see drawTomatoShape below,
+// built fresh -- no reusable tomato asset existed) -- gives the cart's
+// cargo its own identity distinct from the apples that are everywhere
+// else in the game, and reads better as loose piled cargo than one big
+// centerpiece fruit would. 4 tomatoes now (was 3), still each on its own
+// seeded phase (CONFIRMED CHANGE "jitter the rise of each item too so
+// its in dif phases") so they don't rise/fall in lockstep.
+const topsyTurvyCartTomatoes = [0, 1, 2, 3].map(i => ({
+  dx: (i - 1.5) * 15,
   phase: pseudoRandom(TOPSY_CART_X + i * 71) * Math.PI * 2,
   seed: TOPSY_CART_X + i * 71
 }));
@@ -18017,10 +18034,10 @@ const topsyTurvyCartRide = { active: false, startedAt: 0, boost: 0, lastBoostAt:
 // presses -- so reaching real height takes genuine repeated well-timed
 // jumps, not one press held/mashed instantly to the ceiling.
 const TOPSY_CART_FLOAT_PERIOD = 4.5; // seconds per passive up/down cycle
-const TOPSY_CART_FLOAT_AMPLITUDE = 85; // passive peak height above the cart bed
-const TOPSY_CART_BOOST_CAP = 165;
-const TOPSY_CART_BOOST_GAIN = 0.4;
-const TOPSY_CART_BOOST_DECAY = 0.5; // exponential decay rate per second
+const TOPSY_CART_FLOAT_AMPLITUDE = 90; // passive peak height above the cart bed
+const TOPSY_CART_BOOST_CAP = 270;
+const TOPSY_CART_BOOST_GAIN = 0.48;
+const TOPSY_CART_BOOST_DECAY = 0.26; // exponential decay rate per second
 
 let topsyTurvyGrumpyDialogueShown = false;
 let topsyTurvyGrumpyLingerT = 0;
@@ -18416,63 +18433,96 @@ function drawTopsyTurvyReturnPortal(camX) {
   }
 }
 
+// a small round tomato -- built fresh (no reusable tomato asset existed
+// yet), same self-contained ctx/x/y/size/rotation shape as the game's
+// other fruit shapes (drawWholeAppleShape etc.) so it could be reused
+// elsewhere later if it comes up again. Rounded body with a soft
+// highlight, plus a little starred green calyx/stem on top.
+function drawTomatoShape(ctx, x, y, size, rotation) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+
+  ctx.fillStyle = "#c0392b";
+  ctx.strokeStyle = "#8a2418";
+  ctx.lineWidth = size * 0.08;
+  ctx.beginPath();
+  ctx.arc(0, size * 0.06, size * 0.78, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // highlight
+  ctx.fillStyle = "rgba(255,220,200,0.45)";
+  ctx.beginPath();
+  ctx.arc(-size * 0.26, -size * 0.18, size * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // calyx -- small star of green points at the top
+  ctx.fillStyle = "#4a7a3a";
+  for (let i = 0; i < 5; i++) {
+    const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.68);
+    ctx.lineTo(Math.cos(a) * size * 0.28, -size * 0.68 + Math.sin(a) * size * 0.28 - size * 0.1);
+    ctx.lineTo(Math.cos(a + 0.5) * size * 0.14, -size * 0.68 - size * 0.02);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 // the cart -- drawn completely right-side-up (see topsyTurvyCartRide's
-// own placement comment for why), a plain two-wheeled farm cart with a
-// few apples that individually drift up out of the bed and sink back
-// down, each on its own seeded phase so they don't move in lockstep.
+// own placement comment for why), a two-wheeled farm cart with a small
+// pile of tomatoes that individually drift up out of the bed and sink
+// back down, each on its own seeded phase so they don't move in
+// lockstep. CONFIRMED CHANGE ("make the cart larger"): every dimension
+// scaled up from the original pass (roughly 1.6x) -- see
+// TOPSY_CART_HALF_RANGE's own comment for why the hitbox/range grew to
+// match.
 function drawTopsyTurvyCart(camX) {
   const sx = TOPSY_CART_X - camX, sy = gy;
 
   // wheels
   ctx.fillStyle = "#4a3222";
   ctx.beginPath();
-  ctx.arc(sx - 16, sy - 8, 8, 0, Math.PI * 2);
-  ctx.arc(sx + 16, sy - 8, 8, 0, Math.PI * 2);
+  ctx.arc(sx - 27, sy - 13, 13, 0, Math.PI * 2);
+  ctx.arc(sx + 27, sy - 13, 13, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#7a5f3a";
   ctx.beginPath();
-  ctx.arc(sx - 16, sy - 8, 3, 0, Math.PI * 2);
-  ctx.arc(sx + 16, sy - 8, 3, 0, Math.PI * 2);
+  ctx.arc(sx - 27, sy - 13, 4.5, 0, Math.PI * 2);
+  ctx.arc(sx + 27, sy - 13, 4.5, 0, Math.PI * 2);
   ctx.fill();
 
   // bed
   ctx.fillStyle = "#8a6a42";
   ctx.beginPath();
-  ctx.moveTo(sx - 26, sy - 14);
-  ctx.lineTo(sx - 22, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 22, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 26, sy - 14);
+  ctx.moveTo(sx - 42, sy - 22);
+  ctx.lineTo(sx - 36, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 36, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 42, sy - 22);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#5c4426";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.stroke();
   // side rails
   ctx.beginPath();
-  ctx.moveTo(sx - 22, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx - 20, sy - TOPSY_CART_BED_TOP - 8);
-  ctx.moveTo(sx + 22, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 20, sy - TOPSY_CART_BED_TOP - 8);
+  ctx.moveTo(sx - 36, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx - 33, sy - TOPSY_CART_BED_TOP - 13);
+  ctx.moveTo(sx + 36, sy - TOPSY_CART_BED_TOP);
+  ctx.lineTo(sx + 33, sy - TOPSY_CART_BED_TOP - 13);
   ctx.stroke();
 
-  // apples -- drift up out of the bed and sink back, each on its own
+  // tomatoes -- drift up out of the bed and sink back, each on its own
   // seeded phase so they read as independently bobbing, not synced
   const t = performance.now() * 0.001;
-  topsyTurvyCartApples.forEach(a => {
+  topsyTurvyCartTomatoes.forEach(a => {
     const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55)) * Math.PI * 2 + a.phase;
-    const bob = Math.max(0, Math.sin(cyclePhase)) * 30;
-    const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 3;
-    const ay = sy - TOPSY_CART_BED_TOP - 6 - bob;
-    ctx.fillStyle = "#b23a3a";
-    ctx.beginPath();
-    ctx.arc(ax, ay, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#5c3a1c";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay - 5);
-    ctx.lineTo(ax, ay - 8);
-    ctx.stroke();
+    const bob = Math.max(0, Math.sin(cyclePhase)) * 42;
+    const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 4;
+    const ay = sy - TOPSY_CART_BED_TOP - 8 - bob;
+    drawTomatoShape(ctx, ax, ay, 9, Math.sin(cyclePhase * 0.7 + a.phase) * 0.3);
   });
 }
 
