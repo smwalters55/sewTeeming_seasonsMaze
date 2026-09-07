@@ -17976,16 +17976,30 @@ function updateForestFungusClimb(deltaTime) {
 // enough together (and close enough to the world's own edge) that there
 // wasn't real open ground around either one. See TOPSY_WELL_X/
 // TOPSY_SEEDPLOT_X's own comments for the matching position moves.
-const TOPSYTURVY_WIDTH = 1500;
+// CONFIRMED CHANGE ("make building waaay bigger and move everything to
+// the right a lot more. always remember breathing room breeeathing
+// room"): widened again, substantially -- the grumpy/chef house got a
+// big scale bump (see topsyTurvyHouses below) and needed real room to
+// actually stand in, so everything past the entrance got pushed
+// further right with wider gaps between each thing, and the world grew
+// to match instead of cramming it all into the old 1500.
+const TOPSYTURVY_WIDTH = 2250;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
 
 // CONFIRMED CHANGE ("i like the grumpy character thing. w tulip ... maybe
 // the grumpy is a chef"): the one house this land actually wanted --
 // the grumpy (secretly a chef) resident's own place. Sat in the real gap
-// between the second tree (x540) and the cart's own wander range (780
-// +/-85, so nothing past ~695), with room to spare on both sides.
-const topsyTurvyHouses = [{ x: 630, scale: 0.85, grumpy: true }];
+// between the second tree and the cart's own wander range, with room to
+// spare on both sides.
+// CONFIRMED CHANGE ("make building waaay bigger and move everything to
+// the right a lot more. always remember breathing room breeeathing
+// room"): scale roughly doubled (0.85 -> 1.7) so it actually reads as a
+// real building now instead of a small prop, and moved further right
+// with a much wider gap on both sides to give the now-much-bigger
+// footprint real breathing room (see TOPSYTURVY_WIDTH/tree/cart/well
+// position comments for the matching layout-wide shift).
+const topsyTurvyHouses = [{ x: 1080, scale: 1.7, grumpy: true }];
 // CONFIRMED CHANGE ("the roots of the trees are rlly close to the
 // ground, lets make these trees taller and one p tall where you need to
 // cart hieght boost to get to the roots"): trunk length is now per-tree
@@ -17996,10 +18010,14 @@ const topsyTurvyHouses = [{ x: 630, scale: 0.85, grumpy: true }];
 // MUCH taller -- its own root platforms sit high enough that reaching
 // them requires the topsyTurvyCart's height boost (see that section
 // below), giving the cart an actual traversal purpose in the land.
+// CONFIRMED CHANGE ("move everything to the right a lot more. always
+// remember breathing room"): shifted right and re-spaced along with
+// everything else in the land (house/cart/well/seedplot) -- see those
+// constants' own comments for the matching moves.
 const topsyTurvyTrees = [
-  { x: 280, scale: 0.9, trunk: 100 },
-  { x: 540, scale: 1.1, trunk: 110 },
-  { x: 800, scale: 0.85, trunk: 230 }
+  { x: 420, scale: 0.9, trunk: 100 },
+  { x: 760, scale: 1.1, trunk: 110 },
+  { x: 1440, scale: 0.85, trunk: 230 }
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18054,7 +18072,10 @@ const topsyTurvyRootPlatforms = topsyTurvyTrees.flatMap(t =>
 );
 // one ambient "topsy-turvy folk" -- walks on their hands, per the book's
 // own description, wandering a short patrol range near the houses
-const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
+// CONFIRMED CHANGE ("move everything to the right ... breathing room"):
+// shifted along with the house it patrols near, still clear of both
+// neighboring trees' own canopies.
+const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 
 // CONFIRMED CHANGE ("i like the cart upside down idae thing... option a
 // it is") -- a parked cart, drawn right-side-up (unlike everything else
@@ -18094,7 +18115,11 @@ const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 // splash"): pushed further right still, well clear of the cart's own
 // wander range (780 +/- 85), with real open ground on both sides now
 // that TOPSYTURVY_WIDTH grew to match.
-const TOPSY_WELL_X = 1080;
+// CONFIRMED CHANGE ("move everything to the right a lot more. always
+// remember breathing room breeeathing room"): pushed further right
+// again, clear of the now-much-bigger house and the cart/tall-tree
+// cluster, with real open ground on both sides.
+const TOPSY_WELL_X = 1750;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
 // thinking potentially an animation where you attach the bucket to the
@@ -18144,7 +18169,9 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // to the right more"): gap from the well widened (100 -> 260px) so the
 // carry/spill walk actually reads as a real trip, and both spots have
 // clear ground on every side.
-const TOPSY_SEEDPLOT_X = 1340;
+// CONFIRMED CHANGE ("move everything to the right ... breathing room"):
+// shifted right along with the well, gap between them held steady.
+const TOPSY_SEEDPLOT_X = 2050;
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
@@ -18185,7 +18212,11 @@ const topsyDandelionRootPlatforms = TOPSY_DANDELION_ROOT_ANGLES.map((angle, i) =
   };
 });
 
-const TOPSY_CART_X = 780;
+// CONFIRMED CHANGE ("move everything to the right a lot more ...
+// breathing room"): shifted right along with the tall tree it's paired
+// with (kept the same 20px offset between them so the boost-up-to-the-
+// roots relationship still lines up).
+const TOPSY_CART_X = 1420;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
 // (see drawTopsyTurvyCart below), so its landing hitbox/wander range
