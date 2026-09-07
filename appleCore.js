@@ -393,6 +393,7 @@ const player = {
   onBallPitRim: false,    // CONFIRMED BUG FIX: true while standing at the top of the ladder, protected from gravity until a deliberate drop-in or walk-off -- see applyPhysics' guard chain
   inBallPit: false,       // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
   inAntFarm: false,       // CONFIRMED CHANGE: true while shrunk down navigating the sandbox ant farm's tunnel maze -- unlike the ball pit, the real player.x/y stay parked at the mount spot the whole visit; only a small drawn icon moves, tracked by sandboxAntFarm.localX/localY
+  onTopsyHouseLadder: false, // CONFIRMED CHANGE ("we need to be able to climb ladder"): true while climbing the topsy-turvy grumpy house's own ladder up to its door/window -- same "pinned x, gravity-exempt, driven by up/down" shape as onBallPitLadder, see updateTopsyTurvyScene
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -2759,7 +2760,7 @@ function handleInput(){
   // icon (never gated on topsyWell.dipping) kept right on following you.
   // Frozen here the same way every other scripted "busy" animation in
   // this list already is, so the whole beat plays out in place.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -3262,6 +3263,11 @@ function applyPhysics(){
   // all, so ordinary gravity resumed the instant the player reached the
   // top of the ladder, yanking them back down before they could react.
   if (player.onBallPitLadder || player.inBallPit || player.onBallPitRim) return;
+
+  // same idea for the topsy-turvy grumpy house's own ladder -- position
+  // while climbing is driven entirely by updateTopsyTurvyScene, same
+  // "gravity-exempt while pinned to a ladder" shape as the ball pit's.
+  if (player.onTopsyHouseLadder) return;
 
   // the ant farm keeps the real player parked at the mount spot the
   // whole visit (only a small drawn icon moves inside the case), but
@@ -4372,7 +4378,7 @@ function applyPhysics(){
     // platforms only ever existed because the tree itself is already
     // standing.
     const allTopsyPlatforms = topsyWindSeedPlot.grown
-      ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms)
+      ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms;
     allTopsyPlatforms.forEach(p => {
       const platformTop = p.height;
@@ -18000,6 +18006,15 @@ const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same po
 // footprint real breathing room (see TOPSYTURVY_WIDTH/tree/cart/well
 // position comments for the matching layout-wide shift).
 const topsyTurvyHouses = [{ x: 1080, scale: 1.7, grumpy: true }];
+// shared by the draw code, the ladder-climb mechanic, and the give-item
+// interaction checks so all three always agree on exactly how high the
+// top of a house's ladder (and its door) actually is -- see
+// drawTopsyTurvyHouse's own chimH/roofH/wallH for where these numbers
+// come from.
+function topsyHouseDoorstepHeight(h) {
+  return (16 + 30 + 46) * h.scale; // chimH + roofH + wallH, scaled together
+}
+const TOPSY_HOUSE_LADDER_CLIMB_SPEED = 75; // px/sec, matches the sandbox ball pit ladder's own climb speed
 // CONFIRMED CHANGE ("the roots of the trees are rlly close to the
 // ground, lets make these trees taller and one p tall where you need to
 // cart hieght boost to get to the roots"): trunk length is now per-tree
@@ -18150,7 +18165,12 @@ const topsyWell = {
 // visible, physical "sloshing over the rim" moment to go with it instead
 // of just the interior fill line quietly sinking.
 const topsyCarrySplashes = []; // {age, dx, vy}
-const TOPSY_CARRY_SPLASH_LIFE = 550; // ms
+// CONFIRMED CHANGE ("i want much more obvious splashes going upwards
+// into sky of the water in the bucket when we are walking"): lifetime
+// stretched so a burst has real time to climb before fading -- see the
+// spawn/render tuning right where these are used for the rest of the
+// "more obvious" pass.
+const TOPSY_CARRY_SPLASH_LIFE = 900; // ms
 // CONFIRMED CHANGE ("make the fill animation slowr"): was 1000ms, felt
 // rushed for an "attach, lower, wait, draw back up" beat.
 // CONFIRMED CHANGE ("i want so see the bucket actually attache to the
@@ -18211,6 +18231,20 @@ const topsyDandelionRootPlatforms = TOPSY_DANDELION_ROOT_ANGLES.map((angle, i) =
     height: TOPSY_DANDELION_ROOT_ANCHOR_HEIGHT + end.y
   };
 });
+// CONFIRMED CHANGE ("allow to land on dandelion so then maybe we can
+// jump up on dandelion roots"): the puffball head itself is now a real
+// landing spot too, not just the root fan way up at the top of the
+// stem -- gives a real stepping-stone partway up instead of expecting a
+// single jump to close the whole gap from the ground to the roots.
+// Height matches drawTopsyWindSeedPlot's own top-of-sphere math exactly
+// (headCy sits headR*0.8 above ground, sphere radius headR on top of
+// that).
+const TOPSY_DANDELION_HEAD_PLATFORM_HEIGHT = TOPSY_DANDELION_HEAD_R * 1.8;
+const topsyDandelionHeadPlatform = {
+  x: TOPSY_SEEDPLOT_X - TOPSY_DANDELION_HEAD_R * 0.7,
+  width: TOPSY_DANDELION_HEAD_R * 1.4,
+  height: TOPSY_DANDELION_HEAD_PLATFORM_HEIGHT
+};
 
 // CONFIRMED CHANGE ("move everything to the right a lot more ...
 // breathing room"): shifted right along with the tall tree it's paired
@@ -18357,11 +18391,18 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
         bucketWaterAmount = Math.max(0, bucketWaterAmount - movedPx * TOPSY_WELL_SPILL_PER_PX);
         if (bucketWaterAmount <= 0) bucketFilled = false; // spilled dry -- back to the well you go
         updateInventoryUI();
-        // a physical droplet or two flung off, roughly proportional to how
-        // much ground was just covered -- not every tick, so it reads as
-        // occasional sloshing rather than a constant drizzle
-        if (Math.random() < movedPx * 0.05) {
-          topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 12, vy: -18 - Math.random() * 14 });
+        // CONFIRMED CHANGE ("i want much more obvious splashes going
+        // upwards into sky of the water in the bucket when we are
+        // walking"): the old version flung a single small droplet on a
+        // fairly rare roll -- easy to miss entirely at a glance. Now a
+        // real multi-droplet burst, rolled more often and flung harder/
+        // wider, so walking with a full bucket visibly sends water
+        // arcing up into the sky rather than a barely-there drip.
+        if (Math.random() < movedPx * 0.14) {
+          const burst = 2 + Math.floor(Math.random() * 3); // 2-4 droplets per splash moment
+          for (let k = 0; k < burst; k++) {
+            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 26, vy: -32 - Math.random() * 30 });
+          }
         }
       }
     }
@@ -18472,8 +18513,26 @@ function updateTopsyChefSequence(deltaTime, grumpyHouse) {
   }
 }
 
+// CONFIRMED CHANGE ("i want wind to also blow player around"): the
+// ambient wind streaks were purely decorative until now -- this actually
+// pushes the player left/right while walking around the land, on top of
+// whatever movement input they're giving. Two layered sine waves at
+// different periods/phases so the gust never feels like a perfectly
+// metronomic back-and-forth, just a steady breeze that occasionally
+// leans harder one way.
+const TOPSY_WIND_STRENGTH = 34; // px/sec at peak gust
+
 function updateTopsyTurvyScene(deltaTime) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+
+  // skipped while pinned to something else that already owns position
+  // outright (the ladder, the well's dip animation, a scripted fall) so
+  // the gust never fights a state that's driving the player itself.
+  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && seasonTransition.phase === "idle") {
+    const t = performance.now() * 0.001;
+    const gust = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.9 + 1.7) * 0.4;
+    player.x += gust * TOPSY_WIND_STRENGTH * deltaTime;
+  }
 
   // slow hand-walk wander, same shape as any other simple ambient patrol
   // -- suspended while the chef door/pig sequence is actively driving the
@@ -18485,6 +18544,38 @@ function updateTopsyTurvyScene(deltaTime) {
   }
   updateTopsyChefSequence(deltaTime, grumpyHouse);
 
+  // CONFIRMED CHANGE ("we need to be able to climb ladder"): a real
+  // climbing mechanic up the grumpy house's own ladder, same "walk up,
+  // press space to mount, up/down to climb, pinned to the ladder's own
+  // x the whole time" shape as the sandbox ball pit's outer ladder (see
+  // updateSandboxBallPit). Needed now for real, not just for show --
+  // the door/window moved up to the actual top of the house (see
+  // drawTopsyTurvyHouse's own comment on that move), well out of reach
+  // from standing on the ground once the house's bigger scale is
+  // accounted for.
+  if (grumpyHouse) {
+    const doorstepH = topsyHouseDoorstepHeight(grumpyHouse);
+    if (player.onTopsyHouseLadder) {
+      const vertical = keys.up ? 1 : keys.down ? -1 : 0;
+      player.y = Math.max(0, Math.min(doorstepH, player.y + vertical * TOPSY_HOUSE_LADDER_CLIMB_SPEED * deltaTime));
+      player.x = grumpyHouse.x - player.width / 2;
+      player.vy = 0;
+      player.jumping = true;
+      // stepping back down off the bottom rung hands back to ordinary
+      // ground physics, same "walk off the ladder" release the ball pit
+      // rim uses for its own dismount
+      if (player.y <= 0 && keys.down) {
+        player.onTopsyHouseLadder = false;
+        player.y = 0;
+      }
+    } else if (keys.spaceJustPressed && isPlayerNear(grumpyHouse.x, 0, 40, 25, 25)) {
+      player.onTopsyHouseLadder = true;
+      player.jumping = true;
+      player.vy = 0;
+      player.y = Math.max(player.y, 0);
+    }
+  }
+
   // the grumpy resident notices if you linger at their window too long --
   // per the book, they shoo onlookers off rather than making friendly
   // conversation. One-shot, same "everShownThisVisit"-style flag pattern
@@ -18493,7 +18584,12 @@ function updateTopsyTurvyScene(deltaTime) {
   // dialogue only makes sense before they're won over at all -- once the
   // first tomato's landed, lingering at the window is no longer
   // "peeking", it's just visiting.
-  const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x + 14 * grumpyHouse.scale, 34 * grumpyHouse.scale, 30, 25, 20);
+  // CONFIRMED CHANGE (door/window moved to the top of the ladder, see
+  // drawTopsyTurvyHouse): target height now comes from the same shared
+  // topsyHouseDoorstepHeight() the ladder climb itself clamps to, so
+  // reaching the top of the ladder always lines up with this check --
+  // no more guessing at an approximate height.
+  const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 40, 20, 20);
   if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
@@ -18596,23 +18692,25 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.strokeStyle = "#7a5f3a";
   ctx.lineWidth = 2;
   ctx.strokeRect(sx - wallW / 2, y(wallTop), wallW, wallH);
-  // door -- "the front door ends up on top" per the book, so it lives
-  // in the wall band up near the roof, same "topmost part of the house"
-  // area the ladder climbs to. CONFIRMED CHANGE ("put a door on the
-  // house"): the old version anchored itself off wallTop and ended up
-  // poking out ABOVE the wall entirely, into blank sky -- essentially
-  // invisible against the background, which is exactly why it needed
-  // pointing out. Re-anchored off wallBottom instead (the same
-  // reference point the window already correctly used) so it actually
-  // sits inside the wall rectangle, and rebuilt bigger and more
-  // door-shaped besides: proper human-sized proportions (not a square),
-  // a real frame, a two-panel face, and a doorknob.
+  // door -- "the front door ends up on top" per the book, so it belongs
+  // at the actual TOP of the whole structure (wallTop -- the highest
+  // point on screen, functionally "the bottom of the house" once you
+  // account for the inversion), which is also exactly where the ladder
+  // ends. CONFIRMED CHANGE ("the door should be at the top, ie the
+  // bottom of the house not adjacent to the upside down roof"): an
+  // earlier pass anchored it off wallBottom instead, right next to the
+  // roof -- reachable without climbing, but wrong per the book's own
+  // joke and disconnected from the ladder's own destination. Re-anchored
+  // off wallTop -- careful this time to hang the door DOWN from that
+  // peak (into the wall) rather than the very first version's bug,
+  // which anchored off wallTop but let the door float up ABOVE it into
+  // blank sky.
   // CONFIRMED CHANGE: once the chef sequence has ever fired (doorOpen or
   // later), the door stays open for good -- a simple, permanent
   // "someone's home now" signal rather than swinging shut again after
   // the pig's one-time trip in.
   const doorOpen = h.grumpy && topsyChef.sequencePhase !== "none";
-  const doorW = 22 * s, doorH = 32 * s, doorX = sx - doorW / 2, doorY = y(wallBottom + doorH);
+  const doorW = 22 * s, doorH = 32 * s, doorX = sx - doorW / 2, doorY = y(wallTop);
   // frame, always visible whether open or shut
   ctx.fillStyle = "#4a3620";
   ctx.fillRect(doorX - 2.5 * s, doorY - 2.5 * s, doorW + 5 * s, doorH + 2.5 * s);
@@ -18647,8 +18745,12 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.arc(doorX + doorW - 5 * s, doorY + doorH * 0.55, 1.6 * s, 0, Math.PI * 2);
     ctx.fill();
   }
-  // window, off to one side
-  const winX = sx + 16 * s, winY = y(wallBottom + 22 * s);
+  // window, off to one side -- CONFIRMED CHANGE (moved up alongside the
+  // door's own move to the top): used to sit low, near the roof, which
+  // put the resident's own window out of step with where the door (and
+  // the ladder) actually end up. Now shares the door's top anchor so the
+  // whole "reached via the ladder" entryway reads as one coherent spot.
+  const winX = sx + 16 * s, winY = y(wallTop);
   ctx.fillStyle = "#e8f0d8";
   ctx.fillRect(winX, winY, 14 * s, 14 * s);
   ctx.strokeStyle = "#7a5f3a";
@@ -19927,17 +20029,52 @@ function drawTopsyWindSeedPlot(camX) {
     const stemBaseY = headCy - headR; // the top of the sphere -- where the stem rises from
     const stemTopY = stemBaseY - stemH;
 
-    // stem -- thick, tapering slightly, rising from the top of the
-    // flower head straight up with a gentle sway near the top
+    // stem -- CONFIRMED CHANGE ("make the stem of daffodil not just like
+    // a green thin rectangle"): the old version was a single stroked
+    // line, which at any real width just reads as a uniform tube/rect,
+    // not a plant stem. Rebuilt as a real tapered, filled shape (wider
+    // at the base where it meets the flower head, narrowing toward the
+    // top) with a darker seam down one side and a lighter highlight down
+    // the other for some actual roundness, plus a couple of faint
+    // horizontal node lines like a real stalk's growth rings.
     if (stemP > 0) {
-      ctx.strokeStyle = "#4f7a34";
-      ctx.lineWidth = 5 + 1.5 * stemP;
-      ctx.lineCap = "round";
+      const baseW = 6.5 + 2 * stemP, topW = 3.5 + 1.5 * stemP;
+      const midX = dx + sway * 0.5, midY = (stemBaseY + stemTopY) / 2;
+      const tipX = dx + sway;
+      // tangent-ish offsets along the curve so the two edges stay
+      // roughly parallel instead of just offsetting the endpoints
+      const baseNx = 1, baseNy = 0;
+      const tipDx = tipX - midX, tipDy = stemTopY - midY;
+      const tipLen = Math.hypot(tipDx, tipDy) || 1;
+      const tipNx = -tipDy / tipLen, tipNy = tipDx / tipLen;
+      ctx.fillStyle = "#4f7a34";
       ctx.beginPath();
-      ctx.moveTo(dx, stemBaseY);
-      ctx.quadraticCurveTo(dx + sway * 0.5, (stemBaseY + stemTopY) / 2, dx + sway, stemTopY);
-      ctx.stroke();
-      ctx.lineCap = "butt";
+      ctx.moveTo(dx - baseNx * baseW, stemBaseY - baseNy * baseW);
+      ctx.quadraticCurveTo(midX - baseNx * (baseW + topW) / 2, midY, tipX - tipNx * topW, stemTopY - tipNy * topW);
+      ctx.lineTo(tipX + tipNx * topW, stemTopY + tipNy * topW);
+      ctx.quadraticCurveTo(midX + baseNx * (baseW + topW) / 2, midY, dx + baseNx * baseW, stemBaseY + baseNy * baseW);
+      ctx.closePath();
+      ctx.fill();
+      // shaded seam (one side darker) for a little roundness
+      ctx.fillStyle = "rgba(58,94,40,0.55)";
+      ctx.beginPath();
+      ctx.moveTo(dx - baseNx * baseW, stemBaseY - baseNy * baseW);
+      ctx.quadraticCurveTo(midX - baseNx * (baseW + topW) / 2 * 0.4, midY, tipX - tipNx * topW * 0.4, stemTopY - tipNy * topW * 0.4);
+      ctx.lineTo(tipX, stemTopY);
+      ctx.quadraticCurveTo(midX, midY, dx, stemBaseY);
+      ctx.closePath();
+      ctx.fill();
+      // faint growth-ring nodes along the length
+      ctx.strokeStyle = "rgba(58,94,40,0.4)";
+      ctx.lineWidth = 1;
+      [0.35, 0.65].forEach(f => {
+        const nx = dx + (tipX - dx) * f, ny = stemBaseY + (stemTopY - stemBaseY) * f;
+        const w = baseW + (topW - baseW) * f;
+        ctx.beginPath();
+        ctx.moveTo(nx - w, ny);
+        ctx.lineTo(nx + w, ny);
+        ctx.stroke();
+      });
     }
 
     // the flower head itself -- a genuinely large, properly ROUND
@@ -19973,6 +20110,20 @@ function drawTopsyWindSeedPlot(camX) {
     // trees' own upward-reaching mass
     if (rootP > 0) {
       const topX = dx + sway, topY = stemTopY;
+      // CONFIRMED CHANGE ("make the roots well connected to it"): the
+      // strands used to fan straight out of a single bare point right
+      // where the stem's stroke ended, which read as disconnected pieces
+      // rather than one continuous plant. A small rounded root-crown
+      // (same color family as the stem, overlapping its own top a
+      // little) gives the strands an actual mass to visibly emerge from.
+      ctx.fillStyle = "#4f7a34";
+      ctx.beginPath();
+      ctx.ellipse(topX, topY, 7 * rootP + 3, 5.5 * rootP + 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(58,94,40,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(topX, topY, 4.5 * rootP + 2, 3.5 * rootP + 1.2, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.save();
       ctx.translate(topX, topY);
       ctx.scale(1, -1); // local +y now points up the screen, matching drawDendriticRootStrand's own convention
@@ -20103,46 +20254,72 @@ function drawTopsyUpsideDownBirds(camX) {
     const flap = Math.sin(t * 9 + i * 2.4);
     const wingLift = 3 + Math.max(0, flap) * 5;
 
+    // CONFIRMED CHANGE ("the upside down birds look weird af i have no
+    // idea whats going on"): the original sprite was tiny (6px body) and
+    // drawn at 0.6 alpha in a dark near-sky color, so at any real
+    // distance it collapsed into an illegible smudge -- no visible wings,
+    // just a blob with a couple of thin spike-like legs that read as
+    // antennae, not a bird. Rebuilt substantially bigger, fully opaque,
+    // and with real spread-wing silhouettes (a proper gull-wing shape on
+    // each side, not a single thin stroke) so it unmistakably reads as a
+    // bird shape first, THEN as an upside-down one once you clock the
+    // wings-down/legs-up posture.
     ctx.save();
     ctx.translate(sx, sy);
     ctx.scale(dir, -1);
-    ctx.fillStyle = "rgba(50,40,48,0.6)";
-    // body
+    const BIRD_COLOR = "#4a4048";
+    ctx.fillStyle = BIRD_COLOR;
+    // body -- bigger, a real teardrop rather than a tiny dot
     ctx.beginPath();
-    ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
     ctx.fill();
     // head + beak, facing the direction of travel
     ctx.beginPath();
-    ctx.arc(6, -0.5, 2, 0, Math.PI * 2);
+    ctx.arc(9.5, -1, 3.6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#d9a13c";
     ctx.beginPath();
-    ctx.moveTo(8, -0.5);
-    ctx.lineTo(11, 0);
-    ctx.lineTo(8, 1);
+    ctx.moveTo(12.5, -1.4);
+    ctx.lineTo(17, -0.4);
+    ctx.lineTo(12.5, 1);
     ctx.closePath();
     ctx.fill();
-    // tail
+    // tail, fanned rather than a thin sliver
+    ctx.fillStyle = BIRD_COLOR;
     ctx.beginPath();
-    ctx.moveTo(-6, 0);
-    ctx.lineTo(-10, -2);
-    ctx.lineTo(-9, 1);
+    ctx.moveTo(-9, -1.5);
+    ctx.lineTo(-18, -4);
+    ctx.lineTo(-17, 0);
+    ctx.lineTo(-18, 4);
+    ctx.lineTo(-9, 1.5);
     ctx.closePath();
     ctx.fill();
-    // flapping wing (local "up") -- ends up drawn BELOW the body once flipped
-    ctx.strokeStyle = "rgba(50,40,48,0.6)";
-    ctx.lineWidth = 1.4;
+    // spread wings (local "up") -- a proper gull-wing silhouette on each
+    // side, not a single thin flap line, so once flipped these read as
+    // real wings hanging BELOW the body rather than a stray mark
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(side * 2, -2);
+      ctx.quadraticCurveTo(side * 10, -wingLift - 9, side * 17, -wingLift - 1);
+      ctx.quadraticCurveTo(side * 11, -4, side * 2, -2);
+      ctx.closePath();
+      ctx.fill();
+    });
+    // tucked legs (local "down") -- end up poking up ABOVE the body once
+    // flipped, the clearest "something's wrong here" tell. Thicker and
+    // longer than before so they don't disappear at a glance, with tiny
+    // clawed feet.
+    ctx.strokeStyle = BIRD_COLOR;
+    ctx.lineWidth = 1.8;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-3, -1);
-    ctx.quadraticCurveTo(0, -wingLift - 2, 4, -1);
+    ctx.moveTo(-1.5, 4); ctx.lineTo(-2.5, 9);
+    ctx.moveTo(2.5, 4); ctx.lineTo(3.5, 9);
     ctx.stroke();
-    // tucked little legs (local "down") -- end up poking up ABOVE the
-    // body once flipped, the clearest "upside-down" tell
-    ctx.strokeStyle = "rgba(50,40,48,0.55)";
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
-    ctx.moveTo(-1, 2.5); ctx.lineTo(-1.5, 4.5);
-    ctx.moveTo(1.5, 2.5); ctx.lineTo(2, 4.5);
+    ctx.moveTo(-4, 10); ctx.lineTo(-2.5, 9); ctx.lineTo(-1, 10);
+    ctx.moveTo(2, 10); ctx.lineTo(3.5, 9); ctx.lineTo(5, 10);
     ctx.stroke();
     ctx.restore();
   }
@@ -60735,15 +60912,25 @@ if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player
   // back down -- matches the same "loose things float" rule the cart's
   // tomatoes, the well's own rising bubbles, and the dandelion's seed-
   // parachutes all already use in this land.
+  // CONFIRMED CHANGE ("much more obvious splashes going upwards into
+  // sky ... when we are walking"): bigger droplets, flung noticeably
+  // higher, brighter/more opaque, with a little highlight fleck on each
+  // one so a real splash burst reads clearly against the sky instead of
+  // a couple of barely-visible specks.
   if (heldItem === "bucket" && topsyCarrySplashes.length) {
     topsyCarrySplashes.forEach(s => {
       const p = s.age / TOPSY_CARRY_SPLASH_LIFE;
       const eased = 1 - (1 - p) * (1 - p); // ease-out -- quick initial slosh, drifting to a gentle stop
-      const riseY = -eased * (18 + Math.abs(s.vy) * 0.5);
-      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 1.6;
-      ctx.fillStyle = `rgba(120,170,220,${0.65 * (1 - p)})`;
+      const riseY = -eased * (46 + Math.abs(s.vy) * 0.9);
+      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 2.4;
+      const dx = heldPos.x - camX + s.dx + wobbleX, dy = heldPos.y + 6 + riseY;
+      ctx.fillStyle = `rgba(110,175,235,${0.85 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(heldPos.x - camX + s.dx + wobbleX, heldPos.y + 6 + riseY, 1.8, 2.6, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx, dy, 2.8, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(230,245,255,${0.7 * (1 - p)})`;
+      ctx.beginPath();
+      ctx.ellipse(dx - 0.8, dy - 1, 0.9, 1.2, 0, 0, Math.PI * 2);
       ctx.fill();
     });
   }
