@@ -17405,6 +17405,12 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // open walking gap, not the near-touching spacing the tree had before.
 // The ground mushrooms shifted along with it too (see FOREST_GROUND_
 // MUSHROOMS' own comment).
+// CONFIRMED CHANGE ("move the fungus tree to the right of the rushing
+// river, w some breathing room"): pushed right again, +800 -> +1050.
+// The first ground-mushroom patch (still anchored to the return lever,
+// not the tree) stays exactly where it was, so this whole +250 opens up
+// as extra clear walking gap between it and the trunk's own left mat --
+// roughly 380-410px now, well over double the previous ~160.
 //
 // CONFIRMED CHANGE ("and cameray isnt following"): the note that used to
 // live here about staying within the ~300px headroom specifically to
@@ -17419,7 +17425,7 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // threshold keeps ordinary forest jumping (well under 150px high)
 // completely unaffected -- only climbing the fungus tree past that
 // height starts moving the camera.
-const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 800;
+const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
 // between thi and ruhshing river" -> scoped as "tiny real hop -- taps you
