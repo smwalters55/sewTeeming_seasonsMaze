@@ -1543,7 +1543,7 @@ function updateSeasonTransition(deltaTime) {
       player.jumping = false;
       player.usedDoubleJump = false;
       cameraX = 0;
-      cameraY = 0; // only tunnel town ever moves this -- always reset on any scene change
+      cameraY = 0; // tunnel town/forest/oak/sandbox/spring/topsy-turvy all move this while climbing -- always reset on any scene change
       tunnelSafeX = null; tunnelSafeY = null; // forget the last safe dig-collision spot too
       fallJustEndedIntoTransition = false; // scene's swapped now -- the sink-hold has done its job
 
@@ -18092,6 +18092,20 @@ function updateTopsyTurvyScene(deltaTime) {
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
     startSeasonTransition("forest");
   }
+
+  // CONFIRMED BUG FIX ("cameray needs to follow uplayer upwards like
+  // when jumping on supare tall tree roots"): topsy-turvy never tracked
+  // cameraY before -- fine while the only jumpable spots were low, but
+  // the tall tree's cart-boosted roots sit well above the ~150px
+  // headroom gy leaves, so climbing up there ran the player straight
+  // off the top of the screen. Same pattern as forest's fungus climb
+  // (see updateForestScene's own identical line) and oak/tunnel town's
+  // climbs: only kicks in once player.y clears 150, so ordinary walking
+  // and normal jumps are completely unaffected, and resets to 0
+  // automatically on any scene change. drawTopsyTurvyScene applies this
+  // via a single `ctx.translate(0, cameraY)` wrapping its ground-level
+  // body (trees/cart/pig/portal), same as forest's own drawForestScene.
+  cameraY = Math.max(0, player.y - 150);
 }
 
 // draws a cottage standing on its OWN CHIMNEY -- built directly in
@@ -18260,13 +18274,91 @@ function drawTopsyTurvyTree(camX, t) {
   });
 
   // trunk, rising from the canopy up to where the roots are -- length is
-  // per-tree now (t.trunk, see topsyTurvyTrees's own comment on why)
-  ctx.strokeStyle = "#4a3222";
-  ctx.lineWidth = 5 * s;
-  ctx.beginPath();
-  ctx.moveTo(sx, y(30 * s));
-  ctx.lineTo(sx, y(t.trunk * s));
-  ctx.stroke();
+  // per-tree now (t.trunk, see topsyTurvyTrees's own comment on why).
+  // CONFIRMED CHANGE ("make the trees a little better and have thicker
+  // more gnarled trunks and just more vibes"): the old trunk was a
+  // single straight stroked line -- reads fine as a schematic but has
+  // zero character next to the dendritic root mass it's holding up.
+  // Rebuilt as a filled, gently wobbling polygon (real width, tapering
+  // from a wider base up to a narrower neck near the roots) with a
+  // couple of knots and short bark-texture gouges, seeded off the
+  // tree's own x so each of the three trees gnarls a little differently.
+  {
+    const trunkBaseY = 30 * s, trunkTopLocalY = t.trunk * s;
+    const trunkLen = trunkTopLocalY - trunkBaseY;
+    const segs = 7;
+    const baseHalfW = 7.5 * s, topHalfW = 4 * s;
+    const trunkSeed = t.x + 313;
+    const leftPts = [], rightPts = [];
+    const leanDir = pseudoRandom(trunkSeed) < 0.5 ? -1 : 1;
+    for (let i = 0; i <= segs; i++) {
+      const f = i / segs;
+      const localY = trunkBaseY + trunkLen * f;
+      // a gentle bulge that's 0 at both the base AND the very top (so
+      // the top stays anchored exactly at sx, where the root strands
+      // below get translated from -- see that block's own comment on
+      // why it can't move independently), peaking in the middle, plus a
+      // bit of per-segment waver so the outline doesn't read as a
+      // perfectly smooth taper
+      const lean = Math.sin(f * Math.PI) * 5 * s * leanDir;
+      const waver = (pseudoRandom(trunkSeed + i * 5.3) - 0.5) * 2.2 * s;
+      const cx = sx + lean + waver;
+      const halfW = baseHalfW + (topHalfW - baseHalfW) * f + (pseudoRandom(trunkSeed + i * 9.1) - 0.5) * 1.6 * s;
+      leftPts.push({ x: cx - halfW, y: y(localY) });
+      rightPts.push({ x: cx + halfW, y: y(localY) });
+    }
+    ctx.fillStyle = "#4a3222";
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let i = 1; i < leftPts.length; i++) ctx.lineTo(leftPts[i].x, leftPts[i].y);
+    for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#2f2013";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+
+    // a shaded strip down one side gives the trunk some roundness
+    // instead of reading as a flat plank
+    ctx.fillStyle = "rgba(30,18,10,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let i = 1; i < leftPts.length; i++) ctx.lineTo(leftPts[i].x, leftPts[i].y);
+    for (let i = leftPts.length - 1; i >= 0; i--) {
+      const midX = leftPts[i].x + (rightPts[i].x - leftPts[i].x) * 0.35;
+      ctx.lineTo(midX, leftPts[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // a couple of short gnarled bark gouges and a knot, so the trunk
+    // doesn't read as perfectly smooth bark
+    ctx.strokeStyle = "rgba(20,12,6,0.45)";
+    ctx.lineWidth = 1.1;
+    [0.25, 0.45, 0.65, 0.82].forEach((f, gi) => {
+      const localY = trunkBaseY + trunkLen * f;
+      const p = leftPts[Math.round(f * segs)] || leftPts[leftPts.length - 1];
+      const gx = p.x + (pseudoRandom(trunkSeed + gi * 13.7) * (rightPts[Math.round(f * segs)].x - p.x));
+      const glen = 5 * s + pseudoRandom(trunkSeed + gi * 17.3) * 4 * s;
+      ctx.beginPath();
+      ctx.moveTo(gx, y(localY) - glen / 2);
+      ctx.quadraticCurveTo(gx + 1.5 * s, y(localY), gx - 1 * s, y(localY) + glen / 2);
+      ctx.stroke();
+    });
+    const knotF = 0.4 + pseudoRandom(trunkSeed + 55) * 0.3;
+    const knotLocalY = trunkBaseY + trunkLen * knotF;
+    const knotSideL = leftPts[Math.round(knotF * segs)], knotSideR = rightPts[Math.round(knotF * segs)];
+    const knotX = knotSideL.x + (knotSideR.x - knotSideL.x) * (0.2 + pseudoRandom(trunkSeed + 61) * 0.6);
+    ctx.fillStyle = "#2f2013";
+    ctx.beginPath();
+    ctx.ellipse(knotX, y(knotLocalY), 2.6 * s, 1.8 * s, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,12,6,0.5)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(knotX, y(knotLocalY), 4.2 * s, 3 * s, 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   // roots -- per direct follow-up ("make roots a lot more of them, a lot
   // thinner, more dendtritic") this replaced the earlier 4-call
@@ -18552,21 +18644,35 @@ function drawTopsyTurvyCart(camX) {
   // to actually hold produce instead of a flat shelf. Rustic barn red,
   // with a darker aged-wood undercoat showing through at the base and a
   // couple of streaky wear marks down the side.
+  // CONFIRMED BUG FIX ("the tomatoes are not like int he cart"): the
+  // old curve used a single control point sitting well ABOVE both of
+  // its endpoints (meant to pull the middle down into a dip), which
+  // instead made the quadratic bulge UP into a hump near each wheel
+  // before dropping to the middle -- an "M" shape, not a basin -- and
+  // the tomatoes' own settle math didn't track that shape at all, so
+  // they read as floating disconnected above the cart rather than
+  // sitting in it. Rebuilt as two monotonic "ease" curves (control
+  // point held at the SAME height as the far end of each curve, so it
+  // can only ease downward, never overshoot back up) from each rim
+  // corner down to one shared floor point in the middle -- a real
+  // basin, and topsyTurvyCartBedSettleY below walks the exact same
+  // rim-to-floor range so a resting tomato always lands right on it.
   const topL = sx - 40, topR = sx + 40, topY = sy - 24;
-  const dipL = sx - 34, dipR = sx + 34, dipY = sy - TOPSY_CART_BED_TOP, dipMidY = sy - (TOPSY_CART_BED_TOP - 11);
+  const floorY = sy - (TOPSY_CART_BED_TOP - 14); // deepest point, center
+  const basinHalfW = 34;
   ctx.fillStyle = "#5c3a28";
   ctx.beginPath();
   ctx.moveTo(topL, topY);
   ctx.lineTo(topL - 3, topY + 5);
-  ctx.quadraticCurveTo(sx, dipMidY + 7, topR + 3, topY + 5);
+  ctx.quadraticCurveTo(sx, floorY + 9, topR + 3, topY + 5);
   ctx.lineTo(topR, topY);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#8b2e22";
   ctx.beginPath();
   ctx.moveTo(topL, topY);
-  ctx.quadraticCurveTo(dipL, dipY - 6, sx, dipMidY);
-  ctx.quadraticCurveTo(dipR, dipY - 6, topR, topY);
+  ctx.quadraticCurveTo(sx - basinHalfW * 0.5, floorY, sx, floorY);
+  ctx.quadraticCurveTo(sx + basinHalfW * 0.5, floorY, topR, topY);
   ctx.lineTo(topR, topY);
   ctx.closePath();
   ctx.fill();
@@ -18574,9 +18680,17 @@ function drawTopsyTurvyCart(camX) {
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(topL, topY);
-  ctx.quadraticCurveTo(dipL, dipY - 6, sx, dipMidY);
-  ctx.quadraticCurveTo(dipR, dipY - 6, topR, topY);
+  ctx.quadraticCurveTo(sx - basinHalfW * 0.5, floorY, sx, floorY);
+  ctx.quadraticCurveTo(sx + basinHalfW * 0.5, floorY, topR, topY);
   ctx.stroke();
+  // the exact rim-to-floor range the basin curve above sweeps through,
+  // shared with the tomatoes' own settle math and the occlusion band
+  // below so nothing can drift out of sync with what's actually drawn
+  const topsyTurvyCartBedSettleY = (dxAbs) => {
+    const tt = Math.min(1, Math.abs(dxAbs) / basinHalfW);
+    const eased = 1 - (1 - tt) * (1 - tt); // ease-out, matches the curve's own easing shape
+    return floorY - (floorY - topY) * eased;
+  };
 
   // weathered plank lines across the bed's curve, plus a couple of
   // lighter wear streaks so the red doesn't read as one flat block of color
@@ -18584,7 +18698,7 @@ function drawTopsyTurvyCart(camX) {
   ctx.lineWidth = 1.2;
   [0.25, 0.5, 0.75].forEach(f => {
     const px = topL + (topR - topL) * f;
-    const py = topY + (dipMidY - topY) * Math.sin(f * Math.PI) * 0.85 + 4;
+    const py = topY + (floorY - topY) * Math.sin(f * Math.PI) * 0.85 + 4;
     ctx.beginPath();
     ctx.moveTo(px, topY);
     ctx.lineTo(px, py);
@@ -18594,7 +18708,7 @@ function drawTopsyTurvyCart(camX) {
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(sx - 18, topY + 6);
-  ctx.quadraticCurveTo(sx - 8, dipMidY - 4, sx + 6, dipMidY - 2);
+  ctx.quadraticCurveTo(sx - 8, floorY - 4, sx + 6, floorY - 2);
   ctx.stroke();
 
   // top rim -- the actual lip the tomatoes rest against
@@ -18615,19 +18729,60 @@ function drawTopsyTurvyCart(camX) {
   ctx.stroke();
 
   // tomatoes -- pile down in the dip, each one drifting up out of the
-  // bed and sinking back on its own seeded phase AND its own cycle
-  // speed (see topsyTurvyCartTomatoes' own comment for why speed
-  // varies too, not just phase) so the pile reads as independently
-  // alive rather than one wave replayed with a delay
+  // bed (still a real, tall float -- 42px, unchanged) and sinking back
+  // on its own seeded phase AND its own cycle speed (see
+  // topsyTurvyCartTomatoes' own comment for why speed varies too, not
+  // just phase) so the pile reads as independently alive rather than
+  // one wave replayed with a delay. CONFIRMED BUG FIX ("the tomatoes
+  // are not like int he cart" -> clarified "i want teh tomatoes to
+  // still float far above it... just when they touch the cart, they
+  // are actually touching the inside of the cart so they are just
+  // partly occluded"): the float height itself was always fine -- the
+  // actual bug was the settle position (where they touch down at the
+  // bottom of the cycle) not lining up with the basin's real shape, so
+  // even the "touching" moment looked disconnected. Fixed by drawing
+  // from topsyTurvyCartBedSettleY (the SAME curve the basin itself is
+  // drawn with, see that function's own comment) so a resting tomato is
+  // always precisely on the basin floor, not just near it, and the
+  // occlusion band right below catches the overlap.
   const t = performance.now() * 0.001;
   topsyTurvyCartTomatoes.forEach(a => {
     const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55 * a.periodMul)) * Math.PI * 2 + a.phase;
     const bob = Math.max(0, Math.sin(cyclePhase)) * 42 * a.ampMul;
-    const settleY = dipMidY - (topY - dipMidY) * (1 - Math.min(1, Math.abs(a.dx) / 34));
+    const settleY = topsyTurvyCartBedSettleY(a.dx);
     const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 4;
-    const ay = settleY - 6 - bob;
+    const ay = settleY - 4 - bob;
     drawTomatoShape(ctx, ax, ay, 8.5, Math.sin(cyclePhase * 0.7 + a.phase) * 0.3);
   });
+
+  // CONFIRMED CHANGE ("when 'in' the cart like sitting at the bototm
+  // briefly, they need to be slightly occluded"): a thin band tracing
+  // the SAME basin curve the tomatoes settle against, drawn on top of
+  // them, so a resting tomato (bob near 0) reads as sitting IN the
+  // basin -- its lower third tucked behind the near wall's inner lip --
+  // instead of floating in front of a flat backdrop. Follows the exact
+  // settle curve, so it only ever grazes tomatoes that are actually down
+  // near the bottom of their cycle; anything mid-rise clears it and
+  // stays unoccluded.
+  ctx.fillStyle = "#7a2a1e";
+  ctx.beginPath();
+  ctx.moveTo(topL, topY - 9);
+  ctx.quadraticCurveTo(sx - basinHalfW * 0.5, floorY - 9, sx, floorY - 9);
+  ctx.quadraticCurveTo(sx + basinHalfW * 0.5, floorY - 9, topR, topY - 9);
+  ctx.lineTo(topR, topY);
+  ctx.quadraticCurveTo(sx + basinHalfW * 0.5, floorY, sx, floorY);
+  ctx.quadraticCurveTo(sx - basinHalfW * 0.5, floorY, topL, topY);
+  ctx.closePath();
+  ctx.fill();
+  // a slim highlight right at the lip's own top edge, catching a bit of
+  // light the same way the bed's own rim does
+  ctx.strokeStyle = "rgba(210,150,120,0.3)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(topL, topY - 9);
+  ctx.quadraticCurveTo(sx - basinHalfW * 0.5, floorY - 9, sx, floorY - 9);
+  ctx.quadraticCurveTo(sx + basinHalfW * 0.5, floorY - 9, topR, topY - 9);
+  ctx.stroke();
 }
 
 function drawTopsyTurvyScene(camX) {
@@ -18650,6 +18805,21 @@ function drawTopsyTurvyScene(camX) {
     ctx.fill();
   }
 
+  // CONFIRMED BUG FIX ("cameray needs to follow uplayer upwards"):
+  // everything from here down is ground-level (or reaches up from it,
+  // like the tall tree's roots) -- translating the whole block by
+  // cameraY in one shot keeps every element's position relative to each
+  // other exactly as authored, without threading a manual +cameraY into
+  // dozens of individual draw calls. Same pattern drawForestScene's own
+  // fungus-climb block already uses. A no-op except while up on the
+  // tall tree's roots past the 150px threshold (see
+  // updateTopsyTurvyScene's own cameraY line). The sky/cloud layers
+  // just above stay OUTSIDE this translate on purpose, same as forest --
+  // they're already far-back parallax layers that don't need to shift
+  // with a ground-level camera follow.
+  ctx.save();
+  ctx.translate(0, cameraY);
+
   // ground -- a slightly otherworldly dusty-mauve meadow, but still
   // ordinary walkable ground (this first pass is visual-only per Sam's
   // own call -- player physics stay completely normal here)
@@ -18663,6 +18833,8 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyTurvyCart(camX);
   drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
+
+  ctx.restore();
 }
 
 // a single turkey-tail fan lobe -- thin, wavy-edged, with the
