@@ -4216,6 +4216,53 @@ function applyPhysics(){
     }
   }
 
+  } else if (currentScene === "topsyturvy") {
+
+  // CONFIRMED CHANGE ("make tree roots so you can jump on top them"):
+  // real jumpable platforms at the tips of a handful of each tree's own
+  // root strands -- see topsyTurvyRootPlatforms's own comment for how
+  // these hitboxes stay lined up with what's actually drawn. Same
+  // pattern as every other simple platform in the game (autumn's own
+  // `platforms`, clouds' `hopClouds`, etc.), EXCEPT this scene's
+  // platforms sit close enough together (several per tree, stacked at
+  // varied heights) that a couple of their 14px catch bands genuinely
+  // overlap -- found via direct playtest-style verification: a plain
+  // per-platform forEach re-reads player.y fresh on every iteration, so
+  // landing on one platform could immediately re-trigger a SECOND nearby
+  // platform's own check in that same frame (now testing the
+  // already-snapped y against ITS band) and silently bump the player up
+  // onto a taller neighbor instead of the one actually stood on. Fixed
+  // by capturing playerBottom once, before any platform is tested, and
+  // stopping at the first real match instead of letting a later
+  // iteration re-evaluate an already-updated player.y.
+  {
+    const playerBottom = player.y;
+    let bestTop = null;
+    topsyTurvyRootPlatforms.forEach(p => {
+      const platformTop = p.height;
+      if (
+        player.x + player.width > p.x &&
+        player.x < p.x + p.width &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 14 &&
+        player.vy <= 0 &&
+        (bestTop === null || platformTop > bestTop)
+      ) {
+        bestTop = platformTop; // the TALLEST matching platform -- the real
+        // first surface a falling player would actually hit, since a
+        // couple of these root-tip platforms sit close enough in height
+        // for their bands to genuinely overlap (see this block's own
+        // comment above)
+      }
+    });
+    if (bestTop !== null) {
+      player.y = bestTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   } // end currentScene checks
 
   // 2D dig-collision -- checked last, after gravity/platform landing have
@@ -17778,6 +17825,57 @@ const topsyTurvyTrees = [
   { x: 540, scale: 1.1 },
   { x: 800, scale: 0.8 }
 ];
+
+// CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
+// handful of each tree's own dendritic root strands (see
+// drawDendriticRootStrand/drawTopsyTurvyTree below) now double as real
+// jumpable platforms. TOPSY_ROOT_DIRS/topsyTurvyRootStrandParams are the
+// exact same fan-angle/length/seed math the draw call uses per strand --
+// shared here (rather than duplicated) so a platform's hitbox always
+// lines up with where that strand is actually drawn. computeDendriticStrandEnd
+// walks the same wobbly-segment math as the real draw function's main
+// stem (forks ignored -- those are just visual flourish, not platform
+// spots) to find each chosen strand's tip in local (already-flipped)
+// coordinates, then that's converted into world x/height the same way
+// the rest of the game already places jumpable platforms (height==0 is
+// the ground, increasing height is higher up -- see e.g. forestFungusClimb's
+// own level.height fields).
+const TOPSY_ROOT_DIRS = [-1.4, -1.05, -0.7, -0.35, 0, 0.35, 0.7, 1.05, 1.4];
+function topsyTurvyRootStrandParams(t, i, dir) {
+  return {
+    angle: Math.PI / 2 - dir * 0.62,
+    len: 42 + pseudoRandom(t.x + i * 41 + 7) * 20,
+    seed: t.x + i * 613 + 190
+  };
+}
+function computeDendriticStrandEnd(x, y, angle, len, seed) {
+  const segs = 5;
+  let cx = x, cy = y, cAngle = angle;
+  for (let i = 1; i <= segs; i++) {
+    cAngle += (pseudoRandom(seed + i * 3.7) - 0.5) * 0.5;
+    cx += Math.cos(cAngle) * (len / segs);
+    cy += Math.sin(cAngle) * (len / segs);
+  }
+  return { x: cx, y: cy };
+}
+// only every-other strand (5 of the 9 per tree) is a real platform -- the
+// rest stay purely decorative so the canopy of roots doesn't turn into a
+// solid wall of landing spots. Small width (26) since these are thin root
+// tips, not proper ledges.
+const TOPSY_ROOT_PLATFORM_INDICES = [0, 2, 4, 6, 8];
+const topsyTurvyRootPlatforms = topsyTurvyTrees.flatMap(t =>
+  TOPSY_ROOT_PLATFORM_INDICES.map(i => {
+    const dir = TOPSY_ROOT_DIRS[i];
+    const { angle, len, seed } = topsyTurvyRootStrandParams(t, i, dir);
+    const end = computeDendriticStrandEnd(0, 0, angle, len, seed);
+    const s = t.scale;
+    return {
+      x: t.x + end.x * s - 13,
+      width: 26,
+      height: s * (64 + end.y)
+    };
+  })
+);
 // one ambient "topsy-turvy folk" -- walks on their hands, per the book's
 // own description, wandering a short patrol range near the houses
 const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
@@ -17997,11 +18095,9 @@ function drawTopsyTurvyTree(camX, t) {
   ctx.save();
   ctx.translate(sx, trunkTopY);
   ctx.scale(s, -s);
-  const ROOT_DIRS = [-1.4, -1.05, -0.7, -0.35, 0, 0.35, 0.7, 1.05, 1.4];
-  ROOT_DIRS.forEach((dir, i) => {
-    const angle = Math.PI / 2 - dir * 0.62; // fan around straight up
-    const len = 42 + pseudoRandom(t.x + i * 41 + 7) * 20;
-    drawDendriticRootStrand(0, 0, angle, len, 2, t.x + i * 613 + 190, 2.4);
+  TOPSY_ROOT_DIRS.forEach((dir, i) => {
+    const { angle, len, seed } = topsyTurvyRootStrandParams(t, i, dir);
+    drawDendriticRootStrand(0, 0, angle, len, 2, seed, 2.4);
   });
   ctx.restore();
 }
