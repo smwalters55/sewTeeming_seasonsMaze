@@ -18166,11 +18166,11 @@ const topsyWell = {
 // of just the interior fill line quietly sinking.
 const topsyCarrySplashes = []; // {age, dx, vy}
 // CONFIRMED CHANGE ("i want much more obvious splashes going upwards
-// into sky of the water in the bucket when we are walking"): lifetime
-// stretched so a burst has real time to climb before fading -- see the
-// spawn/render tuning right where these are used for the rest of the
-// "more obvious" pass.
-const TOPSY_CARRY_SPLASH_LIFE = 900; // ms
+// into sky ... when we are walking", then "way too much water coming
+// out of bucket" once a first pass overdid it): settled on a modest
+// bump over the original (was 550) rather than the first pass's 900 --
+// see the spawn-rate/render tuning right where these are used.
+const TOPSY_CARRY_SPLASH_LIFE = 650; // ms
 // CONFIRMED CHANGE ("make the fill animation slowr"): was 1000ms, felt
 // rushed for an "attach, lower, wait, draw back up" beat.
 // CONFIRMED CHANGE ("i want so see the bucket actually attache to the
@@ -18394,14 +18394,17 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
         // CONFIRMED CHANGE ("i want much more obvious splashes going
         // upwards into sky of the water in the bucket when we are
         // walking"): the old version flung a single small droplet on a
-        // fairly rare roll -- easy to miss entirely at a glance. Now a
-        // real multi-droplet burst, rolled more often and flung harder/
-        // wider, so walking with a full bucket visibly sends water
-        // arcing up into the sky rather than a barely-there drip.
-        if (Math.random() < movedPx * 0.14) {
-          const burst = 2 + Math.floor(Math.random() * 3); // 2-4 droplets per splash moment
+        // fairly rare roll -- easy to miss entirely at a glance. A first
+        // pass at "more obvious" (multi-droplet burst, rolled often,
+        // flung hard/wide) badly overshot -- direct feedback ("way too
+        // much water coming out of bucket") -- so this is scaled back
+        // to a real but modest bump: bigger and more visible per-droplet
+        // (see the render tuning below) without turning every step into
+        // a small fountain.
+        if (Math.random() < movedPx * 0.045) {
+          const burst = 1 + (Math.random() < 0.3 ? 1 : 0); // usually 1 droplet, occasionally 2
           for (let k = 0; k < burst; k++) {
-            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 26, vy: -32 - Math.random() * 30 });
+            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 16, vy: -22 - Math.random() * 16 });
           }
         }
       }
@@ -18711,9 +18714,14 @@ function drawTopsyTurvyHouse(camX, h) {
   // the pig's one-time trip in.
   const doorOpen = h.grumpy && topsyChef.sequencePhase !== "none";
   const doorW = 22 * s, doorH = 32 * s, doorX = sx - doorW / 2, doorY = y(wallTop);
-  // frame, always visible whether open or shut
+  // frame, always visible whether open or shut. CONFIRMED BUG FIX ("door
+  // is a lil coming up off the bottom of the house"): this used to pad
+  // upward from doorY too (doorY - 2.5*s), which pushed the frame's own
+  // top edge above wallTop -- the wall's actual topmost point -- so a
+  // sliver of frame poked out above the wall into open sky. Padding now
+  // only goes sideways and downward, never past the wall's own top edge.
   ctx.fillStyle = "#4a3620";
-  ctx.fillRect(doorX - 2.5 * s, doorY - 2.5 * s, doorW + 5 * s, doorH + 2.5 * s);
+  ctx.fillRect(doorX - 2.5 * s, doorY, doorW + 5 * s, doorH + 2.5 * s);
   if (doorOpen) {
     // dark open doorway behind the frame
     ctx.fillStyle = "#20160c";
@@ -60913,22 +60921,23 @@ if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player
   // tomatoes, the well's own rising bubbles, and the dandelion's seed-
   // parachutes all already use in this land.
   // CONFIRMED CHANGE ("much more obvious splashes going upwards into
-  // sky ... when we are walking"): bigger droplets, flung noticeably
-  // higher, brighter/more opaque, with a little highlight fleck on each
-  // one so a real splash burst reads clearly against the sky instead of
-  // a couple of barely-visible specks.
+  // sky ... when we are walking", then scaled back after "way too much
+  // water coming out of bucket"): a little bigger/brighter than the
+  // very first version, with a small highlight fleck so a droplet
+  // actually reads, but nowhere near the overshot first pass's size/
+  // height/opacity/spawn-rate -- see the spawn-rate tuning above.
   if (heldItem === "bucket" && topsyCarrySplashes.length) {
     topsyCarrySplashes.forEach(s => {
       const p = s.age / TOPSY_CARRY_SPLASH_LIFE;
       const eased = 1 - (1 - p) * (1 - p); // ease-out -- quick initial slosh, drifting to a gentle stop
-      const riseY = -eased * (46 + Math.abs(s.vy) * 0.9);
-      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 2.4;
+      const riseY = -eased * (26 + Math.abs(s.vy) * 0.6);
+      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 1.8;
       const dx = heldPos.x - camX + s.dx + wobbleX, dy = heldPos.y + 6 + riseY;
-      ctx.fillStyle = `rgba(110,175,235,${0.85 * (1 - p)})`;
+      ctx.fillStyle = `rgba(120,175,230,${0.7 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(dx, dy, 2.8, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx, dy, 2.1, 3, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(230,245,255,${0.7 * (1 - p)})`;
+      ctx.fillStyle = `rgba(230,245,255,${0.55 * (1 - p)})`;
       ctx.beginPath();
       ctx.ellipse(dx - 0.8, dy - 1, 0.9, 1.2, 0, 0, Math.PI * 2);
       ctx.fill();
