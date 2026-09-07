@@ -19440,6 +19440,13 @@ function drawDisheveledPitPath(cx, cy, rw, rh, seed) {
 // permanent mound flanking the pit -- what actually came OUT of the
 // hole -- drawn any time the site is dug, so it sticks around forever
 // once digging's done rather than only during the animation.
+// CONFIRMED CHANGE ("make the dirt bits that fall out of the hole a lot
+// smaller not like these huge round brown balls. like actual dirt bits
+// and flakes and a few awk shaped chunks"): each particle now tumbles
+// (its own spin, seeded/animated) and is one of three small shapes
+// instead of one uniform circle -- mostly tiny specks, some thin flat
+// flakes, and occasionally a small irregular (not-quite-round) chunk --
+// and every shape's own size is well under the old fixed 2-4.4px circle.
 function drawDigFlingParticles(cx, groundY, animT, duration, seed, count) {
   const p = animT / duration;
   for (let i = 0; i < count; i++) {
@@ -19450,11 +19457,38 @@ function drawDigFlingParticles(cx, groundY, animT, duration, seed, count) {
     const speed = 16 + pseudoRandom(seed + i * 3.3) * 20;
     const dist = lp * speed;
     const arcH = Math.sin(lp * Math.PI) * (12 + pseudoRandom(seed + i * 5.7) * 12); // up then back down, not a flat rise
-    const size = 2 + pseudoRandom(seed + i * 9.1) * 2.4;
+    const px = cx + Math.cos(angle) * dist, py = groundY - arcH + Math.sin(angle) * dist * 0.35;
+    const spin = pseudoRandom(seed + i * 4.4) * Math.PI * 2 + lp * 5; // tumbles as it flies
+    const kind = pseudoRandom(seed + i * 2.2);
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(spin);
     ctx.fillStyle = i % 2 === 0 ? `rgba(120,88,55,${1 - lp})` : `rgba(90,64,40,${1 - lp})`;
-    ctx.beginPath();
-    ctx.arc(cx + Math.cos(angle) * dist, groundY - arcH + Math.sin(angle) * dist * 0.35, size, 0, Math.PI * 2);
-    ctx.fill();
+    if (kind < 0.55) {
+      // tiny speck -- the bulk of the spray
+      const r = 0.55 + pseudoRandom(seed + i * 9.1) * 0.55;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (kind < 0.82) {
+      // thin flat flake
+      const w = 1.5 + pseudoRandom(seed + i * 9.1) * 1.1, h = 0.5 + pseudoRandom(seed + i * 6.6) * 0.4;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    } else {
+      // a few awkward little chunks -- small irregular (not round) polygon
+      const r = 1 + pseudoRandom(seed + i * 9.1) * 0.8;
+      ctx.beginPath();
+      for (let v = 0; v < 5; v++) {
+        const a = (v / 5) * Math.PI * 2;
+        const jr = r * (0.55 + pseudoRandom(seed + i * 13 + v * 3) * 0.7);
+        const vx = Math.cos(a) * jr, vy = Math.sin(a) * jr * 0.8;
+        if (v === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 function drawDugDirtPile(cx, groundY, seed) {
@@ -19661,16 +19695,27 @@ function drawTopsyWindSeedPlot(camX) {
 }
 
 function drawTopsyTurvyScene(camX) {
+  // CONFIRMED CHANGE ("maybe we should change the sky a little, so we ca
+  // better see the clouds and the dandelion"): the old gradient faded all
+  // the way down to a near-white pink (#f6e8ea) right at the ground --
+  // exactly where the clouds AND the dandelion's cream-white puffball
+  // both sit, so both were washing out against their own background.
+  // Deepened and pulled more toward a dusty violet/plum the whole way
+  // down (instead of fading toward white), landing on a mauve close to
+  // the ground's own color (#b89ab0) at the horizon so the two blend
+  // naturally -- still pastel/whimsical up top, just enough contrast at
+  // the bottom for white/cream things to actually read.
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
-  sky.addColorStop(0, "#cdb8e8");
-  sky.addColorStop(0.45, "#e0c9e6");
-  sky.addColorStop(0.8, "#f0dcea");
-  sky.addColorStop(1, "#f6e8ea");
+  sky.addColorStop(0, "#b9a0dc");
+  sky.addColorStop(0.45, "#c7a6d2");
+  sky.addColorStop(0.8, "#c39cbc");
+  sky.addColorStop(1, "#b98ea2");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, gy);
 
-  // a few soft clouds drifting below, since this land sits above them
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  // a few soft clouds drifting below, since this land sits above them --
+  // opacity nudged up (0.55 -> 0.75) to hold up against the now-deeper sky
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
   for (let i = 0; i < 4; i++) {
     const cx = (i * 260 - (camX * 0.15)) % (canvas.width + 400) - 100;
     const cy = gy - 40 + Math.sin(i * 1.7) * 10;
