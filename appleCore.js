@@ -256,7 +256,7 @@ const camera = { topDown:false, locked:false };
 // start) once you're done testing sandbox things -- this is a testing
 // convenience, not the real game's intro, so it shouldn't stay on
 // "sandbox" for normal play.
-const DEBUG_START_SCENE = "sandbox";
+const DEBUG_START_SCENE = "autumn";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -519,7 +519,7 @@ function cycleHeldItem() {
   // the cycle order and you're not in its home scene.
   const types = inventoryOrder.filter(t =>
     inventory[t] > 0 && t !== "feather" &&
-    (!SCENE_LOCKED_ITEMS[t] || SCENE_LOCKED_ITEMS[t].includes(currentScene))
+    isSceneLockedItemAllowedHere(t)
   );
   if (types.length === 0) return;
   const currentIdx = types.indexOf(heldItem);
@@ -730,12 +730,30 @@ const SCENE_LOCKED_ITEMS = {
   // in there.
   paperAirplane: ["oak", "clouds", "sandbox"]
 };
+
+// CONFIRMED BUG FIX ("lamp should NOT follow with player after they leave
+// the ratroom -- either in play or in inventory"): SCENE_LOCKED_ITEMS'
+// static ["oak","ratroom"] list is right for the FIRST trip -- you need
+// to be able to hold the lamp in oak to ever carry it down there at all.
+// But once it's actually been lit in ratroom, the rest of the game
+// already treats it as "never leaves the room" (see lampEverUsedInRatroom
+// below) for the held-item case -- this was only ever half-applied,
+// since the static list still let it sit in the inventory strip (and be
+// re-selected from it) back up in oak. Once it's actually been used, its
+// home narrows to ratroom only, matching that same rule everywhere.
+function isSceneLockedItemAllowedHere(type) {
+  const homes = SCENE_LOCKED_ITEMS[type];
+  if (!homes) return true;
+  if (type === "lamp" && lampEverUsedInRatroom) return currentScene === "ratroom";
+  return homes.includes(currentScene);
+}
+
 let lastInventoryUIScene = null; // tracked so the strip only rebuilds when currentScene actually changes, not every frame
 
 function updateInventoryUI() {
   const entries = Object.entries(inventory)
     .filter(([type]) => !CARRYING_ITEM_TYPES.has(type))
-    .filter(([type]) => !SCENE_LOCKED_ITEMS[type] || SCENE_LOCKED_ITEMS[type].includes(currentScene));
+    .filter(([type]) => isSceneLockedItemAllowedHere(type));
   invEl.innerHTML = "";
   updateCarryingUI();
 
@@ -2048,6 +2066,16 @@ const BOOMERANG_HIT_RADIUS = 15; // tightened further — verified honey/vault w
 // stacked on top of the throw arc's own vertical curve. That double
 // variability made the shared 15px radius nearly impossible to land.
 const FOREST_BOOMERANG_HIT_RADIUS = 45; // pulled back way down (was 150 -- that was landing hits without even trying, which stopped feeling like a real throw at all). The actual fix for "impossible to hit" was dropping the thrownWhileAirborne requirement below, not this radius -- so this can now be a normal, visually-sane radius plus a bit of real slack for the moving target, not an enormous catch-all
+// CONFIRMED CHANGE ("def broaden the radius for shaking clouds w
+// boomerang"): the vault clouds were using the same tight shared
+// BOOMERANG_HIT_RADIUS (15) as small stationary targets like the hive and
+// grafted fruit, but they're bigger, visually more prominent shapes that
+// also require an airborne throw for one of them -- that extra timing
+// constraint on top of a 15px window made landing the hit feel a lot
+// harder than the other boomerang targets. Own constant, more than
+// doubled, same "generous but not a catch-all" spirit as the forest
+// snake's own widened radius above.
+const VAULT_CLOUD_BOOMERANG_HIT_RADIUS = 40;
 
 // CONFIRMED CHANGE: clouds gust zone -- a fixed, learnable patch of sky
 // (not random ambient gusts everywhere) where the wind visibly does
@@ -2154,7 +2182,7 @@ function updateBoomerangThrow(deltaTime) {
         if (v.requiresAirborne && !b.thrownWhileAirborne) continue;
         const dx = b.x - v.x;
         const dy = b.y - v.heightAboveGround;
-        if (Math.sqrt(dx * dx + dy * dy) < BOOMERANG_HIT_RADIUS) {
+        if (Math.sqrt(dx * dx + dy * dy) < VAULT_CLOUD_BOOMERANG_HIT_RADIUS) {
           v.phase = "opening";
           v.phaseT = 0;
 
@@ -8275,8 +8303,16 @@ function drawPumpkinMouth(idx, x, y, s, fillColor) {
     ctx.moveTo(-s * 0.6, s * 0.12);
     ctx.quadraticCurveTo(0, s * 0.4, s * 0.6, s * 0.05);
     ctx.stroke();
+    // CONFIRMED BUG FIX ("one has a tooth facing upwards, its just one
+    // tooth, it should face downwards"): the triangle's lone pointed
+    // vertex sat at the smallest (most negative) y of the three points,
+    // with its two flat-base points below it -- a fang pointing UP out
+    // of the bottom gum, when a single snaggletooth reads correctly
+    // hanging DOWN from the top gum instead. Flipped vertically (negated
+    // every y) so the point now sits lowest of the three and the flat
+    // base sits up near the grin line, same size and position otherwise.
     ctx.beginPath();
-    ctx.moveTo(s * 0.02, s * 0.18); ctx.lineTo(s * 0.14, -s * 0.18); ctx.lineTo(s * 0.26, s * 0.14);
+    ctx.moveTo(s * 0.02, -s * 0.18); ctx.lineTo(s * 0.14, s * 0.18); ctx.lineTo(s * 0.26, -s * 0.14);
     ctx.closePath();
     ctx.fill();
   } else if (idx === 10) { // pucker / whistle -- tighter and rounder
@@ -11854,10 +11890,27 @@ function drawWoodpecker(camX) {
     }
   }
 
-  if (!woodpecker.fed && inventory.worm > 0) {
+  // CONFIRMED BUG FIX ("the hungry bird dialogue follows camera when it
+  // shouldnt, as no dialogue should"): neither bubble below ever checked
+  // how far away the player actually was -- carrying a worm anywhere at
+  // all in autumn kept the "tweet tweet! hungry!" bubble drawing every
+  // single frame, off in the woodpecker's own corner of the world.
+  // drawFittedSpeechBubble's shared on-screen clamp (it keeps every
+  // bubble in the game fully visible even when its target sits right at
+  // a screen edge) then pinned it to a fixed spot near the canvas edge
+  // whenever the raw math put it off-screen -- which, with no distance
+  // gate at all, was effectively always until the player happened to be
+  // standing right under the bird. The bubble sitting there detached
+  // from anything visible, at a fixed screen position regardless of
+  // where the camera had scrolled to, is exactly what read as "the
+  // dialogue follows the camera." Every other NPC bubble in the game
+  // only draws while the player is actually near it -- this just never
+  // had that same gate.
+  const nearWoodpecker = isPlayerNear(woodpeckerPlatform.x, woodpeckerPlatform.heightAboveGround, 220, 300, 300);
+  if (!woodpecker.fed && inventory.worm > 0 && nearWoodpecker) {
     drawFittedSpeechBubble(ctx, bodyX + 16, bodyY - 15, ["tweet tweet!", "hungry!"]);
   }
-  if (eating) {
+  if (eating && nearWoodpecker) {
     drawFittedSpeechBubble(ctx, bodyX + 16, bodyY - 15, ["yum yum!"]);
   }
 }
@@ -12162,6 +12215,20 @@ function updateSeesaw(deltaTime) {
     // ground level also satisfies that, which was un-mounting immediately
     // on the same frame as a successful mount.
     if (!nearMountHorizontally) {
+      seesaw.mounted = false;
+      seesaw.charge = 0;
+      playerHop.t = 9999;
+    }
+
+    // CONFIRMED BUG FIX ("we need to be able to get off the seesaw once
+    // we mount"): the ONLY dismount path used to be walking far enough
+    // away to fail nearMountHorizontally above -- but handleInput's own
+    // movement gate explicitly excludes !seesaw.mounted, so player.x can
+    // never actually change while mounted, making that path unreachable
+    // through normal play. Down mirrors the "press down to let go" release
+    // already used for the rock-cling grab elsewhere in the game, so this
+    // adds a dismount without needing a brand new key binding.
+    if (keys.downJustPressed) {
       seesaw.mounted = false;
       seesaw.charge = 0;
       playerHop.t = 9999;
@@ -16900,7 +16967,12 @@ const FOREST_SAND_JUNCTION_MIDGRAINS = Array.from({ length: 320 }, (_, i) => {
 // trailing buffer, close to the ~400px the old zone had after its own
 // last obstacle) -- per direct request ("i think i want to space it
 // out just a little, and make it longer").
-const FOREST_FLOAT_ZONE_END_X = 13350;
+// widened again from 13350 to fit the new fourth obstacle pass (last
+// obstacle now sits at START+CALM_LEAD+7220=14420) plus a longer trailing
+// calm-drift buffer than before (700px vs the old ~450px) -- per direct
+// request ("kinda want to make rushing river longere"), split between
+// more obstacles and more open water rather than only one or the other.
+const FOREST_FLOAT_ZONE_END_X = 15120;
 // CONFIRMED CHANGE ("fix the end of the rushing river now so that it
 // looks good" -> "gradually bend down to the right so it looks like
 // the river is just changing direction but still moving"): the water's
@@ -17164,7 +17236,22 @@ const FOREST_FLOAT_OBSTACLES = [
   { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5480, w: 40, clearance: 125, type: "jump", variant: 0, spiky: true },
   // final gentle closing gate -- same "soft landing" role as the other
   // two passes' closers
-  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5700, w: 40, clearance: 110, type: "jump", variant: 2 }
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5700, w: 40, clearance: 110, type: "jump", variant: 2 },
+
+  // FOURTH PASS -- per direct request ("kinda want to make rushing
+  // river longere"), same reasoning as the third pass above: same
+  // vocabulary, same per-obstacle spacing/timing values, this only adds
+  // more distance/obstacles to cover, it does not raise the difficulty
+  // of any single obstacle.
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5940, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0023, duckPhase: 5.2 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 6160, w: 40, clearance: 72, type: "jump", variant: 0 },
+  // final reprise of the out-of-phase moving-log pair
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 6400, range: 55, speed: 0.0024, phase: 1.2, w: 40, clearance: 40, type: "movingJump", variant: 1 },
+  { baseX: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 6520, range: 50, speed: 0.0029, phase: 4.0, w: 40, clearance: 40, type: "movingJump", variant: 0 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 6760, w: 70, clearance: 48, type: "duck", duckSpeed: 0.0027, duckPhase: 2.4 },
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 7000, w: 40, clearance: 125, type: "jump", variant: 1, spiky: true },
+  // final gentle closing gate of the whole course
+  { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 7220, w: 40, clearance: 110, type: "jump", variant: 2 }
 ];
 
 // resolves an obstacle's CURRENT world x -- a live oscillation for
@@ -17212,6 +17299,11 @@ forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_2.x, anchorY: gy, radiusX
 // after the final moving-log pair and before the last duck
 const FOREST_FLOAT_LILYPAD_3 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 5150, width: 56, heightAboveGround: 20 };
 forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_3.x, anchorY: gy, radiusX: 50, radiusY: 18, heightBase: -26, speed: 0.00048, yFreq: 0.95, seed: 3.7, color: "#8a4a2f" });
+// fourth pad -- same "somewhere to actually stand still" role, sits in
+// the new fourth pass's own calm gap right after its moving-log pair
+// and before its duck, same spot each earlier pass's own rest stop sits in
+const FOREST_FLOAT_LILYPAD_4 = { x: FOREST_FLOAT_ZONE_START_X + FOREST_FLOAT_CALM_LEAD + 6640, width: 56, heightAboveGround: 20 };
+forestDragonflies.push({ anchorX: FOREST_FLOAT_LILYPAD_4.x, anchorY: gy, radiusX: 40, radiusY: 14, heightBase: -22, speed: 0.00062, yFreq: 1.1, seed: 6.6, color: "#5a3a8a" });
 // landing spot right at the far end of the course, for the return
 // lever to stand on -- per direct request ("make a return to start
 // 'lever' at end of river... yes finish to the end"). Sits just shy of
@@ -17241,6 +17333,7 @@ const FOREST_FLOAT_RETURN_DELAY_MS = 500;
 let playerOnFloatLilypad = false;
 let playerOnFloatLilypad2 = false;
 let playerOnFloatLilypad3 = false;
+let playerOnFloatLilypad4 = false;
 let playerOnFloatLilypadEnd = false;
 // minY (optional) gates a collectible behind actually reaching a
 // specific arc height, not just walking/floating near it at ground
@@ -22567,7 +22660,7 @@ const FOREST_RIVER_BOAT_PILE_LILYPAD_X = FOREST_FLOAT_LILYPAD.x;
 // too) since the very first pile still sits at the zone's calm start,
 // on the ground, not on a pad -- that one keeps its own dedicated
 // constant/tolerance above.
-const FOREST_RIVER_BOAT_LILYPADS = [FOREST_FLOAT_LILYPAD, FOREST_FLOAT_LILYPAD_2, FOREST_FLOAT_LILYPAD_3];
+const FOREST_RIVER_BOAT_LILYPADS = [FOREST_FLOAT_LILYPAD, FOREST_FLOAT_LILYPAD_2, FOREST_FLOAT_LILYPAD_3, FOREST_FLOAT_LILYPAD_4];
 // periodic "notice me" shake on the leaf piles, same pattern the spring
 // wiggle bush uses for its hidden bucket -- a cosmetic jitter that
 // plays every several seconds to signal "this is a thing you can pick
@@ -23742,6 +23835,7 @@ function drawForestFloatZone(camX) {
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_2);
   drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_3);
+  drawFloatLilypad(camX, FOREST_FLOAT_LILYPAD_4);
   // CONFIRMED CHANGE ("is the last lili pad rushing river thats on land
   // just there to have tthe dragonfly. i like the dragon fly there but i
   // dont want the lilipad that is on land there"): FOREST_FLOAT_LILYPAD_END
@@ -23849,19 +23943,26 @@ function forestRiverBuildEdgeX() {
   return postSpanX1 + forestRiverSegmentsStrung * segW;
 }
 
-// a placed-but-undecked stringer's live wobble -- a real rock right
-// after it's set down that decays over about a second and a half,
-// settling into a small permanent sway that never fully disappears
-// until it's actually decked. Applied to both the visual render and
-// (while the player is standing on that exact segment) their own
-// height, so an unfinished span feels unstable underfoot, not just
-// different-looking.
+// CONFIRMED CHANGE ("the stabilizing arc... its light beige slightly
+// yellow thing... bouncing when player is building bridge, but hasnt
+// hammered yet... stick it to bridge"): this is that plank -- the tan
+// (#8a7358) placed-but-undecked stringer. It used to carry a permanent
+// live wobble (a real rock right after being set down, decaying over
+// ~1.5s into a small sway that never fully settled until actually
+// decked), applied to both its own render and the player's height while
+// standing on it. That's exactly what read as "hopping with the
+// player" -- since the player's own height synced to the same wobble,
+// the two moved together and it looked like the plank was tied to the
+// player rather than sitting fixed on the bridge. Removed the passive
+// sway entirely so a placed stringer just sits there solid, like the
+// rest of the bridge, until it's decked -- keeping only the short
+// one-off "boing" reaction below for an actual mistimed decking
+// attempt, which is a real, momentary consequence of the player's own
+// action rather than a constant idle wobble.
 function forestRiverStringerWobble(seg) {
   const placedAt = forestRiverStringerPlacedAt[seg];
   if (placedAt == null) return 0;
-  const elapsed = performance.now() - placedAt;
-  const amp = 6 * Math.exp(-elapsed / 500) + 1;
-  let wobble = Math.sin(elapsed * 0.02) * amp;
+  let wobble = 0;
   const missAt = forestRiverStringerMissBumpAt[seg];
   if (missAt != null) {
     const missElapsed = performance.now() - missAt;
@@ -24090,6 +24191,15 @@ function drawNearBankHaloLayer(ctx, layer, nb) {
 }
 
 function drawForestRiver(camX) {
+  // CONFIRMED CHANGE ("dont show the river/bridge base until you have
+  // gone to mole hole"): every bridgePiece in the game is found inside
+  // mole hole (the dig sites, the mole shop, the secret log) -- there is
+  // no way to have a single piece to build with before ever visiting it.
+  // Showing the whole river/bank/bridge-building complex before that
+  // point just previews a puzzle the player can't possibly touch yet, so
+  // it now stays hidden (same fog-of-war idea as discoveredScenes gating
+  // the map) until mole hole has actually been discovered.
+  if (!discoveredScenes.molehole) return;
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
   // the cull bound has to cover everything this function draws, not
@@ -24978,6 +25088,7 @@ function drawForestRiver(camX) {
 // since that helper is local to drawForestRiver's own closure.
 function drawForestRiverFrontRail(camX) {
   if (currentScene !== "forest") return;
+  if (!discoveredScenes.molehole) return; // matches drawForestRiver's own gate -- no rail without the bridge it belongs to
   const nb = FOREST_RIVER_NEAR_BANK_X - camX;
   const fb = FOREST_RIVER_FAR_BANK_X - camX;
   if (fb < -140 || nb > canvas.width + 140) return;
@@ -27916,9 +28027,10 @@ function updateForestScene(deltaTime) {
     playerOnFloatLilypad = landOnFloatPad(FOREST_FLOAT_LILYPAD);
     playerOnFloatLilypad2 = landOnFloatPad(FOREST_FLOAT_LILYPAD_2);
     playerOnFloatLilypad3 = landOnFloatPad(FOREST_FLOAT_LILYPAD_3);
+    playerOnFloatLilypad4 = landOnFloatPad(FOREST_FLOAT_LILYPAD_4);
     playerOnFloatLilypadEnd = landOnFloatPad(FOREST_FLOAT_LILYPAD_END);
 
-    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED * floatCurrentStrengthAt(player.x);
+    if (!playerOnFloatLilypad && !playerOnFloatLilypad2 && !playerOnFloatLilypad3 && !playerOnFloatLilypad4 && !playerOnFloatLilypadEnd) player.x += FOREST_FLOAT_DRIFT_SPEED * floatCurrentStrengthAt(player.x);
 
     const floatCenterX = player.x + player.width / 2;
     FOREST_FLOAT_OBSTACLES.forEach(ob => {
@@ -33646,14 +33758,27 @@ function updateOakScene(deltaTime) {
   updateNookRugNotice(deltaTime);
   if (!trapDoor.active && keys.spaceJustPressed &&
       isPlayerNear(nookRug.x, 0, nookRug.width / 2, 20, 10)) {
-    trapDoor.active = true;
-    trapDoor.t = 0;
     carriedBook = null; // books can't leave oak -- nowhere to actually read one elsewhere, so it's quietly set back down
-    // CONFIRMED BUG FIX (same class as the leaf-pile notice freeze): if a
-    // glow pulse is mid-flight right when the door triggers, force it to
-    // idle now rather than leaving it frozen at a nonzero alpha under the
-    // trap door sequence/opened states, which never tick it down again.
-    NOOK_RUG_NOTICE.glowT = 99999;
+    if (trapDoor.opened) {
+      // CONFIRMED BUG FIX ("the carpet re-rolls up when it's already
+      // gone" -- reported after leaving ratroom once already opened this):
+      // this check only ever excluded !trapDoor.active, never
+      // !trapDoor.opened, so standing on this same spot a second time and
+      // pressing space replayed the ENTIRE rug-roll/door-lift reveal from
+      // scratch -- rolling up a rug that, per trapDoor.opened's own draw
+      // branch above, is already gone for good. Once actually opened,
+      // this same spot just sends you back down directly, no animation
+      // needed a second time.
+      startSeasonTransition("ratroom");
+    } else {
+      trapDoor.active = true;
+      trapDoor.t = 0;
+      // CONFIRMED BUG FIX (same class as the leaf-pile notice freeze): if a
+      // glow pulse is mid-flight right when the door triggers, force it to
+      // idle now rather than leaving it frozen at a nonzero alpha under the
+      // trap door sequence/opened states, which never tick it down again.
+      NOOK_RUG_NOTICE.glowT = 99999;
+    }
   }
 
   // book pile collision — same landing pattern as regular platforms.
@@ -43354,6 +43479,16 @@ function drawHourglassFunhouseReflection(w, h, live) {
   ctx.save();
   ctx.translate(driftX, h * 0.08 - jumpLift);
 
+  // CONFIRMED CHANGE ("leaf crown doesnt show up in mirror in molehole"
+  // -- the hourglass's funhouse reflection): this redraws the player as
+  // a distorted stand-in shape (colored blob + eyes), not through the
+  // real player draw function, so it never picked up anything worn on
+  // the head -- the crown just isn't part of this shape at all right
+  // now. Same drawCrownMini used by the ant farm mini-me, since this is
+  // the same problem: a small stylized stand-in that needs its own copy
+  // of the crown rather than inheriting the real one. Sized/positioned
+  // per distortion flavor, right above wherever that flavor's own eyes
+  // land, since each one reshapes the head differently.
   if (type === "tall") {
     // stretched thin and tall -- narrow body, close-set eyes
     ctx.save();
@@ -43363,6 +43498,7 @@ function drawHourglassFunhouseReflection(w, h, live) {
     else ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
     ctx.restore();
     drawFunhouseEyes(0, -bh * 1.32 * 0.14, bw * 0.6);
+    if (crownState.worn) drawCrownMini(ctx, 0, -bh * 1.32 * 0.14 - bw * 0.16, bw * 0.24);
   } else if (type === "fishbowl") {
     // squat and bulged in the middle -- small head/feet, wide belly
     ctx.beginPath();
@@ -43374,6 +43510,7 @@ function drawHourglassFunhouseReflection(w, h, live) {
     ctx.fillStyle = bodyColor;
     ctx.fill();
     drawFunhouseEyes(0, -bh * 0.42, bw * 0.55);
+    if (crownState.worn) drawCrownMini(ctx, 0, -bh * 0.42 - bw * 0.14, bw * 0.22);
   } else {
     // wavy -- sliced into thin horizontal strips, each riding its own
     // slow sine offset, like heat shimmer off the glass itself. Genuine
@@ -43389,6 +43526,9 @@ function drawHourglassFunhouseReflection(w, h, live) {
     }
     const eyeWob = Math.sin(now * 0.0032 + 3 * 0.55) * bw * 0.06;
     drawFunhouseEyes(eyeWob, -bh * 0.18, bw);
+    // rides the same per-strip wobble as the topmost body strip, so it
+    // shimmers along with the head instead of sitting rigid above it
+    if (crownState.worn) drawCrownMini(ctx, eyeWob, -bh * 0.18 - bw * 0.16, bw * 0.28);
   }
 
   ctx.restore();
@@ -57301,6 +57441,20 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
 const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 
+// CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
+// itself is a feet-anchored ctx.scale further down in this same function
+// (see the "ducking" block below), not a change to drawPy -- it only ever
+// bends the BODY sprite's own draw calls, which happen inside that same
+// transform. The crown is drawn later by an entirely separate function
+// with no access to that transform, so it never inherited any of the
+// squash and stayed floating at full standing height while the body
+// crouched underneath it. Folded in here as a plain head-height drop
+// instead (matching how a feet-anchored scale to duckSquash would move
+// something sitting at head height): approximates the same visual amount
+// without needing to thread the crown draw through the body's own
+// transform stack.
+const duckHeadDrop = (typeof playerDuckAmount !== "undefined" ? playerDuckAmount : 0) * player.height * 0.4;
+
 // the single shared head-anchor offset for this frame -- see
 // playerVisualDX/DY's own declaration up near the crown state for why
 // this exists. Captures every term that just went into px/drawPy above
@@ -57309,7 +57463,7 @@ const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 // follow all of them by reading these two numbers instead of needing
 // its own copy of this exact same math kept in sync by hand.
 playerVisualDX = pileWobble.x;
-playerVisualDY = drawPy - (gy + cameraY - player.height - player.y);
+playerVisualDY = drawPy - (gy + cameraY - player.height - player.y) + duckHeadDrop;
 
 // CONFIRMED BUG FIX ("shadow in water shouldnt be there while
 // swimming"): both of these are a GROUND shadow/contact tint, pinned to
