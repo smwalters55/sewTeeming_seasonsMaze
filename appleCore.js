@@ -17914,7 +17914,13 @@ function updateForestFungusClimb(deltaTime) {
    front door ends up on top -- plus one specifically grumpy resident
    who shoos onlookers away from their window.
    ====================================================== */
-const TOPSYTURVY_WIDTH = 900;
+// CONFIRMED CHANGE ("no lets put it more to the right and open up the
+// world a little more" -> "like to the right of the tallest tree"):
+// widened so there's real open room past the tall tree/cart cluster for
+// the well to sit in (see TOPSY_WELL_X's own comment) without cramming
+// against it -- was 900, which the tall tree (x800) and cart (x780,
+// +/-85 wander) already nearly filled edge to edge.
+const TOPSYTURVY_WIDTH = 1150;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
 
@@ -18021,10 +18027,14 @@ const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 // stay normal, only loose/contained things break gravity" rule the
 // cart itself established (per the earlier scoping talk about where an
 // upside-down well would even sit) -- resolves the "where in the sky
-// would it hang" question by just not putting it in the sky. Placed in
-// the gap between the first and second tree, clear of the pig's own
-// wander range (homeX 520 +/- 60).
-const TOPSY_WELL_X = 400;
+// would it hang" question by just not putting it in the sky. CONFIRMED
+// CHANGE ("no lets put it more to the right and open up the world a
+// little more" -> "like to the right of the tallest tree"): moved from
+// the first-pass spot between tree 1 and 2 out past the tall tree
+// (x800) and the cart's own wander range (780 +/- 85, so clear past
+// 865) into the newly widened room at the far end of the land (see
+// TOPSYTURVY_WIDTH's own comment).
+const TOPSY_WELL_X = 990;
 const TOPSY_CART_X = 780;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
