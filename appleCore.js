@@ -18109,6 +18109,19 @@ function drawTopsyTurvyTree(camX, t) {
 // tipped skyward, waddling back and forth on its patrol range. Same
 // already-established flip trick (translate to ground contact, then
 // scale(1,-1)) as the rest of this scene.
+// CONFIRMED BUG FIX ("well right now the ears are right side up like...
+// they arent onthe ground"): the head's own features weren't actually
+// re-ordered for the flip -- ears were drawn at the highest point on the
+// head (farthest from the ground), same as they'd sit on a normal
+// standing pig, so they read as right-side-up even though the whole
+// sprite is inside the flip transform. Confirmed via direct follow-up
+// ("yes fully flipped version now") rather than the alternative
+// (keeping the head upright/unflipped) -- real anatomy, rotated 180
+// degrees: whatever was highest on a right-side-up pig (ear tips) is now
+// LOWEST/closest to the ground, and whatever was lowest (chin/snout) is
+// now highest. Ears moved down near the torso/ground, snout+nostrils
+// moved up and given a slight upward tilt (a flipped chin now pointing
+// skyward), eye nudged to sit between the two.
 function drawTopsyTurvyPig(camX) {
   const sx = topsyTurvyPig.x - camX, sy = gy;
   const facingLeft = topsyTurvyPig.dir < 0;
@@ -18134,6 +18147,20 @@ function drawTopsyTurvyPig(camX) {
     ctx.fill();
   });
 
+  // CONFIRMED CHANGE ("lets try the pots and pans tower wobbling with on
+  // the pig feet"): a small precarious stack of pots/pans balanced across
+  // the trotters, teetering side to side as it waddles. An explicit,
+  // scene-scoped exception to the game's usual "no man-made stuff"
+  // rule -- Topsy-Turvy Land is pulled directly from the real Faraway
+  // Tree books rather than invented, and the books are full of exactly
+  // this kind of everyday-object gag, so this doesn't set a precedent
+  // for anywhere else in the game (see the project doc's own note on
+  // this). Sway amplitude increases toward the top of the stack (a real
+  // top-heavy pile wobbles more up top than at its base), and each pot's
+  // wobble is phase-offset from the one below so it reads as one
+  // continuous teeter rather than everything swaying in lockstep.
+  drawTopsyTurvyPigPots();
+
   // curly tail near the ground, at the back of the body
   ctx.strokeStyle = "#e8a9bb";
   ctx.lineWidth = 2;
@@ -18147,36 +18174,83 @@ function drawTopsyTurvyPig(camX) {
   ctx.ellipse(0, 9, 15, 9, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // head + snout, tipped up toward the ground-facing side
+  // head -- round base shape is orientation-agnostic, only its attached
+  // features (ears/eye/snout below) actually carry the flipped anatomy
   ctx.fillStyle = "#eeb4c4";
   ctx.beginPath();
   ctx.arc(-15, 8, 8, 0, Math.PI * 2);
   ctx.fill();
+
+  // ears -- now the LOWEST head feature, drooping down near the torso/
+  // ground instead of sticking up in the air
   ctx.fillStyle = "#e191a8";
   ctx.beginPath();
-  ctx.ellipse(-21, 8, 4, 3.2, 0, 0, Math.PI * 2);
+  ctx.moveTo(-11, 5); ctx.lineTo(-9, -1); ctx.lineTo(-15, 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-19, 5); ctx.lineTo(-22, 0); ctx.lineTo(-16, 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // snout + nostrils -- now the HIGHEST head feature, tipped upward (a
+  // flipped chin pointing skyward instead of down toward the ground)
+  ctx.fillStyle = "#e191a8";
+  ctx.beginPath();
+  ctx.ellipse(-21, 13, 4, 3.2, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#7a3f4d";
   ctx.beginPath();
-  ctx.ellipse(-22.5, 6.5, 0.9, 0.7, 0, 0, Math.PI * 2);
-  ctx.ellipse(-22.5, 9.5, 0.9, 0.7, 0, 0, Math.PI * 2);
+  ctx.ellipse(-22.5, 11.5, 0.9, 0.7, 0, 0, Math.PI * 2);
+  ctx.ellipse(-22.5, 14.5, 0.9, 0.7, 0, 0, Math.PI * 2);
   ctx.fill();
-  // ears
-  ctx.fillStyle = "#e191a8";
-  ctx.beginPath();
-  ctx.moveTo(-11, 14); ctx.lineTo(-9, 20); ctx.lineTo(-15, 16);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(-19, 14); ctx.lineTo(-22, 19); ctx.lineTo(-16, 16);
-  ctx.closePath();
-  ctx.fill();
-  // eye
+
+  // eye -- between the two, on the upper/snout-facing part of the head
   ctx.fillStyle = "#3a2a2a";
   ctx.beginPath();
-  ctx.arc(-13, 11, 1.3, 0, Math.PI * 2);
+  ctx.arc(-14, 10, 1.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+function drawTopsyTurvyPigPots() {
+  const wobbleT = performance.now() * 0.0035;
+  const pots = [
+    { w: 15, h: 6.5, color: "#8a8f94", rim: "#c7ccd1" },
+    { w: 11.5, h: 5.5, color: "#6b7176", rim: "#a3a9ae" },
+    { w: 8.5, h: 4.5, color: "#9aa0a5", rim: "#c7ccd1" },
+    { w: 6, h: 3.5, color: "#5a5f63", rim: "#8f9599" }
+  ];
+  let stackY = 27; // starting just above the trotters
+  pots.forEach((pot, i) => {
+    const amp = 1.6 + i * 1.5; // more sway higher up the precarious stack
+    const tilt = Math.sin(wobbleT + i * 0.9) * amp;
+    const cy = stackY + pot.h;
+    ctx.save();
+    ctx.translate(tilt * 0.4, cy);
+    ctx.rotate(tilt * 0.03);
+    ctx.fillStyle = pot.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, pot.w, pot.h, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,20,20,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // rim highlight arc + two small side handles so it reads as
+    // pots/pans rather than plain grey ovals
+    ctx.strokeStyle = pot.rim;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(0, -pot.h * 0.35, pot.w * 0.7, pot.h * 0.45, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.fillStyle = pot.color;
+    ctx.beginPath();
+    ctx.ellipse(-pot.w - 1.5, 0, 2, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(pot.w + 1.5, 0, 2, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    stackY += pot.h * 1.6;
+  });
 }
 
 function drawTopsyTurvyReturnPortal(camX) {
