@@ -18596,29 +18596,56 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.strokeStyle = "#7a5f3a";
   ctx.lineWidth = 2;
   ctx.strokeRect(sx - wallW / 2, y(wallTop), wallW, wallH);
-  // door -- "the front door ends up on top" per the book, so it sits
-  // right at the very top edge of the walls. CONFIRMED CHANGE: once the
-  // chef sequence has ever fired (doorOpen or later), the door stays
-  // open for good -- a simple, permanent "someone's home now" signal
-  // rather than swinging shut again after the pig's one-time trip in.
+  // door -- "the front door ends up on top" per the book, so it lives
+  // in the wall band up near the roof, same "topmost part of the house"
+  // area the ladder climbs to. CONFIRMED CHANGE ("put a door on the
+  // house"): the old version anchored itself off wallTop and ended up
+  // poking out ABOVE the wall entirely, into blank sky -- essentially
+  // invisible against the background, which is exactly why it needed
+  // pointing out. Re-anchored off wallBottom instead (the same
+  // reference point the window already correctly used) so it actually
+  // sits inside the wall rectangle, and rebuilt bigger and more
+  // door-shaped besides: proper human-sized proportions (not a square),
+  // a real frame, a two-panel face, and a doorknob.
+  // CONFIRMED CHANGE: once the chef sequence has ever fired (doorOpen or
+  // later), the door stays open for good -- a simple, permanent
+  // "someone's home now" signal rather than swinging shut again after
+  // the pig's one-time trip in.
   const doorOpen = h.grumpy && topsyChef.sequencePhase !== "none";
-  const doorW = 18 * s, doorH = 18 * s, doorX = sx - doorW / 2, doorY = y(wallTop + 18 * s);
+  const doorW = 22 * s, doorH = 32 * s, doorX = sx - doorW / 2, doorY = y(wallBottom + doorH);
+  // frame, always visible whether open or shut
+  ctx.fillStyle = "#4a3620";
+  ctx.fillRect(doorX - 2.5 * s, doorY - 2.5 * s, doorW + 5 * s, doorH + 2.5 * s);
   if (doorOpen) {
-    // door frame stays put, but the door itself swings inward (drawn
-    // as a thin foreshortened panel) revealing a dark doorway behind it
-    ctx.fillStyle = "#241a10";
+    // dark open doorway behind the frame
+    ctx.fillStyle = "#20160c";
     ctx.fillRect(doorX, doorY, doorW, doorH);
-    ctx.fillStyle = "#4a2e1a";
+    // the door itself, swung inward -- drawn foreshortened along the
+    // frame's near edge so it visibly reads as "open", not just gone
+    ctx.fillStyle = "#6b4426";
     ctx.beginPath();
     ctx.moveTo(doorX, doorY);
-    ctx.lineTo(doorX + doorW * 0.35, doorY + 1 * s);
-    ctx.lineTo(doorX + doorW * 0.35, doorY + doorH - 1 * s);
+    ctx.lineTo(doorX + doorW * 0.3, doorY + 1.5 * s);
+    ctx.lineTo(doorX + doorW * 0.3, doorY + doorH - 1.5 * s);
     ctx.lineTo(doorX, doorY + doorH);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = "#3a2814";
+    ctx.lineWidth = 1;
+    ctx.stroke();
   } else {
-    ctx.fillStyle = "#5c3a24";
+    // closed door face: two raised panels + a doorknob
+    ctx.fillStyle = "#6b4426";
     ctx.fillRect(doorX, doorY, doorW, doorH);
+    ctx.strokeStyle = "#3a2814";
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(doorX, doorY, doorW, doorH);
+    ctx.strokeRect(doorX + 3 * s, doorY + 3 * s, doorW - 6 * s, doorH * 0.4);
+    ctx.strokeRect(doorX + 3 * s, doorY + doorH * 0.52, doorW - 6 * s, doorH * 0.4);
+    ctx.fillStyle = "#e0c060";
+    ctx.beginPath();
+    ctx.arc(doorX + doorW - 5 * s, doorY + doorH * 0.55, 1.6 * s, 0, Math.PI * 2);
+    ctx.fill();
   }
   // window, off to one side
   const winX = sx + 16 * s, winY = y(wallBottom + 22 * s);
