@@ -214,6 +214,33 @@ window.addEventListener("keydown", e => {
     seasonTransition.phase = "idle";
     updateMapUI();
   }
+  // DEBUG CHEAT ("debug spawn me at the bottom of the tree"): Shift+F
+  // drops the player right at the base of the fungus climb (forest
+  // scene, FOREST_FUNGUS_TREE_X, level 0), for quickly testing the
+  // climb itself and the new Topsy-Turvy Land at its top without
+  // floating the whole rushing river or bouncing up from scratch every
+  // time. Same full state-reset shape as the other debug spawns above,
+  // including auto-completing the river bridge -- the fungus tree sits
+  // past it, same reasoning as the Shift+P rock-ledge spawn just above.
+  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.repeat) {
+    currentScene = "forest";
+    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+    player.x = FOREST_FUNGUS_TREE_X;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    forestFungusClimb.level = 0;
+    forestFungusClimb.streak = 0;
+    cameraX = Math.max(0, FOREST_FUNGUS_TREE_X - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
