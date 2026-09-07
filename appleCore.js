@@ -17903,6 +17903,45 @@ function drawTopsyTurvyHouse(camX, h) {
 // the very top. Same "already-inverted local coordinates" approach as
 // the house/folk above -- localY=0 touches the ground, larger localY is
 // higher up the screen.
+// a single thin, forking root strand, drawn in local (already flipped)
+// coordinates where +y is "up/skyward" -- draws a wobbly segmented stem
+// from (x,y) heading roughly along `angle` for `len`, then recursively
+// forks off 1-2 thinner, shorter child strands partway along itself,
+// tapering the line width down with each fork. This is what makes the
+// whole root mass read as dendritic/branching rather than a few single
+// thick lines -- see the tree's own root call site below for why this
+// replaced drawBuffressRoot for this particular tree.
+function drawDendriticRootStrand(x, y, angle, len, depth, seed, lineWidth) {
+  if (len < 5 || lineWidth < 0.4) return;
+  const segs = 5;
+  ctx.strokeStyle = "#3c2c1a";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  let cx = x, cy = y, cAngle = angle;
+  const stemPts = [{ x: cx, y: cy }];
+  for (let i = 1; i <= segs; i++) {
+    cAngle += (pseudoRandom(seed + i * 3.7) - 0.5) * 0.5;
+    cx += Math.cos(cAngle) * (len / segs);
+    cy += Math.sin(cAngle) * (len / segs);
+    ctx.lineTo(cx, cy);
+    stemPts.push({ x: cx, y: cy });
+  }
+  ctx.stroke();
+
+  if (depth > 0) {
+    const forks = pseudoRandom(seed + 90) < 0.45 ? 1 : 2;
+    for (let f = 0; f < forks; f++) {
+      const along = 0.35 + pseudoRandom(seed + 100 + f * 11) * 0.4; // 0.35-0.75 along the stem
+      const p = stemPts[Math.min(segs, Math.round(along * segs))];
+      const spread = 0.55 + pseudoRandom(seed + 110 + f * 13) * 0.5;
+      const childAngle = angle + (f === 0 ? spread : -spread) * (pseudoRandom(seed + 120 + f * 17) < 0.5 ? 1 : 0.6);
+      const childLen = len * (0.45 + pseudoRandom(seed + 130 + f * 19) * 0.2);
+      drawDendriticRootStrand(p.x, p.y, childAngle, childLen, depth - 1, seed + 977 * (f + 1) + 31, lineWidth * 0.55);
+    }
+  }
+}
+
 function drawTopsyTurvyTree(camX, t) {
   const sx = t.x - camX, sy = gy;
   const s = t.scale;
@@ -17943,22 +17982,27 @@ function drawTopsyTurvyTree(camX, t) {
   ctx.lineTo(sx, y(64 * s));
   ctx.stroke();
 
-  // roots -- gnarled buttress-style roots borrowed from drawBuffressRoot
-  // (the same reusable root renderer used for the forest's own buttress
-  // trees: wobbly tapered centerline, bark-groove lines, rim-light, seeded
-  // knot bumps), drawn inside a flipped+scaled transform so the root's own
-  // "trunk-emergence" end lands exactly at this tree's real trunk top and
-  // its "ground-contact" end becomes the airy splayed tip instead, ~55*s
-  // higher up the screen. Four roots at varied fractional angles/reach and
-  // distinct seeds per tree, so they don't read as mirrored duplicates.
+  // roots -- per direct follow-up ("make roots a lot more of them, a lot
+  // thinner, more dendtritic") this replaced the earlier 4-call
+  // drawBuffressRoot version (a few thick tapered buttress roots) with
+  // MANY thin forking strands via drawDendriticRootStrand above -- reads
+  // as a real spread of fine branching roots rather than a handful of
+  // heavy ones. Same flipped+scaled transform as before so the roots
+  // still emerge from the tree's real trunk top and splay skyward from
+  // there. 9 primary strands fanned across roughly a 100 degree spread
+  // centered straight up, each forking 2 more times as it grows, varied
+  // length/seed per strand (and per tree, via t.x) so the whole mass
+  // reads organic rather than symmetric/repeated.
   const trunkTopY = y(64 * s);
   ctx.save();
-  ctx.translate(sx, trunkTopY - 50 * s);
+  ctx.translate(sx, trunkTopY);
   ctx.scale(s, -s);
-  drawBuffressRoot(0, 0, -1.3, 62, 340 + t.x);
-  drawBuffressRoot(0, 0, -0.6, 48, 890 + t.x);
-  drawBuffressRoot(0, 0, 0.6, 48, 1520 + t.x);
-  drawBuffressRoot(0, 0, 1.3, 62, 2210 + t.x);
+  const ROOT_DIRS = [-1.4, -1.05, -0.7, -0.35, 0, 0.35, 0.7, 1.05, 1.4];
+  ROOT_DIRS.forEach((dir, i) => {
+    const angle = Math.PI / 2 - dir * 0.62; // fan around straight up
+    const len = 42 + pseudoRandom(t.x + i * 41 + 7) * 20;
+    drawDendriticRootStrand(0, 0, angle, len, 2, t.x + i * 613 + 190, 2.4);
+  });
   ctx.restore();
 }
 
