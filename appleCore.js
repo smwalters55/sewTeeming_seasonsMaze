@@ -18751,7 +18751,12 @@ function drawTopsyTurvyCart(camX) {
     const bob = Math.max(0, Math.sin(cyclePhase)) * 42 * a.ampMul;
     const settleY = topsyTurvyCartBedSettleY(a.dx);
     const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 4;
-    const ay = settleY - 4 - bob;
+    // CONFIRMED BUG FIX ("tomatoes are like sticking out of the bottom
+    // of the cart"): a resting tomato's bottom edge (radius 8.5) was
+    // landing a few px PAST the basin floor line, poking out under the
+    // drawn bed instead of stopping inside it -- offset by the full
+    // radius (plus a hair) so it never crosses the floor line at rest.
+    const ay = settleY - 9 - bob;
     drawTomatoShape(ctx, ax, ay, 8.5, Math.sin(cyclePhase * 0.7 + a.phase) * 0.3);
   });
 
