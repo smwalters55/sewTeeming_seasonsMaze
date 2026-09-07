@@ -481,6 +481,16 @@ const ITEM_ICONS = {
 // which is just a count — tracked separately from the inventory dict
 let bucketDropCount = 0;
 let bucketFilled = false;
+// CONFIRMED CHANGE ("i like the idea of it spilling a little with
+// walking"): a second, continuous fill level -- ONLY ever touched by
+// the topsy-turvy well/windseed watering mechanic (see
+// updateTopsyWellAndSeedPlot below). The cloud-drip bucket fill
+// elsewhere in the game stays a clean full/empty boolean via
+// bucketFilled itself; this just lets THAT SAME bucket visually drain
+// as you walk after dipping it in the well, without touching the drip
+// mechanic's own logic at all. Defaults to 1 so every other bucketFilled
+// path (which never touches this) keeps reading as a full bucket.
+let bucketWaterAmount = 1;
 const BUCKET_DROPS_NEEDED = 3;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
@@ -6439,7 +6449,7 @@ function drawBucketShape(ctx, x, y, size, rotation) {
   ctx.translate(x, y);
   ctx.rotate(rotation);
 
-  const fillRatio = bucketFilled ? 1 : Math.min(bucketDropCount / BUCKET_DROPS_NEEDED, 1);
+  const fillRatio = bucketFilled ? bucketWaterAmount : Math.min(bucketDropCount / BUCKET_DROPS_NEEDED, 1);
 
   const bucketPath = () => {
     ctx.beginPath();
@@ -18035,6 +18045,51 @@ const topsyTurvyPig = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
 // 865) into the newly widened room at the far end of the land (see
 // TOPSYTURVY_WIDTH's own comment).
 const TOPSY_WELL_X = 990;
+
+// CONFIRMED CHANGE ("well so we will already have a bucket. so i am
+// thinking potentially an animation where you attach the bucket to the
+// rope, maybe the rope is wiggling a bit for attention... i like the
+// idea of it spilling a little with walking. but also need enough
+// water to fill the seed hole with, maybe you have to do 2 or 3 rounds
+// of water carrying and emptying onto seed to grow it"): the well's
+// real interaction, first pass. Reuses the SAME bucket item/heldItem
+// the rest of the game already has (no new item) -- pressing space at
+// the well while holding an empty bucket starts a short attach/dip/
+// draw-up animation, then bucketFilled=true same as the cloud-drip
+// fill path. Walking it over to the seed plot spills a little of
+// bucketWaterAmount per pixel moved (see updateTopsyWellAndSeedPlot),
+// so dawdling on the way risks arriving with an empty bucket. Multiple
+// full trips (TOPSY_SEEDPLOT_WATER_ROUNDS) are needed to fully water
+// the planted seed, same "several small rounds, not one big dump"
+// shape as the pots/cart's own soft-cap boost mechanic.
+const topsyWell = {
+  dipping: false,
+  dipT: 0, // ms since the attach/dip/draw-up animation started
+  lastPlayerX: null // tracked each tick while carrying, purely to measure walked DISTANCE for the spill (not time) -- see the "spilling with walking" quote above
+};
+const TOPSY_WELL_DIP_DURATION = 1000; // ms — attach, dip, draw back up
+const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px walked while carrying
+
+// the actual planting spot -- a short, real walk from the well (not
+// right next to it), so the carry/spill mechanic means something.
+// Mirrors the forest peanut digSite's own dig->plant->water shape (see
+// that block's own comment), but as its own fully separate object so
+// nothing here can cross-wire with that unrelated quest.
+const TOPSY_SEEDPLOT_X = 1090;
+const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
+const topsyWindSeedPlot = {
+  dug: false,
+  digAnimT: 9999,
+  planted: false,
+  plantAnimT: 9999,
+  waterRounds: 0,
+  grown: false,
+  growProgress: 0 // 0-1, first-pass sprout only -- the real "grows into an upside-down wind tree" animation is its own separate follow-up (per the earlier windSeed/well scoping talk), not built yet
+};
+const TOPSY_SEEDPLOT_DIG_ANIM_DURATION = 1200;
+const TOPSY_SEEDPLOT_PLANT_FALL_DURATION = 600;
+const TOPSY_SEEDPLOT_GROW_DURATION = 2200;
+
 const TOPSY_CART_X = 780;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
@@ -18092,6 +18147,95 @@ const TOPSY_CART_BOOST_DECAY = 0.26; // exponential decay rate per second
 let topsyTurvyGrumpyDialogueShown = false;
 let topsyTurvyGrumpyLingerT = 0;
 
+// CONFIRMED CHANGE (see topsyWell/topsyWindSeedPlot's own comment for
+// the full quote this implements): the well's dip/fill animation, the
+// walk-and-spill carry, and the seed plot's dig -> plant -> water(x3)
+// -> first-pass sprout. All gated on keys.spaceJustPressed (a genuinely
+// fresh press, not held-over from a prior action) plus isPlayerNear,
+// same pattern every other single-button interaction in this game uses.
+function updateTopsyWellAndSeedPlot(deltaTime) {
+  const dt = deltaTime * 1000;
+
+  // DIP -- start the attach/rope/draw-up animation. Requires an EMPTY
+  // bucket in hand so re-pressing near the well with a full one doesn't
+  // just restart the animation and reset the spill clock for no reason.
+  if (!topsyWell.dipping && heldItem === "bucket" && !bucketFilled &&
+      keys.spaceJustPressed && isPlayerNear(TOPSY_WELL_X, 0, 30, 15, 15)) {
+    topsyWell.dipping = true;
+    topsyWell.dipT = 0;
+  }
+  if (topsyWell.dipping) {
+    topsyWell.dipT += dt;
+    if (topsyWell.dipT >= TOPSY_WELL_DIP_DURATION) {
+      topsyWell.dipping = false;
+      bucketFilled = true;
+      bucketWaterAmount = 1;
+      updateInventoryUI();
+    }
+  }
+
+  // SPILL -- per Sam's own "spilling a little with walking": measured by
+  // actual horizontal DISTANCE moved, not elapsed time, so standing still
+  // (reading a sign, deciding where to go) never costs you anything.
+  // Scoped strictly to topsy-turvy so the unrelated forest peanut-vine
+  // bucket fill is never touched by this at all.
+  if (heldItem === "bucket" && bucketFilled) {
+    if (topsyWell.lastPlayerX !== null) {
+      const movedPx = Math.abs(player.x - topsyWell.lastPlayerX);
+      if (movedPx > 0) {
+        bucketWaterAmount = Math.max(0, bucketWaterAmount - movedPx * TOPSY_WELL_SPILL_PER_PX);
+        if (bucketWaterAmount <= 0) bucketFilled = false; // spilled dry -- back to the well you go
+        updateInventoryUI();
+      }
+    }
+    topsyWell.lastPlayerX = player.x;
+  } else {
+    topsyWell.lastPlayerX = null; // not carrying -- nothing to measure against next time it starts
+  }
+
+  // SEED PLOT -- dig (shovel) -> plant (windSeed) -> water x3 (bucket,
+  // must still genuinely have water in it -- an empty/spilled bucket
+  // doesn't count, matching the forest dig site's own "requires a
+  // genuinely FULL bucket" rule) -> first-pass sprout.
+  if (topsyWindSeedPlot.digAnimT < TOPSY_SEEDPLOT_DIG_ANIM_DURATION) topsyWindSeedPlot.digAnimT += dt;
+  if (topsyWindSeedPlot.plantAnimT < TOPSY_SEEDPLOT_PLANT_FALL_DURATION) topsyWindSeedPlot.plantAnimT += dt;
+
+  if (!topsyWindSeedPlot.dug) {
+    if (heldItem === "shovel" && keys.spaceJustPressed && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 30, 10, 10)) {
+      topsyWindSeedPlot.dug = true;
+      topsyWindSeedPlot.digAnimT = 0;
+    }
+    return;
+  }
+
+  if (!topsyWindSeedPlot.planted) {
+    if (heldItem === "windSeed" && inventory.windSeed > 0 && keys.spaceJustPressed && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 30, 10, 10)) {
+      topsyWindSeedPlot.planted = true;
+      topsyWindSeedPlot.plantAnimT = 0;
+      inventory.windSeed--;
+      if (inventory.windSeed <= 0) { delete inventory.windSeed; heldItem = null; }
+      updateInventoryUI();
+    }
+    return;
+  }
+
+  if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
+    if (heldItem === "bucket" && bucketFilled && keys.spaceJustPressed && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 30, 10, 10)) {
+      topsyWindSeedPlot.waterRounds++;
+      bucketFilled = false;
+      bucketWaterAmount = 1; // reset for the NEXT fill, not this one
+      bucketDropCount = 0;
+      updateInventoryUI();
+    }
+    return;
+  }
+
+  if (!topsyWindSeedPlot.grown) {
+    topsyWindSeedPlot.growProgress = Math.min(topsyWindSeedPlot.growProgress + dt / TOPSY_SEEDPLOT_GROW_DURATION, 1);
+    if (topsyWindSeedPlot.growProgress >= 1) topsyWindSeedPlot.grown = true;
+  }
+}
+
 function updateTopsyTurvyScene(deltaTime) {
   // slow hand-walk wander, same shape as any other simple ambient patrol
   topsyTurvyPig.x += topsyTurvyPig.dir * topsyTurvyPig.speed * deltaTime;
@@ -18114,6 +18258,8 @@ function updateTopsyTurvyScene(deltaTime) {
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
     startSeasonTransition("forest");
   }
+
+  updateTopsyWellAndSeedPlot(deltaTime);
 
   // CONFIRMED BUG FIX ("cameray needs to follow uplayer upwards like
   // when jumping on supare tall tree roots"): topsy-turvy never tracked
@@ -19009,21 +19155,45 @@ function drawTopsyTurvyWell(camX) {
   ctx.lineTo(sx - wallHalfW - 2, postTopY + 4 * S);
   ctx.stroke();
 
-  const bucketTopY = wallTopY - 7 * S;
+  // CONFIRMED CHANGE ("an animation where you attach the bucket to the
+  // rope, maybe the rope is wiggling a bit for attention so player gets
+  // the hint"): the rope+bucket is no longer a static decoration --
+  // while topsyWell.dipping is running (see updateTopsyWellAndSeedPlot)
+  // it genuinely lowers into the water and draws back up, and any time
+  // the player is standing right here holding an empty bucket (the
+  // exact moment they'd want the hint), the idle sway noticeably picks
+  // up to catch the eye. Otherwise it's just a small constant idle
+  // sway, matching this game's usual "everything has a little life in
+  // it" texture rather than sitting perfectly still.
+  const nearHintingForDip = !topsyWell.dipping && heldItem === "bucket" && !bucketFilled &&
+    Math.abs((player.x + player.width / 2) - TOPSY_WELL_X) < 60;
+  const swayAmp = nearHintingForDip ? 6 : 1.4;
+  const swaySpeed = nearHintingForDip ? 0.006 : 0.0015;
+  const ropeSwayX = Math.sin(performance.now() * swaySpeed) * swayAmp;
+
+  let dipProgress = 0;
+  if (topsyWell.dipping) {
+    dipProgress = Math.sin(Math.min(1, topsyWell.dipT / TOPSY_WELL_DIP_DURATION) * Math.PI);
+  }
+  const restBucketTopY = wallTopY - 7 * S;
+  const dippedBucketTopY = wallTopY + 2 * S;
+  const bucketTopY = restBucketTopY + (dippedBucketTopY - restBucketTopY) * dipProgress;
+  const bucketCx = sx + ropeSwayX * (1 - dipProgress); // sway settles out as it dips into the water, not swinging while submerged
+
   ctx.strokeStyle = "#8a7a5a";
   ctx.lineWidth = 1.6;
   ctx.beginPath();
   ctx.moveTo(sx, postTopY);
-  ctx.lineTo(sx, bucketTopY);
+  ctx.quadraticCurveTo(sx + ropeSwayX * 0.6, (postTopY + bucketTopY) / 2, bucketCx, bucketTopY);
   ctx.stroke();
   // rounder cute bucket -- a soft trapezoid body plus a metal band and
   // a little swing handle, instead of the old plain flat-sided pail
   ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
-  ctx.moveTo(sx - 8 * S, bucketTopY);
-  ctx.quadraticCurveTo(sx, bucketTopY - 2 * S, sx + 8 * S, bucketTopY);
-  ctx.lineTo(sx + 6 * S, bucketTopY + 11 * S);
-  ctx.quadraticCurveTo(sx, bucketTopY + 15 * S, sx - 6 * S, bucketTopY + 11 * S);
+  ctx.moveTo(bucketCx - 8 * S, bucketTopY);
+  ctx.quadraticCurveTo(bucketCx, bucketTopY - 2 * S, bucketCx + 8 * S, bucketTopY);
+  ctx.lineTo(bucketCx + 6 * S, bucketTopY + 11 * S);
+  ctx.quadraticCurveTo(bucketCx, bucketTopY + 15 * S, bucketCx - 6 * S, bucketTopY + 11 * S);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#3a2416";
@@ -19032,15 +19202,132 @@ function drawTopsyTurvyWell(camX) {
   ctx.strokeStyle = "rgba(210,195,160,0.6)";
   ctx.lineWidth = 1.4 * S;
   ctx.beginPath();
-  ctx.moveTo(sx - 7.3 * S, bucketTopY + 6 * S);
-  ctx.lineTo(sx + 7.3 * S, bucketTopY + 6 * S);
+  ctx.moveTo(bucketCx - 7.3 * S, bucketTopY + 6 * S);
+  ctx.lineTo(bucketCx + 7.3 * S, bucketTopY + 6 * S);
   ctx.stroke();
   ctx.strokeStyle = "#3a2416";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.moveTo(sx - 6 * S, bucketTopY + 1);
-  ctx.quadraticCurveTo(sx, bucketTopY - 6 * S, sx + 6 * S, bucketTopY + 1);
+  ctx.moveTo(bucketCx - 6 * S, bucketTopY + 1);
+  ctx.quadraticCurveTo(bucketCx, bucketTopY - 6 * S, bucketCx + 6 * S, bucketTopY + 1);
   ctx.stroke();
+  // a little splash ring right at the peak of the dip, so the moment it
+  // actually touches water reads clearly
+  if (topsyWell.dipping && dipProgress > 0.85) {
+    const splashP = (dipProgress - 0.85) / 0.15;
+    ctx.strokeStyle = `rgba(210,230,235,${0.5 * (1 - splashP)})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(bucketCx, wallTopY + 2 * S, 6 * S + splashP * 10 * S, 2 * S + splashP * 3 * S, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// CONFIRMED CHANGE (see topsyWindSeedPlot's own comment): dig -> plant
+// -> water(x3) -> first-pass sprout, drawn in the same "turned earth
+// visible before digging, real pit once dug" style the forest peanut
+// digSite already uses (see drawDigSitePlantVine), just as its own
+// separate object so nothing here touches that unrelated quest.
+function drawTopsyWindSeedPlot(camX) {
+  const dx = TOPSY_SEEDPLOT_X - camX;
+
+  // turned-earth patch, visible even before digging -- same "already
+  // sitting there, waiting to be noticed" idea used elsewhere
+  const dirtClumps = [
+    { dx: -13, dy: 1, r: 4.5 }, { dx: -7, dy: -2, r: 3.5 }, { dx: -2, dy: 2, r: 4.5 },
+    { dx: 4, dy: -1, r: 3.5 }, { dx: 9, dy: 2, r: 4 }, { dx: -10, dy: 3, r: 3 }, { dx: 6, dy: 3, r: 3 }
+  ];
+  dirtClumps.forEach((c, i) => {
+    ctx.fillStyle = i % 2 === 0 ? "rgba(100,72,44,0.75)" : "rgba(80,56,34,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(dx + c.dx, gy + 2 + c.dy, c.r, c.r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  if (!topsyWindSeedPlot.dug) {
+    ctx.fillStyle = "rgba(50,36,22,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(dx, gy + 2, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  const pitDepth = gy + 10;
+  const pit = ctx.createRadialGradient(dx, gy + 6, 1, dx, gy + 6, 22);
+  pit.addColorStop(0, "rgba(15,11,7,0.97)");
+  pit.addColorStop(0.6, "rgba(30,24,15,0.9)");
+  pit.addColorStop(1, "rgba(60,50,30,0)");
+  ctx.fillStyle = pit;
+  ctx.beginPath();
+  ctx.ellipse(dx, gy + 6, 17, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (topsyWindSeedPlot.digAnimT < TOPSY_SEEDPLOT_DIG_ANIM_DURATION) {
+    const p = topsyWindSeedPlot.digAnimT / TOPSY_SEEDPLOT_DIG_ANIM_DURATION;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const dist = p * 24;
+      ctx.fillStyle = `rgba(120,88,55,${1 - p})`;
+      ctx.beginPath();
+      ctx.arc(dx + Math.cos(angle) * dist, gy - p * 16 + Math.sin(angle) * dist * 0.4, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // water pooled after each successful watering round -- fades back down
+  // toward the next round's own dirt look rather than staying a
+  // permanent puddle, so 3 distinct pours each read as their own moment
+  if (topsyWindSeedPlot.planted && topsyWindSeedPlot.waterRounds > 0 && !topsyWindSeedPlot.grown) {
+    ctx.fillStyle = "rgba(90,150,210,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(dx, gy + 4, 14, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // the seed itself -- falls gently into the pit once planted, then
+  // stays put (as a tiny visible lump) until watering starts the sprout
+  if (topsyWindSeedPlot.planted && !topsyWindSeedPlot.grown) {
+    const fallP = Math.min(topsyWindSeedPlot.plantAnimT / TOPSY_SEEDPLOT_PLANT_FALL_DURATION, 1);
+    const startY = gy - 22;
+    const seedY = startY + (pitDepth - startY) * fallP;
+    drawCollectible(ctx, dx, seedY, 8, fallP * 0.5, "windSeed");
+  }
+
+  // progress hint while watering -- little droplet marks for rounds
+  // already done, so "2 or 3 rounds" reads as visible progress, not a
+  // hidden counter
+  if (topsyWindSeedPlot.planted && !topsyWindSeedPlot.grown && topsyWindSeedPlot.waterRounds > 0) {
+    for (let i = 0; i < topsyWindSeedPlot.waterRounds; i++) {
+      ctx.fillStyle = "rgba(90,150,210,0.75)";
+      ctx.beginPath();
+      ctx.ellipse(dx - 16 + i * 9, gy - 24, 2.6, 3.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // CONFIRMED first-pass placeholder ("we can work from there"): a
+  // simple little sprout once fully watered -- NOT the real "grows into
+  // an upside-down wind tree" animation, which is its own separate
+  // follow-up per the earlier windSeed/well scoping talk. Just enough
+  // to show the mechanic actually completes.
+  if (topsyWindSeedPlot.waterRounds >= TOPSY_SEEDPLOT_WATER_ROUNDS) {
+    const gp = topsyWindSeedPlot.growProgress;
+    const sproutH = 26 * gp;
+    ctx.strokeStyle = "#4f7a34";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(dx, gy);
+    ctx.quadraticCurveTo(dx + Math.sin(performance.now() * 0.002) * 3 * gp, gy - sproutH * 0.6, dx, gy - sproutH);
+    ctx.stroke();
+    if (gp > 0.4) {
+      const leafP = Math.min(1, (gp - 0.4) / 0.6);
+      [-1, 1].forEach(side => {
+        ctx.fillStyle = "#5c9440";
+        ctx.beginPath();
+        ctx.ellipse(dx + side * 5 * leafP, gy - sproutH * 0.55, 6 * leafP, 3 * leafP, side * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  }
 }
 
 function drawTopsyTurvyScene(camX) {
@@ -19090,6 +19377,7 @@ function drawTopsyTurvyScene(camX) {
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
   drawTopsyTurvyWell(camX);
+  drawTopsyWindSeedPlot(camX);
   drawTopsyTurvyPig(camX);
   drawTopsyTurvyReturnPortal(camX);
 
