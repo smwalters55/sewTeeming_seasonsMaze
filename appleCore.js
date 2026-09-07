@@ -18829,21 +18829,37 @@ function drawTopsyTurvyHouse(camX, h) {
       ctx.stroke();
     }
 
-    if (topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
-      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-        "Shoo! Stop peeking in windows,",
-        "whoever-you-are!"
-      ]);
-    } else if (topsyChef.fullyWonOver) {
-      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-        "Ahh, a tulip too? You've got a",
-        "good eye. Come by anytime."
-      ]);
-    } else if (topsyChef.wonOverByTomatoes) {
-      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-        "Mm! Not bad at all. Say... you",
-        "wouldn't happen to have a tulip?"
-      ]);
+    // CONFIRMED BUG FIX ("this text or any relly should not follow
+    // camera x"): topsyTurvyGrumpyDialogueShown/wonOverByTomatoes/
+    // fullyWonOver are all permanent flags that, once true, stay true
+    // for the rest of the visit -- so this used to draw a speech bubble
+    // on every single frame regardless of where the player actually was.
+    // drawFittedSpeechBubble's own on-screen clamp (shared by every NPC
+    // bubble in the game, needed for bubbles that trigger near a screen
+    // edge) then forced that bubble to stay visible somewhere on screen
+    // no matter how far off-screen the house itself had scrolled --
+    // reading exactly like the text "following the camera" instead of
+    // staying anchored to the window like everything else here. Gated
+    // on actually still being near the window, same check the give-item
+    // interactions themselves use, so the bubble now appears and
+    // disappears with proximity like any other world-anchored dialogue.
+    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 20, 20)) {
+      if (topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+          "Shoo! Stop peeking in windows,",
+          "whoever-you-are!"
+        ]);
+      } else if (topsyChef.fullyWonOver) {
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+          "Ahh, a tulip too? You've got a",
+          "good eye. Come by anytime."
+        ]);
+      } else if (topsyChef.wonOverByTomatoes) {
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+          "Mm! Not bad at all. Say... you",
+          "wouldn't happen to have a tulip?"
+        ]);
+      }
     }
   }
 }
