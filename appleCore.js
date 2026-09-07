@@ -18812,137 +18812,234 @@ function drawTopsyTurvyCart(camX) {
   ctx.stroke();
 }
 
-// CONFIRMED CHANGE ("i think with the well idk i think maybe just build
-// it so i can see it and we can work from there"): first-pass well --
-// stone ring base, two angled support posts, a peaked wood roof, and a
-// bucket hanging from a rope over a crossbar. Visual only for now (see
-// TOPSY_WELL_X's own comment) -- no dig/fill/plant interaction wired up
-// yet, just something concrete to look at and react to.
+// CONFIRMED CHANGE ("lets make the well bigger and cuter and figure out
+// the water situation"): scaled up a real amount (WELL_S below, was a
+// fixed 1x) and warmed up -- rounder stone proportions, a cream mortar
+// highlight instead of flat grey, a couple of moss tufts and tiny
+// flowers at the base, a cheerful red-and-cream striped roof trim (a
+// little visual echo of the cart's own barn red, so the two read as
+// part of the same place), and a rounder bucket with a proper metal
+// band. "The water situation" first pass: the water isn't just a flat
+// dark oval anymore -- a real animated shimmer (see waterT below) so it
+// reads as actual water sitting down there, not a paint swatch. Still
+// visual-only otherwise -- no dip/fill/carry interaction wired up yet.
 function drawTopsyTurvyWell(camX) {
   const sx = TOPSY_WELL_X - camX, sy = gy;
-  const wallTopY = sy - 26, wallBottomY = sy - 2;
+  const S = 1.4;
+  const wallTopY = sy - 30 * S, wallBottomY = sy - 2 * S;
+  const wallHalfW = 26 * S;
 
   // soft ground shadow
   ctx.fillStyle = "rgba(20,20,10,0.15)";
   ctx.beginPath();
-  ctx.ellipse(sx, sy + 2, 34, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx, sy + 2, 40 * S, 7 * S, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // stone ring wall -- a short cylinder read via a rounded-rect body
-  // plus a top ellipse "mouth" so it reads as a circular opening, not a
-  // flat box
-  ctx.fillStyle = "#8a8577";
+  // a little scatter of moss and tiny flowers around the base, so the
+  // well reads as settled into the ground rather than plopped on top
+  [-1, 1].forEach(side => {
+    [0, 1].forEach(i => {
+      const mx = sx + side * (wallHalfW - 4 + i * 10);
+      const my = wallBottomY + 6 + i * 3;
+      ctx.fillStyle = "#6f8f4a";
+      ctx.beginPath();
+      ctx.ellipse(mx, my, 7, 4, 0.3 * side, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+  const flowerSpots = [{ dx: -wallHalfW - 6, c: "#e6a4c4" }, { dx: wallHalfW + 8, c: "#f0c860" }];
+  flowerSpots.forEach(f => {
+    const fx = sx + f.dx, fy = wallBottomY + 4;
+    ctx.strokeStyle = "#5c7a3a";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy + 6);
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    for (let p = 0; p < 5; p++) {
+      const a = (Math.PI * 2 * p) / 5;
+      ctx.fillStyle = f.c;
+      ctx.beginPath();
+      ctx.ellipse(fx + Math.cos(a) * 3, fy + Math.sin(a) * 3, 2.4, 1.6, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#f7de8a";
+    ctx.beginPath();
+    ctx.arc(fx, fy, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // stone ring wall -- rounder now, with a warm cream mortar band so it
+  // doesn't read as flat grey
+  ctx.fillStyle = "#948e7c";
   ctx.beginPath();
-  ctx.moveTo(sx - 26, wallBottomY);
-  ctx.lineTo(sx - 26, wallTopY);
-  ctx.quadraticCurveTo(sx, wallTopY - 8, sx + 26, wallTopY);
-  ctx.lineTo(sx + 26, wallBottomY);
-  ctx.quadraticCurveTo(sx, wallBottomY + 8, sx - 26, wallBottomY);
+  ctx.moveTo(sx - wallHalfW, wallBottomY);
+  ctx.lineTo(sx - wallHalfW, wallTopY);
+  ctx.quadraticCurveTo(sx, wallTopY - 11 * S, sx + wallHalfW, wallTopY);
+  ctx.lineTo(sx + wallHalfW, wallBottomY);
+  ctx.quadraticCurveTo(sx, wallBottomY + 11 * S, sx - wallHalfW, wallBottomY);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#5c584c";
   ctx.lineWidth = 2;
   ctx.stroke();
-  // rough stone-block texture lines
-  ctx.strokeStyle = "rgba(92,88,76,0.55)";
-  ctx.lineWidth = 1.2;
-  [0.3, 0.62].forEach(f => {
-    ctx.beginPath();
-    ctx.moveTo(sx - 25, wallTopY + (wallBottomY - wallTopY) * f);
-    ctx.lineTo(sx + 25, wallTopY + (wallBottomY - wallTopY) * f + 1.5);
-    ctx.stroke();
-  });
-  [-14, 0, 14].forEach((dx, i) => {
-    ctx.beginPath();
-    ctx.moveTo(sx + dx, wallTopY + 3);
-    ctx.lineTo(sx + dx + (i - 1) * 2, wallBottomY - 3);
-    ctx.stroke();
-  });
-  // the dark open mouth of the well
-  ctx.fillStyle = "#2a2620";
+  // cream mortar band, wrapping partway down
+  ctx.strokeStyle = "rgba(230,220,195,0.55)";
+  ctx.lineWidth = 3 * S;
   ctx.beginPath();
-  ctx.ellipse(sx, wallTopY, 24, 7, 0, 0, Math.PI * 2);
+  ctx.moveTo(sx - wallHalfW + 2, wallTopY + (wallBottomY - wallTopY) * 0.42);
+  ctx.lineTo(sx + wallHalfW - 2, wallTopY + (wallBottomY - wallTopY) * 0.42 + 2);
+  ctx.stroke();
+  // rough stone-block texture lines
+  ctx.strokeStyle = "rgba(92,88,76,0.5)";
+  ctx.lineWidth = 1.2;
+  [0.68].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(sx - wallHalfW + 1, wallTopY + (wallBottomY - wallTopY) * f);
+    ctx.lineTo(sx + wallHalfW - 1, wallTopY + (wallBottomY - wallTopY) * f + 1.5);
+    ctx.stroke();
+  });
+  [-wallHalfW * 0.55, 0, wallHalfW * 0.55].forEach((dx, i) => {
+    ctx.beginPath();
+    ctx.moveTo(sx + dx, wallTopY + 4 * S);
+    ctx.lineTo(sx + dx + (i - 1) * 2, wallBottomY - 3 * S);
+    ctx.stroke();
+  });
+
+  // the well mouth -- a real animated shimmer instead of a flat dark
+  // oval, so it reads as actual water. Two soft highlight bands drift
+  // across it on slightly different cycles.
+  const waterT = performance.now() * 0.001;
+  ctx.fillStyle = "#2a3428";
+  ctx.beginPath();
+  ctx.ellipse(sx, wallTopY, wallHalfW * 0.92, 7 * S, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = "#3d5a68";
+  ctx.beginPath();
+  ctx.ellipse(sx, wallTopY + 1, wallHalfW * 0.78, 5.5 * S, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, wallTopY + 1, wallHalfW * 0.78, 5.5 * S, 0, 0, Math.PI * 2);
+  ctx.clip();
+  [0, 1].forEach(i => {
+    const shimmerX = sx + Math.sin(waterT * (0.6 + i * 0.35) + i * 2.4) * wallHalfW * 0.5;
+    ctx.fillStyle = `rgba(210,230,235,${0.22 - i * 0.06})`;
+    ctx.beginPath();
+    ctx.ellipse(shimmerX, wallTopY + 1, 10 * S - i * 3, 2.2 * S, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
   ctx.strokeStyle = "#5c584c";
   ctx.lineWidth = 2;
-  ctx.stroke();
-  // a hint of water depth, catching a little highlight
-  ctx.fillStyle = "rgba(120,150,170,0.35)";
   ctx.beginPath();
-  ctx.ellipse(sx, wallTopY + 1, 16, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.ellipse(sx, wallTopY, wallHalfW * 0.92, 7 * S, 0, 0, Math.PI * 2);
+  ctx.stroke();
 
   // two angled support posts, holding up the roof and the crossbar
+  const postTopY = wallTopY - 62 * S;
   ctx.strokeStyle = "#5a3e26";
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 6 * S;
   ctx.beginPath();
-  ctx.moveTo(sx - 24, wallTopY + 4);
-  ctx.lineTo(sx - 20, wallTopY - 58);
-  ctx.moveTo(sx + 24, wallTopY + 4);
-  ctx.lineTo(sx + 20, wallTopY - 58);
+  ctx.moveTo(sx - wallHalfW + 2, wallTopY + 5 * S);
+  ctx.lineTo(sx - wallHalfW + 6, postTopY);
+  ctx.moveTo(sx + wallHalfW - 2, wallTopY + 5 * S);
+  ctx.lineTo(sx + wallHalfW - 6, postTopY);
   ctx.stroke();
 
-  // peaked wood roof
+  // peaked roof, rounder eave overhang, with a cheerful red-and-cream
+  // striped trim along the front edge -- a little visual echo of the
+  // cart's own barn red so the two read as part of the same place
+  const roofHalfSpan = 38 * S, roofPeakY = wallTopY - 82 * S, eaveY = wallTopY - 58 * S, eaveInnerY = wallTopY - 54 * S;
   ctx.fillStyle = "#7a4a2e";
   ctx.beginPath();
-  ctx.moveTo(sx - 32, wallTopY - 54);
-  ctx.lineTo(sx, wallTopY - 76);
-  ctx.lineTo(sx + 32, wallTopY - 54);
-  ctx.lineTo(sx + 24, wallTopY - 50);
-  ctx.lineTo(sx, wallTopY - 68);
-  ctx.lineTo(sx - 24, wallTopY - 50);
+  ctx.moveTo(sx - roofHalfSpan, eaveY);
+  ctx.lineTo(sx, roofPeakY);
+  ctx.lineTo(sx + roofHalfSpan, eaveY);
+  ctx.lineTo(sx + roofHalfSpan * 0.75, eaveInnerY);
+  ctx.lineTo(sx, roofPeakY + 18 * S);
+  ctx.lineTo(sx - roofHalfSpan * 0.75, eaveInnerY);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#3a2416";
   ctx.lineWidth = 1.6;
   ctx.stroke();
-  // a couple of roof-plank lines
-  ctx.strokeStyle = "rgba(58,36,22,0.5)";
-  ctx.lineWidth = 1;
+  // striped trim along the bottom eave
+  ctx.strokeStyle = "#8b2e22";
+  ctx.lineWidth = 3 * S;
   ctx.beginPath();
-  ctx.moveTo(sx - 12, wallTopY - 64);
-  ctx.lineTo(sx - 20, wallTopY - 51);
-  ctx.moveTo(sx + 12, wallTopY - 64);
-  ctx.lineTo(sx + 20, wallTopY - 51);
+  ctx.moveTo(sx - roofHalfSpan * 0.7, eaveY + 4 * S);
+  ctx.lineTo(sx, roofPeakY + 16 * S);
+  ctx.lineTo(sx + roofHalfSpan * 0.7, eaveY + 4 * S);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(240,225,200,0.65)";
+  ctx.lineWidth = 1.2;
+  [-0.35, 0.35].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(sx + f * roofHalfSpan, wallTopY - 68 * S);
+    ctx.lineTo(sx + f * roofHalfSpan * 1.5, eaveInnerY);
+    ctx.stroke();
+  });
+  // a tiny finial ball on top, for a little charm
+  ctx.fillStyle = "#f0c860";
+  ctx.beginPath();
+  ctx.arc(sx, roofPeakY - 3 * S, 3.2 * S, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2416";
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   // crossbar, crank, rope and bucket -- the bucket hangs roughly
-  // halfway down into the well mouth, a still first pass (no fill
-  // animation yet -- that's the actual plant/water mechanic still to
-  // come, per Sam's own "we can work from there")
+  // halfway down into the well mouth, still visual-only (no dip/fill
+  // interaction wired up yet)
   ctx.strokeStyle = "#5a3e26";
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 4.5 * S;
   ctx.beginPath();
-  ctx.moveTo(sx - 20, wallTopY - 58);
-  ctx.lineTo(sx + 20, wallTopY - 58);
+  ctx.moveTo(sx - wallHalfW + 6, postTopY);
+  ctx.lineTo(sx + wallHalfW - 6, postTopY);
   ctx.stroke();
   ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
-  ctx.arc(sx - 20, wallTopY - 58, 5, 0, Math.PI * 2);
+  ctx.arc(sx - wallHalfW + 6, postTopY, 5.5 * S, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#3a2416";
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.moveTo(sx - 20, wallTopY - 58);
-  ctx.lineTo(sx - 26, wallTopY - 54);
+  ctx.moveTo(sx - wallHalfW + 6, postTopY);
+  ctx.lineTo(sx - wallHalfW - 2, postTopY + 4 * S);
   ctx.stroke();
 
-  ctx.strokeStyle = "#7a6a4a";
-  ctx.lineWidth = 1.4;
+  const bucketTopY = wallTopY - 7 * S;
+  ctx.strokeStyle = "#8a7a5a";
+  ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(sx, wallTopY - 58);
-  ctx.lineTo(sx, wallTopY - 6);
+  ctx.moveTo(sx, postTopY);
+  ctx.lineTo(sx, bucketTopY);
   ctx.stroke();
+  // rounder cute bucket -- a soft trapezoid body plus a metal band and
+  // a little swing handle, instead of the old plain flat-sided pail
   ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
-  ctx.moveTo(sx - 7, wallTopY - 6);
-  ctx.lineTo(sx + 7, wallTopY - 6);
-  ctx.lineTo(sx + 5, wallTopY + 4);
-  ctx.lineTo(sx - 5, wallTopY + 4);
+  ctx.moveTo(sx - 8 * S, bucketTopY);
+  ctx.quadraticCurveTo(sx, bucketTopY - 2 * S, sx + 8 * S, bucketTopY);
+  ctx.lineTo(sx + 6 * S, bucketTopY + 11 * S);
+  ctx.quadraticCurveTo(sx, bucketTopY + 15 * S, sx - 6 * S, bucketTopY + 11 * S);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#3a2416";
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(210,195,160,0.6)";
+  ctx.lineWidth = 1.4 * S;
+  ctx.beginPath();
+  ctx.moveTo(sx - 7.3 * S, bucketTopY + 6 * S);
+  ctx.lineTo(sx + 7.3 * S, bucketTopY + 6 * S);
+  ctx.stroke();
+  ctx.strokeStyle = "#3a2416";
   ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(sx - 6 * S, bucketTopY + 1);
+  ctx.quadraticCurveTo(sx, bucketTopY - 6 * S, sx + 6 * S, bucketTopY + 1);
   ctx.stroke();
 }
 
