@@ -4268,34 +4268,6 @@ function applyPhysics(){
   // by capturing playerBottom once, before any platform is tested, and
   // stopping at the first real match instead of letting a later
   // iteration re-evaluate an already-updated player.y.
-  {
-    const playerBottom = player.y;
-    let bestTop = null;
-    topsyTurvyRootPlatforms.forEach(p => {
-      const platformTop = p.height;
-      if (
-        player.x + player.width > p.x &&
-        player.x < p.x + p.width &&
-        playerBottom <= platformTop &&
-        playerBottom >= platformTop - 14 &&
-        player.vy <= 0 &&
-        (bestTop === null || platformTop > bestTop)
-      ) {
-        bestTop = platformTop; // the TALLEST matching platform -- the real
-        // first surface a falling player would actually hit, since a
-        // couple of these root-tip platforms sit close enough in height
-        // for their bands to genuinely overlap (see this block's own
-        // comment above)
-      }
-    });
-    if (bestTop !== null) {
-      player.y = bestTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
-  }
-
   // CONFIRMED CHANGE ("if payer jumps onto the cart, player also floats
   // up and then ddrifts back down like the other contents unless player
   // jumps out of it", refined to "i want to be able to jump within it so
@@ -4347,6 +4319,51 @@ function applyPhysics(){
     // walking (or jumping) far enough out of range is the only way out --
     // just release control and let normal gravity take over from here
     if (Math.abs(player.x + player.width / 2 - TOPSY_CART_X) > TOPSY_CART_HALF_RANGE) {
+      topsyTurvyCartRide.active = false;
+    }
+  }
+
+  // CONFIRMED FIX ("it seems like the impact physics arent workingfor
+  // the taller tree's roots"): this check used to run BEFORE the cart
+  // block above, which meant that even on a frame where the player's
+  // height genuinely lined up with one of the tall tree's root
+  // platforms, the cart's own "else" branch (still active, since only a
+  // horizontal range-exit ever deactivates it) ran right afterward and
+  // unconditionally overwrote player.y with the float/boost formula
+  // again -- silently canceling the landing every single time. Since
+  // the whole point of the cart's height boost was reaching those very
+  // platforms, this made them structurally unreachable while riding,
+  // not just hard to time. Fix: run this check LAST, after the cart has
+  // already set this frame's player.y (if it's active), so a landing
+  // here is the thing that sticks -- and explicitly let go of the cart
+  // ride on landing (stepping onto solid root is as real an exit as
+  // wandering out of horizontal range) so it doesn't immediately
+  // re-grab and overwrite next frame.
+  {
+    const playerBottom = player.y;
+    let bestTop = null;
+    topsyTurvyRootPlatforms.forEach(p => {
+      const platformTop = p.height;
+      if (
+        player.x + player.width > p.x &&
+        player.x < p.x + p.width &&
+        playerBottom <= platformTop &&
+        playerBottom >= platformTop - 14 &&
+        player.vy <= 0 &&
+        (bestTop === null || platformTop > bestTop)
+      ) {
+        bestTop = platformTop; // the TALLEST matching platform -- the real
+        // first surface a falling player would actually hit, since a
+        // couple of these root-tip platforms sit close enough in height
+        // for their bands to genuinely overlap (see this block's own
+        // comment above)
+      }
+    });
+    if (bestTop !== null) {
+      player.y = bestTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
       topsyTurvyCartRide.active = false;
     }
   }
@@ -18019,9 +18036,20 @@ const TOPSY_CART_BED_TOP = 28;
 // centerpiece fruit would. 4 tomatoes now (was 3), still each on its own
 // seeded phase (CONFIRMED CHANGE "jitter the rise of each item too so
 // its in dif phases") so they don't rise/fall in lockstep.
-const topsyTurvyCartTomatoes = [0, 1, 2, 3].map(i => ({
-  dx: (i - 1.5) * 15,
+// CONFIRMED CHANGE ("add more tomatoes" + "the tomato floating is too
+// syncrhonized looking it is the same pattern each time"): 7 now (was
+// 4), and each one gets its OWN period multiplier (periodMul) as well as
+// its own phase -- phase-shifting alone just replays the identical
+// waveform offset in time, which still reads as "the same pattern" once
+// you watch it for more than a few seconds. Varying the speed too means
+// no two tomatoes are ever in the same part of their cycle at the same
+// time, so the pile genuinely looks independently alive rather than one
+// wave copy-pasted with a delay.
+const topsyTurvyCartTomatoes = [0, 1, 2, 3, 4, 5, 6].map(i => ({
+  dx: (i - 3) * 10 + (pseudoRandom(TOPSY_CART_X + i * 53) - 0.5) * 6,
   phase: pseudoRandom(TOPSY_CART_X + i * 71) * Math.PI * 2,
+  periodMul: 0.78 + pseudoRandom(TOPSY_CART_X + i * 97) * 0.55,
+  ampMul: 0.82 + pseudoRandom(TOPSY_CART_X + i * 131) * 0.36,
   seed: TOPSY_CART_X + i * 71
 }));
 // player's own current ride state -- see the float/boost update in
@@ -18472,57 +18500,133 @@ function drawTomatoShape(ctx, x, y, size, rotation) {
 }
 
 // the cart -- drawn completely right-side-up (see topsyTurvyCartRide's
-// own placement comment for why), a two-wheeled farm cart with a small
-// pile of tomatoes that individually drift up out of the bed and sink
-// back down, each on its own seeded phase so they don't move in
-// lockstep. CONFIRMED CHANGE ("make the cart larger"): every dimension
-// scaled up from the original pass (roughly 1.6x) -- see
-// TOPSY_CART_HALF_RANGE's own comment for why the hitbox/range grew to
-// match.
+// own placement comment for why). CONFIRMED CHANGE ("make the cart not
+// just flat. and less cartoon-ie. add some vibe to it. and make it a
+// rustic red cart maybe... have a dip in it so it makes sense to carry
+// tomatoes in it... thinking like a farm wagon or a wheel barrow"):
+// reworked from the original flat brown trapezoid into a weathered barn-
+// red farm wagon -- a real sagging basin curve for the bed (tomatoes now
+// visibly sit IN a dip, not balanced on a flat shelf), plank-line and
+// wear-streak texture on the wood, a rust-streaked iron rim, and spoked
+// wheels instead of plain disks. Collision numbers (TOPSY_CART_X/BED_TOP/
+// HALF_RANGE) are unchanged -- this is a visual pass only.
 function drawTopsyTurvyCart(camX) {
   const sx = TOPSY_CART_X - camX, sy = gy;
 
-  // wheels
-  ctx.fillStyle = "#4a3222";
-  ctx.beginPath();
-  ctx.arc(sx - 27, sy - 13, 13, 0, Math.PI * 2);
-  ctx.arc(sx + 27, sy - 13, 13, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#7a5f3a";
-  ctx.beginPath();
-  ctx.arc(sx - 27, sy - 13, 4.5, 0, Math.PI * 2);
-  ctx.arc(sx + 27, sy - 13, 4.5, 0, Math.PI * 2);
-  ctx.fill();
+  // wheels -- spoked wagon wheels, not plain disks
+  [-27, 27].forEach(wx => {
+    const wcx = sx + wx, wcy = sy - 13;
+    ctx.strokeStyle = "#6b3f2a";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(wcx, wcy, 13, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#5a3420";
+    ctx.beginPath();
+    ctx.arc(wcx, wcy, 10.2, 0, Math.PI * 2);
+    ctx.fill();
+    // rust-flecked iron rim highlight
+    ctx.strokeStyle = "rgba(150,90,60,0.55)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(wcx, wcy, 13, -0.6, 0.9);
+    ctx.stroke();
+    // spokes
+    ctx.strokeStyle = "#3f2416";
+    ctx.lineWidth = 1.6;
+    for (let s = 0; s < 6; s++) {
+      const a = (Math.PI * 2 * s) / 6 + 0.3;
+      ctx.beginPath();
+      ctx.moveTo(wcx, wcy);
+      ctx.lineTo(wcx + Math.cos(a) * 9.5, wcy + Math.sin(a) * 9.5);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#7a5f3a";
+    ctx.beginPath();
+    ctx.arc(wcx, wcy, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
-  // bed
-  ctx.fillStyle = "#8a6a42";
+  // bed -- a real sagging basin: the bottom is a curve that dips down in
+  // the middle rather than a flat line, so it reads as something built
+  // to actually hold produce instead of a flat shelf. Rustic barn red,
+  // with a darker aged-wood undercoat showing through at the base and a
+  // couple of streaky wear marks down the side.
+  const topL = sx - 40, topR = sx + 40, topY = sy - 24;
+  const dipL = sx - 34, dipR = sx + 34, dipY = sy - TOPSY_CART_BED_TOP, dipMidY = sy - (TOPSY_CART_BED_TOP - 11);
+  ctx.fillStyle = "#5c3a28";
   ctx.beginPath();
-  ctx.moveTo(sx - 42, sy - 22);
-  ctx.lineTo(sx - 36, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 36, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 42, sy - 22);
+  ctx.moveTo(topL, topY);
+  ctx.lineTo(topL - 3, topY + 5);
+  ctx.quadraticCurveTo(sx, dipMidY + 7, topR + 3, topY + 5);
+  ctx.lineTo(topR, topY);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#5c4426";
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-  // side rails
+  ctx.fillStyle = "#8b2e22";
   ctx.beginPath();
-  ctx.moveTo(sx - 36, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx - 33, sy - TOPSY_CART_BED_TOP - 13);
-  ctx.moveTo(sx + 36, sy - TOPSY_CART_BED_TOP);
-  ctx.lineTo(sx + 33, sy - TOPSY_CART_BED_TOP - 13);
+  ctx.moveTo(topL, topY);
+  ctx.quadraticCurveTo(dipL, dipY - 6, sx, dipMidY);
+  ctx.quadraticCurveTo(dipR, dipY - 6, topR, topY);
+  ctx.lineTo(topR, topY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a2018";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(topL, topY);
+  ctx.quadraticCurveTo(dipL, dipY - 6, sx, dipMidY);
+  ctx.quadraticCurveTo(dipR, dipY - 6, topR, topY);
   ctx.stroke();
 
-  // tomatoes -- drift up out of the bed and sink back, each on its own
-  // seeded phase so they read as independently bobbing, not synced
+  // weathered plank lines across the bed's curve, plus a couple of
+  // lighter wear streaks so the red doesn't read as one flat block of color
+  ctx.strokeStyle = "rgba(74,32,24,0.5)";
+  ctx.lineWidth = 1.2;
+  [0.25, 0.5, 0.75].forEach(f => {
+    const px = topL + (topR - topL) * f;
+    const py = topY + (dipMidY - topY) * Math.sin(f * Math.PI) * 0.85 + 4;
+    ctx.beginPath();
+    ctx.moveTo(px, topY);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+  });
+  ctx.strokeStyle = "rgba(210,150,120,0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx - 18, topY + 6);
+  ctx.quadraticCurveTo(sx - 8, dipMidY - 4, sx + 6, dipMidY - 2);
+  ctx.stroke();
+
+  // top rim -- the actual lip the tomatoes rest against
+  ctx.strokeStyle = "#3a1a12";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(topL, topY);
+  ctx.lineTo(topR, topY);
+  ctx.stroke();
+  // side rail posts
+  ctx.strokeStyle = "#4a2018";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(topL, topY);
+  ctx.lineTo(topL - 3, topY - 13);
+  ctx.moveTo(topR, topY);
+  ctx.lineTo(topR + 3, topY - 13);
+  ctx.stroke();
+
+  // tomatoes -- pile down in the dip, each one drifting up out of the
+  // bed and sinking back on its own seeded phase AND its own cycle
+  // speed (see topsyTurvyCartTomatoes' own comment for why speed
+  // varies too, not just phase) so the pile reads as independently
+  // alive rather than one wave replayed with a delay
   const t = performance.now() * 0.001;
   topsyTurvyCartTomatoes.forEach(a => {
-    const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55)) * Math.PI * 2 + a.phase;
-    const bob = Math.max(0, Math.sin(cyclePhase)) * 42;
+    const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55 * a.periodMul)) * Math.PI * 2 + a.phase;
+    const bob = Math.max(0, Math.sin(cyclePhase)) * 42 * a.ampMul;
+    const settleY = dipMidY - (topY - dipMidY) * (1 - Math.min(1, Math.abs(a.dx) / 34));
     const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 4;
-    const ay = sy - TOPSY_CART_BED_TOP - 8 - bob;
-    drawTomatoShape(ctx, ax, ay, 9, Math.sin(cyclePhase * 0.7 + a.phase) * 0.3);
+    const ay = settleY - 6 - bob;
+    drawTomatoShape(ctx, ax, ay, 8.5, Math.sin(cyclePhase * 0.7 + a.phase) * 0.3);
   });
 }
 
