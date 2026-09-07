@@ -20344,13 +20344,25 @@ function drawTopsyTurvyScene(camX) {
   // the ground's own color (#b89ab0) at the horizon so the two blend
   // naturally -- still pastel/whimsical up top, just enough contrast at
   // the bottom for white/cream things to actually read.
+  // CONFIRMED BUG FIX ("there shouldnnt be white on the bottom when
+  // cameray follows up"): this rect used to stop at a fixed gy, but the
+  // ground-level content below is translated by cameraY (see the
+  // ctx.translate(0, cameraY) just below) whenever the player climbs
+  // high enough for the camera to follow -- once that translate pushes
+  // the ground down, the strip between the old fixed sky bottom and the
+  // new ground position was never painted at all, showing the canvas's
+  // raw background through. Every other scene with this same
+  // camera-follow-up pattern (forest, oak, spring, tunnel town) already
+  // extends its own background fill by cameraY for exactly this reason
+  // -- topsy-turvy's sky just never picked it up when the well's own
+  // "cameraY needs to follow player upwards" fix went in elsewhere.
   const sky = ctx.createLinearGradient(0, 0, 0, gy);
   sky.addColorStop(0, "#b9a0dc");
   sky.addColorStop(0.45, "#c7a6d2");
   sky.addColorStop(0.8, "#c39cbc");
   sky.addColorStop(1, "#b98ea2");
   ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, gy);
+  ctx.fillRect(0, 0, canvas.width, gy + cameraY);
 
   // a few soft clouds drifting below, since this land sits above them --
   // opacity nudged up (0.55 -> 0.75) to hold up against the now-deeper sky
