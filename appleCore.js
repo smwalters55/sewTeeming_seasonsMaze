@@ -1453,6 +1453,14 @@ function updateSeasonTransition(deltaTime) {
         player.x = POOL_SPAWN_X; // walked off the ledge into the water right at the pool's entry edge
       } else if (currentScene === "forest" && previousScene === "pool") {
         player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20; // climb back out onto the ledge itself, clear of the edge you walked off from
+      } else if (currentScene === "topsyturvy" && previousScene === "forest") {
+        player.x = TOPSYTURVY_SPAWN_X; // broke through the top of the fungus climb -- lands just inside the land, not right at its own edge
+      } else if (currentScene === "forest" && previousScene === "topsyturvy") {
+        // climb back down lands right back at the fungus tree's own top
+        // mat, ready to bounce again -- not the generic forest ground spawn
+        player.x = FOREST_FUNGUS_TREE_X;
+        forestFungusClimb.level = forestFungusClimb.levels.length - 1;
+        forestFungusClimb.streak = 0;
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -1467,6 +1475,9 @@ function updateSeasonTransition(deltaTime) {
       // ever needed a custom x).
       if (currentScene === "forest" && previousScene === "pool") {
         player.y = FOREST_ROCK_LEDGE.height;
+      }
+      if (currentScene === "forest" && previousScene === "topsyturvy") {
+        player.y = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height;
       }
       player.vy = 0;
       player.jumping = false;
@@ -2885,6 +2896,9 @@ function handleInput(){
   // molehole's own right boundary, same small-enclosed-room pattern as
   // ratroom above -- placed at the room's own declared width
   if (currentScene === "molehole" && player.x > MOLEHOLE_WIDTH) player.x = MOLEHOLE_WIDTH;
+
+  // topsy-turvy land's own right boundary, same small-enclosed-room pattern
+  if (currentScene === "topsyturvy" && player.x > TOPSYTURVY_WIDTH) player.x = TOPSYTURVY_WIDTH;
 
   // oak's book-pile jump run stays gated until the lamp has actually
   // been carried down and lit in the ratroom -- see OAK_JUMPRUN_GATE_X's
@@ -17611,6 +17625,20 @@ function forestFungusLaunch(mat, levelIdx) {
   const canPromote = atMaxTier && levelIdx < levels.length - 1;
   const baseHeight = levels[levelIdx].height;
 
+  // CONFIRMED CHANGE ("potentially start building the magic farway
+  // tree... it miiiiight be at the top of the fungus tree"): the top
+  // level used to just cap out with repeating max-tier bounces forever
+  // (see this function's own placement comment above) -- that's now a
+  // real payoff. Catching one more max-tier bounce at the TOP level
+  // (levelIdx === levels.length - 1) breaks through into the Faraway
+  // Tree's own topsy-turvy land instead of just bouncing again.
+  if (atMaxTier && !canPromote && levelIdx === levels.length - 1) {
+    startSeasonTransition("topsyturvy");
+    forestFungusClimb.streak = 0;
+    mat.squishT = 0;
+    return;
+  }
+
   if (canPromote) {
     const rad = FOREST_FUNGUS_PROMOTE_TILT * Math.PI / 180;
     player.y = baseHeight;
@@ -17655,6 +17683,284 @@ function updateForestFungusClimb(deltaTime) {
       if (t.squishT < FOREST_FUNGUS_SQUISH_MS) t.squishT += deltaTime * 1000;
     });
   });
+}
+
+/* ======================================================
+   TOPSY-TURVY LAND -- the Magic Faraway Tree's first real "land", per
+   direct request ("potentially start building the magic farway tree,
+   that actually might be part of the climb up... it will be its own
+   little land up there like how clouds are a lil separate land"), then
+   ("i dont about like new lands hanppening each time you go up though...
+   im not sure that i want that vibe. but like i like the idea of an
+   area being 'topsy turvey' where player and other things are upside
+   down"). Explicitly scoped down from the book's own rotating-lands
+   premise to ONE static land, reached by breaking through the top of
+   the fungus climb (see forestFungusLaunch's own topsyturvy branch).
+   Per AskUserQuestion, this first pass is the VISUAL-ONLY version --
+   the world/decor reads upside-down (houses on their chimneys, trees
+   roots-up, folk walking on their hands) but the player's own physics
+   stay completely normal, no real gravity-flip mechanic yet. Pulled
+   from the actual books (via web research, see sources) rather than
+   guessed: houses stand on their chimneys, residents get around on
+   their hands, and there's a real ladder up to a window since the
+   front door ends up on top -- plus one specifically grumpy resident
+   who shoos onlookers away from their window.
+   ====================================================== */
+const TOPSYTURVY_WIDTH = 900;
+const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
+const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
+
+// CONFIRMED CHANGE ("idk if i want to do buildings in it so far there
+// arent really any manmade items/situations besides in the dev
+// sandbox"): left empty for now, pending that decision -- the drawing
+// code (drawTopsyTurvyHouse below) is fully built and works, it just
+// isn't placed anywhere yet. Add entries back here once buildings (or
+// something else entirely) are actually wanted.
+const topsyTurvyHouses = [];
+const topsyTurvyTrees = [
+  { x: 280, scale: 0.9 },
+  { x: 540, scale: 1.1 },
+  { x: 800, scale: 0.8 }
+];
+// one ambient "topsy-turvy folk" -- walks on their hands, per the book's
+// own description, wandering a short patrol range near the houses
+const topsyTurvyFolk = { homeX: 520, x: 520, dir: 1, range: 60, speed: 18 };
+
+let topsyTurvyGrumpyDialogueShown = false;
+let topsyTurvyGrumpyLingerT = 0;
+
+function updateTopsyTurvyScene(deltaTime) {
+  // slow hand-walk wander, same shape as any other simple ambient patrol
+  topsyTurvyFolk.x += topsyTurvyFolk.dir * topsyTurvyFolk.speed * deltaTime;
+  if (topsyTurvyFolk.x > topsyTurvyFolk.homeX + topsyTurvyFolk.range) topsyTurvyFolk.dir = -1;
+  if (topsyTurvyFolk.x < topsyTurvyFolk.homeX - topsyTurvyFolk.range) topsyTurvyFolk.dir = 1;
+
+  // the grumpy resident notices if you linger at their window too long --
+  // per the book, they shoo onlookers off rather than making friendly
+  // conversation. One-shot, same "everShownThisVisit"-style flag pattern
+  // used elsewhere so it doesn't repeat every single frame you're near.
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x + 14 * grumpyHouse.scale, 34 * grumpyHouse.scale, 30, 25, 20);
+  if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown) {
+    topsyTurvyGrumpyLingerT += deltaTime * 1000;
+    if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
+  } else if (!nearGrumpyWindow) {
+    topsyTurvyGrumpyLingerT = 0;
+  }
+
+  if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
+    startSeasonTransition("forest");
+  }
+}
+
+// draws a cottage standing on its OWN CHIMNEY -- built directly in
+// "already inverted" local coordinates (localY=0 is whatever touches the
+// ground, increasing localY moves up the screen) rather than drawing a
+// normal upright house and trying to flip it with a canvas transform --
+// a real upright-house flip was tried first and got the pivot math
+// wrong (mirroring around the ground line pushed the whole house
+// underground instead of re-anchoring its new "bottom" -- the chimney --
+// to the ground), so this draws the already-correct shape directly, same
+// approach drawTopsyTurvyFolk below already used successfully.
+function drawTopsyTurvyHouse(camX, h) {
+  const sx = h.x - camX, sy = gy;
+  const s = h.scale;
+  const chimH = 16 * s, roofH = 30 * s, wallH = 46 * s, wallW = 70 * s;
+  const y = (localY) => sy - localY; // localY=0 -> ground, larger localY -> higher up
+
+  // chimney -- what the whole house actually stands on
+  ctx.fillStyle = "#8f8f8f";
+  ctx.fillRect(sx - 6 * s, y(chimH), 12 * s, chimH);
+
+  // roof -- narrow point resting on the chimney, flaring wide above it
+  ctx.fillStyle = "#8a3f34";
+  ctx.beginPath();
+  ctx.moveTo(sx, y(chimH));
+  ctx.lineTo(sx - (wallW / 2 + 8 * s), y(chimH + roofH));
+  ctx.lineTo(sx + (wallW / 2 + 8 * s), y(chimH + roofH));
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5c241c";
+  ctx.stroke();
+
+  // walls -- the topmost, highest part of the whole upside-down house
+  const wallBottom = chimH + roofH, wallTop = wallBottom + wallH;
+  ctx.fillStyle = "#c9a876";
+  ctx.fillRect(sx - wallW / 2, y(wallTop), wallW, wallH);
+  ctx.strokeStyle = "#7a5f3a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx - wallW / 2, y(wallTop), wallW, wallH);
+  // door -- "the front door ends up on top" per the book, so it sits
+  // right at the very top edge of the walls
+  ctx.fillStyle = "#5c3a24";
+  ctx.fillRect(sx - 9 * s, y(wallTop + 18 * s), 18 * s, 18 * s);
+  // window, off to one side
+  const winX = sx + 16 * s, winY = y(wallBottom + 22 * s);
+  ctx.fillStyle = "#e8f0d8";
+  ctx.fillRect(winX, winY, 14 * s, 14 * s);
+  ctx.strokeStyle = "#7a5f3a";
+  ctx.strokeRect(winX, winY, 14 * s, 14 * s);
+
+  // a ladder up to the door/window near the top -- per the book, the
+  // only real way in now that the front door ends up on top
+  ctx.strokeStyle = "#6b4a2c";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx - 6 * s, sy);
+  ctx.lineTo(sx - 4 * s, y(wallTop));
+  ctx.moveTo(sx + 6 * s, sy);
+  ctx.lineTo(sx + 8 * s, y(wallTop));
+  for (let r = 0; r < 6; r++) {
+    const ry = sy - r * (wallTop / 6);
+    ctx.moveTo(sx - 6 * s + r * 0.3, ry);
+    ctx.lineTo(sx + 6 * s + r * 0.3, ry);
+  }
+  ctx.stroke();
+
+  if (h.grumpy) {
+    // a cranky face peeking from the window
+    ctx.fillStyle = "#d8b48a";
+    ctx.beginPath();
+    ctx.arc(winX + 7 * s, winY + 7 * s, 5.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3a2a1a";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); // furrowed cranky eyebrows
+    ctx.moveTo(winX + 3 * s, winY + 5 * s);
+    ctx.lineTo(winX + 6 * s, winY + 6.5 * s);
+    ctx.moveTo(winX + 11 * s, winY + 5 * s);
+    ctx.lineTo(winX + 8 * s, winY + 6.5 * s);
+    ctx.stroke();
+
+    if (topsyTurvyGrumpyDialogueShown) {
+      drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+        "Shoo! Stop peeking in windows,",
+        "whoever-you-are!"
+      ]);
+    }
+  }
+}
+
+// a plain tree silhouette, roots-up: canopy planted right at ground
+// level (its normal "top" now touching the ground, not sunk below it),
+// trunk rising from there, gnarled roots exposed and reaching skyward at
+// the very top. Same "already-inverted local coordinates" approach as
+// the house/folk above -- localY=0 touches the ground, larger localY is
+// higher up the screen.
+function drawTopsyTurvyTree(camX, t) {
+  const sx = t.x - camX, sy = gy;
+  const s = t.scale;
+  const y = (localY) => sy - localY;
+
+  // canopy -- the tree's normal top, now resting right on the ground
+  ctx.fillStyle = "#6a8a4a";
+  ctx.beginPath();
+  ctx.arc(sx, y(30 * s), 30 * s, 0, Math.PI * 2);
+  ctx.fill();
+
+  // trunk, rising from the canopy up to where the roots are
+  ctx.strokeStyle = "#4a3222";
+  ctx.lineWidth = 5 * s;
+  ctx.beginPath();
+  ctx.moveTo(sx, y(30 * s));
+  ctx.lineTo(sx, y(64 * s));
+  ctx.stroke();
+
+  // roots -- gnarled branching lines at the very top, reaching skyward
+  ctx.lineWidth = 3 * s;
+  [-1, -0.4, 0.4, 1].forEach(dir => {
+    ctx.beginPath();
+    ctx.moveTo(sx, y(64 * s));
+    ctx.quadraticCurveTo(sx + dir * 10 * s, y(82 * s), sx + dir * 20 * s, y(96 * s));
+    ctx.stroke();
+  });
+}
+
+// the ambient topsy-turvy person -- a simple upside-down humanoid
+// silhouette "walking" on their hands, per the book's own description
+function drawTopsyTurvyFolk(camX) {
+  const sx = topsyTurvyFolk.x - camX, sy = gy;
+  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 4; // hand-walk bounce
+  ctx.save();
+  ctx.translate(sx, sy - bob);
+  ctx.scale(1, -1);
+  // legs up in the air
+  ctx.strokeStyle = "#5a4a6a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-3, 24); ctx.lineTo(-6, 40);
+  ctx.moveTo(3, 24); ctx.lineTo(7, 40);
+  ctx.stroke();
+  // torso
+  ctx.fillStyle = "#7a6a9a";
+  ctx.fillRect(-6, 8, 12, 18);
+  // arms planted on the ground (now drawn "up" by the flip)
+  ctx.strokeStyle = "#d8b48a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-5, 8); ctx.lineTo(-9, 0);
+  ctx.moveTo(5, 8); ctx.lineTo(9, 0);
+  ctx.stroke();
+  // head, near the ground
+  ctx.fillStyle = "#e0bd94";
+  ctx.beginPath();
+  ctx.arc(0, 2, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTopsyTurvyReturnPortal(camX) {
+  const sx = TOPSYTURVY_RETURN_X - camX, sy = gy;
+  const t = performance.now() * 0.003;
+  for (let i = 0; i < 3; i++) {
+    const r = 14 + i * 7 + Math.sin(t + i) * 2;
+    ctx.strokeStyle = `rgba(230,220,250,${0.5 - i * 0.13})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 6, r, r * 0.35, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (isPlayerNear(TOPSYTURVY_RETURN_X, 0, 40, 25, 15)) {
+    ctx.fillStyle = "#3a2a4a";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Press space to climb back down", sx, sy - 34);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawTopsyTurvyScene(camX) {
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#cdb8e8");
+  sky.addColorStop(0.45, "#e0c9e6");
+  sky.addColorStop(0.8, "#f0dcea");
+  sky.addColorStop(1, "#f6e8ea");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // a few soft clouds drifting below, since this land sits above them
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  for (let i = 0; i < 4; i++) {
+    const cx = (i * 260 - (camX * 0.15)) % (canvas.width + 400) - 100;
+    const cy = gy - 40 + Math.sin(i * 1.7) * 10;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 42, 14, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + 30, cy + 4, 30, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ground -- a slightly otherworldly dusty-mauve meadow, but still
+  // ordinary walkable ground (this first pass is visual-only per Sam's
+  // own call -- player physics stay completely normal here)
+  ctx.fillStyle = "#b89ab0";
+  ctx.fillRect(-camX, gy, canvas.width + camX, canvas.height - gy);
+  ctx.fillStyle = "#a686a0";
+  ctx.fillRect(0, gy, canvas.width, 10);
+
+  topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
+  topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
+  drawTopsyTurvyFolk(camX);
+  drawTopsyTurvyReturnPortal(camX);
 }
 
 // a single turkey-tail fan lobe -- thin, wavy-edged, with the
@@ -57349,6 +57655,8 @@ if (currentScene === "autumn") {
   drawSandboxScene(camX);
 } else if (currentScene === "pool") {
   drawPoolScene(camX);
+} else if (currentScene === "topsyturvy") {
+  drawTopsyTurvyScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -58943,6 +59251,8 @@ if (currentScene === "autumn") {
   updateSandboxScene(deltaTime);
 } else if (currentScene === "pool") {
   updatePoolScene(deltaTime);
+} else if (currentScene === "topsyturvy") {
+  updateTopsyTurvyScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
@@ -59104,6 +59414,8 @@ updateSeasonTransition(deltaTime);
   // wall/chute; resumes its normal swim-course framing once the sequence
   // ends (scene swaps to forest before the pool clamp would even apply again).
   if (currentScene === "pool" && !poolSlideExit.active && cameraX > POOL_WIDTH - canvas.width + 40) cameraX = Math.max(0, POOL_WIDTH - canvas.width + 40);
+  // topsy-turvy land's own right-side camera clamp, same small-room pattern
+  if (currentScene === "topsyturvy" && cameraX > TOPSYTURVY_WIDTH - canvas.width + 40) cameraX = Math.max(0, TOPSYTURVY_WIDTH - canvas.width + 40);
   // oak's left side has its own tall bookshelf (x:192) that should be
   // visible/reachable from directly left of the entrance door (x:294) --
   // clamped a little past the shelf's own left edge (~157) so there's a
