@@ -1545,6 +1545,24 @@ function updateSeasonTransition(deltaTime) {
         player.x = FOREST_FUNGUS_TREE_X;
         forestFungusClimb.level = forestFungusClimb.levels.length - 1;
         forestFungusClimb.streak = 0;
+        // CONFIRMED BUG FIX ("when i drop down from topsy turvey it drops
+        // me like in the air at an angle. and... i cannot move right only
+        // left and be under water"): the fungus tree sits PAST the river's
+        // own invisible build wall (see forestRiverBuildEdgeX), same fact
+        // the Shift+F debug spawn already had to account for. Landing
+        // back here without the bridge flagged complete meant the very
+        // next forest-scene frame slammed player.x from the tree all the
+        // way back to the wall's edge (a huge one-frame snap, which is
+        // what read as "flung at an angle") and pinned it there against
+        // the near riverbank, unable to walk right past the wall and
+        // wading in the river's own water visuals when walking left. In
+        // real play this can only happen with the bridge already fully
+        // built (that's the only way to have reached the tree at all),
+        // so unconditionally marking it complete here is always safe --
+        // never a regression, just closing the same gap the debug spawn
+        // already had to patch.
+        forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+        forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
       } else {
         const spawn = sceneSpawns[currentScene];
         player.x = spawn.x;
@@ -19619,21 +19637,90 @@ function drawTopsyTurvyTree(camX, t) {
 // vignette -- a little bark hollow with a tiny creature curled up asleep
 // in a leaf blanket, a couple of drifting "z"s. Pure atmosphere, nothing
 // to press space on -- the point is just "something lives here".
+// CONFIRMED CHANGE ("i meant cuter like as in more like an actual basket,
+// more texture/visual components. same with the sleep nook"): the old
+// hollow was a single flat-filled ellipse -- clean but reads as a plain
+// dark oval stuck on the bark rather than a real carved-out knot hollow.
+// Rebuilt with an actual irregular bark opening (jagged edge, not a
+// perfect ellipse), a raised bark lip around it for depth, a soft
+// gradient inside so it reads as recessed rather than flat, a real
+// two-leaf overlapping blanket with visible veins instead of one flat
+// ellipse, and a tiny moss tuft at the base for extra texture.
 function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
   const nx = sx + side * 15 * s, ny = y(localHeight);
-  // the hollow itself
-  ctx.fillStyle = "#2a1c10";
+  const seed = nx * 3.1 + ny * 1.7;
+
+  // raised bark lip -- a slightly lighter, larger irregular ring behind
+  // the hollow itself, so the opening reads as carved INTO a raised knot
+  // rather than just a dark blob floating on flat bark
+  ctx.fillStyle = "rgba(70,48,28,0.6)";
   ctx.beginPath();
-  ctx.ellipse(nx, ny, 9 * s, 7 * s, 0, 0, Math.PI * 2);
+  const lipPts = 10;
+  for (let i = 0; i <= lipPts; i++) {
+    const a = (i / lipPts) * Math.PI * 2;
+    const jitter = 1 + (pseudoRandom(seed + i * 2.1) - 0.5) * 0.35;
+    const px = nx + Math.cos(a) * 11.5 * s * jitter;
+    const py = ny + Math.sin(a) * 9 * s * jitter;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#1a1008";
+
+  // the hollow itself -- irregular jagged bark opening, radial-shaded so
+  // the middle reads darkest (deepest) and it lightens slightly toward
+  // the torn edge
+  const hollowGrad = ctx.createRadialGradient(nx, ny, 0, nx, ny, 9 * s);
+  hollowGrad.addColorStop(0, "#150d07");
+  hollowGrad.addColorStop(0.7, "#2a1c10");
+  hollowGrad.addColorStop(1, "#3f2c18");
+  ctx.fillStyle = hollowGrad;
+  ctx.beginPath();
+  const hPts = 9;
+  for (let i = 0; i <= hPts; i++) {
+    const a = (i / hPts) * Math.PI * 2;
+    const jitter = 1 + (pseudoRandom(seed + 40 + i * 1.7) - 0.5) * 0.3;
+    const px = nx + Math.cos(a) * 9 * s * jitter;
+    const py = ny + Math.sin(a) * 7 * s * jitter;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#150d07";
   ctx.lineWidth = 1;
   ctx.stroke();
-  // a leaf blanket draped over the curled-up shape
-  ctx.fillStyle = "#5a8a3a";
-  ctx.beginPath();
-  ctx.ellipse(nx, ny + 1.5 * s, 6.5 * s, 4.2 * s, 0, 0, Math.PI * 2);
-  ctx.fill();
+
+  // a tiny moss tuft at the base of the hollow -- small texture detail,
+  // ties the nook back into the forest rather than reading as generic
+  ctx.fillStyle = "#4a7a3a";
+  [[-5, 5.5], [4.2, 6]].forEach(([ox, oy], i) => {
+    ctx.beginPath();
+    ctx.ellipse(nx + ox * s, ny + oy * s, (2 + i * 0.4) * s, 1.2 * s, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // a real two-leaf blanket, overlapping, each with a visible center
+  // vein -- reads as actual leaves stitched together, not a flat oval
+  [{ ox: -1.6, rot: -0.25, c: "#5a8a3a" }, { ox: 2.2, rot: 0.3, c: "#4f7d33" }].forEach(leaf => {
+    const lx = nx + leaf.ox * s, ly = ny + 1.3 * s;
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(leaf.rot);
+    ctx.fillStyle = leaf.c;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5 * s, 3.4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(30,50,20,0.5)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-4.2 * s, 0);
+    ctx.lineTo(4.2 * s, 0);
+    for (let v = -3; v <= 3; v += 2) {
+      ctx.moveTo(v * s, 0);
+      ctx.lineTo(v * 1.2 * s, -1.3 * s * Math.sign(v || 1));
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
   // the sleeper -- just a small round curled bump peeking out, plus a
   // closed-eye squiggle, no more detail than that (mostly hidden by the
   // blanket on purpose)
@@ -19786,38 +19873,25 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
   ctx.lineTo(bx, basketY);
   ctx.stroke();
 
-  // the basket itself -- a real woven look (trapezoid body, cross-weave
-  // lines, a rim), not just a flat pail silhouette
-  const bw = 11 * s, bh = 9 * s;
-  ctx.fillStyle = "#8a6a3e";
-  ctx.beginPath();
-  ctx.moveTo(bx - bw * 0.55, basketY);
-  ctx.lineTo(bx - bw * 0.4, basketY + bh);
-  ctx.lineTo(bx + bw * 0.4, basketY + bh);
-  ctx.lineTo(bx + bw * 0.55, basketY);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#4a3218";
-  ctx.lineWidth = 0.8 * s;
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(60,40,20,0.4)";
-  ctx.lineWidth = 0.6 * s;
-  [0.3, 0.6].forEach(f => {
-    ctx.beginPath();
-    ctx.moveTo(bx - bw * 0.5 * (1 - f) - bw * 0.4 * f, basketY + bh * f);
-    ctx.lineTo(bx + bw * 0.5 * (1 - f) + bw * 0.4 * f, basketY + bh * f);
-    ctx.stroke();
-  });
-  ctx.strokeStyle = "#5a4020";
-  ctx.lineWidth = 1.2 * s;
-  ctx.beginPath();
-  ctx.ellipse(bx, basketY, bw * 0.55, 2 * s, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  // CONFIRMED CHANGE ("make the basket cuter. and have the tomato/
+  // mushrooms slightly occluded while in basket"), then ("remove bow on
+  // basket. i meant cuter like as in more like an actual basket, more
+  // texture/visual components"): the old basket was a sharp-edged
+  // trapezoid with the cargo just floating on top of it. Rounded the
+  // whole body into a real basket-bowl shape and moved the cargo to draw
+  // BEFORE the front rim lip so that lip overlaps and hides the bottom
+  // of whatever's riding along. The bow read as a random accessory
+  // rather than "basket" itself, so it's gone -- replaced with actual
+  // basket construction detail instead: a shaded body (not a flat
+  // color), vertical ribs, a real woven lattice crossing them, and a
+  // wrapped double-band rim, same idea as how the pig's own pots got a
+  // real material pass rather than just a flat silhouette.
+  const bw = 12 * s, bh = 8.5 * s;
 
-  // cargo riding along, peeking up out of the basket -- swaps with the
-  // direction of travel
+  // cargo drawn first, tucked down into the bowl -- its lower half will
+  // get covered by the front rim lip drawn after
   if (goingUp) {
-    const mx = bx, my = basketY - 2 * s;
+    const mx = bx, my = basketY + 1 * s;
     ctx.fillStyle = "#c0392b";
     ctx.beginPath();
     ctx.arc(mx, my, 4 * s, Math.PI, 0);
@@ -19831,8 +19905,84 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
     ctx.fillStyle = "#e8dcc0";
     ctx.fillRect(mx - 1.2 * s, my, 2.4 * s, 3 * s);
   } else {
-    drawTomatoShape(ctx, bx, basketY - 3 * s, 5 * s, 0);
+    drawTomatoShape(ctx, bx, basketY + 0.5 * s, 5 * s, 0);
   }
+
+  // rounded basket bowl, shaded rather than a flat fill -- a real
+  // material gradient (dark at the curving edges, lit toward the middle)
+  // same "curved surfaces show light/dark bands" idea the pig's pots use
+  const bodyGrad = ctx.createLinearGradient(bx - bw * 0.6, 0, bx + bw * 0.6, 0);
+  bodyGrad.addColorStop(0, "#5e4526");
+  bodyGrad.addColorStop(0.28, "#8a6a3e");
+  bodyGrad.addColorStop(0.5, "#a88251");
+  bodyGrad.addColorStop(0.72, "#8a6a3e");
+  bodyGrad.addColorStop(1, "#5e4526");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.moveTo(bx - bw * 0.56, basketY);
+  ctx.quadraticCurveTo(bx - bw * 0.63, basketY + bh * 0.6, bx - bw * 0.3, basketY + bh);
+  ctx.quadraticCurveTo(bx, basketY + bh * 1.15, bx + bw * 0.3, basketY + bh);
+  ctx.quadraticCurveTo(bx + bw * 0.63, basketY + bh * 0.6, bx + bw * 0.56, basketY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 0.8 * s;
+  ctx.stroke();
+
+  // vertical ribs -- the basket's own structural spokes, evenly spaced
+  // and following the same curve as the body, a real construction cue
+  // rather than just a painted-on pattern
+  ctx.strokeStyle = "rgba(45,30,15,0.55)";
+  ctx.lineWidth = 0.6 * s;
+  [-0.44, -0.16, 0.16, 0.44].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(bx + bw * f, basketY);
+    ctx.quadraticCurveTo(bx + bw * f * 0.7, basketY + bh * 0.65, bx + bw * f * 0.32, basketY + bh * 1.02);
+    ctx.stroke();
+  });
+  // horizontal woven bands crossing the ribs -- a proper lattice instead
+  // of two lone strokes, curved to match the rounded body at each level
+  ctx.strokeStyle = "rgba(60,40,20,0.5)";
+  ctx.lineWidth = 0.7 * s;
+  [0.22, 0.48, 0.74].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(bx - bw * 0.56 * (1 - f * 0.6), basketY + bh * f);
+    ctx.quadraticCurveTo(bx, basketY + bh * (f + 0.1), bx + bw * 0.56 * (1 - f * 0.6), basketY + bh * f);
+    ctx.stroke();
+  });
+  // a thin bright highlight streak, offset from center, so the weave
+  // reads as catching real light rather than a flat texture
+  ctx.strokeStyle = "rgba(230,200,150,0.35)";
+  ctx.lineWidth = 1 * s;
+  ctx.beginPath();
+  ctx.moveTo(bx - bw * 0.18, basketY + bh * 0.12);
+  ctx.quadraticCurveTo(bx - bw * 0.24, basketY + bh * 0.6, bx - bw * 0.12, basketY + bh * 0.95);
+  ctx.stroke();
+
+  // front rim lip -- drawn LAST, on top of the cargo's lower half, so
+  // the mushroom/tomato reads as sitting down inside the weave rather
+  // than pasted above it. CONFIRMED BUG FIX (found via debug-harness
+  // screenshot): filling the FULL rim ellipse hid too much -- it covered
+  // area above basketY too, swallowing most of the tomato instead of
+  // just its lower half. Only the bottom-facing half (the 0..PI sweep)
+  // is filled now, so it occludes just the part of the cargo actually
+  // sitting below the rim line. Rebuilt as a wrapped double-band rim
+  // (two concentric strokes with a gap) instead of one thin line, like
+  // a real basket's woven rim edge.
+  ctx.fillStyle = "#9a7a48";
+  ctx.beginPath();
+  ctx.ellipse(bx, basketY, bw * 0.56, 2.6 * s, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = 1.3 * s;
+  ctx.beginPath();
+  ctx.ellipse(bx, basketY, bw * 0.56, 2.6 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#c9a86a";
+  ctx.lineWidth = 0.6 * s;
+  ctx.beginPath();
+  ctx.ellipse(bx, basketY - 0.8 * s, bw * 0.48, 2.1 * s, 0, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 // the ambient topsy-turvy critter -- per direct follow-up ("the upside
@@ -19986,23 +20136,30 @@ function drawTopsyTurvyPig(camX) {
 // so silhouettes stay crisp against any background, brighter warm rims,
 // a glossy highlight streak per piece, and small loop handles instead of
 // plain dot handles -- so the stack pops rather than blending in.
+// CONFIRMED CHANGE ("make the pots/pans thing a little taller, and
+// wobblier"): one more piece stacked on top (5 now, was 4) for real
+// height, plus more sway amplitude at every level and a wider rotate so
+// the lean actually reads, not just a shimmer. Spacing between pieces
+// also opened up a touch (1.6 -> 1.85) so the extra height comes from
+// genuinely taller stacking, not just a 5th squeezed-in piece.
 function drawTopsyTurvyPigPots() {
   const wobbleT = performance.now() * 0.0035;
   const pots = [
     { w: 15, h: 6.5, color: "#2e2b29", colorLite: "#4a4542", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
     { w: 11.5, h: 5.5, color: "#b5622e", colorLite: "#d97f45", rim: "#ffd9a0", handle: "#7a3d18", glossy: true, feet: false },
     { w: 8.5, h: 4.5, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
-    { w: 6, h: 3.5, color: "#c97a3c", colorLite: "#e6975a", rim: "#ffe2b0", handle: "#7a3d18", glossy: true, feet: false }
+    { w: 6, h: 3.5, color: "#c97a3c", colorLite: "#e6975a", rim: "#ffe2b0", handle: "#7a3d18", glossy: true, feet: false },
+    { w: 4.2, h: 2.6, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true }
   ];
   let stackY = 27; // starting just above the trotters
   pots.forEach((pot, i) => {
-    const amp = 1.6 + i * 1.5; // more sway higher up the precarious stack
+    const amp = 2.2 + i * 2.1; // more sway higher up the precarious stack -- wobblier throughout, and steeper toward the top
     const tilt = Math.sin(wobbleT + i * 0.9) * amp;
     const w = pot.w, h = pot.h;
     const cy = stackY + h;
     ctx.save();
-    ctx.translate(tilt * 0.4, cy);
-    ctx.rotate(tilt * 0.03);
+    ctx.translate(tilt * 0.55, cy);
+    ctx.rotate(tilt * 0.045);
 
     // CONFIRMED CHANGE ("cant tell its pots"): a plain filled ellipse
     // reads as a shiny egg/ball, not a container -- rebuilt as an actual
@@ -20123,7 +20280,7 @@ function drawTopsyTurvyPigPots() {
       });
     }
     ctx.restore();
-    stackY += h * 1.6;
+    stackY += h * 1.85;
   });
 }
 
@@ -21864,10 +22021,6 @@ function drawForestFungusClimb(camX) {
     ctx.fill();
   });
 
-  forestFungusClimb.levels.forEach(level => {
-    level.mats.forEach(t => drawForestFungusCap(camX, t));
-  });
-
   // CONFIRMED ADD ("but also maybe some little neat things you see on
   // the way up. like in the books. but i am NOT trying to match the
   // books, more just the flavor of it"): a few small original vignettes
@@ -21884,6 +22037,12 @@ function drawForestFungusClimb(camX) {
   // in (see TW above) plus a soft recessed bark-shadow behind the nook
   // and door so they read as carved INTO the bark instead of a flat
   // sticker floating on top of it.
+  // CONFIRMED CHANGE ("make sure sleep nook is occluded slightly by the
+  // fungus if there is a fungus in front of it"): moved BEFORE the mats
+  // loop below (was after) -- this is what actually lets a mushroom cap
+  // that happens to land near the nook's own height draw on top of it
+  // and partially cover it, real depth instead of the vignette always
+  // painting over every cap no matter how close.
   const fungusY = h => gy - h;
   const FUNGUS_VIGNETTE_SCALE = 2.3;
   const nookX = sx + 1 * 15 * FUNGUS_VIGNETTE_SCALE, nookY = fungusY(150);
@@ -21900,11 +22059,17 @@ function drawForestFungusClimb(camX) {
   ctx.fill();
   drawTreeClimbDoor(sx, fungusY, FUNGUS_VIGNETTE_SCALE, -1, 350);
 
+  forestFungusClimb.levels.forEach(level => {
+    level.mats.forEach(t => drawForestFungusCap(camX, t));
+  });
+
   // CONFIRMED REWORK ("i dont see a basket or whatever that carries
   // things up. and it should also be in motion"): swapped the old static
   // bucket for the animated pulley basket above, spanning most of the
   // climbable trunk (dynamically off topLevelHeight, so it automatically
-  // covers whatever the current climb height is).
+  // covers whatever the current climb height is). Stays drawn LAST, after
+  // the mats, since it's meant to read as clearly in front on its own
+  // rope rather than tucked into the bark like the nook/door.
   drawFungusTrunkPulley(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 60, topLevelHeight + 80);
 }
 
