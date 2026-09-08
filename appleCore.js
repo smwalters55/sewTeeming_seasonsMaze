@@ -4481,9 +4481,10 @@ function applyPhysics(){
     // nothing there to land on, same as how the tall tree's own root
     // platforms only ever existed because the tree itself is already
     // standing.
-    const allTopsyPlatforms = topsyWindSeedPlot.grown
+    const allTopsyPlatforms = (topsyWindSeedPlot.grown
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
-      : topsyTurvyRootPlatforms;
+      : topsyTurvyRootPlatforms
+    ).concat(topsyTallTreeRungs);
     allTopsyPlatforms.forEach(p => {
       const platformTop = p.height;
       if (
@@ -18171,7 +18172,7 @@ const topsyTurvyTrees = [
   // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
   // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
   // 1420) -- nudged out to give the cart/pluck spot some breathing room.
-  { x: 1680, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): nudged out again (was 1560, before that 1490) now that the whole cart->well stretch has more room
+  { x: 1680, scale: 0.85, trunk: 230, tall: true } // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): nudged out again (was 1560, before that 1490) now that the whole cart->well stretch has more room. `tall` flags this one for its own dedicated trunk-rung climb, see topsyTallTreeRungs below
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18224,6 +18225,31 @@ const topsyTurvyRootPlatforms = topsyTurvyTrees.flatMap(t =>
     };
   })
 );
+
+// CONFIRMED ADD ("more rungs for sure. but also maybe some little neat
+// things you see on the way up. like in the books"): a proper climbing
+// sequence up the tall tree's own trunk instead of the cart-boost leap
+// being the ONLY way to reach the root platforms at the top -- small
+// bark-knot footholds, spiraling up by alternating which side of the
+// trunk each one sticks out from. Heights climb from just above the
+// canopy to right where the roots begin (~211, see topsyTurvyRootPlatforms
+// above), each gap sized like sandboxBlockSteps' own tiers (well within
+// a single plain jump, no double-jump required per rung). Same shared
+// "stand on top" collision every other topsy platform already uses (see
+// allTopsyPlatforms in applyPhysics) -- these are real platforms, not
+// decoration.
+const topsyTallTree = topsyTurvyTrees.find(t => t.tall);
+const TOPSY_TALL_TREE_RUNG_HEIGHTS = [45, 82, 119, 156, 193];
+const topsyTallTreeRungs = TOPSY_TALL_TREE_RUNG_HEIGHTS.map((h, i) => {
+  const t = topsyTallTree;
+  const trunkBaseY = 30 * t.scale, trunkTopY = t.trunk * t.scale;
+  const f = (h - trunkBaseY) / (trunkTopY - trunkBaseY);
+  const halfW = (7.5 + (4 - 7.5) * f) * t.scale; // matches drawTopsyTurvyTree's own baseHalfW/topHalfW taper
+  const side = i % 2 === 0 ? -1 : 1;
+  const width = 22;
+  return { x: t.x + side * (halfW + 7) - width / 2, height: h, width, side };
+});
+
 // one ambient "topsy-turvy folk" -- walks on their hands, per the book's
 // own description, wandering a short patrol range near the houses
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
@@ -19597,6 +19623,166 @@ function drawTopsyTurvyTree(camX, t) {
     drawDendriticRootStrand(0, 0, angle, len, 2, seed, 2.4);
   });
   ctx.restore();
+
+  // CONFIRMED ADD ("more rungs for sure. but also maybe some little neat
+  // things you see on the way up. like in the books. but i am NOT trying
+  // to match the books, more just the flavor of it"): the tall tree's own
+  // climbing footholds, plus a few small original vignettes glimpsed
+  // along the way -- nothing lifted from any specific book scene, just
+  // "a tree someone quietly lives in" flavor. Only this one tree gets
+  // any of this (see the `tall` flag on topsyTurvyTrees).
+  if (t.tall) {
+    topsyTallTreeRungs.forEach(rung => {
+      const rx = sx + (rung.x + rung.width / 2 - t.x);
+      const ry = y(rung.height);
+      // short connecting nub back to the trunk's own centerline, so the
+      // knot reads as growing OUT of the bark rather than floating
+      ctx.strokeStyle = "#3a2818";
+      ctx.lineWidth = 3 * s;
+      ctx.beginPath();
+      ctx.moveTo(sx + rung.side * 3 * s, ry);
+      ctx.lineTo(rx, ry);
+      ctx.stroke();
+      // the actual foothold -- a stubby bark knot
+      ctx.fillStyle = "#5a4028";
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, 9 * s, 5 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#2f2013";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,235,200,0.25)";
+      ctx.beginPath();
+      ctx.ellipse(rx - rung.side * 2 * s, ry - 1.5 * s, 4 * s, 2 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    drawTopsyTallTreeSleepyNook(sx, y, s, 1, 63);
+    drawTopsyTallTreeDoor(sx, y, s, -1, 138);
+    drawTopsyTallTreeBucketRig(sx, y, s, 210);
+  }
+}
+
+// vignette -- a little bark hollow with a tiny creature curled up asleep
+// in a leaf blanket, a couple of drifting "z"s. Pure atmosphere, nothing
+// to press space on -- the point is just "something lives here".
+function drawTopsyTallTreeSleepyNook(sx, y, s, side, localHeight) {
+  const nx = sx + side * 15 * s, ny = y(localHeight);
+  // the hollow itself
+  ctx.fillStyle = "#2a1c10";
+  ctx.beginPath();
+  ctx.ellipse(nx, ny, 9 * s, 7 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#1a1008";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // a leaf blanket draped over the curled-up shape
+  ctx.fillStyle = "#5a8a3a";
+  ctx.beginPath();
+  ctx.ellipse(nx, ny + 1.5 * s, 6.5 * s, 4.2 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // the sleeper -- just a small round curled bump peeking out, plus a
+  // closed-eye squiggle, no more detail than that (mostly hidden by the
+  // blanket on purpose)
+  ctx.fillStyle = "#c9a06a";
+  ctx.beginPath();
+  ctx.arc(nx - 2.5 * s, ny - 1 * s, 2.4 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(nx - 3.6 * s, ny - 1.2 * s);
+  ctx.quadraticCurveTo(nx - 2.5 * s, ny - 0.3 * s, nx - 1.4 * s, ny - 1.2 * s);
+  ctx.stroke();
+  // slow-drifting "z"s
+  const t0 = performance.now() * 0.001;
+  [0, 1, 2].forEach(i => {
+    const cycle = ((t0 * 0.25 + i / 3) % 1);
+    const alpha = cycle < 0.15 ? cycle / 0.15 : (cycle > 0.8 ? (1 - cycle) / 0.2 : 1);
+    if (alpha <= 0.02) return;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.75;
+    ctx.fillStyle = "#e8dcc0";
+    ctx.font = `${(6 + cycle * 3) * s}px sans-serif`;
+    ctx.fillText("z", nx + 4 * s + cycle * 4 * s, ny - 6 * s - cycle * 12 * s);
+    ctx.restore();
+  });
+}
+
+// vignette -- a tiny round door set flush into the bark, warm light glowing
+// behind its window. Implies someone lives here without ever showing who.
+function drawTopsyTallTreeDoor(sx, y, s, side, localHeight) {
+  const dx = sx + side * 14 * s, dy = y(localHeight);
+  const w = 8 * s, h = 13 * s;
+  ctx.fillStyle = "#3a2818";
+  ctx.beginPath();
+  ctx.moveTo(dx - w / 2, dy + h / 2);
+  ctx.lineTo(dx - w / 2, dy - h / 2 + w / 2);
+  ctx.arc(dx, dy - h / 2 + w / 2, w / 2, Math.PI, 0);
+  ctx.lineTo(dx + w / 2, dy + h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#1e1409";
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  // the little round window, warm light glowing behind it -- soft glow
+  // first so the window itself reads crisp on top
+  const glow = ctx.createRadialGradient(dx, dy - 1.5 * s, 0, dx, dy - 1.5 * s, 6 * s);
+  glow.addColorStop(0, "rgba(255,210,120,0.55)");
+  glow.addColorStop(1, "rgba(255,210,120,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(dx, dy - 1.5 * s, 6 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffd97a";
+  ctx.beginPath();
+  ctx.arc(dx, dy - 1.5 * s, 2 * s, 0, Math.PI * 2);
+  ctx.fill();
+  // tiny doorknob
+  ctx.fillStyle = "#c9a86a";
+  ctx.beginPath();
+  ctx.arc(dx + side * 2.4 * s, dy + 3 * s, 0.7 * s, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// vignette -- a small pulley/bucket rig strung off a branch stub near the
+// top, like whoever lives here hauls things up rather than climbing for
+// everything. Gently swaying; purely decorative for now.
+function drawTopsyTallTreeBucketRig(sx, y, s, localHeight) {
+  const bx = sx, by = y(localHeight);
+  const sway = Math.sin(performance.now() * 0.0012) * 3 * s;
+  // the branch stub it hangs from
+  ctx.strokeStyle = "#4a3222";
+  ctx.lineWidth = 3 * s;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx + 14 * s, by - 4 * s);
+  ctx.stroke();
+  const hookX = bx + 14 * s, hookY = by - 4 * s;
+  // rope
+  ctx.strokeStyle = "#8a7250";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(hookX, hookY);
+  ctx.lineTo(hookX + sway, hookY + 16 * s);
+  ctx.stroke();
+  // the little bucket
+  const pailX = hookX + sway, pailY = hookY + 16 * s;
+  ctx.fillStyle = "#7a5a34";
+  ctx.beginPath();
+  ctx.moveTo(pailX - 4 * s, pailY);
+  ctx.lineTo(pailX - 3 * s, pailY + 6 * s);
+  ctx.lineTo(pailX + 3 * s, pailY + 6 * s);
+  ctx.lineTo(pailX + 4 * s, pailY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#4a3218";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(pailX, pailY - 1.5 * s, 4 * s, Math.PI, 0);
+  ctx.stroke();
 }
 
 // the ambient topsy-turvy critter -- per direct follow-up ("the upside
