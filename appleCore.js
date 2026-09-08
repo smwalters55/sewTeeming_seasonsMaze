@@ -18084,6 +18084,17 @@ const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own ed
 // degrees (a true rotation, not a mirror, so the letters stay correctly
 // formed and just read right if you tilt your own head, not garbled).
 const TOPSY_SIGN_X = 110;
+// CONFIRMED ADD ("lets put a small upside down dandelion flower upside
+// down near entrance for reason of seeds already floating? and to hint
+// what to do w the dirt subtley"): a small, ALWAYS-bloomed decorative
+// dandelion near the entrance -- same inverted anatomy as the big one
+// at the actual seed plot (flower head at ground, stem rising, tiny
+// root wisp at top) and same "loose things float up" seed-parachute
+// drift, just permanently grown and purely atmospheric. Point is for
+// the player to see wind-seeds already drifting off a dandelion before
+// they ever reach the dug hole, so "dirt + dandelion seed" reads as an
+// obvious idea by the time they get there instead of a cold guess.
+const TOPSY_ENTRANCE_DANDELION_X = 190;
 // CONFIRMED CHANGE ("wut is that white circle... make sure im actually
 // attached to a platform, not floating"): was 130, right on top of the
 // new entrance sign (TOPSY_SIGN_X=110) -- the portal's own ring read as
@@ -19263,41 +19274,33 @@ function drawTopsyTurvyHouse(camX, h) {
     }
   }
 
-  // chimney smoke -- CONFIRMED ADD ("i like the chimney smoke too"):
-  // since this is upside-down land, the joke is that the smoke curls
-  // *downward* out of the chimney instead of drifting up like real
-  // smoke would -- same inverted-world logic already used for the
-  // roots-up trees and the house standing on its own roof.
-  // CONFIRMED BUG FIX ("it looks like the smoke is coming from house
-  // roof, and then going down past the chimney. not from out of chimney"):
-  // two problems with the first pass. (1) the origin sat right at
-  // chimDrawTop -- the chimney's own TALL drawn-for-roof-overlap top,
-  // which is deep inside the region the roof (opaque, drawn earlier)
-  // already covers at this offset x, so the puffs' first frames rendered
-  // ON TOP of the roof fill instead of at the chimney's own visible
-  // brick. Moved down to chimH + 3*s -- comfortably below where the
-  // roof's own curve actually meets the chimney at this x (~chimH +
-  // 5.25*s, per the roof-gap math worked out when the chimney was first
-  // reattached), so every puff starts unambiguously on exposed brick.
-  // (2) the drift distance (26*s) was long enough to carry each puff
-  // almost the chimney's whole visible height, reading as smoke sliding
-  // straight down the chimney's face rather than billowing out and
-  // dissipating near its opening the way real smoke does (just inverted
-  // in direction). Shortened a lot so puffs fade out within a short
-  // distance of the opening instead of streaking all the way to the
-  // ground. Still drawn last (on top of everything) so nothing occludes it.
-  const smokeOriginX = chimX, smokeOriginY = y(chimH + 3 * s);
-  const smokeCount = 4, smokeCycle = 2200;
+  // chimney smoke -- CONFIRMED ADD ("i like the chimney smoke too"), then
+  // twice revised on direction/origin. FINAL take ("smoke still looks
+  // like it is going down from house, not up from chimney from where it
+  // touches the ground"): the two earlier passes both anchored the smoke
+  // near the TOP of the chimney (where it pokes up into the roof), which
+  // needed fragile curve math to place right and, per direct feedback,
+  // never actually read as coming from the chimney at all -- it read as
+  // leaking out of the house/roof generally. Rebuilt around a much
+  // simpler, more legible idea: this land's own already-established rule
+  // is that loose/contained things drift UPWARD, not down (the cart's
+  // tomatoes, the well's water) -- smoke should be no exception. Anchored
+  // at the chimney's own unambiguous, already-computed ground-contact
+  // point (chimX, right at the pot-rim cap -- no curve estimation needed,
+  // it's literally where the chimney visibly meets the ground) and drifts
+  // straight UP from there, same as everything else loose in this land.
+  const smokeOriginX = chimX, smokeOriginY = y(2 * s);
+  const smokeCount = 4, smokeCycle = 2600;
   for (let i = 0; i < smokeCount; i++) {
     const phase = ((performance.now() + i * (smokeCycle / smokeCount)) % smokeCycle) / smokeCycle;
-    const drift = phase * 11 * s; // short downward drift, not up -- dissipates near the opening
+    const rise = phase * 34 * s; // drifts UP, same as the tomatoes/well water
     const wobble = Math.sin(phase * Math.PI * 2.4 + i * 1.7) * 4 * s;
-    const puffR = (1.8 + phase * 2.6) * s;
+    const puffR = (1.8 + phase * 3) * s;
     const alpha = 0.4 * (1 - phase);
     if (alpha <= 0.01) continue;
     ctx.fillStyle = `rgba(230,230,235,${alpha})`;
     ctx.beginPath();
-    ctx.ellipse(smokeOriginX + wobble, smokeOriginY + drift, puffR, puffR * 0.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(smokeOriginX + wobble, smokeOriginY - rise, puffR, puffR * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -19707,8 +19710,31 @@ function drawTopsyTurvyPigPots() {
     ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW - 1, rimY);
     ctx.fill();
 
-    // the body itself -- same taper, real size
-    ctx.fillStyle = pot.color;
+    // the body itself -- CONFIRMED CHANGE ("need to look more like metal
+    // what is this"): a flat fill plus one soft highlight stripe read as
+    // plain painted plastic, not metal -- real metal shows multiple
+    // sharp light/dark BANDS across its curve (it mirrors whatever's
+    // around it in narrow streaks, not one gentle gradient), so this is
+    // rebuilt as a genuine multi-stop horizontal gradient: dark at both
+    // edges (metal curving away from the light), a lit mid-tone, then a
+    // hard bright specular band slightly off-center (never dead center --
+    // that's what actually sells "shiny," a centered highlight just
+    // reads as a glow) before dropping back to shadow on the far side.
+    // Cast iron gets a narrower, dimmer, cooler-grey specular (matte,
+    // low-key metal); copper gets a wider, warmer, near-white one (a
+    // genuinely reflective polished surface).
+    const dark = blendHexColors(pot.color, "#000000", 0.35);
+    const darkest = blendHexColors(pot.color, "#000000", 0.55);
+    const hotspot = pot.glossy ? blendHexColors(pot.colorLite, "#ffffff", 0.85) : blendHexColors(pot.colorLite, "#ffffff", 0.45);
+    const bodyGrad = ctx.createLinearGradient(-bellyHalfW, 0, bellyHalfW, 0);
+    bodyGrad.addColorStop(0, darkest);
+    bodyGrad.addColorStop(0.22, dark);
+    bodyGrad.addColorStop(0.42, pot.colorLite);
+    bodyGrad.addColorStop(pot.glossy ? 0.56 : 0.5, hotspot);
+    bodyGrad.addColorStop(pot.glossy ? 0.68 : 0.58, pot.colorLite);
+    bodyGrad.addColorStop(0.85, dark);
+    bodyGrad.addColorStop(1, darkest);
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
     ctx.moveTo(-rimHalfW, rimY);
     ctx.quadraticCurveTo(-bellyHalfW, bellyY, 0, bottomY);
@@ -19716,14 +19742,19 @@ function drawTopsyTurvyPigPots() {
     ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW, rimY);
     ctx.fill();
 
-    // a soft lit stripe down one side of the belly so the round taper
-    // actually reads as round, not a flat silhouette
-    ctx.fillStyle = pot.colorLite;
-    ctx.beginPath();
-    ctx.moveTo(-rimHalfW * 0.5, rimY + 0.5);
-    ctx.quadraticCurveTo(-bellyHalfW * 0.55, bellyY, -bellyHalfW * 0.1, bottomY - 1);
-    ctx.quadraticCurveTo(bellyHalfW * 0.05, bellyY, rimHalfW * 0.05, rimY + 0.5);
-    ctx.fill();
+    // a couple of thin, sharp horizontal reflection ticks crossing the
+    // vertical specular band -- the real giveaway of curved polished
+    // metal (a flat painted surface never shows these short crossing
+    // streaks, only a smooth continuous material does)
+    ctx.strokeStyle = pot.glossy ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 0.8;
+    [-0.15, 0.25].forEach(t => {
+      const ly = rimY + (bottomY - rimY) * (0.28 + t * 0.4 + 0.3);
+      ctx.beginPath();
+      ctx.moveTo(-bellyHalfW * 0.22, ly);
+      ctx.lineTo(bellyHalfW * 0.32, ly);
+      ctx.stroke();
+    });
 
     // the rim -- a flat ellipse standing in for the pot's own mouth/opening,
     // with a distinctly darker fill than the body so it reads as looking
@@ -19732,20 +19763,26 @@ function drawTopsyTurvyPigPots() {
     ctx.beginPath();
     ctx.ellipse(0, rimY, rimHalfW, h * 0.24, 0, 0, Math.PI * 2);
     ctx.fill();
-    // bright metal lip around that opening -- much lighter/warmer than the
-    // old grey so it reads as a lit rim, not a faint outline
-    ctx.strokeStyle = pot.rim;
-    ctx.lineWidth = 1.4;
+    // bright metal lip around that opening -- a gradient stroke (not a
+    // flat one) so even the thin rim edge reads as curved metal catching
+    // the light unevenly, not a painted-on ring
+    const rimGrad = ctx.createLinearGradient(-rimHalfW, 0, rimHalfW, 0);
+    rimGrad.addColorStop(0, dark);
+    rimGrad.addColorStop(0.5, pot.rim);
+    rimGrad.addColorStop(1, dark);
+    ctx.strokeStyle = rimGrad;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.ellipse(0, rimY, rimHalfW, h * 0.24, 0, 0, Math.PI * 2);
     ctx.stroke();
 
-    // a second, tighter glossy streak on the copper pieces for real shine
+    // a sharp, hard-edged glossy streak on the copper pieces -- real
+    // shine reads as a crisp bright line, not a soft translucent stroke
     if (pot.glossy) {
-      ctx.strokeStyle = "rgba(255,255,255,0.75)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.ellipse(-w * 0.15, bellyY - h * 0.15, w * 0.28, h * 0.22, 0, Math.PI * 1.2, Math.PI * 1.7);
+      ctx.ellipse(-w * 0.15, bellyY - h * 0.15, w * 0.26, h * 0.2, 0, Math.PI * 1.25, Math.PI * 1.65);
       ctx.stroke();
     }
 
@@ -20593,7 +20630,7 @@ function drawTopsyWindSeedPlot(camX) {
     if (!topsyWindSeedPlot.dug) {
       hint = "Dig here with a shovel";
     } else if (!topsyWindSeedPlot.planted) {
-      hint = "Plant a wind seed here";
+      hint = "Plant a dandelion seed here";
     } else if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
       hint = `Water it (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS})`;
     }
@@ -20987,6 +21024,108 @@ function drawTopsyTurvyInvertPlatform(camX) {
   }
 }
 
+// small always-bloomed decorative dandelion near the entrance -- see
+// TOPSY_ENTRANCE_DANDELION_X above for why. Deliberately much simpler
+// than drawTopsyWindSeedPlot's grown dandelion (no growth-stage gating,
+// no jumpable roots, no watering ties) since this one's only job is a
+// quiet visual echo, not a piece of the actual puzzle.
+function drawTopsyTurvyEntranceDandelion(camX) {
+  const dx = TOPSY_ENTRANCE_DANDELION_X - camX;
+  if (dx < -60 || dx > canvas.width + 60) return;
+
+  const sway = Math.sin(performance.now() * 0.0009 + 3.1) * 3;
+  const headR = 11;
+  const headCx = dx, headCy = gy - headR * 0.8;
+  const stemH = 26;
+  const stemBaseY = headCy - headR;
+  const stemTopY = stemBaseY - stemH;
+  const tipX = dx + sway;
+
+  // tapered stem, same construction as the big dandelion's but simpler
+  const baseW = 3.2, topW = 1.8;
+  const midX = dx + sway * 0.5, midY = (stemBaseY + stemTopY) / 2;
+  ctx.fillStyle = "#4f7a34";
+  ctx.beginPath();
+  ctx.moveTo(dx - baseW, stemBaseY);
+  ctx.quadraticCurveTo(midX - (baseW + topW) / 2, midY, tipX - topW, stemTopY);
+  ctx.lineTo(tipX + topW, stemTopY);
+  ctx.quadraticCurveTo(midX + (baseW + topW) / 2, midY, dx + baseW, stemBaseY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(58,94,40,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(dx - baseW, stemBaseY);
+  ctx.quadraticCurveTo(midX - (baseW + topW) / 2 * 0.4, midY, tipX - topW * 0.4, stemTopY);
+  ctx.lineTo(tipX, stemTopY);
+  ctx.quadraticCurveTo(midX, midY, dx, stemBaseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // tiny root wisp at the top -- echoes the big plot dandelion's roots
+  // just enough to read as the same inverted plant, not a different one
+  ctx.fillStyle = "#4f7a34";
+  ctx.beginPath();
+  ctx.ellipse(tipX, stemTopY, 3.5, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(58,94,40,0.55)";
+  ctx.lineWidth = 1;
+  [-0.9, -0.3, 0.3, 0.9].forEach(a => {
+    const len = 8 + Math.abs(a) * 4;
+    const ex = tipX + Math.sin(a) * len;
+    const ey = stemTopY - Math.cos(a) * len * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(tipX, stemTopY);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  });
+
+  // round puffball head, radiating strands
+  const strands = 22;
+  for (let i = 0; i < strands; i++) {
+    const a = (i / strands) * Math.PI * 2 + i * 0.31;
+    const len = headR * (0.85 + pseudoRandom(TOPSY_ENTRANCE_DANDELION_X + i * 13) * 0.22);
+    const tx = headCx + Math.cos(a) * len, ty = headCy + Math.sin(a) * len * 0.94;
+    ctx.strokeStyle = "rgba(240,238,225,0.85)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(headCx, headCy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(250,248,238,0.9)";
+    ctx.beginPath();
+    ctx.arc(tx, ty, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(235,225,180,0.55)";
+  ctx.beginPath();
+  ctx.arc(headCx, headCy, headR * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+
+  // seed-parachutes continuously detaching and drifting UPWARD -- the
+  // whole point: the player sees this happening near the entrance,
+  // before they ever reach the dug hole down the path
+  const t = performance.now() * 0.001;
+  for (let i = 0; i < 3; i++) {
+    const cycle = (t * 0.12 + i / 3) % 1;
+    const px = headCx + Math.sin(i * 2.3 + t * 0.3) * (6 + cycle * 20);
+    const py = headCy - cycle * 70;
+    const fade = cycle < 0.12 ? cycle / 0.12 : (cycle > 0.85 ? (1 - cycle) / 0.15 : 1);
+    ctx.strokeStyle = `rgba(240,238,225,${0.7 * fade})`;
+    ctx.lineWidth = 0.7;
+    [0, 1, 2].forEach(f => {
+      const fa = (f / 3) * Math.PI * 2 + t;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(fa) * 2.2, py + Math.sin(fa) * 2.2);
+      ctx.stroke();
+    });
+    ctx.fillStyle = `rgba(250,248,238,${0.9 * fade})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawTopsyTurvyEntranceSign(camX) {
   const sx = TOPSY_SIGN_X - camX;
   if (sx < -80 || sx > canvas.width + 80) return;
@@ -21133,6 +21272,7 @@ function drawTopsyTurvyScene(camX) {
   ctx.fillRect(0, gy, canvas.width, 10);
 
   drawTopsyTurvyEntranceSign(camX);
+  drawTopsyTurvyEntranceDandelion(camX);
   drawTopsyTurvyInvertPlatform(camX);
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
