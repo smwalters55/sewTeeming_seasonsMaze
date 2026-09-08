@@ -19310,6 +19310,28 @@ function drawTopsyTurvyPig(camX) {
   ctx.scale(facingLeft ? -1 : 1, -1);
 
   // trotters kicking up in the air (now drawn "up" by the flip)
+  // CONFIRMED CHANGE ("pig legs kinda invis now that background darker,
+  // make them vvvvv gently stand out a little more"): the pale pink
+  // legs/hooves had basically no contrast against the darker topsy-turvy
+  // sky. A faint dark outline pass underneath (wider stroke/circles, low
+  // opacity) gives them just enough edge definition to read without
+  // actually changing the pastel palette itself.
+  ctx.strokeStyle = "rgba(60,20,32,0.35)";
+  ctx.lineWidth = 4.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-8, 12); ctx.lineTo(-10, 26);
+  ctx.moveTo(-3, 13); ctx.lineTo(-5, 28);
+  ctx.moveTo(5, 13); ctx.lineTo(7, 28);
+  ctx.moveTo(9, 12); ctx.lineTo(11, 26);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(60,20,32,0.35)";
+  [[-10, 26], [-5, 28], [7, 28], [11, 26]].forEach(([hx, hy]) => {
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 3.4, 2.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   ctx.strokeStyle = "#c98fa0";
   ctx.lineWidth = 3;
   ctx.lineCap = "round";
