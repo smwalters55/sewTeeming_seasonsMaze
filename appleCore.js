@@ -21272,18 +21272,18 @@ function drawTopsyWindSeedPlot(camX) {
   // never promises something a press won't actually do.
   // CONFIRMED REMOVE ("remove 'plant a dandelion seed here'. i feel like
   // it should be another npc that suggests it... or maybe nothing at all
-  // for now and i have tester test it"): the plant-stage hint text is
-  // gone -- once dug but not yet planted, there's deliberately no on-
-  // screen cue at all right now (no silent fallthrough to the water
-  // hint either, since that would misleadingly suggest watering before
-  // anything's even planted). Revisit with an NPC-suggested version, or
-  // leave it silent, based on what testing actually shows is needed.
+  // for now and i have tester test it", then "same witht the water it
+  // text"): both the plant-stage AND water-stage hint text are gone now
+  // -- once dug, there's deliberately no on-screen cue for either later
+  // stage. Only the very first "Dig here with a shovel" cue remains,
+  // since that's the one stage with no other worldly clue at all (an
+  // undug plot just looks like plain ground). Revisit with an NPC-
+  // suggested version, or leave it silent, based on what testing
+  // actually shows is needed.
   if (!topsyWindSeedPlot.grown && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 40, 20, 20)) {
     let hint = null;
     if (!topsyWindSeedPlot.dug) {
       hint = "Dig here with a shovel";
-    } else if (topsyWindSeedPlot.planted && topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
-      hint = `Water it (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS})`;
     }
     if (hint) {
       ctx.fillStyle = "#3a2a4a";
