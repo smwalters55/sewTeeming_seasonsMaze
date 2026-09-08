@@ -17996,6 +17996,15 @@ function updateForestFungusClimb(deltaTime) {
 // to match instead of cramming it all into the old 1500.
 const TOPSYTURVY_WIDTH = 2250;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
+
+// CONFIRMED ADD ("also we still neaed the old school wooden sign saying
+// topsey turvey whatever that is quirkey and maybe upside down letters"):
+// a weathered wooden post-and-plank welcome sign, planted just before the
+// spawn point so it's the first thing seen walking in. The post/board
+// stand upright normally -- only the carved text itself is flipped 180
+// degrees (a true rotation, not a mirror, so the letters stay correctly
+// formed and just read right if you tilt your own head, not garbled).
+const TOPSY_SIGN_X = 110;
 const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
 
 // CONFIRMED CHANGE ("i like the grumpy character thing. w tulip ... maybe
@@ -19156,6 +19165,30 @@ function drawTopsyTurvyHouse(camX, h) {
         ]);
       }
     }
+  }
+
+  // chimney smoke -- CONFIRMED ADD ("i like the chimney smoke too"):
+  // since this is upside-down land, the joke is that the smoke curls
+  // *downward* out of the chimney instead of drifting up like real
+  // smoke would -- same inverted-world logic already used for the
+  // roots-up trees and the house standing on its own roof. Drawn last
+  // (on top of the roof/walls) so it isn't hidden behind them, sourced
+  // from the chimney's own drawn-tall tip (chimX/chimDrawTop, still in
+  // scope from up top) so it always starts right at the visible opening
+  // regardless of the roof's curve at that x.
+  const smokeOriginX = chimX, smokeOriginY = y(chimDrawTop) - 2 * s;
+  const smokeCount = 4, smokeCycle = 2600;
+  for (let i = 0; i < smokeCount; i++) {
+    const phase = ((performance.now() + i * (smokeCycle / smokeCount)) % smokeCycle) / smokeCycle;
+    const drift = phase * 26 * s; // downward travel, not up
+    const wobble = Math.sin(phase * Math.PI * 2.4 + i * 1.7) * 5 * s;
+    const puffR = (2.2 + phase * 3.2) * s;
+    const alpha = 0.4 * (1 - phase);
+    if (alpha <= 0.01) continue;
+    ctx.fillStyle = `rgba(230,230,235,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(smokeOriginX + wobble, smokeOriginY + drift, puffR, puffR * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -20726,6 +20759,83 @@ function drawTopsyUpsideDownBirds(camX) {
   }
 }
 
+function drawTopsyTurvyEntranceSign(camX) {
+  const sx = TOPSY_SIGN_X - camX;
+  if (sx < -80 || sx > canvas.width + 80) return;
+  const s = 1;
+
+  // post, planted in the ground, with a little wood-grain texture
+  ctx.fillStyle = "#6b4a2c";
+  ctx.fillRect(sx - 4 * s, gy - 58 * s, 8 * s, 58 * s);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx - 4 * s, gy - 58 * s, 8 * s, 58 * s);
+  ctx.strokeStyle = "rgba(74,48,24,0.4)";
+  [-1.5, 0, 1.5].forEach(gx => {
+    ctx.beginPath();
+    ctx.moveTo(sx + gx * s, gy - 55 * s);
+    ctx.lineTo(sx + gx * s, gy - 6 * s);
+    ctx.stroke();
+  });
+
+  // plank board, hung slightly askew off a nail near the post's top --
+  // the "old school" crookedness is deliberate, not the flipped text
+  const boardCx = sx + 2 * s, boardCy = gy - 50 * s;
+  const boardW = 54 * s, boardH = 22 * s;
+  const tilt = -0.06;
+  ctx.save();
+  ctx.translate(boardCx, boardCy);
+  ctx.rotate(tilt);
+  ctx.fillStyle = "#8a6438";
+  roundRect(ctx, -boardW / 2, -boardH / 2, boardW, boardH, 3 * s);
+  ctx.fill();
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, -boardW / 2, -boardH / 2, boardW, boardH, 3 * s);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(74,48,24,0.35)";
+  ctx.lineWidth = 1;
+  [-boardH / 6, boardH / 6].forEach(py => {
+    ctx.beginPath();
+    ctx.moveTo(-boardW / 2 + 2 * s, py);
+    ctx.lineTo(boardW / 2 - 2 * s, py);
+    ctx.stroke();
+  });
+  // rope hangers + nail heads at both top corners
+  ctx.strokeStyle = "#c9a86a";
+  ctx.lineWidth = 1.2;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(side * (boardW / 2 - 5 * s), -boardH / 2);
+    ctx.lineTo(side * (boardW / 2 - 5 * s), -boardH / 2 - 5 * s);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#3a2410";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.arc(side * (boardW / 2 - 5 * s), -boardH / 2 - 5 * s, 1.4 * s, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // the carved text -- CONFIRMED CHANGE: rotated a full 180 degrees (a
+  // true point-reflection rotation, not a horizontal mirror) so every
+  // letter is still correctly formed, just upside down as a whole --
+  // reads right if you tilt your own head, not scrambled like a mirror
+  // flip would be. A faint lighter "highlight" copy offset just above
+  // the dark fill reads as routed/carved wood rather than flat paint.
+  ctx.rotate(Math.PI);
+  ctx.font = `bold ${8 * s}px Georgia, serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255,240,210,0.5)";
+  ctx.fillText("TOPSY", 0, -1 * s - 1);
+  ctx.fillText("TURVY", 0, 8 * s - 1);
+  ctx.fillStyle = "#3a2410";
+  ctx.fillText("TOPSY", 0, -1 * s);
+  ctx.fillText("TURVY", 0, 8 * s);
+  ctx.restore();
+}
+
 function drawTopsyTurvyScene(camX) {
   // CONFIRMED CHANGE ("maybe we should change the sky a little, so we ca
   // better see the clouds and the dandelion"): the old gradient faded all
@@ -20794,6 +20904,7 @@ function drawTopsyTurvyScene(camX) {
   ctx.fillStyle = "#a686a0";
   ctx.fillRect(0, gy, canvas.width, 10);
 
+  drawTopsyTurvyEntranceSign(camX);
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
