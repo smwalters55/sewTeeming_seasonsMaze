@@ -349,6 +349,15 @@ const player = {
   speed: 3,
   jumping: false,
   usedDoubleJump: false, // resets whenever player lands on anything
+  // CONFIRMED ADD ("player jumps to platform, gets turned upside down
+  // while sticking to the platform"): set true while standing on (or
+  // having launched off of, mid-dive) topsy-turvy land's own invert
+  // platform (see TOPSY_INVERT_PLATFORM/applyPhysics's own collision
+  // block below) -- only cleared by a genuine ground landing, so the
+  // flipped sprite (see totalTilt's topsyInvertTilt term) persists for
+  // the whole downward dive, not just while actually touching the
+  // platform.
+  topsyInverted: false,
   vy: 0,
   vx: 0,               // horizontal momentum — only used during a swing launch
   launched: false,     // true while mid-flight from a swing release
@@ -2797,6 +2806,16 @@ function handleInput(){
         FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
           Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
 
+      // CONFIRMED ADD ("player jumps to platform, gets turned upside down
+      // while sticking to the platform... is able to jump but it is
+      // downwards"): only true while actually resting on TOPSY_INVERT_PLATFORM
+      // (applyPhysics' own collision block sets topsyInverted true and
+      // jumping false the moment it snaps the player onto it) -- same
+      // "own priority branch, takes over the ordinary jump" shape as
+      // nearSwing/nearVine above, just for the SAME up-arrow input
+      // instead of a different key.
+      const onTopsyInvertPlatform = currentScene === "topsyturvy" && player.topsyInverted && !player.jumping;
+
       if (nearSwing) {
         // jumping onto the swing takes priority over a normal jump here
         swing.mounted = true;
@@ -2831,6 +2850,16 @@ function handleInput(){
         player.launched = false;
         player.launchSteerable = false;
         player.rockJustGrabbed = true; // see this flag's own comment on the player object
+      } else if (onTopsyInvertPlatform) {
+        // CONFIRMED ADD: the platform's whole gag -- same up-arrow input,
+        // opposite direction. topsyInverted is NOT cleared here on
+        // purpose -- it stays true through the entire dive (see
+        // totalTilt's topsyInvertTilt term), only clearing on a real
+        // ground landing (applyPhysics' own generic ground-landing
+        // branch), so the flipped sprite holds the whole way down.
+        player.vy = -TOPSY_INVERT_LAUNCH_VY;
+        player.jumping = true;
+        player.usedDoubleJump = false;
       } else if (!player.jumping) {
         // first jump -- but if you're currently standing on an actively
         // spinning forest clockwork gear, this becomes a real launch
@@ -3672,6 +3701,17 @@ function applyPhysics(){
   // vy well past the old 14px catch window) could skip clean through in
   // one step. See that check's own comment for the real repro.
   const prevPlayerY = player.y;
+  // CONFIRMED ADD -- captured the same way/same spot as prevPlayerY,
+  // for the topsy-turvy invert platform's own landing check below: the
+  // value of vy the jump-input handling left it at THIS frame, before
+  // gravity's own decrement just below touches it. That's what actually
+  // tells "genuinely resting, unmoved since last frame" (prevVy still
+  // exactly 0) apart from "just launched downward this exact frame"
+  // (prevVy freshly set very negative) -- gravity's decrement runs
+  // before the platform check does, so checking player.vy itself there
+  // would already be off by one frame's worth of gravity and could never
+  // read as exactly resting.
+  const prevVy = player.vy;
   player.y += player.vy;
   // falling through one of tunnel town's own dug-out holes (a trapdoor
   // or the s5uHole-style vertical drop) used to just use the same plain
@@ -3753,6 +3793,41 @@ function applyPhysics(){
   // sits well above y=0 and needs to be re-checked every frame -- not
   // just as a one-time landing event -- to actually hold the player up
   // there instead of falling straight through immediately after arriving.
+  // CONFIRMED ADD -- topsy-turvy's invert platform: same persistent
+  // stand-on-it shape as every other scene-specific platform in this
+  // function, EXCEPT it also has to tell a genuine fall onto it FROM
+  // ABOVE apart from the single frame right after the platform's own
+  // downward launch fires (see onTopsyInvertPlatform above) -- that
+  // launch sets vy negative while player.y is STILL exactly platformTop
+  // this same frame (the jump-input handling runs before this function,
+  // before this frame's own y += vy integration happens), which would
+  // otherwise satisfy this same landing band and instantly snap the
+  // player right back into place, cancelling the whole launch before it
+  // even starts. Gated on prevPlayerY (captured above, before this
+  // frame's y += vy) so it only fires when truly arriving from above, or
+  // already resting there from a prior frame -- never the instant a
+  // fresh downward launch begins.
+  if (currentScene === "topsyturvy") {
+    const tp = TOPSY_INVERT_PLATFORM;
+    const platformTop = tp.height;
+    const trulyLanding = prevPlayerY > platformTop;
+    const alreadyResting = prevPlayerY === platformTop && prevVy === 0;
+    if (
+      player.x + player.width > tp.x - tp.width / 2 &&
+      player.x < tp.x + tp.width / 2 &&
+      player.y <= platformTop &&
+      player.y >= platformTop - 14 &&
+      player.vy <= 0 &&
+      (trulyLanding || alreadyResting)
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.topsyInverted = true;
+    }
+  }
+
   if (currentScene === "forest") {
     const ledge = FOREST_ROCK_LEDGE;
     const platformTop = ledge.height;
@@ -3852,6 +3927,10 @@ function applyPhysics(){
       player.usedDoubleJump = false;
       player.vy = 0;
       player.mushroomHopActive = false;
+      // CONFIRMED ADD: any plain ground landing also un-flips the topsy-
+      // turvy invert platform's sprite flip -- same "no partial credit,
+      // a real landing resets it" idea as the two resets just below.
+      player.topsyInverted = false;
       // CONFIRMED CHANGE: any plain ground landing ends a duo run -- the
       // next catch starts back at the base speed, same "escalation resets
       // once you touch down" idea the ground trampoline's own escalating
@@ -18005,7 +18084,13 @@ const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own ed
 // degrees (a true rotation, not a mirror, so the letters stay correctly
 // formed and just read right if you tilt your own head, not garbled).
 const TOPSY_SIGN_X = 110;
-const TOPSYTURVY_RETURN_X = 130; // the way back down -- close to spawn, same portal you arrived through
+// CONFIRMED CHANGE ("wut is that white circle... make sure im actually
+// attached to a platform, not floating"): was 130, right on top of the
+// new entrance sign (TOPSY_SIGN_X=110) -- the portal's own ring read as
+// unexplained clutter sitting almost exactly where the sign's post
+// plants. Moved further left, clear of the sign, still well before the
+// spawn point (200) so it's the very first thing at the land's edge.
+const TOPSYTURVY_RETURN_X = 50; // the way back down -- same portal you arrived through
 
 // CONFIRMED CHANGE ("i like the grumpy character thing. w tulip ... maybe
 // the grumpy is a chef"): the one house this land actually wanted --
@@ -18152,6 +18237,17 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
 const TOPSY_WELL_X = 1750;
+
+// CONFIRMED ADD ("player jumps to platform, gets turned upside down
+// while sticking to the platform, is able to jump but it is downwards")
+// -- a single floating platform in open sky between the trees and the
+// well, reachable with an ordinary double jump (140 sits comfortably
+// under the ~160.6 double-jump-safe ceiling verified elsewhere in this
+// file). See its own collision block in applyPhysics and the
+// onTopsyInvertPlatform branch in the jump-input handling above for the
+// actual mechanic; drawTopsyTurvyInvertPlatform for its look.
+const TOPSY_INVERT_PLATFORM = { x: 1620, height: 140, width: 64 };
+const TOPSY_INVERT_LAUNCH_VY = 11;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
 // thinking potentially an animation where you attach the bucket to the
@@ -20759,6 +20855,51 @@ function drawTopsyUpsideDownBirds(camX) {
   }
 }
 
+function drawTopsyTurvyInvertPlatform(camX) {
+  const tp = TOPSY_INVERT_PLATFORM;
+  const sx = tp.x - camX, sy = gy - tp.height;
+  if (sx < -80 || sx > canvas.width + 80) return;
+  const s = 1;
+  const bob = Math.sin(performance.now() * 0.0016 + tp.x) * 3 * s;
+  const cy = sy + bob;
+
+  // a little drifting puffball platform -- deliberately NOT a normal
+  // wooden plank (nothing here needs to explain how it's floating,
+  // same "just accept it" logic as the cart's own floaty contents), soft
+  // dandelion-puff texture to read as light/airy rather than solid
+  const capW = tp.width, capH = 22 * s;
+  ctx.fillStyle = "#c9b8e0";
+  ctx.beginPath();
+  ctx.ellipse(sx, cy, capW / 2, capH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a72b0";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(sx, cy - capH * 0.18, capW / 2 - 4 * s, capH / 2 - 5 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // wispy puff tufts around the rim
+  ctx.strokeStyle = "rgba(230,220,250,0.8)";
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rx = Math.cos(a) * (capW / 2 - 2 * s), ry = Math.sin(a) * (capH / 2 - 2 * s);
+    ctx.beginPath();
+    ctx.moveTo(sx + rx, cy + ry);
+    ctx.lineTo(sx + rx + Math.cos(a) * 5 * s, cy + ry + Math.sin(a) * 5 * s);
+    ctx.stroke();
+  }
+
+  if (isPlayerNear(tp.x, tp.height, 40, 55, 20)) {
+    ctx.fillStyle = "#3a2a4a";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Press up to dive back down", sx, cy - 22 * s);
+    ctx.textAlign = "left";
+  }
+}
+
 function drawTopsyTurvyEntranceSign(camX) {
   const sx = TOPSY_SIGN_X - camX;
   if (sx < -80 || sx > canvas.width + 80) return;
@@ -20905,6 +21046,7 @@ function drawTopsyTurvyScene(camX) {
   ctx.fillRect(0, gy, canvas.width, 10);
 
   drawTopsyTurvyEntranceSign(camX);
+  drawTopsyTurvyInvertPlatform(camX);
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
@@ -60854,8 +60996,15 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   // poolDiveTilt just above. getPoolSwimTilt() is reset to 0 the instant
   // the slide starts (see startPoolSlideExit) so the two never stack.
   const poolSlideTilt = (typeof poolSlideExit !== "undefined" && poolSlideExit.active) ? poolSlideExit.tiltAngle : 0;
+  // CONFIRMED ADD ("player jumps to platform, gets turned upside down
+  // while sticking to the platform"): reuses this exact same additive-
+  // tilt mechanism (same trick every other "player visually flips/leans"
+  // moment above already uses) for a clean 180-degree flip -- rotating
+  // the whole sprite around its own center, same as everything else in
+  // this sum, rather than a brand new scale/flip path of its own.
+  const topsyInvertTilt = (currentScene === "topsyturvy" && player.topsyInverted) ? Math.PI : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
