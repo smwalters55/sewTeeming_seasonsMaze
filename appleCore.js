@@ -358,6 +358,25 @@ const player = {
   // the whole downward dive, not just while actually touching the
   // platform.
   topsyInverted: false,
+  // CONFIRMED ADD ("pressing up actually first brings u down just a
+  // little then takes u bback up"): a short scripted windup, counted
+  // down in applyPhysics -- while > 0, position is fully driven by that
+  // countdown (see its own comment there) instead of normal gravity.
+  topsyDipFrames: 0,
+  topsyDipFromHeight: 0, // the resting attachY the current dip started from
+  // the specific TOPSY_INVERT_PLATFORMS entry currently exempt from its
+  // own re-catch check -- set the moment a dip/launch starts so the
+  // upward launch crossing back through that same platform's attachY
+  // doesn't instantly re-grab the platform it just left. Cleared once
+  // the player has climbed clearly past it (see the collision loop).
+  topsyGuardPlatform: null,
+  // CONFIRMED ADD ("and if you press down it brings you down all the way
+  // to whatever is below you"): true for the duration of a deliberate
+  // bail-out drop -- every TOPSY_INVERT_PLATFORMS catch is skipped while
+  // this is true, so it falls straight through to real ground (or
+  // whatever solid platform actually catches it) instead of chaining.
+  // Cleared by any real landing.
+  topsyForceDrop: false,
   vy: 0,
   vx: 0,               // horizontal momentum — only used during a swing launch
   launched: false,     // true while mid-flight from a swing release
@@ -2869,13 +2888,25 @@ function handleInput(){
         player.launchSteerable = false;
         player.rockJustGrabbed = true; // see this flag's own comment on the player object
       } else if (onTopsyInvertPlatform) {
-        // CONFIRMED ADD: the platform's whole gag -- same up-arrow input,
-        // opposite direction. topsyInverted is NOT cleared here on
-        // purpose -- it stays true through the entire dive (see
-        // totalTilt's topsyInvertTilt term), only clearing on a real
-        // ground landing (applyPhysics' own generic ground-landing
-        // branch), so the flipped sprite holds the whole way down.
-        player.vy = -TOPSY_INVERT_LAUNCH_VY;
+        // CONFIRMED REWORK ("pressing up actually first brings u down
+        // just a little then takes u bback up, where you can catch a
+        // diff platform upside down or if you dont reach it, you just
+        // fall down"): replaces the old instant downward-only dive with
+        // a short scripted windup dip (see topsyDipFrames, counted down
+        // every frame in applyPhysics right where the real launch fires)
+        // followed by a real upward launch -- the chain now generally
+        // climbs, not just dives to one lower chunk. topsyInverted is
+        // NOT cleared here on purpose -- it stays true through the whole
+        // hop (see totalTilt's topsyInvertTilt term), only clearing on a
+        // real landing (ground, a root platform, or the sky-garden
+        // capstone).
+        player.topsyDipFrames = TOPSY_INVERT_DIP_FRAMES;
+        player.topsyDipFromHeight = player.y;
+        // remember which specific chunk this hop started from so its own
+        // re-catch check can be skipped for the moment the launch first
+        // rises back up through that same attachY -- see the guard's own
+        // comment in the collision loop below.
+        player.topsyGuardPlatform = TOPSY_INVERT_PLATFORMS.find(tp => Math.abs((tp.height - player.height) - player.y) < 0.01) || null;
         player.jumping = true;
         player.usedDoubleJump = false;
       } else if (!player.jumping) {
@@ -3008,6 +3039,26 @@ function handleInput(){
     player.jumping = true;
     player.usedDoubleJump = false;
     player.rockJustReleased = true; // same guard forestRockClimbRelease uses, see that flag's own comment
+  }
+
+  // CONFIRMED ADD ("and if you press down it brings you down all the way
+  // to whatever is below you"): a deliberate bail-out from any invert
+  // platform -- same "Down does the opposite of Up" idea as the rock
+  // climb's own release just above. Skips every TOPSY_INVERT_PLATFORMS
+  // catch for the rest of this fall (topsyForceDrop, checked in the
+  // collision loop below) so it drops straight through to real ground or
+  // whatever solid platform is actually underneath, rather than chaining
+  // to the next chunk. Un-inverts immediately and uses ordinary gravity
+  // (topsyInverted clearing is what turns off TOPSY_INVERT_DIVE_GRAVITY)
+  // so the drop reads as decisive, not another slow float.
+  if (currentScene === "topsyturvy" && player.topsyInverted && !player.jumping && keys.downJustPressed) {
+    player.topsyInverted = false;
+    player.topsyForceDrop = true;
+    player.topsyDipFrames = 0;
+    player.topsyGuardPlatform = null;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    player.vy = 0;
   }
 
   // hard left world boundary — the camera also clamps at 0, so this keeps
@@ -3708,6 +3759,25 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED ADD ("pressing up actually first brings u down just a
+  // little then takes u bback up"): while the windup dip is running,
+  // position is fully scripted right here -- same "driven elsewhere,
+  // skip normal physics for this frame" pattern the mine cart/swing/
+  // vines above use their own early returns for. Eases down from the
+  // resting attachY to a shallow dip; on the final windup frame it fires
+  // the real upward launch (positive vy, same direction sense as any
+  // ordinary jump) and lets normal gravity/collision resume next frame.
+  if (currentScene === "topsyturvy" && player.topsyDipFrames > 0) {
+    player.topsyDipFrames--;
+    const t = 1 - player.topsyDipFrames / TOPSY_INVERT_DIP_FRAMES;
+    const dipT = Math.sin(Math.min(t, 1) * Math.PI / 2); // eases into the bottom of the dip
+    player.y = player.topsyDipFromHeight - TOPSY_INVERT_DIP_DEPTH * dipT;
+    if (player.topsyDipFrames === 0) {
+      player.vy = TOPSY_INVERT_LAUNCH_VY;
+    }
+    return;
+  }
+
   // gravity -- much slower during the snake's knockback, and even
   // slower during the giant pile's scripted collapse fall, so both
   // moments read as clearly intentional and dramatic rather than
@@ -3845,9 +3915,28 @@ function applyPhysics(){
   // skip clean past a lower chunk in one frame otherwise. Stops at the
   // first chunk actually caught this frame so overlapping bands (if any)
   // can't fight over the same landing.
-  if (currentScene === "topsyturvy") {
+  // CONFIRMED ADD ("and if you press down it brings you down all the way
+  // to whatever is below you"): topsyForceDrop skips every chunk in this
+  // whole loop for the rest of the fall -- see its own comment on the
+  // player object. CONFIRMED ADD ("pressing up actually first brings u
+  // down just a little then takes u bback up... catch a diff platform"):
+  // topsyGuardPlatform exempts only the ONE specific chunk a hop just
+  // launched from, and only until the player has genuinely climbed clear
+  // of it -- without this, the upward launch crossing back through that
+  // same chunk's own attachY (it dipped BELOW attachY, then rises back
+  // above it) would satisfy the exact same wasBelow/nowAtOrAbove check
+  // below and instantly re-grab the chunk it just left, cancelling the
+  // whole hop before it goes anywhere.
+  if (currentScene === "topsyturvy" && !player.topsyForceDrop) {
     for (const tp of TOPSY_INVERT_PLATFORMS) {
       const attachY = tp.height - player.height;
+      if (tp === player.topsyGuardPlatform) {
+        if (player.y > attachY + 4) {
+          player.topsyGuardPlatform = null;
+        } else {
+          continue;
+        }
+      }
       const xOverlap = player.x + player.width > tp.x - tp.width / 2 && player.x < tp.x + tp.width / 2;
       if (!xOverlap) continue;
       const wasAbove = prevPlayerY > attachY;
@@ -3969,6 +4058,11 @@ function applyPhysics(){
       // turvy invert platform's sprite flip -- same "no partial credit,
       // a real landing resets it" idea as the two resets just below.
       player.topsyInverted = false;
+      // CONFIRMED ADD: also ends a forced press-down drop (see
+      // topsyForceDrop's own comment) -- reaching real ground is exactly
+      // the "whatever is below you" the drop was falling toward, so it's
+      // done, and this keeps the flag from ever getting stuck true.
+      player.topsyForceDrop = false;
       // CONFIRMED CHANGE: any plain ground landing ends a duo run -- the
       // next catch starts back at the base speed, same "escalation resets
       // once you touch down" idea the ground trampoline's own escalating
@@ -4502,7 +4596,7 @@ function applyPhysics(){
     const allTopsyPlatforms = (topsyWindSeedPlot.grown
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms
-    );
+    ).concat([TOPSY_SKY_GARDEN]); // the invert-platform chain's own capstone -- see its comment above
     allTopsyPlatforms.forEach(p => {
       const platformTop = p.height;
       if (
@@ -4526,6 +4620,13 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
       topsyTurvyCartRide.active = false;
+      // CONFIRMED ADD: a real landing anywhere -- not just true ground --
+      // ends both the invert sprite flip and a forced press-down drop
+      // (see TOPSY_INVERT_PLATFORMS' own onTopsyInvertPlatform/
+      // topsyForceDrop comments), same "no partial credit, a real
+      // landing resets it" idea the plain ground-landing branch uses.
+      player.topsyInverted = false;
+      player.topsyForceDrop = false;
     }
   }
 
@@ -18333,11 +18434,55 @@ const TOPSY_WELL_X = 2050; // CONFIRMED CHANGE ("all of this is way too cramped,
 // pushed further out and further apart (was 1620/1720, only 100px
 // apart and nearly on top of the well at 1750) now that the dive's own
 // float time (TOPSY_INVERT_DIVE_GRAVITY) comfortably covers a wider gap.
+// CONFIRMED EXTEND ("maybe extend where currently is? like add at least
+// 5-8? ... in the middle there should be a thing that you can jump on
+// briefly and then continue with the platforms. also some simple kinda
+// reason to be up there"): grew from 2 chunks to a real 7-hop chain,
+// generally climbing higher (not just the original single dive down),
+// with one wider "rest" chunk partway (#5) where a miss-timed press
+// isn't punishing, and ending just below the sky-garden capstone (see
+// TOPSY_SKY_GARDEN below) rather than looping back to the ground. Gaps
+// tuned (and verified via a real frame-by-frame physics simulation, same
+// technique used for every other reachability-sensitive climb this
+// project) to the new dip-launch's own rise budget -- see
+// TOPSY_INVERT_LAUNCH_VY/TOPSY_INVERT_DIVE_GRAVITY just below.
 const TOPSY_INVERT_PLATFORMS = [
   { x: 1780, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
-  { x: 1880, height: 114, width: 70 }  // attach height ~60, 100px over from the first -- kept at the dive's own verified reach even though the whole area moved further out; see TOPSY_INVERT_DIVE_GRAVITY
+  { x: 1880, height: 114, width: 70 }, // attach height ~60, 100px over from the first -- the original dive-down target
+  // CONFIRMED FIX (reachability simulation): this used to sit at the
+  // SAME x as platform0 (1780) directly below it -- any climb heading
+  // back toward that column would cross platform0's own attach height
+  // first and get vacuumed onto it, making this platform essentially
+  // unreachable. Shifted off that column (1830) so a launch toward it
+  // doesn't pass through platform0 on the way.
+  { x: 1830, height: 232, width: 70 }, // climbing back up and left -- first of the new hops
+  { x: 1900, height: 342, width: 70 },
+  { x: 1760, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
+  { x: 1880, height: 524, width: 70 },
+  { x: 1780, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
-const TOPSY_INVERT_LAUNCH_VY = 2;
+// CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
+// top... i want to be able to jump on it but going downwards", now
+// "pressing up actually first brings u down just a little then takes u
+// bback up"): raised from 2 -- a single dive's worth -- to comfortably
+// cover the new chain's own ~90-120px hops (see TOPSY_INVERT_PLATFORMS),
+// verified the same way as the gaps themselves.
+// CONFIRMED FIX (reachability simulation): the chain's biggest single
+// hops -- platform1(114) -> platform2(232) is +118, platform2(232) ->
+// platform3(342) is +110 -- exceeded 3.2's own rise budget (net ~90px
+// after the windup dip eats into it), so those two hops could only ever
+// be "reached" by accidentally re-catching a lower, already-passed
+// platform on the way up/down rather than actually landing on the
+// intended target. Bumped to comfortably clear the biggest gap (118)
+// with real margin for x-drift timing; re-verified via the same
+// frame-by-frame physics simulation used for the gap sizing itself.
+const TOPSY_INVERT_LAUNCH_VY = 3.9;
+// CONFIRMED ADD: the short scripted windup dip that now runs BEFORE the
+// real launch (see topsyDipFrames' own comment on the player object) --
+// a small, snappy dip, not a real physics fall, so it always finishes in
+// exactly this many frames regardless of platform height.
+const TOPSY_INVERT_DIP_FRAMES = 9;
+const TOPSY_INVERT_DIP_DEPTH = 12;
 // CONFIRMED CHANGE: the original dive used the ordinary 0.8 gravity and
 // covered its whole ~136px drop to the ground in about 10 frames --
 // barely long enough to even register, let alone steer sideways into a
@@ -18348,6 +18493,27 @@ const TOPSY_INVERT_LAUNCH_VY = 2;
 // drift left/right into the next chunk instead of just free-falling
 // past it.
 const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
+
+// CONFIRMED ADD ("in the middle there should be a thing that you can
+// jump on briefly and then continue with the platforms. also some
+// simple kinda reason to be up there to get an upside down item"): the
+// payoff at the top of the invert-platform chain -- a small floating
+// patch of ground with its own tiny well and an upside-down dandelion
+// growing right at its edge, plus a real reason to make the climb: the
+// dandelion is a genuine one-time collectible (grants a bonus dandelion
+// seed, same item the ground-level plot already uses). Deliberately a
+// normal RIGHT-SIDE-UP standing platform, not another invert chunk --
+// landing here is meant to read as "made it, solid ground again" after
+// the whole hanging-upside-down chain, not one more upside-down perch.
+// Shares the same {x, width, height} shape allTopsyPlatforms' own
+// standing-platform loop already expects, so it just concats in there
+// rather than needing its own separate collision block.
+// x is the LEFT edge here (matches allTopsyPlatforms' own p.x/p.x+p.width
+// convention below), not a center -- unlike TOPSY_INVERT_PLATFORMS, which
+// centers on x. Spans 1765-1895, overlapping the last invert chunk's own
+// catch band (1780 +/- 35) so a straight-up launch from it lands here.
+const TOPSY_SKY_GARDEN = { x: 1765, height: 690, width: 130 };
+let topsySkyGardenDandelionCollected = false;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
 // thinking potentially an animation where you attach the bucket to the
@@ -18904,6 +19070,21 @@ function updateTopsyTurvyScene(deltaTime) {
     // was the one holdout still adding straight to inventory with no
     // animation at all.
     startCollectAnimation({ x: TOPSY_CART_X, y: gy - TOPSY_CART_BED_TOP, size: 8, rotation: 0 }, "tomato");
+  }
+
+  // CONFIRMED CHANGE ("some simple kinda reason to be up there like to
+  // get an upside down item"): the sky-garden capstone at the top of the
+  // new invert-platform chain has one collectible waiting on it -- a
+  // bonus windSeed, same itemType/flight animation as every other pickup
+  // (see startCollectAnimation's own comment on TOPSY_CART_X above).
+  // windSeed is in NO_COUNT_LABEL so there's no "x2" clutter even though
+  // the player likely already has one from topsyWindSeedPlot -- this is
+  // just a nice-to-have backup, not a second required item.
+  if (!topsySkyGardenDandelionCollected &&
+      keys.spaceJustPressed &&
+      isPlayerNear(TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, TOPSY_SKY_GARDEN.height, TOPSY_SKY_GARDEN.width / 2, 20, 20)) {
+    topsySkyGardenDandelionCollected = true;
+    startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "windSeed");
   }
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
@@ -21089,13 +21270,19 @@ function drawTopsyWindSeedPlot(camX) {
   // stage, matching exactly what updateTopsyTurvyScene's own gate checks
   // just above require (held item + inventory + proximity), so the hint
   // never promises something a press won't actually do.
+  // CONFIRMED REMOVE ("remove 'plant a dandelion seed here'. i feel like
+  // it should be another npc that suggests it... or maybe nothing at all
+  // for now and i have tester test it"): the plant-stage hint text is
+  // gone -- once dug but not yet planted, there's deliberately no on-
+  // screen cue at all right now (no silent fallthrough to the water
+  // hint either, since that would misleadingly suggest watering before
+  // anything's even planted). Revisit with an NPC-suggested version, or
+  // leave it silent, based on what testing actually shows is needed.
   if (!topsyWindSeedPlot.grown && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 40, 20, 20)) {
     let hint = null;
     if (!topsyWindSeedPlot.dug) {
       hint = "Dig here with a shovel";
-    } else if (!topsyWindSeedPlot.planted) {
-      hint = "Plant a dandelion seed here";
-    } else if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
+    } else if (topsyWindSeedPlot.planted && topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
       hint = `Water it (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS})`;
     }
     if (hint) {
@@ -21518,6 +21705,165 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
   ctx.ellipse(sx, topY + 4, halfW, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // CONFIRMED ADD ("in the middle there should be a thing that you can
+  // jump on briefly"): the one `rest: true` platform in the chain gets a
+  // few small flowers so it visually reads as "safe pause point" rather
+  // than just another hop, without needing any text label.
+  if (tp.rest) {
+    [-0.4, 0, 0.42].forEach((f, i) => {
+      const fx = sx + f * tp.width;
+      const fy = topY + 2 - Math.abs(Math.sin(performance.now() * 0.0011 + i * 2)) * 1.5;
+      ctx.fillStyle = "#e8d24a";
+      for (let p = 0; p < 5; p++) {
+        const a = (p / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(fx + Math.cos(a) * 3, fy + Math.sin(a) * 3, 2, 1.5, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#a8781e";
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+}
+
+// CONFIRMED ADD ("in the middle there should be a thing that you can
+// jump on briefly and then continue with the platforms... some simple
+// kinda reason to be up there like to get an upside down item"): the
+// capstone at the top of the invert-platform chain -- an ordinary
+// right-side-up earth mound (grass on TOP, unlike the hanging invert
+// platforms which are grass-on-bottom) with a small decorative well and
+// one collectible dandelion puffball the player can pick up once. Reuses
+// TOPSY_SKY_GARDEN's own left-edge x convention (see its comment).
+function drawTopsySkyGarden(camX) {
+  const sx = TOPSY_SKY_GARDEN.x - camX + TOPSY_SKY_GARDEN.width / 2;
+  if (sx < -150 || sx > canvas.width + 150) return;
+  const halfW = TOPSY_SKY_GARDEN.width / 2;
+  const topY = gy - TOPSY_SKY_GARDEN.height; // the standing surface
+  const bodyH = 30;
+  const bottomY = topY + bodyH;
+
+  // jagged earth mound body, bumpy underside, grass-top mirror of
+  // drawTopsyTurvyInvertPlatform's own hanging-platform body
+  const bodyGrad = ctx.createLinearGradient(0, topY, 0, bottomY);
+  bodyGrad.addColorStop(0, "#6b4f34");
+  bodyGrad.addColorStop(0.5, "#5a4028");
+  bodyGrad.addColorStop(1, "#3a2818");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW, topY + 6);
+  const bottomPts = 6;
+  for (let i = 0; i <= bottomPts; i++) {
+    const bx = sx - halfW + (i / bottomPts) * TOPSY_SKY_GARDEN.width;
+    const jag = (pseudoRandom(TOPSY_SKY_GARDEN.x + i * 41) - 0.5) * 10;
+    ctx.lineTo(bx, bottomY + jag);
+  }
+  ctx.lineTo(sx + halfW, topY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#2a1c10";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // grass fringe along the top edge, same triangular-blade construction
+  // as the invert platforms for visual consistency
+  ctx.fillStyle = "#5a9a4a";
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW - 3, topY + 6);
+  const bladeCount = 16;
+  for (let i = 0; i <= bladeCount; i++) {
+    const bx = sx - halfW - 3 + (i / bladeCount) * (TOPSY_SKY_GARDEN.width + 6);
+    const bladeH = 6 + pseudoRandom(TOPSY_SKY_GARDEN.x + i * 59) * 5;
+    ctx.lineTo(bx, topY + 6 - bladeH);
+    ctx.lineTo(bx + (TOPSY_SKY_GARDEN.width + 6) / bladeCount / 2, topY + 6);
+  }
+  ctx.lineTo(sx + halfW + 3, topY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4a7a3a";
+  ctx.beginPath();
+  ctx.ellipse(sx, topY + 5, halfW, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // small decorative well, offset to one side so the dandelion has its
+  // own clear spot on the mound
+  const wellX = sx - halfW * 0.42, wellY = topY - 3;
+  const wellR = 16;
+  ctx.fillStyle = "#5a5854";
+  ctx.beginPath();
+  ctx.ellipse(wellX, wellY, wellR, wellR * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a3834";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  // stone ring texture
+  ctx.strokeStyle = "rgba(120,118,112,0.7)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(wellX + Math.cos(a) * wellR * 0.55, wellY + Math.sin(a) * wellR * 0.55 * 0.42);
+    ctx.lineTo(wellX + Math.cos(a) * wellR, wellY + Math.sin(a) * wellR * 0.42);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#1c2a30";
+  ctx.beginPath();
+  ctx.ellipse(wellX, wellY, wellR * 0.62, wellR * 0.62 * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // low well roof posts + tiny peaked roof, echoing a classic wishing well
+  ctx.strokeStyle = "#6b4a2e";
+  ctx.lineWidth = 2.4;
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(wellX + side * wellR * 0.7, wellY - 2);
+    ctx.lineTo(wellX + side * wellR * 0.7, wellY - 22);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#7a3c28";
+  ctx.beginPath();
+  ctx.moveTo(wellX - wellR * 0.9, wellY - 22);
+  ctx.lineTo(wellX, wellY - 32);
+  ctx.lineTo(wellX + wellR * 0.9, wellY - 22);
+  ctx.closePath();
+  ctx.fill();
+
+  // the collectible: a small upright dandelion puffball, styled the same
+  // as drawTopsyTurvyEntranceDandelion, just on this mound instead of
+  // the ground -- collected once via the space-press check in
+  // updateTopsyTurvyScene, then simply stops drawing.
+  if (!topsySkyGardenDandelionCollected) {
+    const dgx = sx + halfW * 0.4;
+    const sway = Math.sin(performance.now() * 0.0009 + 4.2) * 3;
+    const headR = 9;
+    const stemH = 20;
+    const stemBaseY = topY - 2;
+    const stemTopY = stemBaseY - stemH;
+    const tipX = dgx + sway;
+    ctx.strokeStyle = "#4f7a34";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(dgx, stemBaseY);
+    ctx.quadraticCurveTo(dgx + sway * 0.5, (stemBaseY + stemTopY) / 2, tipX, stemTopY);
+    ctx.stroke();
+    const strands = 16;
+    for (let i = 0; i < strands; i++) {
+      const a = (i / strands) * Math.PI * 2 + i * 0.31;
+      const len = headR * (0.85 + pseudoRandom(TOPSY_SKY_GARDEN.x + i * 13) * 0.22);
+      const tx = tipX + Math.cos(a) * len, ty = stemTopY + Math.sin(a) * len * 0.94;
+      ctx.strokeStyle = "rgba(240,238,225,0.85)";
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(tipX, stemTopY);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#f0eee1";
+    ctx.beginPath();
+    ctx.ellipse(tipX, stemTopY, headR * 0.4, headR * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 // small always-bloomed decorative dandelion near the entrance -- see
@@ -21770,6 +22116,7 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyTurvyEntranceSign(camX);
   drawTopsyTurvyEntranceDandelion(camX);
   TOPSY_INVERT_PLATFORMS.forEach(tp => drawTopsyTurvyInvertPlatform(camX, tp));
+  drawTopsySkyGarden(camX);
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
