@@ -21779,17 +21779,28 @@ function drawForestFungusClimb(camX) {
   // CONFIRMED ADD ("but also maybe some little neat things you see on
   // the way up. like in the books. but i am NOT trying to match the
   // books, more just the flavor of it"): a few small original vignettes
-  // glimpsed on the climb, same shared helpers the topsy-turvy tall
-  // tree's own trunk rungs use -- this IS the actual tree between lands,
-  // so these read as "someone lives in this trunk" rather than being
-  // tied to any one land. Placed between levels (not on top of a
-  // mushroom cap's own catch zone) so they never compete with the real
+  // glimpsed on the climb -- this IS the actual tree between lands, so
+  // these read as "someone lives in this trunk" rather than being tied
+  // to any one land. Placed between levels (not on top of a mushroom
+  // cap's own catch zone) so they never compete with the real
   // platforming. `y` here is just gy-relative since the whole scene is
   // already wrapped in the forest's own cameraY translate.
+  // CONFIRMED FIX (found via debug-harness screenshots): these three
+  // helpers were originally tuned at scale 1 for the slender topsy-turvy
+  // tall tree's own trunk (half-width only ~4-7px there), whose narrow
+  // silhouette let a 14-15px offset land clearly beside the bark. This
+  // trunk is MUCH thicker (~26-27px half-width the whole way up this
+  // span), so that same offset/size landed deep inside the solid trunk
+  // fill instead of at its visible edge -- the door and bucket rig in
+  // particular were reading as basically invisible, just a stray pixel
+  // or two. Scaled up (s=2.3, was the implicit 1) so the same shapes'
+  // offsets clear the real edge here and their stroke/fill sizes read
+  // at a legible size against this much bigger trunk.
   const fungusY = h => gy - h;
-  drawTreeClimbSleepyNook(sx, fungusY, 1, 1, 150);
-  drawTreeClimbDoor(sx, fungusY, 1, -1, 350);
-  drawTreeClimbBucketRig(sx, fungusY, 1, 550);
+  const FUNGUS_VIGNETTE_SCALE = 2.3;
+  drawTreeClimbSleepyNook(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 150);
+  drawTreeClimbDoor(sx, fungusY, FUNGUS_VIGNETTE_SCALE, -1, 350);
+  drawTreeClimbBucketRig(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 550);
 }
 
 // CONFIRMED CHANGE ("should this even be the entryway to the rock pool.
