@@ -18862,8 +18862,10 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.lineWidth = 1;
     ctx.stroke();
   } else {
-    // closed door face: a rounded top, two raised panels, a little
-    // round window pane, and a doorknob
+    // closed door face: a rounded top and two raised panels.
+    // CONFIRMED CHANGE ("remove the little circles i dont like em"): the
+    // round window pane and the round doorknob dot are gone -- just the
+    // panel rectangle remains for detail.
     ctx.fillStyle = "#6b4426";
     roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
     ctx.fill();
@@ -18871,16 +18873,9 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.lineWidth = 1.4;
     roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(doorX + doorW / 2, doorY + doorH * 0.28, doorW * 0.22, 0, Math.PI * 2);
-    ctx.stroke();
     ctx.strokeStyle = "rgba(58,40,20,0.7)";
     ctx.lineWidth = 1;
     ctx.strokeRect(doorX + 3 * s, doorY + doorH * 0.55, doorW - 6 * s, doorH * 0.35);
-    ctx.fillStyle = "#e0c060";
-    ctx.beginPath();
-    ctx.arc(doorX + doorW - 5 * s, doorY + doorH * 0.65, 1.6 * s, 0, Math.PI * 2);
-    ctx.fill();
   }
   // window, off to one side -- CONFIRMED CHANGE (moved up alongside the
   // door's own move to the top): used to sit low, near the roof, which
