@@ -3729,7 +3729,14 @@ function applyPhysics(){
   player.vy -= giantPileCollapse.phase === "falling" ? 0.12 :
     (snakeState.knockbackFlightMs > 0 ? 0.22 :
     ((currentScene === "tunneltown" && tunnelFallingThroughGap) ? 0.16 :
-    (player.mushroomHopActive ? FOREST_GROUND_MUSHROOM_GRAVITY : 0.8)));
+    (player.mushroomHopActive ? FOREST_GROUND_MUSHROOM_GRAVITY :
+    // CONFIRMED CHANGE: mid-dive off one of topsy-turvy's invert
+    // platforms (already inverted AND still airborne -- i.e. actually
+    // falling, not resting attached) uses its own much lighter gravity,
+    // same "dedicated multiplier for one specific flight" shape as the
+    // cases just above, so there's real hang time to steer into a lower
+    // chunk instead of dropping straight past it.
+    ((currentScene === "topsyturvy" && player.topsyInverted && player.jumping) ? TOPSY_INVERT_DIVE_GRAVITY : 0.8))));
 
   // ground collision -- with a special case for the sandbox trampoline:
   // landing on its mat while genuinely falling launches the player back
@@ -3807,24 +3814,37 @@ function applyPhysics(){
   // frame's y += vy) so it only fires when truly arriving from above, or
   // already resting there from a prior frame -- never the instant a
   // fresh downward launch begins.
+  // CONFIRMED REWORK ("i want to land under it upside down... jump on
+  // it but going downwards"): catches the player's TOP edge (head, once
+  // flipped -- see attachY below) against a chunk's own underside,
+  // whether arriving by rising up into it from below (the initial jump
+  // off the ground) or falling down into it from above (a dive off a
+  // higher chunk) -- either direction sticks, since the whole point is
+  // "you touch it, you hang from it". Uses the same crossed-through-attachY
+  // test (compare prevPlayerY on one side, current player.y on the
+  // other) tunnel town's own big-fall catch uses, rather than a fixed
+  // pixel band -- the dive's own varying speed means a fixed band could
+  // skip clean past a lower chunk in one frame otherwise. Stops at the
+  // first chunk actually caught this frame so overlapping bands (if any)
+  // can't fight over the same landing.
   if (currentScene === "topsyturvy") {
-    const tp = TOPSY_INVERT_PLATFORM;
-    const platformTop = tp.height;
-    const trulyLanding = prevPlayerY > platformTop;
-    const alreadyResting = prevPlayerY === platformTop && prevVy === 0;
-    if (
-      player.x + player.width > tp.x - tp.width / 2 &&
-      player.x < tp.x + tp.width / 2 &&
-      player.y <= platformTop &&
-      player.y >= platformTop - 14 &&
-      player.vy <= 0 &&
-      (trulyLanding || alreadyResting)
-    ) {
-      player.y = platformTop;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      player.topsyInverted = true;
+    for (const tp of TOPSY_INVERT_PLATFORMS) {
+      const attachY = tp.height - player.height;
+      const xOverlap = player.x + player.width > tp.x - tp.width / 2 && player.x < tp.x + tp.width / 2;
+      if (!xOverlap) continue;
+      const wasAbove = prevPlayerY > attachY;
+      const wasBelow = prevPlayerY < attachY;
+      const nowAtOrBelow = player.y <= attachY;
+      const nowAtOrAbove = player.y >= attachY;
+      const alreadyResting = prevPlayerY === attachY && prevVy === 0;
+      if ((wasAbove && nowAtOrBelow) || (wasBelow && nowAtOrAbove) || alreadyResting) {
+        player.y = attachY;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.topsyInverted = true;
+        break;
+      }
     }
   }
 
@@ -18145,7 +18165,7 @@ const topsyTurvyTrees = [
   // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
   // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
   // 1420) -- nudged out to give the cart/pluck spot some breathing room.
-  { x: 1490, scale: 0.85, trunk: 230 }
+  { x: 1560, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("move tree right of cart a little more to the right, give a lil space"): nudged again (was 1490) for more breathing room off the cart at 1420
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18251,14 +18271,39 @@ const TOPSY_WELL_X = 1750;
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
-// -- a single floating platform in open sky between the trees and the
-// well, reachable with an ordinary double jump (140 sits comfortably
-// under the ~160.6 double-jump-safe ceiling verified elsewhere in this
-// file). See its own collision block in applyPhysics and the
-// onTopsyInvertPlatform branch in the jump-input handling above for the
-// actual mechanic; drawTopsyTurvyInvertPlatform for its look.
-const TOPSY_INVERT_PLATFORM = { x: 1620, height: 140, width: 64 };
-const TOPSY_INVERT_LAUNCH_VY = 11;
+// -- floating chunks of ground in open sky between the trees and the
+// well, reachable with an ordinary double jump. See its own collision
+// block in applyPhysics and the onTopsyInvertPlatform branch in the
+// jump-input handling above for the actual mechanic;
+// drawTopsyTurvyInvertPlatform for its look.
+// CONFIRMED REWORK ("i want to land under it upside down... jump on it
+// but going downwards. not have the only option be jump to ground and
+// right side up again"): the first version only ever caught the player
+// standing ON TOP (still right-side-up-looking, just tilted) and the
+// only thing a launch could ever reach was real ground. Two changes:
+// (1) `height` is now the UNDERSIDE height -- where the player's own
+// head/top-of-bbox touches once hanging (see the attachY math in
+// applyPhysics) -- so catching one of these means visibly hanging
+// below it, upside down, not standing on it. (2) a second, lower chunk
+// sits within reach of the first one's own downward launch, so that
+// dive has something to actually catch besides the ground -- pressing
+// up from THAT one dives again, same generic mechanic, same catch
+// logic, for as long as there's another chunk in reach.
+const TOPSY_INVERT_PLATFORMS = [
+  { x: 1620, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
+  { x: 1720, height: 114, width: 70 }  // attach height ~60 -- within the slow dive's reach from the first, see TOPSY_INVERT_DIVE_GRAVITY
+];
+const TOPSY_INVERT_LAUNCH_VY = 2;
+// CONFIRMED CHANGE: the original dive used the ordinary 0.8 gravity and
+// covered its whole ~136px drop to the ground in about 10 frames --
+// barely long enough to even register, let alone steer sideways into a
+// second platform. A dedicated, much lighter gravity just for this
+// dive (same "own gravity multiplier for one specific flight" pattern
+// the forest launch pads and the giant pile collapse already use)
+// stretches that same drop out to ~45 frames, giving real hang time to
+// drift left/right into the next chunk instead of just free-falling
+// past it.
+const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
 // thinking potentially an animation where you attach the bucket to the
@@ -18761,14 +18806,25 @@ function updateTopsyTurvyScene(deltaTime) {
       heldItem === "tomato" && inventory.tomato > 0 && keys.spaceJustPressed) {
     inventory.tomato--;
     if (inventory.tomato <= 0) { delete inventory.tomato; heldItem = null; }
-    topsyChef.tomatoesGiven++;
-    if (topsyChef.tomatoesGiven >= TOPSY_CHEF_TOMATOES_NEEDED) {
-      topsyChef.wonOverByTomatoes = true;
-      topsyChef.fullyWonOver = true;
-      topsyChef.sequencePhase = "doorOpen";
-      topsyChef.sequenceT = 0;
-    }
     updateInventoryUI();
+    // CONFIRMED CHANGE ("need some animation showing each tomato going
+    // into or like near the chef rat head, not jsut fully silently
+    // disappear"): flies the tomato up to the window -- same shared
+    // place-flight (zoom to center, then out to the target) the door-
+    // slot puzzle pieces already use -- instead of an instant, invisible
+    // inventory decrement. The "did this win him over" bookkeeping now
+    // happens in onArrive, so the rat's own reaction lines up with the
+    // tomato actually reaching the window instead of firing the moment
+    // space is pressed.
+    startPlaceAnimation("tomato", grumpyHouse.x, gy - topsyHouseDoorstepHeight(grumpyHouse) + 10, () => {
+      topsyChef.tomatoesGiven++;
+      if (topsyChef.tomatoesGiven >= TOPSY_CHEF_TOMATOES_NEEDED) {
+        topsyChef.wonOverByTomatoes = true;
+        topsyChef.fullyWonOver = true;
+        topsyChef.sequencePhase = "doorOpen";
+        topsyChef.sequenceT = 0;
+      }
+    });
   }
 
   // CONFIRMED CHANGE (see topsyCartTomatoesPlucked's own comment):
@@ -18779,10 +18835,21 @@ function updateTopsyTurvyScene(deltaTime) {
   // TOPSY_CHEF_TOMATOES_NEEDED total plucks ever, not just a "leave some
   // behind" minimum -- exactly as many as the rat actually needs, so
   // there's no reason to stockpile extras.
-  if (!topsyTurvyCartRide.active &&
+  // CONFIRMED CHANGE ("if you are in cart at the bottom of it, u should
+  // be able to grab a tomato"): plucking used to be flatly disabled the
+  // entire time the float-ride was active, even right at the very
+  // bottom of its cycle where the player is standing practically inside
+  // the pile. Now it's still allowed while riding, just gated to near
+  // the bottom of the float band (small passive bob + no real boost)
+  // instead of anywhere up the whole ride -- reaching a tomato while
+  // floating high above the bed wouldn't make sense.
+  const cartPluckReachOk = !topsyTurvyCartRide.active
+    ? isPlayerNear(TOPSY_CART_X, 0, 55, 15, 15)
+    : isPlayerNear(TOPSY_CART_X, TOPSY_CART_BED_TOP, 55, 16, 4);
+  if (cartPluckReachOk &&
       topsyCartTomatoesPlucked < TOPSY_CHEF_TOMATOES_NEEDED &&
       topsyTurvyCartTomatoes.length - topsyCartTomatoesPlucked > TOPSY_CART_TOMATOES_MIN_REMAINING &&
-      keys.spaceJustPressed && isPlayerNear(TOPSY_CART_X, 0, 55, 15, 15)) {
+      keys.spaceJustPressed) {
     topsyCartTomatoesPlucked++;
     // CONFIRMED CHANGE ("do the normal zoom in then fly to inventory
     // thing w the tomatoes when grabbed, its every else code when we get
@@ -19052,15 +19119,16 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.moveTo(winX, winY + 7 * s);
   ctx.lineTo(winX + 14 * s, winY + 7 * s);
   ctx.stroke();
-  const boxY = winY + 14 * s + 2 * s;
-  ctx.fillStyle = "#8a6a42";
-  ctx.fillRect(winX - 1 * s, boxY, 16 * s, 3 * s);
-  ["#e88ab0", "#f0d060", "#e8f0d8"].forEach((c, i) => {
-    ctx.fillStyle = c;
-    ctx.beginPath();
-    ctx.arc(winX + 2 * s + i * 5 * s, boxY - 1 * s, 1.6 * s, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  // CONFIRMED REMOVE ("why doesnt the rat have a chef hat before i bring
+  // it tomatoes. also get rid og the yellow star thing between the
+  // earss"): this cute little flower box used to sit right under the
+  // window -- its middle (yellow) dot landed almost exactly between the
+  // rat's own ears (they're near the bottom of this upside-down window,
+  // right at the sill), poking through the gap and reading as a stray
+  // yellow star pasted on his head. This is also the ONLY house in this
+  // land and it's the grumpy rat's -- a cheerful flower box was never
+  // quite the right note for him anyway, so dropped rather than
+  // repositioned.
 
   // a ladder up to the door/window near the top -- per the book, the
   // only real way in now that the front door ends up on top
@@ -20979,47 +21047,90 @@ function drawTopsyUpsideDownBirds(camX) {
   }
 }
 
-function drawTopsyTurvyInvertPlatform(camX) {
-  const tp = TOPSY_INVERT_PLATFORM;
-  const sx = tp.x - camX, sy = gy - tp.height;
-  if (sx < -80 || sx > canvas.width + 80) return;
-  const s = 1;
-  const bob = Math.sin(performance.now() * 0.0016 + tp.x) * 3 * s;
-  const cy = sy + bob;
+// CONFIRMED REWORK ("and have it not be a wierd almost invisible oval
+// thing. idk what it shoulv be but i dont like it as it is"): the old
+// pale-lavender puffball washed straight into this land's own
+// pink/purple sky and read as barely-there. Replaced with a small
+// floating chunk of ground -- grass on top, dirt/rock underneath with a
+// few roots dangling off the torn-away bottom edge, like a piece of the
+// world broke free. High-contrast green+brown against the sky, and the
+// underside (dirt, roots) is exactly where the player actually hangs,
+// so the shape now visually explains the mechanic instead of fighting it.
+function drawTopsyTurvyInvertPlatform(camX, tp) {
+  const sx = tp.x - camX;
+  if (sx < -100 || sx > canvas.width + 100) return;
+  const bob = Math.sin(performance.now() * 0.0014 + tp.x) * 3;
+  const halfW = tp.width / 2;
+  const bodyH = 24; // grass-top to dirt-bottom thickness
+  const underY = gy - tp.height + bob;   // the attach surface -- player's head touches here
+  const topY = underY - bodyH;           // grass-top surface
 
-  // a little drifting puffball platform -- deliberately NOT a normal
-  // wooden plank (nothing here needs to explain how it's floating,
-  // same "just accept it" logic as the cart's own floaty contents), soft
-  // dandelion-puff texture to read as light/airy rather than solid
-  const capW = tp.width, capH = 22 * s;
-  ctx.fillStyle = "#c9b8e0";
+  // jagged dirt/rock body, wider from a few uneven bumps rather than a
+  // clean rectangle -- deterministic per-platform via pseudoRandom so it
+  // doesn't re-jitter every frame
+  const bodyGrad = ctx.createLinearGradient(0, topY, 0, underY);
+  bodyGrad.addColorStop(0, "#8a6b4a");
+  bodyGrad.addColorStop(0.4, "#6b4f34");
+  bodyGrad.addColorStop(1, "#4a3624");
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
-  ctx.ellipse(sx, cy, capW / 2, capH / 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#8a72b0";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.35)";
-  ctx.beginPath();
-  ctx.ellipse(sx, cy - capH * 0.18, capW / 2 - 4 * s, capH / 2 - 5 * s, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // wispy puff tufts around the rim
-  ctx.strokeStyle = "rgba(230,220,250,0.8)";
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    const rx = Math.cos(a) * (capW / 2 - 2 * s), ry = Math.sin(a) * (capH / 2 - 2 * s);
-    ctx.beginPath();
-    ctx.moveTo(sx + rx, cy + ry);
-    ctx.lineTo(sx + rx + Math.cos(a) * 5 * s, cy + ry + Math.sin(a) * 5 * s);
-    ctx.stroke();
+  ctx.moveTo(sx - halfW, topY + 4);
+  ctx.lineTo(sx + halfW, topY + 4);
+  const bottomPts = 5;
+  for (let i = 0; i <= bottomPts; i++) {
+    const bx = sx + halfW - (i / bottomPts) * tp.width;
+    const jag = (pseudoRandom(tp.x + i * 37) - 0.5) * 10;
+    ctx.lineTo(bx, underY + jag);
   }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
 
-  if (isPlayerNear(tp.x, tp.height, 40, 55, 20)) {
+  // dangling roots off the torn underside -- echoes the trees/dandelion's
+  // own root motif elsewhere in this land, and doubles as a visual "grab
+  // here" cue right where the attach point actually is
+  ctx.strokeStyle = "#5a4028";
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = "round";
+  [-0.55, -0.2, 0.2, 0.55].forEach((f, i) => {
+    const rx = sx + f * tp.width;
+    const rlen = 7 + pseudoRandom(tp.x + i * 71) * 6;
+    ctx.beginPath();
+    ctx.moveTo(rx, underY - 2);
+    ctx.quadraticCurveTo(rx + Math.sin(i * 2.1) * 3, underY + rlen * 0.6, rx + Math.sin(i * 1.3) * 4, underY + rlen);
+    ctx.stroke();
+  });
+
+  // grass fringe along the top edge -- small triangular blades
+  ctx.fillStyle = "#5a9a4a";
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW - 2, topY + 5);
+  const bladeCount = 9;
+  for (let i = 0; i <= bladeCount; i++) {
+    const bx = sx - halfW - 2 + (i / bladeCount) * (tp.width + 4);
+    const bladeH = 5 + pseudoRandom(tp.x + i * 53) * 4;
+    ctx.lineTo(bx, topY + 5 - bladeH);
+    ctx.lineTo(bx + (tp.width + 4) / bladeCount / 2, topY + 5);
+  }
+  ctx.lineTo(sx + halfW + 2, topY + 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4a7a3a";
+  ctx.beginPath();
+  ctx.ellipse(sx, topY + 4, halfW, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (isPlayerNear(tp.x, tp.height - player.height, 40, 30, 40)) {
+    // CONFIRMED BUG FIX: placed just below the attach point, which is
+    // exactly where the hanging player's own body sits -- the text was
+    // landing right behind the sprite, half-hidden. Dropped further down,
+    // below the player's own hanging height, so it clears the sprite.
     ctx.fillStyle = "#3a2a4a";
     ctx.font = "11px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Press up to dive back down", sx, cy - 22 * s);
+    ctx.fillText("Press up to drop down", sx, underY + player.height + 16);
     ctx.textAlign = "left";
   }
 }
@@ -21273,7 +21384,7 @@ function drawTopsyTurvyScene(camX) {
 
   drawTopsyTurvyEntranceSign(camX);
   drawTopsyTurvyEntranceDandelion(camX);
-  drawTopsyTurvyInvertPlatform(camX);
+  TOPSY_INVERT_PLATFORMS.forEach(tp => drawTopsyTurvyInvertPlatform(camX, tp));
   topsyTurvyTrees.forEach(t => drawTopsyTurvyTree(camX, t));
   topsyTurvyHouses.forEach(h => drawTopsyTurvyHouse(camX, h));
   drawTopsyTurvyCart(camX);
