@@ -18093,7 +18093,13 @@ function updateForestFungusClimb(deltaTime) {
 // actually stand in, so everything past the entrance got pushed
 // further right with wider gaps between each thing, and the world grew
 // to match instead of cramming it all into the old 1500.
-const TOPSYTURVY_WIDTH = 2250;
+// CONFIRMED CHANGE ("ok so all of this is waay to cramped. space it out
+// a ittle"): the cart-through-well stretch (cart, the 3rd tree, both
+// invert platforms, and the well) had all bunched up into a ~330px
+// span -- grew the world again to give the whole back half real gaps,
+// same "widen it to match" move as the last time this got cramped (see
+// this constant's own history above).
+const TOPSYTURVY_WIDTH = 2700;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -18165,7 +18171,7 @@ const topsyTurvyTrees = [
   // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
   // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
   // 1420) -- nudged out to give the cart/pluck spot some breathing room.
-  { x: 1560, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("move tree right of cart a little more to the right, give a lil space"): nudged again (was 1490) for more breathing room off the cart at 1420
+  { x: 1680, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): nudged out again (was 1560, before that 1490) now that the whole cart->well stretch has more room
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18267,7 +18273,7 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // remember breathing room breeeathing room"): pushed further right
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
-const TOPSY_WELL_X = 1750;
+const TOPSY_WELL_X = 2050; // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): was 1750, right against the invert platforms
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
@@ -18289,9 +18295,13 @@ const TOPSY_WELL_X = 1750;
 // dive has something to actually catch besides the ground -- pressing
 // up from THAT one dives again, same generic mechanic, same catch
 // logic, for as long as there's another chunk in reach.
+// CONFIRMED CHANGE ("all of this is way too cramped, space it out"):
+// pushed further out and further apart (was 1620/1720, only 100px
+// apart and nearly on top of the well at 1750) now that the dive's own
+// float time (TOPSY_INVERT_DIVE_GRAVITY) comfortably covers a wider gap.
 const TOPSY_INVERT_PLATFORMS = [
-  { x: 1620, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
-  { x: 1720, height: 114, width: 70 }  // attach height ~60 -- within the slow dive's reach from the first, see TOPSY_INVERT_DIVE_GRAVITY
+  { x: 1780, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
+  { x: 1880, height: 114, width: 70 }  // attach height ~60, 100px over from the first -- kept at the dive's own verified reach even though the whole area moved further out; see TOPSY_INVERT_DIVE_GRAVITY
 ];
 const TOPSY_INVERT_LAUNCH_VY = 2;
 // CONFIRMED CHANGE: the original dive used the ordinary 0.8 gravity and
@@ -18360,7 +18370,7 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // clear ground on every side.
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
 // shifted right along with the well, gap between them held steady.
-const TOPSY_SEEDPLOT_X = 2050;
+const TOPSY_SEEDPLOT_X = 2400; // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): was 2050, pushed out to match the rest of the stretch moving further right
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
