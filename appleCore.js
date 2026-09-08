@@ -18725,8 +18725,15 @@ function drawTopsyTurvyHouse(camX, h) {
 
   // chimney -- what the whole house actually stands on. Rounded, with a
   // little cap ring and soft mortar lines instead of a flat grey block.
+  // CONFIRMED CHANGE ("make upside down house chimney to the right of
+  // the ladder, not right behind it"): was centered on sx, same x as the
+  // ladder's own rails (sx-6s/sx+8s) -- drawn after the ladder, it sat
+  // right on top of the rungs and read as clutter. Offset to its own
+  // chimX, clear of the ladder's right rail, instead of dead-center
+  // under the roof.
+  const chimX = sx + 17 * s;
   ctx.fillStyle = "#a8968a";
-  roundRect(ctx, sx - 6 * s, y(chimH), 12 * s, chimH, 3 * s);
+  roundRect(ctx, chimX - 6 * s, y(chimH), 12 * s, chimH, 3 * s);
   ctx.fill();
   ctx.strokeStyle = "#8a7468";
   ctx.lineWidth = 1;
@@ -18735,13 +18742,13 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.lineWidth = 1;
   [0.35, 0.68].forEach(f => {
     ctx.beginPath();
-    ctx.moveTo(sx - 5.5 * s, y(chimH * f));
-    ctx.lineTo(sx + 5.5 * s, y(chimH * f));
+    ctx.moveTo(chimX - 5.5 * s, y(chimH * f));
+    ctx.lineTo(chimX + 5.5 * s, y(chimH * f));
     ctx.stroke();
   });
   ctx.fillStyle = "#8a7468";
   ctx.beginPath();
-  ctx.ellipse(sx, y(chimH), 7.5 * s, 2 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(chimX, y(chimH), 7.5 * s, 2 * s, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // roof -- a gentle curved, thatched-cottage silhouette (rounded peak,
@@ -18956,111 +18963,64 @@ function drawTopsyTurvyHouse(camX, h) {
     // genuinely dangling below everything else -- a real upside-down
     // face using the exact same coordinates below, just without
     // cancelling them back out with an unnecessary transform.
+    // CONFIRMED CHANGE ("make toad a lil simpler i cant tell what this
+    // is or that it is grumpy"): at the small size this actually renders
+    // at in the window, the jowls/warts/throat-patch/eye-highlight/
+    // wrinkle-line detail from the previous pass just turned into a
+    // muddy blob -- none of it was legible, and worse, it buried the two
+    // things that actually need to read at a glance: "this is a toad"
+    // and "it's grumpy". Stripped way down to just a head, two big bold
+    // eyes, and one thick furrowed-to-relaxed eyebrow shape doing all the
+    // expression work -- bigger and higher-contrast than before so it's
+    // readable at actual in-game size, not just zoomed in.
     const soften = topsyChef.softenProgress;
     const faceCx = winX + 7 * s, faceCy = winY + 6.5 * s;
     ctx.save();
     ctx.translate(faceCx, faceCy);
 
-    const toadColor = blendHexColors("#5c6f37", "#8aa363", soften);
-    const toadShadow = blendHexColors("#4a5a2a", "#6f8850", soften);
-    const throatColor = blendHexColors("#a8b884", "#d8e4bc", soften);
+    const toadColor = blendHexColors("#4a6b2a", "#8aa363", soften);
 
-    // cheek jowls (drawn first, sit slightly behind/below the head)
-    [-1, 1].forEach(side => {
-      ctx.fillStyle = toadShadow;
-      ctx.beginPath();
-      ctx.ellipse(side * 6.3 * s, -0.8 * s, 2.6 * s, 2.9 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // wide toad head, slightly flattened/broad
+    // wide toad head -- simple single shape, no jowls/texture to muddy it
     ctx.fillStyle = toadColor;
     ctx.beginPath();
-    ctx.ellipse(0, 1 * s, 6.6 * s, 5.1 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 1 * s, 7 * s, 5.6 * s, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "rgba(20,26,10,0.5)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    // mottled skin warts for texture -- static, seeded so they don't swim
-    ctx.fillStyle = toadShadow;
-    [[-3.4, 0.5, 0.55], [2.6, 2.4, 0.5], [-1.2, 3.6, 0.45], [4.2, -0.6, 0.5], [-4.6, 3.4, 0.4]].forEach(([wx, wy, wr]) => {
-      ctx.beginPath();
-      ctx.arc(wx * s, wy * s, wr * s, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // lighter throat/chin patch underneath the mouth
-    ctx.fillStyle = throatColor;
-    ctx.beginPath();
-    ctx.ellipse(0, -2.4 * s, 3.4 * s, 2 * s, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // bulgy eyes mounted on TOP of the head, toad-style, with a heavy
-    // upper lid that lifts as soften increases
+    // two big, bold, high-contrast eyes -- the main "toad" read
     [-1, 1].forEach(side => {
-      ctx.fillStyle = toadColor;
-      ctx.beginPath();
-      ctx.arc(side * 3.3 * s, 5.2 * s, 2.5 * s, 0, Math.PI * 2);
-      ctx.fill();
       ctx.fillStyle = "#f4ecd8";
       ctx.beginPath();
-      ctx.arc(side * 3.3 * s, 5.2 * s, 1.65 * s, 0, Math.PI * 2);
+      ctx.arc(side * 3.3 * s, 4.8 * s, 2.2 * s, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#241a10";
+      ctx.fillStyle = "#1a120a";
       ctx.beginPath();
-      ctx.arc(side * 3.3 * s, 5.2 * s, 0.88 * s, 0, Math.PI * 2);
-      ctx.fill();
-      // tiny highlight fleck for a bit of life in the eye
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.beginPath();
-      ctx.arc(side * 3.3 * s + 0.5 * s, 5.6 * s, 0.4 * s, 0, Math.PI * 2);
-      ctx.fill();
-      // heavy lid: drooping low and covering more of the eye while
-      // grumpy, retracting up out of the way once soothed
-      const lidDrop = (1 - soften) * 1.7 * s;
-      ctx.fillStyle = toadColor;
-      ctx.beginPath();
-      ctx.ellipse(side * 3.3 * s, 5.2 * s + 2.5 * s - lidDrop * 0.3, 2.6 * s, 1.6 * s + lidDrop, 0, Math.PI, Math.PI * 2);
+      ctx.arc(side * 3.3 * s, 4.8 * s, 1.15 * s, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    // nostrils
-    ctx.fillStyle = "#241a10";
-    [-1, 1].forEach(side => {
-      ctx.beginPath();
-      ctx.arc(side * 1.15 * s, 2.6 * s, 0.5 * s, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // forehead wrinkles -- three creased lines between the eyes,
-    // strongest at soften=0 and fading (and flattening slightly) out as
-    // soften rises toward 1
-    if (soften < 0.97) {
-      const wrinkleA = (1 - soften);
-      ctx.strokeStyle = `rgba(36,26,16,${0.55 * wrinkleA})`;
-      ctx.lineWidth = 0.9;
-      [0, 1, 2].forEach(i => {
-        const wy = (2.9 - i * 0.85) * s;
-        const spread = (2.6 - i * 0.35) * s * (0.7 + 0.3 * wrinkleA);
-        const dip = 0.9 * s * wrinkleA;
-        ctx.beginPath();
-        ctx.moveTo(-spread, wy);
-        ctx.quadraticCurveTo(0, wy - dip, spread, wy);
-        ctx.stroke();
-      });
-    }
-
-    // eyebrows + mouth: interpolated between a furrowed cranky shape
-    // (soften=0) and a relaxed, faintly pleased one (soften=1)
-    const browOuterY = 6.6 * s + (7.3 - 6.6) * s * soften;
-    const browInnerY = 7.6 * s + (6.8 - 7.6) * s * soften;
-    const mouthDip = -0.8 * s + (0.8 - -0.8) * s * soften; // control point, flat -> smiling
-    ctx.strokeStyle = "#241a10";
-    ctx.lineWidth = 1.15;
+    // one thick eyebrow shape per side doing all the expression work --
+    // a steep furrowed angle over the eyes while grumpy, easing to a
+    // shallow relaxed tilt as soften rises. Bold and high-contrast so
+    // "grumpy" reads instantly even at small size, unlike the old faint
+    // wrinkle lines.
+    const browTiltY = 2.6 * s * (1 - soften); // how far the inner end drops toward the eye while grumpy
+    ctx.strokeStyle = "#1a120a";
+    ctx.lineWidth = 1.8 * s / 1.7; // stays visually consistent across house scale
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-4.6 * s, browOuterY); ctx.lineTo(-2 * s, browInnerY);
-    ctx.moveTo(4.6 * s, browOuterY); ctx.lineTo(2 * s, browInnerY);
-    const mouthEndY = -0.8 * s + (-1.4 - -0.8) * s * soften;
-    ctx.moveTo(-3.6 * s, mouthEndY);
-    ctx.quadraticCurveTo(0, mouthDip, 3.6 * s, mouthEndY);
+    ctx.moveTo(-5.6 * s, 7.6 * s); ctx.lineTo(-1.6 * s, 7.6 * s - browTiltY);
+    ctx.moveTo(5.6 * s, 7.6 * s); ctx.lineTo(1.6 * s, 7.6 * s - browTiltY);
+    ctx.stroke();
+
+    // simple mouth -- flat/downturned while grumpy, curving into a
+    // small smile as soften rises
+    const mouthDip = -0.6 * s + (0.9 - -0.6) * s * soften;
+    ctx.beginPath();
+    ctx.moveTo(-3.2 * s, -1 * s);
+    ctx.quadraticCurveTo(0, mouthDip, 3.2 * s, -1 * s);
     ctx.stroke();
 
     // CONFIRMED CHANGE ("where is the chef hat"): a tall white chef's
