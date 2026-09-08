@@ -19267,18 +19267,32 @@ function drawTopsyTurvyHouse(camX, h) {
   // since this is upside-down land, the joke is that the smoke curls
   // *downward* out of the chimney instead of drifting up like real
   // smoke would -- same inverted-world logic already used for the
-  // roots-up trees and the house standing on its own roof. Drawn last
-  // (on top of the roof/walls) so it isn't hidden behind them, sourced
-  // from the chimney's own drawn-tall tip (chimX/chimDrawTop, still in
-  // scope from up top) so it always starts right at the visible opening
-  // regardless of the roof's curve at that x.
-  const smokeOriginX = chimX, smokeOriginY = y(chimDrawTop) - 2 * s;
-  const smokeCount = 4, smokeCycle = 2600;
+  // roots-up trees and the house standing on its own roof.
+  // CONFIRMED BUG FIX ("it looks like the smoke is coming from house
+  // roof, and then going down past the chimney. not from out of chimney"):
+  // two problems with the first pass. (1) the origin sat right at
+  // chimDrawTop -- the chimney's own TALL drawn-for-roof-overlap top,
+  // which is deep inside the region the roof (opaque, drawn earlier)
+  // already covers at this offset x, so the puffs' first frames rendered
+  // ON TOP of the roof fill instead of at the chimney's own visible
+  // brick. Moved down to chimH + 3*s -- comfortably below where the
+  // roof's own curve actually meets the chimney at this x (~chimH +
+  // 5.25*s, per the roof-gap math worked out when the chimney was first
+  // reattached), so every puff starts unambiguously on exposed brick.
+  // (2) the drift distance (26*s) was long enough to carry each puff
+  // almost the chimney's whole visible height, reading as smoke sliding
+  // straight down the chimney's face rather than billowing out and
+  // dissipating near its opening the way real smoke does (just inverted
+  // in direction). Shortened a lot so puffs fade out within a short
+  // distance of the opening instead of streaking all the way to the
+  // ground. Still drawn last (on top of everything) so nothing occludes it.
+  const smokeOriginX = chimX, smokeOriginY = y(chimH + 3 * s);
+  const smokeCount = 4, smokeCycle = 2200;
   for (let i = 0; i < smokeCount; i++) {
     const phase = ((performance.now() + i * (smokeCycle / smokeCount)) % smokeCycle) / smokeCycle;
-    const drift = phase * 26 * s; // downward travel, not up
-    const wobble = Math.sin(phase * Math.PI * 2.4 + i * 1.7) * 5 * s;
-    const puffR = (2.2 + phase * 3.2) * s;
+    const drift = phase * 11 * s; // short downward drift, not up -- dissipates near the opening
+    const wobble = Math.sin(phase * Math.PI * 2.4 + i * 1.7) * 4 * s;
+    const puffR = (1.8 + phase * 2.6) * s;
     const alpha = 0.4 * (1 - phase);
     if (alpha <= 0.01) continue;
     ctx.fillStyle = `rgba(230,230,235,${alpha})`;
@@ -19658,38 +19672,72 @@ function drawTopsyTurvyPig(camX) {
 function drawTopsyTurvyPigPots() {
   const wobbleT = performance.now() * 0.0035;
   const pots = [
-    { w: 15, h: 6.5, color: "#2e2b29", rim: "#f2e6c8", handle: "#1c1a18", glossy: false },
-    { w: 11.5, h: 5.5, color: "#b5622e", rim: "#ffd9a0", handle: "#7a3d18", glossy: true },
-    { w: 8.5, h: 4.5, color: "#333030", rim: "#f2e6c8", handle: "#1c1a18", glossy: false },
-    { w: 6, h: 3.5, color: "#c97a3c", rim: "#ffe2b0", handle: "#7a3d18", glossy: true }
+    { w: 15, h: 6.5, color: "#2e2b29", colorLite: "#4a4542", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
+    { w: 11.5, h: 5.5, color: "#b5622e", colorLite: "#d97f45", rim: "#ffd9a0", handle: "#7a3d18", glossy: true, feet: false },
+    { w: 8.5, h: 4.5, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
+    { w: 6, h: 3.5, color: "#c97a3c", colorLite: "#e6975a", rim: "#ffe2b0", handle: "#7a3d18", glossy: true, feet: false }
   ];
   let stackY = 27; // starting just above the trotters
   pots.forEach((pot, i) => {
     const amp = 1.6 + i * 1.5; // more sway higher up the precarious stack
     const tilt = Math.sin(wobbleT + i * 0.9) * amp;
-    const cy = stackY + pot.h;
+    const w = pot.w, h = pot.h;
+    const cy = stackY + h;
     ctx.save();
     ctx.translate(tilt * 0.4, cy);
     ctx.rotate(tilt * 0.03);
 
-    // heavy dark outline first (slightly oversized) so every pot keeps a
-    // crisp silhouette no matter what's behind it
+    // CONFIRMED CHANGE ("cant tell its pots"): a plain filled ellipse
+    // reads as a shiny egg/ball, not a container -- rebuilt as an actual
+    // cauldron/pot silhouette instead: a rounded belly that's narrower at
+    // the rim than at its widest point (real pot taper), topped with its
+    // own flatter rim ellipse with a visibly DARKER interior -- that dark
+    // opening is the single biggest cue that reads as "this is hollow,
+    // you're looking into it" rather than "this is a solid blob."
+    const rimY = -h * 0.55, bellyY = h * 0.35, bottomY = h * 0.95;
+    const rimHalfW = w * 0.72, bellyHalfW = w;
+
+    // heavy dark outline pass first (slightly oversized body path) so
+    // every pot keeps a crisp silhouette against the pig/whatever's behind it
     ctx.fillStyle = "rgba(15,12,10,0.9)";
     ctx.beginPath();
-    ctx.ellipse(0, 0.3, pot.w + 1, pot.h + 1, 0, 0, Math.PI * 2);
+    ctx.moveTo(-rimHalfW - 1, rimY);
+    ctx.quadraticCurveTo(-bellyHalfW - 1, bellyY, 0, bottomY + 1);
+    ctx.quadraticCurveTo(bellyHalfW + 1, bellyY, rimHalfW + 1, rimY);
+    ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW - 1, rimY);
     ctx.fill();
 
+    // the body itself -- same taper, real size
     ctx.fillStyle = pot.color;
     ctx.beginPath();
-    ctx.ellipse(0, 0, pot.w, pot.h, 0, 0, Math.PI * 2);
+    ctx.moveTo(-rimHalfW, rimY);
+    ctx.quadraticCurveTo(-bellyHalfW, bellyY, 0, bottomY);
+    ctx.quadraticCurveTo(bellyHalfW, bellyY, rimHalfW, rimY);
+    ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW, rimY);
     ctx.fill();
 
-    // bright rim highlight arc -- much lighter/warmer than the old grey
-    // so it reads as a lit metal edge, not just a faint outline
-    ctx.strokeStyle = pot.rim;
-    ctx.lineWidth = 1.6;
+    // a soft lit stripe down one side of the belly so the round taper
+    // actually reads as round, not a flat silhouette
+    ctx.fillStyle = pot.colorLite;
     ctx.beginPath();
-    ctx.ellipse(0, -pot.h * 0.35, pot.w * 0.7, pot.h * 0.45, 0, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.moveTo(-rimHalfW * 0.5, rimY + 0.5);
+    ctx.quadraticCurveTo(-bellyHalfW * 0.55, bellyY, -bellyHalfW * 0.1, bottomY - 1);
+    ctx.quadraticCurveTo(bellyHalfW * 0.05, bellyY, rimHalfW * 0.05, rimY + 0.5);
+    ctx.fill();
+
+    // the rim -- a flat ellipse standing in for the pot's own mouth/opening,
+    // with a distinctly darker fill than the body so it reads as looking
+    // down INTO the pot, not just another highlight band
+    ctx.fillStyle = "rgba(10,8,7,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimHalfW, h * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // bright metal lip around that opening -- much lighter/warmer than the
+    // old grey so it reads as a lit rim, not a faint outline
+    ctx.strokeStyle = pot.rim;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimHalfW, h * 0.24, 0, 0, Math.PI * 2);
     ctx.stroke();
 
     // a second, tighter glossy streak on the copper pieces for real shine
@@ -19697,22 +19745,34 @@ function drawTopsyTurvyPigPots() {
       ctx.strokeStyle = "rgba(255,255,255,0.75)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.ellipse(-pot.w * 0.15, -pot.h * 0.4, pot.w * 0.3, pot.h * 0.22, 0, Math.PI * 1.2, Math.PI * 1.7);
+      ctx.ellipse(-w * 0.15, bellyY - h * 0.15, w * 0.28, h * 0.22, 0, Math.PI * 1.2, Math.PI * 1.7);
       ctx.stroke();
     }
 
-    // small loop handles instead of plain dots -- reads more like an
-    // actual pot handle silhouette
+    // small loop handles just below the rim -- reads more like an actual
+    // pot handle silhouette than a plain dot
     ctx.strokeStyle = pot.handle;
     ctx.lineWidth = 1.8;
     ctx.lineCap = "round";
     [-1, 1].forEach(side => {
       ctx.beginPath();
-      ctx.arc(side * (pot.w + 1.5), 0, 2, Math.PI * 0.15, Math.PI * 1.85, side < 0);
+      ctx.arc(side * (rimHalfW + 1.2), rimY + h * 0.3, 2, Math.PI * 0.15, Math.PI * 1.85, side < 0);
       ctx.stroke();
     });
+
+    // tiny cauldron feet on the cast-iron pieces -- a small extra cue
+    // (real cauldrons stand on stubby legs) that also helps tell the two
+    // materials apart at a glance, not just by color
+    if (pot.feet) {
+      ctx.fillStyle = pot.color;
+      [-1, 0, 1].forEach(fx => {
+        ctx.beginPath();
+        ctx.ellipse(fx * bellyHalfW * 0.55, bottomY - 0.5, 1.6, 1.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
     ctx.restore();
-    stackY += pot.h * 1.6;
+    stackY += h * 1.6;
   });
 }
 
@@ -20516,6 +20576,33 @@ function drawTopsyWindSeedPlot(camX) {
       ctx.beginPath();
       ctx.ellipse(dx - 16 + i * 9, gy - 24, 2.6, 3.6, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  // CONFIRMED ADD ("we needa hint to do the windsed somehow in the
+  // hole"): every OTHER stage-gated interaction in this land (the well,
+  // the return portal) already shows its own "press space to..."/what's-
+  // needed text when the player is standing near it -- this seed plot
+  // was the one exception, silently waiting on a specific held item with
+  // no on-screen cue at all once it's dug. One text line per remaining
+  // stage, matching exactly what updateTopsyTurvyScene's own gate checks
+  // just above require (held item + inventory + proximity), so the hint
+  // never promises something a press won't actually do.
+  if (!topsyWindSeedPlot.grown && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 40, 20, 20)) {
+    let hint = null;
+    if (!topsyWindSeedPlot.dug) {
+      hint = "Dig here with a shovel";
+    } else if (!topsyWindSeedPlot.planted) {
+      hint = "Plant a wind seed here";
+    } else if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
+      hint = `Water it (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS})`;
+    }
+    if (hint) {
+      ctx.fillStyle = "#3a2a4a";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(hint, dx, gy - 34);
+      ctx.textAlign = "left";
     }
   }
 
