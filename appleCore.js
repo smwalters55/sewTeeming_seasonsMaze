@@ -4334,7 +4334,12 @@ function applyPhysics(){
     // (see TOPSY_CART_BOOST_GAIN's own comment above)
     const boostElapsed = (now - topsyTurvyCartRide.lastBoostAt) / 1000;
     let boostNow = topsyTurvyCartRide.boost * Math.exp(-TOPSY_CART_BOOST_DECAY * boostElapsed);
-    if (keys.upJustPressed || keys.spaceJustPressed) {
+    // CONFIRMED CHANGE ("pressing space bar while in tomato cart should
+    // NOT boost you to the top of the roots. that only happen w up
+    // arrow"): space is the pluck-a-tomato button everywhere else near
+    // this cart (see the give/pluck check below) -- it shouldn't also
+    // double as the boost button while riding. Up arrow only now.
+    if (keys.upJustPressed) {
       boostNow = boostNow + (TOPSY_CART_BOOST_CAP - boostNow) * TOPSY_CART_BOOST_GAIN;
       topsyTurvyCartRide.boost = boostNow;
       topsyTurvyCartRide.lastBoostAt = now;
@@ -18032,7 +18037,10 @@ const TOPSY_HOUSE_LADDER_CLIMB_SPEED = 75; // px/sec, matches the sandbox ball p
 const topsyTurvyTrees = [
   { x: 420, scale: 0.9, trunk: 100 },
   { x: 760, scale: 1.1, trunk: 110 },
-  { x: 1440, scale: 0.85, trunk: 230 }
+  // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
+  // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
+  // 1420) -- nudged out to give the cart/pluck spot some breathing room.
+  { x: 1490, scale: 0.85, trunk: 230 }
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18340,7 +18348,14 @@ const topsyChef = {
   // to the house's base and "goes in" there (vanishing during "inside"),
   // rather than literally climbing the ladder.
   sequencePhase: "none",
-  sequenceT: 0
+  sequenceT: 0,
+  // CONFIRMED CHANGE ("make it more grump wrinkles, that then soften
+  // slow animation when give tomato"): 0 = full grump, 1 = fully soft --
+  // eased toward wonOverByTomatoes each frame in updateTopsyTurvyScene
+  // (see TOPSY_CHEF_SOFTEN_RATE) rather than snapping instantly, so the
+  // wrinkles visibly melt away and the color/expression relax over
+  // roughly a second or two after the second tomato lands.
+  softenProgress: 0
 };
 const TOPSY_CHEF_TOMATOES_NEEDED = 2;
 const TOPSY_CHEF_DOOR_OPEN_DURATION = 700;
@@ -18525,8 +18540,19 @@ function updateTopsyChefSequence(deltaTime, grumpyHouse) {
 // leans harder one way.
 const TOPSY_WIND_STRENGTH = 34; // px/sec at peak gust
 
+// CONFIRMED CHANGE ("make it more grump wrinkles, that then soften slow
+// animation when give tomato"): exponential-style ease-toward-target
+// rate (per second) for topsyChef.softenProgress -- proportional-to-
+// remaining-distance approach, so it starts fast and settles in gently,
+// covering most of the distance to fully-soft (or back to fully-grump)
+// over roughly a second and a half rather than snapping instantly.
+const TOPSY_CHEF_SOFTEN_RATE = 1.8;
+
 function updateTopsyTurvyScene(deltaTime) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+
+  const softenTarget = topsyChef.wonOverByTomatoes ? 1 : 0;
+  topsyChef.softenProgress += (softenTarget - topsyChef.softenProgress) * Math.min(1, TOPSY_CHEF_SOFTEN_RATE * deltaTime);
 
   // skipped while pinned to something else that already owns position
   // outright (the ladder, the well's dip animation, a scripted fall) so
@@ -18592,7 +18618,12 @@ function updateTopsyTurvyScene(deltaTime) {
   // topsyHouseDoorstepHeight() the ladder climb itself clamps to, so
   // reaching the top of the ladder always lines up with this check --
   // no more guessing at an approximate height.
-  const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 40, 20, 20);
+  // CONFIRMED CHANGE ("make dialog of grump npc happen when you are
+  // close to the top but not fully up the ladder"): radiusYDown widened
+  // a lot (20 -> 85) so this -- and the give-item interactions below,
+  // which share this same check -- fire while still climbing the upper
+  // stretch of the ladder, not only once pinned exactly at the very top.
+  const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 40, 25, 85);
   if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
@@ -18634,7 +18665,15 @@ function updateTopsyTurvyScene(deltaTime) {
       topsyTurvyCartTomatoes.length - topsyCartTomatoesPlucked > TOPSY_CART_TOMATOES_MIN_REMAINING &&
       keys.spaceJustPressed && isPlayerNear(TOPSY_CART_X, 0, 55, 15, 15)) {
     topsyCartTomatoesPlucked++;
-    addToInventory("tomato");
+    // CONFIRMED CHANGE ("do the normal zoom in then fly to inventory
+    // thing w the tomatoes when grabbed, its every else code when we get
+    // a new item"): every other pickup in the game goes through the
+    // shared startCollectAnimation flight (reveal/pop -> fly to the
+    // inventory basket -> addToInventory only on arrival, see
+    // updateFlyingItems) instead of an instant addToInventory -- this
+    // was the one holdout still adding straight to inventory with no
+    // animation at all.
+    startCollectAnimation({ x: TOPSY_CART_X, y: gy - TOPSY_CART_BED_TOP, size: 8, rotation: 0 }, "tomato");
   }
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
@@ -18673,28 +18712,99 @@ function drawTopsyTurvyHouse(camX, h) {
   const chimH = 16 * s, roofH = 30 * s, wallH = 46 * s, wallW = 70 * s;
   const y = (localY) => sy - localY; // localY=0 -> ground, larger localY -> higher up
 
-  // chimney -- what the whole house actually stands on
-  ctx.fillStyle = "#8f8f8f";
-  ctx.fillRect(sx - 6 * s, y(chimH), 12 * s, chimH);
+  // CONFIRMED CHANGE ("make this house way cuter this looks like cut
+  // out paste on crap"): the whole structure was flat, hard-edged
+  // shapes with no shading or texture -- read exactly like cutouts
+  // pasted on top of each other. Rebuilt with rounded corners, soft
+  // two-tone shading, and some real cottage detail (mortar lines, a
+  // curved thatch-style roof with a scalloped trim, timber corner
+  // posts, a flower box) throughout, while keeping every world-space
+  // number (chimH/roofH/wallH/wallW) exactly as before so the ladder
+  // climb and every collision height stay lined up with the art.
+  const wallBottom = chimH + roofH, wallTop = wallBottom + wallH;
 
-  // roof -- narrow point resting on the chimney, flaring wide above it
-  ctx.fillStyle = "#8a3f34";
+  // chimney -- what the whole house actually stands on. Rounded, with a
+  // little cap ring and soft mortar lines instead of a flat grey block.
+  ctx.fillStyle = "#a8968a";
+  roundRect(ctx, sx - 6 * s, y(chimH), 12 * s, chimH, 3 * s);
+  ctx.fill();
+  ctx.strokeStyle = "#8a7468";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1;
+  [0.35, 0.68].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(sx - 5.5 * s, y(chimH * f));
+    ctx.lineTo(sx + 5.5 * s, y(chimH * f));
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#8a7468";
   ctx.beginPath();
-  ctx.moveTo(sx, y(chimH));
-  ctx.lineTo(sx - (wallW / 2 + 8 * s), y(chimH + roofH));
-  ctx.lineTo(sx + (wallW / 2 + 8 * s), y(chimH + roofH));
+  ctx.ellipse(sx, y(chimH), 7.5 * s, 2 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // roof -- a gentle curved, thatched-cottage silhouette (rounded peak,
+  // bowed sides) instead of a flat-sided triangle, with a soft ridge
+  // highlight and a scalloped thatch trim along the wide edge.
+  const roofHalfW = wallW / 2 + 8 * s;
+  const roofTipY = y(chimH), roofBaseY = y(chimH + roofH);
+  ctx.fillStyle = "#9a4a3c";
+  ctx.beginPath();
+  ctx.moveTo(sx, roofTipY - 1.5 * s);
+  ctx.quadraticCurveTo(sx - roofHalfW * 0.65, roofTipY - (roofTipY - roofBaseY) * 0.1, sx - roofHalfW, roofBaseY);
+  ctx.lineTo(sx + roofHalfW, roofBaseY);
+  ctx.quadraticCurveTo(sx + roofHalfW * 0.65, roofTipY - (roofTipY - roofBaseY) * 0.1, sx, roofTipY - 1.5 * s);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#5c241c";
+  ctx.strokeStyle = "#6b2c22";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 2 * s;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, roofTipY - 1 * s);
+  ctx.lineTo(sx, roofBaseY + 2 * s);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  // scalloped thatch trim along the roof's wide edge
+  ctx.fillStyle = "#7a3a2e";
+  const scallops = 5;
+  for (let i = 0; i < scallops; i++) {
+    const t0 = -roofHalfW + (i / scallops) * roofHalfW * 2;
+    const t1 = -roofHalfW + ((i + 1) / scallops) * roofHalfW * 2;
+    const midT = (t0 + t1) / 2, r = Math.abs(t1 - t0) / 2;
+    ctx.beginPath();
+    ctx.arc(sx + midT, roofBaseY, r * 0.85, Math.PI, Math.PI * 2);
+    ctx.fill();
+  }
 
-  // walls -- the topmost, highest part of the whole upside-down house
-  const wallBottom = chimH + roofH, wallTop = wallBottom + wallH;
-  ctx.fillStyle = "#c9a876";
-  ctx.fillRect(sx - wallW / 2, y(wallTop), wallW, wallH);
-  ctx.strokeStyle = "#7a5f3a";
+  // walls -- the topmost, highest part of the whole upside-down house.
+  // Rounded corners, soft shading toward the roof line, and simple
+  // timber corner posts for a half-timbered cottage feel.
+  const wallX = sx - wallW / 2, wallY = y(wallTop);
+  ctx.fillStyle = "#d9b98a";
+  roundRect(ctx, wallX, wallY, wallW, wallH, 6 * s);
+  ctx.fill();
+  ctx.fillStyle = "rgba(122,90,50,0.16)";
+  ctx.save();
+  roundRect(ctx, wallX, wallY, wallW, wallH, 6 * s);
+  ctx.clip();
+  ctx.fillRect(wallX, wallY + wallH * 0.7, wallW, wallH * 0.3);
+  ctx.restore();
+  ctx.strokeStyle = "#8a6a42";
   ctx.lineWidth = 2;
-  ctx.strokeRect(sx - wallW / 2, y(wallTop), wallW, wallH);
+  roundRect(ctx, wallX, wallY, wallW, wallH, 6 * s);
+  ctx.stroke();
+  ctx.strokeStyle = "#6b4a2c";
+  ctx.lineWidth = 2.2 * s;
+  [wallX + 6 * s, wallX + wallW - 6 * s].forEach(px => {
+    ctx.beginPath();
+    ctx.moveTo(px, wallY + 3 * s);
+    ctx.lineTo(px, wallY + wallH - 3 * s);
+    ctx.stroke();
+  });
   // door -- "the front door ends up on top" per the book, so it belongs
   // at the actual TOP of the whole structure (wallTop -- the highest
   // point on screen, functionally "the bottom of the house" once you
@@ -18720,12 +18830,17 @@ function drawTopsyTurvyHouse(camX, h) {
   // top edge above wallTop -- the wall's actual topmost point -- so a
   // sliver of frame poked out above the wall into open sky. Padding now
   // only goes sideways and downward, never past the wall's own top edge.
+  // CONFIRMED CHANGE ("make this house way cuter"): rounded top corners
+  // on the frame/door instead of hard right angles, matching the rest
+  // of the cottage's new softer look.
   ctx.fillStyle = "#4a3620";
-  ctx.fillRect(doorX - 2.5 * s, doorY, doorW + 5 * s, doorH + 2.5 * s);
+  roundRect(ctx, doorX - 2.5 * s, doorY, doorW + 5 * s, doorH + 2.5 * s, 4 * s);
+  ctx.fill();
   if (doorOpen) {
     // dark open doorway behind the frame
     ctx.fillStyle = "#20160c";
-    ctx.fillRect(doorX, doorY, doorW, doorH);
+    roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
+    ctx.fill();
     // the door itself, swung inward -- drawn foreshortened along the
     // frame's near edge so it visibly reads as "open", not just gone
     ctx.fillStyle = "#6b4426";
@@ -18740,17 +18855,24 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.lineWidth = 1;
     ctx.stroke();
   } else {
-    // closed door face: two raised panels + a doorknob
+    // closed door face: a rounded top, two raised panels, a little
+    // round window pane, and a doorknob
     ctx.fillStyle = "#6b4426";
-    ctx.fillRect(doorX, doorY, doorW, doorH);
+    roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
+    ctx.fill();
     ctx.strokeStyle = "#3a2814";
     ctx.lineWidth = 1.4;
-    ctx.strokeRect(doorX, doorY, doorW, doorH);
-    ctx.strokeRect(doorX + 3 * s, doorY + 3 * s, doorW - 6 * s, doorH * 0.4);
-    ctx.strokeRect(doorX + 3 * s, doorY + doorH * 0.52, doorW - 6 * s, doorH * 0.4);
+    roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(doorX + doorW / 2, doorY + doorH * 0.28, doorW * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(58,40,20,0.7)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(doorX + 3 * s, doorY + doorH * 0.55, doorW - 6 * s, doorH * 0.35);
     ctx.fillStyle = "#e0c060";
     ctx.beginPath();
-    ctx.arc(doorX + doorW - 5 * s, doorY + doorH * 0.55, 1.6 * s, 0, Math.PI * 2);
+    ctx.arc(doorX + doorW - 5 * s, doorY + doorH * 0.65, 1.6 * s, 0, Math.PI * 2);
     ctx.fill();
   }
   // window, off to one side -- CONFIRMED CHANGE (moved up alongside the
@@ -18758,11 +18880,33 @@ function drawTopsyTurvyHouse(camX, h) {
   // put the resident's own window out of step with where the door (and
   // the ladder) actually end up. Now shares the door's top anchor so the
   // whole "reached via the ladder" entryway reads as one coherent spot.
+  // CONFIRMED CHANGE ("make this house way cuter"): rounded frame, cross
+  // mullions for a real small-paned look, and a little flower box
+  // underneath instead of a bare cutout square.
   const winX = sx + 16 * s, winY = y(wallTop);
+  ctx.fillStyle = "#8a6a42";
+  roundRect(ctx, winX - 1.5 * s, winY - 1.5 * s, 17 * s, 17 * s, 3 * s);
+  ctx.fill();
   ctx.fillStyle = "#e8f0d8";
-  ctx.fillRect(winX, winY, 14 * s, 14 * s);
+  roundRect(ctx, winX, winY, 14 * s, 14 * s, 2 * s);
+  ctx.fill();
   ctx.strokeStyle = "#7a5f3a";
-  ctx.strokeRect(winX, winY, 14 * s, 14 * s);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(winX + 7 * s, winY);
+  ctx.lineTo(winX + 7 * s, winY + 14 * s);
+  ctx.moveTo(winX, winY + 7 * s);
+  ctx.lineTo(winX + 14 * s, winY + 7 * s);
+  ctx.stroke();
+  const boxY = winY + 14 * s + 2 * s;
+  ctx.fillStyle = "#8a6a42";
+  ctx.fillRect(winX - 1 * s, boxY, 16 * s, 3 * s);
+  ["#e88ab0", "#f0d060", "#e8f0d8"].forEach((c, i) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(winX + 2 * s + i * 5 * s, boxY - 1 * s, 1.6 * s, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
   // a ladder up to the door/window near the top -- per the book, the
   // only real way in now that the front door ends up on top
@@ -18781,53 +18925,169 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.stroke();
 
   if (h.grumpy) {
-    // a face peeking from the window -- cranky by default, softening
-    // once the tomatoes have won them over (see topsyChef.wonOverByTomatoes)
-    const won = topsyChef.wonOverByTomatoes;
-    const faceCx = winX + 7 * s, faceCy = winY + 7 * s;
-    ctx.fillStyle = "#d8b48a";
+    // CONFIRMED CHANGE ("lets make it not look like a person, and have
+    // better grumpy...maybe a toad"): the old face was a plain skin-tone
+    // circle with eyebrows -- read as a generic person, not any animal
+    // in particular. Rebuilt as a toad.
+    // CONFIRMED CHANGE ("make toad look a lot better... make it more
+    // grump wrinkles, that then soften slow animation when give
+    // tomato"): full redraw -- proper toad silhouette with cheek jowls
+    // and a lighter throat patch, heavy-lidded eyes, skin warts for
+    // texture, and forehead wrinkles that fade out as topsyChef.softenProgress
+    // (see updateTopsyTurvyScene) eases from 0 (freshly grumpy) to 1
+    // (won over) instead of the old hard "won" on/off switch. Everything
+    // that changes with mood now reads off softenProgress so the whole
+    // face visibly melts from cranky to relaxed over that animation
+    // rather than snapping the instant the second tomato lands.
+    // CONFIRMED BUG FIX ("shouldnt toad chef be upside down too like the
+    // other npcs"): the earlier "wrap it in ctx.scale(1,-1) like the pig/
+    // birds" fix flipped the transform but the face's own coordinates
+    // were still authored with eyes above the mouth (a normal, right-
+    // side-up arrangement) -- the pig/birds only read as upside-down
+    // because their LIMBS are arranged inverted (ears drooping instead
+    // of perked, snout tipped up instead of down), not from the flip
+    // transform alone. A symmetric face flipped that same way just looks
+    // like... the same face, so it rendered normal-looking despite the
+    // transform. The actual fix: no ctx.scale here at all -- with eyes
+    // drawn at positive local y (a canvas-y-down frame, so positive y is
+    // BELOW center) and the mouth at negative y (ABOVE center), drawing
+    // straight onto the canvas with no flip puts the mouth above the
+    // eyes and the chef hat (furthest positive y) at the very bottom,
+    // genuinely dangling below everything else -- a real upside-down
+    // face using the exact same coordinates below, just without
+    // cancelling them back out with an unnecessary transform.
+    const soften = topsyChef.softenProgress;
+    const faceCx = winX + 7 * s, faceCy = winY + 6.5 * s;
+    ctx.save();
+    ctx.translate(faceCx, faceCy);
+
+    const toadColor = blendHexColors("#5c6f37", "#8aa363", soften);
+    const toadShadow = blendHexColors("#4a5a2a", "#6f8850", soften);
+    const throatColor = blendHexColors("#a8b884", "#d8e4bc", soften);
+
+    // cheek jowls (drawn first, sit slightly behind/below the head)
+    [-1, 1].forEach(side => {
+      ctx.fillStyle = toadShadow;
+      ctx.beginPath();
+      ctx.ellipse(side * 6.3 * s, -0.8 * s, 2.6 * s, 2.9 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // wide toad head, slightly flattened/broad
+    ctx.fillStyle = toadColor;
     ctx.beginPath();
-    ctx.arc(faceCx, faceCy, 5.5 * s, 0, Math.PI * 2);
+    ctx.ellipse(0, 1 * s, 6.6 * s, 5.1 * s, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#3a2a1a";
-    ctx.lineWidth = 1.2;
+
+    // mottled skin warts for texture -- static, seeded so they don't swim
+    ctx.fillStyle = toadShadow;
+    [[-3.4, 0.5, 0.55], [2.6, 2.4, 0.5], [-1.2, 3.6, 0.45], [4.2, -0.6, 0.5], [-4.6, 3.4, 0.4]].forEach(([wx, wy, wr]) => {
+      ctx.beginPath();
+      ctx.arc(wx * s, wy * s, wr * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // lighter throat/chin patch underneath the mouth
+    ctx.fillStyle = throatColor;
     ctx.beginPath();
-    if (won) {
-      // relaxed, faintly pleased eyebrows -- no more furrow
-      ctx.moveTo(winX + 3 * s, winY + 5.5 * s);
-      ctx.lineTo(winX + 6 * s, winY + 5 * s);
-      ctx.moveTo(winX + 11 * s, winY + 5.5 * s);
-      ctx.lineTo(winX + 8 * s, winY + 5 * s);
-      // a small smile
-      ctx.moveTo(winX + 4.5 * s, winY + 9 * s);
-      ctx.quadraticCurveTo(winX + 7 * s, winY + 10.5 * s, winX + 9.5 * s, winY + 9 * s);
-    } else {
-      // furrowed cranky eyebrows
-      ctx.moveTo(winX + 3 * s, winY + 5 * s);
-      ctx.lineTo(winX + 6 * s, winY + 6.5 * s);
-      ctx.moveTo(winX + 11 * s, winY + 5 * s);
-      ctx.lineTo(winX + 8 * s, winY + 6.5 * s);
+    ctx.ellipse(0, -2.4 * s, 3.4 * s, 2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // bulgy eyes mounted on TOP of the head, toad-style, with a heavy
+    // upper lid that lifts as soften increases
+    [-1, 1].forEach(side => {
+      ctx.fillStyle = toadColor;
+      ctx.beginPath();
+      ctx.arc(side * 3.3 * s, 5.2 * s, 2.5 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f4ecd8";
+      ctx.beginPath();
+      ctx.arc(side * 3.3 * s, 5.2 * s, 1.65 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#241a10";
+      ctx.beginPath();
+      ctx.arc(side * 3.3 * s, 5.2 * s, 0.88 * s, 0, Math.PI * 2);
+      ctx.fill();
+      // tiny highlight fleck for a bit of life in the eye
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath();
+      ctx.arc(side * 3.3 * s + 0.5 * s, 5.6 * s, 0.4 * s, 0, Math.PI * 2);
+      ctx.fill();
+      // heavy lid: drooping low and covering more of the eye while
+      // grumpy, retracting up out of the way once soothed
+      const lidDrop = (1 - soften) * 1.7 * s;
+      ctx.fillStyle = toadColor;
+      ctx.beginPath();
+      ctx.ellipse(side * 3.3 * s, 5.2 * s + 2.5 * s - lidDrop * 0.3, 2.6 * s, 1.6 * s + lidDrop, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // nostrils
+    ctx.fillStyle = "#241a10";
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.arc(side * 1.15 * s, 2.6 * s, 0.5 * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // forehead wrinkles -- three creased lines between the eyes,
+    // strongest at soften=0 and fading (and flattening slightly) out as
+    // soften rises toward 1
+    if (soften < 0.97) {
+      const wrinkleA = (1 - soften);
+      ctx.strokeStyle = `rgba(36,26,16,${0.55 * wrinkleA})`;
+      ctx.lineWidth = 0.9;
+      [0, 1, 2].forEach(i => {
+        const wy = (2.9 - i * 0.85) * s;
+        const spread = (2.6 - i * 0.35) * s * (0.7 + 0.3 * wrinkleA);
+        const dip = 0.9 * s * wrinkleA;
+        ctx.beginPath();
+        ctx.moveTo(-spread, wy);
+        ctx.quadraticCurveTo(0, wy - dip, spread, wy);
+        ctx.stroke();
+      });
     }
+
+    // eyebrows + mouth: interpolated between a furrowed cranky shape
+    // (soften=0) and a relaxed, faintly pleased one (soften=1)
+    const browOuterY = 6.6 * s + (7.3 - 6.6) * s * soften;
+    const browInnerY = 7.6 * s + (6.8 - 7.6) * s * soften;
+    const mouthDip = -0.8 * s + (0.8 - -0.8) * s * soften; // control point, flat -> smiling
+    ctx.strokeStyle = "#241a10";
+    ctx.lineWidth = 1.15;
+    ctx.beginPath();
+    ctx.moveTo(-4.6 * s, browOuterY); ctx.lineTo(-2 * s, browInnerY);
+    ctx.moveTo(4.6 * s, browOuterY); ctx.lineTo(2 * s, browInnerY);
+    const mouthEndY = -0.8 * s + (-1.4 - -0.8) * s * soften;
+    ctx.moveTo(-3.6 * s, mouthEndY);
+    ctx.quadraticCurveTo(0, mouthDip, 3.6 * s, mouthEndY);
     ctx.stroke();
 
-    // CONFIRMED CHANGE ("top hat/chef hat on some upside down npc"):
-    // a tall white chef's hat appears once they're won over by the
-    // tomatoes -- the secret's out.
-    if (won) {
+    // CONFIRMED CHANGE ("where is the chef hat"): a tall white chef's
+    // hat once they're won over by the tomatoes -- the secret's out.
+    // Drawn sitting normally on top of the head in this LOCAL upright
+    // frame; the outer flip above turns that into "dangling below the
+    // chin" on screen, same inverted read as the rest of the toad. Fades
+    // in with soften rather than popping in at the very last instant.
+    if (soften > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, soften * 1.4);
       ctx.fillStyle = "#f4f0e8";
       ctx.beginPath();
-      ctx.ellipse(faceCx, faceCy - 6.5 * s, 4.2 * s, 2 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 8.4 * s, 4.2 * s, 1.6 * s, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(faceCx - 3.6 * s, faceCy - 6.5 * s);
-      ctx.quadraticCurveTo(faceCx - 4.6 * s, faceCy - 12.5 * s, faceCx, faceCy - 13 * s);
-      ctx.quadraticCurveTo(faceCx + 4.6 * s, faceCy - 12.5 * s, faceCx + 3.6 * s, faceCy - 6.5 * s);
+      ctx.moveTo(-3.6 * s, 8.4 * s);
+      ctx.quadraticCurveTo(-4.6 * s, 14.4 * s, 0, 14.9 * s);
+      ctx.quadraticCurveTo(4.6 * s, 14.4 * s, 3.6 * s, 8.4 * s);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "#c8c2b4";
       ctx.lineWidth = 0.8;
       ctx.stroke();
+      ctx.restore();
     }
+    ctx.restore();
 
     // CONFIRMED BUG FIX ("this text or any relly should not follow
     // camera x"): topsyTurvyGrumpyDialogueShown/wonOverByTomatoes/
@@ -18843,11 +19103,14 @@ function drawTopsyTurvyHouse(camX, h) {
     // on actually still being near the window, same check the give-item
     // interactions themselves use, so the bubble now appears and
     // disappears with proximity like any other world-anchored dialogue.
-    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 20, 20)) {
+    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85)) {
       if (topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
+        // CONFIRMED CHANGE ("add 'need tomatoes!' somehow to its grumpy
+        // dialogue"): tacked on as its own blunt line so it reads as a
+        // grumbled demand, not folded into the "shoo" sentence itself.
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
           "Shoo! Stop peeking in windows,",
-          "whoever-you-are!"
+          "whoever-you-are! Need tomatoes!"
         ]);
       } else if (topsyChef.fullyWonOver) {
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
@@ -19170,13 +19433,22 @@ function drawTopsyTurvyPig(camX) {
   ctx.restore();
 }
 
+// CONFIRMED CHANGE ("make pig pots better like, they almost just blend
+// in with the background"): the old stack was four near-identical
+// muted greys, close enough in tone/saturation to the land's pastel
+// purple-pink backdrop that the whole stack read as a fuzzy grey blob.
+// Redesigned with real material contrast -- alternating dark cast-iron
+// pots and warm copper pans, a heavy near-black outline on every piece
+// so silhouettes stay crisp against any background, brighter warm rims,
+// a glossy highlight streak per piece, and small loop handles instead of
+// plain dot handles -- so the stack pops rather than blending in.
 function drawTopsyTurvyPigPots() {
   const wobbleT = performance.now() * 0.0035;
   const pots = [
-    { w: 15, h: 6.5, color: "#8a8f94", rim: "#c7ccd1" },
-    { w: 11.5, h: 5.5, color: "#6b7176", rim: "#a3a9ae" },
-    { w: 8.5, h: 4.5, color: "#9aa0a5", rim: "#c7ccd1" },
-    { w: 6, h: 3.5, color: "#5a5f63", rim: "#8f9599" }
+    { w: 15, h: 6.5, color: "#2e2b29", rim: "#f2e6c8", handle: "#1c1a18", glossy: false },
+    { w: 11.5, h: 5.5, color: "#b5622e", rim: "#ffd9a0", handle: "#7a3d18", glossy: true },
+    { w: 8.5, h: 4.5, color: "#333030", rim: "#f2e6c8", handle: "#1c1a18", glossy: false },
+    { w: 6, h: 3.5, color: "#c97a3c", rim: "#ffe2b0", handle: "#7a3d18", glossy: true }
   ];
   let stackY = 27; // starting just above the trotters
   pots.forEach((pot, i) => {
@@ -19186,25 +19458,46 @@ function drawTopsyTurvyPigPots() {
     ctx.save();
     ctx.translate(tilt * 0.4, cy);
     ctx.rotate(tilt * 0.03);
+
+    // heavy dark outline first (slightly oversized) so every pot keeps a
+    // crisp silhouette no matter what's behind it
+    ctx.fillStyle = "rgba(15,12,10,0.9)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0.3, pot.w + 1, pot.h + 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.fillStyle = pot.color;
     ctx.beginPath();
     ctx.ellipse(0, 0, pot.w, pot.h, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(20,20,20,0.3)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    // rim highlight arc + two small side handles so it reads as
-    // pots/pans rather than plain grey ovals
+
+    // bright rim highlight arc -- much lighter/warmer than the old grey
+    // so it reads as a lit metal edge, not just a faint outline
     ctx.strokeStyle = pot.rim;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.ellipse(0, -pot.h * 0.35, pot.w * 0.7, pot.h * 0.45, 0, Math.PI * 1.1, Math.PI * 1.9);
     ctx.stroke();
-    ctx.fillStyle = pot.color;
-    ctx.beginPath();
-    ctx.ellipse(-pot.w - 1.5, 0, 2, 1.2, 0, 0, Math.PI * 2);
-    ctx.ellipse(pot.w + 1.5, 0, 2, 1.2, 0, 0, Math.PI * 2);
-    ctx.fill();
+
+    // a second, tighter glossy streak on the copper pieces for real shine
+    if (pot.glossy) {
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(-pot.w * 0.15, -pot.h * 0.4, pot.w * 0.3, pot.h * 0.22, 0, Math.PI * 1.2, Math.PI * 1.7);
+      ctx.stroke();
+    }
+
+    // small loop handles instead of plain dots -- reads more like an
+    // actual pot handle silhouette
+    ctx.strokeStyle = pot.handle;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = "round";
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.arc(side * (pot.w + 1.5), 0, 2, Math.PI * 0.15, Math.PI * 1.85, side < 0);
+      ctx.stroke();
+    });
     ctx.restore();
     stackY += pot.h * 1.6;
   });
