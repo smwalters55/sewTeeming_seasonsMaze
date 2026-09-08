@@ -18927,114 +18927,121 @@ function drawTopsyTurvyHouse(camX, h) {
   ctx.stroke();
 
   if (h.grumpy) {
-    // CONFIRMED CHANGE ("lets make it not look like a person, and have
-    // better grumpy...maybe a toad"): the old face was a plain skin-tone
-    // circle with eyebrows -- read as a generic person, not any animal
-    // in particular. Rebuilt as a toad.
-    // CONFIRMED CHANGE ("make toad look a lot better... make it more
-    // grump wrinkles, that then soften slow animation when give
-    // tomato"): full redraw -- proper toad silhouette with cheek jowls
-    // and a lighter throat patch, heavy-lidded eyes, skin warts for
-    // texture, and forehead wrinkles that fade out as topsyChef.softenProgress
-    // (see updateTopsyTurvyScene) eases from 0 (freshly grumpy) to 1
-    // (won over) instead of the old hard "won" on/off switch. Everything
-    // that changes with mood now reads off softenProgress so the whole
-    // face visibly melts from cranky to relaxed over that animation
-    // rather than snapping the instant the second tomato lands.
-    // CONFIRMED BUG FIX ("shouldnt toad chef be upside down too like the
-    // other npcs"): the earlier "wrap it in ctx.scale(1,-1) like the pig/
-    // birds" fix flipped the transform but the face's own coordinates
-    // were still authored with eyes above the mouth (a normal, right-
-    // side-up arrangement) -- the pig/birds only read as upside-down
-    // because their LIMBS are arranged inverted (ears drooping instead
-    // of perked, snout tipped up instead of down), not from the flip
-    // transform alone. A symmetric face flipped that same way just looks
-    // like... the same face, so it rendered normal-looking despite the
-    // transform. The actual fix: no ctx.scale here at all -- with eyes
-    // drawn at positive local y (a canvas-y-down frame, so positive y is
-    // BELOW center) and the mouth at negative y (ABOVE center), drawing
-    // straight onto the canvas with no flip puts the mouth above the
-    // eyes and the chef hat (furthest positive y) at the very bottom,
-    // genuinely dangling below everything else -- a real upside-down
-    // face using the exact same coordinates below, just without
-    // cancelling them back out with an unnecessary transform.
-    // CONFIRMED CHANGE ("make toad a lil simpler i cant tell what this
-    // is or that it is grumpy"): at the small size this actually renders
-    // at in the window, the jowls/warts/throat-patch/eye-highlight/
-    // wrinkle-line detail from the previous pass just turned into a
-    // muddy blob -- none of it was legible, and worse, it buried the two
-    // things that actually need to read at a glance: "this is a toad"
-    // and "it's grumpy". Stripped way down to just a head, two big bold
-    // eyes, and one thick furrowed-to-relaxed eyebrow shape doing all the
-    // expression work -- bigger and higher-contrast than before so it's
-    // readable at actual in-game size, not just zoomed in.
+    // CONFIRMED CHANGE ("lets do rat to try. make it simple enough to
+    // decifer what it is, but interesting enough that it isnt pasted-on
+    // shapes"): swapped the grumpy chef from a toad to a rat -- ties
+    // directly into the tomato ask (ratatouille, per the dialogue below)
+    // instead of an arbitrary fetch quest. Kept the toad's proven bones
+    // (a handful of bold, high-contrast shapes plus one expressive
+    // eyebrow line carrying all the "grumpy" signal, softened over
+    // topsyChef.softenProgress, same "no ctx.scale" upside-down trick --
+    // see the toad-era comment history above this function for why that
+    // works) but swapped the actual silhouette for a pointed snout, a
+    // pair of round two-tone ears, and a few whisker lines, which are
+    // what actually read as "rat" versus "generic round animal".
     const soften = topsyChef.softenProgress;
     const faceCx = winX + 7 * s, faceCy = winY + 6.5 * s;
     ctx.save();
     ctx.translate(faceCx, faceCy);
 
-    const toadColor = blendHexColors("#4a6b2a", "#8aa363", soften);
+    const furColor = blendHexColors("#5c534d", "#8f7f72", soften);
+    const furShadow = blendHexColors("#413a35", "#6b5d52", soften);
+    const earInner = "#d99aa0";
 
-    // wide toad head -- simple single shape, no jowls/texture to muddy it
-    ctx.fillStyle = toadColor;
+    // two round, two-tone ears -- drawn first so the head overlaps their
+    // inner edge slightly, and positioned at the far end (largest local
+    // y = bottom of screen once rendered) so they land where "the top of
+    // the head" belongs once everything reads upside-down
+    [-1, 1].forEach(side => {
+      ctx.fillStyle = furColor;
+      ctx.beginPath();
+      ctx.arc(side * 4.2 * s, 7.6 * s, 2.5 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = earInner;
+      ctx.beginPath();
+      ctx.arc(side * 4.2 * s, 7.6 * s, 1.35 * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // head -- a rounded body with a tapered snout pinched onto the top
+    // (most-negative-y) end instead of a plain oval, so the silhouette
+    // alone reads as "pointy-nosed" rather than just a blob
+    ctx.fillStyle = furColor;
     ctx.beginPath();
-    ctx.ellipse(0, 1 * s, 7 * s, 5.6 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 3 * s, 5.6 * s, 4.6 * s, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(20,26,10,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(-3.6 * s, 0.2 * s);
+    ctx.quadraticCurveTo(0, -3.6 * s, 3.6 * s, 0.2 * s);
+    ctx.quadraticCurveTo(2.2 * s, 2.6 * s, 0, 2.8 * s);
+    ctx.quadraticCurveTo(-2.2 * s, 2.6 * s, -3.6 * s, 0.2 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,16,12,0.5)";
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // two big, bold, high-contrast eyes -- the main "toad" read
+    // whiskers -- cheap to draw, does most of the "unmistakably a
+    // rodent" work on its own
+    ctx.strokeStyle = "rgba(30,24,18,0.55)";
+    ctx.lineWidth = 0.7;
+    ctx.lineCap = "round";
     [-1, 1].forEach(side => {
-      ctx.fillStyle = "#f4ecd8";
+      [-1.6, -0.6, 0.4].forEach(wy => {
+        ctx.beginPath();
+        ctx.moveTo(side * 1.6 * s, -1.6 * s + wy * s * 0.4);
+        ctx.lineTo(side * 6.2 * s, -2.4 * s + wy * s * 0.9);
+        ctx.stroke();
+      });
+    });
+
+    // nose -- small dark pink tip at the very point of the snout
+    ctx.fillStyle = "#c96f7a";
+    ctx.beginPath();
+    ctx.ellipse(0, -1.6 * s, 0.9 * s, 0.6 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // eyes -- simple bold dots, the other big "instantly readable" shape
+    [-1, 1].forEach(side => {
+      ctx.fillStyle = "#1a140f";
       ctx.beginPath();
-      ctx.arc(side * 3.3 * s, 4.8 * s, 2.2 * s, 0, Math.PI * 2);
+      ctx.arc(side * 2.8 * s, 2.4 * s, 1 * s, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#1a120a";
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
       ctx.beginPath();
-      ctx.arc(side * 3.3 * s, 4.8 * s, 1.15 * s, 0, Math.PI * 2);
+      ctx.arc(side * 2.8 * s + 0.35 * s, 2.1 * s, 0.32 * s, 0, Math.PI * 2);
       ctx.fill();
     });
 
     // one thick eyebrow shape per side doing all the expression work --
-    // a steep furrowed angle over the eyes while grumpy, easing to a
-    // shallow relaxed tilt as soften rises. Bold and high-contrast so
-    // "grumpy" reads instantly even at small size, unlike the old faint
-    // wrinkle lines.
-    const browTiltY = 2.6 * s * (1 - soften); // how far the inner end drops toward the eye while grumpy
-    ctx.strokeStyle = "#1a120a";
-    ctx.lineWidth = 1.8 * s / 1.7; // stays visually consistent across house scale
+    // steep furrowed angle over the eyes while grumpy, easing to a
+    // shallow relaxed tilt as soften rises (same trick the toad used).
+    const browTiltY = 2.2 * s * (1 - soften);
+    ctx.strokeStyle = furShadow;
+    ctx.lineWidth = 1.6 * s / 1.7;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-5.6 * s, 7.6 * s); ctx.lineTo(-1.6 * s, 7.6 * s - browTiltY);
-    ctx.moveTo(5.6 * s, 7.6 * s); ctx.lineTo(1.6 * s, 7.6 * s - browTiltY);
-    ctx.stroke();
-
-    // simple mouth -- flat/downturned while grumpy, curving into a
-    // small smile as soften rises
-    const mouthDip = -0.6 * s + (0.9 - -0.6) * s * soften;
-    ctx.beginPath();
-    ctx.moveTo(-3.2 * s, -1 * s);
-    ctx.quadraticCurveTo(0, mouthDip, 3.2 * s, -1 * s);
+    ctx.moveTo(-5 * s, 5.4 * s); ctx.lineTo(-1.6 * s, 5.4 * s - browTiltY);
+    ctx.moveTo(5 * s, 5.4 * s); ctx.lineTo(1.6 * s, 5.4 * s - browTiltY);
     ctx.stroke();
 
     // CONFIRMED CHANGE ("where is the chef hat"): a tall white chef's
-    // hat once they're won over by the tomatoes -- the secret's out.
-    // Drawn sitting normally on top of the head in this LOCAL upright
-    // frame; the outer flip above turns that into "dangling below the
-    // chin" on screen, same inverted read as the rest of the toad. Fades
-    // in with soften rather than popping in at the very last instant.
+    // hat once they're won over by the tomatoes. Re-anchored further out
+    // than the toad's own hat was, since the ears (not the eyes) are now
+    // the head's most extreme feature -- the hat needs to clear THEM to
+    // still read as dangling below everything else. Fades in with soften
+    // rather than popping in at the very last instant.
     if (soften > 0.05) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, soften * 1.4);
       ctx.fillStyle = "#f4f0e8";
       ctx.beginPath();
-      ctx.ellipse(0, 8.4 * s, 4.2 * s, 1.6 * s, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 10.6 * s, 4.2 * s, 1.6 * s, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(-3.6 * s, 8.4 * s);
-      ctx.quadraticCurveTo(-4.6 * s, 14.4 * s, 0, 14.9 * s);
-      ctx.quadraticCurveTo(4.6 * s, 14.4 * s, 3.6 * s, 8.4 * s);
+      ctx.moveTo(-3.6 * s, 10.6 * s);
+      ctx.quadraticCurveTo(-4.6 * s, 16.6 * s, 0, 17.1 * s);
+      ctx.quadraticCurveTo(4.6 * s, 16.6 * s, 3.6 * s, 10.6 * s);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = "#c8c2b4";
@@ -19061,11 +19068,13 @@ function drawTopsyTurvyHouse(camX, h) {
     if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85)) {
       if (topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
         // CONFIRMED CHANGE ("add 'need tomatoes!' somehow to its grumpy
-        // dialogue"): tacked on as its own blunt line so it reads as a
-        // grumbled demand, not folded into the "shoo" sentence itself.
+        // dialogue"; later, "add to dialogue that he needs two tomatoes
+        // for his ratatouille" once the chef became a rat): spelled out
+        // exactly what for and how many now that there's an actual dish
+        // motivating the ask, instead of just a blunt "need tomatoes!".
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-          "Shoo! Stop peeking in windows,",
-          "whoever-you-are! Need tomatoes!"
+          "Shoo! Stop peeking in windows!",
+          "Bring me two tomatoes for my ratatouille!"
         ]);
       } else if (topsyChef.fullyWonOver) {
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
