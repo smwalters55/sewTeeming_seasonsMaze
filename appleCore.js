@@ -3801,6 +3801,17 @@ function applyPhysics(){
   // read as exactly resting.
   const prevVy = player.vy;
   player.y += player.vy;
+  // CONFIRMED ADD ("soft cap after the highest platform, it goes up
+  // waaay too high"): a gentle ceiling on the invert chain's own floaty
+  // flight -- see TOPSY_INVERT_SOFT_CEILING's own comment for why this
+  // is needed specifically once above the sky garden capstone. Just
+  // stops the rise (zeroes vy) right at the ceiling instead of a hard
+  // bounce, so gravity takes back over and it eases into a normal fall
+  // from there -- reads as "soft", not a wall.
+  if (currentScene === "topsyturvy" && player.topsyInverted && player.jumping && player.vy > 0 && player.y > TOPSY_INVERT_SOFT_CEILING) {
+    player.y = TOPSY_INVERT_SOFT_CEILING;
+    player.vy = 0;
+  }
   // falling through one of tunnel town's own dug-out holes (a trapdoor
   // or the s5uHole-style vertical drop) used to just use the same plain
   // 0.8 gravity as any ordinary jump -- reading as "a fall after a
@@ -18513,6 +18524,16 @@ const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 // centers on x. Spans 1765-1895, overlapping the last invert chunk's own
 // catch band (1780 +/- 35) so a straight-up launch from it lands here.
 const TOPSY_SKY_GARDEN = { x: 1765, height: 690, width: 130 };
+// CONFIRMED ADD ("soft cap after the highest platform like it goes up
+// waaay too high"): the invert chain's own light dive gravity gives a
+// big rise budget so the bigger hops are reachable (see
+// TOPSY_INVERT_LAUNCH_VY/TOPSY_INVERT_DIVE_GRAVITY) -- fine mid-chain
+// where there's always a next platform to arc into, but a launch from
+// up near the sky garden has nothing left above it to catch, so that
+// same rise budget just carried the player way up into empty sky.
+// Capped a modest margin above the capstone -- see the applyPhysics
+// clamp using this same constant.
+const TOPSY_INVERT_SOFT_CEILING = TOPSY_SKY_GARDEN.height + 30;
 let topsySkyGardenDandelionCollected = false;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
