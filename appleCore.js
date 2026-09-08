@@ -18328,15 +18328,17 @@ let topsyTurvyGrumpyLingerT = 0;
 // CONFIRMED CHANGE ("i like the grumpy character thing. w tulip. see
 // face change. ... maybe the grumpy is a chef so we have a top hat/chef
 // hat on some upside down npc that needs like 2 tomatoes"): the land's
-// actual second goal, besides growing the dandelion. Two stages --
-// tomatoes first (2, plucked from the cart), which wins them over and
-// reveals the chef hat/happier face; the tulip after that as the small
-// extra touch that fully wins them over and kicks off the door/pig beat.
+// actual second goal, besides growing the dandelion.
+// CONFIRMED CHANGE ("i dont want to do tulip here it feels really off"):
+// dropped the tulip as a second required gift -- it never fit once the
+// chef became a rat asking for tomatoes specifically for his ratatouille,
+// a follow-up flower request read as a non sequitur. The two tomatoes
+// alone now both win the rat over AND kick off the door/pig delivery
+// beat in one step -- see the tomato give-block in updateTopsyTurvyScene.
 const topsyChef = {
   tomatoesGiven: 0,
-  tulipGiven: false,
   wonOverByTomatoes: false, // true once tomatoesGiven hits TOPSY_CHEF_TOMATOES_NEEDED
-  fullyWonOver: false, // true once the tulip's ALSO been given
+  fullyWonOver: false, // true at the same moment as wonOverByTomatoes now -- kept as a separate flag since the door/pig sequence and its own dialogue line still key off it specifically
   // CONFIRMED CHANGE ("the chef noc then opens door and pig then moves
   // towards and goes inside carrying th pots and pans and then comes out
   // empty"): a one-time sequence kicked off by fullyWonOver. Phases:
@@ -18635,25 +18637,21 @@ function updateTopsyTurvyScene(deltaTime) {
   // hat/chef hat on some upside down npc that needs like 2 tomatoes"):
   // give a tomato while standing at the window, same single-button
   // pattern as every other give/place interaction in this game.
+  // CONFIRMED CHANGE ("i dont want to do tulip here it feels really
+  // off"): the second tomato now directly wins the rat over AND kicks
+  // off the door/pig delivery sequence in the same step -- no separate
+  // tulip gift needed afterward.
   if (grumpyHouse && nearGrumpyWindow && !topsyChef.wonOverByTomatoes &&
       heldItem === "tomato" && inventory.tomato > 0 && keys.spaceJustPressed) {
     inventory.tomato--;
     if (inventory.tomato <= 0) { delete inventory.tomato; heldItem = null; }
     topsyChef.tomatoesGiven++;
-    if (topsyChef.tomatoesGiven >= TOPSY_CHEF_TOMATOES_NEEDED) topsyChef.wonOverByTomatoes = true;
-    updateInventoryUI();
-  }
-  // the tulip -- the small extra touch after the tomatoes, per "maybe
-  // fumpy neighbor w the tulip. see face change". Fully wins them over
-  // and kicks off the door/pig beat.
-  if (grumpyHouse && nearGrumpyWindow && topsyChef.wonOverByTomatoes && !topsyChef.tulipGiven &&
-      heldItem === "tulip" && inventory.tulip > 0 && keys.spaceJustPressed) {
-    inventory.tulip--;
-    if (inventory.tulip <= 0) { delete inventory.tulip; heldItem = null; }
-    topsyChef.tulipGiven = true;
-    topsyChef.fullyWonOver = true;
-    topsyChef.sequencePhase = "doorOpen";
-    topsyChef.sequenceT = 0;
+    if (topsyChef.tomatoesGiven >= TOPSY_CHEF_TOMATOES_NEEDED) {
+      topsyChef.wonOverByTomatoes = true;
+      topsyChef.fullyWonOver = true;
+      topsyChef.sequencePhase = "doorOpen";
+      topsyChef.sequenceT = 0;
+    }
     updateInventoryUI();
   }
 
@@ -18661,7 +18659,12 @@ function updateTopsyTurvyScene(deltaTime) {
   // plucking a tomato is grounded near the cart, deliberately separate
   // from the ride trigger (which is a physics landing, not a button
   // press) so the two never fight over the same space bar press.
+  // CONFIRMED CHANGE ("allow only 2 tomatoes to be colected"): capped at
+  // TOPSY_CHEF_TOMATOES_NEEDED total plucks ever, not just a "leave some
+  // behind" minimum -- exactly as many as the rat actually needs, so
+  // there's no reason to stockpile extras.
   if (!topsyTurvyCartRide.active &&
+      topsyCartTomatoesPlucked < TOPSY_CHEF_TOMATOES_NEEDED &&
       topsyTurvyCartTomatoes.length - topsyCartTomatoesPlucked > TOPSY_CART_TOMATOES_MIN_REMAINING &&
       keys.spaceJustPressed && isPlayerNear(TOPSY_CART_X, 0, 55, 15, 15)) {
     topsyCartTomatoesPlucked++;
@@ -18723,32 +18726,65 @@ function drawTopsyTurvyHouse(camX, h) {
   // climb and every collision height stay lined up with the art.
   const wallBottom = chimH + roofH, wallTop = wallBottom + wallH;
 
-  // chimney -- what the whole house actually stands on. Rounded, with a
-  // little cap ring and soft mortar lines instead of a flat grey block.
+  // chimney -- what the whole house actually stands on.
   // CONFIRMED CHANGE ("make upside down house chimney to the right of
   // the ladder, not right behind it"): was centered on sx, same x as the
   // ladder's own rails (sx-6s/sx+8s) -- drawn after the ladder, it sat
   // right on top of the rungs and read as clutter. Offset to its own
   // chimX, clear of the ladder's right rail, instead of dead-center
   // under the roof.
+  // CONFIRMED BUG FIX ("chimney not attached to roof. also this doesnt
+  // look like a chimney at all"): two problems from that offset move.
+  // (1) the roof's underside is a curved dome, not flat -- moving the
+  // chimney sideways left a real gap between its old top (y(chimH),
+  // flush with the roof only when centered) and the curved roof above
+  // it at that x, so it visibly floated. Drawn taller now (up to
+  // chimH + 8*s, well past that gap) so its top end is hidden behind
+  // the roof fill (drawn right after this) instead of stopping short of
+  // it -- same "draw it long, let the next opaque shape clip it" trick,
+  // not a real structural change. (2) the soft tan pill/cap read as a
+  // bucket, not a chimney -- rebuilt as an actual brick-red rectangular
+  // stack with mortar coursing and a proper dark pot-rim cap at the
+  // ground-touching tip.
   const chimX = sx + 17 * s;
-  ctx.fillStyle = "#a8968a";
-  roundRect(ctx, chimX - 6 * s, y(chimH), 12 * s, chimH, 3 * s);
+  const chimDrawTop = chimH + 8 * s;
+  const chimW = 13 * s;
+  ctx.fillStyle = "#a8483a";
+  roundRect(ctx, chimX - chimW / 2, y(chimDrawTop), chimW, chimDrawTop, 1.5 * s);
   ctx.fill();
-  ctx.strokeStyle = "#8a7468";
+  ctx.strokeStyle = "#6b241a";
   ctx.lineWidth = 1;
+  roundRect(ctx, chimX - chimW / 2, y(chimDrawTop), chimW, chimDrawTop, 1.5 * s);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  // brick coursing -- horizontal mortar lines plus short staggered
+  // vertical ticks, only across the visible (below-the-roofline) span
+  ctx.strokeStyle = "rgba(50,16,10,0.45)";
   ctx.lineWidth = 1;
-  [0.35, 0.68].forEach(f => {
+  const courseCount = 3;
+  for (let c = 1; c <= courseCount; c++) {
+    const cy = y((chimH / courseCount) * c);
     ctx.beginPath();
-    ctx.moveTo(chimX - 5.5 * s, y(chimH * f));
-    ctx.lineTo(chimX + 5.5 * s, y(chimH * f));
+    ctx.moveTo(chimX - chimW / 2 + 1, cy);
+    ctx.lineTo(chimX + chimW / 2 - 1, cy);
     ctx.stroke();
-  });
-  ctx.fillStyle = "#8a7468";
+  }
+  for (let c = 0; c < courseCount; c++) {
+    const rowMidY = y((chimH / courseCount) * (c + 0.5));
+    const tickX = (c % 2 === 0) ? chimX : chimX - chimW / 4;
+    ctx.beginPath();
+    ctx.moveTo(tickX, rowMidY - 2 * s);
+    ctx.lineTo(tickX, rowMidY + 2 * s);
+    ctx.stroke();
+  }
+  // dark pot-rim cap at the ground-touching tip -- the actual "this is a
+  // chimney" silhouette cue, previously missing entirely
+  ctx.fillStyle = "#3a1a12";
   ctx.beginPath();
-  ctx.ellipse(chimX, y(chimH), 7.5 * s, 2 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(chimX, y(1 * s), chimW / 2 + 1.5 * s, 2 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#241009";
+  ctx.beginPath();
+  ctx.ellipse(chimX, y(1 * s), chimW / 2 - 0.5 * s, 1 * s, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // roof -- a gentle curved, thatched-cottage silhouette (rounded peak,
@@ -18940,6 +18976,12 @@ function drawTopsyTurvyHouse(camX, h) {
     // pair of round two-tone ears, and a few whisker lines, which are
     // what actually read as "rat" versus "generic round animal".
     const soften = topsyChef.softenProgress;
+    // CONFIRMED CHANGE ("make his whiskers like twitch a little when he
+    // starts talking too"): same proximity check the dialogue bubble
+    // below already gates on, computed early so the whiskers can react
+    // to it too -- true exactly when a speech bubble is actually up.
+    const talking = isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85) &&
+      (topsyTurvyGrumpyDialogueShown || topsyChef.wonOverByTomatoes);
     const faceCx = winX + 7 * s, faceCy = winY + 6.5 * s;
     ctx.save();
     ctx.translate(faceCx, faceCy);
@@ -18982,15 +19024,20 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.stroke();
 
     // whiskers -- cheap to draw, does most of the "unmistakably a
-    // rodent" work on its own
+    // rodent" work on its own. CONFIRMED CHANGE ("make his whiskers like
+    // twitch a little when he starts talking too"): while `talking` is
+    // true, each whisker's tip gets a small fast sinusoidal wobble
+    // (phase-offset per whisker so they don't all move in lockstep) on
+    // top of its resting position -- still and flat otherwise.
     ctx.strokeStyle = "rgba(30,24,18,0.55)";
     ctx.lineWidth = 0.7;
     ctx.lineCap = "round";
     [-1, 1].forEach(side => {
-      [-1.6, -0.6, 0.4].forEach(wy => {
+      [-1.6, -0.6, 0.4].forEach((wy, wi) => {
+        const twitch = talking ? Math.sin(performance.now() * 0.018 + wi * 2.1 + (side < 0 ? 0 : 1.4)) * 0.55 * s : 0;
         ctx.beginPath();
         ctx.moveTo(side * 1.6 * s, -1.6 * s + wy * s * 0.4);
-        ctx.lineTo(side * 6.2 * s, -2.4 * s + wy * s * 0.9);
+        ctx.lineTo(side * 6.2 * s, -2.4 * s + wy * s * 0.9 + twitch);
         ctx.stroke();
       });
     });
@@ -19016,13 +19063,35 @@ function drawTopsyTurvyHouse(camX, h) {
     // one thick eyebrow shape per side doing all the expression work --
     // steep furrowed angle over the eyes while grumpy, easing to a
     // shallow relaxed tilt as soften rises (same trick the toad used).
+    // CONFIRMED BUG FIX ("he looks neurtral not grumpy"): moved right up
+    // against the eyes (was floating 3*s above them) and switched from
+    // furShadow (too close in tone to furColor to actually show up) to
+    // a near-black, higher-contrast color and a touch thicker -- the
+    // shape was always correct, it just wasn't visible enough to read.
     const browTiltY = 2.2 * s * (1 - soften);
-    ctx.strokeStyle = furShadow;
-    ctx.lineWidth = 1.6 * s / 1.7;
+    ctx.strokeStyle = "#1c1712";
+    ctx.lineWidth = 1.9 * s / 1.7;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-5 * s, 5.4 * s); ctx.lineTo(-1.6 * s, 5.4 * s - browTiltY);
-    ctx.moveTo(5 * s, 5.4 * s); ctx.lineTo(1.6 * s, 5.4 * s - browTiltY);
+    ctx.moveTo(-4.6 * s, 3.9 * s); ctx.lineTo(-1.5 * s, 3.9 * s - browTiltY);
+    ctx.moveTo(4.6 * s, 3.9 * s); ctx.lineTo(1.5 * s, 3.9 * s - browTiltY);
+    ctx.stroke();
+
+    // mouth -- CONFIRMED CHANGE ("make the rat like, slowly smile so we
+    // can see its actually happy"): the rat never had an explicit mouth
+    // before, so there was nothing to actually show happiness with
+    // beyond the eyebrows relaxing. A small curve near the snout that
+    // eases from a flat/neutral line to a real upturned smile as
+    // softenProgress rises -- since that itself animates gradually (see
+    // TOPSY_CHEF_SOFTEN_RATE), the smile spreads slowly rather than
+    // popping in.
+    const mouthLift = 1.1 * s * soften;
+    ctx.strokeStyle = "#1c1712";
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-1.4 * s, -0.6 * s);
+    ctx.quadraticCurveTo(0, -0.6 * s + mouthLift, 1.4 * s, -0.6 * s);
     ctx.stroke();
 
     // CONFIRMED CHANGE ("where is the chef hat"): a tall white chef's
@@ -19077,14 +19146,13 @@ function drawTopsyTurvyHouse(camX, h) {
           "Bring me two tomatoes for my ratatouille!"
         ]);
       } else if (topsyChef.fullyWonOver) {
+        // CONFIRMED CHANGE ("i dont want to do tulip here it feels
+        // really off"): fullyWonOver now fires in the same instant as
+        // wonOverByTomatoes (see the tomato give-block above), so this
+        // is simply the thank-you line -- no tulip follow-up to ask for.
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-          "Ahh, a tulip too? You've got a",
-          "good eye. Come by anytime."
-        ]);
-      } else if (topsyChef.wonOverByTomatoes) {
-        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
-          "Mm! Not bad at all. Say... you",
-          "wouldn't happen to have a tulip?"
+          "Mmm, perfect! Just what my",
+          "ratatouille needed. Come by anytime."
         ]);
       }
     }
@@ -19209,9 +19277,39 @@ function drawTopsyTurvyTree(camX, t) {
     for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
     ctx.closePath();
     ctx.fill();
+    // CONFIRMED BUG FIX ("why is the trunk like a rectangle going into
+    // the green, this doesnt look like an actual tree trunk where it
+    // touches the greenery"): only stroke the two side edges and the
+    // top, not the flat bottom cross-line -- that hard dark straight
+    // edge sitting right on top of the round canopy blobs is exactly
+    // what read as "a rectangle poking into the green". The flare below
+    // covers the now-unstroked base instead.
     ctx.strokeStyle = "#2f2013";
     ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let i = 1; i < leftPts.length; i++) ctx.lineTo(leftPts[i].x, leftPts[i].y);
+    ctx.moveTo(rightPts[0].x, rightPts[0].y);
+    for (let i = 1; i < rightPts.length; i++) ctx.lineTo(rightPts[i].x, rightPts[i].y);
     ctx.stroke();
+
+    // root-flare base -- a few soft, unstroked, rounded bumps spreading
+    // out from the trunk's bottom edge, blending it into the canopy
+    // instead of ending in one hard straight line. No outline on these
+    // so they read as a soft transition, not another sharp edge.
+    ctx.fillStyle = "#4a3222";
+    [-0.85, -0.3, 0.3, 0.85].forEach((fx, fi) => {
+      const bx = sx + fx * baseHalfW * 1.3;
+      const flareLen = 6 * s + pseudoRandom(trunkSeed + fi * 23.1) * 4 * s;
+      // extends toward larger screen-y (down, into the canopy/ground)
+      // from the trunk's base row, not up away from it
+      ctx.beginPath();
+      ctx.moveTo(leftPts[0].x + (rightPts[0].x - leftPts[0].x) * ((fx + 1) / 2 - 0.12), leftPts[0].y);
+      ctx.quadraticCurveTo(bx, leftPts[0].y + flareLen * 0.6, bx, leftPts[0].y + flareLen);
+      ctx.quadraticCurveTo(bx, leftPts[0].y + flareLen * 0.6, leftPts[0].x + (rightPts[0].x - leftPts[0].x) * ((fx + 1) / 2 + 0.12), leftPts[0].y);
+      ctx.closePath();
+      ctx.fill();
+    });
 
     // a shaded strip down one side gives the trunk some roundness
     // instead of reading as a flat plank
