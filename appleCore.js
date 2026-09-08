@@ -19667,7 +19667,13 @@ function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
 function drawTreeClimbDoor(sx, y, s, side, localHeight) {
   const dx = sx + side * 14 * s, dy = y(localHeight);
   const w = 8 * s, h = 13 * s;
-  ctx.fillStyle = "#3a2818";
+  // CONFIRMED FIX (found via debug-harness screenshots): the door's own
+  // fill was too close in tone to the surrounding trunk bark (both dark
+  // brown), so against the much bigger fungus trunk it basically
+  // vanished into the bark and only the window glow read at all. Warmer,
+  // more saturated wood tone plus a lighter plank-seam highlight so the
+  // door itself has real contrast against the trunk, not just its light.
+  ctx.fillStyle = "#6b4426";
   ctx.beginPath();
   ctx.moveTo(dx - w / 2, dy + h / 2);
   ctx.lineTo(dx - w / 2, dy - h / 2 + w / 2);
@@ -19676,8 +19682,18 @@ function drawTreeClimbDoor(sx, y, s, side, localHeight) {
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#1e1409";
-  ctx.lineWidth = 0.9;
+  ctx.lineWidth = 1.2;
   ctx.stroke();
+  // a couple of plank seams, lighter than the fill, so the door reads as
+  // built (planked) rather than a flat blob even before the window glow
+  ctx.strokeStyle = "rgba(160,120,80,0.5)";
+  ctx.lineWidth = 0.6;
+  [-0.22, 0.22].forEach(fx => {
+    ctx.beginPath();
+    ctx.moveTo(dx + fx * w, dy - h / 2 + w / 2);
+    ctx.lineTo(dx + fx * w, dy + h / 2);
+    ctx.stroke();
+  });
   // the little round window, warm light glowing behind it -- soft glow
   // first so the window itself reads crisp on top
   const glow = ctx.createRadialGradient(dx, dy - 1.5 * s, 0, dx, dy - 1.5 * s, 6 * s);
@@ -19698,44 +19714,125 @@ function drawTreeClimbDoor(sx, y, s, side, localHeight) {
   ctx.fill();
 }
 
-// vignette -- a small pulley/bucket rig strung off a branch stub near the
-// top, like whoever lives here hauls things up rather than climbing for
-// everything. Gently swaying; purely decorative for now.
-function drawTreeClimbBucketRig(sx, y, s, localHeight) {
-  const bx = sx, by = y(localHeight);
-  const sway = Math.sin(performance.now() * 0.0012) * 3 * s;
-  // the branch stub it hangs from
+// vignette -- CONFIRMED REWORK ("yeah we need to do this a lot better.
+// its like small things pasted on. i dont see a basket or whatever that
+// carries things up. and it should also be in motion like bringing
+// tomatoes down or bringing mushrooms up"): the old version was a single
+// static bucket dangling from a short branch stub -- easy to miss and
+// not obviously a "basket" at a glance. Replaced with an actual working
+// pulley: a wheel mounted near the top of the climb, a rope running the
+// full span down to a low anchor, and one real basket riding that rope
+// on a continuous loop -- climbing up carrying a mushroom (echoing the
+// climb's own turkey-tail caps) on one leg, then heading back down
+// carrying a tomato (a nod to Topsy-Turvy Land waiting at the top) on
+// the return leg, eased in/out so it doesn't read as a metronome. Reuses
+// the shared drawTomatoShape (same tomato as the topsy-turvy cart/give
+// animation) rather than inventing a second tomato drawing.
+const FUNGUS_PULLEY_CYCLE_MS = 15000;
+function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight) {
+  const topY = y(topLocalHeight);
+  const bottomY = y(bottomLocalHeight);
+  const railX = sx + side * 34 * s;
+
+  // branch stub + pulley wheel, fixed near the top anchor
   ctx.strokeStyle = "#4a3222";
-  ctx.lineWidth = 3 * s;
+  ctx.lineWidth = 4 * s;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(bx, by);
-  ctx.lineTo(bx + 14 * s, by - 4 * s);
+  ctx.moveTo(sx + side * 14 * s, topY - 6 * s);
+  ctx.lineTo(railX, topY);
   ctx.stroke();
-  const hookX = bx + 14 * s, hookY = by - 4 * s;
-  // rope
+  ctx.fillStyle = "#6a4c30";
+  ctx.beginPath();
+  ctx.arc(railX, topY, 5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + 0.4;
+    ctx.beginPath();
+    ctx.moveTo(railX, topY);
+    ctx.lineTo(railX + Math.cos(a) * 4.5 * s, topY + Math.sin(a) * 4.5 * s);
+    ctx.stroke();
+  }
+
+  // the full rope span, faint, so the track reads even where the basket
+  // currently isn't
+  ctx.strokeStyle = "rgba(138,114,80,0.55)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(railX, topY);
+  ctx.lineTo(railX, bottomY);
+  ctx.stroke();
+
+  // one continuous loop: up carrying a mushroom, back down carrying a
+  // tomato, eased in/out at each end rather than linear
+  const t0 = performance.now() % FUNGUS_PULLEY_CYCLE_MS;
+  const phase = t0 / FUNGUS_PULLEY_CYCLE_MS;
+  const goingUp = phase < 0.5;
+  const legT = goingUp ? phase * 2 : (phase - 0.5) * 2;
+  const eased = legT < 0.5 ? 2 * legT * legT : 1 - Math.pow(-2 * legT + 2, 2) / 2;
+  const travelT = goingUp ? eased : 1 - eased;
+  const basketY = bottomY + (topY - bottomY) * travelT;
+  const sway = Math.sin(performance.now() * 0.0015) * 2 * s;
+  const bx = railX + sway;
+
+  // rope handle from the rail down to the basket's rim
   ctx.strokeStyle = "#8a7250";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(hookX, hookY);
-  ctx.lineTo(hookX + sway, hookY + 16 * s);
+  ctx.moveTo(railX, basketY - 6 * s);
+  ctx.lineTo(bx, basketY);
   ctx.stroke();
-  // the little bucket
-  const pailX = hookX + sway, pailY = hookY + 16 * s;
-  ctx.fillStyle = "#7a5a34";
+
+  // the basket itself -- a real woven look (trapezoid body, cross-weave
+  // lines, a rim), not just a flat pail silhouette
+  const bw = 11 * s, bh = 9 * s;
+  ctx.fillStyle = "#8a6a3e";
   ctx.beginPath();
-  ctx.moveTo(pailX - 4 * s, pailY);
-  ctx.lineTo(pailX - 3 * s, pailY + 6 * s);
-  ctx.lineTo(pailX + 3 * s, pailY + 6 * s);
-  ctx.lineTo(pailX + 4 * s, pailY);
+  ctx.moveTo(bx - bw * 0.55, basketY);
+  ctx.lineTo(bx - bw * 0.4, basketY + bh);
+  ctx.lineTo(bx + bw * 0.4, basketY + bh);
+  ctx.lineTo(bx + bw * 0.55, basketY);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#4a3218";
-  ctx.lineWidth = 0.8;
+  ctx.lineWidth = 0.8 * s;
   ctx.stroke();
+  ctx.strokeStyle = "rgba(60,40,20,0.4)";
+  ctx.lineWidth = 0.6 * s;
+  [0.3, 0.6].forEach(f => {
+    ctx.beginPath();
+    ctx.moveTo(bx - bw * 0.5 * (1 - f) - bw * 0.4 * f, basketY + bh * f);
+    ctx.lineTo(bx + bw * 0.5 * (1 - f) + bw * 0.4 * f, basketY + bh * f);
+    ctx.stroke();
+  });
+  ctx.strokeStyle = "#5a4020";
+  ctx.lineWidth = 1.2 * s;
   ctx.beginPath();
-  ctx.arc(pailX, pailY - 1.5 * s, 4 * s, Math.PI, 0);
+  ctx.ellipse(bx, basketY, bw * 0.55, 2 * s, 0, 0, Math.PI * 2);
   ctx.stroke();
+
+  // cargo riding along, peeking up out of the basket -- swaps with the
+  // direction of travel
+  if (goingUp) {
+    const mx = bx, my = basketY - 2 * s;
+    ctx.fillStyle = "#c0392b";
+    ctx.beginPath();
+    ctx.arc(mx, my, 4 * s, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = "#f0e4d0";
+    [[-1.6, -0.5], [0.6, -1.2], [2, 0.2]].forEach(([ox, oy]) => {
+      ctx.beginPath();
+      ctx.arc(mx + ox * s, my + oy * s, 0.7 * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#e8dcc0";
+    ctx.fillRect(mx - 1.2 * s, my, 2.4 * s, 3 * s);
+  } else {
+    drawTomatoShape(ctx, bx, basketY - 3 * s, 5 * s, 0);
+  }
 }
 
 // the ambient topsy-turvy critter -- per direct follow-up ("the upside
@@ -20040,13 +20137,6 @@ function drawTopsyTurvyReturnPortal(camX) {
     ctx.beginPath();
     ctx.ellipse(sx, sy - 6, r, r * 0.35, 0, 0, Math.PI * 2);
     ctx.stroke();
-  }
-  if (isPlayerNear(TOPSYTURVY_RETURN_X, 0, 40, 25, 15)) {
-    ctx.fillStyle = "#3a2a4a";
-    ctx.font = "12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Press space to climb back down", sx, sy - 34);
-    ctx.textAlign = "left";
   }
 }
 
@@ -21271,17 +21361,6 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
   ctx.ellipse(sx, topY + 4, halfW, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (isPlayerNear(tp.x, tp.height - player.height, 40, 30, 40)) {
-    // CONFIRMED BUG FIX: placed just below the attach point, which is
-    // exactly where the hanging player's own body sits -- the text was
-    // landing right behind the sprite, half-hidden. Dropped further down,
-    // below the player's own hanging height, so it clears the sprite.
-    ctx.fillStyle = "#3a2a4a";
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Press up to drop down", sx, underY + player.height + 16);
-    ctx.textAlign = "left";
-  }
 }
 
 // small always-bloomed decorative dandelion near the entrance -- see
@@ -21636,8 +21715,9 @@ function drawForestFungusCap(camX, t) {
   const squish = squishP >= 1 ? 0 : Math.exp(-squishP * 5) * Math.cos(squishP * Math.PI * 2.6);
   const squishScale = 1 - squish * 0.16;
 
-  // attach point on the trunk's own edge at this height
-  const attachX = sx + side * 15;
+  // attach point on the trunk's own edge at this height -- widened to
+  // match the thicker trunk (see FOREST_FUNGUS's own TW widen)
+  const attachX = sx + side * 26;
   const attachY = cy;
 
   const tone = pseudoRandom(t.x * 3.1 + t.height * 7.7);
@@ -21680,24 +21760,36 @@ function drawForestFungusClimb(camX) {
   // gnarled outline -- each edge is its own wavy path built from a few
   // quadratic bows with alternating direction, not a straight taper, plus
   // a wide flared base and a ragged top
+  // CONFIRMED CHANGE ("make the trunk thicker so we can actually see the
+  // things like the sleep nook"): the vignettes at scale 2.3 were still
+  // reading as small/wrong against this trunk -- not because they were
+  // too small in isolation, but because the trunk itself was too thin
+  // (half-width only ~27px) to look like a real climbable tree at this
+  // height in the first place, so anything embedded in it read as an
+  // oversized sticker rather than a real bark feature. Widened every
+  // x-offset here by ~1.7x (half-width now ~45-55px through the climbable
+  // span) instead of just growing the vignettes again -- a genuinely
+  // thicker trunk gives the vignettes real bark to sit in. See the
+  // matching widen on the knot bumps/ridge lines/cap attach point below.
+  const TW = 1.7;
   const leftPts = [
-    { x: sx - 34, y: gy },
-    { x: sx - 24, y: gy - topHeight * 0.22 },
-    { x: sx - 30, y: gy - topHeight * 0.48 },
-    { x: sx - 20, y: gy - topHeight * 0.74 },
-    { x: sx - 15, y: gy - topHeight * 0.95 },
-    { x: sx - 10, y: gy - topHeight }
+    { x: sx - 34 * TW, y: gy },
+    { x: sx - 24 * TW, y: gy - topHeight * 0.22 },
+    { x: sx - 30 * TW, y: gy - topHeight * 0.48 },
+    { x: sx - 20 * TW, y: gy - topHeight * 0.74 },
+    { x: sx - 15 * TW, y: gy - topHeight * 0.95 },
+    { x: sx - 10 * TW, y: gy - topHeight }
   ];
   const rightPts = [
-    { x: sx + 10, y: gy - topHeight },
-    { x: sx + 16, y: gy - topHeight * 0.94 },
-    { x: sx + 19, y: gy - topHeight * 0.72 },
-    { x: sx + 27, y: gy - topHeight * 0.46 },
-    { x: sx + 22, y: gy - topHeight * 0.2 },
-    { x: sx + 34, y: gy }
+    { x: sx + 10 * TW, y: gy - topHeight },
+    { x: sx + 16 * TW, y: gy - topHeight * 0.94 },
+    { x: sx + 19 * TW, y: gy - topHeight * 0.72 },
+    { x: sx + 27 * TW, y: gy - topHeight * 0.46 },
+    { x: sx + 22 * TW, y: gy - topHeight * 0.2 },
+    { x: sx + 34 * TW, y: gy }
   ];
 
-  const trunkGrad = ctx.createLinearGradient(sx - 30, 0, sx + 30, 0);
+  const trunkGrad = ctx.createLinearGradient(sx - 30 * TW, 0, sx + 30 * TW, 0);
   trunkGrad.addColorStop(0, "#241a11");
   trunkGrad.addColorStop(0.45, "#4a3521");
   trunkGrad.addColorStop(0.6, "#5a4128");
@@ -21720,10 +21812,10 @@ function drawForestFungusClimb(camX) {
   // as real bark character rather than a smooth cylinder
   ctx.fillStyle = "rgba(20,14,8,0.55)";
   [0.32, 0.68].forEach((t, i) => {
-    const kx = sx + (i === 0 ? -19 : 21);
+    const kx = sx + (i === 0 ? -19 : 21) * TW;
     const ky = gy - topHeight * t;
     ctx.beginPath();
-    ctx.ellipse(kx, ky, 6, 4.5, i === 0 ? -0.4 : 0.4, 0, Math.PI * 2);
+    ctx.ellipse(kx, ky, 6 * TW, 4.5 * TW, i === 0 ? -0.4 : 0.4, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -21732,11 +21824,11 @@ function drawForestFungusClimb(camX) {
   // read as copies of each other
   ctx.strokeStyle = "rgba(15,10,6,0.42)";
   ctx.lineWidth = 2;
-  for (let i = -2; i <= 2; i++) {
-    const jitter = (pseudoRandom(seed + i * 3.3) - 0.5) * 14;
+  for (let i = -3; i <= 3; i++) {
+    const jitter = (pseudoRandom(seed + i * 3.3) - 0.5) * 14 * TW;
     ctx.beginPath();
-    ctx.moveTo(sx + i * 9, gy - 4);
-    ctx.quadraticCurveTo(sx + i * 11 + jitter, gy - topHeight * 0.5, sx + i * 7 + jitter * 0.4, gy - topHeight * 0.9);
+    ctx.moveTo(sx + i * 9 * TW, gy - 4);
+    ctx.quadraticCurveTo(sx + i * 11 * TW + jitter, gy - topHeight * 0.5, sx + i * 7 * TW + jitter * 0.4, gy - topHeight * 0.9);
     ctx.stroke();
   }
 
@@ -21785,22 +21877,35 @@ function drawForestFungusClimb(camX) {
   // cap's own catch zone) so they never compete with the real
   // platforming. `y` here is just gy-relative since the whole scene is
   // already wrapped in the forest's own cameraY translate.
-  // CONFIRMED FIX (found via debug-harness screenshots): these three
-  // helpers were originally tuned at scale 1 for the slender topsy-turvy
-  // tall tree's own trunk (half-width only ~4-7px there), whose narrow
-  // silhouette let a 14-15px offset land clearly beside the bark. This
-  // trunk is MUCH thicker (~26-27px half-width the whole way up this
-  // span), so that same offset/size landed deep inside the solid trunk
-  // fill instead of at its visible edge -- the door and bucket rig in
-  // particular were reading as basically invisible, just a stray pixel
-  // or two. Scaled up (s=2.3, was the implicit 1) so the same shapes'
-  // offsets clear the real edge here and their stroke/fill sizes read
-  // at a legible size against this much bigger trunk.
+  // CONFIRMED FIX ("make the trunk thicker so we can actually see the
+  // things", then "we need to do this a lot better. its like small
+  // things pasted on"): the real fix wasn't just cranking the vignette
+  // scale again -- it was giving them a genuinely thicker trunk to sit
+  // in (see TW above) plus a soft recessed bark-shadow behind the nook
+  // and door so they read as carved INTO the bark instead of a flat
+  // sticker floating on top of it.
   const fungusY = h => gy - h;
   const FUNGUS_VIGNETTE_SCALE = 2.3;
+  const nookX = sx + 1 * 15 * FUNGUS_VIGNETTE_SCALE, nookY = fungusY(150);
+  ctx.fillStyle = "rgba(15,10,6,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(nookX, nookY, 15 * FUNGUS_VIGNETTE_SCALE * 0.55, 12 * FUNGUS_VIGNETTE_SCALE * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
   drawTreeClimbSleepyNook(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 150);
+
+  const doorX = sx - 1 * 14 * FUNGUS_VIGNETTE_SCALE, doorY = fungusY(350);
+  ctx.fillStyle = "rgba(15,10,6,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(doorX, doorY, 12 * FUNGUS_VIGNETTE_SCALE * 0.55, 16 * FUNGUS_VIGNETTE_SCALE * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
   drawTreeClimbDoor(sx, fungusY, FUNGUS_VIGNETTE_SCALE, -1, 350);
-  drawTreeClimbBucketRig(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 550);
+
+  // CONFIRMED REWORK ("i dont see a basket or whatever that carries
+  // things up. and it should also be in motion"): swapped the old static
+  // bucket for the animated pulley basket above, spanning most of the
+  // climbable trunk (dynamically off topLevelHeight, so it automatically
+  // covers whatever the current climb height is).
+  drawFungusTrunkPulley(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 60, topLevelHeight + 80);
 }
 
 // CONFIRMED CHANGE ("should this even be the entryway to the rock pool.
