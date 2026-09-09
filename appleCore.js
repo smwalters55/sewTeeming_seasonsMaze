@@ -18532,15 +18532,10 @@ const TOPSY_INVERT_PLATFORMS = [
   // of x position -- belt and suspenders, verified via the same
   // frame-by-frame simulation.
   { x: 1650, height: 448, width: 70 },
-  // CONFIRMED ADD ("also some more horizontal platforms"): extending the
-  // sideways stretch further instead of turning back to the climb right
-  // away -- two more hops crossing back over the rest platform's own
-  // column (safe: both stay well above its 424 attach height, same
-  // margin reasoning as the 1650 one just above) before finally
-  // resuming the climb. Total sideways run is now 1590 -> 1650 -> 1750
-  // -> 1820, ~230px of real lateral travel.
-  { x: 1750, height: 460, width: 70 },
-  { x: 1820, height: 445, width: 70 },
+  // CONFIRMED REVERT ("it isnt useable like this, you only need like two
+  // platforms here"): briefly grew this to four hops (1590/1650/1750/
+  // 1820), but that crammed too many platforms into too small a patch of
+  // sky to actually read/play cleanly -- back down to just the two.
   { x: 1880, height: 524, width: 70 },
   { x: 1780, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
