@@ -792,9 +792,9 @@ const ITEM_CANVAS_RENDER = {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "windSeed");
   },
-  umbrella: (iconCtx) => {
+  pinwheel: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
-    drawCollectible(iconCtx, 10, 11, 8, 0, "umbrella");
+    drawCollectible(iconCtx, 10, 11, 8, 0, "pinwheel");
   }
   // NOTE: "gnawedStick" is itemType-checked in drawCollectible but is never
   // actually granted anywhere in the game (no addToInventory/hasItem call
@@ -814,7 +814,7 @@ const ITEM_CANVAS_RENDER = {
 // aragonite and geode both added -- neither is a stackable pickup, each
 // is exactly one unique found mineral (with its own permanent shine/crack
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed", "umbrella"]; // windSeed/umbrella can never exceed 1, so the "x1" label is just noise
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed", "pinwheel"]; // windSeed/pinwheel can never exceed 1, so the "x1" label is just noise
 
 // CONFIRMED CHANGE: items that only ever do anything in a couple of
 // specific "home" scenes (see the matching heldItem safety nets near
@@ -7080,53 +7080,43 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafBoatShape(ctx, x, y, size, rotation, "#1e5631");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
-  } else if (itemType === "umbrella") {
-    // CONFIRMED ADD ("i like maybe umbrella upside down"): the topsy-
-    // turvy sky-garden's own collectible -- a literal upside-down
-    // umbrella, canopy open toward the sky like a cup instead of
-    // shedding rain downward, matching this land's whole "everything's
-    // flipped" joke. Not wired to any gameplay effect elsewhere yet
-    // (see this item's own comment on the sky garden) -- just a themed
-    // pickup for now, the actual unlock to design later.
+  } else if (itemType === "pinwheel") {
+    // CONFIRMED CHANGE ("i like the wind swirl thing. not a pendant
+    // tho. maybe like the ones that are on sticks" -- replacing an
+    // earlier upside-down-umbrella pass): a real toy pinwheel, four
+    // curved vanes around a center hub -- ties into the wind/gust theme
+    // already established in this land (TOPSY_WIND_STRENGTH, the
+    // dandelion puffballs, windSeed itself) better than either the
+    // umbrella or a generic charm did. Not wired to any gameplay effect
+    // elsewhere yet -- just a themed pickup for now, the actual unlock
+    // to design later. `rotation` drives the whole vane cluster, so a
+    // caller can spin it continuously for a live "catching the wind"
+    // read (see drawTopsySkyGarden) while the inventory icon just passes
+    // 0 for a static rest pose, same convention every other icon uses.
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rotation);
     const r = size * 0.85;
-    ctx.fillStyle = "#6a4fa0";
-    ctx.beginPath();
-    ctx.moveTo(-r, 0);
-    const scallops = 5;
-    for (let i = 0; i <= scallops; i++) {
-      const sx = -r + (i / scallops) * r * 2;
-      const dip = i % 2 === 0 ? 0 : r * 0.12;
-      ctx.lineTo(sx, -r * 0.55 + dip);
-    }
-    ctx.lineTo(r, 0);
-    ctx.quadraticCurveTo(0, r * 0.35, -r, 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#4a3574";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,0.3)";
-    for (let i = 1; i < scallops; i++) {
-      const sx = -r + (i / scallops) * r * 2;
+    const vaneColors = ["#e05a7a", "#f0a840", "#6a4fa0", "#4fa0a0"];
+    for (let i = 0; i < 4; i++) {
+      ctx.save();
+      ctx.rotate((i / 4) * Math.PI * 2);
+      ctx.fillStyle = vaneColors[i];
       ctx.beginPath();
-      ctx.moveTo(sx, -r * 0.3);
-      ctx.lineTo(0, r * 0.2);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(r, -r * 0.15);
+      ctx.quadraticCurveTo(r * 0.7, r * 0.35, 0, r * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.15)";
+      ctx.lineWidth = 0.6;
       ctx.stroke();
+      ctx.restore();
     }
-    // handle -- a small hooked curl BELOW the canopy, pointing down,
-    // since flipping the whole umbrella puts the handle end at the
-    // bottom now instead of the top
-    ctx.strokeStyle = "#3a2a1a";
-    ctx.lineWidth = size * 0.14;
-    ctx.lineCap = "round";
+    ctx.fillStyle = "#3a2a1a";
     ctx.beginPath();
-    ctx.moveTo(0, r * 0.25);
-    ctx.lineTo(0, r * 0.7);
-    ctx.quadraticCurveTo(r * 0.25, r * 0.85, r * 0.15, r * 1.0);
-    ctx.stroke();
+    ctx.arc(0, 0, r * 0.16, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   } else if (itemType === "windSeed") {
     drawWindSeedShape(ctx, x, y, size, rotation);
@@ -18560,7 +18550,13 @@ const TOPSY_INVERT_PLATFORMS = [
 // intended target. Bumped to comfortably clear the biggest gap (118)
 // with real margin for x-drift timing; re-verified via the same
 // frame-by-frame physics simulation used for the gap sizing itself.
-const TOPSY_INVERT_LAUNCH_VY = 3.9;
+// CONFIRMED CHANGE ("the lift up for the upside down platforms is too
+// much. lets decrease the amount a bit"): eased back down from 3.9 --
+// still comfortably clears the chain's biggest gaps (114->232 is +118,
+// 232->342 is +110) with real margin, just a noticeably less extreme
+// arc than 3.9's own overshoot. Re-verified via the same frame-by-frame
+// simulation used to size the gaps in the first place.
+const TOPSY_INVERT_LAUNCH_VY = 3.7;
 // CONFIRMED ADD: the short scripted windup dip that now runs BEFORE the
 // real launch (see topsyDipFrames' own comment on the player object) --
 // a small, snappy dip, not a real physics fall, so it always finishes in
@@ -18608,9 +18604,11 @@ const TOPSY_SKY_GARDEN = { x: 1765, height: 690, width: 130 };
 // clamp using this same constant.
 const TOPSY_INVERT_SOFT_CEILING = TOPSY_SKY_GARDEN.height + 30;
 // CONFIRMED RENAME ("i dont want the dandelion and well as mini up
-// there... umbrella upside down"): was topsySkyGardenDandelionCollected
-// -- renamed now that the actual item up here is the umbrella, not a
-// dandelion (see drawTopsySkyGarden's own comment).
+// there... i like the wind swirl thing... like the ones that are on
+// sticks"): was topsySkyGardenDandelionCollected -- renamed now that the
+// actual item up here is a pinwheel, not a dandelion (see
+// drawTopsySkyGarden's own comment; briefly an umbrella in between, since
+// dropped).
 let topsySkyGardenCollected = false;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
@@ -19171,18 +19169,19 @@ function updateTopsyTurvyScene(deltaTime) {
   }
 
   // CONFIRMED CHANGE ("some simple kinda reason to be up there like to
-  // get an upside down item", reworked from a bonus windSeed to "i like
-  // maybe umbrella upside down"): the sky-garden capstone's one
-  // collectible is now the upside-down umbrella (see
-  // drawTopsySkyGarden's own comment) -- themed to this land, not tied
-  // to any gameplay effect elsewhere yet. Same shared flight animation
-  // every other pickup uses (see startCollectAnimation's own comment on
-  // TOPSY_CART_X above).
+  // get an upside down item", went through a bonus windSeed then a
+  // (rejected) upside-down umbrella before landing on "i like the wind
+  // swirl thing... like the ones that are on sticks"): the sky-garden
+  // capstone's one collectible is a toy pinwheel (see drawTopsySkyGarden
+  // and drawCollectible's own "pinwheel" comments) -- themed to this
+  // land's existing wind motif, not tied to any gameplay effect
+  // elsewhere yet. Same shared flight animation every other pickup uses
+  // (see startCollectAnimation's own comment on TOPSY_CART_X above).
   if (!topsySkyGardenCollected &&
       keys.spaceJustPressed &&
       isPlayerNear(TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, TOPSY_SKY_GARDEN.height, TOPSY_SKY_GARDEN.width / 2, 20, 20)) {
     topsySkyGardenCollected = true;
-    startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "umbrella");
+    startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "pinwheel");
   }
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
@@ -21836,13 +21835,15 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
 // left-edge x convention (see its comment).
 // CONFIRMED CHANGE ("i dont want the dandelion and well as mini up
 // there... what if it's something upside down that could be used
-// elsewhere outside of topsy turvy or later in topsy turvy"): the well
-// and dandelion are gone -- the one collectible up here is now a literal
-// upside-down umbrella (see its own drawCollectible/"umbrella" branch),
-// stuck point-down into the mound like a little planted flag. Themed to
-// match this land, not wired to any gameplay effect elsewhere yet -- the
-// actual unlock is a later design decision, this is just banking the
-// item itself.
+// elsewhere outside of topsy turvy or later in topsy turvy", settling on
+// "i like the wind swirl thing... like the ones that are on sticks"
+// after a rejected upside-down-umbrella pass): the well and dandelion
+// are gone -- the one collectible up here is a toy pinwheel on a stick
+// (see its own drawCollectible/"pinwheel" branch), planted into the
+// mound and spinning gently. Themed to match this land's existing wind
+// motif, not wired to any gameplay effect elsewhere yet -- the actual
+// unlock is a later design decision, this is just banking the item
+// itself.
 function drawTopsySkyGarden(camX) {
   const sx = TOPSY_SKY_GARDEN.x - camX + TOPSY_SKY_GARDEN.width / 2;
   if (sx < -150 || sx > canvas.width + 150) return;
@@ -21893,26 +21894,26 @@ function drawTopsySkyGarden(camX) {
   ctx.ellipse(sx, topY + 5, halfW, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // the collectible: the upside-down umbrella (see its own drawCollectible
-  // "umbrella" branch), planted point-down into the mound like a little
-  // flag -- gently bobbing so it reads as pickable, not scenery. Collected
-  // once via the space-press check in updateTopsyTurvyScene, then simply
-  // stops drawing.
+  // the collectible: a toy pinwheel (see its own drawCollectible
+  // "pinwheel" branch) on a stick planted into the mound, genuinely
+  // spinning (driven by performance.now(), not the bob/sway every other
+  // ground decoration uses) so it reads as "catching the wind" rather
+  // than just sitting there. Collected once via the space-press check
+  // in updateTopsyTurvyScene, then simply stops drawing.
   if (!topsySkyGardenCollected) {
     const ux = sx + halfW * 0.15;
-    const bob = Math.sin(performance.now() * 0.0011 + 2.7) * 3;
     const groundY = topY - 4;
-    const canopyY = groundY - 22 + bob;
-    // a short stake bridging the icon's own handle down to the ground,
-    // so it reads as planted rather than floating
+    const hubY = groundY - 26;
+    const spin = performance.now() * 0.004;
+    // the stick, planted straight into the ground
     ctx.strokeStyle = "#3a2a1a";
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(ux, canopyY + 9);
+    ctx.moveTo(ux, hubY);
     ctx.lineTo(ux, groundY);
     ctx.stroke();
-    drawCollectible(ctx, ux, canopyY, 13, 0, "umbrella");
+    drawCollectible(ctx, ux, hubY, 13, spin, "pinwheel");
   }
 }
 
