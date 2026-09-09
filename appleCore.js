@@ -358,6 +358,14 @@ const player = {
   // the whole downward dive, not just while actually touching the
   // platform.
   topsyInverted: false,
+  // CONFIRMED ADD ("make player more wobbly on the towers... add a
+  // little wiggle"): true only while actually resting on the pig's pot
+  // stack or the tea critter's cup stack THIS frame (see the dynamic-
+  // -platform landing check) -- drives a small extra sprite tilt in the
+  // draw code (topsyStackWobbleTilt) so riding one of these visibly
+  // sways the player too, not just slides them sideways as a rigid
+  // block.
+  topsyRidingStack: false,
   // CONFIRMED ADD ("pressing up actually first brings u down just a
   // little then takes u bback up"): a short scripted windup, counted
   // down in applyPhysics -- while > 0, position is fully driven by that
@@ -4678,6 +4686,13 @@ function applyPhysics(){
         player.x = bestPlatform.centerX - player.width / 2;
       }
     }
+    // CONFIRMED ADD ("make player more wobbly on the towers... add a
+    // little wiggle"): re-derived fresh every frame from this frame's
+    // own landing result (not just set-and-forget) so it turns off the
+    // instant the player jumps away or the platform wobbles out from
+    // under them, same "recomputed every frame" shape the rest of this
+    // block already uses for position.
+    player.topsyRidingStack = !!(bestPlatform && bestPlatform.dynamic);
   }
 
   } // end currentScene checks
@@ -62656,8 +62671,19 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   // the whole sprite around its own center, same as everything else in
   // this sum, rather than a brand new scale/flip path of its own.
   const topsyInvertTilt = (currentScene === "topsyturvy" && player.topsyInverted) ? Math.PI : 0;
+  // CONFIRMED ADD ("make player more wobbly on the towers like now it
+  // just moves as a block horizontally, add a little wiggle"): standing
+  // on the pig's pot stack / the tea critter's cup stack already re-
+  // -centers the player on it every frame (see the dynamic-platform
+  // landing check), but that alone just slides the sprite sideways as a
+  // rigid block -- no different from walking on solid ground. A small
+  // extra sway, same additive-tilt mechanism as everything else in this
+  // sum, sells "precariously balanced on a wobbling stack" instead.
+  const topsyStackWobbleTilt = (currentScene === "topsyturvy" && player.topsyRidingStack)
+    ? Math.sin(performance.now() * 0.006) * 0.15
+    : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
