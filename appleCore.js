@@ -791,6 +791,10 @@ const ITEM_CANVAS_RENDER = {
   windSeed: (iconCtx) => {
     iconCtx.clearRect(0, 0, 20, 20);
     drawCollectible(iconCtx, 10, 11, 8, 0, "windSeed");
+  },
+  umbrella: (iconCtx) => {
+    iconCtx.clearRect(0, 0, 20, 20);
+    drawCollectible(iconCtx, 10, 11, 8, 0, "umbrella");
   }
   // NOTE: "gnawedStick" is itemType-checked in drawCollectible but is never
   // actually granted anywhere in the game (no addToInventory/hasItem call
@@ -810,7 +814,7 @@ const ITEM_CANVAS_RENDER = {
 // aragonite and geode both added -- neither is a stackable pickup, each
 // is exactly one unique found mineral (with its own permanent shine/crack
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed"]; // windSeed can never exceed 1, so the "x1" label is just noise
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed", "umbrella"]; // windSeed/umbrella can never exceed 1, so the "x1" label is just noise
 
 // CONFIRMED CHANGE: items that only ever do anything in a couple of
 // specific "home" scenes (see the matching heldItem safety nets near
@@ -7076,6 +7080,54 @@ function drawCollectible(ctx, x, y, size, rotation, itemType) {
     drawLeafBoatShape(ctx, x, y, size, rotation, "#1e5631");
   } else if (HYBRID_DRAW_FN[itemType]) {
     HYBRID_DRAW_FN[itemType](ctx, x, y, size);
+  } else if (itemType === "umbrella") {
+    // CONFIRMED ADD ("i like maybe umbrella upside down"): the topsy-
+    // turvy sky-garden's own collectible -- a literal upside-down
+    // umbrella, canopy open toward the sky like a cup instead of
+    // shedding rain downward, matching this land's whole "everything's
+    // flipped" joke. Not wired to any gameplay effect elsewhere yet
+    // (see this item's own comment on the sky garden) -- just a themed
+    // pickup for now, the actual unlock to design later.
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    const r = size * 0.85;
+    ctx.fillStyle = "#6a4fa0";
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    const scallops = 5;
+    for (let i = 0; i <= scallops; i++) {
+      const sx = -r + (i / scallops) * r * 2;
+      const dip = i % 2 === 0 ? 0 : r * 0.12;
+      ctx.lineTo(sx, -r * 0.55 + dip);
+    }
+    ctx.lineTo(r, 0);
+    ctx.quadraticCurveTo(0, r * 0.35, -r, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#4a3574";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    for (let i = 1; i < scallops; i++) {
+      const sx = -r + (i / scallops) * r * 2;
+      ctx.beginPath();
+      ctx.moveTo(sx, -r * 0.3);
+      ctx.lineTo(0, r * 0.2);
+      ctx.stroke();
+    }
+    // handle -- a small hooked curl BELOW the canopy, pointing down,
+    // since flipping the whole umbrella puts the handle end at the
+    // bottom now instead of the top
+    ctx.strokeStyle = "#3a2a1a";
+    ctx.lineWidth = size * 0.14;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.25);
+    ctx.lineTo(0, r * 0.7);
+    ctx.quadraticCurveTo(r * 0.25, r * 0.85, r * 0.15, r * 1.0);
+    ctx.stroke();
+    ctx.restore();
   } else if (itemType === "windSeed") {
     drawWindSeedShape(ctx, x, y, size, rotation);
   } else if (itemType === "worm") {
@@ -18469,6 +18521,27 @@ const TOPSY_INVERT_PLATFORMS = [
   { x: 1830, height: 232, width: 70 }, // climbing back up and left -- first of the new hops
   { x: 1900, height: 342, width: 70 },
   { x: 1760, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
+  // CONFIRMED ADD ("some of it being horizontal not just an upward
+  // climb"): a genuine sideways stretch right after the rest platform --
+  // barely any net height change across these two (424 -> 450 -> 430),
+  // so the dip-launch's own hang time gets spent covering real ground
+  // sideways instead of gaining height, before the chain picks the climb
+  // back up again below. Stays well clear of the cart's wander range
+  // (TOPSY_CART_X 1420 +/- 85) and the well (TOPSY_WELL_X 2050) on
+  // either side.
+  { x: 1590, height: 450, width: 70 },
+  // CONFIRMED FIX (reachability simulation): this was originally x1720,
+  // height430 -- close enough to the rest platform's own attach height
+  // (424, only 6px below) that the mandatory pre-launch windup dip
+  // (always -12px, unconditionally) alone was enough to drop back BELOW
+  // 424 while still drifting through the rest platform's wide catch
+  // band (x1760, width 110 -> spans 1705-1815), instantly re-catching
+  // it instead of ever actually launching anywhere. Moved further left
+  // (clear of that band on x) AND raised just enough (448, not 430)
+  // that even the dip's floor (436) stays safely above 424 regardless
+  // of x position -- belt and suspenders, verified via the same
+  // frame-by-frame simulation.
+  { x: 1650, height: 448, width: 70 },
   { x: 1880, height: 524, width: 70 },
   { x: 1780, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
@@ -18534,7 +18607,11 @@ const TOPSY_SKY_GARDEN = { x: 1765, height: 690, width: 130 };
 // Capped a modest margin above the capstone -- see the applyPhysics
 // clamp using this same constant.
 const TOPSY_INVERT_SOFT_CEILING = TOPSY_SKY_GARDEN.height + 30;
-let topsySkyGardenDandelionCollected = false;
+// CONFIRMED RENAME ("i dont want the dandelion and well as mini up
+// there... umbrella upside down"): was topsySkyGardenDandelionCollected
+// -- renamed now that the actual item up here is the umbrella, not a
+// dandelion (see drawTopsySkyGarden's own comment).
+let topsySkyGardenCollected = false;
 
 // CONFIRMED CHANGE ("well so we will already have a bucket. so i am
 // thinking potentially an animation where you attach the bucket to the
@@ -19094,18 +19171,18 @@ function updateTopsyTurvyScene(deltaTime) {
   }
 
   // CONFIRMED CHANGE ("some simple kinda reason to be up there like to
-  // get an upside down item"): the sky-garden capstone at the top of the
-  // new invert-platform chain has one collectible waiting on it -- a
-  // bonus windSeed, same itemType/flight animation as every other pickup
-  // (see startCollectAnimation's own comment on TOPSY_CART_X above).
-  // windSeed is in NO_COUNT_LABEL so there's no "x2" clutter even though
-  // the player likely already has one from topsyWindSeedPlot -- this is
-  // just a nice-to-have backup, not a second required item.
-  if (!topsySkyGardenDandelionCollected &&
+  // get an upside down item", reworked from a bonus windSeed to "i like
+  // maybe umbrella upside down"): the sky-garden capstone's one
+  // collectible is now the upside-down umbrella (see
+  // drawTopsySkyGarden's own comment) -- themed to this land, not tied
+  // to any gameplay effect elsewhere yet. Same shared flight animation
+  // every other pickup uses (see startCollectAnimation's own comment on
+  // TOPSY_CART_X above).
+  if (!topsySkyGardenCollected &&
       keys.spaceJustPressed &&
       isPlayerNear(TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, TOPSY_SKY_GARDEN.height, TOPSY_SKY_GARDEN.width / 2, 20, 20)) {
-    topsySkyGardenDandelionCollected = true;
-    startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "windSeed");
+    topsySkyGardenCollected = true;
+    startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "umbrella");
   }
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
@@ -21755,9 +21832,17 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
 // kinda reason to be up there like to get an upside down item"): the
 // capstone at the top of the invert-platform chain -- an ordinary
 // right-side-up earth mound (grass on TOP, unlike the hanging invert
-// platforms which are grass-on-bottom) with a small decorative well and
-// one collectible dandelion puffball the player can pick up once. Reuses
-// TOPSY_SKY_GARDEN's own left-edge x convention (see its comment).
+// platforms which are grass-on-bottom). Reuses TOPSY_SKY_GARDEN's own
+// left-edge x convention (see its comment).
+// CONFIRMED CHANGE ("i dont want the dandelion and well as mini up
+// there... what if it's something upside down that could be used
+// elsewhere outside of topsy turvy or later in topsy turvy"): the well
+// and dandelion are gone -- the one collectible up here is now a literal
+// upside-down umbrella (see its own drawCollectible/"umbrella" branch),
+// stuck point-down into the mound like a little planted flag. Themed to
+// match this land, not wired to any gameplay effect elsewhere yet -- the
+// actual unlock is a later design decision, this is just banking the
+// item itself.
 function drawTopsySkyGarden(camX) {
   const sx = TOPSY_SKY_GARDEN.x - camX + TOPSY_SKY_GARDEN.width / 2;
   if (sx < -150 || sx > canvas.width + 150) return;
@@ -21808,82 +21893,26 @@ function drawTopsySkyGarden(camX) {
   ctx.ellipse(sx, topY + 5, halfW, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // small decorative well, offset to one side so the dandelion has its
-  // own clear spot on the mound
-  const wellX = sx - halfW * 0.42, wellY = topY - 3;
-  const wellR = 16;
-  ctx.fillStyle = "#5a5854";
-  ctx.beginPath();
-  ctx.ellipse(wellX, wellY, wellR, wellR * 0.42, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#3a3834";
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-  // stone ring texture
-  ctx.strokeStyle = "rgba(120,118,112,0.7)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
+  // the collectible: the upside-down umbrella (see its own drawCollectible
+  // "umbrella" branch), planted point-down into the mound like a little
+  // flag -- gently bobbing so it reads as pickable, not scenery. Collected
+  // once via the space-press check in updateTopsyTurvyScene, then simply
+  // stops drawing.
+  if (!topsySkyGardenCollected) {
+    const ux = sx + halfW * 0.15;
+    const bob = Math.sin(performance.now() * 0.0011 + 2.7) * 3;
+    const groundY = topY - 4;
+    const canopyY = groundY - 22 + bob;
+    // a short stake bridging the icon's own handle down to the ground,
+    // so it reads as planted rather than floating
+    ctx.strokeStyle = "#3a2a1a";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(wellX + Math.cos(a) * wellR * 0.55, wellY + Math.sin(a) * wellR * 0.55 * 0.42);
-    ctx.lineTo(wellX + Math.cos(a) * wellR, wellY + Math.sin(a) * wellR * 0.42);
+    ctx.moveTo(ux, canopyY + 9);
+    ctx.lineTo(ux, groundY);
     ctx.stroke();
-  }
-  ctx.fillStyle = "#1c2a30";
-  ctx.beginPath();
-  ctx.ellipse(wellX, wellY, wellR * 0.62, wellR * 0.62 * 0.42, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // low well roof posts + tiny peaked roof, echoing a classic wishing well
-  ctx.strokeStyle = "#6b4a2e";
-  ctx.lineWidth = 2.4;
-  [-1, 1].forEach(side => {
-    ctx.beginPath();
-    ctx.moveTo(wellX + side * wellR * 0.7, wellY - 2);
-    ctx.lineTo(wellX + side * wellR * 0.7, wellY - 22);
-    ctx.stroke();
-  });
-  ctx.fillStyle = "#7a3c28";
-  ctx.beginPath();
-  ctx.moveTo(wellX - wellR * 0.9, wellY - 22);
-  ctx.lineTo(wellX, wellY - 32);
-  ctx.lineTo(wellX + wellR * 0.9, wellY - 22);
-  ctx.closePath();
-  ctx.fill();
-
-  // the collectible: a small upright dandelion puffball, styled the same
-  // as drawTopsyTurvyEntranceDandelion, just on this mound instead of
-  // the ground -- collected once via the space-press check in
-  // updateTopsyTurvyScene, then simply stops drawing.
-  if (!topsySkyGardenDandelionCollected) {
-    const dgx = sx + halfW * 0.4;
-    const sway = Math.sin(performance.now() * 0.0009 + 4.2) * 3;
-    const headR = 9;
-    const stemH = 20;
-    const stemBaseY = topY - 2;
-    const stemTopY = stemBaseY - stemH;
-    const tipX = dgx + sway;
-    ctx.strokeStyle = "#4f7a34";
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(dgx, stemBaseY);
-    ctx.quadraticCurveTo(dgx + sway * 0.5, (stemBaseY + stemTopY) / 2, tipX, stemTopY);
-    ctx.stroke();
-    const strands = 16;
-    for (let i = 0; i < strands; i++) {
-      const a = (i / strands) * Math.PI * 2 + i * 0.31;
-      const len = headR * (0.85 + pseudoRandom(TOPSY_SKY_GARDEN.x + i * 13) * 0.22);
-      const tx = tipX + Math.cos(a) * len, ty = stemTopY + Math.sin(a) * len * 0.94;
-      ctx.strokeStyle = "rgba(240,238,225,0.85)";
-      ctx.lineWidth = 0.9;
-      ctx.beginPath();
-      ctx.moveTo(tipX, stemTopY);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#f0eee1";
-    ctx.beginPath();
-    ctx.ellipse(tipX, stemTopY, headR * 0.4, headR * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    drawCollectible(ctx, ux, canopyY, 13, 0, "umbrella");
   }
 }
 
