@@ -2918,7 +2918,16 @@ function handleInput(){
         // re-catch check can be skipped for the moment the launch first
         // rises back up through that same attachY -- see the guard's own
         // comment in the collision loop below.
-        player.topsyGuardPlatform = TOPSY_INVERT_PLATFORMS.find(tp => Math.abs((tp.height - player.height) - player.y) < 0.01) || null;
+        // CONFIRMED CHANGE (chef-house furniture peek): also searches the
+        // ceiling furniture when inside that room, so a hop between two
+        // pieces of furniture gets the same launch-guard exemption the
+        // outdoor chain relies on -- without this, the dip crossing back
+        // through the furniture's own attachY would instantly re-grab
+        // the very piece you just launched from.
+        player.topsyGuardPlatform = (topsyChefInteriorActive
+          ? TOPSY_CHEF_FURNITURE_PLATFORMS
+          : TOPSY_INVERT_PLATFORMS
+        ).find(tp => Math.abs((tp.height - player.height) - player.y) < 0.01) || null;
         player.jumping = true;
         player.usedDoubleJump = false;
       } else if (!player.jumping) {
@@ -3824,6 +3833,15 @@ function applyPhysics(){
     player.y = TOPSY_INVERT_SOFT_CEILING;
     player.vy = 0;
   }
+  // CONFIRMED ADD (chef-house furniture peek): the room's own much lower
+  // ceiling -- without its own cap, a launch in here would use the same
+  // rise budget tuned for the big outdoor chain and go sailing up out of
+  // the room's actual drawn ceiling. Same "stop the rise, let gravity
+  // ease it back down" shape as the outdoor soft ceiling just above.
+  if (topsyChefInteriorActive && player.topsyInverted && player.jumping && player.vy > 0 && player.y > TOPSY_CHEF_INTERIOR_SOFT_CEILING) {
+    player.y = TOPSY_CHEF_INTERIOR_SOFT_CEILING;
+    player.vy = 0;
+  }
   // falling through one of tunnel town's own dug-out holes (a trapdoor
   // or the s5uHole-style vertical drop) used to just use the same plain
   // 0.8 gravity as any ordinary jump -- reading as "a fall after a
@@ -3951,7 +3969,11 @@ function applyPhysics(){
   // below and instantly re-grab the chunk it just left, cancelling the
   // whole hop before it goes anywhere.
   if (currentScene === "topsyturvy" && !player.topsyForceDrop) {
-    for (const tp of TOPSY_INVERT_PLATFORMS) {
+    // CONFIRMED CHANGE (chef-house furniture peek): swaps in the ceiling
+    // furniture list instead of the outdoor chain while inside that
+    // room -- same catch loop, same mechanic, just a different (much
+    // smaller) set of platforms.
+    for (const tp of (topsyChefInteriorActive ? TOPSY_CHEF_FURNITURE_PLATFORMS : TOPSY_INVERT_PLATFORMS)) {
       const attachY = tp.height - player.height;
       if (tp === player.topsyGuardPlatform) {
         if (player.y > attachY + 4) {
@@ -18944,6 +18966,43 @@ const TOPSY_CHEF_DOOR_OPEN_DURATION = 700;
 const TOPSY_CHEF_PIG_INSIDE_DURATION = 1000;
 const TOPSY_CHEF_PIG_WALK_SPEED = 70; // px/s, faster than its own idle patrol -- reads as "on a mission"
 
+// CONFIRMED ADD ("lets do the chef house peek, but let me also be able
+// to jump upside down on the furniture no reward or anything"): a small
+// walk-in interior for the chef's house, entered/exited at the window
+// (same spot the tomato-giving already happens at). Deliberately stays
+// inside currentScene "topsyturvy" rather than becoming its own real
+// scene -- this is a self-contained little room right at the house's
+// own x, so hiding the outdoor draw/update and swapping in a room-local
+// draw/update while this flag is on gets the same effect as a real
+// scene switch without touching the game's actual scene-transition
+// plumbing (previousScene, leadsTo, etc.) for what's meant to be a
+// quick, low-stakes peek, not a whole new destination.
+let topsyChefInteriorActive = false;
+// where outside to put the player back once they leave -- captured the
+// moment they step in, restored the moment they step out.
+const topsyChefInteriorReturn = { x: 0, y: 0 };
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 90; // the little room spans the house's own x +/- this
+// CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
+// way every OTHER upside-down surface in this land works -- these reuse
+// the exact same dip-then-launch/light-gravity float as
+// TOPSY_INVERT_PLATFORMS itself (see the two "topsyChefInteriorActive"
+// extensions to that mechanic just below the outdoor array's own
+// collision code), just scoped to this room instead of the outdoor
+// climb. No reward up here, purely a "because it's fun to wobble around
+// on your ceiling furniture" bonus room. Heights tuned so the FIRST one
+// (the armchair) is reachable with an ordinary jump from the floor --
+// same as how the very first TOPSY_INVERT_PLATFORMS entry works outside
+// -- and the rest chain off it with the usual dip-launch once inverted.
+const TOPSY_CHEF_FURNITURE_PLATFORMS = [
+  { x: topsyTurvyHouses[0].x - 45, height: 85, width: 46, kind: "armchair" },
+  { x: topsyTurvyHouses[0].x + 5, height: 108, width: 22, kind: "plant" },
+  { x: topsyTurvyHouses[0].x + 50, height: 118, width: 62, kind: "couch" }
+];
+// a modest margin above the tallest furniture piece -- see its own use
+// right next to the outdoor TOPSY_INVERT_SOFT_CEILING check.
+const TOPSY_CHEF_INTERIOR_SOFT_CEILING = 150;
+const TOPSY_CHEF_INTERIOR_ROOM_HEIGHT = 170; // the drawn room's own ceiling line, above the soft ceiling with a little headroom
+
 // CONFIRMED CHANGE (see topsyWell/topsyWindSeedPlot's own comment for
 // the full quote this implements): the well's dip/fill animation, the
 // walk-and-spill carry, and the seed plot's dig -> plant -> water(x3)
@@ -19130,7 +19189,409 @@ const TOPSY_WIND_STRENGTH = 34; // px/sec at peak gust
 // over roughly a second and a half rather than snapping instantly.
 const TOPSY_CHEF_SOFTEN_RATE = 1.8;
 
+// CONFIRMED ADD ("lets do the chef house peek, but let me also be able
+// to jump upside down on the furniture no reward or anything"): the
+// room's own tiny update -- just walls to keep the player inside, and
+// the exit. Movement/jumping/the actual furniture-catch physics are all
+// still the shared, generic player-physics code (applyPhysics, the
+// jump-key handler) -- only the two things unique to being in a small
+// room live here.
+function updateTopsyChefInterior(deltaTime) {
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  if (!grumpyHouse) return;
+
+  // simple room walls -- keeps the player from wandering out into the
+  // rest of the (undrawn, while in here) outdoor world
+  const roomLeft = grumpyHouse.x - TOPSY_CHEF_INTERIOR_HALF_WIDTH + player.width / 2;
+  const roomRight = grumpyHouse.x + TOPSY_CHEF_INTERIOR_HALF_WIDTH - player.width / 2;
+  if (player.x < roomLeft) player.x = roomLeft;
+  if (player.x > roomRight) player.x = roomRight;
+
+  // press down while standing normally on the floor (not mid a
+  // furniture hop) to step back outside -- no item, no proximity check
+  // needed, just "you're on solid ground and you want to leave."
+  if (keys.downJustPressed && !player.jumping && !player.topsyInverted) {
+    topsyChefInteriorActive = false;
+    player.x = topsyChefInteriorReturn.x;
+    player.y = topsyChefInteriorReturn.y;
+    player.vy = 0;
+    player.jumping = false;
+    player.topsyInverted = false;
+  }
+}
+
+// CONFIRMED ADD ("lets do the chef house peek, but let me also be able
+// to jump upside down on the furniture"): the room's whole visual --
+// wallpaper/floor/ceiling beams, the three furniture pieces hanging
+// upside-down (a big green puffy armchair, an upside-down potted
+// plant, a yellow loveseat), and the rat chef's own back at a cooking
+// pot with steam rising. Drawn full-canvas-width (rather than only the
+// player's actual ±HALF_WIDTH walkable strip) so it reads as a real
+// cozy room rather than a narrow boxed-in chamber -- the player just
+// can't wander past the walkable strip's own clamp in
+// updateTopsyChefInterior, same as any other small-room boundary in
+// this game.
+function drawTopsyChefInterior(camX) {
+  const cx = canvas.width / 2;
+  const floorY = gy;
+  const ceilingBandH = TOPSY_CHEF_INTERIOR_ROOM_HEIGHT - 40; // where the dark beam band gives way to wallpaper
+  const ceilingY = floorY - ceilingBandH;
+
+  // wallpaper -- warm kitchen tone, slightly deeper up near the beams
+  const wallGrad = ctx.createLinearGradient(0, 0, 0, floorY);
+  wallGrad.addColorStop(0, "#d9b57c");
+  wallGrad.addColorStop(1, "#eedab0");
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0, 0, canvas.width, floorY);
+
+  // dark wood ceiling/beam band -- what the furniture is visually
+  // "glued to", drawn first so the furniture (drawn later) naturally
+  // overlaps and reads as attached to it
+  ctx.fillStyle = "#5c4326";
+  ctx.fillRect(0, 0, canvas.width, ceilingY);
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  for (let bx = -40; bx < canvas.width + 40; bx += 70) {
+    ctx.fillRect(bx, 0, 10, ceilingY);
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, ceilingY);
+  ctx.lineTo(canvas.width, ceilingY);
+  ctx.stroke();
+
+  // floor -- simple warm plank boards
+  ctx.fillStyle = "#8a6a42";
+  ctx.fillRect(0, floorY, canvas.width, canvas.height - floorY);
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 1;
+  for (let bx = -20; bx < canvas.width + 20; bx += 34) {
+    ctx.beginPath();
+    ctx.moveTo(bx, floorY);
+    ctx.lineTo(bx, canvas.height);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.beginPath();
+  ctx.moveTo(0, floorY + 1.5);
+  ctx.lineTo(canvas.width, floorY + 1.5);
+  ctx.stroke();
+
+  // the three ceiling-hung furniture pieces, drawn back-to-front by
+  // height so nearer/taller ones don't get weirdly clipped by farther
+  // ones -- reuses the SAME TOPSY_CHEF_FURNITURE_PLATFORMS array the
+  // physics/collision code walks, so the art can never drift out of
+  // sync with where the player actually lands.
+  TOPSY_CHEF_FURNITURE_PLATFORMS.forEach(tp => drawTopsyChefFurniturePiece(tp, camX));
+
+  drawTopsyChefBack(cx, camX);
+
+  // CONFIRMED ADD: the exit nudge, same plain monospace hint style as
+  // the entry one drawn at the outdoor window -- only shown while it'd
+  // actually do something (standing normally, not mid a furniture hop),
+  // matching updateTopsyChefInterior's own down-press condition exactly.
+  if (!player.jumping && !player.topsyInverted) {
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "10px ui-monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("press DOWN to step back outside", cx, canvas.height - 12);
+    ctx.textAlign = "left";
+    ctx.globalAlpha = 1;
+  }
+}
+
+// One furniture piece, hanging upside-down from the ceiling. Local
+// space here is NOT screen space: local y=0 is the attach line (screen
+// y = topY, exactly where the player's feet land per the shared
+// TOPSY_CHEF_FURNITURE_PLATFORMS collision code), positive local y
+// runs AWAY from the room and toward the true ceiling (drawn upward on
+// screen once flipped), and a little negative local y is used for
+// cushions/rims/leaves that hang a few px past the attach line, back
+// down into the room -- purely decorative overhang, not collidable.
+function drawTopsyChefFurniturePiece(tp, camX) {
+  const sx = tp.x - camX;
+  const topY = gy - tp.height;
+  ctx.save();
+  ctx.translate(sx, topY);
+  ctx.scale(1, -1);
+  if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width);
+  else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width);
+  else if (tp.kind === "couch") drawTopsyChefLoveCouch(tp.width);
+  ctx.restore();
+}
+
+// CONFIRMED ADD ("i want one of the things to be a large green puffy
+// chair"): a fat, round-cushioned armchair -- the FIRST furniture
+// piece, sized to be reachable with a plain ordinary jump from the
+// floor (see TOPSY_CHEF_FURNITURE_PLATFORMS's own comment).
+function drawTopsyChefArmchair(w) {
+  const hw = w / 2;
+  // two stubby wood legs disappearing up into the ceiling band
+  ctx.strokeStyle = "#6b4a2c";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-hw * 0.5, 4); ctx.lineTo(-hw * 0.5, 50);
+  ctx.moveTo(hw * 0.5, 4); ctx.lineTo(hw * 0.5, 50);
+  ctx.stroke();
+  // big puffy rounded body -- soft green, shaded darker toward the
+  // ceiling side so it reads like it's catching light from the room
+  // below rather than looking like a flat pasted blob
+  const bodyGrad = ctx.createLinearGradient(0, 0, 0, 40);
+  bodyGrad.addColorStop(0, "#8fd08a");
+  bodyGrad.addColorStop(1, "#4c8f49");
+  ctx.fillStyle = bodyGrad;
+  roundRect(ctx, -hw, 2, w, 40, hw * 0.6);
+  ctx.fill();
+  ctx.strokeStyle = "#356b33";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, -hw, 2, w, 40, hw * 0.6);
+  ctx.stroke();
+  // two round arm bumps
+  [-1, 1].forEach(side => {
+    ctx.fillStyle = "#6bb567";
+    ctx.beginPath();
+    ctx.ellipse(side * hw * 0.72, 12, hw * 0.32, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#356b33";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+  // seat cushion rim, right at the attach/standing line -- a lighter
+  // highlight band so the surface the player actually lands on reads
+  // clearly against the darker body above it
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  roundRect(ctx, -hw * 0.85, -2, w * 0.85, 8, 3);
+  ctx.fill();
+  ctx.fillStyle = "#a8e0a3";
+  ctx.beginPath();
+  ctx.ellipse(0, -2, hw * 0.78, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// CONFIRMED ADD ("and an upside down plotted plant"): a terracotta pot
+// glued to the ceiling by its own (now-upward) base, opening/rim facing
+// down into the room right at the attach line, with a few leafy fronds
+// drooping down past the rim into open air -- the one piece that
+// actually gets to use the small negative-y overhang for something
+// more than a rim highlight.
+function drawTopsyChefPottedPlant(w) {
+  const hw = w / 2;
+  // pot -- wide rim at the attach line, tapering to a narrow base up
+  // toward the ceiling
+  ctx.fillStyle = "#b5673f";
+  ctx.beginPath();
+  ctx.moveTo(-hw, 0);
+  ctx.lineTo(hw, 0);
+  ctx.lineTo(hw * 0.55, 30);
+  ctx.lineTo(-hw * 0.55, 30);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#7a3f22";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  // rim lip + a dark ring of soil just inside it
+  ctx.fillStyle = "#8a4a2c";
+  ctx.fillRect(-hw, -1.5, w, 3);
+  ctx.fillStyle = "#3a2a1c";
+  ctx.beginPath();
+  ctx.ellipse(0, 0.5, hw * 0.75, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a few drooping fronds, each a simple curved blade with 2-3 leaves,
+  // hanging down (negative local y) past the rim into the room
+  const fronds = [{ dx: -hw * 0.5, len: 26, bend: -10 }, { dx: 0, len: 34, bend: 4 }, { dx: hw * 0.5, len: 24, bend: 12 }];
+  fronds.forEach((f, i) => {
+    const sway = Math.sin(performance.now() * 0.0016 + i * 1.8) * 2.5;
+    ctx.strokeStyle = "#3f7a3c";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(f.dx, 0);
+    ctx.quadraticCurveTo(f.dx + f.bend + sway, -f.len * 0.6, f.dx + f.bend * 1.6 + sway, -f.len);
+    ctx.stroke();
+    ctx.fillStyle = "#5aa457";
+    [0.45, 0.8].forEach(t => {
+      const lx = f.dx + (f.bend + sway) * t, ly = -f.len * t;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 4, 2, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// CONFIRMED ADD ("and a yellow lovecouch or something maybe"): a wider,
+// lower two-cushion loveseat.
+function drawTopsyChefLoveCouch(w) {
+  const hw = w / 2;
+  ctx.strokeStyle = "#6b4a2c";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-hw * 0.75, 4); ctx.lineTo(-hw * 0.75, 42);
+  ctx.moveTo(hw * 0.75, 4); ctx.lineTo(hw * 0.75, 42);
+  ctx.stroke();
+  // low wide backrest/body
+  const bodyGrad = ctx.createLinearGradient(0, 0, 0, 30);
+  bodyGrad.addColorStop(0, "#f5dd7a");
+  bodyGrad.addColorStop(1, "#dbb63e");
+  ctx.fillStyle = bodyGrad;
+  roundRect(ctx, -hw, 2, w, 28, 8);
+  ctx.fill();
+  ctx.strokeStyle = "#a8862c";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, -hw, 2, w, 28, 8);
+  ctx.stroke();
+  // two tufted seat-cushion humps, right at the attach line
+  [-1, 1].forEach(side => {
+    ctx.fillStyle = "#f0d566";
+    ctx.beginPath();
+    ctx.ellipse(side * hw * 0.42, -1, hw * 0.4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#a8862c";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(side * hw * 0.42, -3, hw * 0.22, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // a couple of small round buttons marking the tuft centers -- cheap
+  // detail that reads as "upholstered" rather than a flat cushion
+  ctx.fillStyle = "#a8862c";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.arc(side * hw * 0.42, -1, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// CONFIRMED ADD (per the "talk before build": "the rat chef backside
+// with the hat on kinda bobbing and stirring or something"): drawn
+// right-side up on the real floor (this is the one thing in the room
+// that ISN'T upside-down -- the joke is the furniture, not the chef),
+// facing away from the player at a simple cooking pot, with a light
+// idle bob and a stirring-arm wobble, plus rising steam. Purely
+// decorative -- no interaction, no item, same "just for fun" spirit as
+// the furniture itself.
+function drawTopsyChefBack(cx, camX) {
+  const potX = cx, potY = gy;
+  const t = performance.now() * 0.001;
+
+  // little stove/table the pot sits on
+  ctx.fillStyle = "#6b4a2c";
+  roundRect(ctx, potX - 20, potY - 10, 40, 10, 2);
+  ctx.fill();
+  ctx.fillStyle = "#4a3220";
+  ctx.fillRect(potX - 20, potY - 2, 40, 2);
+
+  // the pot itself
+  ctx.fillStyle = "#3a3a3f";
+  ctx.beginPath();
+  ctx.ellipse(potX, potY - 10, 15, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(potX - 15, potY - 10);
+  ctx.quadraticCurveTo(potX - 17, potY - 22, potX, potY - 22);
+  ctx.quadraticCurveTo(potX + 17, potY - 22, potX + 15, potY - 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#8a4a3a";
+  ctx.beginPath();
+  ctx.ellipse(potX, potY - 22, 13, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // steam -- same rising-puff shape as the chimney smoke outdoors, just
+  // white/warm instead of grey
+  const steamCount = 4, cycle = 2200;
+  for (let i = 0; i < steamCount; i++) {
+    const phase = ((performance.now() + i * (cycle / steamCount)) % cycle) / cycle;
+    const rise = phase * 36;
+    const wobble = Math.sin(phase * Math.PI * 2.4 + i * 1.7) * 4;
+    const puffR = (1.6 + phase * 2.6);
+    const alpha = 0.5 * (1 - phase);
+    if (alpha <= 0.01) continue;
+    ctx.fillStyle = `rgba(255,250,240,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(potX + wobble, potY - 24 - rise, puffR, puffR * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // the chef, from behind, standing right at the pot -- small idle bob
+  // plus a stirring wobble on the near-side arm/shoulder
+  const bob = Math.abs(Math.sin(t * 3)) * 1.6;
+  const stir = Math.sin(t * 5) * 3;
+  const bx = potX - 22, by = potY - bob;
+  ctx.save();
+  ctx.translate(bx, by);
+
+  // tail, curling out from behind the body
+  ctx.strokeStyle = "#7a6a5c";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-6, -2);
+  ctx.quadraticCurveTo(-14, -6 + stir * 0.3, -10, -16);
+  ctx.stroke();
+
+  // body -- rounded back, fur-toned
+  const furColor = "#8f7f72", furShadow = "#6b5d52";
+  ctx.fillStyle = furColor;
+  ctx.beginPath();
+  ctx.ellipse(0, -14, 9, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = furShadow;
+  ctx.beginPath();
+  ctx.ellipse(3, -10, 6, 9, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // stirring arm, reaching toward the pot, wobbling side to side
+  ctx.strokeStyle = furShadow;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(6, -12);
+  ctx.lineTo(18 + stir, -18 + Math.abs(stir) * 0.4);
+  ctx.stroke();
+
+  // rounded ears, just visible past the hat's brim
+  [-1, 1].forEach(side => {
+    ctx.fillStyle = furColor;
+    ctx.beginPath();
+    ctx.arc(side * 5, -25, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // tall chef's hat (toque) -- the single biggest "this is a chef, not
+  // just any rat" cue when all you can see is a back
+  ctx.fillStyle = "#f4f0e8";
+  ctx.beginPath();
+  ctx.ellipse(0, -26, 6.5, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-5.6, -26);
+  ctx.quadraticCurveTo(-7, -36, -2.5, -38);
+  ctx.quadraticCurveTo(0, -39.5, 2.5, -38);
+  ctx.quadraticCurveTo(7, -36, 5.6, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#c8c2b4";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function updateTopsyTurvyScene(deltaTime) {
+  // CONFIRMED ADD ("lets do the chef house peek"): while inside, none of
+  // the outdoor land's own wind/pig-patrol/well/etc. logic below should
+  // run at all -- the room has its own tiny self-contained update
+  // instead. Early-return, same shape used elsewhere in this file for
+  // "this whole function is really two different modes."
+  if (topsyChefInteriorActive) {
+    updateTopsyChefInterior(deltaTime);
+    return;
+  }
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
 
   const softenTarget = topsyChef.wonOverByTomatoes ? 1 : 0;
@@ -19217,6 +19678,27 @@ function updateTopsyTurvyScene(deltaTime) {
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
   } else if (!nearGrumpyWindow) {
     topsyTurvyGrumpyLingerT = 0;
+  }
+
+  // CONFIRMED ADD ("lets do the chef house peek"): press up at the
+  // window to step inside for a look around -- gated to the two "nothing
+  // scripted is currently happening" phases (before the tomato quest
+  // even starts, or after the one-time pig delivery sequence has fully
+  // finished) so this can never interrupt the door/pig cutscene itself.
+  // No item, no gate on wonOverByTomatoes -- purely a "you can just go
+  // look" bonus, same spirit as the furniture up there having no reward.
+  if (grumpyHouse && nearGrumpyWindow && keys.upJustPressed &&
+      (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done")) {
+    topsyChefInteriorReturn.x = player.x;
+    topsyChefInteriorReturn.y = player.y;
+    topsyChefInteriorActive = true;
+    player.x = grumpyHouse.x;
+    player.y = 0;
+    player.vy = 0;
+    player.vx = 0;
+    player.jumping = false;
+    player.topsyInverted = false;
+    player.usedDoubleJump = false;
   }
 
   // CONFIRMED CHANGE ("maybe the grumpy is a chef so we have a top
@@ -19819,6 +20301,22 @@ function drawTopsyTurvyHouse(camX, h) {
           "ratatouille needed. Come by anytime."
         ]);
       }
+    }
+
+    // CONFIRMED ADD ("lets do the chef house peek"): a small on-screen
+    // nudge that the window is actually enterable, same plain monospace
+    // "press X to ..." style used for the sandbox pinboard's close hint
+    // elsewhere in this file. Gated on the exact same phase check the
+    // real up-press trigger itself uses (see updateTopsyTurvyScene) so
+    // it never invites a press that would silently do nothing mid-cutscene.
+    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85) && (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done")) {
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = "10px ui-monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("press UP to peek inside", sx + 16 * s, y(wallTop - 14 * s));
+      ctx.textAlign = "left";
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -22583,6 +23081,13 @@ function drawTopsyTurvyEntranceSign(camX) {
 }
 
 function drawTopsyTurvyScene(camX) {
+  // CONFIRMED ADD ("lets do the chef house peek"): the room replaces the
+  // WHOLE outdoor draw while inside it, same early-return shape as
+  // updateTopsyTurvyScene's own interior branch just above.
+  if (topsyChefInteriorActive) {
+    drawTopsyChefInterior(camX);
+    return;
+  }
   // CONFIRMED CHANGE ("maybe we should change the sky a little, so we ca
   // better see the clouds and the dandelion"): the old gradient faded all
   // the way down to a near-white pink (#f6e8ea) right at the ground --
@@ -64190,7 +64695,16 @@ updateSeasonTransition(deltaTime);
   draw();
 
   const targetCam = player.x - canvas.width*0.4;
-  if (hayBales.waiting) {
+  if (topsyChefInteriorActive) {
+    // CONFIRMED ADD ("lets do the chef house peek"): a small
+    // self-contained room -- locked dead-center on the house's own x
+    // every frame (same "just pin it" idea as hayBales.waiting below)
+    // instead of the normal player-following easing formula, which
+    // would otherwise let the room slide around or reveal empty space
+    // past its own walls as the player walks/jumps around inside it.
+    const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+    if (grumpyHouse) cameraX = grumpyHouse.x - canvas.width / 2;
+  } else if (hayBales.waiting) {
     // tight during the pause -- just a sliver of space to the right,
     // the tower dominates the frame before anything happens
     cameraX = hayBales.x - (canvas.width - 40);
