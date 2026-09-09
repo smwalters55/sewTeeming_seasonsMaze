@@ -4612,7 +4612,29 @@ function applyPhysics(){
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms
     ).concat([TOPSY_SKY_GARDEN]); // the invert-platform chain's own capstone -- see its comment above
-    allTopsyPlatforms.forEach(p => {
+    // CONFIRMED ADD ("werent we going to do that you can jump on the
+    // pans and now teacups and wobble along with them?"): the pig's pot
+    // stack and the tea critter's cup stack are now standable too, using
+    // the same falling-landing check as everything else here -- but
+    // unlike every other entry in allTopsyPlatforms, these two actually
+    // MOVE (the pig/critter patrol, and the stack itself wobbles), so
+    // they're rebuilt fresh every single frame from topsyPigPotsTopOffset/
+    // topsyTeaCupsTopOffset rather than being a fixed list. Narrow
+    // (width 16) since it's realistically just the rim of the topmost
+    // pot/cup, not a real platform.
+    const dynamicTopsyPlatforms = [];
+    if (topsyPigHasPots()) {
+      const off = topsyPigPotsTopOffset();
+      const centerX = topsyTurvyPig.x + off.dx;
+      dynamicTopsyPlatforms.push({ x: centerX - 8, width: 16, height: off.height, centerX, dynamic: true });
+    }
+    {
+      const off = topsyTeaCupsTopOffset();
+      const centerX = topsyTeaCritter.x + off.dx;
+      dynamicTopsyPlatforms.push({ x: centerX - 8, width: 16, height: off.height, centerX, dynamic: true });
+    }
+    let bestPlatform = null;
+    allTopsyPlatforms.concat(dynamicTopsyPlatforms).forEach(p => {
       const platformTop = p.height;
       if (
         player.x + player.width > p.x &&
@@ -4627,6 +4649,7 @@ function applyPhysics(){
         // couple of these root-tip platforms sit close enough in height
         // for their bands to genuinely overlap (see this block's own
         // comment above)
+        bestPlatform = p;
       }
     });
     if (bestTop !== null) {
@@ -4642,6 +4665,18 @@ function applyPhysics(){
       // landing resets it" idea the plain ground-landing branch uses.
       player.topsyInverted = false;
       player.topsyForceDrop = false;
+      // CONFIRMED ADD ("wobble along with them"): every OTHER platform
+      // here is fixed, so just re-snapping player.y to its top each
+      // frame (above) is enough to "stay landed." These two aren't fixed
+      // -- the pig waddles and the whole stack sways side to side -- so
+      // riding one also re-centers the player on it horizontally every
+      // frame, the same way the vertical snap above already rides the
+      // wobble's up/down. Standing on a moving, wobbling stack this
+      // narrow really does mean visibly swaying along with it, not just
+      // technically staying "landed" on paper.
+      if (bestPlatform && bestPlatform.dynamic) {
+        player.x = bestPlatform.centerX - player.width / 2;
+      }
     }
   }
 
@@ -19267,12 +19302,22 @@ function updateTopsyTurvyScene(deltaTime) {
   // spot.
   if (keys.spaceJustPressed && isPlayerNear(topsyTeaCritter.x, 0, 40, 20, 20)) {
     let hint;
+    // CONFIRMED CHANGE ("change text to a windy seed might do well in
+    // that patch of dirt there"): was "That patch of dirt looks
+    // diggable with a shovel" -- didn't actually point at what to DO
+    // with it (plant a wind seed there), just that it was diggable.
     if (!topsyWindSeedPlot.dug) {
-      hint = "That patch of dirt looks diggable with a shovel.";
+      hint = "A wind seed might do well in that patch of dirt there.";
     } else if (!topsyWindSeedPlot.planted) {
       hint = "Good soil there for a dandelion seed, if you ask me.";
     } else if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
-      hint = `That seed could use some water (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS}).`;
+      // CONFIRMED REMOVE ("i dont like the water 1/3... lets remove that
+      // for now and see what tester does"): was a literal fraction
+      // counter (`(${waterRounds}/${TOTAL})`) -- dropped back to a plain
+      // suggestion with no visible progress count, same "let testing
+      // tell us if it's actually needed" approach already used for the
+      // plot's own on-screen hint text above.
+      hint = "That seed could use a bit more water, I think.";
     } else if (!topsyWindSeedPlot.grown) {
       hint = "Almost there -- just needs a little more time to grow.";
     } else {
@@ -19741,9 +19786,13 @@ function drawTopsyTurvyHouse(camX, h) {
         // for his ratatouille" once the chef became a rat): spelled out
         // exactly what for and how many now that there's an actual dish
         // motivating the ask, instead of just a blunt "need tomatoes!".
+        // CONFIRMED CHANGE ("change the bring me two tomatoes to 'unless
+        // you bring me two tomatoes'"): reads as one continuous grumpy-
+        // -then-bargaining line now, instead of two separate flat
+        // statements.
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
           "Shoo! Stop peeking in windows!",
-          "Bring me two tomatoes for my ratatouille!"
+          "...unless you bring me two tomatoes for my ratatouille!"
         ]);
       } else if (topsyChef.fullyWonOver) {
         // CONFIRMED CHANGE ("i dont want to do tulip here it feels
@@ -20444,8 +20493,7 @@ function drawTopsyTurvyPig(camX) {
   // delivery trip (pigOut/done), it's handed the pots off to the chef and
   // doesn't carry them anymore -- everywhere else/before, it's carrying
   // its usual stack.
-  const pigHasPots = topsyChef.sequencePhase !== "pigOut" && topsyChef.sequencePhase !== "done" || !topsyChef.fullyWonOver;
-  if (pigHasPots) drawTopsyTurvyPigPots();
+  if (topsyPigHasPots()) drawTopsyTurvyPigPots();
 
   // curly tail near the ground, at the back of the body
   ctx.strokeStyle = "#e8a9bb";
@@ -20514,15 +20562,60 @@ function drawTopsyTurvyPig(camX) {
 // the lean actually reads, not just a shimmer. Spacing between pieces
 // also opened up a touch (1.6 -> 1.85) so the extra height comes from
 // genuinely taller stacking, not just a 5th squeezed-in piece.
+// CONFIRMED ADD ("werent we going to do that you can jump on the pans
+// and now teacups and wobble along with them?"): hoisted out of
+// drawTopsyTurvyPigPots so the new standable-platform code
+// (topsyPigPotsTopOffset below) can share the exact same array instead
+// of maintaining a second copy that could drift out of sync with what's
+// actually drawn.
+const TOPSY_PIG_POTS = [
+  { w: 15, h: 6.5, color: "#2e2b29", colorLite: "#4a4542", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
+  { w: 11.5, h: 5.5, color: "#b5622e", colorLite: "#d97f45", rim: "#ffd9a0", handle: "#7a3d18", glossy: true, feet: false },
+  { w: 8.5, h: 4.5, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
+  { w: 6, h: 3.5, color: "#c97a3c", colorLite: "#e6975a", rim: "#ffe2b0", handle: "#7a3d18", glossy: true, feet: false },
+  { w: 4.2, h: 2.6, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true }
+];
+// CONFIRMED ADD (same "jump on and wobble along" pass): true whenever
+// the pig is actually carrying its pot stack right now -- shared by the
+// draw code (drawTopsyTurvyPig) and the new standable-platform collision
+// code below so the two can never disagree about whether there's
+// currently anything up there to stand on.
+function topsyPigHasPots() {
+  return topsyChef.sequencePhase !== "inside" &&
+    (topsyChef.sequencePhase !== "pigOut" && topsyChef.sequencePhase !== "done" || !topsyChef.fullyWonOver);
+}
+// CONFIRMED ADD ("jump on the pans... and wobble along with them"): the
+// current world position of the TOP pot's own anchor point, in the same
+// units the rest of the topsy-turvy platform collision code already
+// uses (dx to add to the pig's own x, accounting for which way it's
+// facing; height above ground for the platform's own top). Deliberately
+// walks the exact same stackY accumulation, wobble formula, and
+// constants as the draw loop below (TOPSY_PIG_POTS, the 27 starting
+// offset, 1.85 spacing, the 2.2/2.1 amplitude and 0.0035/0.9 wobble
+// timing) so the platform a player can actually stand on always matches
+// what's drawn, frame for frame -- if either one changes, the other
+// needs to change with it.
+function topsyPigPotsTopOffset() {
+  let stackY = 27;
+  let topCy = 0;
+  const topIndex = TOPSY_PIG_POTS.length - 1;
+  TOPSY_PIG_POTS.forEach(pot => {
+    topCy = stackY + pot.h;
+    stackY += pot.h * 1.85;
+  });
+  const wobbleT = performance.now() * 0.0035;
+  const amp = 2.2 + topIndex * 2.1;
+  const tilt = Math.sin(wobbleT + topIndex * 0.9) * amp;
+  const facingLeft = topsyTurvyPig.dir < 0;
+  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 3;
+  return {
+    dx: (facingLeft ? -1 : 1) * tilt * 0.55,
+    height: bob + topCy
+  };
+}
 function drawTopsyTurvyPigPots() {
   const wobbleT = performance.now() * 0.0035;
-  const pots = [
-    { w: 15, h: 6.5, color: "#2e2b29", colorLite: "#4a4542", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
-    { w: 11.5, h: 5.5, color: "#b5622e", colorLite: "#d97f45", rim: "#ffd9a0", handle: "#7a3d18", glossy: true, feet: false },
-    { w: 8.5, h: 4.5, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true },
-    { w: 6, h: 3.5, color: "#c97a3c", colorLite: "#e6975a", rim: "#ffe2b0", handle: "#7a3d18", glossy: true, feet: false },
-    { w: 4.2, h: 2.6, color: "#333030", colorLite: "#4f4a47", rim: "#f2e6c8", handle: "#1c1a18", glossy: false, feet: true }
-  ];
+  const pots = TOPSY_PIG_POTS;
   let stackY = 27; // starting just above the trotters
   pots.forEach((pot, i) => {
     const amp = 2.2 + i * 2.1; // more sway higher up the precarious stack -- wobblier throughout, and steeper toward the top
@@ -20679,10 +20772,18 @@ function drawTopsyTeaCritter(camX) {
   ctx.scale(facingLeft ? -1 : 1, -1);
   ctx.translate(0, -TOPSY_TEA_CRITTER_FLIP_CENTER);
 
-  // curled tail
+  // curled tail -- outlined so it doesn't just melt into the sky at a
+  // glance, same "dark pass first" trick the body/ears use below
+  ctx.strokeStyle = "rgba(30,20,15,0.4)";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-9, -6);
+  ctx.quadraticCurveTo(-17, -3, -15, 3);
+  ctx.quadraticCurveTo(-13, 7, -9, 5);
+  ctx.stroke();
   ctx.strokeStyle = "#8a7566";
   ctx.lineWidth = 1.6;
-  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(-9, -6);
   ctx.quadraticCurveTo(-17, -3, -15, 3);
@@ -20690,49 +20791,109 @@ function drawTopsyTeaCritter(camX) {
   ctx.stroke();
 
   // small feet
-  ctx.fillStyle = "#b8a695";
+  ctx.fillStyle = "#8f7c68";
   [[-4, -1], [3, -1]].forEach(([fx, fy]) => {
     ctx.beginPath();
-    ctx.ellipse(fx, fy, 2.6, 1.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(fx, fy, 2.9, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#c9b6a2";
+  [[-4, -1], [3, -1]].forEach(([fx, fy]) => {
+    ctx.beginPath();
+    ctx.ellipse(fx, fy - 0.3, 2.2, 1.4, 0, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  // round body
-  const bodyGrad = ctx.createLinearGradient(-10, -16, 10, 0);
-  bodyGrad.addColorStop(0, "#cbb8a4");
-  bodyGrad.addColorStop(1, "#a68f78");
+  // CONFIRMED CHANGE ("make the mouse mousier its too flat paste on
+  // visual"): the old version was just two flat-filled ellipses (a round
+  // "body" blob and a round "head" blob) with no outline and barely any
+  // shading, which read as a paper cutout rather than an actual animal.
+  // Rebuilt with: a heavy dark outline pass under everything (same
+  // silhouette trick the pig's pots use) so it reads as a solid shape
+  // against any background instead of blending in at the edges; a real
+  // body gradient (dark-to-light, implying a light source) instead of a
+  // flat tone; and a proper tapered SNOUT instead of a second round
+  // blob for the head, plus whiskers, which are what actually reads as
+  // "mouse" rather than "blob with ears."
+  ctx.fillStyle = "rgba(25,17,13,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(0.5, -8, 11, 8.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(6, -15.5);
+  ctx.quadraticCurveTo(17, -14.5, 19.5, -12.5);
+  ctx.quadraticCurveTo(17, -10.5, 6, -9.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // round body, real light-to-dark gradient (not a flat fill)
+  const bodyGrad = ctx.createLinearGradient(-10, -16, 6, 2);
+  bodyGrad.addColorStop(0, "#d9c5ad");
+  bodyGrad.addColorStop(0.55, "#b89e83");
+  bodyGrad.addColorStop(1, "#8f7660");
   ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(0, -8, 10, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // round head
+  // pale belly patch -- the single biggest cue that sells "furry animal"
+  // over "flat painted shape," a lighter patch where the body catches
+  // the light instead of one even tone throughout
+  ctx.fillStyle = "rgba(240,228,210,0.55)";
   ctx.beginPath();
-  ctx.ellipse(8, -14, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(-2, -6, 5.5, 4.2, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ears
-  ctx.fillStyle = "#e8d9c8";
+  // tapered snout, narrowing away from the body -- reads as an actual
+  // mouse muzzle instead of a second round head-blob
+  const snoutGrad = ctx.createLinearGradient(6, -16, 19, -12);
+  snoutGrad.addColorStop(0, "#c2a98e");
+  snoutGrad.addColorStop(1, "#e6d4bd");
+  ctx.fillStyle = snoutGrad;
+  ctx.beginPath();
+  ctx.moveTo(6, -16);
+  ctx.quadraticCurveTo(16, -15, 18.5, -13);
+  ctx.quadraticCurveTo(16, -11, 6, -10);
+  ctx.closePath();
+  ctx.fill();
+
+  // whiskers -- thin, sparse, just enough to sell "rodent" at a glance
+  ctx.strokeStyle = "rgba(60,45,35,0.55)";
+  ctx.lineWidth = 0.6;
+  ctx.lineCap = "round";
+  [[-1.2, 0], [-0.6, 1.4], [0.4, -1.4]].forEach(([dy1, dy2]) => {
+    ctx.beginPath();
+    ctx.moveTo(17, -13 + dy1);
+    ctx.lineTo(24, -13 + dy1 + dy2);
+    ctx.stroke();
+  });
+
+  // ears -- outlined so they don't just blend into the head at this
+  // scale, pink inner cup for a bit of real dimension
   [[6, -19], [11.5, -19]].forEach(([ex, ey]) => {
+    ctx.fillStyle = "rgba(25,17,13,0.45)";
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e8d9c8";
     ctx.beginPath();
     ctx.arc(ex, ey, 3, 0, Math.PI * 2);
     ctx.fill();
-  });
-  ctx.fillStyle = "#caa898";
-  [[6, -19], [11.5, -19]].forEach(([ex, ey]) => {
+    ctx.fillStyle = "#d9a8ae";
     ctx.beginPath();
     ctx.arc(ex, ey, 1.6, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  // eye + nose
+  // eye + nose -- nose moved to the actual snout tip now that there's a
+  // real snout to put it on
   ctx.fillStyle = "#2a1e16";
   ctx.beginPath();
-  ctx.arc(11, -14, 1, 0, Math.PI * 2);
+  ctx.arc(11, -14.5, 1.1, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#c96b7a";
+  ctx.fillStyle = "#3a2a2a";
   ctx.beginPath();
-  ctx.arc(14, -13, 1.1, 0, Math.PI * 2);
+  ctx.ellipse(18, -13, 1.3, 1, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -20749,9 +20910,50 @@ function drawTopsyTeaCritter(camX) {
   }
 }
 
+// CONFIRMED ADD ("werent we going to do that you can jump on the pans
+// and now teacups and wobble along with them?"): hoisted out of
+// drawTopsyTeaCritterCups, same reasoning as TOPSY_PIG_POTS above -- one
+// shared array so the new standable-platform code (topsyTeaCupsTopOffset
+// below) can never quietly drift out of sync with what's actually drawn.
+// CONFIRMED CHANGE ("the teacups... are white and they sort of blend in
+// with the cloud"): every cup's own body color was a near-white cream
+// (#e8e0d0/#f0e8da), which washed out against the pale clouds drifting
+// through this scene. Swapped for actual saturated colors -- one per
+// cup, same rim accents as before -- so the stack reads clearly against
+// sky, cloud, or ground alike.
+const TOPSY_TEA_CUPS = [
+  { rw: 5.6, fw: 3.4, h: 5, color: "#d9647c", colorLite: "#f0a3b3", rim: "#7a2438" },
+  { rw: 4.8, fw: 2.9, h: 4.4, color: "#3f8f95", colorLite: "#7ecdd2", rim: "#1f4d50" },
+  { rw: 4, fw: 2.4, h: 3.8, color: "#dba03c", colorLite: "#f0c26a", rim: "#8a5f1c" },
+  { rw: 3.2, fw: 1.9, h: 3.2, color: "#7a5ca0", colorLite: "#ae8fd4", rim: "#452f60" }
+];
+// CONFIRMED ADD (same "jump on and wobble along" pass): the current
+// world position of the TOP (smallest) cup's own anchor point, same
+// units/shape as topsyPigPotsTopOffset above. Walks the exact same
+// stackY accumulation, wobble formula, and constants as the draw loop
+// below (TOPSY_TEA_CUPS, the -18 starting offset, 1.6 spacing, the
+// 1.6/1.8 amplitude and 0.0035/1.1 wobble timing, the 0.5 tilt-to-dx
+// factor) -- if either one changes, the other needs to change with it.
+function topsyTeaCupsTopOffset() {
+  let stackY = -18;
+  let topCy = 0;
+  const topIndex = TOPSY_TEA_CUPS.length - 1;
+  TOPSY_TEA_CUPS.forEach(cup => {
+    topCy = stackY - cup.h;
+    stackY -= cup.h * 1.6;
+  });
+  const wobbleT = performance.now() * 0.0035;
+  const amp = 1.6 + topIndex * 1.8;
+  const tilt = Math.sin(wobbleT + topIndex * 1.1) * amp;
+  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 2;
+  return {
+    dx: tilt * 0.5,
+    height: bob - topCy // topCy is negative (up); height above ground is bob + |topCy|
+  };
+}
 function drawTopsyTeaCritterCups(baseX, baseY) {
   // a little saucer balanced on its back, underneath the whole stack
-  ctx.fillStyle = "#f0e8da";
+  ctx.fillStyle = "#c9a878";
   ctx.strokeStyle = "rgba(15,12,10,0.6)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -20763,12 +20965,7 @@ function drawTopsyTeaCritterCups(baseX, baseY) {
   // CONFIRMED CHANGE ("the largest teacup is way too large. make it
   // smaller and add another cup"): shrunk the bottom (largest) cup down
   // closer to the others' scale, and added a 4th, smallest cup on top.
-  const cups = [
-    { rw: 5.6, fw: 3.4, h: 5, color: "#e8e0d0", colorLite: "#fbf6ec", rim: "#c94f6a" },
-    { rw: 4.8, fw: 2.9, h: 4.4, color: "#f0e8da", colorLite: "#fffaf0", rim: "#4f8fa0" },
-    { rw: 4, fw: 2.4, h: 3.8, color: "#e8e0d0", colorLite: "#fbf6ec", rim: "#dba03c" },
-    { rw: 3.2, fw: 1.9, h: 3.2, color: "#f0e8da", colorLite: "#fffaf0", rim: "#7a6aa8" }
-  ];
+  const cups = TOPSY_TEA_CUPS;
   let stackY = -18; // just above the saucer
   cups.forEach((cup, i) => {
     const amp = 1.6 + i * 1.8; // more sway toward the top, same shape as the pig's pot stack
@@ -21618,17 +21815,14 @@ function drawTopsyWindSeedPlot(camX) {
     drawCollectible(ctx, dx, seedY, 8, fallP * 0.5, "windSeed");
   }
 
-  // progress hint while watering -- little droplet marks for rounds
-  // already done, so "2 or 3 rounds" reads as visible progress, not a
-  // hidden counter
-  if (topsyWindSeedPlot.planted && !topsyWindSeedPlot.grown && topsyWindSeedPlot.waterRounds > 0) {
-    for (let i = 0; i < topsyWindSeedPlot.waterRounds; i++) {
-      ctx.fillStyle = "rgba(90,150,210,0.75)";
-      ctx.beginPath();
-      ctx.ellipse(dx - 16 + i * 9, gy - 24, 2.6, 3.6, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+  // CONFIRMED REMOVE ("i dont like the water 1/3 or the one droplet
+  // thing there. lets remove that for now and see what tester does"):
+  // this used to draw one little droplet mark per completed watering
+  // round as a visible progress counter -- removed along with the
+  // critter's own spoken fraction (see updateTopsyTurvyScene's own
+  // seed-plot hint block), same "leave it silent, let testing tell us
+  // if it's actually needed" approach the other seed-plot hints already
+  // went through earlier.
 
   // CONFIRMED ADD ("we needa hint to do the windsed somehow in the
   // hole"): every OTHER stage-gated interaction in this land (the well,
@@ -21644,15 +21838,20 @@ function drawTopsyWindSeedPlot(camX) {
   // for now and i have tester test it", then "same witht the water it
   // text"): both the plant-stage AND water-stage hint text are gone now
   // -- once dug, there's deliberately no on-screen cue for either later
-  // stage. Only the very first "Dig here with a shovel" cue remains,
-  // since that's the one stage with no other worldly clue at all (an
-  // undug plot just looks like plain ground). Revisit with an NPC-
-  // suggested version, or leave it silent, based on what testing
-  // actually shows is needed.
+  // stage. Only the very first cue remains, since that's the one stage
+  // with no other worldly clue at all (an undug plot just looks like
+  // plain ground). Revisit with an NPC-suggested version, or leave it
+  // silent, based on what testing actually shows is needed.
+  // CONFIRMED CHANGE ("change text to a windy seed might do well in
+  // that patch of dirt there"): was "Dig here with a shovel" -- named
+  // the tool but not what it was for. Now hints at the actual goal
+  // (planting a wind seed here) and leaves the "you'll need to dig
+  // first" part for the player to work out, same spirit as the
+  // teacup critter's own matching line.
   if (!topsyWindSeedPlot.grown && isPlayerNear(TOPSY_SEEDPLOT_X, 0, 40, 20, 20)) {
     let hint = null;
     if (!topsyWindSeedPlot.dug) {
-      hint = "Dig here with a shovel";
+      hint = "A wind seed might do well in this patch of dirt.";
     }
     if (hint) {
       ctx.fillStyle = "#3a2a4a";
