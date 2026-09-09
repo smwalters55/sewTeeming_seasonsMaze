@@ -18962,7 +18962,15 @@ const topsyChef = {
   softenProgress: 0
 };
 const TOPSY_CHEF_TOMATOES_NEEDED = 2;
-const TOPSY_CHEF_DOOR_OPEN_DURATION = 700;
+// CONFIRMED CHANGE ("make thee door opena nimation slower i didnt even
+// notice it changed before"): this also doubles as the swing's own
+// animation length now (see drawTopsyTurvyHouse's door block) -- was
+// 700, which combined with the door having no actual tween before (it
+// just instantly swapped from the closed art to the fully-open art the
+// moment this phase started) made the whole thing basically invisible.
+// Slowed way down so the door visibly swings open over real time
+// before the pig ever starts walking in.
+const TOPSY_CHEF_DOOR_OPEN_DURATION = 1800;
 const TOPSY_CHEF_PIG_INSIDE_DURATION = 1000;
 const TOPSY_CHEF_PIG_WALK_SPEED = 70; // px/s, faster than its own idle patrol -- reads as "on a mission"
 
@@ -19680,15 +19688,18 @@ function updateTopsyTurvyScene(deltaTime) {
     topsyTurvyGrumpyLingerT = 0;
   }
 
-  // CONFIRMED ADD ("lets do the chef house peek"): press up at the
-  // window to step inside for a look around -- gated to the two "nothing
-  // scripted is currently happening" phases (before the tomato quest
-  // even starts, or after the one-time pig delivery sequence has fully
-  // finished) so this can never interrupt the door/pig cutscene itself.
-  // No item, no gate on wonOverByTomatoes -- purely a "you can just go
-  // look" bonus, same spirit as the furniture up there having no reward.
+  // CONFIRMED ADD ("lets do the chef house peek"), CONFIRMED CHANGE
+  // ("but only once tomatos given AND DOOR Opens"): press up at the
+  // window to step inside for a look around -- gated to "done" only,
+  // i.e. the tomatoes have actually been handed over AND the whole
+  // door/pig sequence (including the door's own swing-open animation)
+  // has fully played out. Used to also allow this from "none" (before
+  // the door was ever opened at all), which let the player walk
+  // straight through a closed door -- and still would have interrupted
+  // the doorOpen/pigIn/inside/pigOut cutscene phases if allowed there
+  // too, so "done" is the only phase where peeking in ever makes sense.
   if (grumpyHouse && nearGrumpyWindow && keys.upJustPressed &&
-      (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done")) {
+      topsyChef.sequencePhase === "done") {
     topsyChefInteriorReturn.x = player.x;
     topsyChefInteriorReturn.y = player.y;
     topsyChefInteriorActive = true;
@@ -20007,6 +20018,21 @@ function drawTopsyTurvyHouse(camX, h) {
   // "someone's home now" signal rather than swinging shut again after
   // the pig's one-time trip in.
   const doorOpen = h.grumpy && topsyChef.sequencePhase !== "none";
+  // CONFIRMED CHANGE ("make thee door opena nimation slower i didnt even
+  // notice it changed before"): the door used to just instantly swap
+  // between the two fully-closed/fully-open art blocks below the
+  // instant sequencePhase left "none" -- nothing actually animated, so
+  // a 700ms pause elsewhere in the sequence read as "did the door even
+  // move?" This progress value eases the swing itself open over the
+  // whole (now much longer) doorOpen phase, then stays locked at fully
+  // open for good once that phase ends, matching the "door stays open
+  // for good" permanence below.
+  let doorSwingProgress = 0;
+  if (topsyChef.sequencePhase === "doorOpen") {
+    doorSwingProgress = Math.min(1, topsyChef.sequenceT / TOPSY_CHEF_DOOR_OPEN_DURATION);
+  } else if (doorOpen) {
+    doorSwingProgress = 1;
+  }
   const doorW = 22 * s, doorH = 32 * s, doorX = sx - doorW / 2, doorY = y(wallTop);
   // frame, always visible whether open or shut. CONFIRMED BUG FIX ("door
   // is a lil coming up off the bottom of the house"): this used to pad
@@ -20025,13 +20051,20 @@ function drawTopsyTurvyHouse(camX, h) {
     ctx.fillStyle = "#20160c";
     roundRect(ctx, doorX, doorY, doorW, doorH, 3 * s);
     ctx.fill();
-    // the door itself, swung inward -- drawn foreshortened along the
-    // frame's near edge so it visibly reads as "open", not just gone
+    // the door itself, swinging inward -- drawn foreshortened along the
+    // frame's near edge so it visibly reads as "open", not just gone.
+    // CONFIRMED CHANGE (see doorSwingProgress's own comment above): the
+    // foreshortening amount now eases from a flush, barely-open sliver
+    // (swingT=0, nearFactor close to 1 -- basically still reads as
+    // "closed" at a glance, same wide flat panel) down to the old fixed
+    // 0.3 fully-swung-open pose as swingProgress rises, instead of
+    // jumping straight to the open pose in a single frame.
+    const doorNearFactor = 1 - doorSwingProgress * 0.7;
     ctx.fillStyle = "#6b4426";
     ctx.beginPath();
     ctx.moveTo(doorX, doorY);
-    ctx.lineTo(doorX + doorW * 0.3, doorY + 1.5 * s);
-    ctx.lineTo(doorX + doorW * 0.3, doorY + doorH - 1.5 * s);
+    ctx.lineTo(doorX + doorW * doorNearFactor, doorY + 1.5 * s);
+    ctx.lineTo(doorX + doorW * doorNearFactor, doorY + doorH - 1.5 * s);
     ctx.lineTo(doorX, doorY + doorH);
     ctx.closePath();
     ctx.fill();
@@ -20307,9 +20340,11 @@ function drawTopsyTurvyHouse(camX, h) {
     // nudge that the window is actually enterable, same plain monospace
     // "press X to ..." style used for the sandbox pinboard's close hint
     // elsewhere in this file. Gated on the exact same phase check the
-    // real up-press trigger itself uses (see updateTopsyTurvyScene) so
-    // it never invites a press that would silently do nothing mid-cutscene.
-    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85) && (topsyChef.sequencePhase === "none" || topsyChef.sequencePhase === "done")) {
+    // real up-press trigger itself uses (see updateTopsyTurvyScene) --
+    // CONFIRMED CHANGE ("but only once tomatos given AND DOOR Opens"):
+    // that's "done" only now, so the hint itself only ever shows once
+    // the door has actually opened and the tomato sequence has finished.
+    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85) && topsyChef.sequencePhase === "done") {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.font = "10px ui-monospace";
