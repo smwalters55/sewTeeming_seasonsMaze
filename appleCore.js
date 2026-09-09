@@ -18507,14 +18507,21 @@ const TOPSY_WELL_X = 2300; // CONFIRMED CHANGE ("move well and dirt mound approp
 // TOPSY_INVERT_LAUNCH_VY/TOPSY_INVERT_DIVE_GRAVITY just below.
 const TOPSY_INVERT_PLATFORMS = [
   { x: 1780, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
-  { x: 1880, height: 114, width: 70 }, // attach height ~60, 100px over from the first -- the original dive-down target
+  // CONFIRMED CHANGE ("jump budget still a lil too high" pass): raised
+  // from 114 -- gives the hop up to platform2 a bit more margin under
+  // the same launch budget. Not the actual fix for the reported skip
+  // (see platform6/platform7's own comments below for that) -- this and
+  // platform2's own raise just came out of the same reachability-
+  // simulation pass and were left in since they only add headroom, never
+  // remove it.
+  { x: 1880, height: 150, width: 70 }, // the original dive-down target
   // CONFIRMED FIX (reachability simulation): this used to sit at the
   // SAME x as platform0 (1780) directly below it -- any climb heading
   // back toward that column would cross platform0's own attach height
   // first and get vacuumed onto it, making this platform essentially
   // unreachable. Shifted off that column (1830) so a launch toward it
   // doesn't pass through platform0 on the way.
-  { x: 1830, height: 232, width: 70 }, // climbing back up and left -- first of the new hops
+  { x: 1830, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
   { x: 1900, height: 342, width: 70 },
   { x: 1760, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
   // CONFIRMED CHANGE ("some of it being horizontal not just an upward
@@ -18529,13 +18536,28 @@ const TOPSY_INVERT_PLATFORMS = [
   // needed for the old 1650 platform (see its own now-removed comment)
   // isn't needed here.
   { x: 1930, height: 450, width: 70 },
-  { x: 2000, height: 448, width: 70 },
+  // CONFIRMED CHANGE ("jump budget still a lil too high" -- reachability
+  // simulation found platform3 (342) could launch straight past this one
+  // and land directly on the platform after it (524, now 565), skipping
+  // this one entirely): raised from 448 so that skip's own required rise
+  // now clearly exceeds the launch budget, while the legitimate hops on
+  // either side of it (450 -> here, here -> the next one up) both still
+  // clear it with real margin -- verified via the same frame-by-frame
+  // simulation used everywhere else in this chain.
+  { x: 2000, height: 480, width: 70 },
   // climb resumes -- shifted +150/+170 right of where these used to sit
   // (1880/1780) to match the rest of the rightward move, same relative
   // shape (small hop up, then a bit back left before the capstone) as
   // before. Stays well clear of the well's own new position (TOPSY_WELL_X
   // 2300).
-  { x: 2050, height: 524, width: 70 },
+  // CONFIRMED CHANGE ("jump budget still a lil too high"): raised from
+  // 524 -- reachability simulation found the REST platform (424) could
+  // launch directly here in one hop, skipping both platforms in between
+  // (450 and the one just above). Raising this one closes that specific
+  // skip (its own required rise now exceeds the launch budget from the
+  // rest platform) while the legitimate hop up from 480 still clears
+  // with real margin.
+  { x: 2050, height: 565, width: 70 },
   { x: 1950, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
 // CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
@@ -18559,6 +18581,21 @@ const TOPSY_INVERT_PLATFORMS = [
 // 232->342 is +110) with real margin, just a noticeably less extreme
 // arc than 3.9's own overshoot. Re-verified via the same frame-by-frame
 // simulation used to size the gaps in the first place.
+// CONFIRMED INVESTIGATED, LEFT AT 3.7 ("jump budget still a lil too
+// high" -- reachability simulation confirmed a real skip: from the rest
+// platform, one launch could land directly on the platform after next,
+// bypassing an intended hop entirely): the tempting fix looked like
+// lowering this number, but the very LAST hop of the chain (up onto
+// TOPSY_SKY_GARDEN itself) turns out to need nearly this entire rise
+// budget too -- simulation showed dropping this even to 3.5 made the
+// sky-garden capstone itself unreachable from the final platform. So
+// the actual fix is above: the specific platforms a launch was skipping
+// past got raised just enough that skipping them now needs more rise
+// than this budget provides, while every legitimate hop (including that
+// tight final one onto the capstone) still clears with the same margin
+// it always has. Verified via the full sequential climb AND a direct
+// steer-toward-target probe launched from every platform, same
+// frame-by-frame simulation used throughout this chain's own tuning.
 const TOPSY_INVERT_LAUNCH_VY = 3.7;
 // CONFIRMED ADD: the short scripted windup dip that now runs BEFORE the
 // real launch (see topsyDipFrames' own comment on the player object) --
