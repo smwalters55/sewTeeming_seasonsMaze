@@ -18286,7 +18286,13 @@ function updateForestFungusClimb(deltaTime) {
 // span -- grew the world again to give the whole back half real gaps,
 // same "widen it to match" move as the last time this got cramped (see
 // this constant's own history above).
-const TOPSYTURVY_WIDTH = 2700;
+// CONFIRMED CHANGE ("make it more sideways to the right, moving the
+// highest platform w reward further to the right as well. move well and
+// dirt mound appropriately"): grew by the same +250 the well/invert-
+// chain/sky-garden all shifted right by (see their own comments), so the
+// gap from the seed plot to the world's own right edge stays exactly
+// what it was before the shift.
+const TOPSYTURVY_WIDTH = 2950;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -18461,7 +18467,7 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // remember breathing room breeeathing room"): pushed further right
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
-const TOPSY_WELL_X = 2050; // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): was 1750, right against the invert platforms
+const TOPSY_WELL_X = 2300; // CONFIRMED CHANGE ("move well and dirt mound appropriately" -- shifted +250 along with the invert chain/sky garden moving further right, so it stays clear of the chain's new rightmost extent): was 2050
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
@@ -18511,33 +18517,26 @@ const TOPSY_INVERT_PLATFORMS = [
   { x: 1830, height: 232, width: 70 }, // climbing back up and left -- first of the new hops
   { x: 1900, height: 342, width: 70 },
   { x: 1760, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
-  // CONFIRMED ADD ("some of it being horizontal not just an upward
-  // climb"): a genuine sideways stretch right after the rest platform --
-  // barely any net height change across these two (424 -> 450 -> 430),
-  // so the dip-launch's own hang time gets spent covering real ground
-  // sideways instead of gaining height, before the chain picks the climb
-  // back up again below. Stays well clear of the cart's wander range
-  // (TOPSY_CART_X 1420 +/- 85) and the well (TOPSY_WELL_X 2050) on
-  // either side.
-  { x: 1590, height: 450, width: 70 },
-  // CONFIRMED FIX (reachability simulation): this was originally x1720,
-  // height430 -- close enough to the rest platform's own attach height
-  // (424, only 6px below) that the mandatory pre-launch windup dip
-  // (always -12px, unconditionally) alone was enough to drop back BELOW
-  // 424 while still drifting through the rest platform's wide catch
-  // band (x1760, width 110 -> spans 1705-1815), instantly re-catching
-  // it instead of ever actually launching anywhere. Moved further left
-  // (clear of that band on x) AND raised just enough (448, not 430)
-  // that even the dip's floor (436) stays safely above 424 regardless
-  // of x position -- belt and suspenders, verified via the same
-  // frame-by-frame simulation.
-  { x: 1650, height: 448, width: 70 },
-  // CONFIRMED REVERT ("it isnt useable like this, you only need like two
-  // platforms here"): briefly grew this to four hops (1590/1650/1750/
-  // 1820), but that crammed too many platforms into too small a patch of
-  // sky to actually read/play cleanly -- back down to just the two.
-  { x: 1880, height: 524, width: 70 },
-  { x: 1780, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
+  // CONFIRMED CHANGE ("some of it being horizontal not just an upward
+  // climb", then "make it more sideways to the right, moving the highest
+  // platform w reward further to the right as well"): the sideways
+  // stretch now goes RIGHT off the rest platform instead of left -- was
+  // 1590/1650 (left of the 1760 rest platform), flipped to the other
+  // side so the whole back half of the chain (and the sky-garden
+  // capstone at the end of it) trends rightward instead of doubling
+  // back. Comfortably clear of the rest platform's own catch band
+  // (1705-1815) on x alone now, so the earlier height-tuning trick
+  // needed for the old 1650 platform (see its own now-removed comment)
+  // isn't needed here.
+  { x: 1930, height: 450, width: 70 },
+  { x: 2000, height: 448, width: 70 },
+  // climb resumes -- shifted +150/+170 right of where these used to sit
+  // (1880/1780) to match the rest of the rightward move, same relative
+  // shape (small hop up, then a bit back left before the capstone) as
+  // before. Stays well clear of the well's own new position (TOPSY_WELL_X
+  // 2300).
+  { x: 2050, height: 524, width: 70 },
+  { x: 1950, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
 // CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
 // top... i want to be able to jump on it but going downwards", now
@@ -18594,9 +18593,12 @@ const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 // rather than needing its own separate collision block.
 // x is the LEFT edge here (matches allTopsyPlatforms' own p.x/p.x+p.width
 // convention below), not a center -- unlike TOPSY_INVERT_PLATFORMS, which
-// centers on x. Spans 1765-1895, overlapping the last invert chunk's own
-// catch band (1780 +/- 35) so a straight-up launch from it lands here.
-const TOPSY_SKY_GARDEN = { x: 1765, height: 690, width: 130 };
+// centers on x.
+// CONFIRMED CHANGE ("moving the highest platform w reward further to
+// the right as well"): shifted +170 along with the last invert chunk
+// (now x1950) so it still overlaps that chunk's own catch band and a
+// straight-up launch from it lands here. Was x1765 (spanned 1765-1895).
+const TOPSY_SKY_GARDEN = { x: 1935, height: 690, width: 130 };
 // CONFIRMED ADD ("soft cap after the highest platform like it goes up
 // waaay too high"): the invert chain's own light dive gravity gives a
 // big rise budget so the bigger hops are reachable (see
@@ -18670,7 +18672,7 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // clear ground on every side.
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
 // shifted right along with the well, gap between them held steady.
-const TOPSY_SEEDPLOT_X = 2400; // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): was 2050, pushed out to match the rest of the stretch moving further right
+const TOPSY_SEEDPLOT_X = 2650; // CONFIRMED CHANGE ("move well and dirt mound appropriately"): shifted +250 to keep the same gap from TOPSY_WELL_X now that it moved right too. Was 2400.
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
