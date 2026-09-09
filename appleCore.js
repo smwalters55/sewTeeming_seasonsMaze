@@ -18683,6 +18683,26 @@ const topsyWindSeedPlot = {
   grown: false,
   growProgress: 0 // 0-1, first-pass sprout only -- the real "grows into an upside-down wind tree" animation is its own separate follow-up (per the earlier windSeed/well scoping talk), not built yet
 };
+
+// CONFIRMED ADD ("lets also add another npc with wobbling something
+// like teacups maybe... that are upside down... it should suggest
+// something with the well and the seed kind of thing"): a small
+// wandering critter, same ambient-patrol shape as topsyTurvyPig, parked
+// between the well and the seed plot -- carries a stack of wobbling
+// upside-down teacups (see drawTopsyTeaCritterCups) and, on a space
+// press nearby, offers exactly the stage-appropriate seed-plot hint that
+// used to be plain floating text over the plot itself (see
+// topsyWindSeedPlot's own hint history) -- now delivered as an NPC
+// suggestion instead of UI text.
+const topsyTeaCritter = {
+  homeX: (TOPSY_WELL_X + TOPSY_SEEDPLOT_X) / 2,
+  x: (TOPSY_WELL_X + TOPSY_SEEDPLOT_X) / 2,
+  dir: 1,
+  range: 55,
+  speed: 14,
+  speechText: null,
+  speechUntil: 0
+};
 // CONFIRMED CHANGE ("slow the dig down"): was 1200, felt rushed next to
 // the well's own already-slowed dip beat.
 const TOPSY_SEEDPLOT_DIG_ANIM_DURATION = 2200;
@@ -19048,6 +19068,12 @@ function updateTopsyTurvyScene(deltaTime) {
   }
   updateTopsyChefSequence(deltaTime, grumpyHouse);
 
+  // same simple ambient patrol shape as the pig above -- see
+  // topsyTeaCritter's own comment for what it's for
+  topsyTeaCritter.x += topsyTeaCritter.dir * topsyTeaCritter.speed * deltaTime;
+  if (topsyTeaCritter.x > topsyTeaCritter.homeX + topsyTeaCritter.range) topsyTeaCritter.dir = -1;
+  if (topsyTeaCritter.x < topsyTeaCritter.homeX - topsyTeaCritter.range) topsyTeaCritter.dir = 1;
+
   // CONFIRMED CHANGE ("we need to be able to climb ladder"): a real
   // climbing mechanic up the grumpy house's own ladder, same "walk up,
   // press space to mount, up/down to climb, pinned to the ladder's own
@@ -19192,6 +19218,31 @@ function updateTopsyTurvyScene(deltaTime) {
 
   if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
     startSeasonTransition("forest");
+  }
+
+  // CONFIRMED ADD ("it should suggest sometihng witht he well and the
+  // seed kind of thing"): the teacup critter's one interaction -- talk
+  // to it near the seed plot / well and it offers exactly the stage-
+  // appropriate suggestion the plot's own hint text used to show before
+  // being removed (see topsyWindSeedPlot's hint-text history above this
+  // function). A generous reach (its wander range plus some) so it
+  // still answers even mid-patrol, not just when standing on its exact
+  // spot.
+  if (keys.spaceJustPressed && isPlayerNear(topsyTeaCritter.x, 0, 40, 20, 20)) {
+    let hint;
+    if (!topsyWindSeedPlot.dug) {
+      hint = "That patch of dirt looks diggable with a shovel.";
+    } else if (!topsyWindSeedPlot.planted) {
+      hint = "Good soil there for a dandelion seed, if you ask me.";
+    } else if (topsyWindSeedPlot.waterRounds < TOPSY_SEEDPLOT_WATER_ROUNDS) {
+      hint = `That seed could use some water (${topsyWindSeedPlot.waterRounds}/${TOPSY_SEEDPLOT_WATER_ROUNDS}).`;
+    } else if (!topsyWindSeedPlot.grown) {
+      hint = "Almost there -- just needs a little more time to grow.";
+    } else {
+      hint = "Lovely dandelion, don't you think?";
+    }
+    topsyTeaCritter.speechText = hint;
+    topsyTeaCritter.speechUntil = performance.now() + 3200;
   }
 
   updateTopsyWellAndSeedPlot(deltaTime);
@@ -20565,6 +20616,184 @@ function drawTopsyTurvyPigPots() {
     }
     ctx.restore();
     stackY += h * 1.85;
+  });
+}
+
+// CONFIRMED CHANGE ("no i want the critter to be upside down dude"): the
+// critter itself is now flipped upside-down, same running joke as the
+// pig -- see drawTopsyTurvyPig's own scale(x,-1). Unlike the pig (which
+// is authored ground-up so the flip alone works), this body was
+// originally drawn right-side-up standing ON the ground, so a bare
+// scale(-1) around the ground line would sink it below the ground --
+// instead we flip around the critter's OWN vertical center (translate
+// to center, scale, translate back) so it stays in the same footprint
+// but renders upside down: the small feet end up highest (in the air,
+// where the teacup stack now rests -- same idea as the pig's pots
+// resting on its kicked-up trotters), and the head/ears end up lowest,
+// near the ground.
+const TOPSY_TEA_CRITTER_FLIP_CENTER = -9;
+function drawTopsyTeaCritter(camX) {
+  const sx = topsyTeaCritter.x - camX, sy = gy;
+  const facingLeft = topsyTeaCritter.dir < 0;
+  const bob = Math.abs(Math.sin(performance.now() * 0.006)) * 2;
+  ctx.save();
+  ctx.translate(sx, sy - bob);
+  ctx.translate(0, TOPSY_TEA_CRITTER_FLIP_CENTER);
+  ctx.scale(facingLeft ? -1 : 1, -1);
+  ctx.translate(0, -TOPSY_TEA_CRITTER_FLIP_CENTER);
+
+  // curled tail
+  ctx.strokeStyle = "#8a7566";
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-9, -6);
+  ctx.quadraticCurveTo(-17, -3, -15, 3);
+  ctx.quadraticCurveTo(-13, 7, -9, 5);
+  ctx.stroke();
+
+  // small feet
+  ctx.fillStyle = "#b8a695";
+  [[-4, -1], [3, -1]].forEach(([fx, fy]) => {
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, 2.6, 1.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // round body
+  const bodyGrad = ctx.createLinearGradient(-10, -16, 10, 0);
+  bodyGrad.addColorStop(0, "#cbb8a4");
+  bodyGrad.addColorStop(1, "#a68f78");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, -8, 10, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // round head
+  ctx.beginPath();
+  ctx.ellipse(8, -14, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ears
+  ctx.fillStyle = "#e8d9c8";
+  [[6, -19], [11.5, -19]].forEach(([ex, ey]) => {
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#caa898";
+  [[6, -19], [11.5, -19]].forEach(([ex, ey]) => {
+    ctx.beginPath();
+    ctx.arc(ex, ey, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // eye + nose
+  ctx.fillStyle = "#2a1e16";
+  ctx.beginPath();
+  ctx.arc(11, -14, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c96b7a";
+  ctx.beginPath();
+  ctx.arc(14, -13, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // the teacup stack is drawn in world space (outside the flip transform
+  // above) so its own orientation stays fixed regardless of which way the
+  // critter is facing or how it's flipped -- balanced up near where the
+  // critter's (now airborne) feet ended up, same relationship as the
+  // pig's pots resting on its kicked-up trotters
+  drawTopsyTeaCritterCups(sx, sy - bob);
+
+  if (topsyTeaCritter.speechText && performance.now() < topsyTeaCritter.speechUntil) {
+    drawSpeechBubble(ctx, sx + 15, sy - bob - 62, [topsyTeaCritter.speechText]);
+  }
+}
+
+function drawTopsyTeaCritterCups(baseX, baseY) {
+  // a little saucer balanced on its back, underneath the whole stack
+  ctx.fillStyle = "#f0e8da";
+  ctx.strokeStyle = "rgba(15,12,10,0.6)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(baseX, baseY - 17, 8, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  const wobbleT = performance.now() * 0.0035;
+  // CONFIRMED CHANGE ("the largest teacup is way too large. make it
+  // smaller and add another cup"): shrunk the bottom (largest) cup down
+  // closer to the others' scale, and added a 4th, smallest cup on top.
+  const cups = [
+    { rw: 5.6, fw: 3.4, h: 5, color: "#e8e0d0", colorLite: "#fbf6ec", rim: "#c94f6a" },
+    { rw: 4.8, fw: 2.9, h: 4.4, color: "#f0e8da", colorLite: "#fffaf0", rim: "#4f8fa0" },
+    { rw: 4, fw: 2.4, h: 3.8, color: "#e8e0d0", colorLite: "#fbf6ec", rim: "#dba03c" },
+    { rw: 3.2, fw: 1.9, h: 3.2, color: "#f0e8da", colorLite: "#fffaf0", rim: "#7a6aa8" }
+  ];
+  let stackY = -18; // just above the saucer
+  cups.forEach((cup, i) => {
+    const amp = 1.6 + i * 1.8; // more sway toward the top, same shape as the pig's pot stack
+    const tilt = Math.sin(wobbleT + i * 1.1) * amp;
+    const rw = cup.rw, fw = cup.fw, h = cup.h;
+    const cy = stackY - h;
+    ctx.save();
+    ctx.translate(baseX + tilt * 0.5, baseY + cy);
+    ctx.rotate(tilt * 0.05);
+
+    // UPSIDE-DOWN cup: the wide rim/opening is at the BOTTOM (facing the
+    // saucer below it) and the narrow foot is at the TOP -- the opposite
+    // taper from a right-side-up cup, which is the whole gag here
+    const rimY = h / 2, footY = -h / 2;
+
+    ctx.fillStyle = "rgba(15,12,10,0.85)";
+    ctx.beginPath();
+    ctx.moveTo(-rw - 0.8, rimY);
+    ctx.lineTo(-fw - 0.8, footY);
+    ctx.lineTo(fw + 0.8, footY);
+    ctx.lineTo(rw + 0.8, rimY);
+    ctx.closePath();
+    ctx.fill();
+
+    const bodyGrad = ctx.createLinearGradient(-rw, 0, rw, 0);
+    bodyGrad.addColorStop(0, blendHexColors(cup.color, "#000000", 0.25));
+    bodyGrad.addColorStop(0.45, cup.colorLite);
+    bodyGrad.addColorStop(0.55, cup.colorLite);
+    bodyGrad.addColorStop(1, blendHexColors(cup.color, "#000000", 0.25));
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(-rw, rimY);
+    ctx.lineTo(-fw, footY);
+    ctx.lineTo(fw, footY);
+    ctx.lineTo(rw, rimY);
+    ctx.closePath();
+    ctx.fill();
+
+    // bright rim ring at the bottom edge -- the cup's open mouth, now
+    // pointing down
+    ctx.strokeStyle = cup.rim;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rw, 1.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // small foot ellipse at the top
+    ctx.fillStyle = blendHexColors(cup.color, "#000000", 0.15);
+    ctx.beginPath();
+    ctx.ellipse(0, footY, fw, 1.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // handle loop near the rim end
+    ctx.strokeStyle = cup.rim;
+    ctx.lineWidth = 1.3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(rw + 1.4, rimY - h * 0.28, 2.1, Math.PI * 0.2, Math.PI * 1.7, false);
+    ctx.stroke();
+
+    ctx.restore();
+    stackY -= h * 1.6;
   });
 }
 
@@ -22182,6 +22411,7 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyAmbientWindSeeds(camX);
   drawTopsyUpsideDownBirds(camX);
   drawTopsyTurvyPig(camX);
+  drawTopsyTeaCritter(camX);
   drawTopsyTurvyReturnPortal(camX);
 
   ctx.restore();
