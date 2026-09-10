@@ -23341,7 +23341,15 @@ function drawTopsyWindSeedPlot(camX) {
     // a little rather than floating -- the same "gently embedded" look
     // the tree canopies use where THEY meet the ground.
     const headCx = dx, headCy = gy - headR * 0.8;
-    const stemBaseY = headCy - headR; // the top of the sphere -- where the stem rises from
+    // CONFIRMED CHANGE ("should we also make the stem more go into the
+    // center of the flower occluded by the white things"): was headCy -
+    // headR, i.e. the stem's bottom just touched the sphere's outer edge
+    // tangent to it, so it read as resting ON the puffball rather than
+    // growing OUT of it. Pulled deep into the head (most of the way to
+    // center) so the strands drawn after it (see below) visibly cross
+    // over its lower portion, the way a real dandelion stem disappears
+    // into its own fluffy seed head instead of just touching its rim.
+    const stemBaseY = headCy - headR * 0.15;
     const stemTopY = stemBaseY - stemH;
 
     // stem -- CONFIRMED CHANGE ("make the stem of daffodil not just like
@@ -23867,7 +23875,12 @@ function drawTopsyTurvyEntranceDandelion(camX) {
   const headR = 11;
   const headCx = dx, headCy = gy - headR * 0.8;
   const stemH = 26;
-  const stemBaseY = headCy - headR;
+  // CONFIRMED CHANGE ("should we also make the stem more go into the
+  // center of the flower occluded by the white things"): same fix as the
+  // big dandelion -- pulled the stem's base down into the puffball so
+  // the strands (drawn after) visibly cross over it, instead of the
+  // stem just touching the sphere's outer rim.
+  const stemBaseY = headCy - headR * 0.15;
   const stemTopY = stemBaseY - stemH;
   const tipX = dx + sway;
 
@@ -23988,7 +24001,11 @@ function drawTopsyMeadowDandelion(camX, seed) {
   const headR = 11 * scale * eased;
   const headCx = dx, headCy = gy - headR * 0.8;
   const stemH = 26 * scale * eased;
-  const stemBaseY = headCy - headR;
+  // CONFIRMED CHANGE ("should we also make the stem more go into the
+  // center of the flower occluded by the white things"): same fix as the
+  // big and entrance dandelions -- stem's base pulled into the puffball
+  // instead of just touching its outer rim.
+  const stemBaseY = headCy - headR * 0.15;
   const stemTopY = stemBaseY - stemH;
   const tipX = dx + sway;
 
