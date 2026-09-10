@@ -464,6 +464,12 @@ const player = {
   onBallPitRim: false,    // CONFIRMED BUG FIX: true while standing at the top of the ladder, protected from gravity until a deliberate drop-in or walk-off -- see applyPhysics' guard chain
   inBallPit: false,       // CONFIRMED CHANGE: true while swimming inside the sandbox ball pit -- position driven entirely by updateSandboxBallPit
   inAntFarm: false,       // CONFIRMED CHANGE: true while shrunk down navigating the sandbox ant farm's tunnel maze -- unlike the ball pit, the real player.x/y stay parked at the mount spot the whole visit; only a small drawn icon moves, tracked by sandboxAntFarm.localX/localY
+  // CONFIRMED ADD ("transport us into the center of the tree, where we
+  // see player actually sliding all the way down"): same "real x/y stay
+  // parked, a small drawn icon moves in local space instead" shape as
+  // inAntFarm just above, for the topsy-turvy spiral slide's own room
+  // (see topsySpiralSlideRoom / drawTopsySpiralSlideRoom).
+  inTopsySpiralSlide: false,
   onTopsyHouseLadder: false, // CONFIRMED CHANGE ("we need to be able to climb ladder"): true while climbing the topsy-turvy grumpy house's own ladder up to its door/window -- same "pinned x, gravity-exempt, driven by up/down" shape as onBallPitLadder, see updateTopsyTurvyScene
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
@@ -3842,28 +3848,13 @@ function applyPhysics(){
     }
   }
 
-  // CONFIRMED ADD ("we need to see player sliding down the spiral slide
-  // we need that animation"): while the spiral slide's own fall timer is
-  // running, position is fully scripted right here -- same "driven
-  // elsewhere, skip normal physics for this frame" pattern the dip
-  // windup just below uses its own early return for (the mask-over-the-
-  // hole trick moleHoleEntrance uses doesn't work here since this scene's
-  // hole overlay draws BEFORE the player in the shared draw() order, so
-  // it can never actually cover the sprite -- real scripted motion is
-  // the only way to make it visible). Spirals inward (shrinking radius,
-  // a couple of full turns) while sinking below ground level, so it
-  // genuinely reads as corkscrewing down into the hole.
-  if (currentScene === "topsyturvy" && topsySpiralSlide.active) {
-    const p = Math.min(1, topsySpiralSlide.t / TOPSY_SPIRAL_SLIDE_FALL_MS);
-    const turns = 2.5;
-    const angle = p * Math.PI * 2 * turns;
-    const radius = 16 * (1 - p);
-    player.x = TOPSY_SPIRAL_SLIDE_X + Math.cos(angle) * radius - player.width / 2;
-    player.y = -p * 80;
-    player.vy = 0;
-    player.jumping = false;
-    return;
-  }
+  // CONFIRMED CHANGE ("i want it to be an actual 'room'... transport us
+  // into the center of the tree"): the spiral slide is now a real
+  // self-contained room (see drawTopsySpiralSlideRoom) with its own
+  // locally-drawn player icon -- the REAL player just stays parked here,
+  // exactly the same "gravity-exempt while a visit is in progress" guard
+  // shape player.inAntFarm already has just below.
+  if (player.inTopsySpiralSlide) return;
 
   // CONFIRMED ADD ("pressing up actually first brings u down just a
   // little then takes u bback up"): while the windup dip is running,
@@ -5852,7 +5843,7 @@ function drawCrown(camX) {
   // out explicitly rather than relying on it happening to land
   // somewhere unnoticed ("make sure that crown from autumn works in
   // both the ball pit and the ant farm when player is wearing it").
-  if (crownState.worn && !player.inAntFarm) {
+  if (crownState.worn && !player.inAntFarm && !player.inTopsySpiralSlide) {
     drawCrownOnHead(camX, sinkAmount);
   } else if (!crownState.ready && currentScene === "autumn") {
     // in-progress — visible beside the player so catching a leaf feels
@@ -19238,9 +19229,7 @@ function topsyPickMeadowSpot() {
 // already uses -- this is a quick shortcut hole, not a whole physical
 // slide to walk/ride along like the pool's own elaborate chute.
 const TOPSY_SPIRAL_SLIDE_X = TOPSYTURVY_WIDTH - 50; // past where any meadow dandelion can spawn (topsyPickMeadowSpot caps at WIDTH-80) -- genuinely "to the right of" the whole meadow cluster, not just the plot
-const TOPSY_SPIRAL_SLIDE_FALL_MS = 900;
-let topsySpiralSlide = { active: false, t: 0 };
-// set the instant the slide's own fall finishes and cleared the instant
+// set the instant the room's own ride finishes and cleared the instant
 // the resulting scene arrival is handled -- lets the shared scene-
 // arrival switch (see its own topsyturvy->forest branches) tell this
 // deliberate slide-down apart from the ordinary "climbed back down the
@@ -19251,29 +19240,58 @@ function topsySpiralSlideUnlocked() {
   return topsyMeadowSeeds.length >= TOPSY_MEADOW_MAX;
 }
 
+// CONFIRMED CHANGE ("i want it to be an actual 'room' as in we see the
+// full thing of the player spiraling all the way down on the slide,
+// getting occluded by the center of the slide when it goes behind...
+// transport us into the center of the tree, where we see player
+// actually sliding all the way down before being popped out into the
+// forest"): the first pass just played a brief in-place animation
+// standing over the hole -- replaced with a real self-contained room,
+// same "the real player.x/y stay parked, a small drawn icon moves in
+// local space instead" shape the sandbox ant farm already uses (see
+// player.inAntFarm/sandboxAntFarm.localX/localY), not a new scene or
+// camera -- just a full draw/update takeover while active, same as the
+// chef interior peek. See drawTopsySpiralSlideRoom for the occlusion
+// trick (same two-pass "draw the far side, then the player, then the
+// near side" idea drawMoleHoleRootsOverHole already uses for its own
+// roots-reaching-into-the-hole layering).
+const TOPSY_SPIRAL_ROOM_RIDE_MS = 2400; // how long the actual spiral descent takes
+const TOPSY_SPIRAL_ROOM_POP_MS = 400; // a short beat at the bottom (a little radiating "pop") before the real scene transition fires
+const TOPSY_SPIRAL_ROOM_TOTAL_MS = TOPSY_SPIRAL_ROOM_RIDE_MS + TOPSY_SPIRAL_ROOM_POP_MS;
+const TOPSY_SPIRAL_ROOM_LOOPS = 4; // full turns completed over the whole ride
+const TOPSY_SPIRAL_ROOM_RADIUS = 44;
+const TOPSY_SPIRAL_ROOM_HEIGHT = 640; // total local "depth" descended -- purely a room-local unit, unrelated to world y
+let topsySpiralSlideRoom = { active: false, t: 0 };
+
 function updateTopsySpiralSlide(deltaTime) {
-  if (!topsySpiralSlideUnlocked()) return;
-  if (topsySpiralSlide.active) {
-    topsySpiralSlide.t += deltaTime * 1000;
-    if (topsySpiralSlide.t >= TOPSY_SPIRAL_SLIDE_FALL_MS) {
-      topsySpiralSlide.active = false;
-      topsySpiralSlideJustUsed = true;
-      startSeasonTransition("forest");
-    }
-    return;
-  }
+  if (!topsySpiralSlideRoom.active && !topsySpiralSlideUnlocked()) return;
+  if (topsySpiralSlideRoom.active) return; // driven entirely by updateTopsySpiralSlideRoom instead once the ride starts
   if (keys.spaceJustPressed && isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 24, 15, 15)) {
-    topsySpiralSlide.active = true;
-    topsySpiralSlide.t = 0;
+    topsySpiralSlideRoom.active = true;
+    topsySpiralSlideRoom.t = 0;
+    player.inTopsySpiralSlide = true;
   }
 }
 
-// hole art + a decorative spinning spiral (same "3 rings, different
-// radii/speeds" idiom the pool's whirlpool uses for its own swirl) plus
-// a mole-hole-style growing dark disc while actually falling through --
-// the player sprite keeps its normal position/physics the whole time
-// (same "brief in-place effect, not real physics" trick moleHoleEntrance
-// uses), this overlay is what visually sells "going down."
+// the room's own update -- entirely separate from applyPhysics (which
+// just parks the real player and returns early while
+// player.inTopsySpiralSlide, same guard shape as player.inAntFarm) since
+// nothing here is really "physics," it's one continuous scripted ride.
+function updateTopsySpiralSlideRoom(deltaTime) {
+  topsySpiralSlideRoom.t += deltaTime * 1000;
+  if (topsySpiralSlideRoom.t >= TOPSY_SPIRAL_ROOM_TOTAL_MS) {
+    topsySpiralSlideRoom.active = false;
+    player.inTopsySpiralSlide = false;
+    topsySpiralSlideJustUsed = true;
+    startSeasonTransition("forest");
+  }
+}
+
+// outdoor hole art + a decorative spinning spiral (same "3 rings,
+// different radii/speeds" idiom the pool's whirlpool uses for its own
+// swirl) -- purely the entrance now; the actual ride lives entirely in
+// drawTopsySpiralSlideRoom below, which takes over the whole screen
+// while active (see drawTopsyTurvyScene's own early-return).
 function drawTopsySpiralSlide(camX) {
   if (!topsySpiralSlideUnlocked()) return;
   const sx = TOPSY_SPIRAL_SLIDE_X - camX;
@@ -19301,28 +19319,130 @@ function drawTopsySpiralSlide(camX) {
   });
   ctx.restore();
 
-  if (!topsySpiralSlide.active && isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 40, 20, 20)) {
+  if (isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 40, 20, 20)) {
     ctx.fillStyle = "#3a2a4a";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("Press SPACE to slide down", sx, gy - 30);
     ctx.textAlign = "left";
   }
+}
 
-  // sink-and-fade, drawn on top of everything -- same trick
-  // drawMoleHoleEntrance uses: a short in-place effect over the hole
-  // rather than any real physics on the player itself.
-  if (topsySpiralSlide.active) {
-    const p = Math.min(1, topsySpiralSlide.t / TOPSY_SPIRAL_SLIDE_FALL_MS);
-    ctx.save();
+// CONFIRMED ADD -- the actual "inside the tree" room: a fixed-camera
+// full-screen takeover (same shape as drawTopsyChefInterior) showing the
+// player spiraling all the way down a central coil. The player orbits a
+// fixed screen x/y (the coil scrolls past THEM, not the other way
+// around, same "camera follows the player" feel any side-scroller
+// uses) -- occlusion between the player and the coil is real: every
+// point along the whole spiral path is classified as "near side"
+// (drawn AFTER the player, so it visibly passes in front) or "far side"
+// (drawn BEFORE), based on the exact same cos(angle) sign the player's
+// own current position uses, same two-pass "far layer, subject, near
+// layer" trick drawMoleHoleRootsOverHole already uses for the mole
+// hole's own roots-reaching-into-the-hole layering.
+function drawTopsySpiralSlideRoom(camX) {
+  const cx = canvas.width / 2;
+  const playerScreenY = canvas.height * 0.48;
+  const t = topsySpiralSlideRoom.t;
+  const rideP = Math.min(1, t / TOPSY_SPIRAL_ROOM_RIDE_MS);
+  const depth = rideP * TOPSY_SPIRAL_ROOM_HEIGHT;
+  const playerAngle = rideP * TOPSY_SPIRAL_ROOM_LOOPS * Math.PI * 2;
+
+  // dim, warm "inside the tree" backdrop -- concentric wood-ring arcs
+  // radiating from center, same "trunk cross-section" language a real
+  // cut log uses, instead of just reusing the outdoor sky
+  const bg = ctx.createRadialGradient(cx, canvas.height * 0.4, 20, cx, canvas.height * 0.4, canvas.width * 0.75);
+  bg.addColorStop(0, "#4a3220");
+  bg.addColorStop(0.55, "#33210f");
+  bg.addColorStop(1, "#150c06");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "rgba(90,60,30,0.35)";
+  ctx.lineWidth = 2;
+  for (let r = 40; r < canvas.width; r += 55) {
     ctx.beginPath();
-    ctx.ellipse(sx, gy + 2, 22, 11, 0, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.globalAlpha = p;
-    ctx.fillStyle = "#0a0510";
+    ctx.ellipse(cx, canvas.height * 0.4, r, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // the spiral path itself, sampled into beads -- lets the two-pass
+  // far/near split work per-point instead of needing one continuous
+  // stroke to somehow change layering mid-path
+  const SEGMENTS = 90;
+  const beads = [];
+  for (let i = 0; i <= SEGMENTS; i++) {
+    const segP = i / SEGMENTS;
+    const segDepth = segP * TOPSY_SPIRAL_ROOM_HEIGHT;
+    const segAngle = segP * TOPSY_SPIRAL_ROOM_LOOPS * Math.PI * 2;
+    const screenY = playerScreenY + (segDepth - depth);
+    if (screenY < -20 || screenY > canvas.height + 20) continue;
+    const near = Math.cos(segAngle) >= 0;
+    // a little way out from the coil's own radius so it reads as a real
+    // tube wall, not a razor-thin wire
+    const wobble = Math.sin(segAngle * 1.7) * 3;
+    beads.push({
+      x: cx + Math.cos(segAngle) * (TOPSY_SPIRAL_ROOM_RADIUS + wobble),
+      y: screenY,
+      near,
+      shade: 0.55 + Math.cos(segAngle) * 0.35
+    });
+  }
+  const drawBeads = (wantNear) => {
+    beads.forEach(b => {
+      if (b.near !== wantNear) return;
+      ctx.fillStyle = `rgba(${Math.round(200 * b.shade + 40)},${Math.round(190 * b.shade + 30)},${Math.round(235 * b.shade + 20)},0.9)`;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  };
+  drawBeads(false); // far side of the coil, behind the player
+
+  // the player's own mini-me icon, same simplified "rounded body + two
+  // eyes" style the ant farm's shrunk-down icon uses -- real
+  // player.x/y stay parked outside (see player.inTopsySpiralSlide),
+  // this is a purely local, self-contained representation.
+  const px = cx + Math.cos(playerAngle) * TOPSY_SPIRAL_ROOM_RADIUS;
+  const py = playerScreenY;
+  const iconScale = 0.85 + Math.cos(playerAngle) * 0.15; // a touch bigger on the near side, smaller on the far side -- a cheap depth cue
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(iconScale, iconScale);
+  ctx.fillStyle = "#7a78b8";
+  ctx.beginPath();
+  ctx.moveTo(-13, -17);
+  ctx.arcTo(13, -17, 13, 17, 5);
+  ctx.arcTo(13, 17, -13, 17, 5);
+  ctx.arcTo(-13, 17, -13, -17, 5);
+  ctx.arcTo(-13, -17, 13, -17, 5);
+  ctx.closePath();
+  ctx.fill();
+  [-5, 5].forEach(ex => {
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.ellipse(sx, gy + 2 + p * 30, 25 - p * 8, 12 - p * 4, 0, 0, Math.PI * 2);
+    ctx.arc(ex, -6, 3.4, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#2a2a2a";
+    ctx.beginPath();
+    ctx.arc(ex, -6, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  drawBeads(true); // near side of the coil, in front of the player
+
+  // a short radiating "pop" beat once the ride reaches the bottom,
+  // right before the real scene transition fires -- a beat of payoff
+  // instead of cutting the instant the descent ends
+  if (t > TOPSY_SPIRAL_ROOM_RIDE_MS) {
+    const popP = Math.min(1, (t - TOPSY_SPIRAL_ROOM_RIDE_MS) / TOPSY_SPIRAL_ROOM_POP_MS);
+    ctx.save();
+    ctx.globalAlpha = 1 - popP;
+    ctx.strokeStyle = "#fff2b0";
+    ctx.lineWidth = 3 * (1 - popP);
+    ctx.beginPath();
+    ctx.arc(px, py, 10 + popP * 60, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 }
@@ -20652,6 +20772,12 @@ function updateTopsyTurvyScene(deltaTime) {
     updateTopsyChefInterior(deltaTime);
     return;
   }
+  // CONFIRMED ADD -- same early-return shape as the chef interior just
+  // above, for the spiral slide's own room (see topsySpiralSlideRoom).
+  if (topsySpiralSlideRoom.active) {
+    updateTopsySpiralSlideRoom(deltaTime);
+    return;
+  }
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
 
   const softenTarget = topsyChef.wonOverByTomatoes ? 1 : 0;
@@ -20660,7 +20786,7 @@ function updateTopsyTurvyScene(deltaTime) {
   // skipped while pinned to something else that already owns position
   // outright (the ladder, the well's dip animation, a scripted fall) so
   // the gust never fights a state that's driving the player itself.
-  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && !topsySpiralSlide.active && seasonTransition.phase === "idle") {
+  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && !player.inTopsySpiralSlide && seasonTransition.phase === "idle") {
     const t = performance.now() * 0.001;
     const gust = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.9 + 1.7) * 0.4;
     player.x += gust * TOPSY_WIND_STRENGTH * deltaTime;
@@ -21761,18 +21887,60 @@ function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
     ctx.stroke();
     ctx.restore();
   });
-  // the sleeper -- just a small round curled bump peeking out, plus a
-  // closed-eye squiggle, no more detail than that (mostly hidden by the
-  // blanket on purpose)
+  // the sleeper -- a small curled dormouse peeking out from under the
+  // blanket: a shaded round body, one visible ear (the other tucked into
+  // the leaves), a snout with a tiny dark nose, a tail curling around the
+  // base, and a closed-eye squiggle near the snout. Reads as an actual
+  // curled-up animal now instead of a plain circle with a smile.
+  // CONFIRMED CHANGE ("rn it is just a circle with a smile"): replaced the
+  // flat filled circle + squiggle with this.
+  const bodyCx = nx - 2.5 * s, bodyCy = ny - 1 * s;
+  const bodyR = 2.4 * s;
+
+  // tail first, so the body overlaps its base
+  ctx.strokeStyle = "#a8845a";
+  ctx.lineWidth = 0.9 * s;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(bodyCx + bodyR * 0.8, bodyCy + bodyR * 0.6);
+  ctx.quadraticCurveTo(bodyCx + bodyR * 2.2, bodyCy + bodyR * 1.4, bodyCx + bodyR * 1.1, bodyCy - bodyR * 0.5);
+  ctx.stroke();
+
+  // body -- radial-shaded so it reads as a rounded curled form
+  const bodyGrad = ctx.createRadialGradient(bodyCx - bodyR * 0.3, bodyCy - bodyR * 0.3, 0, bodyCx, bodyCy, bodyR * 1.3);
+  bodyGrad.addColorStop(0, "#dab383");
+  bodyGrad.addColorStop(1, "#b78a56");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.arc(bodyCx, bodyCy, bodyR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // one visible ear, with a darker inner-ear shade
   ctx.fillStyle = "#c9a06a";
   ctx.beginPath();
-  ctx.arc(nx - 2.5 * s, ny - 1 * s, 2.4 * s, 0, Math.PI * 2);
+  ctx.ellipse(bodyCx - bodyR * 0.35, bodyCy - bodyR * 1.05, bodyR * 0.42, bodyR * 0.5, -0.3, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "#3a2818";
-  ctx.lineWidth = 0.7;
+  ctx.fillStyle = "#8a5f3a";
   ctx.beginPath();
-  ctx.moveTo(nx - 3.6 * s, ny - 1.2 * s);
-  ctx.quadraticCurveTo(nx - 2.5 * s, ny - 0.3 * s, nx - 1.4 * s, ny - 1.2 * s);
+  ctx.ellipse(bodyCx - bodyR * 0.35, bodyCy - bodyR * 1.0, bodyR * 0.2, bodyR * 0.26, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // snout tapering to a tiny dark nose
+  ctx.fillStyle = "#e8cda0";
+  ctx.beginPath();
+  ctx.ellipse(bodyCx - bodyR * 1.15, bodyCy + bodyR * 0.15, bodyR * 0.55, bodyR * 0.38, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4a2f18";
+  ctx.beginPath();
+  ctx.arc(bodyCx - bodyR * 1.55, bodyCy + bodyR * 0.2, bodyR * 0.14, 0, Math.PI * 2);
+  ctx.fill();
+
+  // closed eye -- small squiggle just above the snout
+  ctx.strokeStyle = "#3a2818";
+  ctx.lineWidth = 0.6 * s;
+  ctx.beginPath();
+  ctx.moveTo(bodyCx - bodyR * 1.0, bodyCy - bodyR * 0.25);
+  ctx.quadraticCurveTo(bodyCx - bodyR * 0.7, bodyCy + bodyR * 0.1, bodyCx - bodyR * 0.4, bodyCy - bodyR * 0.2);
   ctx.stroke();
   // slow-drifting "z"s
   const t0 = performance.now() * 0.001;
@@ -24371,6 +24539,12 @@ function drawTopsyTurvyScene(camX) {
     drawTopsyChefInterior(camX);
     return;
   }
+  // CONFIRMED ADD -- same early-return shape as the chef interior just
+  // above, for the spiral slide's own room.
+  if (topsySpiralSlideRoom.active) {
+    drawTopsySpiralSlideRoom(camX);
+    return;
+  }
   // CONFIRMED CHANGE ("maybe we should change the sky a little, so we ca
   // better see the clouds and the dandelion"): the old gradient faded all
   // the way down to a near-white pink (#f6e8ea) right at the ground --
@@ -25378,11 +25552,37 @@ function computeForestSlideChuteGeometry(camX) {
 // loop) -- during normal exploration the single background pass in
 // drawForestSlideChute already paints this same rock, so there's nothing
 // new to occlude.
+// CONFIRMED BUG FIX ("the 'back wall' occludes player it should not, only
+// the front wall should"): this used to rebuild and redraw the near-rail
+// strip along the chute's ENTIRE length every single frame, not just the
+// short stretch actually next to the player. Since the chute wobbles back
+// and forth a fair amount (see computeForestSlideChuteGeometry's own sine
+// terms), a rail segment from well above or below the player's current
+// position could have wobbled far enough sideways to visually land right
+// on top of the player's sprite even though it has nothing to do with
+// "in front of them right now" -- reading exactly like the FAR side was
+// incorrectly occluding, when really it was a distant near-side segment
+// wrapping around through an unrelated bend. Real fix: only rebuild/redraw
+// a small local window of steps centered on the player's own current ride
+// progress (poolSlideExit.rideProgress, set each frame in
+// updatePoolSlideExit right next to the position it's derived from), so
+// nothing outside arm's reach of the player can ever occlude them. Outside
+// that window the ORIGINAL single background pass in drawForestSlideChute
+// (drawn before the player, so it never occludes) is all that's visible --
+// this redraw paints the exact same gradient/facets over the exact same
+// geometry, just restricted to the local stretch, so there's no seam where
+// the window starts/ends.
 function drawForestSlideChuteNearRail(camX) {
   const geo = computeForestSlideChuteGeometry(camX);
   const { steps, right, trackRight, halfWidths } = geo;
   if (right[0].x < -150 && right[right.length - 1].x < -150) return;
   if (right[0].x > canvas.width + 150 && right[right.length - 1].x > canvas.width + 150) return;
+
+  const RAIL_WINDOW = 5; // steps of local reach on either side of the player -- comfortably covers the player's own height (~54px) against this chute's ~10.5px-per-step average spacing, without reaching far enough to snag a distant wobble
+  const playerIdx = Math.round((poolSlideExit.rideProgress || 0) * steps);
+  const idx0Win = Math.max(0, playerIdx - RAIL_WINDOW);
+  const idx1Win = Math.min(steps, playerIdx + RAIL_WINDOW);
+  if (idx1Win <= idx0Win) return;
 
   ctx.save();
   const grad = ctx.createLinearGradient(trackRight[0].x, 0, right[0].x + 10, 0);
@@ -25391,8 +25591,11 @@ function drawForestSlideChuteNearRail(camX) {
   grad.addColorStop(1, "#332e27");
   ctx.fillStyle = grad;
   ctx.beginPath();
-  trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-  for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+  for (let i = idx0Win; i <= idx1Win; i++) {
+    const p = trackRight[i];
+    i === idx0Win ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+  }
+  for (let i = idx1Win; i >= idx0Win; i--) ctx.lineTo(right[i].x, right[i].y);
   ctx.closePath();
   ctx.fill();
 
@@ -25403,15 +25606,24 @@ function drawForestSlideChuteNearRail(camX) {
   ctx.strokeStyle = "rgba(200,190,164,0.55)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  trackRight.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  for (let i = idx0Win; i <= idx1Win; i++) {
+    const p = trackRight[i];
+    i === idx0Win ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+  }
   ctx.stroke();
   // a few small facet shades so the rail itself doesn't read as one flat
-  // gradient strip
+  // gradient strip -- same per-facet seeds as before (keyed off the
+  // GLOBAL step index, not a local window index), so a given stretch of
+  // rail always shades the same way regardless of how much of the window
+  // currently covers it
   const RAIL_FACETS = 10;
-  for (let f = 0; f < RAIL_FACETS; f++) {
-    const idx0 = Math.floor((f / RAIL_FACETS) * steps);
-    const idx1 = Math.min(steps, Math.ceil(((f + 1) / RAIL_FACETS) * steps));
-    if (idx0 >= right.length || idx1 >= right.length) continue;
+  const facetStep = steps / RAIL_FACETS;
+  const fStart = Math.max(0, Math.floor(idx0Win / facetStep) - 1);
+  const fEnd = Math.min(RAIL_FACETS - 1, Math.ceil(idx1Win / facetStep) + 1);
+  for (let f = fStart; f <= fEnd; f++) {
+    const idx0 = Math.max(idx0Win, Math.floor(f * facetStep));
+    const idx1 = Math.min(idx1Win, Math.ceil((f + 1) * facetStep));
+    if (idx0 >= idx1 || idx0 >= right.length || idx1 >= right.length) continue;
     const seed = f * 21.7 + 400;
     const shade = pseudoRandom(seed);
     ctx.fillStyle = shade > 0.5
@@ -26678,6 +26890,13 @@ function updatePoolSlideExit(deltaTime) {
       player.x = pt.x - player.width / 2;
       player.y = pt.y;
       poolSlideExit.tiltAngle = Math.sin(ease * Math.PI * 3 + 0.6) * 0.3; // same phase as the position wobble above, so the lean visually matches the direction the path is actually curving
+      // CONFIRMED BUG FIX ("the 'back wall' occludes player it should not,
+      // only the front wall should"): drawForestSlideChuteNearRail needs to
+      // know WHERE along the ride the player currently is, so it can only
+      // redraw the short local stretch of rail actually next to them (see
+      // its own comment for the full explanation) instead of the entire
+      // ride-length rail every frame.
+      poolSlideExit.rideProgress = ease;
 
       if (p >= 1) {
         poolSlideExit.phase = "land";
@@ -64267,7 +64486,7 @@ const pileWobble = (currentScene === "oak" && player.lastPileX === GIANT_PILE_X)
 // tiny icon inside the case. Pushed the VISUAL position off-canvas
 // only; nothing else (physics, camera target, mount/exit checks) reads
 // px, so this is purely cosmetic.
-const px = player.inAntFarm ? -9999 : (player.x - camX + pileWobble.x);
+const px = (player.inAntFarm || player.inTopsySpiralSlide) ? -9999 : (player.x - camX + pileWobble.x);
 // cameraY is ADDED here (not subtracted): as the player climbs past the
 // follow threshold in tunnel town, cameraY grows to offset player.y 1:1,
 // pinning the sprite's on-screen height instead of letting it keep
