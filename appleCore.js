@@ -4653,10 +4653,19 @@ function applyPhysics(){
     // nothing there to land on, same as how the tall tree's own root
     // platforms only ever existed because the tree itself is already
     // standing.
+    // CONFIRMED ADD ("also i want to jump on them"): each fully-bloomed
+    // meadow dandelion becomes a small standable platform too, same
+    // "hitbox matches the art" approach as the big dandelion's own head
+    // -- see topsyMeadowSeedPlatform's own comment for the sizing.
+    // Still-sprouting seeds (growProgress < 1) aren't included yet, so
+    // you can't stand on something that hasn't finished growing.
+    const meadowPlatforms = topsyMeadowSeeds
+      .filter(s => performance.now() - s.plantedAt >= TOPSY_MEADOW_GROW_DURATION)
+      .map(topsyMeadowSeedPlatform);
     const allTopsyPlatforms = (topsyWindSeedPlot.grown
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms
-    ).concat([TOPSY_SKY_GARDEN]); // the invert-platform chain's own capstone -- see its comment above
+    ).concat([TOPSY_SKY_GARDEN], meadowPlatforms); // the invert-platform chain's own capstone -- see its comment above
     // CONFIRMED ADD ("werent we going to do that you can jump on the
     // pans and now teacups and wobble along with them?"): the pig's pot
     // stack and the tea critter's cup stack are now standable too, using
@@ -4730,35 +4739,53 @@ function applyPhysics(){
       // landing wobble uses) so drawTopsyWindSeedPlot can play a quick
       // decaying jitter across the strands.
       if (bestPlatform === topsyDandelionHeadPlatform && prevPlayerY > bestTop) {
-        topsyDandelionHeadPlatform.lastLandTime = performance.now();
-        // CONFIRMED ADD ("make the bounce feel good... trampoline-
-        // style"): overrides the plain "come to rest" landing just set
-        // above -- a gentle automatic upward kick, and jumping stays
-        // true (instead of the resting false every other platform gets)
-        // so gravity immediately starts pulling back down into the next
-        // hop rather than parking the player standing still on it.
-        player.vy = TOPSY_DANDELION_BOUNCE_VY;
+        const landNow = performance.now();
+        topsyDandelionHeadPlatform.lastLandTime = landNow;
+        // CONFIRMED CHANGE ("3 jumps that get visibly larger each jump
+        // and thennnn a slow blow out of the seeds, and then the slow
+        // grow"): reworked from a flat bounce height + random-chance-
+        // per-landing spawn into a real 3-beat sequence -- streak resets
+        // if you weren't continuously bouncing (too long a gap since the
+        // last landing here), otherwise it climbs 1 -> 2 -> 3 with a
+        // visibly bigger kick each time, and the 3rd is the one that
+        // triggers the blow-out below. jumping stays true (instead of
+        // the resting false every other platform gets) so gravity
+        // immediately starts pulling back down into the next hop.
+        const gapSinceLastBounce = landNow - (topsyDandelionHeadPlatform.prevLandTime || -1e9);
+        let streak = gapSinceLastBounce > TOPSY_DANDELION_BOUNCE_STREAK_GAP
+          ? 1
+          : (topsyDandelionHeadPlatform.bounceStreak || 0) + 1;
+        topsyDandelionHeadPlatform.prevLandTime = landNow;
         player.jumping = true;
         player.usedDoubleJump = false;
-        // CONFIRMED ADD ("blowing them would scatter seeds that then
-        // make more small dandelions nearby... make a little dandelion
-        // meadow"): every bounce has a shot at scattering 1-2 seeds that
-        // take root nearby, up to the meadow cap -- see
-        // topsyPickMeadowSpot's own comment for the placement rules.
-        if (topsyMeadowSeeds.length < TOPSY_MEADOW_MAX && Math.random() < 0.6) {
-          const spawnCount = 1 + (Math.random() < 0.35 ? 1 : 0);
-          for (let s = 0; s < spawnCount && topsyMeadowSeeds.length < TOPSY_MEADOW_MAX; s++) {
+        if (streak >= TOPSY_DANDELION_BOUNCE_VYS.length) {
+          // the big 3rd bounce -- biggest kick, then the slow blow-out,
+          // then streak resets so the next bounce starts small again
+          player.vy = TOPSY_DANDELION_BOUNCE_VYS[TOPSY_DANDELION_BOUNCE_VYS.length - 1];
+          topsyDandelionHeadPlatform.bounceStreak = 0;
+          if (topsyMeadowSeeds.length + topsyMeadowPending.length < TOPSY_MEADOW_MAX) {
             const spot = topsyPickMeadowSpot();
-            if (spot !== null) topsyMeadowSeeds.push({ x: spot, plantedAt: performance.now() });
+            if (spot !== null) {
+              topsyMeadowPending.push({ x: spot, revealAt: landNow + TOPSY_MEADOW_BLOWOUT_DURATION });
+            }
           }
-          for (let k = 0; k < 10; k++) {
+          // CONFIRMED CHANGE ("slow blow out of the seeds"): was an
+          // instant 10-particle firework -- now a real, slower dispersal:
+          // more particles, each with its own small spawn delay so they
+          // release in a loose stagger rather than all at once, and they
+          // hang in the air/drift much longer before fading (see
+          // TOPSY_MEADOW_SCATTER_LIFE).
+          for (let k = 0; k < 16; k++) {
             topsyMeadowScatterBurst.push({
-              age: 0,
+              age: -Math.random() * 260, // negative age = still-pending spawn delay
               angle: Math.random() * Math.PI * 2,
-              dist: 8 + Math.random() * 16,
-              vy: -(16 + Math.random() * 14)
+              dist: 10 + Math.random() * 22,
+              vy: -(10 + Math.random() * 10)
             });
           }
+        } else {
+          player.vy = TOPSY_DANDELION_BOUNCE_VYS[streak - 1];
+          topsyDandelionHeadPlatform.bounceStreak = streak;
         }
       }
     }
@@ -18947,33 +18974,65 @@ const topsyDandelionHeadPlatform = {
 // plays, in ms -- see drawTopsyWindSeedPlot's strand loop for the decay
 // math itself.
 const TOPSY_DANDELION_HEAD_SHUFFLE_DURATION = 450;
-// CONFIRMED ADD ("make the bounce feel good... trampoline-style"): a
-// gentle automatic upward kick every time you land on the puffball head
-// -- noticeably springy without being a full extra jump (a normal jump
-// is vy=12; this is a little more than half that). See the landing
-// block in applyPhysics for where it's actually applied.
-const TOPSY_DANDELION_BOUNCE_VY = 7.5;
+// CONFIRMED CHANGE ("3 jumps that get visibly larger each jump and
+// thennnn a slow blow out of the seeds, and then the slow grow"): was a
+// single flat bounce height -- now a real 3-beat build-up, each entry a
+// visibly bigger kick than the last (a normal jump is vy=12; even the
+// 3rd bounce here stays a little under that). See the landing block in
+// applyPhysics for where the streak is tracked and this is applied.
+const TOPSY_DANDELION_BOUNCE_VYS = [6, 8.5, 11];
+// how long a gap since the last bounce on the head is still considered
+// "the same streak" -- longer than a single bounce's own up-down cycle
+// takes, so a normal continuous bouncing rhythm never accidentally
+// resets, but wandering off and coming back later does.
+const TOPSY_DANDELION_BOUNCE_STREAK_GAP = 900;
 
 // CONFIRMED ADD ("blowing them would scatter seeds that then make more
 // small dandelions nearby so you make a little dandelion meadow kinda
-// thing"): every bounce off the puffball head has a chance to scatter a
-// couple of seeds that take root nearby as small always-bloomed baby
-// dandelions -- same visual language as drawTopsyTurvyEntranceDandelion,
-// just planted at a random spot instead of one fixed decorative one.
-// Purely a bonus meadow that fills in the more you bounce, no new item
-// or inventory involved.
+// thing"): the 3rd (biggest) bounce triggers a real blow-out -- a slow
+// scatter of seeds off the head -- and one takes root nearby as a small
+// always-bloomed baby dandelion once the blow-out finishes. Same visual
+// language as drawTopsyTurvyEntranceDandelion, just planted at a random
+// spot instead of one fixed decorative one. Purely a bonus meadow that
+// fills in the more you bounce, no new item or inventory involved.
 const TOPSY_MEADOW_MAX = 12; // caps how big the meadow can grow -- keeps it a nice field, not visual clutter
-const TOPSY_MEADOW_GROW_DURATION = 1100; // ms, a baby dandelion's own quick sprout-up once seeded
+// CONFIRMED ADD ("slow blow out of the seeds... and then the slow
+// grow"): how long the blow-out animation plays before the seed
+// actually takes root and starts its own (separately slow)
+// TOPSY_MEADOW_GROW_DURATION sprout -- the two are deliberately
+// sequential beats, not overlapping.
+const TOPSY_MEADOW_BLOWOUT_DURATION = 900;
+// CONFIRMED CHANGE ("sloooow down the growing of them"): was 1100 (a
+// quick ~1-second pop-up) -- stretched way out so a baby dandelion
+// visibly, gradually sprouts rather than snapping to full bloom.
+const TOPSY_MEADOW_GROW_DURATION = 5000; // ms
 const TOPSY_MEADOW_MIN_SPACING = 34; // never plant two meadow dandelions closer than this
 const TOPSY_MEADOW_CLEAR_OF_WELL = 70; // keep clear of the well's own art
 const TOPSY_MEADOW_CLEAR_OF_PLOT = 45; // keep clear of the big dandelion's own base
 let topsyMeadowSeeds = []; // {x, plantedAt} -- one entry per rooted baby dandelion
-// decorative-only burst of seeds flung outward off the head the instant
-// a new meadow spot takes root, echoing the "loose things float upward"
-// rule the well/cart/big-dandelion particles already use, just radiating
-// outward first before drifting up.
-let topsyMeadowScatterBurst = []; // {age, angle, dist, vy}
-const TOPSY_MEADOW_SCATTER_LIFE = 600;
+// a meadow spot chosen during the blow-out but not planted yet -- see
+// TOPSY_MEADOW_BLOWOUT_DURATION's own comment for why this is a
+// separate deliberate beat instead of planting immediately.
+let topsyMeadowPending = []; // {x, revealAt}
+// decorative-only burst of seeds flung outward off the head during the
+// blow-out, echoing the "loose things float upward" rule the well/cart/
+// big-dandelion particles already use, just radiating outward first
+// before drifting up. CONFIRMED CHANGE ("slow blow out of the seeds"):
+// life stretched way out (was 600) so the seeds hang and drift for a
+// real beat instead of a quick firework-flash.
+let topsyMeadowScatterBurst = []; // {age, angle, dist, vy} -- age starts negative for a staggered release, see the spawn site
+const TOPSY_MEADOW_SCATTER_LIFE = 1400;
+
+// CONFIRMED ADD ("also i want to jump on them"): a fully-bloomed meadow
+// dandelion's own standable hitbox, sized to match exactly how
+// drawTopsyMeadowDandelion actually draws it (same scale/headR math),
+// same "hitbox matches the art" rule the big dandelion's own head
+// platform already follows.
+function topsyMeadowSeedPlatform(seed) {
+  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  const headR = 11 * scale;
+  return { x: seed.x - headR * 0.7, width: headR * 1.4, height: headR * 1.8 };
+}
 
 // picks a valid new meadow spot near the seed plot, or returns null if
 // none can be found after a handful of tries (respects spacing from the
@@ -19320,10 +19379,25 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
     if (topsyCarrySplashes[i].age > TOPSY_CARRY_SPLASH_LIFE) topsyCarrySplashes.splice(i, 1);
   }
 
-  // same aging pattern for the dandelion meadow's own scatter flourish
+  // same aging pattern for the dandelion meadow's own scatter flourish --
+  // a particle's age can start negative (its own little spawn delay, see
+  // the blow-out trigger) and simply isn't drawn until it counts up past
+  // zero, which is what gives the "loose stagger" release its shape
   for (let i = topsyMeadowScatterBurst.length - 1; i >= 0; i--) {
     topsyMeadowScatterBurst[i].age += dt;
     if (topsyMeadowScatterBurst[i].age > TOPSY_MEADOW_SCATTER_LIFE) topsyMeadowScatterBurst.splice(i, 1);
+  }
+
+  // CONFIRMED ADD ("slow blow out of the seeds, and then the slow
+  // grow"): promotes a pending meadow spot into an actual rooted seed
+  // (starting its own separate slow grow timer) once the blow-out
+  // animation has actually finished, rather than planting it the instant
+  // the bounce happened -- keeps the two beats genuinely sequential.
+  for (let i = topsyMeadowPending.length - 1; i >= 0; i--) {
+    if (performance.now() >= topsyMeadowPending[i].revealAt) {
+      topsyMeadowSeeds.push({ x: topsyMeadowPending[i].x, plantedAt: performance.now() });
+      topsyMeadowPending.splice(i, 1);
+    }
   }
 
   // SEED PLOT -- dig (shovel) -> plant (windSeed) -> water x3 (bucket,
@@ -23846,9 +23920,10 @@ function drawTopsyMeadowScatterBurst(camX) {
   const headCx = TOPSY_SEEDPLOT_X - camX;
   const headCy = gy - TOPSY_DANDELION_HEAD_R * 0.8;
   topsyMeadowScatterBurst.forEach(s => {
+    if (s.age < 0) return; // still in its own staggered spawn delay -- not out yet
     const p = s.age / TOPSY_MEADOW_SCATTER_LIFE;
-    const outEased = 1 - (1 - Math.min(1, p * 2.2)) * (1 - Math.min(1, p * 2.2)); // quick outward pop
-    const riseY = -Math.max(0, p - 0.25) * (30 + Math.abs(s.vy) * 0.5);
+    const outEased = 1 - (1 - Math.min(1, p * 2.2)) * (1 - Math.min(1, p * 2.2)); // quick outward pop, then a long slow drift
+    const riseY = -Math.max(0, p - 0.15) * (34 + Math.abs(s.vy) * 0.5);
     const px = headCx + Math.cos(s.angle) * s.dist * outEased;
     const py = headCy + Math.sin(s.angle) * s.dist * outEased * 0.7 + riseY;
     const fade = 1 - p;
