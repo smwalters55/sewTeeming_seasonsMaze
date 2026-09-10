@@ -304,6 +304,55 @@ window.addEventListener("keydown", e => {
     seasonTransition.phase = "idle";
     updateMapUI();
   }
+  // DEBUG CHEAT ("give me whatever inventory i should have-ish, like the
+  // key pieces but also others so its not obvious exactly what to use
+  // wher[e]... debug spawn me at the start of the rushing river pls"):
+  // drops the player right at the river's near bank, crossing not yet
+  // started (forestRiverSegmentsStrung/Decked both stay 0, unlike every
+  // other forest spawn above which force the river already built) --
+  // same "start of the crossing" state a real playthrough would reach
+  // it in. Inventory is wiped and reset to a plausible mixed loadout:
+  // a full 7 bridgePiece (exactly enough logs to build every segment,
+  // the actual answer here) mixed in among several unrelated decoy
+  // items from other parts of the game, so at a glance the inventory
+  // strip doesn't just hand over "use this one" the way a bare
+  // bridgePiece-only stock would.
+  if ((e.key==="k" || e.key==="K") && e.shiftKey && !e.repeat) {
+    currentScene = "forest";
+    Object.keys(inventory).forEach(k => delete inventory[k]);
+    inventoryOrder = [];
+    heldItem = null;
+    carriedBook = null;
+    carriedFeather = false;
+    [
+      ["bridgePiece", 7],  // the actual key piece the river crossing needs
+      ["appleSlice", 2],
+      ["acorn", 3],
+      ["roundLeaf", 1],
+      ["stone", 2],
+      ["worm", 1],
+      ["pumpkin", 1],
+      ["windSeed", 4]
+    ].forEach(([itemType, count]) => {
+      for (let i = 0; i < count; i++) addToInventory(itemType);
+    });
+    forestRiverLogPile = 0;
+    forestRiverSegmentsStrung = 0;
+    forestRiverSegmentsDecked = 0;
+    player.x = FOREST_RIVER_NEAR_BANK_X - 60;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    cameraX = Math.max(0, FOREST_RIVER_NEAR_BANK_X - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+    updateInventoryUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
