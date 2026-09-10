@@ -19049,7 +19049,12 @@ const topsyChefInteriorReturn = { x: 0, y: 0 };
 // neighboring pieces a real double-digit-pixel gap (see the platform
 // list below), so standing under any one piece and jumping reliably
 // catches THAT piece.
-const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 140; // the little room spans the house's own x +/- this
+// CONFIRMED CHANGE ("have it be a 'small space'"): pulled back in from
+// 140 -- with the furniture itself bulked up bigger now (see each
+// piece's own proportions), a tighter room around it reads as a small,
+// stuffed-full space instead of a spacious gallery with furniture
+// floating around in it.
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 130; // the little room spans the house's own x +/- this
 // CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
 // way every OTHER upside-down surface in this land works -- these reuse
 // the exact same dip-then-launch/light-gravity float as
@@ -19386,6 +19391,44 @@ function drawTopsyChefInterior(camX) {
   ctx.lineTo(canvas.width, floorY + 1.5);
   ctx.stroke();
 
+  // CONFIRMED ADD ("put visual boarders on the side of the room like
+  // walls"): the room's actual playable width (TOPSY_CHEF_INTERIOR_HALF_WIDTH
+  // either side of the house) used to just fade into the same
+  // wallpaper as everything else, with nothing marking where the room
+  // itself ends -- same dark wood tone as the ceiling band, carried
+  // down the two flanking columns, reads as real side walls closing
+  // the room in instead of open-ended wallpaper.
+  const leftWallX = cx - TOPSY_CHEF_INTERIOR_HALF_WIDTH;
+  const rightWallX = cx + TOPSY_CHEF_INTERIOR_HALF_WIDTH;
+  if (leftWallX > 0) {
+    ctx.fillStyle = "#5c4326";
+    ctx.fillRect(0, ceilingY, leftWallX, floorY - ceilingY);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    for (let bx = -40; bx < leftWallX + 40; bx += 70) {
+      ctx.fillRect(bx, ceilingY, 10, floorY - ceilingY);
+    }
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(leftWallX, ceilingY);
+    ctx.lineTo(leftWallX, floorY);
+    ctx.stroke();
+  }
+  if (rightWallX < canvas.width) {
+    ctx.fillStyle = "#5c4326";
+    ctx.fillRect(rightWallX, ceilingY, canvas.width - rightWallX, floorY - ceilingY);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    for (let bx = rightWallX - 30; bx < canvas.width + 40; bx += 70) {
+      ctx.fillRect(bx, ceilingY, 10, floorY - ceilingY);
+    }
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(rightWallX, ceilingY);
+    ctx.lineTo(rightWallX, floorY);
+    ctx.stroke();
+  }
+
   // the three ceiling-hung furniture pieces, drawn back-to-front by
   // height so nearer/taller ones don't get weirdly clipped by farther
   // ones -- reuses the SAME TOPSY_CHEF_FURNITURE_PLATFORMS array the
@@ -19448,7 +19491,14 @@ function drawTopsyChefInterior(camX) {
 // upside-down look piece by piece, which was easy to get backwards
 // (legs and backrest both ended up on the ceiling side last round,
 // reading as neither right-side-up nor properly flipped).
-const TOPSY_CHEF_SEAT_Y = { armchair: 34, table: 0, plant: 0, couch: 17 };
+const TOPSY_CHEF_SEAT_Y = { armchair: 46, table: 0, plant: 0, couch: 23 };
+// CONFIRMED ADD ("i want this to look real, but wonkier, like gigantic
+// furniture... have it be a 'small space'"): a small fixed tilt per
+// piece, off true vertical, so the room reads as a lopsided storybook
+// jumble rather than four perfectly plumb-hung pieces -- purely
+// cosmetic, applied after the upside-down flip so it never touches the
+// collision math above.
+const TOPSY_CHEF_TILT = { armchair: -0.11, table: 0.16, plant: -0.08, couch: 0.09 };
 function drawTopsyChefFurniturePiece(tp, camX) {
   const sx = tp.x - camX;
   const topY = gy - tp.height;
@@ -19462,6 +19512,7 @@ function drawTopsyChefFurniturePiece(tp, camX) {
   ctx.save();
   ctx.translate(sx, topY + seatY);
   ctx.scale(1, -1);
+  ctx.rotate(TOPSY_CHEF_TILT[tp.kind] || 0);
   if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width, reach);
   else if (tp.kind === "table") drawTopsyChefCoffeeTable(tp.width, reach);
   else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width, reach);
@@ -19486,12 +19537,15 @@ function drawTopsyChefFurniturePiece(tp, camX) {
 // this normal drawing so IT can do the one actual flip.
 function drawTopsyChefArmchair(w, reach) {
   const hw = w / 2;
+  // CONFIRMED CHANGE ("gigantic furniture"): every proportion bulked up
+  // roughly 35% over the original sizing (see TOPSY_CHEF_SEAT_Y.armchair,
+  // kept in lockstep with backBottom below).
   const backTop = 0;
-  const backBottom = 34; // = seatTop, see TOPSY_CHEF_SEAT_Y.armchair
-  const seatTop = 34;
-  const seatBottom = 50;
-  const legsTop = 50;
-  const legsBottom = 76;
+  const backBottom = 46; // = seatTop, see TOPSY_CHEF_SEAT_Y.armchair
+  const seatTop = 46;
+  const seatBottom = 68;
+  const legsTop = 68;
+  const legsBottom = 103;
 
   // tall puffy backrest, narrower than the seat
   const backGrad = ctx.createLinearGradient(0, backTop, 0, backBottom);
@@ -19569,29 +19623,27 @@ function drawTopsyChefArmchair(w, reach) {
 // CONFIRMED CHANGE ("make this look more like actual furniture what is
 // this sketch"): a short, chunky decorative leg (or the puffy backrest
 // above) reads fine as furniture, but stretching that SAME thick shape
-// the entire way up to wherever the ceiling band happens to start (94px
-// for the coffee table, at its old height) reads as a swing set, not a
-// leg. A plain thin wire picking up the remaining distance beyond a
-// believable leg length reads as "hung from the ceiling by a wire" --
-// which is exactly what's actually going on here anyway.
-// CONFIRMED BUG FIX ("the coffee table is gigantically tall"): capped
-// -- a piece whose own height sits well below the ceiling band (the
-// table especially, being the lowest/first-reachable piece) used to
-// get a very long thin wire the whole remaining way there, which at
-// normal in-game scale (not the zoomed-in crop this was checked
-// against) just reads as "this piece is absurdly tall/stretched", not
-// "hung by a wire". Capped short -- past this length it's simply left
-// a little short of the ceiling band rather than stretched to reach
-// it, which reads far better than an oversized wire.
-const TOPSY_CHEF_LEG_CABLE_MAX = 24;
+// the entire way up to wherever the ceiling band happens to start reads
+// as a swing set, not a leg. A plain thin wire picking up the remaining
+// distance beyond a believable leg length reads as "hung from the
+// ceiling by a wire" -- which is exactly what's actually going on here
+// anyway.
+// CONFIRMED BUG FIX ("still not right, things floating"): this used to
+// cap the wire's length short, leaving a visible gap of bare wallpaper
+// between the wire's end and the actual ceiling band whenever a piece's
+// own reach exceeded the cap -- the furniture read as literally
+// floating, disconnected from anything. The wire now always goes the
+// full distance to the ceiling, no matter how far that is -- a long
+// thin wire reads fine (that's genuinely what's holding the piece up),
+// it was only ever the earlier THICK leg being stretched that looked
+// like a swing set.
 function drawLegCable(x, fromY, reach) {
-  const cappedReach = Math.min(reach, fromY + TOPSY_CHEF_LEG_CABLE_MAX);
-  if (cappedReach <= fromY) return;
+  if (reach <= fromY) return;
   ctx.strokeStyle = "rgba(70,50,35,0.55)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, fromY);
-  ctx.lineTo(x, cappedReach);
+  ctx.lineTo(x, reach);
   ctx.stroke();
 }
 
@@ -19607,10 +19659,12 @@ function drawLegCable(x, fromY, reach) {
 // local origin, so no offset is needed there.
 function drawTopsyChefCoffeeTable(w, reach) {
   const hw = w / 2;
+  // CONFIRMED CHANGE ("gigantic furniture"): bulked up roughly 35% over
+  // the original sizing.
   const topSurface = 0;
-  const tableBottom = 7.5;
-  const legsTop = 7.5;
-  const legsBottom = 23.5;
+  const tableBottom = 10;
+  const legsTop = 10;
+  const legsBottom = 32;
 
   const topGrad = ctx.createLinearGradient(0, topSurface, 0, tableBottom);
   topGrad.addColorStop(0, "#b98a54");
@@ -19669,12 +19723,15 @@ function drawTopsyChefCoffeeTable(w, reach) {
 // planter rather than floating disconnected from the room above it.
 function drawTopsyChefPottedPlant(w, reach) {
   const hw = w / 2;
+  // CONFIRMED CHANGE ("gigantic furniture"): pot depth and frond
+  // lengths bulked up roughly 30% over the original sizing, matching
+  // the other pieces' bigger proportions.
   // thin hanger cords, up to the ceiling band
   ctx.strokeStyle = "rgba(90,70,50,0.6)";
   ctx.lineWidth = 1;
   [-0.65, 0.65].forEach(side => {
     ctx.beginPath();
-    ctx.moveTo(side * hw * 0.8, 24);
+    ctx.moveTo(side * hw * 0.8, 30);
     ctx.lineTo(side * hw * 0.25, reach);
     ctx.stroke();
   });
@@ -19684,8 +19741,8 @@ function drawTopsyChefPottedPlant(w, reach) {
   ctx.beginPath();
   ctx.moveTo(-hw, 0);
   ctx.lineTo(hw, 0);
-  ctx.lineTo(hw * 0.6, 26);
-  ctx.lineTo(-hw * 0.6, 26);
+  ctx.lineTo(hw * 0.6, 34);
+  ctx.lineTo(-hw * 0.6, 34);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#5a2c18";
@@ -19702,7 +19759,7 @@ function drawTopsyChefPottedPlant(w, reach) {
   // fronds -- proper tapered leaf-blade shapes fanned out from the rim
   // and drooping down into open air, each with a center vein highlight,
   // instead of the old thin stroked line + two blob "leaflets".
-  const fronds = [{ dx: -hw * 0.55, len: 22, bend: -9 }, { dx: -hw * 0.15, len: 30, bend: -2 }, { dx: hw * 0.15, len: 27, bend: 3 }, { dx: hw * 0.55, len: 19, bend: 9 }];
+  const fronds = [{ dx: -hw * 0.55, len: 29, bend: -11 }, { dx: -hw * 0.15, len: 39, bend: -3 }, { dx: hw * 0.15, len: 35, bend: 4 }, { dx: hw * 0.55, len: 25, bend: 12 }];
   fronds.forEach((f, i) => {
     const sway = Math.sin(performance.now() * 0.0016 + i * 1.7) * 2;
     const tipX = f.bend + sway, tipY = -f.len;
@@ -19743,14 +19800,17 @@ function drawTopsyChefPottedPlant(w, reach) {
 // that seat surface sits in this normal drawing.
 function drawTopsyChefLoveCouch(w, reach) {
   const hw = w / 2;
+  // CONFIRMED CHANGE ("gigantic furniture"): bulked up roughly 35% over
+  // the original sizing (see TOPSY_CHEF_SEAT_Y.couch, kept in lockstep
+  // with backBottom below).
   const armTop = 0;
-  const armBottom = 33;
-  const backTop = 4;
-  const backBottom = 17; // = seatTop, see TOPSY_CHEF_SEAT_Y.couch
-  const seatTop = 17;
-  const seatBottom = 33;
-  const legsTop = 33;
-  const legsBottom = 57;
+  const armBottom = 45;
+  const backTop = 5;
+  const backBottom = 23; // = seatTop, see TOPSY_CHEF_SEAT_Y.couch
+  const seatTop = 23;
+  const seatBottom = 45;
+  const legsTop = 45;
+  const legsBottom = 77;
 
   // tall rolled arms at both ends
   [-1, 1].forEach(side => {
@@ -19937,10 +19997,27 @@ function drawTopsyChefBack(potX, camX) {
 
   // tall chef's hat (toque) -- the single biggest "this is a chef, not
   // just any rat" cue when all you can see is a back
-  ctx.fillStyle = "#f4f0e8";
+  // CONFIRMED CHANGE ("make the chef hat better a lil more texture"):
+  // was a flat two-tone shape (one solid band, one solid puff) -- added
+  // a shading gradient on the puff itself plus a fan of gathered pleat
+  // creases running from the band up to the crown, the real construction
+  // detail that reads as "cloth toque" rather than a plain white blob.
+  const hatBandGrad = ctx.createLinearGradient(0, -29, 0, -23);
+  hatBandGrad.addColorStop(0, "#f4f0e8");
+  hatBandGrad.addColorStop(1, "#d8d2c4");
+  ctx.fillStyle = hatBandGrad;
   ctx.beginPath();
   ctx.ellipse(0, -26, 6.5, 2.4, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = "#b8b2a4";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  const puffGrad = ctx.createLinearGradient(-7, -38, 7, -26);
+  puffGrad.addColorStop(0, "#fffdf8");
+  puffGrad.addColorStop(0.55, "#f4f0e8");
+  puffGrad.addColorStop(1, "#e2dccc");
+  ctx.fillStyle = puffGrad;
   ctx.beginPath();
   ctx.moveTo(-5.6, -26);
   ctx.quadraticCurveTo(-7, -36, -2.5, -38);
@@ -19950,6 +20027,31 @@ function drawTopsyChefBack(potX, camX) {
   ctx.fill();
   ctx.strokeStyle = "#c8c2b4";
   ctx.lineWidth = 0.8;
+  ctx.stroke();
+  // gathered pleat creases, fanning up from the band into the puff --
+  // clipped to the puff's own silhouette so they never spill past it
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-5.6, -26);
+  ctx.quadraticCurveTo(-7, -36, -2.5, -38);
+  ctx.quadraticCurveTo(0, -39.5, 2.5, -38);
+  ctx.quadraticCurveTo(7, -36, 5.6, -26);
+  ctx.closePath();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(150,140,120,0.45)";
+  ctx.lineWidth = 0.5;
+  [-4.2, -2.4, -0.6, 1.2, 3, 4.6].forEach(baseX => {
+    ctx.beginPath();
+    ctx.moveTo(baseX, -25.5);
+    ctx.quadraticCurveTo(baseX * 0.4, -33, 0, -39);
+    ctx.stroke();
+  });
+  ctx.restore();
+  // a soft crease shadow right where the puff gathers into the band
+  ctx.strokeStyle = "rgba(120,110,95,0.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, -26, 5.6, 1.9, 0, 0.15, Math.PI - 0.15);
   ctx.stroke();
 
   ctx.restore();
@@ -20063,7 +20165,15 @@ function updateTopsyTurvyScene(deltaTime) {
   // straight through a closed door -- and still would have interrupted
   // the doorOpen/pigIn/inside/pigOut cutscene phases if allowed there
   // too, so "done" is the only phase where peeking in ever makes sense.
-  if (grumpyHouse && nearGrumpyWindow && keys.upJustPressed &&
+  // CONFIRMED CHANGE ("remove the 'up to enter' thing... make it space
+  // bar, its not working right rn"): up was a bad trigger here because
+  // it's ALSO the ladder-climb key (see the onTopsyHouseLadder block
+  // just above) -- reaching the top of the ladder means up is already
+  // being held to climb, so the "just pressed" edge this used to check
+  // never fires again without releasing and re-pressing up while
+  // already pinned at the top, which read as "broken". Space isn't
+  // used by the ladder at all, so there's no held-key conflict.
+  if (grumpyHouse && nearGrumpyWindow && keys.spaceJustPressed &&
       topsyChef.sequencePhase === "done") {
     topsyChefInteriorReturn.x = player.x;
     topsyChefInteriorReturn.y = player.y;
@@ -20706,9 +20816,14 @@ function drawTopsyTurvyHouse(camX, h) {
         // really off"): fullyWonOver now fires in the same instant as
         // wonOverByTomatoes (see the tomato give-block above), so this
         // is simply the thank-you line -- no tulip follow-up to ask for.
+        // CONFIRMED CHANGE ("i wonder if we should gently hint more in
+        // the dialogue... take a look now but something better"): the
+        // old "come by anytime" was too vague to actually point anyone
+        // at the peek-inside window -- swapped for a soft, in-character
+        // nudge that says what to actually do next.
         drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
           "Mmm, perfect! Just what my",
-          "ratatouille needed. Come by anytime."
+          "ratatouille needed. Go on, take a peek inside."
         ]);
       }
     }
@@ -20726,7 +20841,7 @@ function drawTopsyTurvyHouse(camX, h) {
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.font = "10px ui-monospace";
       ctx.textAlign = "center";
-      ctx.fillText("press UP to peek inside", sx + 16 * s, y(wallTop - 14 * s));
+      ctx.fillText("press SPACE to peek inside", sx + 16 * s, y(wallTop - 14 * s));
       ctx.textAlign = "left";
       ctx.globalAlpha = 1;
     }
