@@ -242,46 +242,22 @@ window.addEventListener("keydown", e => {
     updateMapUI();
   }
   // DEBUG CHEAT ("can you actually debug spawn me within topsy turvery
-  // land pls can use f still"): Ctrl+Shift+F drops the player straight
-  // into Topsy-Turvy Land itself (right near the trees/pig, not just at
-  // the base of the climb leading up to it), for quickly testing that
-  // scene's own content without bouncing all the way up the fungus climb
-  // first every time. Still F, same mnemonic as the fungus-climb spawn
-  // right above -- Ctrl added since Shift+F was already taken. Same
-  // full state-reset shape as the other debug spawns, plus resets
-  // forestFungusClimb to the top level/streak so a same-session trip
-  // back down through the return portal lands somewhere sane.
+  // land pls can use f still" -- then later "debug spawn me with all the
+  // daffodils marked as grown or whatever, putting me next to the slide
+  // entrance pls" -- then "no ctrl shift d is another windows command...
+  // just re-use one of the other letters it is fine and remove it from
+  // whereever it is currently being used"): Ctrl+Shift+F used to be a
+  // plain "drop into Topsy-Turvy Land near the trees" spawn. Reusing that
+  // SAME already-working combo instead of hunting for a free one (both
+  // Ctrl+Shift+S and Shift+D turned out to collide with real Windows/
+  // browser bindings) -- this now drops the player right next to the
+  // spiral slide hole (see TOPSY_SPIRAL_SLIDE_X) with the big dandelion
+  // fully grown AND the meadow already filled to its cap, so the slide
+  // is unlocked and testable immediately. Strictly more useful than the
+  // old generic land spawn for current testing needs, so it fully
+  // replaces it rather than living alongside it -- same full state-reset
+  // shape as the other debug spawns.
   if ((e.key==="f" || e.key==="F") && e.shiftKey && e.ctrlKey && !e.repeat) {
-    currentScene = "topsyturvy";
-    player.x = topsyTurvyTrees[1].x - 40;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    forestFungusClimb.level = forestFungusClimb.levels.length - 1;
-    forestFungusClimb.streak = 0;
-    cameraX = Math.max(0, topsyTurvyTrees[1].x - 480);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("debug spawn me with all the daffodils marked as grown
-  // or whatever, putting me next to the slide entrance pls"): Shift+D
-  // drops the player right next to the new spiral slide hole (see
-  // TOPSY_SPIRAL_SLIDE_X) with the big dandelion fully grown AND the
-  // meadow already filled to its cap, so the slide is unlocked and
-  // testable immediately -- no bouncing/blowing-out 12 separate times
-  // first. Same full state-reset shape as the other topsy-turvy debug
-  // spawn (Ctrl+Shift+F) just above. CONFIRMED CHANGE ("that shortcut is
-  // a normal keyboard command in windows i cant use that"): was
-  // Ctrl+Shift+S, which collides with Windows/browser's own "Save As"
-  // binding on that combo -- moved to a plain, unmodified-by-anything-
-  // else Shift+D instead (D was completely free; every existing single-
-  // modifier debug spawn here already just uses Shift+<letter>, no Ctrl).
-  if ((e.key==="d" || e.key==="D") && e.shiftKey && !e.repeat) {
     currentScene = "topsyturvy";
     topsyWindSeedPlot.dug = true;
     topsyWindSeedPlot.planted = true;
