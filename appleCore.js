@@ -19400,19 +19400,22 @@ function drawTopsyChefInterior(camX) {
   // CONFIRMED CHANGE ("the cieling should prob look different from the
   // walls"): was the exact same dark beam-wood as the ceiling band,
   // which made the two blend into one continuous dark shape with no
-  // visible seam except a thin line. Walls now use a lighter, warmer
-  // wood tone (matching the floor's own plank color instead) with
-  // vertical plank seams rather than the ceiling's thick cross-beams,
-  // so ceiling and walls read as two different surfaces at a glance.
+  // visible seam except a thin line.
+  // CONFIRMED CHANGE ("i dont like that color really the puke brown.
+  // the darker brown is nice tho"): the lighter tan/plank-wood tone
+  // just tried reads as a washed-out yellow-brown -- pulled back to a
+  // richer, darker wood close to the ceiling's own color (kept
+  // distinct via a slightly different hue plus the vertical plank
+  // seams below, not by going lighter/tanner).
   const leftWallX = cx - TOPSY_CHEF_INTERIOR_HALF_WIDTH;
   const rightWallX = cx + TOPSY_CHEF_INTERIOR_HALF_WIDTH;
   const wallGrad2 = ctx.createLinearGradient(0, ceilingY, 0, floorY);
-  wallGrad2.addColorStop(0, "#9c7a4e");
-  wallGrad2.addColorStop(1, "#8a6a42");
+  wallGrad2.addColorStop(0, "#5c4028");
+  wallGrad2.addColorStop(1, "#432d1a");
   if (leftWallX > 0) {
     ctx.fillStyle = wallGrad2;
     ctx.fillRect(0, ceilingY, leftWallX, floorY - ceilingY);
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.lineWidth = 1;
     for (let bx = -20; bx < leftWallX + 20; bx += 30) {
       ctx.beginPath();
@@ -19430,7 +19433,7 @@ function drawTopsyChefInterior(camX) {
   if (rightWallX < canvas.width) {
     ctx.fillStyle = wallGrad2;
     ctx.fillRect(rightWallX, ceilingY, canvas.width - rightWallX, floorY - ceilingY);
-    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.lineWidth = 1;
     for (let bx = rightWallX + 10; bx < canvas.width + 20; bx += 30) {
       ctx.beginPath();
