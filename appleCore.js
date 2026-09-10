@@ -18574,7 +18574,19 @@ function updateForestFungusClimb(deltaTime) {
 // chain/sky-garden all shifted right by (see their own comments), so the
 // gap from the seed plot to the world's own right edge stays exactly
 // what it was before the shift.
-const TOPSYTURVY_WIDTH = 2950;
+// CONFIRMED CHANGE ("move the slide entrance to the right more" + "why are
+// all the small dandelions to the left of the big one, make sure they are
+// on both sides"): these turned out to be the same root cause. The spiral
+// slide's own clearance zone (TOPSY_SPIRAL_SLIDE_X +-
+// TOPSY_MEADOW_CLEAR_OF_SLIDE) used to overlap most of
+// topsyPickMeadowSpot's intended right-side spawn range (SEEDPLOT_X+55 to
+// SEEDPLOT_X+295), so right-side attempts kept getting rejected far more
+// often than left-side ones despite the 65% right-bias -- meadow seeds
+// ended up landing left of the plot almost every time. Widening the world
+// (and moving the slide out to the new edge, see TOPSY_SPIRAL_SLIDE_X)
+// pushes that clearance zone well clear of the meadow's whole right-side
+// range instead of trying to re-tune the spawn formula around it.
+const TOPSYTURVY_WIDTH = 3170;
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -19255,12 +19267,17 @@ function topsySpiralSlideUnlocked() {
 // trick (same two-pass "draw the far side, then the player, then the
 // near side" idea drawMoleHoleRootsOverHole already uses for its own
 // roots-reaching-into-the-hole layering).
-const TOPSY_SPIRAL_ROOM_RIDE_MS = 2400; // how long the actual spiral descent takes
+// CONFIRMED CHANGE ("i want the slide to look kind of like this [a real
+// playground spiral slide, coiled around a central post] but longer/more
+// spirals, and see the inside of the trunk around it"): longer ride, more
+// turns, taller descent to give each turn real room to breathe.
+const TOPSY_SPIRAL_ROOM_RIDE_MS = 3600; // how long the actual spiral descent takes
 const TOPSY_SPIRAL_ROOM_POP_MS = 400; // a short beat at the bottom (a little radiating "pop") before the real scene transition fires
 const TOPSY_SPIRAL_ROOM_TOTAL_MS = TOPSY_SPIRAL_ROOM_RIDE_MS + TOPSY_SPIRAL_ROOM_POP_MS;
-const TOPSY_SPIRAL_ROOM_LOOPS = 4; // full turns completed over the whole ride
-const TOPSY_SPIRAL_ROOM_RADIUS = 44;
-const TOPSY_SPIRAL_ROOM_HEIGHT = 640; // total local "depth" descended -- purely a room-local unit, unrelated to world y
+const TOPSY_SPIRAL_ROOM_LOOPS = 6.5; // full turns completed over the whole ride -- was 4
+const TOPSY_SPIRAL_ROOM_RADIUS = 52; // orbit radius of the trough's own centerline around the central post
+const TOPSY_SPIRAL_ROOM_TROUGH_HALF_W = 19; // half-width of the trough itself (its inner-to-outer edge), separate from the orbit radius
+const TOPSY_SPIRAL_ROOM_HEIGHT = 1150; // total local "depth" descended -- purely a room-local unit, unrelated to world y
 let topsySpiralSlideRoom = { active: false, t: 0 };
 
 function updateTopsySpiralSlide(deltaTime) {
@@ -19328,21 +19345,58 @@ function drawTopsySpiralSlide(camX) {
   }
 }
 
-// CONFIRMED ADD -- the actual "inside the tree" room: a fixed-camera
-// full-screen takeover (same shape as drawTopsyChefInterior) showing the
-// player spiraling all the way down a central coil. The player orbits a
-// fixed screen x/y (the coil scrolls past THEM, not the other way
-// around, same "camera follows the player" feel any side-scroller
-// uses) -- occlusion between the player and the coil is real: every
-// point along the whole spiral path is classified as "near side"
-// (drawn AFTER the player, so it visibly passes in front) or "far side"
-// (drawn BEFORE), based on the exact same cos(angle) sign the player's
-// own current position uses, same two-pass "far layer, subject, near
-// layer" trick drawMoleHoleRootsOverHole already uses for the mole
-// hole's own roots-reaching-into-the-hole layering.
+// CONFIRMED CHANGE ("i want the slide to look kiiind of like this [a real
+// playground spiral slide -- a solid molded trough coiled around a
+// central post] but longer/more spirals, and see the inside of the trunk
+// around it. so we see player spiral around sometimes occluded until we
+// get out at the bottom"): rebuilt from a thin chain of dots into an
+// actual continuous trough (paired inner/outer edges filled as quads,
+// same "real ribbon with a raised lip" language the forest pool-slide
+// chute's own near-rail already uses) wound around a real central support
+// post, with more turns over a taller descent. Still a fixed-camera
+// full-screen takeover (same shape as drawTopsyChefInterior): the player
+// orbits a fixed screen x/y and the coil scrolls past them ("a side view
+// that moves down with the player as it slides down" -- from the
+// player's own frame this reads identically to a camera panning down
+// with them, since only the relative motion is visible).
+// CONFIRMED BUG FIX ("occlusion only happens when going behind the center
+// pole. not randomly on the outside on the spirals"): the first pass
+// classified every trough segment (and the player) as "near"/"far" off
+// cos(angle) -- the same value used for horizontal screen position -- so
+// the coil and player swapped which one drew on top twice per loop
+// regardless of whether that segment was anywhere near the post -- so the
+// coil and player swapped which one drew on top twice per loop even far
+// out at the edge of a turn, nowhere near the post itself.
+// CONFIRMED CHANGE ("have alternating of the spiral slide being occluded
+// and then not occluded by the center pole. again, like cushions in mole
+// hole"): restored the real two-pass far/subject/near split the mole
+// hole's own cushions use -- but keyed off sin(angle), the coil's actual
+// TOWARD/AWAY-from-camera depth, instead of cos(angle) (its left/right
+// screen position). sin(angle) is what genuinely alternates the coil
+// between passing in front of the post and behind it once per loop (a
+// real barber-pole stripe does exactly this); cos(angle) was alternating
+// on left/right position instead, which is why occlusion used to look
+// like it was happening randomly out on the open loops instead of only
+// right at the post. The player is inserted into whichever pass matches
+// their OWN current depth, so they always ride visibly on top of their
+// own local stretch of trough, and only the post itself (and, honestly,
+// an unrelated near-side loop if it genuinely is in front at that screen
+// position) can ever cover them.
+// CONFIRMED CHANGE ("make it look more like a slide though. this looks
+// like a ribbon or something"): the trough itself is chunkier now (wider,
+// far less pinching at the edge-on points) with a real raised-wall
+// cross-section -- inner and outer lip walls with their own height and
+// shading, not just a flat colored strip -- so it reads as a molded
+// slide with actual depth instead of a painted ribbon glued to a circle.
+// CONFIRMED BUG FIX ("player is partly outside the slide on both [shots].
+// make sure player stays inside the slide"): the player's icon width
+// (26px) could exceed the trough's own foreshortened width at the
+// edge-on points (as narrow as ~24px) -- widened the trough's minimum
+// width and shrunk the icon a little so there's always real margin on
+// both sides, at every point along the ride.
 function drawTopsySpiralSlideRoom(camX) {
   const cx = canvas.width / 2;
-  const playerScreenY = canvas.height * 0.48;
+  const playerScreenY = canvas.height * 0.46;
   const t = topsySpiralSlideRoom.t;
   const rideP = Math.min(1, t / TOPSY_SPIRAL_ROOM_RIDE_MS);
   const depth = rideP * TOPSY_SPIRAL_ROOM_HEIGHT;
@@ -19365,71 +19419,167 @@ function drawTopsySpiralSlideRoom(camX) {
     ctx.stroke();
   }
 
-  // the spiral path itself, sampled into beads -- lets the two-pass
-  // far/near split work per-point instead of needing one continuous
-  // stroke to somehow change layering mid-path
-  const SEGMENTS = 90;
-  const beads = [];
+  // the central support post the whole coil winds around (matches the
+  // reference image's own central pole). Fixed on screen at cx, full
+  // height -- the one part of this "room" that never scrolls, same as a
+  // real post would look from a camera that's otherwise tracking the
+  // descent.
+  const poleHalfW = 15;
+  const drawPole = () => {
+    const poleGrad = ctx.createLinearGradient(cx - poleHalfW, 0, cx + poleHalfW, 0);
+    poleGrad.addColorStop(0, "#241608");
+    poleGrad.addColorStop(0.45, "#4a3018");
+    poleGrad.addColorStop(0.55, "#5a3c20");
+    poleGrad.addColorStop(1, "#20130a");
+    ctx.fillStyle = poleGrad;
+    ctx.fillRect(cx - poleHalfW, 0, poleHalfW * 2, canvas.height);
+    ctx.strokeStyle = "rgba(15,9,4,0.35)";
+    ctx.lineWidth = 1;
+    for (let gy2 = -20; gy2 < canvas.height + 20; gy2 += 26) {
+      const gyy = ((gy2 - depth * 0.15) % (canvas.height + 40) + canvas.height + 40) % (canvas.height + 40) - 20;
+      ctx.beginPath();
+      ctx.moveTo(cx - poleHalfW + 2, gyy);
+      ctx.lineTo(cx + poleHalfW - 2, gyy + 6);
+      ctx.stroke();
+    }
+  };
+
+  // the trough itself -- sampled into a strip of paired inner/outer edge
+  // points (inner = toward the post, outer = away from it), so each
+  // consecutive pair can be filled as a real quad. Width stays close to
+  // constant (a real molded trough doesn't visually collapse to a line),
+  // with just a light foreshortening at the edge-on points to keep the
+  // winding readable as one continuous coil -- never enough to pinch
+  // narrower than the player's own icon.
+  const SEGMENTS = 160;
+  const WALL_RISE = 7; // how tall the raised side walls read, in screen px
+  const troughHalfWAt = (orbitX) => TOPSY_SPIRAL_ROOM_TROUGH_HALF_W * (0.78 + 0.22 * Math.abs(orbitX));
+  const pts = [];
   for (let i = 0; i <= SEGMENTS; i++) {
     const segP = i / SEGMENTS;
     const segDepth = segP * TOPSY_SPIRAL_ROOM_HEIGHT;
     const segAngle = segP * TOPSY_SPIRAL_ROOM_LOOPS * Math.PI * 2;
     const screenY = playerScreenY + (segDepth - depth);
-    if (screenY < -20 || screenY > canvas.height + 20) continue;
-    const near = Math.cos(segAngle) >= 0;
-    // a little way out from the coil's own radius so it reads as a real
-    // tube wall, not a razor-thin wire
-    const wobble = Math.sin(segAngle * 1.7) * 3;
-    beads.push({
-      x: cx + Math.cos(segAngle) * (TOPSY_SPIRAL_ROOM_RADIUS + wobble),
-      y: screenY,
-      near,
-      shade: 0.55 + Math.cos(segAngle) * 0.35
+    const orbitX = Math.cos(segAngle);
+    const halfW = troughHalfWAt(orbitX);
+    pts.push({
+      i, y: screenY,
+      innerX: cx + orbitX * (TOPSY_SPIRAL_ROOM_RADIUS - halfW),
+      outerX: cx + orbitX * (TOPSY_SPIRAL_ROOM_RADIUS + halfW),
+      shade: 0.5 + orbitX * 0.4,
+      near: Math.sin(segAngle) >= 0
     });
   }
-  const drawBeads = (wantNear) => {
-    beads.forEach(b => {
-      if (b.near !== wantNear) return;
-      ctx.fillStyle = `rgba(${Math.round(200 * b.shade + 40)},${Math.round(190 * b.shade + 30)},${Math.round(235 * b.shade + 20)},0.9)`;
+  const drawTrough = (wantNear) => {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (a.near !== wantNear && b.near !== wantNear) continue;
+      if (Math.max(a.y, b.y) < -30 || Math.min(a.y, b.y) > canvas.height + 30) continue;
+      const shade = (a.shade + b.shade) / 2;
+      // floor of the channel -- a concave gradient across its width
+      // (darker at both edges, brightest a little off-center) so it
+      // reads as a real curved trough, not a flat painted strip
+      const floorGrad = ctx.createLinearGradient(a.innerX, 0, a.outerX, 0);
+      const rC = Math.round(150 * shade + 70), gC = Math.round(112 * shade + 50), bC = Math.round(66 * shade + 26);
+      const rE = Math.round(90 * shade + 45), gE = Math.round(66 * shade + 30), bE = Math.round(38 * shade + 16);
+      floorGrad.addColorStop(0, `rgb(${rE},${gE},${bE})`);
+      floorGrad.addColorStop(0.5, `rgb(${rC},${gC},${bC})`);
+      floorGrad.addColorStop(1, `rgb(${rE},${gE},${bE})`);
+      ctx.fillStyle = floorGrad;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 6.5, 0, Math.PI * 2);
+      ctx.moveTo(a.innerX, a.y);
+      ctx.lineTo(a.outerX, a.y);
+      ctx.lineTo(b.outerX, b.y);
+      ctx.lineTo(b.innerX, b.y);
+      ctx.closePath();
       ctx.fill();
-    });
+
+      // raised outer wall -- a real strip with height (offset upward by
+      // WALL_RISE), shaded as a shadowed side face, so the outer edge
+      // reads as a molded lip rather than just a darker line
+      ctx.fillStyle = `rgba(28,17,8,${0.55 * shade + 0.25})`;
+      ctx.beginPath();
+      ctx.moveTo(a.outerX, a.y);
+      ctx.lineTo(a.outerX, a.y - WALL_RISE);
+      ctx.lineTo(b.outerX, b.y - WALL_RISE);
+      ctx.lineTo(b.outerX, b.y);
+      ctx.closePath();
+      ctx.fill();
+      // raised inner wall -- catches more light (faces the viewer/post
+      // side), so it's a lighter warm tone rather than a shadow
+      ctx.fillStyle = `rgba(${rC + 20},${gC + 14},${bC + 6},${0.6 * shade + 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(a.innerX, a.y);
+      ctx.lineTo(a.innerX, a.y - WALL_RISE);
+      ctx.lineTo(b.innerX, b.y - WALL_RISE);
+      ctx.lineTo(b.innerX, b.y);
+      ctx.closePath();
+      ctx.fill();
+      // bright rim highlights along both raised top edges, like light
+      // catching polished, worn wood
+      ctx.strokeStyle = `rgba(255,238,200,${0.5 * shade})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(a.innerX, a.y - WALL_RISE);
+      ctx.lineTo(b.innerX, b.y - WALL_RISE);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,220,170,${0.32 * shade})`;
+      ctx.beginPath();
+      ctx.moveTo(a.outerX, a.y - WALL_RISE);
+      ctx.lineTo(b.outerX, b.y - WALL_RISE);
+      ctx.stroke();
+    }
   };
-  drawBeads(false); // far side of the coil, behind the player
 
   // the player's own mini-me icon, same simplified "rounded body + two
   // eyes" style the ant farm's shrunk-down icon uses -- real
   // player.x/y stay parked outside (see player.inTopsySpiralSlide),
-  // this is a purely local, self-contained representation.
-  const px = cx + Math.cos(playerAngle) * TOPSY_SPIRAL_ROOM_RADIUS;
+  // this is a purely local, self-contained representation. Clamped to
+  // the exact trough width at the player's own row, so it can never
+  // poke out past the walls it's supposedly riding inside of.
+  const playerOrbitX = Math.cos(playerAngle);
+  const playerNear = Math.sin(playerAngle) >= 0;
+  const playerHalfW = troughHalfWAt(playerOrbitX) - 3; // a little inset from the walls themselves
+  const rawPx = cx + playerOrbitX * TOPSY_SPIRAL_ROOM_RADIUS;
+  const px = Math.max(cx - playerHalfW, Math.min(cx + playerHalfW, rawPx));
   const py = playerScreenY;
-  const iconScale = 0.85 + Math.cos(playerAngle) * 0.15; // a touch bigger on the near side, smaller on the far side -- a cheap depth cue
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.scale(iconScale, iconScale);
-  ctx.fillStyle = "#7a78b8";
-  ctx.beginPath();
-  ctx.moveTo(-13, -17);
-  ctx.arcTo(13, -17, 13, 17, 5);
-  ctx.arcTo(13, 17, -13, 17, 5);
-  ctx.arcTo(-13, 17, -13, -17, 5);
-  ctx.arcTo(-13, -17, 13, -17, 5);
-  ctx.closePath();
-  ctx.fill();
-  [-5, 5].forEach(ex => {
-    ctx.fillStyle = "#ffffff";
+  const depthScale = 0.85 + playerOrbitX * 0.15; // a touch bigger on the near side, smaller on the far side -- a cheap depth cue
+  const fitScale = Math.min(1, (playerHalfW * 2 - 2) / 26); // never wider than the trough it's riding in, at this exact row
+  const iconScale = Math.max(0.35, depthScale * fitScale);
+  const drawPlayerIcon = () => {
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(iconScale, iconScale);
+    ctx.fillStyle = "#7a78b8";
     ctx.beginPath();
-    ctx.arc(ex, -6, 3.4, 0, Math.PI * 2);
+    ctx.moveTo(-13, -17);
+    ctx.arcTo(13, -17, 13, 17, 5);
+    ctx.arcTo(13, 17, -13, 17, 5);
+    ctx.arcTo(-13, 17, -13, -17, 5);
+    ctx.arcTo(-13, -17, 13, -17, 5);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#2a2a2a";
-    ctx.beginPath();
-    ctx.arc(ex, -6, 1.7, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.restore();
+    [-5, 5].forEach(ex => {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(ex, -6, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#2a2a2a";
+      ctx.beginPath();
+      ctx.arc(ex, -6, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  };
 
-  drawBeads(true); // near side of the coil, in front of the player
+  // the real two-pass layering, same shape drawMoleHoleRootsOverHole
+  // uses for its own cushions: far coil, post, [player inserted on
+  // whichever side matches its own depth], near coil.
+  drawTrough(false);
+  drawPole();
+  if (!playerNear) drawPlayerIcon();
+  drawTrough(true);
+  if (playerNear) drawPlayerIcon();
 
   // a short radiating "pop" beat once the ride reaches the bottom,
   // right before the real scene transition fires -- a beat of payoff
@@ -22052,14 +22202,15 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
     ctx.stroke();
   }
 
-  // the full rope span, faint, so the track reads even where the basket
-  // currently isn't
-  ctx.strokeStyle = "rgba(138,114,80,0.55)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(railX, topY);
-  ctx.lineTo(railX, bottomY);
-  ctx.stroke();
+  // CONFIRMED BUG FIX ("i dont want the string of the basket to just stay
+  // there below the basket while the basket is above it. it goes with the
+  // basket"): this used to also draw the FULL rope span, top anchor to
+  // bottom anchor, every frame regardless of where the basket actually
+  // was -- so a long faint line stayed visible reaching well past the
+  // basket's own real position instead of looking like it belonged to it.
+  // Removed entirely; the short rope handle drawn below (railX/basketY to
+  // bx/basketY) is the only cord now, and it moves with the basket every
+  // frame since it's derived from the basket's own current position.
 
   // one continuous loop: up carrying a mushroom, back down carrying a
   // tomato, eased in/out at each end rather than linear
