@@ -4777,7 +4777,7 @@ function applyPhysics(){
           // TOPSY_MEADOW_SCATTER_LIFE).
           for (let k = 0; k < 16; k++) {
             topsyMeadowScatterBurst.push({
-              age: -Math.random() * 260, // negative age = still-pending spawn delay
+              age: -Math.random() * 450, // negative age = still-pending spawn delay -- CONFIRMED CHANGE ("sloooow it all down"): wider stagger window (was 260) for a lazier release
               angle: Math.random() * Math.PI * 2,
               dist: 10 + Math.random() * 22,
               vy: -(10 + Math.random() * 10)
@@ -18973,14 +18973,21 @@ const topsyDandelionHeadPlatform = {
 // little when you land on them"): how long the post-landing jitter
 // plays, in ms -- see drawTopsyWindSeedPlot's strand loop for the decay
 // math itself.
-const TOPSY_DANDELION_HEAD_SHUFFLE_DURATION = 450;
+// CONFIRMED CHANGE ("sloooow it all down"): stretched out (was 450) to
+// match the slower decay envelope in the strand loop so the jitter has
+// room to fully ease out instead of getting cut off still partway
+// visible.
+const TOPSY_DANDELION_HEAD_SHUFFLE_DURATION = 900;
 // CONFIRMED CHANGE ("3 jumps that get visibly larger each jump and
 // thennnn a slow blow out of the seeds, and then the slow grow"): was a
 // single flat bounce height -- now a real 3-beat build-up, each entry a
 // visibly bigger kick than the last (a normal jump is vy=12; even the
 // 3rd bounce here stays a little under that). See the landing block in
 // applyPhysics for where the streak is tracked and this is applied.
-const TOPSY_DANDELION_BOUNCE_VYS = [6, 8.5, 11];
+// CONFIRMED CHANGE ("the bounce is too intense... sloooow it all down"):
+// toned down across the board -- softer kicks that still visibly
+// escalate, without the jarring snap the original set had.
+const TOPSY_DANDELION_BOUNCE_VYS = [4, 5.5, 7];
 // how long a gap since the last bounce on the head is still considered
 // "the same streak" -- longer than a single bounce's own up-down cycle
 // takes, so a normal continuous bouncing rhythm never accidentally
@@ -23285,14 +23292,21 @@ function drawTopsyWindSeedPlot(camX) {
       // (stamped in applyPhysics' shared landing check) -- each strand
       // gets its own random phase/frequency so the whole puffball reads
       // as genuinely jostled rather than one uniform pulse.
+      // CONFIRMED CHANGE ("the bounce is too intense. it shakes too much
+      // and too quickly it is jarring" / "sloooow it all down"): the
+      // jitter was oscillating fast and snapping hard right at landing --
+      // slowed way down (lower per-strand frequency, slower decay so it
+      // eases out gently instead of cutting off sharply) and toned down
+      // (roughly a third of the old angle/length swing) so it reads as a
+      // soft settle, not a shake.
       const sinceHeadLand = performance.now() - (topsyDandelionHeadPlatform.lastLandTime || -1e9);
       const headShuffling = sinceHeadLand >= 0 && sinceHeadLand < TOPSY_DANDELION_HEAD_SHUFFLE_DURATION;
-      const headShuffleEnv = headShuffling ? Math.exp(-sinceHeadLand / 130) : 0;
+      const headShuffleEnv = headShuffling ? Math.exp(-sinceHeadLand / 320) : 0;
       for (let i = 0; i < strands; i++) {
         const a = (i / strands) * Math.PI * 2 + i * 0.29;
         const len = headR * (0.85 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 17) * 0.22);
-        const angleJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.05 + pseudoRandom(i * 3.1) * 0.05) + i * 1.7) * 0.4;
-        const lenJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.06 + pseudoRandom(i * 5.3) * 0.05) + i * 2.3) * headR * 0.18;
+        const angleJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.018 + pseudoRandom(i * 3.1) * 0.018) + i * 1.7) * 0.14;
+        const lenJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.02 + pseudoRandom(i * 5.3) * 0.018) + i * 2.3) * headR * 0.06;
         const ja = a + angleJitter, jlen = len + lenJitter;
         const tx = headCx + Math.cos(ja) * jlen, ty = headCy + Math.sin(ja) * jlen * 0.94;
         ctx.strokeStyle = "rgba(240,238,225,0.85)";
@@ -23922,7 +23936,7 @@ function drawTopsyMeadowScatterBurst(camX) {
   topsyMeadowScatterBurst.forEach(s => {
     if (s.age < 0) return; // still in its own staggered spawn delay -- not out yet
     const p = s.age / TOPSY_MEADOW_SCATTER_LIFE;
-    const outEased = 1 - (1 - Math.min(1, p * 2.2)) * (1 - Math.min(1, p * 2.2)); // quick outward pop, then a long slow drift
+    const outEased = 1 - (1 - Math.min(1, p * 1.4)) * (1 - Math.min(1, p * 1.4)); // CONFIRMED CHANGE ("sloooow it all down"): a gentler, more gradual outward pop (was p*2.2) instead of a quick flick
     const riseY = -Math.max(0, p - 0.15) * (34 + Math.abs(s.vy) * 0.5);
     const px = headCx + Math.cos(s.angle) * s.dist * outEased;
     const py = headCy + Math.sin(s.angle) * s.dist * outEased * 0.7 + riseY;
