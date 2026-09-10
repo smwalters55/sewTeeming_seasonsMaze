@@ -3874,7 +3874,16 @@ function applyPhysics(){
     // same "dedicated multiplier for one specific flight" shape as the
     // cases just above, so there's real hang time to steer into a lower
     // chunk instead of dropping straight past it.
-    ((currentScene === "topsyturvy" && player.topsyInverted && player.jumping) ? TOPSY_INVERT_DIVE_GRAVITY : 0.8))));
+    ((currentScene === "topsyturvy" && player.topsyInverted && player.jumping) ? TOPSY_INVERT_DIVE_GRAVITY :
+    // CONFIRMED CHANGE ("decrease the speed of the jump i dont like this
+    // wildly fast hops that occur"): lowering the dandelion bounce's own
+    // vy earlier made each hop gentler in HEIGHT but, under ordinary
+    // gravity, also shorter and snappier in TIME -- a lower launch speed
+    // reaches the same fraction of its arc faster, so it read as quick
+    // twitchy hops rather than a slow trampoline. A dedicated lighter
+    // gravity while airborne near the dandelion stretches the whole arc
+    // out in time without needing a taller (more "intense") bounce.
+    ((currentScene === "topsyturvy" && player.jumping && !player.topsyInverted && topsyWindSeedPlot.grown && Math.abs(player.x - TOPSY_SEEDPLOT_X) < 160) ? TOPSY_DANDELION_BOUNCE_GRAVITY : 0.8)))));
 
   // ground collision -- with a special case for the sandbox trampoline:
   // landing on its mat while genuinely falling launches the player back
@@ -19010,6 +19019,14 @@ const TOPSY_DANDELION_BOUNCE_VYS = [4, 5.5, 7];
 // takes, so a normal continuous bouncing rhythm never accidentally
 // resets, but wandering off and coming back later does.
 const TOPSY_DANDELION_BOUNCE_STREAK_GAP = 900;
+// CONFIRMED CHANGE ("decrease the speed of the jump i dont like this
+// wildyl fast hops that occur"): lowering the bounce vys above (in the
+// softening pass) made each hop gentler in height, but under the normal
+// 0.8 gravity that also made the whole up-down cycle finish FASTER
+// (cycle time = 2*vy/gravity), which read as quick twitchy hopping. A
+// lighter gravity applied only while airborne near the dandelion
+// stretches the arc out in time without changing how high it goes.
+const TOPSY_DANDELION_BOUNCE_GRAVITY = 0.32;
 
 // CONFIRMED ADD ("blowing them would scatter seeds that then make more
 // small dandelions nearby so you make a little dandelion meadow kinda
