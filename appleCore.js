@@ -21414,21 +21414,31 @@ function drawTopsyTurvyTree(camX, t) {
     for (let i = 1; i < rightPts.length; i++) ctx.lineTo(rightPts[i].x, rightPts[i].y);
     ctx.stroke();
 
-    // root-flare base -- a few soft, unstroked, rounded bumps spreading
-    // out from the trunk's bottom edge, blending it into the canopy
-    // instead of ending in one hard straight line. No outline on these
-    // so they read as a soft transition, not another sharp edge.
+    // CONFIRMED CHANGE ("make the tree roots more connected to the
+    // trunk, not have this sharp line at that part of the trunk where
+    // it looks pasted on"): a soft, wide, semi-transparent collar first
+    // -- eases the hard brown-to-green boundary into a gradient instead
+    // of a crisp seam, same "blend before you detail" idea the shaded
+    // trunk strip already uses.
+    ctx.fillStyle = "rgba(74,50,34,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(sx, leftPts[0].y + 4 * s, baseHalfW * 2.2, 7 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // root-flare base -- CONFIRMED CHANGE: the old flares were narrow
+    // pointed lens shapes tapering to a point at their tip, which read
+    // as separate spikes stuck onto the canopy rather than a real root
+    // mass merging into it. Replaced with more, wider, round overlapping
+    // bumps (real ellipses, no pointed tips) sitting lower and closer
+    // together so they genuinely fuse into one continuous mass instead
+    // of reading as individual triangles.
     ctx.fillStyle = "#4a3222";
-    [-0.85, -0.3, 0.3, 0.85].forEach((fx, fi) => {
-      const bx = sx + fx * baseHalfW * 1.3;
-      const flareLen = 6 * s + pseudoRandom(trunkSeed + fi * 23.1) * 4 * s;
-      // extends toward larger screen-y (down, into the canopy/ground)
-      // from the trunk's base row, not up away from it
+    [-0.9, -0.55, -0.18, 0.18, 0.55, 0.9].forEach((fx, fi) => {
+      const bx = sx + fx * baseHalfW * 1.5;
+      const bumpR = (5.5 + pseudoRandom(trunkSeed + fi * 23.1) * 3.5) * s;
+      const dip = (3 + pseudoRandom(trunkSeed + fi * 31.7) * 3) * s;
       ctx.beginPath();
-      ctx.moveTo(leftPts[0].x + (rightPts[0].x - leftPts[0].x) * ((fx + 1) / 2 - 0.12), leftPts[0].y);
-      ctx.quadraticCurveTo(bx, leftPts[0].y + flareLen * 0.6, bx, leftPts[0].y + flareLen);
-      ctx.quadraticCurveTo(bx, leftPts[0].y + flareLen * 0.6, leftPts[0].x + (rightPts[0].x - leftPts[0].x) * ((fx + 1) / 2 + 0.12), leftPts[0].y);
-      ctx.closePath();
+      ctx.ellipse(bx, leftPts[0].y + dip, bumpR, bumpR * 0.75, 0, 0, Math.PI * 2);
       ctx.fill();
     });
 
