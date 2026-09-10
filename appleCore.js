@@ -57,6 +57,49 @@ const lowfog = {
    ====================================================== */
 const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false, downJustPressed:false };
 
+// CONFIRMED BUG FIX ("this is still happening wtf didnt you fix this" --
+// screenshotted the player stuck tilted and floating in mid-air in the
+// forest): every debug spawn cheat below only ever reset a handful of
+// position/physics fields (x/y/vx/vy/jumping/usedDoubleJump/launched),
+// never the many separate "mode lock" flags scattered all over the game
+// (onFan, onPendulum, onBallPitLadder, onFungusPulleyRide, topsyInverted,
+// and so on -- applyPhysics early-returns for most of these, see its own
+// block of `if (player.onX) return;` checks). Testing one mechanic, then
+// jumping to a different debug spawn without ever cleanly finishing/
+// leaving the first one, could leave a stale flag from the PREVIOUS
+// mechanic still true in the new scene: frozen out of normal gravity
+// (the "floating" part, since applyPhysics returns early before gravity
+// ever runs) and, if that same flag also feeds the sprite's own tilt sum
+// (see playerVisualRotation/totalTilt further down), visibly rotated
+// too, exactly matching the screenshot. Every cheat below now calls this
+// first, so hopping between any of them always starts from a genuinely
+// clean slate regardless of what was being tested right before.
+function resetAllPlayerModeFlags() {
+  player.onSeesawBounce = false;
+  player.onFan = false;
+  player.onFan2 = false;
+  player.onPendulum = false;
+  player.onSlinky = false;
+  player.onBalanceBall = false;
+  player.onBallPitLadder = false;
+  player.inBallPit = false;
+  player.onBallPitRim = false;
+  player.onTopsyHouseLadder = false;
+  player.onFungusPulleyRide = false;
+  player.inAntFarm = false;
+  player.inTopsySpiralSlide = false;
+  player.topsyInverted = false;
+  player.topsyRidingStack = false;
+  player.topsyDandelionBounceFlight = false;
+  player.mushroomHopActive = false;
+  player.launchSteerable = false;
+  poolDive.active = false;
+  poolSlideExit.active = false;
+  topsySpiralSlideRoom.active = false;
+  topsySpiralSlideRoom.t = 0;
+  fungusPulleyRide.t = 0;
+}
+
 window.addEventListener("keydown", e => {
   if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," ","Control","Tab"].includes(e.key)) {
     e.preventDefault();
@@ -106,6 +149,7 @@ window.addEventListener("keydown", e => {
   // can't leave the player stuck mid-air or mid-fade from wherever they
   // were before pressing it.
   if ((e.key==="h" || e.key==="H") && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "autumn";
     player.x = 400;
     player.y = 0;
@@ -125,6 +169,7 @@ window.addEventListener("keydown", e => {
   // walking there from spring every time. Same full state-reset shape as
   // Shift+H above, just landing in a different scene/spot.
   if ((e.key==="s" || e.key==="S") && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "sandbox";
     player.x = 200;
     player.y = 0;
@@ -164,6 +209,7 @@ window.addEventListener("keydown", e => {
   // knock the beehive first -- doesn't touch honeyScoops if you already
   // have some, so it won't quietly overwrite a real in-progress test.
   if ((e.key==="t" || e.key==="T") && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "spring";
     player.x = GRAFT_TREE_X.plum - player.width / 2;
     player.y = 0;
@@ -198,6 +244,7 @@ window.addEventListener("keydown", e => {
   // bridge here, same "don't leave other real-progression assumptions
   // broken" fix already applied to the sandbox/graft debug spawns above.
   if ((e.key==="p" || e.key==="P") && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "forest";
     forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
     forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
@@ -222,7 +269,8 @@ window.addEventListener("keydown", e => {
   // time. Same full state-reset shape as the other debug spawns above,
   // including auto-completing the river bridge -- the fungus tree sits
   // past it, same reasoning as the Shift+P rock-ledge spawn just above.
-  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.ctrlKey && !e.repeat) {
+  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "forest";
     forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
     forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
@@ -258,6 +306,7 @@ window.addEventListener("keydown", e => {
   // replaces it rather than living alongside it -- same full state-reset
   // shape as the other debug spawns.
   if ((e.key==="f" || e.key==="F") && e.shiftKey && e.ctrlKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "topsyturvy";
     topsyWindSeedPlot.dug = true;
     topsyWindSeedPlot.planted = true;
@@ -325,7 +374,16 @@ window.addEventListener("keydown", e => {
   // begin with, capped to the same 1 every other windSeed pickup gives.
   // Also dropped pumpkin per direct request -- it read as too obviously
   // "not the one" next to a river-crossing puzzle anyway.
-  if ((e.key==="k" || e.key==="K") && e.shiftKey && !e.repeat) {
+  // CONFIRMED BUG FIX ("the k is another windows command!! just re-use
+  // f pls"): Shift+K collided with a real Windows binding, same class of
+  // problem the Ctrl+Shift+F cheat's own comment already flagged for
+  // Ctrl+Shift+S/Shift+D. Every plain-Shift and Ctrl+Shift F combo is
+  // already spoken for by the other forest spawns above, so this one
+  // reuses F again with the one modifier combo still free: Alt+Shift+F --
+  // altKey isn't checked anywhere else in this file, so there's no
+  // collision risk here either.
+  if ((e.key==="f" || e.key==="F") && e.altKey && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
     currentScene = "forest";
     Object.keys(inventory).forEach(k => delete inventory[k]);
     inventoryOrder = [];
