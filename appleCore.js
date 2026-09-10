@@ -19296,13 +19296,34 @@ function topsyMeadowSeedRootPlatforms(seed) {
 // none can be found after a handful of tries (respects spacing from the
 // well, the big dandelion's own base, the world edges, and every other
 // meadow dandelion already planted).
+// CONFIRMED BUG FIX ("why are all the small dandelions to the left of
+// the big one. make sure they are on both sides" -- reported again after
+// an earlier width-only fix): a flat 65% right / 35% left coin flip
+// LOOKS balanced in isolation, but the two windows it draws from aren't
+// the same size (the right window, toward the open world edge, is wider
+// than the narrower gap to the well on the left) -- so in real play,
+// where spots fill up one at a time and each new pick has to dodge every
+// already-planted one (TOPSY_MEADOW_MIN_SPACING), whichever side gets a
+// slightly luckier run of coin flips early on can pack in first and
+// starve the other side of room for the rest of the session, reading as
+// "they're all on one side" even though the coin itself isn't biased
+// that way. Fixed by making the SIDE CHOICE actively track which side
+// currently has fewer (both already-grown seeds AND still-blooming
+// pending ones, so a burst of blow-outs in quick succession doesn't all
+// pile onto the same side before any of them finish revealing) --
+// strongly prefers topping up the emptier side, with a small chance of
+// still trying the fuller one so it doesn't read as a robotic strict
+// alternation either.
 function topsyPickMeadowSpot() {
+  const sideCounts = topsyMeadowSeeds.map(s => s.x).concat(topsyMeadowPending.map(p => p.x))
+    .reduce((acc, x) => { if (x > TOPSY_SEEDPLOT_X) acc.right++; else acc.left++; return acc; }, { left: 0, right: 0 });
+  const preferRight = sideCounts.right <= sideCounts.left;
   for (let attempt = 0; attempt < 10; attempt++) {
-    // favors the open ground to the right of the plot (toward the world
-    // edge) but also allows the narrower gap between the plot and the
-    // well, so the meadow can fill in on either side rather than only
-    // ever spreading one direction.
-    const dx = Math.random() < 0.65
+    // strongly favors whichever side is currently emptier (85% of
+    // attempts), with the earlier "open ground toward the world edge is
+    // roomier than the well-side gap" preference only breaking ties.
+    const goRight = Math.random() < 0.85 ? preferRight : !preferRight;
+    const dx = goRight
       ? 55 + Math.random() * 240
       : -(50 + Math.random() * 180);
     const x = TOPSY_SEEDPLOT_X + dx;
@@ -19311,6 +19332,7 @@ function topsyPickMeadowSpot() {
     if (Math.abs(x - TOPSY_SEEDPLOT_X) < TOPSY_MEADOW_CLEAR_OF_PLOT) continue;
     if (Math.abs(x - TOPSY_SPIRAL_SLIDE_X) < TOPSY_MEADOW_CLEAR_OF_SLIDE) continue;
     if (topsyMeadowSeeds.some(s => Math.abs(s.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
+    if (topsyMeadowPending.some(p => Math.abs(p.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
     return x;
   }
   return null;
@@ -19359,8 +19381,8 @@ function topsySpiralSlideUnlocked() {
 // playground spiral slide, coiled around a central post] but longer/more
 // spirals, and see the inside of the trunk around it"): longer ride, more
 // turns, taller descent to give each turn real room to breathe.
-const TOPSY_SPIRAL_ROOM_RIDE_MS = 3600; // how long the actual spiral descent takes
-const TOPSY_SPIRAL_ROOM_POP_MS = 400; // a short beat at the bottom (a little radiating "pop") before the real scene transition fires
+const TOPSY_SPIRAL_ROOM_RIDE_MS = 7200; // how long the actual spiral descent takes -- CONFIRMED CHANGE ("slow down the sliding a good amount"): doubled from 3600
+const TOPSY_SPIRAL_ROOM_POP_MS = 700; // the bottom "pop out and slide off" beat before the real scene transition fires -- widened from 400 to give the new exit-slide motion (see drawTopsySpiralSlideRoom's own pop-beat comment) room to actually read
 const TOPSY_SPIRAL_ROOM_TOTAL_MS = TOPSY_SPIRAL_ROOM_RIDE_MS + TOPSY_SPIRAL_ROOM_POP_MS;
 const TOPSY_SPIRAL_ROOM_LOOPS = 6.5; // full turns completed over the whole ride -- was 4
 const TOPSY_SPIRAL_ROOM_RADIUS = 52; // orbit radius of the trough's own centerline around the central post
@@ -19424,13 +19446,6 @@ function drawTopsySpiralSlide(camX) {
   });
   ctx.restore();
 
-  if (isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 40, 20, 20)) {
-    ctx.fillStyle = "#3a2a4a";
-    ctx.font = "12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Press SPACE to slide down", sx, gy - 30);
-    ctx.textAlign = "left";
-  }
 }
 
 // CONFIRMED CHANGE ("i want the slide to look kiiind of like this [a real
@@ -19625,11 +19640,23 @@ function drawTopsySpiralSlideRoom(camX) {
   // this is a purely local, self-contained representation. Clamped to
   // the exact trough width at the player's own row, so it can never
   // poke out past the walls it's supposedly riding inside of.
+  // CONFIRMED BUG FIX ("it doesnt look like player is on the actual
+  // slide thing... player is more rotating around the center pole but
+  // not necessarily while fully on the slide"): rawPx here IS already
+  // the trough's own centerline at this orbitX (cx + orbitX*RADIUS) --
+  // exactly where the player is supposed to ride. The old clamp below
+  // clamped that around screen-CENTER (cx +/- playerHalfW, only a
+  // ~±16px band) instead of around rawPx itself, which silently pinned
+  // the player to a tiny orbit right on top of the post (post half-width
+  // is 15, almost exactly that same clamp band) no matter how far out to
+  // +-52ish the visible trough actually swung. Riding the real
+  // centerline directly -- no clamp needed here at all, the width
+  // containment the earlier "player partly outside the slide" fix
+  // wanted is entirely handled by iconScale/fitScale below instead.
   const playerOrbitX = Math.cos(playerAngle);
   const playerNear = Math.sin(playerAngle) >= 0;
   const playerHalfW = troughHalfWAt(playerOrbitX) - 3; // a little inset from the walls themselves
-  const rawPx = cx + playerOrbitX * TOPSY_SPIRAL_ROOM_RADIUS;
-  const px = Math.max(cx - playerHalfW, Math.min(cx + playerHalfW, rawPx));
+  const px = cx + playerOrbitX * TOPSY_SPIRAL_ROOM_RADIUS;
   const py = playerScreenY;
   const depthScale = 0.85 + playerOrbitX * 0.15; // a touch bigger on the near side, smaller on the far side -- a cheap depth cue
   const fitScale = Math.min(1, (playerHalfW * 2 - 2) / 26); // never wider than the trough it's riding in, at this exact row
@@ -19662,24 +19689,50 @@ function drawTopsySpiralSlideRoom(camX) {
 
   // the real two-pass layering, same shape drawMoleHoleRootsOverHole
   // uses for its own cushions: far coil, post, [player inserted on
-  // whichever side matches its own depth], near coil.
+  // whichever side matches its own depth], near coil. Skipped once the
+  // pop/exit beat below takes over (see its own comment) so the player
+  // doesn't draw twice -- once frozen in the trough, once flying out of
+  // it.
+  const ridingInTrough = t <= TOPSY_SPIRAL_ROOM_RIDE_MS;
   drawTrough(false);
   drawPole();
-  if (!playerNear) drawPlayerIcon();
+  if (ridingInTrough && !playerNear) drawPlayerIcon();
   drawTrough(true);
-  if (playerNear) drawPlayerIcon();
+  if (ridingInTrough && playerNear) drawPlayerIcon();
 
-  // a short radiating "pop" beat once the ride reaches the bottom,
-  // right before the real scene transition fires -- a beat of payoff
-  // instead of cutting the instant the descent ends
+  // CONFIRMED CHANGE ("lets see the player pop out at the bottom not
+  // just like stop mid air off the slide and then transition to forest
+  // like more visuallyy sliding off and out kind of"): the ride used to
+  // freeze the player dead at their exact final spiral position for the
+  // whole pop beat, just pulsing a static ring around them before
+  // cutting to the forest -- read as stopping mid-air, not actually
+  // finishing the slide. Now the pop beat carries the player onward,
+  // continuing to drift outward in the same direction they were last
+  // orbiting and further down past the bottom of the visible trough,
+  // eased in like real momentum carrying them clear of the tube --
+  // fading out only right at the very end, just before the scene
+  // transition fires. Drawn on top of the trough/post (not inside the
+  // two-pass layering above) since by this point they've genuinely slid
+  // out of it, not still riding inside.
   if (t > TOPSY_SPIRAL_ROOM_RIDE_MS) {
     const popP = Math.min(1, (t - TOPSY_SPIRAL_ROOM_RIDE_MS) / TOPSY_SPIRAL_ROOM_POP_MS);
+    const shoot = popP * popP; // ease-in -- slow to start, flings outward faster as it goes, like real exit momentum
+    const exitPx = px + playerOrbitX * shoot * 55;
+    const exitPy = py + shoot * canvas.height * 0.62;
+    const exitAlpha = popP < 0.7 ? 1 : 1 - (popP - 0.7) / 0.3;
+
     ctx.save();
-    ctx.globalAlpha = 1 - popP;
+    ctx.globalAlpha = exitAlpha;
+    ctx.translate(exitPx - px, exitPy - py);
+    drawPlayerIcon();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = (1 - popP) * exitAlpha;
     ctx.strokeStyle = "#fff2b0";
     ctx.lineWidth = 3 * (1 - popP);
     ctx.beginPath();
-    ctx.arc(px, py, 10 + popP * 60, 0, Math.PI * 2);
+    ctx.arc(exitPx, exitPy, 10 + popP * 50, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -22198,7 +22251,12 @@ function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
 // vignette -- a tiny round door set flush into the bark, warm light glowing
 // behind its window. Implies someone lives here without ever showing who.
 function drawTreeClimbDoor(sx, y, s, side, localHeight) {
-  const dx = sx + side * 14 * s, dy = y(localHeight);
+  // CONFIRMED CHANGE ("put that one between fungi not partly behind
+  // one pls"): pulled further from the trunk's centerline (14 -> 28) to
+  // clear the neighboring fungus clusters -- see the matching offset on
+  // this function's own call site / shadow ellipse in
+  // drawForestFungusClimb for the full reasoning.
+  const dx = sx + side * 22 * s, dy = y(localHeight);
   const w = 8 * s, h = 13 * s;
   // CONFIRMED FIX (found via debug-harness screenshots): the door's own
   // fill was too close in tone to the surrounding trunk bark (both dark
@@ -24909,6 +24967,18 @@ function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
     { frac: 0.30, color: "#3d2814" }, // dark brown band -- darkened slightly
     { frac: 0.14, color: "#1a0f06" }  // near-black attachment core -- darkened slightly
   ];
+  // CONFIRMED FIX ("i dont like the harsh diagonal lines at the left and
+  // right top. it could look a loooot better"): each lobe's flat base
+  // (the straight diameter edge closing the half-disc back from (rr,0)
+  // to (-rr,0)) used to close with a dead-straight line -- fine on its
+  // own, but with several lobes per cluster all rotated to different
+  // fan angles (see the angle math in drawForestFungusCap), those flat
+  // edges showed through as hard straight diagonal cuts wherever one
+  // lobe's base crossed in front of its neighbors, especially toward the
+  // outer/upper lobes of a cluster. Bowing that base into a shallow
+  // curve (instead of a straight closePath) turns every lobe into a
+  // fuller, softer shell shape with no straight edge left to read as a
+  // harsh line, however it happens to overlap its neighbors.
   bands.forEach((b, i) => {
     const rr = r * b.frac;
     ctx.fillStyle = b.color;
@@ -24931,6 +25001,7 @@ function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
       ctx.arc(0, 0, rr, Math.PI, 0, true);
       ctx.lineTo(rr, 0);
     }
+    ctx.quadraticCurveTo(0, rr * 0.22, -rr, 0);
     ctx.closePath();
     ctx.fill();
   });
@@ -25017,23 +25088,67 @@ function drawForestFungusClimb(camX) {
   // span) instead of just growing the vignettes again -- a genuinely
   // thicker trunk gives the vignettes real bark to sit in. See the
   // matching widen on the knot bumps/ridge lines/cap attach point below.
+  // CONFIRMED CHANGE ("make the trunk of the fungus tree better. more
+  // gnarled. i want it to feel mystical magical fairy tale like. not
+  // these straight lines"): each edge point now carries its own small
+  // seeded jitter on top of the existing in/out bow, and there are more
+  // of them (8 per side, was 6) so the extra irregularity actually has
+  // somewhere to show -- reads as a real weathered, twisted fairy-tale
+  // trunk instead of a smoothly bowed pipe. The very top point on each
+  // side is deliberately left un-jittered so the ridge-line clip and the
+  // canopy anchor above still line up cleanly with a tidy silhouette
+  // right at the join, same idea as before, just gnarlier everywhere
+  // below it.
   const TW = 1.7;
+  const gnarl = i => (pseudoRandom(seed + i * 4.1) - 0.5) * 16 * TW;
   const leftPts = [
-    { x: sx - 34 * TW, y: gy },
-    { x: sx - 24 * TW, y: gy - topHeight * 0.22 },
-    { x: sx - 30 * TW, y: gy - topHeight * 0.48 },
-    { x: sx - 20 * TW, y: gy - topHeight * 0.74 },
-    { x: sx - 15 * TW, y: gy - topHeight * 0.95 },
-    { x: sx - 10 * TW, y: gy - topHeight }
+    { x: sx - 34 * TW + gnarl(0), y: gy },
+    { x: sx - 22 * TW + gnarl(1), y: gy - topHeight * 0.16 },
+    { x: sx - 31 * TW + gnarl(2), y: gy - topHeight * 0.34 },
+    { x: sx - 18 * TW + gnarl(3), y: gy - topHeight * 0.5 },
+    { x: sx - 26 * TW + gnarl(4), y: gy - topHeight * 0.66 },
+    { x: sx - 16 * TW + gnarl(5), y: gy - topHeight * 0.8 },
+    { x: sx - 12 * TW + gnarl(6) * 0.5, y: gy - topHeight * 0.93 },
+    { x: sx - 9 * TW, y: gy - topHeight }
   ];
   const rightPts = [
-    { x: sx + 10 * TW, y: gy - topHeight },
-    { x: sx + 16 * TW, y: gy - topHeight * 0.94 },
-    { x: sx + 19 * TW, y: gy - topHeight * 0.72 },
-    { x: sx + 27 * TW, y: gy - topHeight * 0.46 },
-    { x: sx + 22 * TW, y: gy - topHeight * 0.2 },
-    { x: sx + 34 * TW, y: gy }
+    { x: sx + 9 * TW, y: gy - topHeight },
+    { x: sx + 13 * TW + gnarl(7) * 0.5, y: gy - topHeight * 0.93 },
+    { x: sx + 17 * TW + gnarl(8), y: gy - topHeight * 0.8 },
+    { x: sx + 28 * TW + gnarl(9), y: gy - topHeight * 0.66 },
+    { x: sx + 19 * TW + gnarl(10), y: gy - topHeight * 0.5 },
+    { x: sx + 30 * TW + gnarl(11), y: gy - topHeight * 0.34 },
+    { x: sx + 21 * TW + gnarl(12), y: gy - topHeight * 0.16 },
+    { x: sx + 34 * TW + gnarl(13), y: gy }
   ];
+
+  // CONFIRMED FIX ("the vertical lines on it also poke out at the top of
+  // it"): the ridge lines below used to be drawn from their own
+  // independent formula, which didn't actually track the silhouette
+  // above -- fine through the wide lower/mid trunk, but once the real
+  // outline narrowed sharply near the top (see leftPts/rightPts' own
+  // tight top points) the ridges' own reach no longer matched, so they
+  // visibly poked out past the bark's own edge. Building the outline as
+  // a reusable path function and clipping the ridge lines (and the new
+  // moss patches) to it guarantees they can never draw outside the
+  // actual silhouette again, no matter how the taper/jitter above gets
+  // tuned later.
+  const buildTrunkOutline = () => {
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let i = 1; i < leftPts.length; i++) {
+      const mx = (leftPts[i - 1].x + leftPts[i].x) / 2, my = (leftPts[i - 1].y + leftPts[i].y) / 2;
+      ctx.quadraticCurveTo(leftPts[i - 1].x, leftPts[i - 1].y, mx, my);
+    }
+    ctx.lineTo(leftPts[leftPts.length - 1].x, leftPts[leftPts.length - 1].y);
+    for (let i = 0; i < rightPts.length; i++) {
+      const prev = i === 0 ? leftPts[leftPts.length - 1] : rightPts[i - 1];
+      const mx = (prev.x + rightPts[i].x) / 2, my = (prev.y + rightPts[i].y) / 2;
+      ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
+      ctx.lineTo(rightPts[i].x, rightPts[i].y);
+    }
+    ctx.closePath();
+  };
 
   const trunkGrad = ctx.createLinearGradient(sx - 30 * TW, 0, sx + 30 * TW, 0);
   trunkGrad.addColorStop(0, "#241a11");
@@ -25041,42 +25156,66 @@ function drawForestFungusClimb(camX) {
   trunkGrad.addColorStop(0.6, "#5a4128");
   trunkGrad.addColorStop(1, "#201710");
   ctx.fillStyle = trunkGrad;
-  ctx.beginPath();
-  ctx.moveTo(leftPts[0].x, leftPts[0].y);
-  for (let i = 1; i < leftPts.length; i++) {
-    const mx = (leftPts[i - 1].x + leftPts[i].x) / 2, my = (leftPts[i - 1].y + leftPts[i].y) / 2;
-    ctx.quadraticCurveTo(leftPts[i - 1].x, leftPts[i - 1].y, mx, my);
-  }
-  ctx.lineTo(leftPts[leftPts.length - 1].x, leftPts[leftPts.length - 1].y);
-  for (let i = 0; i < rightPts.length; i++) {
-    ctx.lineTo(rightPts[i].x, rightPts[i].y);
-  }
-  ctx.closePath();
+  buildTrunkOutline();
   ctx.fill();
 
-  // a couple of small knot/burl bumps -- fixed positions (seeded), reads
-  // as real bark character rather than a smooth cylinder
+  ctx.save();
+  buildTrunkOutline();
+  ctx.clip();
+
+  // a handful of small knot/burl bumps -- fixed positions (seeded),
+  // reads as real bark character rather than a smooth cylinder. One more
+  // than before, sizes varied a touch more, for a busier/older-looking
+  // trunk to match the gnarlier silhouette above.
   ctx.fillStyle = "rgba(20,14,8,0.55)";
-  [0.32, 0.68].forEach((t, i) => {
-    const kx = sx + (i === 0 ? -19 : 21) * TW;
+  [[0.22, -19, 1], [0.5, 23, 0.8], [0.72, -24, 1.15]].forEach(([t, ox, sc]) => {
+    const kx = sx + ox * TW;
     const ky = gy - topHeight * t;
     ctx.beginPath();
-    ctx.ellipse(kx, ky, 6 * TW, 4.5 * TW, i === 0 ? -0.4 : 0.4, 0, Math.PI * 2);
+    ctx.ellipse(kx, ky, 6 * TW * sc, 4.5 * TW * sc, ox < 0 ? -0.4 : 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // CONFIRMED ADD ("i want it to feel mystical magical fairy tale
+  // like"): a couple of faint mossy patches, soft-edged via radial
+  // gradient rather than a hard-outlined blob, so the ancient trunk
+  // reads as a little enchanted/overgrown rather than plain bark.
+  // Deliberately subtle (low peak alpha) -- an accent, not a texture
+  // that competes with the climb's own mushroom caps.
+  [[0.12, -14, 20], [0.58, 25, 16], [0.85, -10, 14]].forEach(([t, ox, r]) => {
+    const mx = sx + ox * TW, my = gy - topHeight * t;
+    const mossGrad = ctx.createRadialGradient(mx, my, 0, mx, my, r * TW);
+    mossGrad.addColorStop(0, "rgba(90,120,70,0.32)");
+    mossGrad.addColorStop(1, "rgba(90,120,70,0)");
+    ctx.fillStyle = mossGrad;
+    ctx.beginPath();
+    ctx.ellipse(mx, my, r * TW, r * TW * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
   });
 
   // irregular bark ridge lines, more of them and less uniform than a
   // plain straight taper would need, each with its own jitter so no two
-  // read as copies of each other
+  // read as copies of each other. CONFIRMED CHANGE: each ridge now also
+  // gets a slow sideways lean that reverses partway up (a gentle S)
+  // instead of bowing just one way, so the grain reads as genuinely
+  // twisted/spiraling around the trunk rather than a set of straight-ish
+  // verticals with a wobble -- clipped to the real silhouette above, so
+  // this can lean as far as it wants without ever poking outside the bark.
   ctx.strokeStyle = "rgba(15,10,6,0.42)";
   ctx.lineWidth = 2;
   for (let i = -3; i <= 3; i++) {
     const jitter = (pseudoRandom(seed + i * 3.3) - 0.5) * 14 * TW;
+    const lean = Math.sin(i * 0.9 + seed * 0.01) * 16 * TW;
     ctx.beginPath();
     ctx.moveTo(sx + i * 9 * TW, gy - 4);
-    ctx.quadraticCurveTo(sx + i * 11 * TW + jitter, gy - topHeight * 0.5, sx + i * 7 * TW + jitter * 0.4, gy - topHeight * 0.9);
+    ctx.bezierCurveTo(
+      sx + i * 11 * TW + lean, gy - topHeight * 0.35,
+      sx + i * 8 * TW + jitter - lean * 0.6, gy - topHeight * 0.65,
+      sx + i * 7 * TW + jitter * 0.4, gy - topHeight * 0.92
+    );
     ctx.stroke();
   }
+  ctx.restore();
 
   // CONFIRMED CHANGE ("make the top better"): the canopy was a thin,
   // modest cluster that read fine on the earlier, shorter trunk but got
@@ -25141,12 +25280,26 @@ function drawForestFungusClimb(camX) {
   ctx.fill();
   drawTreeClimbSleepyNook(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 150);
 
-  const doorX = sx - 1 * 14 * FUNGUS_VIGNETTE_SCALE, doorY = fungusY(350);
+  // CONFIRMED FIX ("for the lighted window, put that one between fungi
+  // not partly behind one pls"): the door used to sit at the exact
+  // midpoint between the two fungus levels flanking it (height 350,
+  // right between the 300 and 400 mats), and only 14*scale off the
+  // trunk's own centerline -- close enough that the height-300 mat's own
+  // turkey-tail cluster (which climbs UP the bark from its attach point,
+  // see drawForestFungusCap's lobeUp) could grow right over it, drawn
+  // after the door in this same function. Pulled further out from the
+  // centerline (14 -> 28) AND moved up closer to the level ABOVE it
+  // (350 -> 385, only 15 below the 400 mats, which only ever grow
+  // upward from their own attach point and so never reach back down onto
+  // it) instead of the crowded exact-midpoint spot -- genuinely clear of
+  // both neighboring clusters now, reads as sitting between the fungi
+  // rather than tucked behind one.
+  const doorX = sx - 1 * 22 * FUNGUS_VIGNETTE_SCALE, doorY = fungusY(385);
   ctx.fillStyle = "rgba(15,10,6,0.5)";
   ctx.beginPath();
   ctx.ellipse(doorX, doorY, 12 * FUNGUS_VIGNETTE_SCALE * 0.55, 16 * FUNGUS_VIGNETTE_SCALE * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
-  drawTreeClimbDoor(sx, fungusY, FUNGUS_VIGNETTE_SCALE, -1, 350);
+  drawTreeClimbDoor(sx, fungusY, FUNGUS_VIGNETTE_SCALE, -1, 385);
 
   forestFungusClimb.levels.forEach(level => {
     level.mats.forEach(t => drawForestFungusCap(camX, t));
