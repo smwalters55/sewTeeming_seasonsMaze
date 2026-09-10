@@ -269,14 +269,19 @@ window.addEventListener("keydown", e => {
     updateMapUI();
   }
   // DEBUG CHEAT ("debug spawn me with all the daffodils marked as grown
-  // or whatever, putting me next to the slide entrance pls"): Ctrl+Shift+S
+  // or whatever, putting me next to the slide entrance pls"): Shift+D
   // drops the player right next to the new spiral slide hole (see
   // TOPSY_SPIRAL_SLIDE_X) with the big dandelion fully grown AND the
   // meadow already filled to its cap, so the slide is unlocked and
   // testable immediately -- no bouncing/blowing-out 12 separate times
   // first. Same full state-reset shape as the other topsy-turvy debug
-  // spawn (Ctrl+Shift+F) just above.
-  if ((e.key==="s" || e.key==="S") && e.shiftKey && e.ctrlKey && !e.repeat) {
+  // spawn (Ctrl+Shift+F) just above. CONFIRMED CHANGE ("that shortcut is
+  // a normal keyboard command in windows i cant use that"): was
+  // Ctrl+Shift+S, which collides with Windows/browser's own "Save As"
+  // binding on that combo -- moved to a plain, unmodified-by-anything-
+  // else Shift+D instead (D was completely free; every existing single-
+  // modifier debug spawn here already just uses Shift+<letter>, no Ctrl).
+  if ((e.key==="d" || e.key==="D") && e.shiftKey && !e.repeat) {
     currentScene = "topsyturvy";
     topsyWindSeedPlot.dug = true;
     topsyWindSeedPlot.planted = true;
@@ -3859,6 +3864,29 @@ function applyPhysics(){
       player.vineFlying = false; // missed everything — falls to the ground, no penalty
       player.vineFlyingSource = null;
     }
+  }
+
+  // CONFIRMED ADD ("we need to see player sliding down the spiral slide
+  // we need that animation"): while the spiral slide's own fall timer is
+  // running, position is fully scripted right here -- same "driven
+  // elsewhere, skip normal physics for this frame" pattern the dip
+  // windup just below uses its own early return for (the mask-over-the-
+  // hole trick moleHoleEntrance uses doesn't work here since this scene's
+  // hole overlay draws BEFORE the player in the shared draw() order, so
+  // it can never actually cover the sprite -- real scripted motion is
+  // the only way to make it visible). Spirals inward (shrinking radius,
+  // a couple of full turns) while sinking below ground level, so it
+  // genuinely reads as corkscrewing down into the hole.
+  if (currentScene === "topsyturvy" && topsySpiralSlide.active) {
+    const p = Math.min(1, topsySpiralSlide.t / TOPSY_SPIRAL_SLIDE_FALL_MS);
+    const turns = 2.5;
+    const angle = p * Math.PI * 2 * turns;
+    const radius = 16 * (1 - p);
+    player.x = TOPSY_SPIRAL_SLIDE_X + Math.cos(angle) * radius - player.width / 2;
+    player.y = -p * 80;
+    player.vy = 0;
+    player.jumping = false;
+    return;
   }
 
   // CONFIRMED ADD ("pressing up actually first brings u down just a
@@ -20656,7 +20684,7 @@ function updateTopsyTurvyScene(deltaTime) {
   // skipped while pinned to something else that already owns position
   // outright (the ladder, the well's dip animation, a scripted fall) so
   // the gust never fights a state that's driving the player itself.
-  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && seasonTransition.phase === "idle") {
+  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && !topsySpiralSlide.active && seasonTransition.phase === "idle") {
     const t = performance.now() * 0.001;
     const gust = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.9 + 1.7) * 0.4;
     player.x += gust * TOPSY_WIND_STRENGTH * deltaTime;
