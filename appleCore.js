@@ -4659,9 +4659,14 @@ function applyPhysics(){
     // -- see topsyMeadowSeedPlatform's own comment for the sizing.
     // Still-sprouting seeds (growProgress < 1) aren't included yet, so
     // you can't stand on something that hasn't finished growing.
-    const meadowPlatforms = topsyMeadowSeeds
-      .filter(s => performance.now() - s.plantedAt >= TOPSY_MEADOW_GROW_DURATION)
-      .map(topsyMeadowSeedPlatform);
+    // CONFIRMED ADD ("also i want to be able to jump on the roots"): each
+    // fully-bloomed meadow dandelion's own two outer root strands are
+    // standable too, alongside its head -- see
+    // topsyMeadowSeedRootPlatforms's own comment.
+    const grownMeadowSeeds = topsyMeadowSeeds.filter(s => performance.now() - s.plantedAt >= TOPSY_MEADOW_GROW_DURATION);
+    const meadowPlatforms = grownMeadowSeeds
+      .map(topsyMeadowSeedPlatform)
+      .concat(grownMeadowSeeds.flatMap(topsyMeadowSeedRootPlatforms));
     const allTopsyPlatforms = (topsyWindSeedPlot.grown
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms
@@ -18940,6 +18945,18 @@ const TOPSY_SEEDPLOT_GROW_DURATION = 2200;
 const TOPSY_DANDELION_HEAD_R = 26;
 const TOPSY_DANDELION_STEM_H = 105;
 const TOPSY_DANDELION_ROOT_ANGLES = [0.12, 0.32, 0.58, Math.PI / 2, Math.PI - 0.58, Math.PI - 0.32, Math.PI - 0.12];
+// CONFIRMED ADD ("make the dandelions the small ones, nicer like the big
+// one"): a smaller version of the same fan, shared by the entrance
+// dandelion and every meadow baby dandelion so they all use the SAME
+// branching-root technique as the big one instead of a flat straight-
+// line wisp -- just fewer strands, matching their smaller scale.
+const TOPSY_SMALL_DANDELION_ROOT_ANGLES = [0.3, Math.PI / 2, Math.PI - 0.3];
+// CONFIRMED ADD ("also i want to be able to jump on the roots"): of the
+// small fan above, only the two outer strands (the widest-spread ones)
+// are real standable platforms -- same "not every strand, just enough to
+// be a real stepping stone" restraint topsyTurvyRootPlatforms and the
+// big dandelion's own root platforms already use.
+const TOPSY_MEADOW_ROOT_PLATFORM_ANGLES = [0.3, Math.PI - 0.3];
 // height above ground of the root fan's own anchor point (the top of the
 // fully-grown stem) -- matches drawTopsyWindSeedPlot's stemTopY math
 // exactly: headCy sits headR*0.8 above ground, the stem's base is a
@@ -19039,6 +19056,28 @@ function topsyMeadowSeedPlatform(seed) {
   const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
   const headR = 11 * scale;
   return { x: seed.x - headR * 0.7, width: headR * 1.4, height: headR * 1.8 };
+}
+
+// CONFIRMED ADD ("also i want to be able to jump on the roots"): the two
+// outer root strands of a fully-bloomed meadow dandelion (see
+// TOPSY_MEADOW_ROOT_PLATFORM_ANGLES) are standable too, same "hitbox
+// matches the art" rule -- computeDendriticStrandEnd is fed the exact
+// same angle/length/seed drawTopsyMeadowDandelion's root loop uses (down
+// to matching index i within the FULL angle list, not just the platform
+// subset, since the strand's own random wiggle is seeded off that index)
+// so the hitbox always lines up with the drawn root tip.
+function topsyMeadowSeedRootPlatforms(seed) {
+  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  const headR = 11 * scale, stemH = 26 * scale;
+  const anchorHeight = headR * 1.8 + stemH;
+  const platforms = [];
+  TOPSY_SMALL_DANDELION_ROOT_ANGLES.forEach((angle, i) => {
+    if (!TOPSY_MEADOW_ROOT_PLATFORM_ANGLES.includes(angle)) return;
+    const len = (8 + Math.abs(Math.PI / 2 - angle) * 5) * scale;
+    const end = computeDendriticStrandEnd(0, 0, angle, len, seed.x * 13 + i * 233 + 41);
+    platforms.push({ x: seed.x + end.x - 7, width: 14, height: anchorHeight + end.y });
+  });
+  return platforms;
 }
 
 // picks a valid new meadow spot near the seed plot, or returns null if
@@ -23338,11 +23377,16 @@ function drawTopsyWindSeedPlot(camX) {
       // rather than one continuous plant. A small rounded root-crown
       // (same color family as the stem, overlapping its own top a
       // little) gives the strands an actual mass to visibly emerge from.
-      ctx.fillStyle = "#4f7a34";
+      // CONFIRMED CHANGE ("make them brown"): the root crown used to
+      // share the stem's own green, which read as more stem than root --
+      // the strands themselves were already brown (drawDendriticRootStrand
+      // is hardcoded brown), so this brings the crown they emerge from
+      // in line with them.
+      ctx.fillStyle = "#6b4a2c";
       ctx.beginPath();
       ctx.ellipse(topX, topY, 7 * rootP + 3, 5.5 * rootP + 2, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "rgba(58,94,40,0.5)";
+      ctx.fillStyle = "rgba(58,40,25,0.5)";
       ctx.beginPath();
       ctx.ellipse(topX, topY, 4.5 * rootP + 2, 3.5 * rootP + 1.2, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -23774,23 +23818,29 @@ function drawTopsyTurvyEntranceDandelion(camX) {
   ctx.closePath();
   ctx.fill();
 
-  // tiny root wisp at the top -- echoes the big plot dandelion's roots
-  // just enough to read as the same inverted plant, not a different one
-  ctx.fillStyle = "#4f7a34";
+  // CONFIRMED CHANGE ("make the dandelions the small ones, nicer like
+  // the big one" / "make them brown"): was a flat 4-line wisp in the
+  // stem's own green -- rebuilt with the SAME brown root-crown +
+  // branching dendritic-strand technique drawTopsyWindSeedPlot's big
+  // roots use, just scaled down, so the small dandelion reads as a
+  // genuine little version of the big one rather than a simplified
+  // placeholder.
+  ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
   ctx.ellipse(tipX, stemTopY, 3.5, 2.6, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(58,94,40,0.55)";
-  ctx.lineWidth = 1;
-  [-0.9, -0.3, 0.3, 0.9].forEach(a => {
-    const len = 8 + Math.abs(a) * 4;
-    const ex = tipX + Math.sin(a) * len;
-    const ey = stemTopY - Math.cos(a) * len * 0.6;
-    ctx.beginPath();
-    ctx.moveTo(tipX, stemTopY);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
+  ctx.fillStyle = "rgba(58,40,25,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(tipX, stemTopY, 2.3, 1.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(tipX, stemTopY);
+  ctx.scale(1, -1); // local +y now points up the screen, matching drawDendriticRootStrand's own convention
+  TOPSY_SMALL_DANDELION_ROOT_ANGLES.forEach((angle, i) => {
+    const len = 8 + Math.abs(Math.PI / 2 - angle) * 5;
+    drawDendriticRootStrand(0, 0, angle, len, 0, TOPSY_ENTRANCE_DANDELION_X + i * 233 + 41, 1);
   });
+  ctx.restore();
 
   // round puffball head, radiating strands
   const strands = 22;
@@ -23883,22 +23933,28 @@ function drawTopsyMeadowDandelion(camX, seed) {
   ctx.closePath();
   ctx.fill();
 
-  // tiny root wisp at the top
-  ctx.fillStyle = "#4f7a34";
+  // CONFIRMED CHANGE ("make the dandelions the small ones, nicer like
+  // the big one" / "make them brown" / "i want to be able to jump on the
+  // roots"): was a flat 4-line wisp in the stem's own green -- rebuilt
+  // with the same brown root-crown + branching dendritic-strand
+  // technique the big dandelion uses, and the two outer strands are now
+  // real jumpable platforms (see topsyMeadowSeedRootPlatforms).
+  ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
   ctx.ellipse(tipX, stemTopY, 3.5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(58,94,40,0.55)";
-  ctx.lineWidth = 1;
-  [-0.9, -0.3, 0.3, 0.9].forEach(a => {
-    const len = (8 + Math.abs(a) * 4) * scale;
-    const ex = tipX + Math.sin(a) * len;
-    const ey = stemTopY - Math.cos(a) * len * 0.6;
-    ctx.beginPath();
-    ctx.moveTo(tipX, stemTopY);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
+  ctx.fillStyle = "rgba(58,40,25,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(tipX, stemTopY, 2.3 * scale, 1.7 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(tipX, stemTopY);
+  ctx.scale(1, -1); // local +y now points up the screen, matching drawDendriticRootStrand's own convention
+  TOPSY_SMALL_DANDELION_ROOT_ANGLES.forEach((angle, i) => {
+    const len = (8 + Math.abs(Math.PI / 2 - angle) * 5) * scale;
+    drawDendriticRootStrand(0, 0, angle, len, 0, seed.x * 13 + i * 233 + 41, 1 * scale);
   });
+  ctx.restore();
 
   // round puffball head, radiating strands
   const strands = 20;
