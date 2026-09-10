@@ -385,6 +385,18 @@ window.addEventListener("keydown", e => {
   if ((e.key==="f" || e.key==="F") && e.altKey && e.shiftKey && !e.repeat) {
     resetAllPlayerModeFlags();
     currentScene = "forest";
+    // CONFIRMED BUG FIX ("where is my water world in forest, my rushing
+    // river"): drawForestRiver deliberately stays a no-op until
+    // discoveredScenes.molehole is true (every bridgePiece lives inside
+    // mole hole, so the whole river/bank/bridge complex is fog-of-war'd
+    // off before that, same idea as the map gating). This cheat drops the
+    // player right at the bank with a full crossing inventory, so it
+    // needs to also mark mole hole discovered or the actual water/bridge
+    // graphics never draw at all -- even though the wade-zone tint (a
+    // separate, ungated check) still correctly wets the sprite while
+    // standing in the real open-water strip beside the near bridge post.
+    // That tint was never the bug; the missing river was.
+    discoveredScenes.molehole = true;
     Object.keys(inventory).forEach(k => delete inventory[k]);
     inventoryOrder = [];
     heldItem = null;
@@ -19445,7 +19457,56 @@ function topsyMeadowSeedRootPlatforms(seed) {
 // strongly prefers topping up the emptier side, with a small chance of
 // still trying the fuller one so it doesn't read as a robotic strict
 // alternation either.
+function topsyMeadowSpotValid(x) {
+  if (x < 80 || x > TOPSYTURVY_WIDTH - 80) return false;
+  if (Math.abs(x - TOPSY_WELL_X) < TOPSY_MEADOW_CLEAR_OF_WELL) return false;
+  if (Math.abs(x - TOPSY_SEEDPLOT_X) < TOPSY_MEADOW_CLEAR_OF_PLOT) return false;
+  if (Math.abs(x - TOPSY_SPIRAL_SLIDE_X) < TOPSY_MEADOW_CLEAR_OF_SLIDE) return false;
+  if (topsyMeadowSeeds.some(s => Math.abs(s.x - x) < TOPSY_MEADOW_MIN_SPACING)) return false;
+  if (topsyMeadowPending.some(p => Math.abs(p.x - x) < TOPSY_MEADOW_MIN_SPACING)) return false;
+  return true;
+}
+
+// CONFIRMED BUG FIX ("the slide hole on the right doesn't show up at all
+// even after growing all the dandelion seeds"): the old windows (dx 55..295
+// right, -50..-230 left) were both drawn tighter than the space actually
+// available -- they left real, unused clearance on the table on both sides
+// (right: the slide's own clearance doesn't actually start until dx~410,
+// not 295; left: the well's clearance doesn't actually start until
+// dx~-280, not -230). That mattered because with TOPSY_MEADOW_MIN_SPACING
+// (34) enforced, purely random placement is a real-world instance of the
+// classic "random sequential adsorption" packing problem -- it statistically
+// jams well before a window is actually geometrically full (measured
+// directly: 20 simulated playthroughs of 60 blow-out attempts each, via the
+// sampleMeadowSpotsSequential debug hook, on the OLD narrower windows,
+// NEVER once reached the 12-seed cap -- they plateaued at 9-11 every single
+// time). The meadow read as "basically full" to the player while genuinely,
+// permanently unable to ever place its last 1-3 seeds, so the slide hole --
+// gated on exactly reaching TOPSY_MEADOW_MAX -- could never unlock.
+// Deriving the windows from the actual clearance constants instead of
+// hardcoded numbers gives ~358px on the right and ~228px on the left
+// (was 240/180) -- enough headroom that the same jamming math now settles
+// comfortably above 12 well before running out of room.
+// NOTE: these are functions, not top-level consts, on purpose --
+// TOPSY_SPIRAL_SLIDE_X (used by the right-side bound below) isn't declared
+// until further down the file, and a top-level const referencing it here
+// would throw a temporal-dead-zone ReferenceError the moment this script
+// evaluates. Computing them lazily, only once topsyPickMeadowSpot actually
+// runs (well after every const in the file has initialized), sidesteps
+// that entirely.
+function topsyMeadowRightDxMin() { return TOPSY_MEADOW_CLEAR_OF_PLOT + 1; }
+function topsyMeadowRightDxMax() {
+  return Math.min(
+    TOPSYTURVY_WIDTH - 80 - TOPSY_SEEDPLOT_X,
+    TOPSY_SPIRAL_SLIDE_X - TOPSY_MEADOW_CLEAR_OF_SLIDE - TOPSY_SEEDPLOT_X
+  ) - 6;
+}
+function topsyMeadowLeftDxMax() { return -(TOPSY_MEADOW_CLEAR_OF_PLOT + 1); }
+function topsyMeadowLeftDxMin() { return -(TOPSY_SEEDPLOT_X - TOPSY_WELL_X - TOPSY_MEADOW_CLEAR_OF_WELL - 6); }
+
 function topsyPickMeadowSpot() {
+  const rMin = topsyMeadowRightDxMin(), rMax = topsyMeadowRightDxMax();
+  const lMin = topsyMeadowLeftDxMin(), lMax = topsyMeadowLeftDxMax();
   const sideCounts = topsyMeadowSeeds.map(s => s.x).concat(topsyMeadowPending.map(p => p.x))
     .reduce((acc, x) => { if (x > TOPSY_SEEDPLOT_X) acc.right++; else acc.left++; return acc; }, { left: 0, right: 0 });
   const preferRight = sideCounts.right <= sideCounts.left;
@@ -19455,18 +19516,33 @@ function topsyPickMeadowSpot() {
     // roomier than the well-side gap" preference only breaking ties.
     const goRight = Math.random() < 0.85 ? preferRight : !preferRight;
     const dx = goRight
-      ? 55 + Math.random() * 240
-      : -(50 + Math.random() * 180);
+      ? rMin + Math.random() * (rMax - rMin)
+      : lMin + Math.random() * (lMax - lMin);
     const x = TOPSY_SEEDPLOT_X + dx;
-    if (x < 80 || x > TOPSYTURVY_WIDTH - 80) continue;
-    if (Math.abs(x - TOPSY_WELL_X) < TOPSY_MEADOW_CLEAR_OF_WELL) continue;
-    if (Math.abs(x - TOPSY_SEEDPLOT_X) < TOPSY_MEADOW_CLEAR_OF_PLOT) continue;
-    if (Math.abs(x - TOPSY_SPIRAL_SLIDE_X) < TOPSY_MEADOW_CLEAR_OF_SLIDE) continue;
-    if (topsyMeadowSeeds.some(s => Math.abs(s.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
-    if (topsyMeadowPending.some(p => Math.abs(p.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
-    return x;
+    if (topsyMeadowSpotValid(x)) return x;
   }
-  return null;
+  // Belt-and-suspenders on top of the widened windows above: if 10 random
+  // tries still whiff (e.g. a genuinely unlucky late-game layout), fall
+  // back to an exhaustive, deterministic scan of both windows in fine
+  // steps and take the first valid slot found, side-preference first --
+  // guarantees success whenever *any* legal gap remains, so the meadow can
+  // always actually reach its cap. The random pass above still handles the
+  // overwhelming majority of picks (keeping the organic, non-gridded look
+  // for a normal playthrough); this only ever kicks in as a safety net.
+  const scanSide = (goRightFirst) => {
+    const windows = goRightFirst
+      ? [[rMin, rMax], [lMin, lMax]]
+      : [[lMin, lMax], [rMin, rMax]];
+    for (const [lo, hi] of windows) {
+      const step = 3;
+      for (let dx = lo; (lo < hi ? dx <= hi : dx >= hi); dx += (lo < hi ? step : -step)) {
+        const x = TOPSY_SEEDPLOT_X + dx;
+        if (topsyMeadowSpotValid(x)) return x;
+      }
+    }
+    return null;
+  };
+  return scanSide(preferRight);
 }
 
 // CONFIRMED ADD ("have a hole for that spiral slide to the right of the
@@ -65539,7 +65615,24 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
 
 if (currentScene === "forest") {
   drawForestBrambleFrontLayer(camX); // cached -- covers Front's crossing strands AND the obstacle knots composited on top of them, same layering as before
+  // CONFIRMED BUG FIX ("this top yellow arc is what jumps with player
+  // when player does a double jump on it"): same class of bug as the
+  // sandbox ball-pit front-balls fix just below -- this whole post-
+  // player section runs AFTER drawForestScene has already closed its
+  // own ctx.save()/ctx.translate(0, cameraY)/ctx.restore() block, so a
+  // call made here with no translate of its own stays pinned to its raw
+  // screen position while everything else (the deck, the lower rope,
+  // the posts, the player) shifts by cameraY as updateForestScene's
+  // `cameraY = Math.max(0, player.y - 150);` kicks in on a high enough
+  // jump. The pale front rail was exactly that unwrapped call, so on a
+  // double jump it visibly detached from the rest of the bridge and
+  // appeared to "jump" against it instead of staying part of the same
+  // structure. Wrapping it in the identical translate fixes it to move
+  // with the bridge exactly like the back rope does.
+  ctx.save();
+  ctx.translate(0, cameraY);
   drawForestRiverFrontRail(camX); // the bridge's pale front railing, drawn after the player so it reads as actually in front, not just painted over
+  ctx.restore();
   drawForestFloatDuckOverlay(camX); // redraws the duck-type float obstacle over the player while passing under it -- see that function's own comment
 } else if (currentScene === "molehole") {
   // foreground root pillars, drawn AFTER the player sprite so they sit
