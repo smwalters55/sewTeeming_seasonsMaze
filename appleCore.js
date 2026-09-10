@@ -264,13 +264,28 @@ window.addEventListener("keydown", e => {
     topsyWindSeedPlot.waterRounds = TOPSY_SEEDPLOT_WATER_ROUNDS;
     topsyWindSeedPlot.grown = true;
     topsyWindSeedPlot.growProgress = 1;
+    // CONFIRMED BUG FIX ("why are all the mini dandelions to the left of
+    // the big one" -- asked three times, still happening after two
+    // separate passes at the REAL random-growth logic in
+    // topsyPickMeadowSpot): finally tracked down -- this debug cheat's
+    // own instant-fill spawn was the actual culprit the whole time, not
+    // the organic growth logic those earlier fixes targeted. This spawn
+    // hardcoded every one of the 12 seeds to the LEFT of the plot
+    // (TOPSY_SEEDPLOT_X - 60 - i*36), so any time this cheat was used to
+    // jump straight into a "meadow already filled" topsy-turvy for
+    // testing/checking, ALL the minis were left, no matter what the real
+    // growth logic did. Alternates sides now instead, spread out on both
+    // the wider right-hand window (open ground toward the world edge)
+    // and the narrower left-hand gap toward the well, matching how a
+    // real, properly-balanced grown meadow should actually look.
     topsyMeadowSeeds = [];
     topsyMeadowPending = [];
     for (let i = 0; i < TOPSY_MEADOW_MAX; i++) {
-      // spaced out to the LEFT of the seed plot (toward the well) so
-      // none of them land on/past the slide itself, which sits at the
-      // world's own far right edge -- see TOPSY_SPIRAL_SLIDE_X.
-      topsyMeadowSeeds.push({ x: TOPSY_SEEDPLOT_X - 60 - i * 36, plantedAt: performance.now() - TOPSY_MEADOW_GROW_DURATION - 100 });
+      const half = Math.floor(i / 2);
+      const x = i % 2 === 0
+        ? TOPSY_SEEDPLOT_X + 70 + half * 38   // right: open ground toward the world edge
+        : TOPSY_SEEDPLOT_X - 60 - half * 38;  // left: narrower gap toward the well
+      topsyMeadowSeeds.push({ x, plantedAt: performance.now() - TOPSY_MEADOW_GROW_DURATION - 100 });
     }
     player.x = TOPSY_SPIRAL_SLIDE_X - 40;
     player.y = 0;
@@ -19381,7 +19396,7 @@ function topsySpiralSlideUnlocked() {
 // playground spiral slide, coiled around a central post] but longer/more
 // spirals, and see the inside of the trunk around it"): longer ride, more
 // turns, taller descent to give each turn real room to breathe.
-const TOPSY_SPIRAL_ROOM_RIDE_MS = 7200; // how long the actual spiral descent takes -- CONFIRMED CHANGE ("slow down the sliding a good amount"): doubled from 3600
+const TOPSY_SPIRAL_ROOM_RIDE_MS = 11000; // how long the actual spiral descent takes -- CONFIRMED CHANGE ("slow down the sliding a good amount", then "slow down slide more"): 3600 -> 7200 -> 11000
 const TOPSY_SPIRAL_ROOM_POP_MS = 700; // the bottom "pop out and slide off" beat before the real scene transition fires -- widened from 400 to give the new exit-slide motion (see drawTopsySpiralSlideRoom's own pop-beat comment) room to actually read
 const TOPSY_SPIRAL_ROOM_TOTAL_MS = TOPSY_SPIRAL_ROOM_RIDE_MS + TOPSY_SPIRAL_ROOM_POP_MS;
 const TOPSY_SPIRAL_ROOM_LOOPS = 6.5; // full turns completed over the whole ride -- was 4
