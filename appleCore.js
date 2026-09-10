@@ -471,6 +471,13 @@ const player = {
   // (see topsySpiralSlideRoom / drawTopsySpiralSlideRoom).
   inTopsySpiralSlide: false,
   onTopsyHouseLadder: false, // CONFIRMED CHANGE ("we need to be able to climb ladder"): true while climbing the topsy-turvy grumpy house's own ladder up to its door/window -- same "pinned x, gravity-exempt, driven by up/down" shape as onBallPitLadder, see updateTopsyTurvyScene
+  // CONFIRMED ADD ("i like the gated climb thing!"): true while riding
+  // the fungus tree's pulley basket up as a shortcut (unlocked only
+  // after completing the real climb once) -- same "pinned x, gravity-
+  // exempt" shape as onTopsyHouseLadder above, except the ride is a
+  // timed scripted climb rather than up/down-driven. See
+  // updateFungusPulleyRide.
+  onFungusPulleyRide: false,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -3455,6 +3462,10 @@ function applyPhysics(){
   // while climbing is driven entirely by updateTopsyTurvyScene, same
   // "gravity-exempt while pinned to a ladder" shape as the ball pit's.
   if (player.onTopsyHouseLadder) return;
+
+  // same idea for the fungus tree's pulley-basket shortcut ride --
+  // position while riding is driven entirely by updateFungusPulleyRide.
+  if (player.onFungusPulleyRide) return;
 
   // the ant farm keeps the real player parked at the mount spot the
   // whole visit (only a small drawn icon moves inside the case), but
@@ -18473,6 +18484,13 @@ function forestFungusLaunch(mat, levelIdx) {
     startSeasonTransition("topsyturvy");
     forestFungusClimb.streak = 0;
     mat.squishT = 0;
+    // CONFIRMED ADD ("i like the gated climb thing!"): completing the
+    // real climb once, for real, unlocks the pulley basket as a ride-up
+    // shortcut on repeat visits (see fungusPulleyRideUnlocked /
+    // updateFungusPulleyRide) -- never available before this first
+    // breakthrough, so the actual climb/bounce mechanic is never
+    // skippable the first time through.
+    fungusPulleyRideUnlocked = true;
     return;
   }
 
@@ -18520,6 +18538,76 @@ function updateForestFungusClimb(deltaTime) {
       if (t.squishT < FOREST_FUNGUS_SQUISH_MS) t.squishT += deltaTime * 1000;
     });
   });
+}
+
+// CONFIRMED ADD ("what do you think of potentially being able to go up
+// the tree by riding the basket up?" -> "i like the gated climb thing!"):
+// a shortcut back to the top of the fungus climb via the decorative
+// pulley basket, unlocked only after actually completing the real
+// bounce-climb once (see forestFungusLaunch's own topsyturvy-transition
+// branch, which flips fungusPulleyRideUnlocked -- never true before that
+// first real breakthrough, so the climb itself is never skippable the
+// first time through). Same "walk up, press space to mount, pinned x,
+// gravity-exempt" shape as onTopsyHouseLadder, except the ride is a
+// timed scripted climb rather than up/down-driven -- this is meant to
+// read as a reward on repeat visits, not a second real climb.
+//
+// The mount point is the pulley's own bottom anchor -- bottomLocalHeight
+// 60 in the drawFungusTrunkPulley(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1,
+// 60, topLevelHeight + 80) call in drawForestFungusClimb -- at the same
+// rail world-x that call's own railX = sx + side*34*s works out to
+// (side=1, s=FUNGUS_VIGNETTE_SCALE=2.3). Duplicated here as a plain
+// constant rather than threaded through, since the draw call's own
+// FUNGUS_VIGNETTE_SCALE is local to that function.
+const FOREST_FUNGUS_PULLEY_RAIL_X = FOREST_FUNGUS_TREE_X + 78.2;
+const FOREST_FUNGUS_PULLEY_RIDE_MS = 2200;
+let fungusPulleyRideUnlocked = false;
+const fungusPulleyRide = { t: 0 };
+
+function updateFungusPulleyRide(deltaTime) {
+  if (player.onFungusPulleyRide) {
+    fungusPulleyRide.t += deltaTime * 1000;
+    const p = Math.min(1, fungusPulleyRide.t / FOREST_FUNGUS_PULLEY_RIDE_MS);
+    const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    const topHeight = forestFungusClimb.levels[forestFungusClimb.levels.length - 1].height;
+    player.y = eased * topHeight;
+    player.x = FOREST_FUNGUS_PULLEY_RAIL_X - player.width / 2;
+    player.vy = 0;
+    player.jumping = true;
+    if (p >= 1) {
+      player.onFungusPulleyRide = false;
+      // CONFIRMED FIX (found via debug-harness playtest): the climb has
+      // no real "standing still" state anywhere above ground -- every
+      // level above 0 only exists as a mid-flight catch (see
+      // forestFungusLaunch and the launched-flight re-catch checks
+      // around it), so simply parking the player at y=700 with
+      // jumping=true left them floating with nothing supporting them;
+      // normal gravity resumed next frame and they fell straight through
+      // every level's catch radius on the way down. Instead, hand off
+      // into the exact same state a real catch on the top level's own
+      // mat produces -- forestFungusLaunch's own ordinary (non-promote,
+      // non-breakthrough) bounce branch -- so the player lands already
+      // mid-arc between the top level's two caps, needing the same real
+      // max-tier bounces a genuine climb would to actually break through
+      // into topsy-turvy. The ride is a shortcut to the top, not a
+      // shortcut past the final payoff bounce.
+      const topIdx = forestFungusClimb.levels.length - 1;
+      const topMat = forestFungusClimb.levels[topIdx].mats[0];
+      forestFungusClimb.level = topIdx;
+      forestFungusClimb.streak = 0;
+      player.x = topMat.x - player.width / 2;
+      forestFungusLaunch(topMat, topIdx);
+    }
+    return;
+  }
+
+  if (fungusPulleyRideUnlocked && forestFungusClimb.level === 0 && keys.spaceJustPressed &&
+      isPlayerNear(FOREST_FUNGUS_PULLEY_RAIL_X, 60, 45, 70, 70)) {
+    player.onFungusPulleyRide = true;
+    fungusPulleyRide.t = 0;
+    player.jumping = true;
+    player.vy = 0;
+  }
 }
 
 /* ======================================================
@@ -35012,6 +35100,7 @@ function updateForestScene(deltaTime) {
   updateForestRiverBoatPileNotice(deltaTime);
   updateForestFloatReturnLever(deltaTime);
   updateForestFungusClimb(deltaTime);
+  updateFungusPulleyRide(deltaTime);
   updateForestGroundMushrooms(deltaTime);
 
   // CONFIRMED BUG FIX ("and cameray isnt following"): forest never
