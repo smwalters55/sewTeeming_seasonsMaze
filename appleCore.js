@@ -313,10 +313,18 @@ window.addEventListener("keydown", e => {
   // same "start of the crossing" state a real playthrough would reach
   // it in. Inventory is wiped and reset to a plausible mixed loadout:
   // a full 7 bridgePiece (exactly enough logs to build every segment,
-  // the actual answer here) mixed in among several unrelated decoy
-  // items from other parts of the game, so at a glance the inventory
-  // strip doesn't just hand over "use this one" the way a bare
-  // bridgePiece-only stock would.
+  // the actual answer here), the two general-purpose tools a player
+  // would realistically already have by this point (shovel, bucket --
+  // same ones seeded into every debug start further down this file),
+  // mixed in among a handful of unrelated decoy items from other parts
+  // of the game, so at a glance the inventory strip doesn't just hand
+  // over "use this one" the way a bare bridgePiece-only stock would.
+  // CONFIRMED BUG FIX ("why are there four windseeds"): windSeed is a
+  // never-exceeds-1 item everywhere else in the game (see its own entry
+  // in NO_COUNT_LABEL) -- stacking 4 of it here was never sensible to
+  // begin with, capped to the same 1 every other windSeed pickup gives.
+  // Also dropped pumpkin per direct request -- it read as too obviously
+  // "not the one" next to a river-crossing puzzle anyway.
   if ((e.key==="k" || e.key==="K") && e.shiftKey && !e.repeat) {
     currentScene = "forest";
     Object.keys(inventory).forEach(k => delete inventory[k]);
@@ -326,13 +334,14 @@ window.addEventListener("keydown", e => {
     carriedFeather = false;
     [
       ["bridgePiece", 7],  // the actual key piece the river crossing needs
+      ["shovel", 1],       // general tool, already in hand by this point in a real playthrough
+      ["bucket", 1],       // general tool, same as above
       ["appleSlice", 2],
       ["acorn", 3],
       ["roundLeaf", 1],
       ["stone", 2],
       ["worm", 1],
-      ["pumpkin", 1],
-      ["windSeed", 4]
+      ["windSeed", 1]
     ].forEach(([itemType, count]) => {
       for (let i = 0; i < count; i++) addToInventory(itemType);
     });
