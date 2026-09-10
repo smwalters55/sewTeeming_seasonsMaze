@@ -349,6 +349,20 @@ const player = {
   speed: 3,
   jumping: false,
   usedDoubleJump: false, // resets whenever player lands on anything
+  // CONFIRMED BUG FIX ("the jump is too high around the dandelions like
+  // i jump up on a small one and i fly wayyy high"): the dandelion
+  // bounce's lighter gravity (TOPSY_DANDELION_BOUNCE_GRAVITY) was
+  // originally gated by "airborne + near TOPSY_SEEDPLOT_X" -- but a
+  // meadow dandelion's own landing doesn't run the escalating-bounce
+  // block at all (only the ONE big head platform does), so that broad
+  // proximity zone was silently applying the floaty gravity to the
+  // player's own ordinary jump near a meadow dandelion too, sending a
+  // normal jump way higher than it should go. This flag is set true
+  // only at the moment the real escalating bounce launches the player
+  // (see applyPhysics' topsyDandelionHeadPlatform landing block) and
+  // cleared on every other landing, so the slow gravity only ever
+  // applies to an actual dandelion-launched flight, never a plain jump.
+  topsyDandelionBounceFlight: false,
   // CONFIRMED ADD ("player jumps to platform, gets turned upside down
   // while sticking to the platform"): set true while standing on (or
   // having launched off of, mid-dive) topsy-turvy land's own invert
@@ -3883,7 +3897,7 @@ function applyPhysics(){
     // twitchy hops rather than a slow trampoline. A dedicated lighter
     // gravity while airborne near the dandelion stretches the whole arc
     // out in time without needing a taller (more "intense") bounce.
-    ((currentScene === "topsyturvy" && player.jumping && !player.topsyInverted && topsyWindSeedPlot.grown && Math.abs(player.x - TOPSY_SEEDPLOT_X) < 160) ? TOPSY_DANDELION_BOUNCE_GRAVITY : 0.8)))));
+    (player.topsyDandelionBounceFlight ? TOPSY_DANDELION_BOUNCE_GRAVITY : 0.8)))));
 
   // ground collision -- with a special case for the sandbox trampoline:
   // landing on its mat while genuinely falling launches the player back
@@ -4132,6 +4146,11 @@ function applyPhysics(){
       // the "whatever is below you" the drop was falling toward, so it's
       // done, and this keeps the flag from ever getting stuck true.
       player.topsyForceDrop = false;
+      // CONFIRMED BUG FIX ("i fly wayyy high" jumping near a small
+      // dandelion): a plain ground landing anywhere also ends a
+      // dandelion-launched flight, same "no partial credit" reset shape
+      // as topsyInverted/topsyForceDrop just above.
+      player.topsyDandelionBounceFlight = false;
       // CONFIRMED CHANGE: any plain ground landing ends a duo run -- the
       // next catch starts back at the base speed, same "escalation resets
       // once you touch down" idea the ground trampoline's own escalating
@@ -4733,6 +4752,12 @@ function applyPhysics(){
       // landing resets it" idea the plain ground-landing branch uses.
       player.topsyInverted = false;
       player.topsyForceDrop = false;
+      // CONFIRMED BUG FIX ("i fly wayyy high" jumping near a small
+      // dandelion): every platform landing here ends a dandelion-launched
+      // flight by default -- the dandelion-head-specific check just below
+      // turns it back on only when this landing IS the actual bounce
+      // trigger, same override shape as player.jumping just below it.
+      player.topsyDandelionBounceFlight = false;
       // CONFIRMED ADD ("wobble along with them"): every OTHER platform
       // here is fixed, so just re-snapping player.y to its top each
       // frame (above) is enough to "stay landed." These two aren't fixed
@@ -4772,6 +4797,10 @@ function applyPhysics(){
         topsyDandelionHeadPlatform.prevLandTime = landNow;
         player.jumping = true;
         player.usedDoubleJump = false;
+        // CONFIRMED BUG FIX ("i fly wayyy high" jumping near a small
+        // dandelion): only the actual bounce launch turns the slow
+        // gravity on -- see the flag's own declaration comment above.
+        player.topsyDandelionBounceFlight = true;
         if (streak >= TOPSY_DANDELION_BOUNCE_VYS.length) {
           // the big 3rd bounce -- biggest kick, then the slow blow-out,
           // then streak resets so the next bounce starts small again
@@ -19070,7 +19099,13 @@ const TOPSY_MEADOW_SCATTER_LIFE = 1400;
 // same "hitbox matches the art" rule the big dandelion's own head
 // platform already follows.
 function topsyMeadowSeedPlatform(seed) {
-  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  // CONFIRMED CHANGE ("make the small dandelions varrying sizes"): widened
+  // from a narrow 0.8-1.15 band to a much more visible 0.55-1.45 range so
+  // a meadow actually reads as a mix of little sprouts and near-full-size
+  // ones, not a field of near-identical clones. Same seed.x-keyed
+  // pseudoRandom in all three call sites (this platform, its root
+  // platforms, and the draw function) so the hitbox keeps matching the art.
+  const scale = 0.55 + pseudoRandom(seed.x) * 0.9;
   const headR = 11 * scale;
   return { x: seed.x - headR * 0.7, width: headR * 1.4, height: headR * 1.8 };
 }
@@ -19084,7 +19119,13 @@ function topsyMeadowSeedPlatform(seed) {
 // subset, since the strand's own random wiggle is seeded off that index)
 // so the hitbox always lines up with the drawn root tip.
 function topsyMeadowSeedRootPlatforms(seed) {
-  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  // CONFIRMED CHANGE ("make the small dandelions varrying sizes"): widened
+  // from a narrow 0.8-1.15 band to a much more visible 0.55-1.45 range so
+  // a meadow actually reads as a mix of little sprouts and near-full-size
+  // ones, not a field of near-identical clones. Same seed.x-keyed
+  // pseudoRandom in all three call sites (this platform, its root
+  // platforms, and the draw function) so the hitbox keeps matching the art.
+  const scale = 0.55 + pseudoRandom(seed.x) * 0.9;
   const headR = 11 * scale, stemH = 26 * scale;
   const anchorHeight = headR * 1.8 + stemH;
   const platforms = [];
@@ -19426,7 +19467,12 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
         // phase advances with distance walked (a steady rock as you
         // step), energy ramps up toward a cap so a burst of movement
         // builds up a visible sway rather than snapping straight to it.
-        topsyBucketWobblePhase += movedPx * 0.14;
+        // CONFIRMED CHANGE ("slow the jostle of the water bucket when
+        // filled in play"): phase rate roughly halved (0.14 -> 0.065) so
+        // each rock takes noticeably longer, reading as an easy sway
+        // instead of a fast jitter -- energy ramp/cap untouched, this is
+        // purely about speed, not how far it tips.
+        topsyBucketWobblePhase += movedPx * 0.065;
         topsyBucketWobbleEnergy = Math.min(1, topsyBucketWobbleEnergy + movedPx * 0.03);
       }
     }
@@ -19439,7 +19485,10 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
   // the wobble settles back to still (rather than holding at full sway)
   // as soon as you stop walking, same shape as the furniture room's own
   // landing-wobble decay.
-  topsyBucketWobbleEnergy *= Math.exp(-dt / 260);
+  // CONFIRMED CHANGE ("slow the jostle"): decay stretched out a bit too
+  // (260 -> 420) so the sway eases off rather than cutting short right
+  // as it's finally reading as a slow rock.
+  topsyBucketWobbleEnergy *= Math.exp(-dt / 420);
 
   // age out and drop finished splash particles regardless of held item --
   // if the bucket got swapped out mid-flight the last couple of droplets
@@ -23928,7 +23977,13 @@ function drawTopsyMeadowDandelion(camX, seed) {
   if (growP <= 0) return;
   const eased = 1 - Math.pow(1 - growP, 2); // ease-out sprout, quick then settling
 
-  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  // CONFIRMED CHANGE ("make the small dandelions varrying sizes"): widened
+  // from a narrow 0.8-1.15 band to a much more visible 0.55-1.45 range so
+  // a meadow actually reads as a mix of little sprouts and near-full-size
+  // ones, not a field of near-identical clones. Same seed.x-keyed
+  // pseudoRandom in all three call sites (this platform, its root
+  // platforms, and the draw function) so the hitbox keeps matching the art.
+  const scale = 0.55 + pseudoRandom(seed.x) * 0.9;
   const sway = Math.sin(performance.now() * 0.0009 + seed.x) * 3 * eased;
   const headR = 11 * scale * eased;
   const headCx = dx, headCy = gy - headR * 0.8;
