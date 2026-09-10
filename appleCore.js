@@ -268,6 +268,46 @@ window.addEventListener("keydown", e => {
     seasonTransition.phase = "idle";
     updateMapUI();
   }
+  // DEBUG CHEAT ("debug spawn me with all the daffodils marked as grown
+  // or whatever, putting me next to the slide entrance pls"): Ctrl+Shift+S
+  // drops the player right next to the new spiral slide hole (see
+  // TOPSY_SPIRAL_SLIDE_X) with the big dandelion fully grown AND the
+  // meadow already filled to its cap, so the slide is unlocked and
+  // testable immediately -- no bouncing/blowing-out 12 separate times
+  // first. Same full state-reset shape as the other topsy-turvy debug
+  // spawn (Ctrl+Shift+F) just above.
+  if ((e.key==="s" || e.key==="S") && e.shiftKey && e.ctrlKey && !e.repeat) {
+    currentScene = "topsyturvy";
+    topsyWindSeedPlot.dug = true;
+    topsyWindSeedPlot.planted = true;
+    topsyWindSeedPlot.waterRounds = TOPSY_SEEDPLOT_WATER_ROUNDS;
+    topsyWindSeedPlot.grown = true;
+    topsyWindSeedPlot.growProgress = 1;
+    topsyMeadowSeeds = [];
+    topsyMeadowPending = [];
+    for (let i = 0; i < TOPSY_MEADOW_MAX; i++) {
+      // spaced out to the LEFT of the seed plot (toward the well) so
+      // none of them land on/past the slide itself, which sits at the
+      // world's own far right edge -- see TOPSY_SPIRAL_SLIDE_X.
+      topsyMeadowSeeds.push({ x: TOPSY_SEEDPLOT_X - 60 - i * 36, plantedAt: performance.now() - TOPSY_MEADOW_GROW_DURATION - 100 });
+    }
+    player.x = TOPSY_SPIRAL_SLIDE_X - 40;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    forestFungusClimb.level = forestFungusClimb.levels.length - 1;
+    forestFungusClimb.streak = 0;
+    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+    cameraX = Math.max(0, TOPSY_SPIRAL_SLIDE_X - 480);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    updateMapUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
@@ -1593,6 +1633,24 @@ function updateSeasonTransition(deltaTime) {
         player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20; // climb back out onto the ledge itself, clear of the edge you walked off from
       } else if (currentScene === "topsyturvy" && previousScene === "forest") {
         player.x = TOPSYTURVY_SPAWN_X; // broke through the top of the fungus climb -- lands just inside the land, not right at its own edge
+      } else if (currentScene === "forest" && previousScene === "topsyturvy" && topsySpiralSlideJustUsed) {
+        // CONFIRMED ADD ("have a hole for that spiral slide... drops you
+        // at the bottom of the magic faraway tree"): the SAME scene pair
+        // as the ordinary climb-back-down branch just below, but this
+        // one lands at the very BASE of the fungus climb (level 0)
+        // instead of back up at its top mat -- the slide is a shortcut
+        // straight down, not a rewind of the climb. The flag is what
+        // tells the two apart since they share the same scene pair; it's
+        // cleared right here so only this one specific arrival ever
+        // consumes it.
+        topsySpiralSlideJustUsed = false;
+        player.x = FOREST_FUNGUS_TREE_X;
+        forestFungusClimb.level = 0;
+        forestFungusClimb.streak = 0;
+        // same bridge-completion safety as the ordinary return branch
+        // below -- reaching the tree at all already required it built.
+        forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+        forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
       } else if (currentScene === "forest" && previousScene === "topsyturvy") {
         // climb back down lands right back at the fungus tree's own top
         // mat, ready to bounce again -- not the generic forest ground spawn
@@ -19079,6 +19137,7 @@ const TOPSY_MEADOW_GROW_DURATION = 5000; // ms
 const TOPSY_MEADOW_MIN_SPACING = 34; // never plant two meadow dandelions closer than this
 const TOPSY_MEADOW_CLEAR_OF_WELL = 70; // keep clear of the well's own art
 const TOPSY_MEADOW_CLEAR_OF_PLOT = 45; // keep clear of the big dandelion's own base
+const TOPSY_MEADOW_CLEAR_OF_SLIDE = 60; // keep clear of the spiral slide hole -- see TOPSY_SPIRAL_SLIDE_X
 let topsyMeadowSeeds = []; // {x, plantedAt} -- one entry per rooted baby dandelion
 // a meadow spot chosen during the blow-out but not planted yet -- see
 // TOPSY_MEADOW_BLOWOUT_DURATION's own comment for why this is a
@@ -19155,10 +19214,113 @@ function topsyPickMeadowSpot() {
     if (x < 80 || x > TOPSYTURVY_WIDTH - 80) continue;
     if (Math.abs(x - TOPSY_WELL_X) < TOPSY_MEADOW_CLEAR_OF_WELL) continue;
     if (Math.abs(x - TOPSY_SEEDPLOT_X) < TOPSY_MEADOW_CLEAR_OF_PLOT) continue;
+    if (Math.abs(x - TOPSY_SPIRAL_SLIDE_X) < TOPSY_MEADOW_CLEAR_OF_SLIDE) continue;
     if (topsyMeadowSeeds.some(s => Math.abs(s.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
     return x;
   }
   return null;
+}
+
+// CONFIRMED ADD ("have a hole for that spiral slide to the right of the
+// daffodils that shows up once you finish growing all the small
+// dandelions... like it drops you at the bottom of the magic faraway
+// tree, for now at least"): once the meadow reaches its cap, a spiral
+// slide hole opens up past the meadow's own reach -- a quick way back
+// down, landing right at the base of the fungus climb (the very tree
+// climbed up to reach this land in the first place -- Sam's own "magic
+// faraway tree" reference, see the Ctrl+Shift+F debug spawn's comment
+// for the same idea). Kept to the SAME simple "press space near it,
+// short animation, real scene transition" shape moleHoleEntrance
+// already uses -- this is a quick shortcut hole, not a whole physical
+// slide to walk/ride along like the pool's own elaborate chute.
+const TOPSY_SPIRAL_SLIDE_X = TOPSYTURVY_WIDTH - 50; // past where any meadow dandelion can spawn (topsyPickMeadowSpot caps at WIDTH-80) -- genuinely "to the right of" the whole meadow cluster, not just the plot
+const TOPSY_SPIRAL_SLIDE_FALL_MS = 900;
+let topsySpiralSlide = { active: false, t: 0 };
+// set the instant the slide's own fall finishes and cleared the instant
+// the resulting scene arrival is handled -- lets the shared scene-
+// arrival switch (see its own topsyturvy->forest branches) tell this
+// deliberate slide-down apart from the ordinary "climbed back down the
+// fungus tree" return, which reuses the exact same scene pair.
+let topsySpiralSlideJustUsed = false;
+
+function topsySpiralSlideUnlocked() {
+  return topsyMeadowSeeds.length >= TOPSY_MEADOW_MAX;
+}
+
+function updateTopsySpiralSlide(deltaTime) {
+  if (!topsySpiralSlideUnlocked()) return;
+  if (topsySpiralSlide.active) {
+    topsySpiralSlide.t += deltaTime * 1000;
+    if (topsySpiralSlide.t >= TOPSY_SPIRAL_SLIDE_FALL_MS) {
+      topsySpiralSlide.active = false;
+      topsySpiralSlideJustUsed = true;
+      startSeasonTransition("forest");
+    }
+    return;
+  }
+  if (keys.spaceJustPressed && isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 24, 15, 15)) {
+    topsySpiralSlide.active = true;
+    topsySpiralSlide.t = 0;
+  }
+}
+
+// hole art + a decorative spinning spiral (same "3 rings, different
+// radii/speeds" idiom the pool's whirlpool uses for its own swirl) plus
+// a mole-hole-style growing dark disc while actually falling through --
+// the player sprite keeps its normal position/physics the whole time
+// (same "brief in-place effect, not real physics" trick moleHoleEntrance
+// uses), this overlay is what visually sells "going down."
+function drawTopsySpiralSlide(camX) {
+  if (!topsySpiralSlideUnlocked()) return;
+  const sx = TOPSY_SPIRAL_SLIDE_X - camX;
+  if (sx < -60 || sx > canvas.width + 60) return;
+  const t = performance.now() * 0.001;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, gy + 2, 22, 11, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#241a30";
+  ctx.fill();
+  ctx.strokeStyle = "#5a3e6e";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // rotating spiral arcs winding down into the hole
+  [0.35, 0.6, 0.85].forEach((frac, i) => {
+    const r = 19 * frac;
+    const spin = t * (1.7 - i * 0.35) + i * 2.1;
+    ctx.strokeStyle = `rgba(225,205,240,${0.55 - i * 0.12})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(sx, gy + 2, r, r * 0.55, 0, spin, spin + Math.PI * 1.3);
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  if (!topsySpiralSlide.active && isPlayerNear(TOPSY_SPIRAL_SLIDE_X, 0, 40, 20, 20)) {
+    ctx.fillStyle = "#3a2a4a";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Press SPACE to slide down", sx, gy - 30);
+    ctx.textAlign = "left";
+  }
+
+  // sink-and-fade, drawn on top of everything -- same trick
+  // drawMoleHoleEntrance uses: a short in-place effect over the hole
+  // rather than any real physics on the player itself.
+  if (topsySpiralSlide.active) {
+    const p = Math.min(1, topsySpiralSlide.t / TOPSY_SPIRAL_SLIDE_FALL_MS);
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(sx, gy + 2, 22, 11, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = p;
+    ctx.fillStyle = "#0a0510";
+    ctx.beginPath();
+    ctx.ellipse(sx, gy + 2 + p * 30, 25 - p * 8, 12 - p * 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 // CONFIRMED CHANGE ("move everything to the right a lot more ...
@@ -20751,6 +20913,7 @@ function updateTopsyTurvyScene(deltaTime) {
   }
 
   updateTopsyWellAndSeedPlot(deltaTime);
+  updateTopsySpiralSlide(deltaTime);
 
   // CONFIRMED BUG FIX ("cameray needs to follow uplayer upwards like
   // when jumping on supare tall tree roots"): topsy-turvy never tracked
@@ -24282,6 +24445,7 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyWindSeedPlot(camX);
   topsyMeadowSeeds.forEach(seed => drawTopsyMeadowDandelion(camX, seed));
   drawTopsyMeadowScatterBurst(camX);
+  drawTopsySpiralSlide(camX);
   drawTopsyAmbientWindSeeds(camX);
   drawTopsyUpsideDownBirds(camX);
   drawTopsyTurvyPig(camX);
