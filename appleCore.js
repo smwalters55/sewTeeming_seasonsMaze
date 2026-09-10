@@ -529,6 +529,15 @@ let bucketFilled = false;
 // path (which never touches this) keeps reading as a full bucket.
 let bucketWaterAmount = 1;
 const BUCKET_DROPS_NEEDED = 3;
+// CONFIRMED ADD ("make the bucket in play, when it has water, to wobble
+// too on the head"): drives a visible side-to-side rock on the carried
+// full bucket. Phase advances with actual distance walked (same signal
+// the spill/splash mechanic already uses), energy ramps up while
+// stepping and decays back to still when you stop -- see
+// updateTopsyWellAndSeedPlot's SPILL block for where both are driven,
+// and the held-item render block for where the rotation is applied.
+let topsyBucketWobblePhase = 0;
+let topsyBucketWobbleEnergy = 0;
 
 // heldItem = the item type currently "picked up" in hand, ready to place
 // into a slot. Click an inventory chip to select/deselect it.
@@ -4712,6 +4721,16 @@ function applyPhysics(){
       // technically staying "landed" on paper.
       if (bestPlatform && bestPlatform.dynamic) {
         player.x = bestPlatform.centerX - player.width / 2;
+      }
+      // CONFIRMED ADD ("i want the white parts of the flower to shuffle
+      // a little when you land on them"): stamps the moment of a
+      // genuinely fresh landing on the puffball head (falling into it,
+      // not just resting there frame after frame -- same "was below the
+      // surface a moment ago" edge check the chef room's furniture-
+      // landing wobble uses) so drawTopsyWindSeedPlot can play a quick
+      // decaying jitter across the strands.
+      if (bestPlatform === topsyDandelionHeadPlatform && prevPlayerY > bestTop) {
+        topsyDandelionHeadPlatform.lastLandTime = performance.now();
       }
     }
     // CONFIRMED ADD ("make player more wobbly on the towers... add a
@@ -18894,6 +18913,11 @@ const topsyDandelionHeadPlatform = {
   width: TOPSY_DANDELION_HEAD_R * 1.4,
   height: TOPSY_DANDELION_HEAD_PLATFORM_HEIGHT
 };
+// CONFIRMED ADD ("i want the white parts of the flower to shuffle a
+// little when you land on them"): how long the post-landing jitter
+// plays, in ms -- see drawTopsyWindSeedPlot's strand loop for the decay
+// math itself.
+const TOPSY_DANDELION_HEAD_SHUFFLE_DURATION = 450;
 
 // CONFIRMED CHANGE ("move everything to the right a lot more ...
 // breathing room"): shifted right along with the tall tree it's paired
@@ -19173,22 +19197,41 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
         // fairly rare roll -- easy to miss entirely at a glance. A first
         // pass at "more obvious" (multi-droplet burst, rolled often,
         // flung hard/wide) badly overshot -- direct feedback ("way too
-        // much water coming out of bucket") -- so this is scaled back
-        // to a real but modest bump: bigger and more visible per-droplet
-        // (see the render tuning below) without turning every step into
-        // a small fountain.
-        if (Math.random() < movedPx * 0.045) {
-          const burst = 1 + (Math.random() < 0.3 ? 1 : 0); // usually 1 droplet, occasionally 2
+        // much water coming out of bucket") -- so that round got scaled
+        // back to a modest bump.
+        // CONFIRMED CHANGE ("make the water coming out of the bucket a
+        // lot more obvious... like rn you can barely tell why its
+        // getting less water"): that modest bump still read as too
+        // subtle to actually explain the drain, so this goes bigger
+        // again -- rolled about twice as often, a bigger 2-3 droplet
+        // burst instead of mostly-singles, and a wider fling (see the
+        // dx/vy spread below and the matching size/opacity bump in the
+        // render block) -- aiming for genuinely obvious without
+        // repeating the earlier overshoot's nonstop-fountain feel.
+        if (Math.random() < movedPx * 0.09) {
+          const burst = 2 + (Math.random() < 0.5 ? 1 : 0); // 2-3 droplets per burst
           for (let k = 0; k < burst; k++) {
-            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 16, vy: -22 - Math.random() * 16 });
+            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 26, vy: -26 - Math.random() * 20 });
           }
         }
+        // CONFIRMED ADD ("make the bucket... wobble too on the head"):
+        // phase advances with distance walked (a steady rock as you
+        // step), energy ramps up toward a cap so a burst of movement
+        // builds up a visible sway rather than snapping straight to it.
+        topsyBucketWobblePhase += movedPx * 0.14;
+        topsyBucketWobbleEnergy = Math.min(1, topsyBucketWobbleEnergy + movedPx * 0.03);
       }
     }
     topsyWell.lastPlayerX = player.x;
   } else {
     topsyWell.lastPlayerX = null; // not carrying -- nothing to measure against next time it starts
   }
+
+  // decays every frame regardless of movement this particular frame, so
+  // the wobble settles back to still (rather than holding at full sway)
+  // as soon as you stop walking, same shape as the furniture room's own
+  // landing-wobble decay.
+  topsyBucketWobbleEnergy *= Math.exp(-dt / 260);
 
   // age out and drop finished splash particles regardless of held item --
   // if the bucket got swapped out mid-flight the last couple of droplets
@@ -23077,10 +23120,22 @@ function drawTopsyWindSeedPlot(camX) {
     // around instead of only the top half
     if (headP > 0) {
       const strands = 34;
+      // CONFIRMED ADD ("i want the white parts of the flower to shuffle
+      // a little when you land on them"): a quick, decaying per-strand
+      // jitter right after a fresh landing on topsyDandelionHeadPlatform
+      // (stamped in applyPhysics' shared landing check) -- each strand
+      // gets its own random phase/frequency so the whole puffball reads
+      // as genuinely jostled rather than one uniform pulse.
+      const sinceHeadLand = performance.now() - (topsyDandelionHeadPlatform.lastLandTime || -1e9);
+      const headShuffling = sinceHeadLand >= 0 && sinceHeadLand < TOPSY_DANDELION_HEAD_SHUFFLE_DURATION;
+      const headShuffleEnv = headShuffling ? Math.exp(-sinceHeadLand / 130) : 0;
       for (let i = 0; i < strands; i++) {
         const a = (i / strands) * Math.PI * 2 + i * 0.29;
         const len = headR * (0.85 + pseudoRandom(TOPSY_SEEDPLOT_X + i * 17) * 0.22);
-        const tx = headCx + Math.cos(a) * len, ty = headCy + Math.sin(a) * len * 0.94;
+        const angleJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.05 + pseudoRandom(i * 3.1) * 0.05) + i * 1.7) * 0.4;
+        const lenJitter = headShuffleEnv * Math.sin(sinceHeadLand * (0.06 + pseudoRandom(i * 5.3) * 0.05) + i * 2.3) * headR * 0.18;
+        const ja = a + angleJitter, jlen = len + lenJitter;
+        const tx = headCx + Math.cos(ja) * jlen, ty = headCy + Math.sin(ja) * jlen * 0.94;
         ctx.strokeStyle = "rgba(240,238,225,0.85)";
         ctx.lineWidth = 1.1;
         ctx.beginPath();
@@ -64366,6 +64421,15 @@ if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player
     const popT = Math.min(1, sincePickup / 220);
     const eased = 1 - Math.pow(1 - popT, 3); // ease-out, quick then settling
     drawCollectible(ctx, heldPos.x - camX, heldPos.y + (1 - eased) * 8, 10 * (0.6 + eased * 0.4), 0, heldItem);
+  } else if (heldItem === "bucket" && bucketFilled) {
+    // CONFIRMED ADD ("make the bucket in play, when it has water, to
+    // wobble too on the head"): rocks side-to-side while carrying a full
+    // bucket, driven by topsyBucketWobblePhase/Energy (see
+    // updateTopsyWellAndSeedPlot's SPILL block) -- builds up with actual
+    // walking and settles back to still when you stop, same "it's really
+    // sloshing" read as the splash droplets, just on the bucket itself.
+    const wobbleRot = Math.sin(topsyBucketWobblePhase) * topsyBucketWobbleEnergy * 0.3;
+    drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, wobbleRot, heldItem);
   } else {
     drawCollectible(ctx, heldPos.x - camX, heldPos.y, 10, 0, heldItem);
   }
@@ -64382,21 +64446,26 @@ if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player
   // water coming out of bucket"): a little bigger/brighter than the
   // very first version, with a small highlight fleck so a droplet
   // actually reads, but nowhere near the overshot first pass's size/
-  // height/opacity/spawn-rate -- see the spawn-rate tuning above.
+  // height/opacity/spawn-rate.
+  // CONFIRMED CHANGE ("make the water coming out of the bucket a lot
+  // more obvious... like splashing everywhere"): that modest bump still
+  // didn't sell "the bucket is visibly losing water", so droplets are
+  // bigger again, brighter, travel further, and spread wider -- see the
+  // matching spawn-rate/burst-size bump in updateTopsyWellAndSeedPlot.
   if (heldItem === "bucket" && topsyCarrySplashes.length) {
     topsyCarrySplashes.forEach(s => {
       const p = s.age / TOPSY_CARRY_SPLASH_LIFE;
       const eased = 1 - (1 - p) * (1 - p); // ease-out -- quick initial slosh, drifting to a gentle stop
-      const riseY = -eased * (26 + Math.abs(s.vy) * 0.6);
-      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 1.8;
+      const riseY = -eased * (34 + Math.abs(s.vy) * 0.7);
+      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 2.6;
       const dx = heldPos.x - camX + s.dx + wobbleX, dy = heldPos.y + 6 + riseY;
-      ctx.fillStyle = `rgba(120,175,230,${0.7 * (1 - p)})`;
+      ctx.fillStyle = `rgba(110,170,230,${0.85 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(dx, dy, 2.1, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx, dy, 3.2, 4.4, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(230,245,255,${0.55 * (1 - p)})`;
+      ctx.fillStyle = `rgba(235,248,255,${0.68 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(dx - 0.8, dy - 1, 0.9, 1.2, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx - 1.1, dy - 1.4, 1.3, 1.7, 0, 0, Math.PI * 2);
       ctx.fill();
     });
   }
