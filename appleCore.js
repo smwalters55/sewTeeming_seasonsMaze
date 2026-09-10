@@ -432,6 +432,34 @@ window.addEventListener("keydown", e => {
     updateMapUI();
     updateInventoryUI();
   }
+
+  // DEBUG CHEAT ("debug spawn me in front of the pot gauntlet pls"):
+  // Ctrl+Alt+Shift+F -- checked carefully against the other F combos
+  // already in use (plain Shift+F, Ctrl+Shift+F, Alt+Shift+F) and against
+  // real OS/browser bindings before picking this one, same "check
+  // carefully so i dont waste time" bar as the Shift+K collision fix.
+  // Neither ctrlKey+altKey+shiftKey together, nor F specifically with
+  // that combination, is bound to anything at the Windows or common-
+  // browser level (unlike, say, Ctrl+Shift+K, which opens Firefox's own
+  // console).
+  if ((e.key==="f" || e.key==="F") && e.ctrlKey && e.altKey && e.shiftKey && !e.repeat) {
+    resetAllPlayerModeFlags();
+    currentScene = "topsyturvy";
+    player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    player.launched = false;
+    player.rockClingIndex = -1;
+    cameraX = Math.max(0, TOPSY_POT_GAUNTLET_START_X - 400);
+    cameraY = 0;
+    seasonTransition.phase = "idle";
+    discoveredScenes.topsyturvy = true;
+    updateMapUI();
+    updateInventoryUI();
+  }
 });
 
 window.addEventListener("keyup", e => {
@@ -688,6 +716,7 @@ const ITEM_ICONS = {
   plumStick: "🌿",
   pearStick: "🌿",
   peachStick: "🌿",
+  goldenLadle: "🥄", // reward for clearing the topsy-turvy pot gauntlet -- see TOPSY_POT_GAUNTLET_POTS
   apple: "🍏",
   roundLeaf: "🍂",
   mapleLeaf: "🍁",
@@ -1022,7 +1051,7 @@ const ITEM_CANVAS_RENDER = {
 // aragonite and geode both added -- neither is a stackable pickup, each
 // is exactly one unique found mineral (with its own permanent shine/crack
 // cosmetic state), so a "x1" count reads as clutter rather than useful info
-const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed", "pinwheel"]; // windSeed/pinwheel can never exceed 1, so the "x1" label is just noise
+const NO_COUNT_LABEL = ["bucket", "honey", "plumStick", "pearStick", "peachStick", "roundLeaf", "mapleLeaf", "boomerang", "lamp", "marble", "paperAirplane", "shovel", "aragonite", "geode", "windSeed", "pinwheel", "goldenLadle"]; // windSeed/pinwheel/goldenLadle can never exceed 1, so the "x1" label is just noise
 
 // CONFIRMED CHANGE: items that only ever do anything in a couple of
 // specific "home" scenes (see the matching heldItem safety nets near
@@ -5046,6 +5075,72 @@ function applyPhysics(){
     // under them, same "recomputed every frame" shape the rest of this
     // block already uses for position.
     player.topsyRidingStack = !!(bestPlatform && bestPlatform.dynamic);
+  }
+
+  // POT GAUNTLET -- CONFIRMED ADD ("pots and pans relatively horizontal
+  // in the air... kept flipping right side up and upside down randomly
+  // and you have to land it each one or you fall off and have to start
+  // over... jump forward/back and up/down between 3-4 jagged layers,
+  // overall movement to the right"). Each pot is ALWAYS solid (never a
+  // pass-through) -- the difference is what happens when you land on one:
+  // upright, it holds you like a normal platform; upside-down, it's a
+  // bounce pad (same shape as the meadow dandelion's own bounce-flight,
+  // just a flat single kick instead of an escalating streak) that pops
+  // you back up so you get another shot once it flips, matching "keep
+  // jumping on the upside down pot until it turns right side up."
+  {
+    const playerCenterX = player.x + player.width / 2;
+    const playerBottom = player.y;
+    let landedPot = null;
+    for (const pot of TOPSY_POT_GAUNTLET_POTS) {
+      if (Math.abs(playerCenterX - pot.x) < TOPSY_POT_GAUNTLET_HALF_WIDTH &&
+          playerBottom <= pot.height &&
+          playerBottom >= pot.height - 14 &&
+          player.vy <= 0) {
+        landedPot = pot;
+        break;
+      }
+    }
+    if (landedPot) {
+      if (topsyPotUpright(landedPot)) {
+        player.y = landedPot.height;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
+          topsyPotGauntlet.rewardGranted = true;
+          addToInventory("goldenLadle");
+          topsyPotGauntletWinFlashAt = performance.now();
+        }
+      } else {
+        // upside-down: a bounce kick, not a landing -- same gravity/vy
+        // shape as the dandelion bounce-flight above, just a single flat
+        // kick (no escalating streak) since this is a "keep trying until
+        // it flips" beat, not a reward moment.
+        player.y = landedPot.height;
+        player.vy = TOPSY_POT_GAUNTLET_BOUNCE_VY;
+        player.jumping = true;
+        player.usedDoubleJump = false;
+      }
+    }
+  }
+  // fail/reset -- only counts as "fell" if it's a genuine return to real
+  // ground (y<=0, not just resting on a pot) somewhere inside the
+  // gauntlet's own span, and only on the frame that actually happens
+  // (edge-detected off the previous frame's y) so it doesn't re-fire
+  // every single frame while standing there.
+  {
+    const px = player.x + player.width / 2;
+    const inGauntletSpan = px > TOPSY_POT_GAUNTLET_START_X - 6 && px < TOPSY_POT_GAUNTLET_END_X + 40;
+    if (inGauntletSpan && player.y <= 0 && !player.jumping && topsyPotGauntlet.prevPlayerY > 0) {
+      player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
+      player.y = 0;
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    topsyPotGauntlet.prevPlayerY = player.y;
   }
 
   } // end currentScene checks
@@ -18817,7 +18912,7 @@ function updateFungusPulleyRide(deltaTime) {
 // (and moving the slide out to the new edge, see TOPSY_SPIRAL_SLIDE_X)
 // pushes that clearance zone well clear of the meadow's whole right-side
 // range instead of trying to re-tune the spawn formula around it.
-const TOPSYTURVY_WIDTH = 3170;
+const TOPSYTURVY_WIDTH = 3750; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as everything else from the cart onward, so the world still ends with the same margin past TOPSY_SPIRAL_SLIDE_X (= WIDTH-50) it always did
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -18889,7 +18984,7 @@ const topsyTurvyTrees = [
   // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
   // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
   // 1420) -- nudged out to give the cart/pluck spot some breathing room.
-  { x: 1680, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("all of this is way too cramped, space it out"): nudged out again (was 1560, before that 1490) now that the whole cart->well stretch has more room.
+  { x: 2260, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with the cart, same reason -- see TOPSY_CART_X's own comment. Was 1680 (itself already nudged out from 1560/1490 "all of this is way too cramped").
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18992,7 +19087,7 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // remember breathing room breeeathing room"): pushed further right
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
-const TOPSY_WELL_X = 2300; // CONFIRMED CHANGE ("move well and dirt mound appropriately" -- shifted +250 along with the invert chain/sky garden moving further right, so it stays clear of the chain's new rightmost extent): was 2050
+const TOPSY_WELL_X = 2880; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with everything from the cart onward, to clear the new pot gauntlet. Was 2300 (itself already shifted +250 before that, from 2050, along with the invert chain/sky garden).
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
@@ -19030,8 +19125,13 @@ const TOPSY_WELL_X = 2300; // CONFIRMED CHANGE ("move well and dirt mound approp
 // technique used for every other reachability-sensitive climb this
 // project) to the new dip-launch's own rise budget -- see
 // TOPSY_INVERT_LAUNCH_VY/TOPSY_INVERT_DIVE_GRAVITY just below.
+// CONFIRMED CHANGE ("move stuff to the right as appropriate"): every x in
+// this whole chain +580, same delta/reason as TOPSY_CART_X's own comment
+// (clearing the new pot gauntlet) -- heights/widths/gaps are all
+// untouched, so every already-tuned reachability relationship in this
+// chain (see its own comments below) carries over exactly as-is.
 const TOPSY_INVERT_PLATFORMS = [
-  { x: 1780, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
+  { x: 2360, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
   // CONFIRMED CHANGE ("jump budget still a lil too high" pass): raised
   // from 114 -- gives the hop up to platform2 a bit more margin under
   // the same launch budget. Not the actual fix for the reported skip
@@ -19039,16 +19139,16 @@ const TOPSY_INVERT_PLATFORMS = [
   // platform2's own raise just came out of the same reachability-
   // simulation pass and were left in since they only add headroom, never
   // remove it.
-  { x: 1880, height: 150, width: 70 }, // the original dive-down target
+  { x: 2460, height: 150, width: 70 }, // the original dive-down target
   // CONFIRMED FIX (reachability simulation): this used to sit at the
   // SAME x as platform0 (1780) directly below it -- any climb heading
   // back toward that column would cross platform0's own attach height
   // first and get vacuumed onto it, making this platform essentially
   // unreachable. Shifted off that column (1830) so a launch toward it
   // doesn't pass through platform0 on the way.
-  { x: 1830, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
-  { x: 1900, height: 342, width: 70 },
-  { x: 1760, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
+  { x: 2410, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
+  { x: 2480, height: 342, width: 70 },
+  { x: 2340, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
   // CONFIRMED CHANGE ("some of it being horizontal not just an upward
   // climb", then "make it more sideways to the right, moving the highest
   // platform w reward further to the right as well"): the sideways
@@ -19060,7 +19160,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // (1705-1815) on x alone now, so the earlier height-tuning trick
   // needed for the old 1650 platform (see its own now-removed comment)
   // isn't needed here.
-  { x: 1930, height: 450, width: 70 },
+  { x: 2510, height: 450, width: 70 },
   // CONFIRMED CHANGE ("jump budget still a lil too high" -- reachability
   // simulation found platform3 (342) could launch straight past this one
   // and land directly on the platform after it (524, now 565), skipping
@@ -19069,7 +19169,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // either side of it (450 -> here, here -> the next one up) both still
   // clear it with real margin -- verified via the same frame-by-frame
   // simulation used everywhere else in this chain.
-  { x: 2000, height: 480, width: 70 },
+  { x: 2580, height: 480, width: 70 },
   // climb resumes -- shifted +150/+170 right of where these used to sit
   // (1880/1780) to match the rest of the rightward move, same relative
   // shape (small hop up, then a bit back left before the capstone) as
@@ -19082,8 +19182,8 @@ const TOPSY_INVERT_PLATFORMS = [
   // skip (its own required rise now exceeds the launch budget from the
   // rest platform) while the legitimate hop up from 480 still clears
   // with real margin.
-  { x: 2050, height: 565, width: 70 },
-  { x: 1950, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
+  { x: 2630, height: 565, width: 70 },
+  { x: 2530, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
 // CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
 // top... i want to be able to jump on it but going downwards", now
@@ -19160,7 +19260,7 @@ const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 // the right as well"): shifted +170 along with the last invert chunk
 // (now x1950) so it still overlaps that chunk's own catch band and a
 // straight-up launch from it lands here. Was x1765 (spanned 1765-1895).
-const TOPSY_SKY_GARDEN = { x: 1935, height: 690, width: 130 };
+const TOPSY_SKY_GARDEN = { x: 2515, height: 690, width: 130 }; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as the invert chain it caps
 // CONFIRMED ADD ("soft cap after the highest platform like it goes up
 // waaay too high"): the invert chain's own light dive gravity gives a
 // big rise budget so the bigger hops are reachable (see
@@ -19234,7 +19334,7 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // clear ground on every side.
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
 // shifted right along with the well, gap between them held steady.
-const TOPSY_SEEDPLOT_X = 2650; // CONFIRMED CHANGE ("move well and dirt mound appropriately"): shifted +250 to keep the same gap from TOPSY_WELL_X now that it moved right too. Was 2400.
+const TOPSY_SEEDPLOT_X = 3230; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as TOPSY_WELL_X, keeping the same gap between them. Was 2650 (itself already shifted +250 from 2400).
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
@@ -19949,7 +20049,14 @@ function drawTopsySpiralSlideRoom(camX) {
 // breathing room"): shifted right along with the tall tree it's paired
 // with (kept the same 20px offset between them so the boost-up-to-the-
 // roots relationship still lines up).
-const TOPSY_CART_X = 1420;
+// CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, to
+// clear the new pot gauntlet (TOPSY_POT_GAUNTLET_POTS, spanning
+// ~1300-1890) which didn't exist when this and everything after it were
+// originally placed -- was 1420, sitting squarely inside the gauntlet's
+// own span. Shifting the cart and every landmark after it by the same
+// delta (see this file's other "was X, now X+580" comments below)
+// preserves all of their already-tuned relative spacing to each other.
+const TOPSY_CART_X = 2000;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
 // (see drawTopsyTurvyCart below), so its landing hitbox/wander range
@@ -22872,8 +22979,15 @@ const TOPSY_PIG_POTS = [
 // code below so the two can never disagree about whether there's
 // currently anything up there to stand on.
 function topsyPigHasPots() {
-  return topsyChef.sequencePhase !== "inside" &&
-    (topsyChef.sequencePhase !== "pigOut" && topsyChef.sequencePhase !== "done" || !topsyChef.fullyWonOver);
+  // CONFIRMED CHANGE ("why would pots disappear though after [fully
+  // winning the chef over], idk if i like that"): used to also hide once
+  // topsyChef.fullyWonOver was true, as an unannounced "quest complete"
+  // visual change -- pulled that condition since it read as things going
+  // missing/breaking rather than a deliberate reward. The pig keeps its
+  // pot stack (and stays a standable platform) for the whole visit now,
+  // same as before the tomato questline resolves; only actually being
+  // "inside" hides it.
+  return topsyChef.sequencePhase !== "inside";
 }
 // CONFIRMED ADD ("jump on the pans... and wobble along with them"): the
 // current world position of the TOP pot's own anchor point, in the same
@@ -23038,6 +23152,165 @@ function drawTopsyTurvyPigPots() {
     ctx.restore();
     stackY += h * 1.85;
   });
+}
+
+// CONFIRMED ADD ("pots and pans relatively horizontal in the air, in a
+// sort of vertical horizontal line, that kept flipping right side up and
+// upside down randomly and you have to land it each one or you fall off
+// and have to start over... 3-4 layers, jagged, overall movement to the
+// right, but within range of catching another one successfully"): a
+// standalone hanging-pot gauntlet placed in the open stretch between the
+// chef's house and the invert-chain climb. Reuses the same pot-silhouette
+// language as TOPSY_PIG_POTS/drawTopsyTurvyPigPots just above (rounded
+// cauldron belly, dark rim) so it visually reads as "more of the same
+// kitchenware," just hung in the air and much bigger since these are
+// meant to be landed on individually rather than glimpsed as a stack.
+const TOPSY_POT_GAUNTLET_START_X = 1300;
+const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot's rim
+const TOPSY_POT_GAUNTLET_BOUNCE_VY = 9; // flat kick off an upside-down pot -- enough hang time to try again once it flips, not a full re-jump
+// 4 layers, 60px apart -- comfortably inside a normal single jump's
+// ~90px reach (vy=12, gravity=0.8/frame => v^2/2g = 90) even without a
+// double jump, so no single hop in the sequence below is ever a forced
+// double-jump-only gap.
+const TOPSY_POT_GAUNTLET_LAYER_HEIGHTS = [45, 105, 165, 225];
+// {dx: distance from the PREVIOUS pot in the sequence, layer: index into
+// LAYER_HEIGHTS above} -- consecutive layers never jump by more than 1
+// (60px) so any two pots back-to-back in this list are always a fair
+// single hop, while the sequence as a whole zig-zags up/down across all
+// 4 layers (not a simple staircase) for the "jagged" placement asked for.
+// Horizontal gaps vary (45-65px) for the same non-gridded reason.
+// CONFIRMED CHANGE ("we need like 9-12 pots/pans"): 11 -> 12.
+const TOPSY_POT_GAUNTLET_LAYOUT = [
+  { dx: 0, layer: 0 }, { dx: 50, layer: 1 }, { dx: 45, layer: 2 },
+  { dx: 55, layer: 1 }, { dx: 60, layer: 2 }, { dx: 50, layer: 3 },
+  { dx: 65, layer: 2 }, { dx: 45, layer: 3 }, { dx: 55, layer: 2 },
+  { dx: 60, layer: 1 }, { dx: 50, layer: 0 }, { dx: 55, layer: 1 }
+];
+const TOPSY_POT_GAUNTLET_POTS = (() => {
+  let x = TOPSY_POT_GAUNTLET_START_X;
+  return TOPSY_POT_GAUNTLET_LAYOUT.map((p, i) => {
+    x += p.dx;
+    return {
+      i,
+      x,
+      height: TOPSY_POT_GAUNTLET_LAYER_HEIGHTS[p.layer],
+      // staggered per-pot flip timing (own period + phase) so the whole
+      // row never reads as one synced blink -- same "no two are ever in
+      // the same part of their cycle" idea the tomato cart's own float
+      // cycle already uses.
+      period: 1900 + pseudoRandom(i * 71 + 5) * 900,
+      phase: pseudoRandom(i * 37 + 11) * 10000,
+      uprightFraction: 0.58 // spends a little more than half of each cycle right-side-up -- landable more often than not, but never a guarantee
+    };
+  });
+})();
+const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
+let topsyPotGauntlet = { prevPlayerY: 0, rewardGranted: false };
+let topsyPotGauntletWinFlashAt = 0;
+
+function topsyPotUpright(pot) {
+  const t = (performance.now() + pot.phase) % pot.period;
+  return (t / pot.period) < pot.uprightFraction;
+}
+
+// one shared pot-body path, reused for both the upright and flipped
+// (upside-down) draw -- flipping is a literal ctx.scale(1,-1) around the
+// pot's own local origin rather than a second hand-authored shape, so
+// the two states can never visually drift apart.
+function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
+  const rimY = -h * 0.55, bellyY = h * 0.32, bottomY = h * 0.95;
+  const rimHalfW = w * 0.7, bellyHalfW = w;
+  ctx.fillStyle = "rgba(15,12,10,0.9)";
+  ctx.beginPath();
+  ctx.moveTo(-rimHalfW - 2, rimY);
+  ctx.quadraticCurveTo(-bellyHalfW - 2, bellyY, 0, bottomY + 2);
+  ctx.quadraticCurveTo(bellyHalfW + 2, bellyY, rimHalfW + 2, rimY);
+  ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW - 2, rimY);
+  ctx.fill();
+  const bodyGrad = ctx.createLinearGradient(-bellyHalfW, bellyY, bellyHalfW, bellyY);
+  bodyGrad.addColorStop(0, color);
+  bodyGrad.addColorStop(0.5, colorLite);
+  bodyGrad.addColorStop(1, color);
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.moveTo(-rimHalfW, rimY);
+  ctx.quadraticCurveTo(-bellyHalfW, bellyY, 0, bottomY);
+  ctx.quadraticCurveTo(bellyHalfW, bellyY, rimHalfW, rimY);
+  ctx.quadraticCurveTo(0, rimY - h * 0.3, -rimHalfW, rimY);
+  ctx.fill();
+  // dark hollow opening at the rim -- the "this is a container" cue
+  ctx.fillStyle = "rgba(20,16,14,0.85)";
+  ctx.beginPath();
+  ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rim;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawTopsyPotGauntlet(camX) {
+  const t = performance.now();
+  TOPSY_POT_GAUNTLET_POTS.forEach(pot => {
+    const sx = pot.x - camX;
+    if (sx < -50 || sx > canvas.width + 50) return;
+    const sy = gy - pot.height;
+    const upright = topsyPotUpright(pot);
+    // a short, snappy flip animation right around the transition instant
+    // instead of an instant hard swap, so the moment it turns read as an
+    // actual flip, not a pop -- sampled from how far into/out of its
+    // current state this pot is, clamped to a short window either side
+    const cyclePos = ((t + pot.phase) % pot.period) / pot.period;
+    const distToFlip = Math.min(
+      Math.abs(cyclePos - pot.uprightFraction),
+      Math.abs(cyclePos - 1)
+    );
+    const flipWindow = 0.045;
+    const flipT = Math.max(0, 1 - distToFlip / flipWindow);
+    const scaleY = upright
+      ? 1 - flipT * 0.35 // squash slightly as it's about to flip away
+      : -(1 - flipT * 0.35);
+
+    // chain/rope hanging it from an unseen branch above
+    ctx.strokeStyle = "rgba(90,75,55,0.65)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 22);
+    ctx.lineTo(sx, sy - 4);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(1, scaleY);
+    drawTopsyPotGauntletPotBody(22, 13, "#d97f45", "#b5622e", "#ffd9a0");
+    // small loop handles, same idiom as the pig's own stack
+    ctx.strokeStyle = "#7a3d18";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    [-1, 1].forEach(side => {
+      ctx.beginPath();
+      ctx.arc(side * 23.5, -13 * 0.55 + 13 * 0.3, 2.6, Math.PI * 0.15, Math.PI * 1.85, side < 0);
+      ctx.stroke();
+    });
+    ctx.restore();
+  });
+
+  // win flash -- a short golden sweep across the final pot the instant
+  // the reward is actually granted, same "you're done" idiom the river
+  // bridge's own completion glow uses
+  if (topsyPotGauntletWinFlashAt) {
+    const sinceWin = t - topsyPotGauntletWinFlashAt;
+    if (sinceWin < 600) {
+      const lastPot = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1];
+      const sx = lastPot.x - camX, sy = gy - lastPot.height;
+      const flashT = sinceWin / 600;
+      ctx.fillStyle = `rgba(255,235,170,${0.6 * (1 - flashT)})`;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - 8, 22 * (0.6 + flashT * 0.8), 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 // CONFIRMED CHANGE ("no i want the critter to be upside down dude"): the
@@ -23533,7 +23806,8 @@ function drawTopsyTurvyCart(camX) {
   // skipped here so the pile visibly thins out as you take from it.
   topsyTurvyCartTomatoes.slice(topsyCartTomatoesPlucked).forEach(a => {
     const cyclePhase = (t / (TOPSY_CART_FLOAT_PERIOD * 0.55 * a.periodMul)) * Math.PI * 2 + a.phase;
-    const bob = Math.max(0, Math.sin(cyclePhase)) * 42 * a.ampMul;
+    // CONFIRMED CHANGE ("make the tomatoes float up a lil higher"): 42 -> 56
+    const bob = Math.max(0, Math.sin(cyclePhase)) * 56 * a.ampMul;
     const settleY = topsyTurvyCartBedSettleY(a.dx);
     const ax = sx + a.dx + Math.sin(cyclePhase * 0.5 + a.phase) * 4;
     // CONFIRMED BUG FIX ("tomatoes are like sticking out of the bottom
@@ -25128,6 +25402,7 @@ function drawTopsyTurvyScene(camX) {
   topsyMeadowSeeds.forEach(seed => drawTopsyMeadowDandelion(camX, seed));
   drawTopsyMeadowScatterBurst(camX);
   drawTopsySpiralSlide(camX);
+  drawTopsyPotGauntlet(camX);
   drawTopsyAmbientWindSeeds(camX);
   drawTopsyUpsideDownBirds(camX);
   drawTopsyTurvyPig(camX);
