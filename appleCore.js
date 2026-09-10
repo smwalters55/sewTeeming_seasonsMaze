@@ -19395,19 +19395,32 @@ function drawTopsyChefInterior(camX) {
   // walls"): the room's actual playable width (TOPSY_CHEF_INTERIOR_HALF_WIDTH
   // either side of the house) used to just fade into the same
   // wallpaper as everything else, with nothing marking where the room
-  // itself ends -- same dark wood tone as the ceiling band, carried
-  // down the two flanking columns, reads as real side walls closing
-  // the room in instead of open-ended wallpaper.
+  // itself ends -- these flanking columns read as real side walls
+  // closing the room in instead of open-ended wallpaper.
+  // CONFIRMED CHANGE ("the cieling should prob look different from the
+  // walls"): was the exact same dark beam-wood as the ceiling band,
+  // which made the two blend into one continuous dark shape with no
+  // visible seam except a thin line. Walls now use a lighter, warmer
+  // wood tone (matching the floor's own plank color instead) with
+  // vertical plank seams rather than the ceiling's thick cross-beams,
+  // so ceiling and walls read as two different surfaces at a glance.
   const leftWallX = cx - TOPSY_CHEF_INTERIOR_HALF_WIDTH;
   const rightWallX = cx + TOPSY_CHEF_INTERIOR_HALF_WIDTH;
+  const wallGrad2 = ctx.createLinearGradient(0, ceilingY, 0, floorY);
+  wallGrad2.addColorStop(0, "#9c7a4e");
+  wallGrad2.addColorStop(1, "#8a6a42");
   if (leftWallX > 0) {
-    ctx.fillStyle = "#5c4326";
+    ctx.fillStyle = wallGrad2;
     ctx.fillRect(0, ceilingY, leftWallX, floorY - ceilingY);
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    for (let bx = -40; bx < leftWallX + 40; bx += 70) {
-      ctx.fillRect(bx, ceilingY, 10, floorY - ceilingY);
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    for (let bx = -20; bx < leftWallX + 20; bx += 30) {
+      ctx.beginPath();
+      ctx.moveTo(bx, ceilingY);
+      ctx.lineTo(bx, floorY);
+      ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(leftWallX, ceilingY);
@@ -19415,13 +19428,17 @@ function drawTopsyChefInterior(camX) {
     ctx.stroke();
   }
   if (rightWallX < canvas.width) {
-    ctx.fillStyle = "#5c4326";
+    ctx.fillStyle = wallGrad2;
     ctx.fillRect(rightWallX, ceilingY, canvas.width - rightWallX, floorY - ceilingY);
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
-    for (let bx = rightWallX - 30; bx < canvas.width + 40; bx += 70) {
-      ctx.fillRect(bx, ceilingY, 10, floorY - ceilingY);
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    for (let bx = rightWallX + 10; bx < canvas.width + 20; bx += 30) {
+      ctx.beginPath();
+      ctx.moveTo(bx, ceilingY);
+      ctx.lineTo(bx, floorY);
+      ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(rightWallX, ceilingY);
@@ -19545,7 +19562,13 @@ function drawTopsyChefArmchair(w, reach) {
   const seatTop = 46;
   const seatBottom = 68;
   const legsTop = 68;
-  const legsBottom = 103;
+  // CONFIRMED BUG FIX ("the couch legs shouldnt go past the cieling" --
+  // same fix applied here for every piece, not just the couch): a
+  // piece whose own attach height sits close to the ceiling can have a
+  // reach shorter than this fixed "ideal" leg length -- clamped to
+  // reach so the leg itself always stops right at the ceiling band
+  // instead of visibly poking past it into the beam texture.
+  const legsBottom = Math.min(103, reach);
 
   // tall puffy backrest, narrower than the seat
   const backGrad = ctx.createLinearGradient(0, backTop, 0, backBottom);
@@ -19664,7 +19687,10 @@ function drawTopsyChefCoffeeTable(w, reach) {
   const topSurface = 0;
   const tableBottom = 10;
   const legsTop = 10;
-  const legsBottom = 32;
+  // CONFIRMED BUG FIX ("the couch legs shouldnt go past the cieling"):
+  // clamped to reach so the leg stops right at the ceiling band instead
+  // of poking past it when this piece sits close to it.
+  const legsBottom = Math.min(32, reach);
 
   const topGrad = ctx.createLinearGradient(0, topSurface, 0, tableBottom);
   topGrad.addColorStop(0, "#b98a54");
@@ -19810,7 +19836,12 @@ function drawTopsyChefLoveCouch(w, reach) {
   const seatTop = 23;
   const seatBottom = 45;
   const legsTop = 45;
-  const legsBottom = 77;
+  // CONFIRMED BUG FIX ("the couch legs shouldnt go past the cieling"):
+  // the couch sits closest to the ceiling of any piece, so its fixed
+  // 32px leg length was the one that actually overshot -- clamped to
+  // reach so the leg stops right at the ceiling band instead of
+  // visibly poking past it into the beam texture.
+  const legsBottom = Math.min(77, reach);
 
   // tall rolled arms at both ends
   [-1, 1].forEach(side => {
@@ -20148,6 +20179,12 @@ function updateTopsyTurvyScene(deltaTime) {
   // which share this same check -- fire while still climbing the upper
   // stretch of the ladder, not only once pinned exactly at the very top.
   const nearGrumpyWindow = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 40, 25, 85);
+  // CONFIRMED CHANGE ("make the radius wider for entering the rat
+  // home... like for spacebar"): the peek-inside trigger specifically
+  // gets its own, more generous radius -- the dialogue/tomato-give
+  // checks above and below stay on the original tighter one, this is
+  // just about making it easier to actually walk up and get IN.
+  const nearGrumpyWindowForEntry = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 70, 40, 110);
   if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
@@ -20173,7 +20210,7 @@ function updateTopsyTurvyScene(deltaTime) {
   // never fires again without releasing and re-pressing up while
   // already pinned at the top, which read as "broken". Space isn't
   // used by the ladder at all, so there's no held-key conflict.
-  if (grumpyHouse && nearGrumpyWindow && keys.spaceJustPressed &&
+  if (grumpyHouse && nearGrumpyWindowForEntry && keys.spaceJustPressed &&
       topsyChef.sequencePhase === "done") {
     topsyChefInteriorReturn.x = player.x;
     topsyChefInteriorReturn.y = player.y;
@@ -20826,24 +20863,6 @@ function drawTopsyTurvyHouse(camX, h) {
           "ratatouille needed. Go on, take a peek inside."
         ]);
       }
-    }
-
-    // CONFIRMED ADD ("lets do the chef house peek"): a small on-screen
-    // nudge that the window is actually enterable, same plain monospace
-    // "press X to ..." style used for the sandbox pinboard's close hint
-    // elsewhere in this file. Gated on the exact same phase check the
-    // real up-press trigger itself uses (see updateTopsyTurvyScene) --
-    // CONFIRMED CHANGE ("but only once tomatos given AND DOOR Opens"):
-    // that's "done" only now, so the hint itself only ever shows once
-    // the door has actually opened and the tomato sequence has finished.
-    if (isPlayerNear(h.x, topsyHouseDoorstepHeight(h), 40, 25, 85) && topsyChef.sequencePhase === "done") {
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.font = "10px ui-monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("press SPACE to peek inside", sx + 16 * s, y(wallTop - 14 * s));
-      ctx.textAlign = "left";
-      ctx.globalAlpha = 1;
     }
   }
 
