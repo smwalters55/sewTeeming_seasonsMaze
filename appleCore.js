@@ -4731,6 +4731,35 @@ function applyPhysics(){
       // decaying jitter across the strands.
       if (bestPlatform === topsyDandelionHeadPlatform && prevPlayerY > bestTop) {
         topsyDandelionHeadPlatform.lastLandTime = performance.now();
+        // CONFIRMED ADD ("make the bounce feel good... trampoline-
+        // style"): overrides the plain "come to rest" landing just set
+        // above -- a gentle automatic upward kick, and jumping stays
+        // true (instead of the resting false every other platform gets)
+        // so gravity immediately starts pulling back down into the next
+        // hop rather than parking the player standing still on it.
+        player.vy = TOPSY_DANDELION_BOUNCE_VY;
+        player.jumping = true;
+        player.usedDoubleJump = false;
+        // CONFIRMED ADD ("blowing them would scatter seeds that then
+        // make more small dandelions nearby... make a little dandelion
+        // meadow"): every bounce has a shot at scattering 1-2 seeds that
+        // take root nearby, up to the meadow cap -- see
+        // topsyPickMeadowSpot's own comment for the placement rules.
+        if (topsyMeadowSeeds.length < TOPSY_MEADOW_MAX && Math.random() < 0.6) {
+          const spawnCount = 1 + (Math.random() < 0.35 ? 1 : 0);
+          for (let s = 0; s < spawnCount && topsyMeadowSeeds.length < TOPSY_MEADOW_MAX; s++) {
+            const spot = topsyPickMeadowSpot();
+            if (spot !== null) topsyMeadowSeeds.push({ x: spot, plantedAt: performance.now() });
+          }
+          for (let k = 0; k < 10; k++) {
+            topsyMeadowScatterBurst.push({
+              age: 0,
+              angle: Math.random() * Math.PI * 2,
+              dist: 8 + Math.random() * 16,
+              vy: -(16 + Math.random() * 14)
+            });
+          }
+        }
       }
     }
     // CONFIRMED ADD ("make player more wobbly on the towers... add a
@@ -18918,6 +18947,56 @@ const topsyDandelionHeadPlatform = {
 // plays, in ms -- see drawTopsyWindSeedPlot's strand loop for the decay
 // math itself.
 const TOPSY_DANDELION_HEAD_SHUFFLE_DURATION = 450;
+// CONFIRMED ADD ("make the bounce feel good... trampoline-style"): a
+// gentle automatic upward kick every time you land on the puffball head
+// -- noticeably springy without being a full extra jump (a normal jump
+// is vy=12; this is a little more than half that). See the landing
+// block in applyPhysics for where it's actually applied.
+const TOPSY_DANDELION_BOUNCE_VY = 7.5;
+
+// CONFIRMED ADD ("blowing them would scatter seeds that then make more
+// small dandelions nearby so you make a little dandelion meadow kinda
+// thing"): every bounce off the puffball head has a chance to scatter a
+// couple of seeds that take root nearby as small always-bloomed baby
+// dandelions -- same visual language as drawTopsyTurvyEntranceDandelion,
+// just planted at a random spot instead of one fixed decorative one.
+// Purely a bonus meadow that fills in the more you bounce, no new item
+// or inventory involved.
+const TOPSY_MEADOW_MAX = 12; // caps how big the meadow can grow -- keeps it a nice field, not visual clutter
+const TOPSY_MEADOW_GROW_DURATION = 1100; // ms, a baby dandelion's own quick sprout-up once seeded
+const TOPSY_MEADOW_MIN_SPACING = 34; // never plant two meadow dandelions closer than this
+const TOPSY_MEADOW_CLEAR_OF_WELL = 70; // keep clear of the well's own art
+const TOPSY_MEADOW_CLEAR_OF_PLOT = 45; // keep clear of the big dandelion's own base
+let topsyMeadowSeeds = []; // {x, plantedAt} -- one entry per rooted baby dandelion
+// decorative-only burst of seeds flung outward off the head the instant
+// a new meadow spot takes root, echoing the "loose things float upward"
+// rule the well/cart/big-dandelion particles already use, just radiating
+// outward first before drifting up.
+let topsyMeadowScatterBurst = []; // {age, angle, dist, vy}
+const TOPSY_MEADOW_SCATTER_LIFE = 600;
+
+// picks a valid new meadow spot near the seed plot, or returns null if
+// none can be found after a handful of tries (respects spacing from the
+// well, the big dandelion's own base, the world edges, and every other
+// meadow dandelion already planted).
+function topsyPickMeadowSpot() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // favors the open ground to the right of the plot (toward the world
+    // edge) but also allows the narrower gap between the plot and the
+    // well, so the meadow can fill in on either side rather than only
+    // ever spreading one direction.
+    const dx = Math.random() < 0.65
+      ? 55 + Math.random() * 240
+      : -(50 + Math.random() * 180);
+    const x = TOPSY_SEEDPLOT_X + dx;
+    if (x < 80 || x > TOPSYTURVY_WIDTH - 80) continue;
+    if (Math.abs(x - TOPSY_WELL_X) < TOPSY_MEADOW_CLEAR_OF_WELL) continue;
+    if (Math.abs(x - TOPSY_SEEDPLOT_X) < TOPSY_MEADOW_CLEAR_OF_PLOT) continue;
+    if (topsyMeadowSeeds.some(s => Math.abs(s.x - x) < TOPSY_MEADOW_MIN_SPACING)) continue;
+    return x;
+  }
+  return null;
+}
 
 // CONFIRMED CHANGE ("move everything to the right a lot more ...
 // breathing room"): shifted right along with the tall tree it's paired
@@ -19239,6 +19318,12 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
   for (let i = topsyCarrySplashes.length - 1; i >= 0; i--) {
     topsyCarrySplashes[i].age += dt;
     if (topsyCarrySplashes[i].age > TOPSY_CARRY_SPLASH_LIFE) topsyCarrySplashes.splice(i, 1);
+  }
+
+  // same aging pattern for the dandelion meadow's own scatter flourish
+  for (let i = topsyMeadowScatterBurst.length - 1; i >= 0; i--) {
+    topsyMeadowScatterBurst[i].age += dt;
+    if (topsyMeadowScatterBurst[i].age > TOPSY_MEADOW_SCATTER_LIFE) topsyMeadowScatterBurst.splice(i, 1);
   }
 
   // SEED PLOT -- dig (shovel) -> plant (windSeed) -> water x3 (bucket,
@@ -23666,6 +23751,123 @@ function drawTopsyTurvyEntranceDandelion(camX) {
   }
 }
 
+// CONFIRMED ADD ("blowing them would scatter seeds that then make more
+// small dandelions nearby so you make a little dandelion meadow kinda
+// thing"): one rooted baby dandelion -- same small always-bloomed look
+// as drawTopsyTurvyEntranceDandelion, just planted wherever
+// topsyPickMeadowSpot chose and sprouting up from nothing over
+// TOPSY_MEADOW_GROW_DURATION right after it lands, instead of always
+// being fully grown. pseudoRandom(seed.x) picks a little size variety
+// (0.8-1.15x) so the meadow doesn't read as one shape copy-pasted.
+function drawTopsyMeadowDandelion(camX, seed) {
+  const dx = seed.x - camX;
+  if (dx < -60 || dx > canvas.width + 60) return;
+  const growP = Math.min(1, (performance.now() - seed.plantedAt) / TOPSY_MEADOW_GROW_DURATION);
+  if (growP <= 0) return;
+  const eased = 1 - Math.pow(1 - growP, 2); // ease-out sprout, quick then settling
+
+  const scale = 0.8 + pseudoRandom(seed.x) * 0.35;
+  const sway = Math.sin(performance.now() * 0.0009 + seed.x) * 3 * eased;
+  const headR = 11 * scale * eased;
+  const headCx = dx, headCy = gy - headR * 0.8;
+  const stemH = 26 * scale * eased;
+  const stemBaseY = headCy - headR;
+  const stemTopY = stemBaseY - stemH;
+  const tipX = dx + sway;
+
+  // tapered stem -- same construction as the entrance dandelion's
+  const baseW = 3.2 * scale, topW = 1.8 * scale;
+  const midX = dx + sway * 0.5, midY = (stemBaseY + stemTopY) / 2;
+  ctx.fillStyle = "#4f7a34";
+  ctx.beginPath();
+  ctx.moveTo(dx - baseW, stemBaseY);
+  ctx.quadraticCurveTo(midX - (baseW + topW) / 2, midY, tipX - topW, stemTopY);
+  ctx.lineTo(tipX + topW, stemTopY);
+  ctx.quadraticCurveTo(midX + (baseW + topW) / 2, midY, dx + baseW, stemBaseY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(58,94,40,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(dx - baseW, stemBaseY);
+  ctx.quadraticCurveTo(midX - (baseW + topW) / 2 * 0.4, midY, tipX - topW * 0.4, stemTopY);
+  ctx.lineTo(tipX, stemTopY);
+  ctx.quadraticCurveTo(midX, midY, dx, stemBaseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // tiny root wisp at the top
+  ctx.fillStyle = "#4f7a34";
+  ctx.beginPath();
+  ctx.ellipse(tipX, stemTopY, 3.5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(58,94,40,0.55)";
+  ctx.lineWidth = 1;
+  [-0.9, -0.3, 0.3, 0.9].forEach(a => {
+    const len = (8 + Math.abs(a) * 4) * scale;
+    const ex = tipX + Math.sin(a) * len;
+    const ey = stemTopY - Math.cos(a) * len * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(tipX, stemTopY);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+  });
+
+  // round puffball head, radiating strands
+  const strands = 20;
+  for (let i = 0; i < strands; i++) {
+    const a = (i / strands) * Math.PI * 2 + i * 0.31;
+    const len = headR * (0.85 + pseudoRandom(seed.x + i * 13) * 0.22);
+    const tx = headCx + Math.cos(a) * len, ty = headCy + Math.sin(a) * len * 0.94;
+    ctx.strokeStyle = "rgba(240,238,225,0.85)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(headCx, headCy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(250,248,238,0.9)";
+    ctx.beginPath();
+    ctx.arc(tx, ty, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(235,225,180,0.55)";
+  ctx.beginPath();
+  ctx.arc(headCx, headCy, headR * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// the decorative firework-like burst of seeds flung outward off the big
+// dandelion's head the instant a fresh meadow spot takes root -- purely
+// visual, no tie to the actual planted positions. Radiates outward first
+// (per each particle's own fixed angle/dist), then drifts upward and
+// fades, matching the "loose things float up" rule the rest of this
+// land's particles already use.
+function drawTopsyMeadowScatterBurst(camX) {
+  if (!topsyMeadowScatterBurst.length) return;
+  const headCx = TOPSY_SEEDPLOT_X - camX;
+  const headCy = gy - TOPSY_DANDELION_HEAD_R * 0.8;
+  topsyMeadowScatterBurst.forEach(s => {
+    const p = s.age / TOPSY_MEADOW_SCATTER_LIFE;
+    const outEased = 1 - (1 - Math.min(1, p * 2.2)) * (1 - Math.min(1, p * 2.2)); // quick outward pop
+    const riseY = -Math.max(0, p - 0.25) * (30 + Math.abs(s.vy) * 0.5);
+    const px = headCx + Math.cos(s.angle) * s.dist * outEased;
+    const py = headCy + Math.sin(s.angle) * s.dist * outEased * 0.7 + riseY;
+    const fade = 1 - p;
+    ctx.strokeStyle = `rgba(240,238,225,${0.7 * fade})`;
+    ctx.lineWidth = 0.7;
+    [0, 1, 2].forEach(f => {
+      const fa = (f / 3) * Math.PI * 2 + p * 6;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(fa) * 2.2, py + Math.sin(fa) * 2.2);
+      ctx.stroke();
+    });
+    ctx.fillStyle = `rgba(250,248,238,${0.9 * fade})`;
+    ctx.beginPath();
+    ctx.arc(px, py, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawTopsyTurvyEntranceSign(camX) {
   const sx = TOPSY_SIGN_X - camX;
   if (sx < -80 || sx > canvas.width + 80) return;
@@ -23827,6 +24029,8 @@ function drawTopsyTurvyScene(camX) {
   drawTopsyTurvyCart(camX);
   drawTopsyTurvyWell(camX);
   drawTopsyWindSeedPlot(camX);
+  topsyMeadowSeeds.forEach(seed => drawTopsyMeadowDandelion(camX, seed));
+  drawTopsyMeadowScatterBurst(camX);
   drawTopsyAmbientWindSeeds(camX);
   drawTopsyUpsideDownBirds(camX);
   drawTopsyTurvyPig(camX);
