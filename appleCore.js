@@ -18989,7 +18989,17 @@ let topsyChefInteriorActive = false;
 // where outside to put the player back once they leave -- captured the
 // moment they step in, restored the moment they step out.
 const topsyChefInteriorReturn = { x: 0, y: 0 };
-const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 90; // the little room spans the house's own x +/- this
+// CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
+// the room... also i cant jump up or move left or right"): widened so
+// there's actual open floor to walk/jump around in instead of the
+// furniture cluster spanning almost the entire walkable strip -- the
+// old 90 left barely any clearance once 3 (now 4) pieces sat spread
+// across it.
+// CONFIRMED CHANGE (see TOPSY_CHEF_FURNITURE_PLATFORMS's own comment on
+// widening the furniture back out past the player's size): widened
+// again along with the furniture so four now-bigger pieces still have
+// real gaps between them instead of overlapping.
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 170; // the little room spans the house's own x +/- this
 // CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
 // way every OTHER upside-down surface in this land works -- these reuse
 // the exact same dip-then-launch/light-gravity float as
@@ -18997,14 +19007,42 @@ const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 90; // the little room spans the house's 
 // extensions to that mechanic just below the outdoor array's own
 // collision code), just scoped to this room instead of the outdoor
 // climb. No reward up here, purely a "because it's fun to wobble around
-// on your ceiling furniture" bonus room. Heights tuned so the FIRST one
-// (the armchair) is reachable with an ordinary jump from the floor --
-// same as how the very first TOPSY_INVERT_PLATFORMS entry works outside
-// -- and the rest chain off it with the usual dip-launch once inverted.
+// on your ceiling furniture" bonus room. Heights tuned so the two
+// lowest (the table, then the armchair) are reachable with an ordinary
+// jump from the floor -- same as how the very first TOPSY_INVERT_PLATFORMS
+// entry works outside -- and the rest chain off them with the usual
+// dip-launch once inverted.
+// CONFIRMED CHANGE ("make this smaller... couch larger... lets also add
+// a lilttle side coffee table"): every piece scaled down and spread out
+// with real gaps between them (was a cramped 95px-wide cluster in a
+// 180px room), the couch widened back out so it clearly reads as the
+// single biggest piece in the room, and a small coffee table added as
+// its own 4th ceiling piece -- lowest of the four, so it's the very
+// first thing reachable from the floor.
+// CONFIRMED BUG FIX ("why are couch and chair smaller than player
+// body", "like make them a larger... i guess they are for rat thugh
+// but that doesnt seem to carry well through here"): the earlier "make
+// this smaller" pass (about the room feeling cramped, not about
+// individual pieces) shrank the widths down well past the player's own
+// 40x54 footprint -- the armchair (32) and table (26) were both
+// literally narrower than the player standing on them. "Sized for a
+// rat" doesn't read as a joke when the player's own human-ish sprite
+// is standing right there dwarfing the furniture -- widened every
+// piece out well past the player's size instead, same spirit as real
+// furniture always reading bigger than the person in it.
 const TOPSY_CHEF_FURNITURE_PLATFORMS = [
-  { x: topsyTurvyHouses[0].x - 45, height: 85, width: 46, kind: "armchair" },
-  { x: topsyTurvyHouses[0].x + 5, height: 108, width: 22, kind: "plant" },
-  { x: topsyTurvyHouses[0].x + 50, height: 118, width: 62, kind: "couch" }
+  { x: topsyTurvyHouses[0].x - 130, height: 76, width: 70, kind: "armchair" },
+  // CONFIRMED BUG FIX: height must stay >= the player's own 54px
+  // height for its attach point (height - player.height) to be
+  // non-negative -- a lower value than that is never actually
+  // reachable by the normal jump (or anything else), since the
+  // player's y never goes negative. The "gigantically tall" complaint
+  // was about the cable's visual length, which is now capped
+  // regardless of this value (see drawLegCable/TOPSY_CHEF_LEG_CABLE_MAX)
+  // -- so this can stay a real, reachable height instead.
+  { x: topsyTurvyHouses[0].x - 55, height: 60, width: 56, kind: "table" },
+  { x: topsyTurvyHouses[0].x + 10, height: 104, width: 32, kind: "plant" },
+  { x: topsyTurvyHouses[0].x + 90, height: 124, width: 105, kind: "couch" }
 ];
 // a modest margin above the tallest furniture piece -- see its own use
 // right next to the outdoor TOPSY_INVERT_SOFT_CEILING check.
@@ -19292,7 +19330,12 @@ function drawTopsyChefInterior(camX) {
   // sync with where the player actually lands.
   TOPSY_CHEF_FURNITURE_PLATFORMS.forEach(tp => drawTopsyChefFurniturePiece(tp, camX));
 
-  drawTopsyChefBack(cx, camX);
+  // CONFIRMED CHANGE ("the rat cooking should be a little to the right,
+  // not directly under in the middle of the furniture"): was dead
+  // center (cx), sitting right underneath the densest part of the
+  // furniture cluster -- shifted into the open gap between the plant
+  // and the couch instead.
+  drawTopsyChefBack(cx + 55, camX);
 
   // CONFIRMED ADD: the exit nudge, same plain monospace hint style as
   // the entry one drawn at the outdoor window -- only shown while it'd
@@ -19317,161 +19360,345 @@ function drawTopsyChefInterior(camX) {
 // screen once flipped), and a little negative local y is used for
 // cushions/rims/leaves that hang a few px past the attach line, back
 // down into the room -- purely decorative overhang, not collidable.
+// CONFIRMED CHANGE ("make this look more like actual furniture what is
+// this sketch"): passes each piece's own gap-to-ceiling along with its
+// width now, so every piece's legs/base can reach far enough to
+// actually visually connect into the dark ceiling band drawn in
+// drawTopsyChefInterior, however tall or short that particular piece
+// is -- a fixed leg length looked fine for one height and left a gap
+// of bare wallpaper for any other.
 function drawTopsyChefFurniturePiece(tp, camX) {
   const sx = tp.x - camX;
   const topY = gy - tp.height;
+  const ceilingY = gy - (TOPSY_CHEF_INTERIOR_ROOM_HEIGHT - 40);
+  const reach = Math.max(14, topY - ceilingY + 10); // how far "up" (positive local y) this piece's own legs/base need to go to actually reach the ceiling band, plus a little overlap so it never falls short
   ctx.save();
   ctx.translate(sx, topY);
   ctx.scale(1, -1);
-  if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width);
-  else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width);
-  else if (tp.kind === "couch") drawTopsyChefLoveCouch(tp.width);
+  if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width, reach);
+  else if (tp.kind === "table") drawTopsyChefCoffeeTable(tp.width, reach);
+  else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width, reach);
+  else if (tp.kind === "couch") drawTopsyChefLoveCouch(tp.width, reach);
   ctx.restore();
 }
 
-// CONFIRMED ADD ("i want one of the things to be a large green puffy
-// chair"): a fat, round-cushioned armchair -- the FIRST furniture
-// piece, sized to be reachable with a plain ordinary jump from the
+// CONFIRMED CHANGE ("i want one of the things to be a large green puffy
+// chair", later "make this look more like actual furniture what is
+// this sketch"): rebuilt as an actual armchair silhouette -- a squat
+// seat base, two distinct rolled arm bolsters, and a real tall tufted
+// backrest rising well above the seat -- rather than one soft blob
+// with two side-bumps. Reachable with a plain ordinary jump from the
 // floor (see TOPSY_CHEF_FURNITURE_PLATFORMS's own comment).
-function drawTopsyChefArmchair(w) {
+function drawTopsyChefArmchair(w, reach) {
   const hw = w / 2;
-  // two stubby wood legs disappearing up into the ceiling band
+  // CONFIRMED BUG FIX ("the chair doesnt look upside down sort of"):
+  // real legs, hanging DOWN past the attach line into open room air
+  // (negative local y -- same overhang trick the plant's fronds already
+  // use), with little foot caps at the tips. This is the single
+  // clearest "yep, this is upside-down" cue there is -- a chair glued
+  // to the ceiling should visibly have its own legs sticking down into
+  // the room. The old legs were drawn going UP behind the seat, which
+  // both looked wrong for "upside down" and were completely hidden
+  // behind the opaque seat shape anyway.
   ctx.strokeStyle = "#6b4a2c";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.6;
   ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-hw * 0.5, 4); ctx.lineTo(-hw * 0.5, 50);
-  ctx.moveTo(hw * 0.5, 4); ctx.lineTo(hw * 0.5, 50);
-  ctx.stroke();
-  // big puffy rounded body -- soft green, shaded darker toward the
-  // ceiling side so it reads like it's catching light from the room
-  // below rather than looking like a flat pasted blob
-  const bodyGrad = ctx.createLinearGradient(0, 0, 0, 40);
-  bodyGrad.addColorStop(0, "#8fd08a");
-  bodyGrad.addColorStop(1, "#4c8f49");
-  ctx.fillStyle = bodyGrad;
-  roundRect(ctx, -hw, 2, w, 40, hw * 0.6);
-  ctx.fill();
-  ctx.strokeStyle = "#356b33";
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, -hw, 2, w, 40, hw * 0.6);
-  ctx.stroke();
-  // two round arm bumps
-  [-1, 1].forEach(side => {
-    ctx.fillStyle = "#6bb567";
+  [-0.6, 0.6].forEach(side => {
     ctx.beginPath();
-    ctx.ellipse(side * hw * 0.72, 12, hw * 0.32, 9, 0, 0, Math.PI * 2);
+    ctx.moveTo(side * hw * 0.85, 0);
+    ctx.lineTo(side * hw, -13);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#4a3220";
+  [-0.6, 0.6].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(side * hw, -13, 2, 1.3, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#356b33";
+  });
+  // squat seat base right at the attach line
+  const seatGrad = ctx.createLinearGradient(0, 0, 0, 16);
+  seatGrad.addColorStop(0, "#6bb567");
+  seatGrad.addColorStop(1, "#3d7a3b");
+  ctx.fillStyle = seatGrad;
+  roundRect(ctx, -hw, 1, w, 16, 5);
+  ctx.fill();
+  ctx.strokeStyle = "#2c5c2a";
+  ctx.lineWidth = 1.3;
+  roundRect(ctx, -hw, 1, w, 16, 5);
+  ctx.stroke();
+  // rolled arms, distinct bolsters flanking the seat
+  [-1, 1].forEach(side => {
+    ctx.fillStyle = "#5aa457";
+    ctx.beginPath();
+    ctx.ellipse(side * hw * 0.85, 11, hw * 0.28, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2c5c2a";
     ctx.lineWidth = 1;
     ctx.stroke();
   });
-  // seat cushion rim, right at the attach/standing line -- a lighter
-  // highlight band so the surface the player actually lands on reads
-  // clearly against the darker body above it
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
-  roundRect(ctx, -hw * 0.85, -2, w * 0.85, 8, 3);
+  // tall puffy backrest, narrower than the base, rising up toward the
+  // ceiling -- a fixed, proportional height (not stretched to match
+  // reach -- see drawLegCable) so it always reads as "a chair back",
+  // with a thin cable (drawLegCable) picking up the rest of the
+  // distance into the ceiling band beyond that.
+  const backTop = 48;
+  const backGrad = ctx.createLinearGradient(0, 14, 0, backTop);
+  backGrad.addColorStop(0, "#8fd08a");
+  backGrad.addColorStop(1, "#3d7a3b");
+  ctx.fillStyle = backGrad;
+  roundRect(ctx, -hw * 0.72, 14, w * 0.72, backTop - 14, hw * 0.42);
   ctx.fill();
-  ctx.fillStyle = "#a8e0a3";
+  ctx.strokeStyle = "#2c5c2a";
+  ctx.lineWidth = 1.3;
+  roundRect(ctx, -hw * 0.72, 14, w * 0.72, backTop - 14, hw * 0.42);
+  ctx.stroke();
+  // a tufted seam + button down the backrest's middle
+  ctx.strokeStyle = "rgba(44,92,42,0.55)";
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.ellipse(0, -2, hw * 0.78, 3.5, 0, 0, Math.PI * 2);
+  ctx.moveTo(0, 17); ctx.lineTo(0, backTop - 4);
+  ctx.stroke();
+  ctx.fillStyle = "#2c5c2a";
+  ctx.beginPath();
+  ctx.arc(0, 14 + (backTop - 14) * 0.4, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  // seat cushion rim, right at the attach/standing line
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  roundRect(ctx, -hw * 0.85, -1.5, w * 0.85, 6, 2.5);
+  ctx.fill();
+  // a thin cable picking up the rest of the distance from the top of
+  // the backrest into the ceiling band -- see drawLegCable's own
+  // comment on why this is separate from the chunky leg/backrest art.
+  drawLegCable(0, backTop, reach);
+}
+
+// CONFIRMED CHANGE ("make this look more like actual furniture what is
+// this sketch"): a short, chunky decorative leg (or the puffy backrest
+// above) reads fine as furniture, but stretching that SAME thick shape
+// the entire way up to wherever the ceiling band happens to start (94px
+// for the coffee table, at its old height) reads as a swing set, not a
+// leg. A plain thin wire picking up the remaining distance beyond a
+// believable leg length reads as "hung from the ceiling by a wire" --
+// which is exactly what's actually going on here anyway.
+// CONFIRMED BUG FIX ("the coffee table is gigantically tall"): capped
+// -- a piece whose own height sits well below the ceiling band (the
+// table especially, being the lowest/first-reachable piece) used to
+// get a very long thin wire the whole remaining way there, which at
+// normal in-game scale (not the zoomed-in crop this was checked
+// against) just reads as "this piece is absurdly tall/stretched", not
+// "hung by a wire". Capped short -- past this length it's simply left
+// a little short of the ceiling band rather than stretched to reach
+// it, which reads far better than an oversized wire.
+const TOPSY_CHEF_LEG_CABLE_MAX = 24;
+function drawLegCable(x, fromY, reach) {
+  const cappedReach = Math.min(reach, fromY + TOPSY_CHEF_LEG_CABLE_MAX);
+  if (cappedReach <= fromY) return;
+  ctx.strokeStyle = "rgba(70,50,35,0.55)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, fromY);
+  ctx.lineTo(x, cappedReach);
+  ctx.stroke();
+}
+
+// CONFIRMED ADD ("lets also add a lilttle side coffee table"): a simple
+// flat wood tabletop with short peg legs, lowest of the four pieces so
+// it's the very first thing reachable from the floor.
+function drawTopsyChefCoffeeTable(w, reach) {
+  const hw = w / 2;
+  // CONFIRMED BUG FIX ("the chair doesnt look upside down sort of" --
+  // same fix applied here): legs hang down into the room, tabletop
+  // sits just above the attach line instead of straddling it.
+  ctx.strokeStyle = "#6b4a2c";
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = "round";
+  [-0.75, 0.75].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(side * hw * 0.85, 0);
+    ctx.lineTo(side * hw, -11);
+    ctx.stroke();
+  });
+  drawLegCable(0, 8, reach);
+  const topGrad = ctx.createLinearGradient(0, -1.5, 0, 6);
+  topGrad.addColorStop(0, "#b98a54");
+  topGrad.addColorStop(1, "#8a6038");
+  ctx.fillStyle = topGrad;
+  roundRect(ctx, -hw, -1.5, w, 7.5, 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5c4326";
+  ctx.lineWidth = 1;
+  roundRect(ctx, -hw, -1.5, w, 7.5, 2);
+  ctx.stroke();
+  // a couple of faint wood-grain lines
+  ctx.strokeStyle = "rgba(0,0,0,0.15)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(-hw * 0.7, 2.2); ctx.lineTo(hw * 0.7, 2.2);
+  ctx.stroke();
+  // a tiny teacup resting against the underside -- just for a little
+  // charm, purely decorative
+  ctx.fillStyle = "#d9647c";
+  ctx.beginPath();
+  ctx.ellipse(hw * 0.4, -3, 2.2, 1.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7a2438";
+  ctx.beginPath();
+  ctx.ellipse(hw * 0.4, -4.1, 2.2, 0.7, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
-// CONFIRMED ADD ("and an upside down plotted plant"): a terracotta pot
-// glued to the ceiling by its own (now-upward) base, opening/rim facing
-// down into the room right at the attach line, with a few leafy fronds
-// drooping down past the rim into open air -- the one piece that
-// actually gets to use the small negative-y overhang for something
-// more than a rim highlight.
-function drawTopsyChefPottedPlant(w) {
+// CONFIRMED CHANGE ("and an upside down plotted plant" -> "make plant
+// better. look at the styles in Oak. that level of good"): rebuilt the
+// fronds around the SAME tapered-blade-plus-center-vein technique the
+// oak entryway fern already uses (a filled pointed leaf built with
+// quadraticCurveTo, not a stroked line with blob "leaflets"), and added
+// a couple of thin hanger cords from the pot's own base up to the
+// ceiling so the whole thing visually reads as a proper hanging
+// planter rather than floating disconnected from the room above it.
+function drawTopsyChefPottedPlant(w, reach) {
   const hw = w / 2;
-  // pot -- wide rim at the attach line, tapering to a narrow base up
-  // toward the ceiling
-  ctx.fillStyle = "#b5673f";
+  // thin hanger cords, up to the ceiling band
+  ctx.strokeStyle = "rgba(90,70,50,0.6)";
+  ctx.lineWidth = 1;
+  [-0.65, 0.65].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(side * hw * 0.8, 24);
+    ctx.lineTo(side * hw * 0.25, reach);
+    ctx.stroke();
+  });
+  // pot -- wide rim at the attach line, tapering to a narrower base up
+  // toward the ceiling, same build as the oak entryway fern's own pot
+  ctx.fillStyle = "#9a5530";
   ctx.beginPath();
   ctx.moveTo(-hw, 0);
   ctx.lineTo(hw, 0);
-  ctx.lineTo(hw * 0.55, 30);
-  ctx.lineTo(-hw * 0.55, 30);
+  ctx.lineTo(hw * 0.6, 26);
+  ctx.lineTo(-hw * 0.6, 26);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#7a3f22";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "#5a2c18";
+  ctx.lineWidth = 1;
   ctx.stroke();
-  // rim lip + a dark ring of soil just inside it
-  ctx.fillStyle = "#8a4a2c";
-  ctx.fillRect(-hw, -1.5, w, 3);
-  ctx.fillStyle = "#3a2a1c";
+  // rim highlight band + soil disc just inside it
+  ctx.fillStyle = "#c1794a";
+  ctx.fillRect(-hw, -1.2, w, 2.4);
+  ctx.fillStyle = "#3a2818";
   ctx.beginPath();
-  ctx.ellipse(0, 0.5, hw * 0.75, 2.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0.4, hw * 0.82, 2.2, 0, 0, Math.PI * 2);
   ctx.fill();
-  // a few drooping fronds, each a simple curved blade with 2-3 leaves,
-  // hanging down (negative local y) past the rim into the room
-  const fronds = [{ dx: -hw * 0.5, len: 26, bend: -10 }, { dx: 0, len: 34, bend: 4 }, { dx: hw * 0.5, len: 24, bend: 12 }];
+
+  // fronds -- proper tapered leaf-blade shapes fanned out from the rim
+  // and drooping down into open air, each with a center vein highlight,
+  // instead of the old thin stroked line + two blob "leaflets".
+  const fronds = [{ dx: -hw * 0.55, len: 22, bend: -9 }, { dx: -hw * 0.15, len: 30, bend: -2 }, { dx: hw * 0.15, len: 27, bend: 3 }, { dx: hw * 0.55, len: 19, bend: 9 }];
   fronds.forEach((f, i) => {
-    const sway = Math.sin(performance.now() * 0.0016 + i * 1.8) * 2.5;
-    ctx.strokeStyle = "#3f7a3c";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
+    const sway = Math.sin(performance.now() * 0.0016 + i * 1.7) * 2;
+    const tipX = f.bend + sway, tipY = -f.len;
+    const angle = Math.atan2(tipX, -tipY);
+    ctx.save();
+    ctx.translate(f.dx, 0.5);
+    ctx.rotate(angle);
+    const len = f.len;
+    ctx.fillStyle = i % 2 === 0 ? "#3f7a3c" : "#5aa457";
     ctx.beginPath();
-    ctx.moveTo(f.dx, 0);
-    ctx.quadraticCurveTo(f.dx + f.bend + sway, -f.len * 0.6, f.dx + f.bend * 1.6 + sway, -f.len);
+    ctx.moveTo(-1.5, 0);
+    ctx.quadraticCurveTo(-2.5, -len * 0.55, -0.5, -len);
+    ctx.quadraticCurveTo(0, -len * 1.03, 0.5, -len);
+    ctx.quadraticCurveTo(2.5, -len * 0.55, 1.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,45,20,0.4)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -1.5); ctx.lineTo(0, -len * 0.9);
     ctx.stroke();
-    ctx.fillStyle = "#5aa457";
-    [0.45, 0.8].forEach(t => {
-      const lx = f.dx + (f.bend + sway) * t, ly = -f.len * t;
-      ctx.beginPath();
-      ctx.ellipse(lx, ly, 4, 2, -0.6, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    ctx.restore();
   });
 }
 
-// CONFIRMED ADD ("and a yellow lovecouch or something maybe"): a wider,
-// lower two-cushion loveseat.
-function drawTopsyChefLoveCouch(w) {
+// CONFIRMED CHANGE ("and a yellow lovecouch or something maybe" ->
+// "couch larger... make this look more like actual furniture"):
+// rebuilt as an actual loveseat silhouette -- a wide low seat deck,
+// two tall rolled arms bookending it, and a real backrest band running
+// between them -- clearly the biggest, widest piece in the room now,
+// instead of reading about the same size as the armchair.
+function drawTopsyChefLoveCouch(w, reach) {
   const hw = w / 2;
+  // CONFIRMED BUG FIX ("the chair doesnt look upside down sort of" --
+  // same fix applied here): legs hang down past the attach line into
+  // the room instead of being hidden going up behind the seat deck.
   ctx.strokeStyle = "#6b4a2c";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.6;
   ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-hw * 0.75, 4); ctx.lineTo(-hw * 0.75, 42);
-  ctx.moveTo(hw * 0.75, 4); ctx.lineTo(hw * 0.75, 42);
-  ctx.stroke();
-  // low wide backrest/body
-  const bodyGrad = ctx.createLinearGradient(0, 0, 0, 30);
-  bodyGrad.addColorStop(0, "#f5dd7a");
-  bodyGrad.addColorStop(1, "#dbb63e");
-  ctx.fillStyle = bodyGrad;
-  roundRect(ctx, -hw, 2, w, 28, 8);
+  [-0.75, -0.28, 0.28, 0.75].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(side * hw * 0.9, 0);
+    ctx.lineTo(side * hw, -12);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#4a3220";
+  [-0.75, -0.28, 0.28, 0.75].forEach(side => {
+    ctx.beginPath();
+    ctx.ellipse(side * hw, -12, 1.8, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // low wide seat deck
+  const seatGrad = ctx.createLinearGradient(0, 0, 0, 16);
+  seatGrad.addColorStop(0, "#f5dd7a");
+  seatGrad.addColorStop(1, "#c89a2c");
+  ctx.fillStyle = seatGrad;
+  roundRect(ctx, -hw, 1, w, 16, 6);
   ctx.fill();
-  ctx.strokeStyle = "#a8862c";
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, -hw, 2, w, 28, 8);
+  ctx.strokeStyle = "#8a6a1e";
+  ctx.lineWidth = 1.4;
+  roundRect(ctx, -hw, 1, w, 16, 6);
   ctx.stroke();
-  // two tufted seat-cushion humps, right at the attach line
+  // tall rolled arms at both ends -- fixed proportional height (see
+  // drawLegCable's own comment on why this isn't stretched to reach)
+  const armTop = 34;
+  [-1, 1].forEach(side => {
+    ctx.fillStyle = "#f0d566";
+    roundRect(ctx, side > 0 ? hw - w * 0.16 : -hw, 1, w * 0.16, armTop - 1, 4);
+    ctx.fill();
+    ctx.strokeStyle = "#8a6a1e";
+    ctx.lineWidth = 1.2;
+    roundRect(ctx, side > 0 ? hw - w * 0.16 : -hw, 1, w * 0.16, armTop - 1, 4);
+    ctx.stroke();
+  });
+  // backrest band running the width between the two arms -- a real
+  // fixed-height band (was squashed down to a barely-visible sliver
+  // whenever reach was small, e.g. this piece's own low ceiling gap)
+  const backTop = 30;
+  const backGrad = ctx.createLinearGradient(0, 16, 0, backTop);
+  backGrad.addColorStop(0, "#f0d566");
+  backGrad.addColorStop(1, "#c89a2c");
+  ctx.fillStyle = backGrad;
+  roundRect(ctx, -hw + w * 0.16, 16, w * 0.68, backTop - 16, 5);
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a1e";
+  ctx.lineWidth = 1.2;
+  roundRect(ctx, -hw + w * 0.16, 16, w * 0.68, backTop - 16, 5);
+  ctx.stroke();
+  drawLegCable(0, armTop, reach);
+  // two tufted seat cushions with a center seam, right at the attach line
   [-1, 1].forEach(side => {
     ctx.fillStyle = "#f0d566";
     ctx.beginPath();
-    ctx.ellipse(side * hw * 0.42, -1, hw * 0.4, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * hw * 0.35, -1, hw * 0.3, 6, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "#a8862c";
+    ctx.strokeStyle = "#8a6a1e";
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath();
-    ctx.ellipse(side * hw * 0.42, -3, hw * 0.22, 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * hw * 0.35, -3, hw * 0.16, 2, 0, 0, Math.PI * 2);
     ctx.fill();
   });
-  // a couple of small round buttons marking the tuft centers -- cheap
-  // detail that reads as "upholstered" rather than a flat cushion
-  ctx.fillStyle = "#a8862c";
-  [-1, 1].forEach(side => {
-    ctx.beginPath();
-    ctx.arc(side * hw * 0.42, -1, 1.2, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  ctx.strokeStyle = "rgba(138,106,30,0.6)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -6); ctx.lineTo(0, 1);
+  ctx.stroke();
 }
 
 // CONFIRMED ADD (per the "talk before build": "the rat chef backside
@@ -19482,8 +19709,8 @@ function drawTopsyChefLoveCouch(w) {
 // idle bob and a stirring-arm wobble, plus rising steam. Purely
 // decorative -- no interaction, no item, same "just for fun" spirit as
 // the furniture itself.
-function drawTopsyChefBack(cx, camX) {
-  const potX = cx, potY = gy;
+function drawTopsyChefBack(potX, camX) {
+  const potY = gy;
   const t = performance.now() * 0.001;
 
   // little stove/table the pot sits on
@@ -19554,13 +19781,38 @@ function drawTopsyChefBack(cx, camX) {
   ctx.fill();
 
   // stirring arm, reaching toward the pot, wobbling side to side
+  const handX = 18 + stir, handY = -18 + Math.abs(stir) * 0.4;
   ctx.strokeStyle = furShadow;
   ctx.lineWidth = 2.4;
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(6, -12);
-  ctx.lineTo(18 + stir, -18 + Math.abs(stir) * 0.4);
+  ctx.lineTo(handX, handY);
   ctx.stroke();
+
+  // CONFIRMED ADD ("doesnt look like the rat is sturring the
+  // ratatouillie actualy w a spoon"): an actual wooden spoon in-hand,
+  // handle continuing from the paw down into the pot's own rim/interior
+  // so it reads as stirring something, not just waving an empty arm
+  // near the pot.
+  const spoonTipX = handX + 4.5, spoonTipY = handY - 5;
+  ctx.strokeStyle = "#c8a860";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(handX, handY);
+  ctx.lineTo(spoonTipX, spoonTipY);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(spoonTipX, spoonTipY);
+  ctx.rotate(0.35);
+  ctx.fillStyle = "#c8a860";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 2.6, 1.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a6a3a";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.restore();
 
   // rounded ears, just visible past the hat's brim
   [-1, 1].forEach(side => {
@@ -19710,6 +19962,18 @@ function updateTopsyTurvyScene(deltaTime) {
     player.jumping = false;
     player.topsyInverted = false;
     player.usedDoubleJump = false;
+    // CONFIRMED BUG FIX ("i cant jump up or move left or right"): you
+    // can only ever be near the window at all by having climbed the
+    // ladder up to it (onTopsyHouseLadder=true), and this trigger never
+    // cleared that flag -- so it was still true the instant the room
+    // opened. The whole rest of the outdoor ladder-climb code that
+    // would normally release it on stepping off the bottom rung never
+    // runs again once topsyChefInteriorActive short-circuits
+    // updateTopsyTurvyScene, so it stayed stuck true for the entire
+    // visit. Ordinary left/right movement explicitly excludes anyone
+    // onTopsyHouseLadder (see the big movement condition up top) --
+    // exactly the "frozen, can't walk or jump" symptom reported.
+    player.onTopsyHouseLadder = false;
   }
 
   // CONFIRMED CHANGE ("maybe the grumpy is a chef so we have a top
