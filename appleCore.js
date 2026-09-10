@@ -19327,10 +19327,13 @@ function updateTopsyChefInterior(deltaTime) {
   if (player.x < roomLeft) player.x = roomLeft;
   if (player.x > roomRight) player.x = roomRight;
 
-  // press down while standing normally on the floor (not mid a
+  // press down OR space while standing normally on the floor (not mid a
   // furniture hop) to step back outside -- no item, no proximity check
   // needed, just "you're on solid ground and you want to leave."
-  if (keys.downJustPressed && !player.jumping && !player.topsyInverted) {
+  // CONFIRMED CHANGE ("make space bar to get out too"): space already
+  // means "enter" at the window outside, so letting it also mean "exit"
+  // in here keeps the whole peek-inside interaction on one single key.
+  if ((keys.downJustPressed || keys.spaceJustPressed) && !player.jumping && !player.topsyInverted) {
     topsyChefInteriorActive = false;
     player.x = topsyChefInteriorReturn.x;
     player.y = topsyChefInteriorReturn.y;
@@ -19478,7 +19481,7 @@ function drawTopsyChefInterior(camX) {
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "10px ui-monospace";
     ctx.textAlign = "center";
-    ctx.fillText("press DOWN to step back outside", cx, canvas.height - 12);
+    ctx.fillText("press DOWN or SPACE to step back outside", cx, canvas.height - 12);
     ctx.textAlign = "left";
     ctx.globalAlpha = 1;
   }
@@ -20248,7 +20251,10 @@ function updateTopsyTurvyScene(deltaTime) {
   // gets its own, more generous radius -- the dialogue/tomato-give
   // checks above and below stay on the original tighter one, this is
   // just about making it easier to actually walk up and get IN.
-  const nearGrumpyWindowForEntry = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 70, 40, 110);
+  // CONFIRMED CHANGE ("can you enlarge the radius of spacebar getting
+  // into the house like i asked"): widened further still (70/40/110 ->
+  // 110/60/150) -- the first pass wasn't generous enough.
+  const nearGrumpyWindowForEntry = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 110, 60, 150);
   if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
