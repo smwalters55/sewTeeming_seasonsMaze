@@ -3990,6 +3990,12 @@ function applyPhysics(){
       const nowAtOrAbove = player.y >= attachY;
       const alreadyResting = prevPlayerY === attachY && prevVy === 0;
       if ((wasAbove && nowAtOrBelow) || (wasBelow && nowAtOrAbove) || alreadyResting) {
+        // CONFIRMED ADD ("i like the idea of the plant wobble... have
+        // that wobble too"): stamp the moment of a genuinely fresh
+        // landing (not every frame spent already resting there) so
+        // drawTopsyChefFurniturePiece can play a short decaying wobble
+        // on whichever piece the player just landed on.
+        if (topsyChefInteriorActive && !alreadyResting) tp.lastLandTime = performance.now();
         player.y = attachY;
         player.vy = 0;
         player.jumping = false;
@@ -19519,6 +19525,13 @@ const TOPSY_CHEF_SEAT_Y = { armchair: 46, table: 0, plant: 0, couch: 23 };
 // cosmetic, applied after the upside-down flip so it never touches the
 // collision math above.
 const TOPSY_CHEF_TILT = { armchair: -0.11, table: 0.16, plant: -0.08, couch: 0.09 };
+// CONFIRMED ADD ("i like the idea of the plant wobble... have that
+// wobble too"): a short decaying sway that kicks in the instant the
+// player actually lands on a piece (tp.lastLandTime, stamped in
+// applyPhysics' own furniture-catch loop), settling back to the
+// piece's normal fixed tilt over about 2/3 of a second -- the piece
+// visibly reacts to being landed on instead of sitting dead still.
+const TOPSY_CHEF_WOBBLE_DURATION = 700;
 function drawTopsyChefFurniturePiece(tp, camX) {
   const sx = tp.x - camX;
   const topY = gy - tp.height;
@@ -19529,14 +19542,17 @@ function drawTopsyChefFurniturePiece(tp, camX) {
   // go to actually reach the ceiling band, plus a little overlap so it
   // never falls short
   const reach = Math.max(14, topY - ceilingY + 10) + seatY;
+  const sinceLand = performance.now() - (tp.lastLandTime || -1e9);
+  const wobbling = sinceLand >= 0 && sinceLand < TOPSY_CHEF_WOBBLE_DURATION;
+  const wobble = wobbling ? Math.sin(sinceLand * 0.032) * Math.exp(-sinceLand / 200) * 0.1 : 0;
   ctx.save();
   ctx.translate(sx, topY + seatY);
   ctx.scale(1, -1);
-  ctx.rotate(TOPSY_CHEF_TILT[tp.kind] || 0);
-  if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width, reach);
-  else if (tp.kind === "table") drawTopsyChefCoffeeTable(tp.width, reach);
-  else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width, reach);
-  else if (tp.kind === "couch") drawTopsyChefLoveCouch(tp.width, reach);
+  ctx.rotate((TOPSY_CHEF_TILT[tp.kind] || 0) + wobble);
+  if (tp.kind === "armchair") drawTopsyChefArmchair(tp.width, reach, wobble);
+  else if (tp.kind === "table") drawTopsyChefCoffeeTable(tp.width, reach, wobble);
+  else if (tp.kind === "plant") drawTopsyChefPottedPlant(tp.width, reach, wobble);
+  else if (tp.kind === "couch") drawTopsyChefLoveCouch(tp.width, reach, wobble);
   ctx.restore();
 }
 
@@ -19555,7 +19571,7 @@ function drawTopsyChefFurniturePiece(tp, camX) {
 // logic anywhere in this function). TOPSY_CHEF_SEAT_Y.armchair (34)
 // tells drawTopsyChefFurniturePiece where the seat surface sits in
 // this normal drawing so IT can do the one actual flip.
-function drawTopsyChefArmchair(w, reach) {
+function drawTopsyChefArmchair(w, reach, wobble) {
   const hw = w / 2;
   // CONFIRMED CHANGE ("gigantic furniture"): every proportion bulked up
   // roughly 35% over the original sizing (see TOPSY_CHEF_SEAT_Y.armchair,
@@ -19683,7 +19699,7 @@ function drawLegCable(x, fromY, reach) {
 // down to the floor. TOPSY_CHEF_SEAT_Y.table (0) tells
 // drawTopsyChefFurniturePiece the tabletop surface IS the piece's own
 // local origin, so no offset is needed there.
-function drawTopsyChefCoffeeTable(w, reach) {
+function drawTopsyChefCoffeeTable(w, reach, wobble) {
   const hw = w / 2;
   // CONFIRMED CHANGE ("gigantic furniture"): bulked up roughly 35% over
   // the original sizing.
@@ -19711,16 +19727,55 @@ function drawTopsyChefCoffeeTable(w, reach) {
   ctx.beginPath();
   ctx.moveTo(-hw * 0.7, tableBottom - 2.3); ctx.lineTo(hw * 0.7, tableBottom - 2.3);
   ctx.stroke();
-  // a tiny teacup resting right on the tabletop surface -- just for a
-  // little charm, purely decorative
-  ctx.fillStyle = "#d9647c";
-  ctx.beginPath();
-  ctx.ellipse(hw * 0.4, topSurface - 2.5, 2.2, 1.5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#7a2438";
-  ctx.beginPath();
-  ctx.ellipse(hw * 0.4, topSurface - 3.6, 2.2, 0.7, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // a proper little teacup-and-saucer resting on the tabletop, replacing
+  // the old two-ellipse blob that didn't read as a cup at all
+  // CONFIRMED CHANGE ("is it supposed to be a teacup on the table? it
+  // doesnt look like it... make it better"): real saucer, tapered cup
+  // body, a stroked handle loop, and a visible tea-dark rim -- plus its
+  // own extra jiggle (on top of the whole table's wobble) since it's a
+  // loose item resting on the surface, not part of the table itself.
+  {
+    const cupX = hw * 0.4;
+    const cupWobble = wobble * 10;
+    ctx.save();
+    ctx.translate(cupX, topSurface - 0.3);
+    ctx.rotate(cupWobble);
+    // saucer
+    ctx.fillStyle = "#f4ece0";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 3.4, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#c9b8a0";
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // cup body -- tapered, wider at the rim than the base
+    ctx.fillStyle = "#fdfaf4";
+    ctx.beginPath();
+    ctx.moveTo(-2.1, -0.6);
+    ctx.lineTo(2.1, -0.6);
+    ctx.lineTo(1.5, -3.2);
+    ctx.lineTo(-1.5, -3.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#c9b8a0";
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+    // colored stripe near the rim
+    ctx.fillStyle = "#d9647c";
+    ctx.fillRect(-2, -3.5, 4, 0.6);
+    // rim opening, dark tea visible inside
+    ctx.fillStyle = "#5a3420";
+    ctx.beginPath();
+    ctx.ellipse(0, -3.2, 1.5, 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // handle -- small stroked loop on one side
+    ctx.strokeStyle = "#c9b8a0";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(2.3, -1.9, 0.9, 0.7, 0, -Math.PI * 0.6, Math.PI * 0.6);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // legs, straight down from the tabletop to the floor
   ctx.strokeStyle = "#6b4a2c";
@@ -19750,8 +19805,14 @@ function drawTopsyChefCoffeeTable(w, reach) {
 // a couple of thin hanger cords from the pot's own base up to the
 // ceiling so the whole thing visually reads as a proper hanging
 // planter rather than floating disconnected from the room above it.
-function drawTopsyChefPottedPlant(w, reach) {
+function drawTopsyChefPottedPlant(w, reach, wobble) {
   const hw = w / 2;
+  // CONFIRMED ADD ("i like the idea of the plant wobble"): the fronds'
+  // own ambient sway (below) gets a big, decaying kick added on top of
+  // it right when the player lands -- on top of the whole-pot rotation
+  // the container already applies, so the leaves visibly flick extra
+  // hard for a moment rather than just the pot itself tilting.
+  const frondKick = wobble * 55;
   // CONFIRMED CHANGE ("gigantic furniture"): pot depth and frond
   // lengths bulked up roughly 30% over the original sizing, matching
   // the other pieces' bigger proportions.
@@ -19791,7 +19852,7 @@ function drawTopsyChefPottedPlant(w, reach) {
   const fronds = [{ dx: -hw * 0.55, len: 29, bend: -11 }, { dx: -hw * 0.15, len: 39, bend: -3 }, { dx: hw * 0.15, len: 35, bend: 4 }, { dx: hw * 0.55, len: 25, bend: 12 }];
   fronds.forEach((f, i) => {
     const sway = Math.sin(performance.now() * 0.0016 + i * 1.7) * 2;
-    const tipX = f.bend + sway, tipY = -f.len;
+    const tipX = f.bend + sway + frondKick * (i % 2 === 0 ? 1 : -1), tipY = -f.len;
     const angle = Math.atan2(tipX, -tipY);
     ctx.save();
     ctx.translate(f.dx, 0.5);
@@ -19827,7 +19888,7 @@ function drawTopsyChefPottedPlant(w, reach) {
 // four legs at the very bottom reaching down to the floor.
 // TOPSY_CHEF_SEAT_Y.couch (17) tells drawTopsyChefFurniturePiece where
 // that seat surface sits in this normal drawing.
-function drawTopsyChefLoveCouch(w, reach) {
+function drawTopsyChefLoveCouch(w, reach, wobble) {
   const hw = w / 2;
   // CONFIRMED CHANGE ("gigantic furniture"): bulked up roughly 35% over
   // the original sizing (see TOPSY_CHEF_SEAT_Y.couch, kept in lockstep
