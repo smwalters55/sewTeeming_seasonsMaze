@@ -19392,10 +19392,17 @@ function updateTopsyWellAndSeedPlot(deltaTime) {
         // dx/vy spread below and the matching size/opacity bump in the
         // render block) -- aiming for genuinely obvious without
         // repeating the earlier overshoot's nonstop-fountain feel.
+        // CONFIRMED CHANGE ("make the droplets a lot smaller. and only
+        // coming out of the bucket not also on the sides of outside the
+        // bucket"): the wide dx spread (+/-13) was launching droplets far
+        // enough sideways that they visibly popped up beside the bucket
+        // rather than out of it -- narrowed way down so they spawn right
+        // over the bucket's own mouth. Size shrink is in the render block
+        // below.
         if (Math.random() < movedPx * 0.09) {
           const burst = 2 + (Math.random() < 0.5 ? 1 : 0); // 2-3 droplets per burst
           for (let k = 0; k < burst; k++) {
-            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 26, vy: -26 - Math.random() * 20 });
+            topsyCarrySplashes.push({ age: 0, dx: (Math.random() - 0.5) * 8, vy: -26 - Math.random() * 20 });
           }
         }
         // CONFIRMED ADD ("make the bucket... wobble too on the head"):
@@ -64801,20 +64808,25 @@ if (heldItem && !fallState.active && !activeDig && !topsyWell.dipping && !player
   // didn't sell "the bucket is visibly losing water", so droplets are
   // bigger again, brighter, travel further, and spread wider -- see the
   // matching spawn-rate/burst-size bump in updateTopsyWellAndSeedPlot.
+  // CONFIRMED CHANGE ("make the droplets a lot smaller. and only coming
+  // out of the bucket not also on the sides"): shrunk the droplets
+  // themselves (was 3.2/4.4, now under half that) and tightened the
+  // sideways in-flight wobble so they stay reading as coming out of the
+  // bucket's own mouth instead of drifting out beside it.
   if (heldItem === "bucket" && topsyCarrySplashes.length) {
     topsyCarrySplashes.forEach(s => {
       const p = s.age / TOPSY_CARRY_SPLASH_LIFE;
       const eased = 1 - (1 - p) * (1 - p); // ease-out -- quick initial slosh, drifting to a gentle stop
       const riseY = -eased * (34 + Math.abs(s.vy) * 0.7);
-      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 2.6;
+      const wobbleX = Math.sin(p * Math.PI * 2.4 + s.dx) * 1.1;
       const dx = heldPos.x - camX + s.dx + wobbleX, dy = heldPos.y + 6 + riseY;
       ctx.fillStyle = `rgba(110,170,230,${0.85 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(dx, dy, 3.2, 4.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx, dy, 1.4, 1.9, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = `rgba(235,248,255,${0.68 * (1 - p)})`;
       ctx.beginPath();
-      ctx.ellipse(dx - 1.1, dy - 1.4, 1.3, 1.7, 0, 0, Math.PI * 2);
+      ctx.ellipse(dx - 0.5, dy - 0.6, 0.6, 0.8, 0, 0, Math.PI * 2);
       ctx.fill();
     });
   }
