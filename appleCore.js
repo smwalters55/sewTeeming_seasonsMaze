@@ -23112,7 +23112,17 @@ if (DEBUG_START_SCENE === "topsyturvy") {
 // was reachability-simulation-tuned against the layout's biggest single
 // gap (65px) -- this only trims the LANDING window, not how far a
 // flight can travel, so nothing here changes what's reachable.
-const TOPSY_POT_GAUNTLET_HALF_WIDTH = 22; // landable half-width of a single pot's rim
+// CONFIRMED CHANGE ("make the landing radius just slightly more
+// forgiving cus now i fall off every time within like 5 pots"): 22 ->
+// 25. That 22 was tuned back when the ambient wind was still nudging
+// the player around near-gauntlet, which was itself adding a bunch of
+// the miss-the-window failures -- with the wind now suppressed inside
+// the gauntlet (see updateTopsyTurvyScene), 22 turned out to be tighter
+// than intended once the wind wasn't there to blame/mask it. Splitting
+// the difference back toward the original 26 rather than reverting all
+// the way, so the catch window is still a little tighter than before
+// this whole tuning pass started.
+const TOPSY_POT_GAUNTLET_HALF_WIDTH = 25; // landable half-width of a single pot's rim
 // CONFIRMED CHANGE ("the pot line is both too hard, and then if you get
 // something right in the beginning its way too easy... i want them to
 // NEED to go inside the pots, not just full jump over them, minimum
@@ -23259,6 +23269,40 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+}
+
+// CONFIRMED RE-ADD (see the drawPy/potSink comment above for why this
+// was pulled and why it's back): a solid pot-colored wedge covering the
+// player's now-sunk legs (see potSink) -- exactly one shape, no separate
+// dark interior/hole (that's what made an earlier pass read as a smudge
+// the player was falling into). Sized to the player's own width so the
+// sprite doesn't stick out the sides. Anchored to the player's own feet
+// (footX/footY, the same values the sprite itself just drew at) rather
+// than the pot's world position -- with the ambient wind now off inside
+// the gauntlet, the two should finally stay in sync frame to frame.
+function drawTopsyPotGauntletOcclusion(footX, footY) {
+  const halfW = player.width / 2 + 4, wallH = 13;
+  const topY = footY - wallH;
+  const grad = ctx.createLinearGradient(footX - halfW, 0, footX + halfW, 0);
+  grad.addColorStop(0, "#b5622e");
+  grad.addColorStop(0.5, "#d97f45");
+  grad.addColorStop(1, "#b5622e");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(footX - halfW, topY);
+  ctx.quadraticCurveTo(footX - halfW * 1.08, footY - wallH * 0.35, footX - halfW * 0.85, footY);
+  ctx.quadraticCurveTo(footX, footY + 2, footX + halfW * 0.85, footY);
+  ctx.quadraticCurveTo(footX + halfW * 1.08, footY - wallH * 0.35, footX + halfW, topY);
+  ctx.closePath();
+  ctx.fill();
+  // just the top rim edge of this front wall -- no dark interior, no
+  // second hollow ellipse. reads as "the pot's near wall", not a hole.
+  ctx.strokeStyle = "#ffd9a0";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(footX - halfW * 0.95, topY + 1);
+  ctx.quadraticCurveTo(footX, topY - 1.5, footX + halfW * 0.95, topY + 1);
   ctx.stroke();
 }
 
@@ -23442,6 +23486,140 @@ function drawTopsyPotGauntletSoupPit(camX) {
     ctx.quadraticCurveTo(wx + sway * 0.4, wy - 14, wx, wy - 18);
     ctx.stroke();
   }
+}
+
+// CONFIRMED CHANGE ("wait no this is not it at all. i meant like one
+// large pot under and around the soup like it is holding it"): the
+// first pass scattered small broken-looking pot pieces along the
+// ground -- what was actually wanted is ONE big pot silhouette that the
+// soup visibly sits inside, like the soup pit IS this pot's own
+// interior. Drawn BEFORE the soup fill (see the call site) so the soup
+// paints over its opening as the "contents," leaving only this pot's
+// own rim, outer walls, rounded base, and two big loop handles visible
+// framing the strip.
+// CONFIRMED FIX ("dont have it above the soup... it looks like an arc
+// is placed on another arc. also the colors are too similar"): the
+// first cut gave this pot its OWN rim a few px above the soup's own
+// rim, so the two curves read as two separate stacked arcs instead of
+// one container with soup in it. Its rim is now at the exact same
+// height as the soup pit's own (gy) -- since this pot is only WIDER and
+// DEEPER than the soup, not taller, their top edges now coincide
+// exactly and the soup fill (drawn after, same starting y) covers this
+// pot's opening completely wherever the two overlap. Only the margin
+// past the soup's own taper (the walls) and the strip below the soup's
+// own floor (the rounded base) still show -- no floating second arc.
+// Also switched off the bronze/orange palette entirely (it was too
+// close to the soup's own colors to read as a separate object) for a
+// dark cast-iron one instead -- real contrast between "the dark pot"
+// and "the glowing orange soup inside it."
+function drawTopsyPotGauntletBigPot(camX) {
+  const startSx = (TOPSY_POT_GAUNTLET_START_X - 6) - camX;
+  const endSx = (TOPSY_POT_GAUNTLET_END_X + 40) - camX;
+  if (endSx < -20 || startSx > canvas.width + 20) return;
+  const margin = 26; // how far this pot's own wall pokes out past the soup's own taper, each side
+  const bigStartSx = startSx - margin, bigEndSx = endSx + margin;
+  const pitW = bigEndSx - bigStartSx;
+  const rimY = gy; // exactly the soup pit's own rim height -- see the comment above for why
+  const bottomY = gy + 44; // well below the soup's own floor, so a rounded exterior shows peeking out beneath it
+  const taper = Math.min(95, pitW * 0.14);
+
+  const outline = () => {
+    ctx.beginPath();
+    ctx.moveTo(bigStartSx, rimY);
+    ctx.quadraticCurveTo(bigStartSx, bottomY, bigStartSx + taper, bottomY);
+    ctx.lineTo(bigEndSx - taper, bottomY);
+    ctx.quadraticCurveTo(bigEndSx, bottomY, bigEndSx, rimY);
+    ctx.closePath();
+  };
+
+  // soft ground-contact shadow FIRST, well outside the pot's own silhouette,
+  // so the pot reads as sitting IN the ground rather than a decal stamped on
+  // top of it -- this is the piece that was missing and made it look "pasted on"
+  ctx.save();
+  const shadowGrad = ctx.createRadialGradient(
+    (bigStartSx + bigEndSx) / 2, rimY, pitW * 0.25,
+    (bigStartSx + bigEndSx) / 2, rimY, pitW * 0.62
+  );
+  shadowGrad.addColorStop(0, "rgba(20,14,12,0.38)");
+  shadowGrad.addColorStop(1, "rgba(20,14,12,0)");
+  ctx.fillStyle = shadowGrad;
+  ctx.beginPath();
+  ctx.ellipse((bigStartSx + bigEndSx) / 2, rimY, pitW * 0.62, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // heavy dark outline pass, same idiom as the small pots, so the
+  // whole thing keeps a crisp silhouette against the ground
+  ctx.save();
+  ctx.translate(0, 0);
+  ctx.lineJoin = "round";
+  ctx.fillStyle = "rgba(10,9,8,0.9)";
+  ctx.beginPath();
+  ctx.moveTo(bigStartSx - 3, rimY);
+  ctx.quadraticCurveTo(bigStartSx - 3, bottomY + 3, bigStartSx + taper, bottomY + 3);
+  ctx.lineTo(bigEndSx - taper, bottomY + 3);
+  ctx.quadraticCurveTo(bigEndSx + 3, bottomY + 3, bigEndSx + 3, rimY);
+  ctx.lineTo(bigStartSx - 3, rimY);
+  ctx.fill();
+  ctx.restore();
+
+  // dark cast-iron gradient -- same dark-metal palette the pig's own
+  // iron pots use (TOPSY_PIG_POTS), deliberately far from the soup's
+  // own orange/red so the two never blend into each other
+  const grad = ctx.createLinearGradient(0, rimY, 0, bottomY);
+  grad.addColorStop(0, "#5b5450");
+  grad.addColorStop(0.5, "#3a3532");
+  grad.addColorStop(1, "#211d1b");
+  ctx.fillStyle = grad;
+  outline();
+  ctx.fill();
+
+  // horizontal (side-to-side) shading pass on top of the vertical gradient --
+  // without this the walls read as a flat trapezoid instead of a rounded
+  // cylindrical pot; a soft highlight left-of-center plus dark falloff at
+  // both extreme edges sells the curvature
+  ctx.save();
+  outline();
+  ctx.clip();
+  const roundGrad = ctx.createLinearGradient(bigStartSx, 0, bigEndSx, 0);
+  roundGrad.addColorStop(0, "rgba(0,0,0,0.35)");
+  roundGrad.addColorStop(0.22, "rgba(0,0,0,0)");
+  roundGrad.addColorStop(0.42, "rgba(255,255,255,0.10)");
+  roundGrad.addColorStop(0.62, "rgba(0,0,0,0)");
+  roundGrad.addColorStop(1, "rgba(0,0,0,0.4)");
+  ctx.fillStyle = roundGrad;
+  ctx.fillRect(bigStartSx, rimY, pitW, bottomY - rimY + 4);
+  ctx.restore();
+
+  // rim highlight along the actual opening line -- cool cream/metal
+  // tone instead of the soup's own warm cream, so the rim itself
+  // doesn't blend into the soup's own bubble/rim highlight color
+  ctx.strokeStyle = "#d9cdb8";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(bigStartSx, rimY + 0.5);
+  ctx.lineTo(bigEndSx, rimY + 0.5);
+  ctx.stroke();
+
+  // two big loop handles at the outer edges, in the SAME dark cast-iron
+  // family as the body (was left bronze/orange before, which is why it
+  // read as a mismatched sticker glued onto the dark pot) -- dark outer
+  // pass plus a thin metal highlight inner pass, like the body's own
+  // rim highlight, so the handle reads as forged from the same metal
+  [[bigStartSx, -1], [bigEndSx, 1]].forEach(([hx, side]) => {
+    ctx.strokeStyle = "#1c1815";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(hx, rimY + 12, 10, Math.PI * 0.15, Math.PI * 1.85, side < 0);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#8a8480";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(hx, rimY + 12, 10, Math.PI * 0.2, Math.PI * 0.85, side < 0);
+    ctx.stroke();
+  });
 }
 
 function drawTopsyPotGauntlet(camX) {
@@ -25661,6 +25839,7 @@ function drawTopsyTurvyScene(camX) {
   topsyMeadowSeeds.forEach(seed => drawTopsyMeadowDandelion(camX, seed));
   drawTopsyMeadowScatterBurst(camX);
   drawTopsySpiralSlide(camX);
+  drawTopsyPotGauntletBigPot(camX);
   drawTopsyPotGauntletSoupPit(camX);
   drawTopsyPotGauntlet(camX);
   drawTopsyAmbientWindSeeds(camX);
@@ -65714,16 +65893,26 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-// CONFIRMED REMOVE ("dont draw the pot occlusion on the player like
-// that. ahhhh maybe this is too hard to do with the windy stuff"):
-// tried this "sink the sprite + draw a front wall over it" idiom four
-// times (floating oval, disliked outright, a dark hole read as a
-// smudge, then too narrow) and it never landed -- dropping it rather
-// than iterating a 5th time. The hot-soup pit under the gauntlet (see
-// drawTopsyPotGauntletSoupPit) already gives a clear "don't walk under
-// here" visual, so the pots themselves go back to drawing plainly with
-// no occlusion trick.
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
+// CONFIRMED RE-ADD ("since we are no longer having wind while in
+// gauntlet, can we do the occlusion in the pots but correctly this
+// time"): pulled entirely last time after 4 rejected passes (floating
+// oval, a dark hole that read as a smudge, too narrow). The real root
+// cause of at least the "floating/disconnected" complaints wasn't the
+// occlusion shape itself -- it was that the ambient topsy-turvy wind
+// (TOPSY_WIND_STRENGTH) was nudging player.x every frame even while
+// standing on an upright pot, so the character (and anything anchored
+// to it) visibly drifted sideways relative to the pot's own fixed
+// position. That's now suppressed for the whole gauntlet span (see
+// updateTopsyTurvyScene), so the standing position is finally stable
+// enough for this to actually hold still. Reusing the LAST shape that
+// was tried (full player-width solid wedge, no dark interior -- see
+// drawTopsyPotGauntletOcclusion below) since that one was never
+// actually rejected on its own merits, just swept out along with
+// everything else in the same message.
+const onUprightGauntletPot = currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
+  topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex]);
+const potSink = onUprightGauntletPot ? 6 : 0;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66405,6 +66594,14 @@ if (currentScene === "spring" && peanutVine.mounted && peanutVine.grown && peanu
 // snuggled right up against the player, not partially hidden behind anything.
 if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
+}
+
+// CONFIRMED RE-ADD -- gated to standingPotIndex AND the pot currently
+// being upright, matching "when its facing upward" from the original
+// ask -- no occlusion while locked/pinned on an upside-down one.
+if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
+    topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex])) {
+  drawTopsyPotGauntletOcclusion(px + player.width / 2, drawPy + player.height);
 }
 
 drawCrown(camX);
