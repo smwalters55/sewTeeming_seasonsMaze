@@ -18732,7 +18732,7 @@ function updateFungusPulleyRide(deltaTime) {
 // (and moving the slide out to the new edge, see TOPSY_SPIRAL_SLIDE_X)
 // pushes that clearance zone well clear of the meadow's whole right-side
 // range instead of trying to re-tune the spawn formula around it.
-const TOPSYTURVY_WIDTH = 4050; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as everything else from the cart onward, so the world still ends with the same margin past TOPSY_SPIRAL_SLIDE_X (= WIDTH-50) it always did
+const TOPSYTURVY_WIDTH = 4260; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as everything else from the cart onward, so the world still ends with the same margin past TOPSY_SPIRAL_SLIDE_X (= WIDTH-50) it always did
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -18916,7 +18916,7 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // remember breathing room breeeathing room"): pushed further right
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
-const TOPSY_WELL_X = 3180; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with everything from the cart onward, to clear the new pot gauntlet. Was 2300 (itself already shifted +250 before that, from 2050, along with the invert chain/sky garden).
+const TOPSY_WELL_X = 3390; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with everything from the cart onward, to clear the new pot gauntlet. Was 2300 (itself already shifted +250 before that, from 2050, along with the invert chain/sky garden).
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
@@ -18960,7 +18960,7 @@ const TOPSY_WELL_X = 3180; // CONFIRMED CHANGE ("move stuff to the right as appr
 // untouched, so every already-tuned reachability relationship in this
 // chain (see its own comments below) carries over exactly as-is.
 const TOPSY_INVERT_PLATFORMS = [
-  { x: 2660, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
+  { x: 2870, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
   // CONFIRMED CHANGE ("jump budget still a lil too high" pass): raised
   // from 114 -- gives the hop up to platform2 a bit more margin under
   // the same launch budget. Not the actual fix for the reported skip
@@ -18968,16 +18968,16 @@ const TOPSY_INVERT_PLATFORMS = [
   // platform2's own raise just came out of the same reachability-
   // simulation pass and were left in since they only add headroom, never
   // remove it.
-  { x: 2760, height: 150, width: 70 }, // the original dive-down target
+  { x: 2970, height: 150, width: 70 }, // the original dive-down target
   // CONFIRMED FIX (reachability simulation): this used to sit at the
   // SAME x as platform0 (1780) directly below it -- any climb heading
   // back toward that column would cross platform0's own attach height
   // first and get vacuumed onto it, making this platform essentially
   // unreachable. Shifted off that column (1830) so a launch toward it
   // doesn't pass through platform0 on the way.
-  { x: 2710, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
-  { x: 2780, height: 342, width: 70 },
-  { x: 2640, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
+  { x: 2920, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
+  { x: 2990, height: 342, width: 70 },
+  { x: 2850, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
   // CONFIRMED CHANGE ("some of it being horizontal not just an upward
   // climb", then "make it more sideways to the right, moving the highest
   // platform w reward further to the right as well"): the sideways
@@ -18989,7 +18989,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // (1705-1815) on x alone now, so the earlier height-tuning trick
   // needed for the old 1650 platform (see its own now-removed comment)
   // isn't needed here.
-  { x: 2810, height: 450, width: 70 },
+  { x: 3020, height: 450, width: 70 },
   // CONFIRMED CHANGE ("jump budget still a lil too high" -- reachability
   // simulation found platform3 (342) could launch straight past this one
   // and land directly on the platform after it (524, now 565), skipping
@@ -18998,7 +18998,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // either side of it (450 -> here, here -> the next one up) both still
   // clear it with real margin -- verified via the same frame-by-frame
   // simulation used everywhere else in this chain.
-  { x: 2880, height: 480, width: 70 },
+  { x: 3090, height: 480, width: 70 },
   // climb resumes -- shifted +150/+170 right of where these used to sit
   // (1880/1780) to match the rest of the rightward move, same relative
   // shape (small hop up, then a bit back left before the capstone) as
@@ -19011,8 +19011,8 @@ const TOPSY_INVERT_PLATFORMS = [
   // skip (its own required rise now exceeds the launch budget from the
   // rest platform) while the legitimate hop up from 480 still clears
   // with real margin.
-  { x: 2930, height: 565, width: 70 },
-  { x: 2830, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
+  { x: 3140, height: 565, width: 70 },
+  { x: 3040, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
 // CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
 // top... i want to be able to jump on it but going downwards", now
@@ -19089,7 +19089,7 @@ const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 // the right as well"): shifted +170 along with the last invert chunk
 // (now x1950) so it still overlaps that chunk's own catch band and a
 // straight-up launch from it lands here. Was x1765 (spanned 1765-1895).
-const TOPSY_SKY_GARDEN = { x: 2815, height: 690, width: 130 }; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as the invert chain it caps
+const TOPSY_SKY_GARDEN = { x: 3025, height: 690, width: 130 }; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as the invert chain it caps
 // CONFIRMED ADD ("soft cap after the highest platform like it goes up
 // waaay too high"): the invert chain's own light dive gravity gives a
 // big rise budget so the bigger hops are reachable (see
@@ -19163,7 +19163,7 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // clear ground on every side.
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
 // shifted right along with the well, gap between them held steady.
-const TOPSY_SEEDPLOT_X = 3530; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as TOPSY_WELL_X, keeping the same gap between them. Was 2650 (itself already shifted +250 from 2400).
+const TOPSY_SEEDPLOT_X = 3740; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as TOPSY_WELL_X, keeping the same gap between them. Was 2650 (itself already shifted +250 from 2400).
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
@@ -23089,7 +23089,16 @@ if (DEBUG_START_SCENE === "topsyturvy") {
   player.x = TOPSY_POT_GAUNTLET_START_X - 60;
   player.y = 0;
 }
-const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot's rim
+// CONFIRMED CHANGE ("still relatively easy to almost hop all the way
+// over"): 26 -> 22. This is the second lever alongside the extra pots
+// above -- a slightly tighter catch window means holding forward and
+// mashing jump lands cleanly less often, so actually watching where
+// you're going to land starts to matter. Kept well clear of breaking
+// reachability: TOPSY_POT_GAUNTLET_MAX_DRIFT (75) is the constant that
+// was reachability-simulation-tuned against the layout's biggest single
+// gap (65px) -- this only trims the LANDING window, not how far a
+// flight can travel, so nothing here changes what's reachable.
+const TOPSY_POT_GAUNTLET_HALF_WIDTH = 22; // landable half-width of a single pot's rim
 // CONFIRMED CHANGE ("the pot line is both too hard, and then if you get
 // something right in the beginning its way too easy... i want them to
 // NEED to go inside the pots, not just full jump over them, minimum
@@ -23129,11 +23138,23 @@ const TOPSY_POT_GAUNTLET_LAYER_HEIGHTS = [45, 105, 165, 225];
 // 4 layers (not a simple staircase) for the "jagged" placement asked for.
 // Horizontal gaps vary (45-65px) for the same non-gridded reason.
 // CONFIRMED CHANGE ("we need like 9-12 pots/pans"): 11 -> 12.
+// CONFIRMED CHANGE ("make gauntlet a little longer... still relatively
+// easy to almost hop all the way over"): 12 -> 16. A longer chain
+// doesn't need any single pot to get harder to feel harder -- it just
+// means more consecutive chances to mistime a landing before reaching
+// the end, which is exactly the gap the naive "hold forward and mash
+// jump" strategy exploits (verified via the debug harness: that
+// strategy does eventually get bounced all the way back to the start on
+// the 12-pot version, but rarely enough that a lot of near-misses don't
+// register as real risk). Same dx/layer authoring style as the
+// original 12, no new mechanics.
 const TOPSY_POT_GAUNTLET_LAYOUT = [
   { dx: 0, layer: 0 }, { dx: 50, layer: 1 }, { dx: 45, layer: 2 },
   { dx: 55, layer: 1 }, { dx: 60, layer: 2 }, { dx: 50, layer: 3 },
   { dx: 65, layer: 2 }, { dx: 45, layer: 3 }, { dx: 55, layer: 2 },
-  { dx: 60, layer: 1 }, { dx: 50, layer: 0 }, { dx: 55, layer: 1 }
+  { dx: 60, layer: 1 }, { dx: 50, layer: 0 }, { dx: 55, layer: 1 },
+  { dx: 60, layer: 2 }, { dx: 45, layer: 3 }, { dx: 55, layer: 1 },
+  { dx: 50, layer: 2 }
 ];
 const TOPSY_POT_GAUNTLET_POTS = (() => {
   let x = TOPSY_POT_GAUNTLET_START_X;
