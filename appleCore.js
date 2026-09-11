@@ -4788,13 +4788,11 @@ function applyPhysics(){
   // in the air... kept flipping right side up and upside down randomly
   // and you have to land it each one or you fall off and have to start
   // over... jump forward/back and up/down between 3-4 jagged layers,
-  // overall movement to the right"). Each pot is ALWAYS solid (never a
-  // pass-through) -- the difference is what happens when you land on one:
-  // upright, it holds you like a normal platform; upside-down, it's a
-  // bounce pad (same shape as the meadow dandelion's own bounce-flight,
-  // just a flat single kick instead of an escalating streak) that pops
-  // you back up so you get another shot once it flips, matching "keep
-  // jumping on the upside down pot until it turns right side up."
+  // overall movement to the right"). Landing on a pot while it's upright
+  // holds you like a normal platform; landing on one while it's
+  // upside-down fails you immediately, same as missing entirely (see
+  // topsyPotGauntletReset below) -- per the original ask, "you have to
+  // land it each one or you fall off and have to start over."
   {
     const playerCenterX = player.x + player.width / 2;
     const playerBottom = player.y;
@@ -4819,27 +4817,28 @@ function applyPhysics(){
         player.vy = 0;
         player.jumping = false;
         player.usedDoubleJump = false;
-        topsyPotGauntlet.pinnedPotX = null; // real landing -- free to launch for the next pot normally
         if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
           topsyPotGauntlet.rewardGranted = true;
           addToInventory("goldenLadle");
           topsyPotGauntletWinFlashAt = performance.now();
         }
       } else {
-        // upside-down: a bounce kick, not a landing -- same gravity/vy
-        // shape as the dandelion bounce-flight above, just a single flat
-        // kick (no escalating streak) since this is a "keep trying until
-        // it flips" beat, not a reward moment. CONFIRMED BUG FIX: pin the
-        // drift clamp to THIS pot's x (see TOPSY_POT_GAUNTLET_PIN_RADIUS)
-        // so holding right through repeated bounces can't quietly walk
-        // you forward pot-by-pot -- you stay over this one until it's
-        // actually upright when you land.
-        player.y = landedPot.height;
-        player.vy = TOPSY_POT_GAUNTLET_BOUNCE_VY;
-        player.jumping = true;
-        player.usedDoubleJump = false;
-        topsyPotGauntlet.pinnedPotX = landedPot.x;
-        topsyPotGauntlet.flightOriginX = landedPot.x;
+        // CONFIRMED BUG FIX (3rd pass -- "you can still basically hop
+        // across them fully on the top, cus when they are upside down
+        // you just stay auto hopping on them"): the bounce this used to
+        // do was ME inventing a safety net ("keep jumping on the upside
+        // down pot until it turns right side up") that was never
+        // actually asked for -- the ORIGINAL report said "you have to
+        // land it each one or you fall off and have to start over",
+        // i.e. touching a pot in the wrong orientation should be exactly
+        // as punishing as missing it completely. A bounce, even pinned
+        // in place, is still a free do-over that needs zero real timing
+        // -- you can just hold forward and let it auto-catch you forever
+        // until it happens to be upright, no skill involved. Landing on
+        // an upside-down pot now fails you immediately, same reset as
+        // falling straight to the ground -- the only way through is
+        // actually being airborne AT the moment each pot is upright.
+        topsyPotGauntletReset();
       }
     }
   }
@@ -4866,14 +4865,7 @@ function applyPhysics(){
     const px = player.x + player.width / 2;
     const inGauntletSpan = px > TOPSY_POT_GAUNTLET_START_X - 6 && px < TOPSY_POT_GAUNTLET_END_X + 40;
     if (inGauntletSpan && player.y <= 0 && !player.jumping) {
-      player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
-      player.y = 0;
-      player.vx = 0;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-      topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
-      topsyPotGauntlet.pinnedPotX = null;
+      topsyPotGauntletReset();
     }
   }
 
@@ -4893,13 +4885,8 @@ function applyPhysics(){
         topsyPotGauntlet.flightOriginX = player.x;
       }
       if (player.jumping) {
-        // pinned (mid-bounce off an upside-down pot) uses the tight
-        // radius around that pot instead of the normal wide flight
-        // budget -- see TOPSY_POT_GAUNTLET_PIN_RADIUS's own comment.
-        const originX = topsyPotGauntlet.pinnedPotX != null ? topsyPotGauntlet.pinnedPotX : topsyPotGauntlet.flightOriginX;
-        const radius = topsyPotGauntlet.pinnedPotX != null ? TOPSY_POT_GAUNTLET_PIN_RADIUS : TOPSY_POT_GAUNTLET_MAX_DRIFT;
-        const lo = originX - radius;
-        const hi = originX + radius;
+        const lo = topsyPotGauntlet.flightOriginX - TOPSY_POT_GAUNTLET_MAX_DRIFT;
+        const hi = topsyPotGauntlet.flightOriginX + TOPSY_POT_GAUNTLET_MAX_DRIFT;
         if (player.x < lo) player.x = lo;
         if (player.x > hi) player.x = hi;
       }
@@ -23052,7 +23039,6 @@ const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot
 // uprightFraction below).
 const TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH = 42;
 const TOPSY_POT_GAUNTLET_ENTRY_VERTICAL_TOL = 24; // vs the ordinary 14
-const TOPSY_POT_GAUNTLET_BOUNCE_VY = 9; // flat kick off an upside-down pot -- enough hang time to try again once it flips, not a full re-jump
 // CONFIRMED ADD (same steer): a single strong jump/double-jump used to be
 // able to just sail clean over several pots at once and land on real
 // ground past the whole gauntlet -- "full jump over them" instead of
@@ -23064,19 +23050,6 @@ const TOPSY_POT_GAUNTLET_BOUNCE_VY = 9; // flat kick off an upside-down pot -- e
 // deliberate double-hop, but nowhere near enough to clear the ~590px
 // full span in one leap -- landing on the pots stops being optional.
 const TOPSY_POT_GAUNTLET_MAX_DRIFT = 95;
-// CONFIRMED BUG FIX ("still really easy to just jump over all of it
-// regardless of what orientation of the pots is"): MAX_DRIFT above only
-// ever stopped a single flight from crossing multiple pots -- it never
-// stopped an upside-down BOUNCE from still carrying you forward, and a
-// bounce isn't a fail, so holding right and just bouncing off every pot
-// pot-to-pot (upright or not, never mattering which) was a completely
-// safe way through with zero timing. While "pinned" to a pot (see
-// topsyPotGauntlet.pinnedPotX, set the instant a bounce off that pot
-// happens), the drift clamp below uses this much tighter radius instead
-// of the normal one -- so a bounce keeps you hovering near THAT pot
-// until you actually catch it upright, instead of drifting toward the
-// next one for free.
-const TOPSY_POT_GAUNTLET_PIN_RADIUS = 22;
 // 4 layers, 60px apart -- comfortably inside a normal single jump's
 // ~90px reach (vy=12, gravity=0.8/frame => v^2/2g = 90) even without a
 // double jump, so no single hop in the sequence below is ever a forced
@@ -23126,8 +23099,21 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   });
 })();
 const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
-let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false, pinnedPotX: null };
+let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false };
 let topsyPotGauntletWinFlashAt = 0;
+
+// shared reset used both by missing every pot and landing on one in the
+// wrong (upside-down) orientation -- see both call sites' own comments
+// for why they now share this exact behavior.
+function topsyPotGauntletReset() {
+  player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
+  player.y = 0;
+  player.vx = 0;
+  player.vy = 0;
+  player.jumping = false;
+  player.usedDoubleJump = false;
+  topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
+}
 
 function topsyPotUpright(pot) {
   const t = (performance.now() + pot.phase) % pot.period;
