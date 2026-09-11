@@ -57,23 +57,22 @@ const lowfog = {
    ====================================================== */
 const keys = { left:false, right:false, up:false, down:false, space:false, ctrl:false, upJustPressed:false, leftJustPressed:false, rightJustPressed:false, downJustPressed:false };
 
-// CONFIRMED BUG FIX ("this is still happening wtf didnt you fix this" --
-// screenshotted the player stuck tilted and floating in mid-air in the
-// forest): every debug spawn cheat below only ever reset a handful of
-// position/physics fields (x/y/vx/vy/jumping/usedDoubleJump/launched),
-// never the many separate "mode lock" flags scattered all over the game
-// (onFan, onPendulum, onBallPitLadder, onFungusPulleyRide, topsyInverted,
-// and so on -- applyPhysics early-returns for most of these, see its own
-// block of `if (player.onX) return;` checks). Testing one mechanic, then
-// jumping to a different debug spawn without ever cleanly finishing/
-// leaving the first one, could leave a stale flag from the PREVIOUS
-// mechanic still true in the new scene: frozen out of normal gravity
-// (the "floating" part, since applyPhysics returns early before gravity
-// ever runs) and, if that same flag also feeds the sprite's own tilt sum
-// (see playerVisualRotation/totalTilt further down), visibly rotated
-// too, exactly matching the screenshot. Every cheat below now calls this
-// first, so hopping between any of them always starts from a genuinely
-// clean slate regardless of what was being tested right before.
+// Utility kept around for TEMPORARY debug spawns (see DEBUG_START_SCENE's
+// own comment) -- per direct steer ("all these new debug cheat things are
+// really annoying, can we not just delete all those everywhere, and you
+// just temporary start player where i ask you to"), permanent keyboard-
+// shortcut cheats have been removed from this file entirely. Whenever a
+// one-off test spawn is actually needed, it should be wired up temporarily
+// (e.g. by hand-editing DEBUG_START_SCENE and adding whatever position/
+// state setup is needed right after it, matching the shape below) and then
+// reverted once testing is done -- not left in as a standing keybinding.
+// This function stays because it's still the correct way to clear every
+// "mode lock" flag scattered across the game (onFan, onPendulum,
+// onBallPitLadder, onFungusPulleyRide, topsyInverted, and so on --
+// applyPhysics early-returns for most of these) before force-moving the
+// player somewhere -- skipping it can leave a stale flag from whatever was
+// being tested before, freezing the player out of normal gravity and/or
+// visibly rotating their sprite (see playerVisualRotation/totalTilt).
 function resetAllPlayerModeFlags() {
   player.onSeesawBounce = false;
   player.onFan = false;
@@ -129,337 +128,6 @@ window.addEventListener("keydown", e => {
   if ((e.key==="c" || e.key==="C") && !e.repeat) keys.cJustPressed = true;
   if ((e.key==="b" || e.key==="B") && !e.repeat) selectBoomerangIfAvailable();
   if ((e.key==="r" || e.key==="R") && !e.repeat) keys.rJustPressed = true; // zen sand rake: clear/start over -- see updateZenRakeUI
-  // DEBUG CHEAT ("how do i give gold to chest. debug spawn w mine gold"):
-  // Shift+G instantly tops off inventory.goldPile to the treasure chest's
-  // own cap, so the pool chest deposit can be tested without riding the
-  // full mine cart track to farm real gold first. Not reachable by
-  // accident (needs Shift held), and easy to strip back out later if this
-  // was only ever meant for testing.
-  if ((e.key==="g" || e.key==="G") && e.shiftKey && !e.repeat) {
-    inventory.goldPile = POOL_TREASURE_CHEST_CAP;
-    touchInventoryOrder("goldPile");
-    updateInventoryUI();
-  }
-  // DEBUG CHEAT ("can you spawn me at thr befinning"): Shift+H yanks the
-  // player straight back to the game's actual starting spot -- the
-  // orchard/autumn scene, at the same x/y the player object itself starts
-  // at (see its own declaration up top) -- for quickly retesting the
-  // intro without closing the tab / clearing state by hand. Also resets
-  // the camera and clears any mid-flight physics/transition state so this
-  // can't leave the player stuck mid-air or mid-fade from wherever they
-  // were before pressing it.
-  if ((e.key==="h" || e.key==="H") && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "autumn";
-    player.x = 400;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    cameraX = 0;
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("debug spawn sandbox"): Shift+S drops the player straight
-  // into the sandbox scene, right at its own entrance mound, for quickly
-  // testing sandbox toys (fan, trampolines, ant farm, etc.) without
-  // walking there from spring every time. Same full state-reset shape as
-  // Shift+H above, just landing in a different scene/spot.
-  if ((e.key==="s" || e.key==="S") && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "sandbox";
-    player.x = 200;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.launchSteerable = false;
-    player.onFan = false;
-    player.onFan2 = false;
-    cameraX = 0;
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    // CONFIRMED BUG FIX ("when i come back to spring from sandbox, i want
-    // to still see the sandbox in spring"): the entrance mound in spring
-    // (sandboxEntranceMound, a real little red sandbox, not just a plain
-    // dirt pile) only draws -- and can only be walked back INTO -- while
-    // discoveredScenes.clouds && peanutVine.grown are both true. Debug-
-    // spawning straight into the sandbox skips the real clouds/peanut-vine
-    // progression entirely, so those flags were still false the whole
-    // time -- meaning a debug session could walk sandbox -> spring and
-    // find the entrance had silently never been there at all, same "debug
-    // spawn shouldn't leave other assumptions broken" fix already applied
-    // to the rock climb's own debug spawn. Auto-marking both here so
-    // debug testing sees the same spring the mound expects.
-    discoveredScenes.clouds = true;
-    peanutVine.grown = true;
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("place me in graft tree zone"): Shift+T drops the player
-  // in spring right at the plum graft tree (the leftmost of the three,
-  // GRAFT_TREE_X.plum), for quickly testing the honey/stick/boomerang
-  // graft flow without walking there each time. Same full state-reset
-  // shape as Shift+H/Shift+S above. Also tops off honeyScoops if you're
-  // currently out, so testing isn't blocked behind a detour to autumn to
-  // knock the beehive first -- doesn't touch honeyScoops if you already
-  // have some, so it won't quietly overwrite a real in-progress test.
-  if ((e.key==="t" || e.key==="T") && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "spring";
-    player.x = GRAFT_TREE_X.plum - player.width / 2;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    cameraX = Math.max(0, GRAFT_TREE_X.plum - 400);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    if (honeyScoops <= 0) honeyScoops = 8;
-    updateInventoryUI();
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("debug spawn me on cliff to jump into pool"): Shift+P
-  // drops the player standing on the rock climb's own ledge
-  // (FOREST_ROCK_LEDGE, forest scene), a short walk back from its right
-  // edge -- walking right from here off the edge triggers the real
-  // startPoolDive() dive-into-the-pool sequence exactly like actually
-  // climbing up there and walking off would, no separate pool-entry
-  // shortcut needed. Same full state-reset shape as the other debug
-  // spawns above.
-  // CONFIRMED BUG FIX (found while building this): the rock ledge sits
-  // PAST the river-building invisible wall (see updateForestScene's own
-  // "riverWallX" clamp) -- a debug-spawned player who hasn't actually
-  // strung/decked the bridge gets silently snapped back to the wall's
-  // edge the very next frame, thousands of px away, with no visible
-  // cause (this is exactly the pre-existing "[teleport-watchdog]"
-  // diagnostic further down was trying to catch -- turns out it's this
-  // debug spawn's own doing, not a real play bug). Auto-completing the
-  // bridge here, same "don't leave other real-progression assumptions
-  // broken" fix already applied to the sandbox/graft debug spawns above.
-  if ((e.key==="p" || e.key==="P") && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "forest";
-    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-    player.x = FOREST_ROCK_LEDGE.x + FOREST_ROCK_LEDGE.width / 2 - 30;
-    player.y = FOREST_ROCK_LEDGE.height;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    cameraX = Math.max(0, FOREST_ROCK_LEDGE.x - 400);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("debug spawn me at the bottom of the tree"): Shift+F
-  // drops the player right at the base of the fungus climb (forest
-  // scene, FOREST_FUNGUS_TREE_X, level 0), for quickly testing the
-  // climb itself and the new Topsy-Turvy Land at its top without
-  // floating the whole rushing river or bouncing up from scratch every
-  // time. Same full state-reset shape as the other debug spawns above,
-  // including auto-completing the river bridge -- the fungus tree sits
-  // past it, same reasoning as the Shift+P rock-ledge spawn just above.
-  if ((e.key==="f" || e.key==="F") && e.shiftKey && !e.ctrlKey && !e.altKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "forest";
-    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-    player.x = FOREST_FUNGUS_TREE_X;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    forestFungusClimb.level = 0;
-    forestFungusClimb.streak = 0;
-    cameraX = Math.max(0, FOREST_FUNGUS_TREE_X - 400);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("can you actually debug spawn me within topsy turvery
-  // land pls can use f still" -- then later "debug spawn me with all the
-  // daffodils marked as grown or whatever, putting me next to the slide
-  // entrance pls" -- then "no ctrl shift d is another windows command...
-  // just re-use one of the other letters it is fine and remove it from
-  // whereever it is currently being used"): Ctrl+Shift+F used to be a
-  // plain "drop into Topsy-Turvy Land near the trees" spawn. Reusing that
-  // SAME already-working combo instead of hunting for a free one (both
-  // Ctrl+Shift+S and Shift+D turned out to collide with real Windows/
-  // browser bindings) -- this now drops the player right next to the
-  // spiral slide hole (see TOPSY_SPIRAL_SLIDE_X) with the big dandelion
-  // fully grown AND the meadow already filled to its cap, so the slide
-  // is unlocked and testable immediately. Strictly more useful than the
-  // old generic land spawn for current testing needs, so it fully
-  // replaces it rather than living alongside it -- same full state-reset
-  // shape as the other debug spawns.
-  if ((e.key==="f" || e.key==="F") && e.shiftKey && e.ctrlKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "topsyturvy";
-    topsyWindSeedPlot.dug = true;
-    topsyWindSeedPlot.planted = true;
-    topsyWindSeedPlot.waterRounds = TOPSY_SEEDPLOT_WATER_ROUNDS;
-    topsyWindSeedPlot.grown = true;
-    topsyWindSeedPlot.growProgress = 1;
-    // CONFIRMED BUG FIX ("why are all the mini dandelions to the left of
-    // the big one" -- asked three times, still happening after two
-    // separate passes at the REAL random-growth logic in
-    // topsyPickMeadowSpot): finally tracked down -- this debug cheat's
-    // own instant-fill spawn was the actual culprit the whole time, not
-    // the organic growth logic those earlier fixes targeted. This spawn
-    // hardcoded every one of the 12 seeds to the LEFT of the plot
-    // (TOPSY_SEEDPLOT_X - 60 - i*36), so any time this cheat was used to
-    // jump straight into a "meadow already filled" topsy-turvy for
-    // testing/checking, ALL the minis were left, no matter what the real
-    // growth logic did. Alternates sides now instead, spread out on both
-    // the wider right-hand window (open ground toward the world edge)
-    // and the narrower left-hand gap toward the well, matching how a
-    // real, properly-balanced grown meadow should actually look.
-    topsyMeadowSeeds = [];
-    topsyMeadowPending = [];
-    for (let i = 0; i < TOPSY_MEADOW_MAX; i++) {
-      const half = Math.floor(i / 2);
-      const x = i % 2 === 0
-        ? TOPSY_SEEDPLOT_X + 70 + half * 38   // right: open ground toward the world edge
-        : TOPSY_SEEDPLOT_X - 60 - half * 38;  // left: narrower gap toward the well
-      topsyMeadowSeeds.push({ x, plantedAt: performance.now() - TOPSY_MEADOW_GROW_DURATION - 100 });
-    }
-    player.x = TOPSY_SPIRAL_SLIDE_X - 40;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    forestFungusClimb.level = forestFungusClimb.levels.length - 1;
-    forestFungusClimb.streak = 0;
-    forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-    forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
-    cameraX = Math.max(0, TOPSY_SPIRAL_SLIDE_X - 480);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-  }
-  // DEBUG CHEAT ("give me whatever inventory i should have-ish, like the
-  // key pieces but also others so its not obvious exactly what to use
-  // wher[e]... debug spawn me at the start of the rushing river pls"):
-  // drops the player right at the river's near bank, crossing not yet
-  // started (forestRiverSegmentsStrung/Decked both stay 0, unlike every
-  // other forest spawn above which force the river already built) --
-  // same "start of the crossing" state a real playthrough would reach
-  // it in. Inventory is wiped and reset to a plausible mixed loadout:
-  // a full 7 bridgePiece (exactly enough logs to build every segment,
-  // the actual answer here), the two general-purpose tools a player
-  // would realistically already have by this point (shovel, bucket --
-  // same ones seeded into every debug start further down this file),
-  // mixed in among a handful of unrelated decoy items from other parts
-  // of the game, so at a glance the inventory strip doesn't just hand
-  // over "use this one" the way a bare bridgePiece-only stock would.
-  // CONFIRMED BUG FIX ("why are there four windseeds"): windSeed is a
-  // never-exceeds-1 item everywhere else in the game (see its own entry
-  // in NO_COUNT_LABEL) -- stacking 4 of it here was never sensible to
-  // begin with, capped to the same 1 every other windSeed pickup gives.
-  // Also dropped pumpkin per direct request -- it read as too obviously
-  // "not the one" next to a river-crossing puzzle anyway.
-  // CONFIRMED BUG FIX ("the k is another windows command!! just re-use
-  // f pls"): Shift+K collided with a real Windows binding, same class of
-  // problem the Ctrl+Shift+F cheat's own comment already flagged for
-  // Ctrl+Shift+S/Shift+D. Every plain-Shift and Ctrl+Shift F combo is
-  // already spoken for by the other forest spawns above, so this one
-  // reuses F again with the one modifier combo still free: Alt+Shift+F --
-  // altKey isn't checked anywhere else in this file, so there's no
-  // collision risk here either.
-  if ((e.key==="f" || e.key==="F") && e.altKey && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "forest";
-    // CONFIRMED BUG FIX ("where is my water world in forest, my rushing
-    // river"): drawForestRiver deliberately stays a no-op until
-    // discoveredScenes.molehole is true (every bridgePiece lives inside
-    // mole hole, so the whole river/bank/bridge complex is fog-of-war'd
-    // off before that, same idea as the map gating). This cheat drops the
-    // player right at the bank with a full crossing inventory, so it
-    // needs to also mark mole hole discovered or the actual water/bridge
-    // graphics never draw at all -- even though the wade-zone tint (a
-    // separate, ungated check) still correctly wets the sprite while
-    // standing in the real open-water strip beside the near bridge post.
-    // That tint was never the bug; the missing river was.
-    discoveredScenes.molehole = true;
-    Object.keys(inventory).forEach(k => delete inventory[k]);
-    inventoryOrder = [];
-    heldItem = null;
-    carriedBook = null;
-    carriedFeather = false;
-    [
-      ["bridgePiece", 7],  // the actual key piece the river crossing needs
-      ["shovel", 1],       // general tool, already in hand by this point in a real playthrough
-      ["bucket", 1],       // general tool, same as above
-      ["appleSlice", 2],
-      ["acorn", 3],
-      ["roundLeaf", 1],
-      ["stone", 2],
-      ["worm", 1],
-      ["windSeed", 1]
-    ].forEach(([itemType, count]) => {
-      for (let i = 0; i < count; i++) addToInventory(itemType);
-    });
-    forestRiverLogPile = 0;
-    forestRiverSegmentsStrung = 0;
-    forestRiverSegmentsDecked = 0;
-    player.x = FOREST_RIVER_NEAR_BANK_X - 60;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    cameraX = Math.max(0, FOREST_RIVER_NEAR_BANK_X - 400);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    updateMapUI();
-    updateInventoryUI();
-  }
-
-  // DEBUG CHEAT ("debug spawn me in front of the pot gauntlet pls"):
-  // Ctrl+Alt+Shift+F -- checked carefully against the other F combos
-  // already in use (plain Shift+F, Ctrl+Shift+F, Alt+Shift+F) and against
-  // real OS/browser bindings before picking this one, same "check
-  // carefully so i dont waste time" bar as the Shift+K collision fix.
-  // Neither ctrlKey+altKey+shiftKey together, nor F specifically with
-  // that combination, is bound to anything at the Windows or common-
-  // browser level (unlike, say, Ctrl+Shift+K, which opens Firefox's own
-  // console).
-  if ((e.key==="f" || e.key==="F") && e.ctrlKey && e.altKey && e.shiftKey && !e.repeat) {
-    resetAllPlayerModeFlags();
-    currentScene = "topsyturvy";
-    player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
-    player.y = 0;
-    player.vx = 0;
-    player.vy = 0;
-    player.jumping = false;
-    player.usedDoubleJump = false;
-    player.launched = false;
-    player.rockClingIndex = -1;
-    cameraX = Math.max(0, TOPSY_POT_GAUNTLET_START_X - 400);
-    cameraY = 0;
-    seasonTransition.phase = "idle";
-    discoveredScenes.topsyturvy = true;
-    updateMapUI();
-    updateInventoryUI();
-  }
 });
 
 window.addEventListener("keyup", e => {
@@ -578,6 +246,23 @@ const player = {
   // countdown (see its own comment there) instead of normal gravity.
   topsyDipFrames: 0,
   topsyDipFromHeight: 0, // the resting attachY the current dip started from
+  // CONFIRMED BUG FIX ("you can easily get to the top level from maybe
+  // the bottom third ish of the platforms... jump forgiveness is too
+  // high still... tester went up twice incredibly quickly"): the invert
+  // chain's own light dive gravity (TOPSY_INVERT_DIVE_GRAVITY) gives a
+  // single launch a very long hang time near its apex -- comfortably
+  // enough, if held the whole flight, to drift ~400px+ sideways (player
+  // speed x total airborne frames), far more than the biggest legitimate
+  // single-hop gap in the chain (~170px). The catch loop below (see
+  // TOPSY_INVERT_PLATFORMS' own collision block) has no notion of "which
+  // hop this launch is supposed to be" -- it just catches whatever chunk
+  // your x happens to overlap the instant your y crosses its attachY --
+  // so a long, fully-held horizontal drift could sail clean over several
+  // intended rungs and land on one much higher/farther in a single jump.
+  // Recorded the moment a launch actually fires (not the dip) and used to
+  // clamp horizontal drift for that flight -- see the clamp itself, right
+  // after the ordinary left/right movement block.
+  topsyLaunchOriginX: 0,
   // the specific TOPSY_INVERT_PLATFORMS entry currently exempt from its
   // own re-catch check -- set the moment a dip/launch starts so the
   // upward launch crossing back through that same platform's attachY
@@ -3070,6 +2755,23 @@ function handleInput(){
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
 
+    // CONFIRMED BUG FIX ("jump forgiveness is too high... tester went up
+    // twice incredibly quickly" on the invert chain): clamp horizontal
+    // drift to a real single-hop's worth (see topsyLaunchOriginX's own
+    // comment) for as long as this specific flight is still airborne --
+    // once it lands (jumping goes false) the clamp stops applying, so
+    // ordinary walking on a platform/ground is completely unaffected.
+    // 190px comfortably covers the chain's biggest actual single-hop gap
+    // (170px, platform4 -> platform5) with a little margin for timing,
+    // while cutting off the ~400px+ of drift a fully-held flight could
+    // otherwise reach -- no longer enough to sail past several rungs and
+    // land near the top of the chain in one or two launches.
+    if (currentScene === "topsyturvy" && player.jumping && player.topsyInverted && player.topsyDipFrames === 0) {
+      const maxDrift = 190;
+      if (player.x > player.topsyLaunchOriginX + maxDrift) player.x = player.topsyLaunchOriginX + maxDrift;
+      if (player.x < player.topsyLaunchOriginX - maxDrift) player.x = player.topsyLaunchOriginX - maxDrift;
+    }
+
     // CONFIRMED BUG FIX: aboutToMountSeesaw was excluding the entire
     // movement block above (left/right included), not just the jump —
     // meaning a player standing near the mount zone lost ALL movement,
@@ -4054,6 +3756,11 @@ function applyPhysics(){
     player.y = player.topsyDipFromHeight - TOPSY_INVERT_DIP_DEPTH * dipT;
     if (player.topsyDipFrames === 0) {
       player.vy = TOPSY_INVERT_LAUNCH_VY;
+      // CONFIRMED BUG FIX -- see topsyLaunchOriginX's own comment on the
+      // player object: mark the real x this specific flight launches
+      // from, right as it actually fires, so the drift clamp has
+      // something to measure from for the whole hop.
+      player.topsyLaunchOriginX = player.x;
     }
     return;
   }
@@ -5124,15 +4831,29 @@ function applyPhysics(){
       }
     }
   }
-  // fail/reset -- only counts as "fell" if it's a genuine return to real
-  // ground (y<=0, not just resting on a pot) somewhere inside the
-  // gauntlet's own span, and only on the frame that actually happens
-  // (edge-detected off the previous frame's y) so it doesn't re-fire
-  // every single frame while standing there.
+  // fail/reset -- CONFIRMED BUG FIX ("you can basically just hop on top
+  // of all of them to get through it, doesnt matter if they are tipping
+  // down or up"): the real ground everywhere else in topsy-turvy is also
+  // solid ground UNDER this entire gauntlet (there's no scene-level pit
+  // here, same flat floor as the rest of the land), so missing every pot
+  // just meant a one-time teleport back to the start line -- after that
+  // single edge-triggered reset, the player was standing on ordinary
+  // solid ground again and could simply walk the rest of the way through
+  // and past the whole gauntlet with zero further risk, making the pots'
+  // own upright/upside-down state completely optional to ever check.
+  // Fixed by treating the ground under the gauntlet's own interior span
+  // as a real pit instead of a one-shot trap: this now re-fires on EVERY
+  // frame the player is genuinely grounded (y<=0) anywhere inside the
+  // span, not just the single frame right after landing there, so plain
+  // ground is never a safe way through -- only the pots themselves are.
+  // The start line itself (px <= START_X - 6, where the player is placed
+  // after a reset) stays just outside this span so resetting can't
+  // immediately re-trigger itself, and clearing the final pot leaves you
+  // past END_X + 40, back on genuinely solid ground toward the cart.
   {
     const px = player.x + player.width / 2;
     const inGauntletSpan = px > TOPSY_POT_GAUNTLET_START_X - 6 && px < TOPSY_POT_GAUNTLET_END_X + 40;
-    if (inGauntletSpan && player.y <= 0 && !player.jumping && topsyPotGauntlet.prevPlayerY > 0) {
+    if (inGauntletSpan && player.y <= 0 && !player.jumping) {
       player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
       player.y = 0;
       player.vx = 0;
@@ -5140,7 +4861,6 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
     }
-    topsyPotGauntlet.prevPlayerY = player.y;
   }
 
   } // end currentScene checks
@@ -22662,15 +22382,30 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
     ctx.stroke();
   }
 
-  // CONFIRMED BUG FIX ("i dont want the string of the basket to just stay
-  // there below the basket while the basket is above it. it goes with the
-  // basket"): this used to also draw the FULL rope span, top anchor to
-  // bottom anchor, every frame regardless of where the basket actually
-  // was -- so a long faint line stayed visible reaching well past the
-  // basket's own real position instead of looking like it belonged to it.
-  // Removed entirely; the short rope handle drawn below (railX/basketY to
-  // bx/basketY) is the only cord now, and it moves with the basket every
-  // frame since it's derived from the basket's own current position.
+  // CONFIRMED CHANGE ("tomato in basket still comes down from a rope,
+  // but make sure it goes back up w the rope, there should just be a
+  // permanent rope line that is always visible"): the earlier fix here
+  // removed the full top-to-bottom rope span entirely because a flat
+  // static line looked disconnected from the basket riding along it (see
+  // the old comment this replaced). The actual fix isn't "no rope at
+  // all" though -- a real pulley's cable IS continuously there whether
+  // the basket is near the top or bottom, so a permanent line is correct;
+  // the earlier version just didn't visually tie it to the basket. Drawn
+  // here BEFORE the basket itself (so the basket rides on top of/along
+  // it, not floating next to a separate disconnected cord), anchored to
+  // a small fixed hook at the bottom so it reads as one continuous cable
+  // running the wheel-to-anchor span, exactly like the branch/wheel
+  // mount at the top.
+  ctx.strokeStyle = "#7a6244";
+  ctx.lineWidth = 1 * s;
+  ctx.beginPath();
+  ctx.moveTo(railX, topY);
+  ctx.lineTo(railX, bottomY);
+  ctx.stroke();
+  ctx.fillStyle = "#5a4530";
+  ctx.beginPath();
+  ctx.arc(railX, bottomY, 2.6 * s, 0, Math.PI * 2);
+  ctx.fill();
 
   // one continuous loop: up carrying a mushroom, back down carrying a
   // tomato, eased in/out at each end rather than linear
@@ -23205,7 +22940,7 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   });
 })();
 const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
-let topsyPotGauntlet = { prevPlayerY: 0, rewardGranted: false };
+let topsyPotGauntlet = { rewardGranted: false };
 let topsyPotGauntletWinFlashAt = 0;
 
 function topsyPotUpright(pot) {
@@ -24809,25 +24544,39 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
   if (sx < -100 || sx > canvas.width + 100) return;
   const bob = Math.sin(performance.now() * 0.0014 + tp.x) * 3;
   const halfW = tp.width / 2;
-  const bodyH = 24; // grass-top to dirt-bottom thickness
+  // CONFIRMED BUG FIX ("make the roots look a lot better not pasted on
+  // thin rectangles"): the old body was a near-flat 24px slab with a
+  // perfectly straight top edge and only 4 short, uniform, dead-straight-
+  // ish root lines -- from normal play distance that reads exactly as "a
+  // thin rectangle with some lines under it", not a real torn-off chunk
+  // of earth. Thickened the body, roughed up BOTH edges (not just the
+  // bottom), and gave it a chunkier silhouette (a couple of the bottom
+  // points now bulge out past the top width instead of tapering evenly),
+  // so the outline itself reads as a real uneven clump before any detail
+  // is even added.
+  const bodyH = 34;
   const underY = gy - tp.height + bob;   // the attach surface -- player's head touches here
   const topY = underY - bodyH;           // grass-top surface
 
-  // jagged dirt/rock body, wider from a few uneven bumps rather than a
-  // clean rectangle -- deterministic per-platform via pseudoRandom so it
-  // doesn't re-jitter every frame
   const bodyGrad = ctx.createLinearGradient(0, topY, 0, underY);
   bodyGrad.addColorStop(0, "#8a6b4a");
   bodyGrad.addColorStop(0.4, "#6b4f34");
   bodyGrad.addColorStop(1, "#4a3624");
   ctx.fillStyle = bodyGrad;
   ctx.beginPath();
-  ctx.moveTo(sx - halfW, topY + 4);
-  ctx.lineTo(sx + halfW, topY + 4);
-  const bottomPts = 5;
+  const topPts = 5;
+  for (let i = 0; i <= topPts; i++) {
+    const tx = sx - halfW + (i / topPts) * tp.width;
+    const tjag = (pseudoRandom(tp.x + i * 19 + 3) - 0.5) * 6;
+    if (i === 0) ctx.moveTo(tx, topY + 4 + tjag); else ctx.lineTo(tx, topY + 4 + tjag);
+  }
+  const bottomPts = 6;
   for (let i = 0; i <= bottomPts; i++) {
     const bx = sx + halfW - (i / bottomPts) * tp.width;
-    const jag = (pseudoRandom(tp.x + i * 37) - 0.5) * 10;
+    // every other point bulges OUTWARD past the flat rectangle instead of
+    // just dipping down -- what actually breaks up the "rectangle" read
+    const bulge = (i % 2 === 0) ? 5 : 0;
+    const jag = 6 + pseudoRandom(tp.x + i * 37) * 12 + bulge;
     ctx.lineTo(bx, underY + jag);
   }
   ctx.closePath();
@@ -24836,20 +24585,53 @@ function drawTopsyTurvyInvertPlatform(camX, tp) {
   ctx.lineWidth = 1.2;
   ctx.stroke();
 
+  // a few embedded pebbles/rock flecks poking out of the dirt face --
+  // small, cheap detail that breaks up the flat gradient fill so the body
+  // reads as textured dirt rather than a smooth painted slab
+  [0.6, -0.3, 0.15].forEach((f, i) => {
+    const px = sx + f * halfW;
+    const py = topY + bodyH * (0.45 + pseudoRandom(tp.x + i * 91) * 0.35);
+    ctx.fillStyle = i === 1 ? "#a08868" : "#5c4530";
+    ctx.beginPath();
+    ctx.ellipse(px, py, 2.6 + pseudoRandom(tp.x + i * 13) * 1.8, 1.8, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   // dangling roots off the torn underside -- echoes the trees/dandelion's
   // own root motif elsewhere in this land, and doubles as a visual "grab
-  // here" cue right where the attach point actually is
-  ctx.strokeStyle = "#5a4028";
-  ctx.lineWidth = 1.3;
-  ctx.lineCap = "round";
-  [-0.55, -0.2, 0.2, 0.55].forEach((f, i) => {
-    const rx = sx + f * tp.width;
-    const rlen = 7 + pseudoRandom(tp.x + i * 71) * 6;
+  // here" cue right where the attach point actually is. CONFIRMED CHANGE:
+  // more of them, varying noticeably in thickness/length/curl (not 4
+  // near-identical short lines), and about half now fork into a thinner
+  // secondary tendril partway down -- reads as a real tangled root mass
+  // instead of a tidy row of straight ticks.
+  const rootCount = 7;
+  for (let i = 0; i < rootCount; i++) {
+    const f = -0.62 + (i / (rootCount - 1)) * 1.24;
+    const rx = sx + f * tp.width * 0.5;
+    const rlen = 9 + pseudoRandom(tp.x + i * 71) * 14;
+    const thick = 1 + pseudoRandom(tp.x + i * 29) * 1.6;
+    const curl = (pseudoRandom(tp.x + i * 53) - 0.5) * 8;
+    const midX = rx + Math.sin(i * 2.1 + tp.x) * curl;
+    const endX = rx + Math.sin(i * 1.3 + tp.x) * curl * 1.6;
+    ctx.strokeStyle = i % 3 === 0 ? "#4a3320" : "#5a4028";
+    ctx.lineWidth = thick;
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(rx, underY - 2);
-    ctx.quadraticCurveTo(rx + Math.sin(i * 2.1) * 3, underY + rlen * 0.6, rx + Math.sin(i * 1.3) * 4, underY + rlen);
+    ctx.quadraticCurveTo(midX, underY + rlen * 0.6, endX, underY + rlen);
     ctx.stroke();
-  });
+    // roughly half the roots get a thinner forked tendril branching off
+    // partway down, deterministic per-index so it's stable frame to frame
+    if (i % 2 === 0) {
+      const forkX = midX + (pseudoRandom(tp.x + i * 17) - 0.5) * 12;
+      ctx.strokeStyle = "#5a4028";
+      ctx.lineWidth = Math.max(0.8, thick * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(midX, underY + rlen * 0.6);
+      ctx.quadraticCurveTo(forkX, underY + rlen * 0.85, forkX, underY + rlen * 1.15);
+      ctx.stroke();
+    }
+  }
 
   // grass fringe along the top edge -- small triangular blades
   ctx.fillStyle = "#5a9a4a";
@@ -25483,7 +25265,19 @@ function drawTurkeyTailFan(baseX, baseY, r, angle, wobbleSeed) {
       ctx.arc(0, 0, rr, Math.PI, 0, true);
       ctx.lineTo(rr, 0);
     }
-    ctx.quadraticCurveTo(0, rr * 0.22, -rr, 0);
+    // CONFIRMED BUG FIX ("i dont like the sharp lines on the top right
+    // and left of each one" -- still visible after the earlier bowed-
+    // base pass): a single quadraticCurveTo from (rr,0) to (-rr,0)
+    // departs almost horizontally (its control point sits basically on
+    // the centerline), while the arc/wavy rim it's joining meets those
+    // same two points moving perfectly VERTICALLY (a circle's tangent at
+    // its own equator) -- that mismatch is exactly what reads as a hard
+    // kink right at each lobe's two side corners. A cubic curve with a
+    // control point pulled up near each endpoint keeps the tangent
+    // vertical-ish leaving both corners before sweeping across, so the
+    // rim and the base now actually meet smoothly instead of snapping to
+    // a straight diagonal line.
+    ctx.bezierCurveTo(rr * 0.9, rr * 0.42, -rr * 0.9, rr * 0.42, -rr, 0);
     ctx.closePath();
     ctx.fill();
   });
@@ -25520,23 +25314,51 @@ function drawForestFungusCap(camX, t) {
   const attachY = cy;
 
   const tone = pseudoRandom(t.x * 3.1 + t.height * 7.7);
-  const LOBES = 4;
-  for (let i = 0; i < LOBES; i++) {
-    const seed = tone * 31 + i * 9.7 + t.height * 0.4;
-    const lobeR = (17 + pseudoRandom(seed) * 9) * squishScale;
-    // shingled, slightly climbing up and further out from the trunk for
-    // each successive lobe in the cluster, with a little vertical jitter
-    // so they don't line up in a mechanical row
-    const lobeOutward = side * (i * 8 + pseudoRandom(seed + 1) * 5);
-    const lobeUp = -i * 6 - pseudoRandom(seed + 2) * 6;
-    const lobeX = attachX + lobeOutward;
-    const lobeY = attachY + lobeUp;
-    // fan angle sweeps outward from the trunk, tilted per-lobe so the
-    // cluster reads as a natural irregular fan rather than a stack of
-    // identically-angled copies
-    const baseAngle = side > 0 ? Math.PI / 2 : -Math.PI / 2;
-    const angle = baseAngle + (pseudoRandom(seed + 3) - 0.5) * 0.7 - i * 0.12 * side;
-    drawTurkeyTailFan(lobeX, lobeY, lobeR, angle, seed + 4);
+
+  // CONFIRMED CHANGE ("i want more variety, and some to be smaller and
+  // maybe two together sometimes"): every catch point used to grow the
+  // exact same 4-lobe cluster at the same size range -- reads as one
+  // repeated stamp climbing the trunk. Each attach point now rolls its
+  // own lobe count (3-6) and an overall size scale (a real range, not
+  // just per-lobe jitter within a fixed band), so some colonies read as
+  // small and sparse, others as a fuller shelf. About a third of the
+  // time it also grows a second, smaller companion cluster just off to
+  // the side -- two separate little colonies sharing one catch point,
+  // like real turkey tail often clusters on bark.
+  const drawCluster = (originX, originY, lobes, sizeScale, seedBase) => {
+    for (let i = 0; i < lobes; i++) {
+      const seed = seedBase + i * 9.7 + t.height * 0.4;
+      const lobeR = (14 + pseudoRandom(seed) * 9) * sizeScale * squishScale;
+      // shingled, slightly climbing up and further out from the trunk for
+      // each successive lobe in the cluster, with a little vertical jitter
+      // so they don't line up in a mechanical row
+      const lobeOutward = side * (i * 8 + pseudoRandom(seed + 1) * 5) * sizeScale;
+      const lobeUp = -i * 6 * sizeScale - pseudoRandom(seed + 2) * 6;
+      const lobeX = originX + lobeOutward;
+      const lobeY = originY + lobeUp;
+      // fan angle sweeps outward from the trunk, tilted per-lobe so the
+      // cluster reads as a natural irregular fan rather than a stack of
+      // identically-angled copies
+      const baseAngle = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+      const angle = baseAngle + (pseudoRandom(seed + 3) - 0.5) * 0.7 - i * 0.12 * side;
+      drawTurkeyTailFan(lobeX, lobeY, lobeR, angle, seed + 4);
+    }
+  };
+
+  const lobes = 3 + Math.floor(pseudoRandom(tone * 17 + 2) * 4); // 3-6
+  const sizeScale = 0.65 + pseudoRandom(tone * 23 + 5) * 0.65; // 0.65-1.3, a real small/large spread
+  drawCluster(attachX, attachY, lobes, sizeScale, tone * 31);
+
+  const hasCompanion = pseudoRandom(tone * 41 + 9) < 0.33;
+  if (hasCompanion) {
+    // tucked further along the trunk from the main colony, noticeably
+    // smaller, with its own independent (smaller) lobe count
+    const compDir = pseudoRandom(tone * 53 + 3) < 0.5 ? -1 : 1;
+    const compX = attachX + side * (18 + pseudoRandom(tone * 61) * 10);
+    const compY = attachY + compDir * (14 + pseudoRandom(tone * 67) * 10);
+    const compLobes = 2 + Math.floor(pseudoRandom(tone * 71 + 4) * 2); // 2-3
+    const compScale = sizeScale * (0.4 + pseudoRandom(tone * 79) * 0.2);
+    drawCluster(compX, compY, compLobes, compScale, tone * 89);
   }
 }
 
@@ -67230,24 +67052,6 @@ updateSeasonTransition(deltaTime);
 // saw the first frame. Deleted for good -- the game now actually starts
 // where currentScene's own declaration already says it should: the
 // orchard, at the real beginning.
-
-// DEBUG CHEAT ("oh give me bucket and shovel in inventory. and the wind
-// seed"): seeded straight into starting inventory (via the real
-// addToInventory, not a raw inventory[type]=1 -- that would've left
-// them out of inventoryOrder and made Tab-cycle skip right past them)
-// so the new well/windSeed-plot mechanic is immediately testable
-// without first replaying the willow shovel pickup, the peanut-vine
-// bucket, and a clouds-scene windSeed collection. Placed down here,
-// right before the game loop actually starts, since addToInventory
-// pulls in state (CARRYING_ITEM_TYPES, etc.) declared further down the
-// file than the inventory/addToInventory definitions themselves -- any
-// earlier and it throws before the page ever finishes loading. Same
-// "just hardcode it for now" spirit as DEBUG_START_SCENE itself --
-// remove/revert whenever a normal fresh start (nothing pre-collected)
-// is wanted again.
-addToInventory("bucket");
-addToInventory("shovel");
-addToInventory("windSeed");
 
 update();
 
