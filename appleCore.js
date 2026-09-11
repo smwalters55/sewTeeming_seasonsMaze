@@ -21236,7 +21236,21 @@ function updateTopsyTurvyScene(deltaTime) {
   // skipped while pinned to something else that already owns position
   // outright (the ladder, the well's dip animation, a scripted fall) so
   // the gust never fights a state that's driving the player itself.
-  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && !player.inTopsySpiralSlide && seasonTransition.phase === "idle") {
+  // CONFIRMED FIX ("there just is the speed stress due to the wind
+  // always moving player"): the pot gauntlet's whole redesign is about
+  // reading the wave and timing a landing inside a narrow catch window
+  // (TOPSY_POT_GAUNTLET_HALF_WIDTH, 22px) -- the ambient wind is a
+  // totally unrelated flavor effect from elsewhere in this land that
+  // was never accounted for when any of that was tuned, and it doesn't
+  // turn off just because you're mid-jump over the pots. Constantly
+  // nudging x during exactly the moments that need precision was
+  // fighting the gauntlet's own design, not adding to it. Suppressed
+  // across the same span the bounce-back/drift-clamp/soup-pit already
+  // treat as "the gauntlet" (with the same 80px buffer the drift clamp
+  // uses) so the wind stays everywhere else in the land, just not here.
+  const inPotGauntletSpan = player.x + player.width / 2 > TOPSY_POT_GAUNTLET_START_X - 80 &&
+    player.x + player.width / 2 < TOPSY_POT_GAUNTLET_END_X + 80;
+  if (!player.onTopsyHouseLadder && !topsyWell.dipping && !fallState.active && !player.launched && !player.inTopsySpiralSlide && seasonTransition.phase === "idle" && !inPotGauntletSpan) {
     const t = performance.now() * 0.001;
     const gust = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.9 + 1.7) * 0.4;
     player.x += gust * TOPSY_WIND_STRENGTH * deltaTime;
