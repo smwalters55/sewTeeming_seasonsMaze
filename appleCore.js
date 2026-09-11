@@ -4862,30 +4862,23 @@ function applyPhysics(){
       if (player.x > centerX + lockHalfW) player.x = centerX + lockHalfW;
     }
   }
-  // fail/reset -- CONFIRMED BUG FIX ("you can basically just hop on top
-  // of all of them to get through it, doesnt matter if they are tipping
-  // down or up"): the real ground everywhere else in topsy-turvy is also
-  // solid ground UNDER this entire gauntlet (there's no scene-level pit
-  // here, same flat floor as the rest of the land), so missing every pot
-  // just meant a one-time teleport back to the start line -- after that
-  // single edge-triggered reset, the player was standing on ordinary
-  // solid ground again and could simply walk the rest of the way through
-  // and past the whole gauntlet with zero further risk, making the pots'
-  // own upright/upside-down state completely optional to ever check.
-  // Fixed by treating the ground under the gauntlet's own interior span
-  // as a real pit instead of a one-shot trap: this now re-fires on EVERY
-  // frame the player is genuinely grounded (y<=0) anywhere inside the
-  // span, not just the single frame right after landing there, so plain
-  // ground is never a safe way through -- only the pots themselves are.
-  // The start line itself (px <= START_X - 6, where the player is placed
-  // after a reset) stays just outside this span so resetting can't
-  // immediately re-trigger itself, and clearing the final pot leaves you
-  // past END_X + 40, back on genuinely solid ground toward the cart.
+  // WALL -- CONFIRMED ADD ("we need to make it like probably impassable
+  // to get across by just walking under the pots"): under the current
+  // land-and-wait design every pot catches on contact regardless of
+  // orientation (see the LOCK block above), so the ONLY way to be
+  // grounded at y<=0 inside the gauntlet's own span with nothing locked
+  // is to never have engaged with a pot at all -- i.e. just walked in
+  // along the real ground underneath them. A hard stop right at the
+  // entry line, not a teleport-back -- reads as an actual wall instead of
+  // a stutter/bounce-back loop, and it's a true wall: nothing here lets
+  // player.x cross it while grounded and not standing on a pot.
   {
     const px = player.x + player.width / 2;
-    const inGauntletSpan = px > TOPSY_POT_GAUNTLET_START_X - 6 && px < TOPSY_POT_GAUNTLET_END_X + 40;
-    if (inGauntletSpan && player.y <= 0 && !player.jumping) {
-      topsyPotGauntletReset();
+    const wallX = TOPSY_POT_GAUNTLET_START_X - 6;
+    const inGauntletSpan = px > wallX && px < TOPSY_POT_GAUNTLET_END_X + 40;
+    if (inGauntletSpan && player.y <= 0 && !player.jumping && topsyPotGauntlet.standingPotIndex == null) {
+      player.x = wallX - player.width / 2;
+      player.vx = 0;
     }
   }
 
@@ -18803,10 +18796,16 @@ const TOPSY_HOUSE_LADDER_CLIMB_SPEED = 75; // px/sec, matches the sandbox ball p
 const topsyTurvyTrees = [
   { x: 420, scale: 0.9, trunk: 100 },
   { x: 760, scale: 1.1, trunk: 110 },
-  // CONFIRMED CHANGE ("move the tree next to the tomatoes a little more
-  // to the right"): was 1440, right up against the cart (TOPSY_CART_X =
-  // 1420) -- nudged out to give the cart/pluck spot some breathing room.
-  { x: 2260, scale: 0.85, trunk: 230 } // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with the cart, same reason -- see TOPSY_CART_X's own comment. Was 1680 (itself already nudged out from 1560/1490 "all of this is way too cramped").
+  // CONFIRMED CHANGE ("i want them between house and gauntlet, with
+  // gauntlet plus the rest moved more to the right"): moved along with
+  // the cart (TOPSY_CART_X, see its own comment), kept the same 100px
+  // "tree sits just past the cart" spacing. The gauntlet itself moved
+  // further right (TOPSY_POT_GAUNTLET_START_X) to open up real breathing
+  // room here instead of cramming this tree's root platforms
+  // (topsyTurvyRootPlatforms, which fan out ~40px horizontally from
+  // wherever it's planted) right up against the gauntlet's own airspace.
+  // Was 2260.
+  { x: 1250, scale: 0.85, trunk: 230 }
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -19871,14 +19870,20 @@ function drawTopsySpiralSlideRoom(camX) {
 // breathing room"): shifted right along with the tall tree it's paired
 // with (kept the same 20px offset between them so the boost-up-to-the-
 // roots relationship still lines up).
-// CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, to
-// clear the new pot gauntlet (TOPSY_POT_GAUNTLET_POTS, spanning
-// ~1300-1890) which didn't exist when this and everything after it were
-// originally placed -- was 1420, sitting squarely inside the gauntlet's
-// own span. Shifting the cart and every landmark after it by the same
-// delta (see this file's other "was X, now X+580" comments below)
-// preserves all of their already-tuned relative spacing to each other.
-const TOPSY_CART_X = 2000;
+// CONFIRMED CHANGE ("lets put the tomatoes to the left of the pots
+// thing i think" -> "i do not want the tomatoes there i want them
+// between house and gauntlet, with gauntlet plus the rest moved more to
+// the right"): moved from after the gauntlet (2000, right past the old
+// TOPSY_POT_GAUNTLET_END_X=1890) to right after the chef's house
+// (x=1080) instead -- now you grab tomatoes on the way TO the gauntlet,
+// not after clearing it. The gauntlet itself (TOPSY_POT_GAUNTLET_START_X)
+// moved further right to make room, rather than cramming the cart+tree
+// into the old tight gap -- see that constant's own comment. Considered
+// a full there-and-back-and-through-again loop (cart after the gauntlet,
+// bring tomatoes back to the chef, then cross again) but that's crossing
+// the gauntlet three times total, which is too much -- simple "grab
+// tomatoes, then cross" reads better.
+const TOPSY_CART_X = 1150;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
 // (see drawTopsyTurvyCart below), so its landing hitbox/wander range
@@ -23044,7 +23049,14 @@ function drawTopsyTurvyPigPots() {
 // cauldron belly, dark rim) so it visually reads as "more of the same
 // kitchenware," just hung in the air and much bigger since these are
 // meant to be landed on individually rather than glimpsed as a stack.
-const TOPSY_POT_GAUNTLET_START_X = 1300;
+// CONFIRMED CHANGE ("gauntlet plus the rest moved more to the right"):
+// shifted +250 (1300 -> 1550) to open up real room between the chef's
+// house/cart/tree and the gauntlet's own entry, instead of squeezing the
+// cart+tree into the old tight gap. The new END_X (2140) still lands
+// comfortably clear of the invert-platform chain's own nearest point
+// (x=2340, its "rest" platform) with ~200px to spare, so nothing
+// downstream of the gauntlet needed to move.
+const TOPSY_POT_GAUNTLET_START_X = 1550;
 // CONFIRMED ADD ("please spawn me right in front of it"): TEMPORARY
 // debug spawn, per this session's standing hand-edit convention -- drops
 // the player right at the pot gauntlet's own entry line, already in the
@@ -23069,17 +23081,20 @@ const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot
 // uprightFraction below).
 const TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH = 42;
 const TOPSY_POT_GAUNTLET_ENTRY_VERTICAL_TOL = 24; // vs the ordinary 14
-// CONFIRMED ADD (same steer): a single strong jump/double-jump used to be
-// able to just sail clean over several pots at once and land on real
-// ground past the whole gauntlet -- "full jump over them" instead of
-// ever touching one. Clamps how far a single continuous flight can carry
-// the player horizontally anywhere near the gauntlet (tracked in
-// applyPhysics, see topsyPotGauntlet.flightOriginX), same idea as the
-// invert chain's own launch-drift clamp. 95px comfortably covers the
-// biggest single real gap in the layout (65px) with margin for a
-// deliberate double-hop, but nowhere near enough to clear the ~590px
-// full span in one leap -- landing on the pots stops being optional.
-const TOPSY_POT_GAUNTLET_MAX_DRIFT = 95;
+// CONFIRMED CHANGE ("i keep just jumping across really fast and usually
+// make it" -- the strategy still isn't reading clearly): since every pot
+// catches on contact regardless of orientation now (see the LOCK block),
+// there's zero risk in touching one -- the only thing stopping a player
+// from just spraying a big careless jump across several pots' catch
+// windows at once, hoping ANY of them happens to be upright at that
+// instant, was this clamp. It used to allow up to 190px of total drift
+// specifically to cover a "deliberate double-hop" -- but that's exactly
+// what let a single sloppy jump brush past 2-3 pots for free instead of
+// committing to one. Tightened to comfortably clear the single biggest
+// real gap (65px) with a little margin, but nowhere near enough to reach
+// a SECOND pot beyond that in the same flight -- every jump now commits
+// to one specific pot, whatever its state turns out to be.
+const TOPSY_POT_GAUNTLET_MAX_DRIFT = 75;
 // 4 layers, 60px apart -- comfortably inside a normal single jump's
 // ~90px reach (vy=12, gravity=0.8/frame => v^2/2g = 90) even without a
 // double jump, so no single hop in the sequence below is ever a forced
@@ -23135,19 +23150,6 @@ const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS
 let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false, standingPotIndex: null };
 let topsyPotGauntletWinFlashAt = 0;
 
-// used for genuinely missing every pot (falling to real ground somewhere
-// inside the gauntlet's own span) -- see that call site's own comment.
-function topsyPotGauntletReset() {
-  player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
-  player.y = 0;
-  player.vx = 0;
-  player.vy = 0;
-  player.jumping = false;
-  player.usedDoubleJump = false;
-  topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
-  topsyPotGauntlet.standingPotIndex = null;
-}
-
 function topsyPotUpright(pot) {
   const t = (performance.now() + pot.phase) % pot.period;
   return (t / pot.period) < pot.uprightFraction;
@@ -23187,6 +23189,50 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+}
+
+// CONFIRMED ADD (4th pass on this -- "just have the 'outside' 'front'
+// of the pot occluding the player, not show the 'inside' of the pot"):
+// the previous pass drew a little bowl shape PLUS a separate dark
+// "rim opening" ellipse on top of it, and that dark ellipse read as a
+// hole/smudge the player was half-falling into rather than as "the
+// pot's front wall is in front of you". This pass draws exactly one
+// shape: a solid pot-colored wedge (same gradient/stroke as the real
+// pot body) that sits in front of the player's now-sunk legs (see
+// potSink) and masks them -- no separate interior/hole shape at all.
+// Anchored to the player's own feet (footX/footY, the same values the
+// sprite itself just drew at) rather than the background pot's world
+// position -- that's what kept earlier attempts from floating out of
+// sync (camera/sink offsets shift the two independently).
+function drawTopsyPotGauntletOcclusion(footX, footY) {
+  // CONFIRMED FIX ("player is sticking out on the sides, i want the
+  // full width of the player in the pot"): halfW was 14 (28px total),
+  // narrower than player.width (40px), so the player's shoulders stuck
+  // out past the wedge on both sides. halfW is now derived from the
+  // actual player width plus a little margin so it always fully covers
+  // the sprite regardless of any future width tuning.
+  const halfW = player.width / 2 + 4, wallH = 13;
+  const topY = footY - wallH;
+  const grad = ctx.createLinearGradient(footX - halfW, 0, footX + halfW, 0);
+  grad.addColorStop(0, "#b5622e");
+  grad.addColorStop(0.5, "#d97f45");
+  grad.addColorStop(1, "#b5622e");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(footX - halfW, topY);
+  ctx.quadraticCurveTo(footX - halfW * 1.08, footY - wallH * 0.35, footX - halfW * 0.85, footY);
+  ctx.quadraticCurveTo(footX, footY + 2, footX + halfW * 0.85, footY);
+  ctx.quadraticCurveTo(footX + halfW * 1.08, footY - wallH * 0.35, footX + halfW, topY);
+  ctx.closePath();
+  ctx.fill();
+  // just the top rim edge of this front wall -- no dark interior, no
+  // second hollow ellipse. reads as "the pot's near wall", not a hole.
+  ctx.strokeStyle = "#ffd9a0";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(footX - halfW * 0.95, topY + 1);
+  ctx.quadraticCurveTo(footX, topY - 1.5, footX + halfW * 0.95, topY + 1);
   ctx.stroke();
 }
 
@@ -65459,7 +65505,16 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
+// CONFIRMED ADD (3rd pass -- "put player inside the pot when its facing
+// upward have some occlusion pls"): same sink-the-sprite idiom as the
+// nest above. Gated to genuinely STANDING on an upright pot specifically
+// (not while locked/pinned on an upside-down one -- "when its facing
+// upward") -- see drawTopsyPotGauntletOcclusion's call site for the
+// matching redraw-on-top-of-the-player piece.
+const onUprightGauntletPot = currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
+  topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex]);
+const potSink = onUprightGauntletPot ? 6 : 0;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66143,12 +66198,14 @@ if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
 }
 
-// CONFIRMED REMOVED ("i dont like the black thin oval at bottom of
-// player"): tried a floating rim, then a feet-anchored rim -- neither
-// landed well visually, and it isn't load-bearing for the actual
-// mechanic (the lock/catch logic never depended on it), so it's gone
-// rather than iterating on it again. Standing on a pot is just a normal
-// platform stand now, no occlusion.
+// CONFIRMED ADD (3rd pass -- "put player inside the pot when its facing
+// upward have some occlusion pls"): gated to standingPotIndex AND the
+// pot currently being upright, matching "when its facing upward" -- no
+// occlusion while locked/pinned on an upside-down one.
+if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
+    topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex])) {
+  drawTopsyPotGauntletOcclusion(px + player.width / 2, drawPy + player.height);
+}
 
 drawCrown(camX);
 drawBoomerangPrompt(camX);
