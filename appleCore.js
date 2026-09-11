@@ -170,7 +170,7 @@ const camera = { topDown:false, locked:false };
 // start) once you're done testing sandbox things -- this is a testing
 // convenience, not the real game's intro, so it shouldn't stay on
 // "sandbox" for normal play.
-const DEBUG_START_SCENE = "autumn";
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -8637,6 +8637,21 @@ const vines = [
 const VINE_GRAVITY = 0.01; // reverted to last known-working value — the further slowdown broke hop reachability
 const VINE_SWING_INPUT = 0.025;
 const VINE_PUMP_COOLDOWN = 120; // ms between pumps
+// CONFIRMED BUG FIX ("if you press up at the wrong time, it snaps you
+// straight v quickly... if you press up when you are at a good jump
+// angle we go to next vine, beautiful. but up when you arent at a good
+// jump spot either does nothing or slightly slows you down, but you're
+// still moving"): the release below used to fire off pure momentum on
+// ANY up-press, no matter the angle -- press it near the BOTTOM of the
+// swing (angle near 0), where angularVel is at its fastest and cos(angle)
+// is near 1, and you got flung at full speed in whatever direction you
+// happened to be passing through, which reads exactly as "snaps you
+// straight, too quick" since that's the least intentional-looking part
+// of the arc to launch from. Gated the real release on actually being
+// out near the peak of the swing (a "good jump angle"); pressing up
+// anywhere short of that no longer launches at all -- it just bleeds a
+// little speed off the swing (still very much still swinging) instead.
+const VINE_RELEASE_MIN_ANGLE = 0.45; // out of max 1.1 -- must be out near the arc's peak for a real release
 const VINE_HOP_MIN_CYCLES = 2; // real back-and-forth swings needed before a hop is even available
 const VINE_HOP_STRONG_ANGLE = 0.8; // out of max 1.1 — how strong the swing needs to be at commit for a FULL-distance hop
 const VINE_HOP_ARC_FRAMES = 40; // standardized hop arc duration
@@ -9621,21 +9636,32 @@ function updateVines(deltaTime) {
     if (v.pumpCooldown > 0) v.pumpCooldown -= deltaTime * 1000;
 
     if (keys.upJustPressed) {
-      // pure momentum release — no rhythm gate, no target requirement.
-      // Real arc driven by your actual angular velocity right now. A weak
-      // swing naturally produces a short arc and falls short of any
-      // neighboring vine (or just lands on the ground/a platform); a
-      // strong swing naturally reaches far enough to get auto-caught.
-      const tangentSpeed = v.angularVel * v.length;
-      const releaseVx = Math.cos(v.angle) * tangentSpeed;
-      const releaseVy = Math.sin(v.angle) * tangentSpeed + 2;
-      v.mounted = false;
-      player.vineFlyingSource = v;
-      player.vx = releaseVx;
-      player.vy = releaseVy;
-      player.vineFlying = true;
-      player.jumping = true;
-      return;
+      if (Math.abs(v.angle) >= VINE_RELEASE_MIN_ANGLE) {
+        // pure momentum release — no rhythm gate beyond the angle check
+        // above, no target requirement. Real arc driven by your actual
+        // angular velocity right now. A weak swing naturally produces a
+        // short arc and falls short of any neighboring vine (or just
+        // lands on the ground/a platform); a strong swing naturally
+        // reaches far enough to get auto-caught.
+        const tangentSpeed = v.angularVel * v.length;
+        const releaseVx = Math.cos(v.angle) * tangentSpeed;
+        const releaseVy = Math.sin(v.angle) * tangentSpeed + 2;
+        v.mounted = false;
+        player.vineFlyingSource = v;
+        player.vx = releaseVx;
+        player.vy = releaseVy;
+        player.vineFlying = true;
+        player.jumping = true;
+        return;
+      }
+      // not out at a real jump angle yet -- pressing up here doesn't
+      // launch at all, just bleeds a little momentum off the swing (a
+      // light brake, not a stop) so it still reads as an input that did
+      // *something*, not a dead button. Deliberately falls through to
+      // the ordinary swing physics below instead of returning, so the
+      // player stays mounted and still visibly swinging this same frame
+      // rather than freezing for a tick.
+      v.angularVel *= 0.8;
     }
 
     // edge-triggered pump, matching the swing's gentle-pump pattern — was
@@ -18232,6 +18258,29 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // completely unaffected -- only climbing the fungus tree past that
 // height starts moving the camera.
 const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
+// TEMPORARY debug spawn ("start me at the bottom of the fungus tree
+// pls") -- same one-off DEBUG_START_SCENE-keyed pattern as the sandbox
+// case above, not a permanent keybind. Revert alongside DEBUG_START_SCENE
+// once this test spot is no longer needed.
+// CONFIRMED BUG FIX ("reloading the game puts me right here again --
+// always make sure all dependencies are filled when i ask for debug
+// spawns"): a raw teleport past the river isn't enough on its own -- the
+// fungus tree sits on the FAR side of it, and with the river bridge not
+// actually built yet (forestRiverSegmentsStrung/Decked both 0 fresh),
+// the very first physics frame found the player standing over open
+// water with no crossing and snapped them back to a safe spot on the
+// near bank, undoing the teleport before a single screenshot could even
+// be taken (confirmed via a one-off console trace: player.x went
+// 16170 -> 4348 inside that first update() call). Filling in the
+// bridge's own completion state -- the actual real dependency this
+// destination needs -- alongside the position fixes it for good.
+if (DEBUG_START_SCENE === "forest") {
+  forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
+  forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
+  discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
+  player.x = FOREST_FUNGUS_TREE_X - 40;
+  player.y = 0;
+}
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
 // between thi and ruhshing river" -> scoped as "tiny real hop -- taps you
