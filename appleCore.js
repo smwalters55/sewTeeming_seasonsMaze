@@ -23155,26 +23155,26 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
 }
 
 // CONFIRMED ADD ("when the pot is open at the top, i want to see player
-// actually go inside the pot like partial occlusion"): redraws just the
-// pot's own rim opening ON TOP of whatever's already been drawn (the
-// player, in practice) -- called separately from the normal pot body
-// pass, once per frame, ONLY for the specific pot the player is
-// currently standing in (see topsyPotGauntlet.standingPotIndex and the
-// call site right after the player finishes drawing). Same shape/colors
-// as the rim drawn inside drawTopsyPotGauntletPotBody so it reads as
-// literally the same pot, just the opening now sitting in front of the
-// player's tucked-down legs instead of behind them.
-function drawTopsyPotGauntletFrontRim(sx, sy) {
-  const h = 13, w = 22;
-  const rimY = sy - h * 0.55, rimHalfW = w * 0.7;
-  ctx.fillStyle = "rgba(20,16,14,0.85)";
+// actually go inside the pot like partial occlusion"), CONFIRMED BUG FIX
+// (2nd pass -- "black hole/thin oval that forms above the highest most
+// pots"): a small dark opening + pale rim highlight, drawn right at the
+// player's own feet (see the call site's own comment on why it's anchored
+// there instead of the pot's world position). Deliberately small/plain
+// rather than trying to fully match the background pot's own size -- a
+// close-enough "your feet are tucked into something" cue reads fine even
+// if it isn't pixel-identical to the real pot shape, and it can never
+// drift apart from the player since it shares the exact same anchor.
+function drawTopsyPotGauntletFrontRim(footX, footY) {
+  const rimHalfW = player.width * 0.42, rimHalfH = 3.2;
+  const rimY = footY - 3;
+  ctx.fillStyle = "rgba(20,16,14,0.82)";
   ctx.beginPath();
-  ctx.ellipse(sx, rimY, rimHalfW, h * 0.14, 0, 0, Math.PI * 2);
+  ctx.ellipse(footX, rimY, rimHalfW, rimHalfH, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#ffd9a0";
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.ellipse(sx, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
+  ctx.ellipse(footX, rimY, rimHalfW, rimHalfH, 0, Math.PI, Math.PI * 2);
   ctx.stroke();
 }
 
@@ -66140,13 +66140,20 @@ if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
 }
 
-// CONFIRMED ADD ("i want to see player actually go inside the pot like
-// partial occlusion"): pairs with potSink above -- redraws the rim of
-// whichever pot the player is currently standing in, on top of the
-// already-drawn player, so the legs read as tucked inside the opening.
+// CONFIRMED BUG FIX ("there is like a black hole/thin oval that forms
+// above the highest most pots when you jump on them"): the rim redraw
+// used to be positioned from the POT's own world coordinates
+// (stoodPot.x/height via gy), completely independent of wherever the
+// player sprite actually ended up on screen -- cameraY, the sink offset
+// just added, and the pot's own squash/flip animation all shift the
+// player and the pot slightly differently, so the two drifted apart
+// instead of lining up, reading as a random dark oval floating near (not
+// on) the pot. Anchored to the player's own already-computed screen
+// position instead (px/drawPy, same values the sprite itself was just
+// drawn with) -- this can't drift out of sync with the player because
+// it's the exact same numbers, whichever pot they're actually standing on.
 if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null) {
-  const stoodPot = TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex];
-  if (stoodPot) drawTopsyPotGauntletFrontRim(stoodPot.x - camX, gy - stoodPot.height);
+  drawTopsyPotGauntletFrontRim(px + player.width / 2, drawPy + player.height);
 }
 
 drawCrown(camX);
