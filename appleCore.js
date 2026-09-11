@@ -170,7 +170,7 @@ const camera = { topDown:false, locked:false };
 // start) once you're done testing sandbox things -- this is a testing
 // convenience, not the real game's intro, so it shouldn't stay on
 // "sandbox" for normal play.
-const DEBUG_START_SCENE = "forest";
+const DEBUG_START_SCENE = "topsyturvy";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -4788,29 +4788,28 @@ function applyPhysics(){
   // in the air... kept flipping right side up and upside down randomly
   // and you have to land it each one or you fall off and have to start
   // over... jump forward/back and up/down between 3-4 jagged layers,
-  // overall movement to the right"). Landing on a pot while it's upright
-  // holds you like a normal platform.
+  // overall movement to the right").
   //
-  // CONFIRMED BUG FIX (4th pass -- "yeah i dont know that it should be a
-  // full failure. maybe 2 or 3"): tried two harsher versions of this
-  // before -- a free bounce-retry (way 1) that never punished touching a
-  // pot at all, then an instant full reset-to-start (way 2) on ANY wrong-
-  // orientation touch, which felt too harsh given there are 12 pots in a
-  // row. Landed on option 2/3 together instead: an upside-down pot is no
-  // longer solid at all -- it's simply excluded from the catch check
-  // below, so touching one isn't a special event, you just keep falling
-  // straight through it like it was never there. The only real penalty
-  // is the SAME ground-pit fail/reset every other miss already uses
-  // (right below this block) -- so a bad read costs you whatever height
-  // you already had, not an instant trip back to the start line, while
-  // still making "just walk into it" a straightforwardly bad idea rather
-  // than a free ride.
+  // CONFIRMED REDESIGN (5th pass, brainstormed together -- "i dont even
+  // know how to play this... what if once ur in a pot, you are locked
+  // into it kinda unless you jump down, if the pot is facing down, and
+  // can only get out once its facing up"): every earlier version put the
+  // skill check at the moment of LANDING -- read the orientation
+  // mid-air, land in a tiny window, or fall through/fail. That's a lot
+  // to parse while airborne and it never felt learnable. Moved the
+  // actual check to a moment you're standing still for instead: EVERY
+  // pot is solid and catches you now, in any orientation (no more
+  // guessing whether contact even registers) -- but see the LOCK block
+  // right below, which pins you to whichever pot you're on and cancels
+  // any jump attempt for as long as IT stays upside-down. The pot
+  // itself is the timer: wait for it to turn upright (the anticipation
+  // glow below gives you a countdown), then jump for real. "Wait for the
+  // green light, then hop" instead of "read a flip mid-air."
   {
     const playerCenterX = player.x + player.width / 2;
     const playerBottom = player.y;
     let landedPot = null;
     for (const pot of TOPSY_POT_GAUNTLET_POTS) {
-      if (!topsyPotUpright(pot)) continue; // upside-down -- pass straight through, not solid
       // pot 0 (the entry) gets a deliberately wider, taller catch window
       // -- see TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH's own comment -- every
       // other pot keeps the ordinary tight band.
@@ -4829,14 +4828,38 @@ function applyPhysics(){
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
-      topsyPotGauntlet.standingPotIndex = landedPot.i; // for the visual sink/occlusion, see drawPy's potSink
+      topsyPotGauntlet.standingPotIndex = landedPot.i;
       if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
         topsyPotGauntlet.rewardGranted = true;
         addToInventory("goldenLadle");
         topsyPotGauntletWinFlashAt = performance.now();
       }
-    } else {
+    }
+  }
+  // LOCK -- while standing on a pot that's currently upside-down, pin the
+  // player to it: any jump this same frame (already processed earlier in
+  // this same tick, before this block runs) gets cancelled back to
+  // grounded, and horizontal drift is clamped to a small radius so you
+  // can't just walk off toward the next one either. The instant the pot
+  // flips upright, this stops running and a normal jump launches for
+  // real. Cleared the moment they're not actually on that pot anymore
+  // (walked/launched off, or missed and fail/reset ran below).
+  if (topsyPotGauntlet.standingPotIndex != null) {
+    const stoodPot = TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex];
+    const stillThere = stoodPot &&
+      Math.abs((player.x + player.width / 2) - stoodPot.x) < (stoodPot.i === 0 ? TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH : TOPSY_POT_GAUNTLET_HALF_WIDTH) + 30 &&
+      Math.abs(player.y - stoodPot.height) < 20;
+    if (!stillThere) {
       topsyPotGauntlet.standingPotIndex = null;
+    } else if (!topsyPotUpright(stoodPot)) {
+      player.y = stoodPot.height;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      const lockHalfW = 16;
+      const centerX = stoodPot.x - player.width / 2;
+      if (player.x < centerX - lockHalfW) player.x = centerX - lockHalfW;
+      if (player.x > centerX + lockHalfW) player.x = centerX + lockHalfW;
     }
   }
   // fail/reset -- CONFIRMED BUG FIX ("you can basically just hop on top
@@ -23022,6 +23045,16 @@ function drawTopsyTurvyPigPots() {
 // kitchenware," just hung in the air and much bigger since these are
 // meant to be landed on individually rather than glimpsed as a stack.
 const TOPSY_POT_GAUNTLET_START_X = 1300;
+// CONFIRMED ADD ("please spawn me right in front of it"): TEMPORARY
+// debug spawn, per this session's standing hand-edit convention -- drops
+// the player right at the pot gauntlet's own entry line, already in the
+// topsyturvy scene (see DEBUG_START_SCENE above), so testing the new
+// lock mechanic doesn't need a walk-in from the land's entrance first.
+// Revert alongside DEBUG_START_SCENE once no longer needed for testing.
+if (DEBUG_START_SCENE === "topsyturvy") {
+  player.x = TOPSY_POT_GAUNTLET_START_X - 60;
+  player.y = 0;
+}
 const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot's rim
 // CONFIRMED CHANGE ("the pot line is both too hard, and then if you get
 // something right in the beginning its way too easy... i want them to
@@ -23099,9 +23132,8 @@ const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS
 let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false, standingPotIndex: null };
 let topsyPotGauntletWinFlashAt = 0;
 
-// shared reset used both by missing every pot and landing on one in the
-// wrong (upside-down) orientation -- see both call sites' own comments
-// for why they now share this exact behavior.
+// used for genuinely missing every pot (falling to real ground somewhere
+// inside the gauntlet's own span) -- see that call site's own comment.
 function topsyPotGauntletReset() {
   player.x = TOPSY_POT_GAUNTLET_START_X - 46 - player.width / 2;
   player.y = 0;
@@ -23110,6 +23142,7 @@ function topsyPotGauntletReset() {
   player.jumping = false;
   player.usedDoubleJump = false;
   topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
+  topsyPotGauntlet.standingPotIndex = null;
 }
 
 function topsyPotUpright(pot) {
