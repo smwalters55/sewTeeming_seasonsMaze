@@ -4800,9 +4800,14 @@ function applyPhysics(){
     const playerBottom = player.y;
     let landedPot = null;
     for (const pot of TOPSY_POT_GAUNTLET_POTS) {
-      if (Math.abs(playerCenterX - pot.x) < TOPSY_POT_GAUNTLET_HALF_WIDTH &&
+      // pot 0 (the entry) gets a deliberately wider, taller catch window
+      // -- see TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH's own comment -- every
+      // other pot keeps the ordinary tight band.
+      const halfW = pot.i === 0 ? TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH : TOPSY_POT_GAUNTLET_HALF_WIDTH;
+      const vTol = pot.i === 0 ? TOPSY_POT_GAUNTLET_ENTRY_VERTICAL_TOL : 14;
+      if (Math.abs(playerCenterX - pot.x) < halfW &&
           playerBottom <= pot.height &&
-          playerBottom >= pot.height - 14 &&
+          playerBottom >= pot.height - vTol &&
           player.vy <= 0) {
         landedPot = pot;
         break;
@@ -4860,6 +4865,34 @@ function applyPhysics(){
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
+    }
+  }
+
+  // CONFIRMED ADD ("i want them to NEED to go inside the pots, not just
+  // full jump over them"): clamps how far a single continuous flight can
+  // carry the player horizontally anywhere near the gauntlet -- see
+  // TOPSY_POT_GAUNTLET_MAX_DRIFT's own comment. Origin is re-captured the
+  // instant player.jumping flips from false to true while inside this
+  // wider watch zone (a fresh takeoff, whether from the ground entry, a
+  // real pot landing, or an upside-down bounce), then held fixed for as
+  // long as they stay airborne.
+  {
+    const px = player.x + player.width / 2;
+    const nearGauntlet = px > TOPSY_POT_GAUNTLET_START_X - 80 && px < TOPSY_POT_GAUNTLET_END_X + 80;
+    if (nearGauntlet) {
+      if (player.jumping && !topsyPotGauntlet.wasJumping) {
+        topsyPotGauntlet.flightOriginX = player.x;
+      }
+      if (player.jumping) {
+        const lo = topsyPotGauntlet.flightOriginX - TOPSY_POT_GAUNTLET_MAX_DRIFT;
+        const hi = topsyPotGauntlet.flightOriginX + TOPSY_POT_GAUNTLET_MAX_DRIFT;
+        if (player.x < lo) player.x = lo;
+        if (player.x > hi) player.x = hi;
+      }
+      topsyPotGauntlet.wasJumping = player.jumping;
+    } else {
+      topsyPotGauntlet.wasJumping = false;
     }
   }
 
@@ -22062,7 +22095,19 @@ function drawTopsyTurvyTree(camX, t) {
     ctx.beginPath();
     ctx.moveTo(leftPts[0].x, leftPts[0].y);
     for (let i = 1; i < leftPts.length; i++) ctx.lineTo(leftPts[i].x, leftPts[i].y);
-    for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
+    // CONFIRMED BUG FIX ("make all these upside down trees not have the
+    // flat top that connects to the roots"): leftPts[last] to
+    // rightPts[last] used to close with one dead-straight line across the
+    // narrow top of the taper -- a flat little plateau sitting right at
+    // the exact spot the whole dendritic root mass fans out from, reading
+    // as a hard manufactured cap rather than wood that just keeps going
+    // into root. Bowed into a shallow rounded curve instead (a real
+    // domed top, not a corner), same "no straight edge left to read as a
+    // seam" fix already used on the fungus lobes' own base.
+    const topMidX = (leftPts[leftPts.length - 1].x + rightPts[rightPts.length - 1].x) / 2;
+    const topY = leftPts[leftPts.length - 1].y;
+    ctx.quadraticCurveTo(topMidX, topY - 3 * s, rightPts[rightPts.length - 1].x, rightPts[rightPts.length - 1].y);
+    for (let i = rightPts.length - 2; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
     ctx.closePath();
     ctx.fill();
     // CONFIRMED BUG FIX ("why is the trunk like a rectangle going into
@@ -22090,6 +22135,16 @@ function drawTopsyTurvyTree(camX, t) {
     ctx.fillStyle = "rgba(74,50,34,0.45)";
     ctx.beginPath();
     ctx.ellipse(sx, leftPts[0].y + 4 * s, baseHalfW * 2.2, 7 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // CONFIRMED BUG FIX (same "flat top" report): the base got this same
+    // soft blended collar already -- the top never did, so even with the
+    // flat cap itself now rounded off above, the trunk-to-root join could
+    // still read as a slightly too-clean seam right where the dendritic
+    // strands start. Same treatment, just anchored at the top instead.
+    ctx.fillStyle = "rgba(74,50,34,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(topMidX, topY - 2 * s, topHalfW * 2.4, 6 * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // root-flare base -- CONFIRMED CHANGE: the old flares were narrow
@@ -22951,7 +23006,31 @@ function drawTopsyTurvyPigPots() {
 // meant to be landed on individually rather than glimpsed as a stack.
 const TOPSY_POT_GAUNTLET_START_X = 1300;
 const TOPSY_POT_GAUNTLET_HALF_WIDTH = 26; // landable half-width of a single pot's rim
+// CONFIRMED CHANGE ("the pot line is both too hard, and then if you get
+// something right in the beginning its way too easy... i want them to
+// NEED to go inside the pots, not just full jump over them, minimum
+// somehow player needs to time when to do what"): the pit fix made ANY
+// miss anywhere in the gauntlet reset all the way back to the entrance,
+// but pot 0 sits right at that same entrance with an ordinary tight
+// catch band -- so the single hardest moment in the whole run was the
+// very first jump, worst possible place for it. This widens JUST the
+// entry pot's own landable window so getting IN is forgiving, while the
+// real difficulty ramps up across the rest of the chain instead (see
+// uprightFraction below).
+const TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH = 42;
+const TOPSY_POT_GAUNTLET_ENTRY_VERTICAL_TOL = 24; // vs the ordinary 14
 const TOPSY_POT_GAUNTLET_BOUNCE_VY = 9; // flat kick off an upside-down pot -- enough hang time to try again once it flips, not a full re-jump
+// CONFIRMED ADD (same steer): a single strong jump/double-jump used to be
+// able to just sail clean over several pots at once and land on real
+// ground past the whole gauntlet -- "full jump over them" instead of
+// ever touching one. Clamps how far a single continuous flight can carry
+// the player horizontally anywhere near the gauntlet (tracked in
+// applyPhysics, see topsyPotGauntlet.flightOriginX), same idea as the
+// invert chain's own launch-drift clamp. 95px comfortably covers the
+// biggest single real gap in the layout (65px) with margin for a
+// deliberate double-hop, but nowhere near enough to clear the ~590px
+// full span in one leap -- landing on the pots stops being optional.
+const TOPSY_POT_GAUNTLET_MAX_DRIFT = 95;
 // 4 layers, 60px apart -- comfortably inside a normal single jump's
 // ~90px reach (vy=12, gravity=0.8/frame => v^2/2g = 90) even without a
 // double jump, so no single hop in the sequence below is ever a forced
@@ -22974,6 +23053,18 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   let x = TOPSY_POT_GAUNTLET_START_X;
   return TOPSY_POT_GAUNTLET_LAYOUT.map((p, i) => {
     x += p.dx;
+    // CONFIRMED CHANGE ("if you get something right in the beginning its
+    // way too easy -- i want real timing"): every pot used to spend the
+    // same ~58% of its cycle upright, so once you were past the (now
+    // fixed) hard entrance the rest of the chain never asked for
+    // anything more. Ramped instead: pot 0 spends most of its cycle
+    // upright (genuinely forgiving, on top of its own wider entry catch
+    // band above), easing down toward the far end where a pot is
+    // upside-down more often than not -- so the back half of the run
+    // actually needs you to read/wait for the flip, not just walk the
+    // rhythm on autopilot.
+    const progress = i / (TOPSY_POT_GAUNTLET_LAYOUT.length - 1);
+    const uprightFraction = 0.8 - progress * 0.38; // 0.8 at pot 0 -> 0.42 at the last pot
     return {
       i,
       x,
@@ -22984,12 +23075,12 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
       // cycle already uses.
       period: 1900 + pseudoRandom(i * 71 + 5) * 900,
       phase: pseudoRandom(i * 37 + 11) * 10000,
-      uprightFraction: 0.58 // spends a little more than half of each cycle right-side-up -- landable more often than not, but never a guarantee
+      uprightFraction
     };
   });
 })();
 const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
-let topsyPotGauntlet = { rewardGranted: false };
+let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false };
 let topsyPotGauntletWinFlashAt = 0;
 
 function topsyPotUpright(pot) {
@@ -25374,17 +25465,32 @@ function drawForestFungusCap(camX, t) {
   // time it also grows a second, smaller companion cluster just off to
   // the side -- two separate little colonies sharing one catch point,
   // like real turkey tail often clusters on bark.
+  // CONFIRMED BUG FIX ("too many funguses that are diagonal going up to
+  // the left, mix this around more"): every cluster used to stack its
+  // lobes along the exact same fixed diagonal -- outward by a positive
+  // multiple of `side` AND up by a fixed negative offset, every single
+  // time -- so the whole climb read as one repeated up-and-away line
+  // rather than real irregular clumps. Each cluster now rolls its own
+  // growth direction (a full-circle placement angle, not just "outward
+  // and up") and its own spread shape, so some climb up, some spill
+  // sideways or even droop down, and the lobes fan out around that
+  // direction instead of marching along one straight line away from it.
   const drawCluster = (originX, originY, lobes, sizeScale, seedBase) => {
+    // the cluster's own overall growth direction -- centered on "away
+    // from the trunk" (so it still reads as attached, not floating) but
+    // free to lean anywhere from straight up to straight down along that
+    // side, different per cluster
+    const growAngle = (side > 0 ? 0 : Math.PI) + (pseudoRandom(seedBase + 7) - 0.5) * Math.PI * 1.1;
     for (let i = 0; i < lobes; i++) {
       const seed = seedBase + i * 9.7 + t.height * 0.4;
       const lobeR = (14 + pseudoRandom(seed) * 9) * sizeScale * squishScale;
-      // shingled, slightly climbing up and further out from the trunk for
-      // each successive lobe in the cluster, with a little vertical jitter
-      // so they don't line up in a mechanical row
-      const lobeOutward = side * (i * 8 + pseudoRandom(seed + 1) * 5) * sizeScale;
-      const lobeUp = -i * 6 * sizeScale - pseudoRandom(seed + 2) * 6;
-      const lobeX = originX + lobeOutward;
-      const lobeY = originY + lobeUp;
+      // each lobe sits out along the cluster's own growth direction, with
+      // real angular spread per lobe (not just distance) so the cluster
+      // reads as a clump fanning out rather than beads on a string
+      const dist = (i * 7 + pseudoRandom(seed + 1) * 5) * sizeScale;
+      const lobeAngle = growAngle + (pseudoRandom(seed + 5) - 0.5) * 1.3;
+      const lobeX = originX + Math.cos(lobeAngle) * dist;
+      const lobeY = originY + Math.sin(lobeAngle) * dist;
       // fan angle sweeps outward from the trunk, tilted per-lobe so the
       // cluster reads as a natural irregular fan rather than a stack of
       // identically-angled copies
