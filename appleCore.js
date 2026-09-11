@@ -23102,18 +23102,21 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   let x = TOPSY_POT_GAUNTLET_START_X;
   return TOPSY_POT_GAUNTLET_LAYOUT.map((p, i) => {
     x += p.dx;
-    // CONFIRMED CHANGE ("if you get something right in the beginning its
-    // way too easy -- i want real timing"): every pot used to spend the
-    // same ~58% of its cycle upright, so once you were past the (now
-    // fixed) hard entrance the rest of the chain never asked for
-    // anything more. Ramped instead: pot 0 spends most of its cycle
-    // upright (genuinely forgiving, on top of its own wider entry catch
-    // band above), easing down toward the far end where a pot is
-    // upside-down more often than not -- so the back half of the run
-    // actually needs you to read/wait for the flip, not just walk the
-    // rhythm on autopilot.
+    // CONFIRMED CHANGE (2nd pass -- "so easy to get across without
+    // really knowing what if anything is going on"): even with the new
+    // land-and-wait lock mechanic (see the LOCK block in applyPhysics),
+    // 0.8->0.42 upright still meant most pots were upright MOST of the
+    // time -- a player just holding forward and mashing jump would land
+    // on an already-upright pot far more often than not, so the lock
+    // rarely engaged and even when it did, the wait was short enough to
+    // pass unnoticed. The lock is the entire game here, so it needs to
+    // actually fire regularly and hold for a beat -- flipped the ramp so
+    // upside-down is the DEFAULT state throughout (pot 0 is a coin-flip,
+    // not a freebie; deep into the chain a pot is upright barely a
+    // quarter of the time), so waiting for the flip is the normal thing
+    // that happens at nearly every pot, not an occasional surprise.
     const progress = i / (TOPSY_POT_GAUNTLET_LAYOUT.length - 1);
-    const uprightFraction = 0.8 - progress * 0.38; // 0.8 at pot 0 -> 0.42 at the last pot
+    const uprightFraction = 0.5 - progress * 0.28; // 0.5 at pot 0 -> 0.22 at the last pot
     return {
       i,
       x,
@@ -23184,30 +23187,6 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
-  ctx.stroke();
-}
-
-// CONFIRMED ADD ("when the pot is open at the top, i want to see player
-// actually go inside the pot like partial occlusion"), CONFIRMED BUG FIX
-// (2nd pass -- "black hole/thin oval that forms above the highest most
-// pots"): a small dark opening + pale rim highlight, drawn right at the
-// player's own feet (see the call site's own comment on why it's anchored
-// there instead of the pot's world position). Deliberately small/plain
-// rather than trying to fully match the background pot's own size -- a
-// close-enough "your feet are tucked into something" cue reads fine even
-// if it isn't pixel-identical to the real pot shape, and it can never
-// drift apart from the player since it shares the exact same anchor.
-function drawTopsyPotGauntletFrontRim(footX, footY) {
-  const rimHalfW = player.width * 0.42, rimHalfH = 3.2;
-  const rimY = footY - 3;
-  ctx.fillStyle = "rgba(20,16,14,0.82)";
-  ctx.beginPath();
-  ctx.ellipse(footX, rimY, rimHalfW, rimHalfH, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#ffd9a0";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.ellipse(footX, rimY, rimHalfW, rimHalfH, 0, Math.PI, Math.PI * 2);
   ctx.stroke();
 }
 
@@ -65480,16 +65459,7 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-// CONFIRMED CHANGE ("when the pot is open at the top, i want to see
-// player actually go inside the pot like partial occlusion"): same
-// sink-the-sprite idiom as the nest above -- standing on an upright pot
-// (see topsyPotGauntlet.standingPotIndex, set in applyPhysics) tucks the
-// legs down a few px so the body actually reads as IN the pot's opening,
-// not just balanced on its rim. Paired with drawTopsyPotGauntletFrontRim
-// redrawing the near lip on top of the player afterward -- see that call
-// below, right after the player finishes drawing.
-const potSink = (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null) ? 7 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66173,21 +66143,12 @@ if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
 }
 
-// CONFIRMED BUG FIX ("there is like a black hole/thin oval that forms
-// above the highest most pots when you jump on them"): the rim redraw
-// used to be positioned from the POT's own world coordinates
-// (stoodPot.x/height via gy), completely independent of wherever the
-// player sprite actually ended up on screen -- cameraY, the sink offset
-// just added, and the pot's own squash/flip animation all shift the
-// player and the pot slightly differently, so the two drifted apart
-// instead of lining up, reading as a random dark oval floating near (not
-// on) the pot. Anchored to the player's own already-computed screen
-// position instead (px/drawPy, same values the sprite itself was just
-// drawn with) -- this can't drift out of sync with the player because
-// it's the exact same numbers, whichever pot they're actually standing on.
-if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null) {
-  drawTopsyPotGauntletFrontRim(px + player.width / 2, drawPy + player.height);
-}
+// CONFIRMED REMOVED ("i dont like the black thin oval at bottom of
+// player"): tried a floating rim, then a feet-anchored rim -- neither
+// landed well visually, and it isn't load-bearing for the actual
+// mechanic (the lock/catch logic never depended on it), so it's gone
+// rather than iterating on it again. Standing on a pot is just a normal
+// platform stand now, no occlusion.
 
 drawCrown(camX);
 drawBoomerangPrompt(camX);
