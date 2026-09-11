@@ -4819,6 +4819,7 @@ function applyPhysics(){
         player.vy = 0;
         player.jumping = false;
         player.usedDoubleJump = false;
+        topsyPotGauntlet.pinnedPotX = null; // real landing -- free to launch for the next pot normally
         if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
           topsyPotGauntlet.rewardGranted = true;
           addToInventory("goldenLadle");
@@ -4828,11 +4829,17 @@ function applyPhysics(){
         // upside-down: a bounce kick, not a landing -- same gravity/vy
         // shape as the dandelion bounce-flight above, just a single flat
         // kick (no escalating streak) since this is a "keep trying until
-        // it flips" beat, not a reward moment.
+        // it flips" beat, not a reward moment. CONFIRMED BUG FIX: pin the
+        // drift clamp to THIS pot's x (see TOPSY_POT_GAUNTLET_PIN_RADIUS)
+        // so holding right through repeated bounces can't quietly walk
+        // you forward pot-by-pot -- you stay over this one until it's
+        // actually upright when you land.
         player.y = landedPot.height;
         player.vy = TOPSY_POT_GAUNTLET_BOUNCE_VY;
         player.jumping = true;
         player.usedDoubleJump = false;
+        topsyPotGauntlet.pinnedPotX = landedPot.x;
+        topsyPotGauntlet.flightOriginX = landedPot.x;
       }
     }
   }
@@ -4866,6 +4873,7 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
       topsyPotGauntlet.wasJumping = false; // fresh flight origin next time they take off
+      topsyPotGauntlet.pinnedPotX = null;
     }
   }
 
@@ -4885,8 +4893,13 @@ function applyPhysics(){
         topsyPotGauntlet.flightOriginX = player.x;
       }
       if (player.jumping) {
-        const lo = topsyPotGauntlet.flightOriginX - TOPSY_POT_GAUNTLET_MAX_DRIFT;
-        const hi = topsyPotGauntlet.flightOriginX + TOPSY_POT_GAUNTLET_MAX_DRIFT;
+        // pinned (mid-bounce off an upside-down pot) uses the tight
+        // radius around that pot instead of the normal wide flight
+        // budget -- see TOPSY_POT_GAUNTLET_PIN_RADIUS's own comment.
+        const originX = topsyPotGauntlet.pinnedPotX != null ? topsyPotGauntlet.pinnedPotX : topsyPotGauntlet.flightOriginX;
+        const radius = topsyPotGauntlet.pinnedPotX != null ? TOPSY_POT_GAUNTLET_PIN_RADIUS : TOPSY_POT_GAUNTLET_MAX_DRIFT;
+        const lo = originX - radius;
+        const hi = originX + radius;
         if (player.x < lo) player.x = lo;
         if (player.x > hi) player.x = hi;
       }
@@ -19917,7 +19930,8 @@ const TOPSY_CART_TOMATOES_MIN_REMAINING = 2;
 // presses -- so reaching real height takes genuine repeated well-timed
 // jumps, not one press held/mashed instantly to the ceiling.
 const TOPSY_CART_FLOAT_PERIOD = 4.5; // seconds per passive up/down cycle
-const TOPSY_CART_FLOAT_AMPLITUDE = 90; // passive peak height above the cart bed
+// CONFIRMED CHANGE ("make tomatoes in cart go higher"): 90 -> 130.
+const TOPSY_CART_FLOAT_AMPLITUDE = 130; // passive peak height above the cart bed
 const TOPSY_CART_BOOST_CAP = 270;
 const TOPSY_CART_BOOST_GAIN = 0.48;
 const TOPSY_CART_BOOST_DECAY = 0.26; // exponential decay rate per second
@@ -22071,7 +22085,19 @@ function drawTopsyTurvyTree(camX, t) {
     const trunkBaseY = 30 * s, trunkTopLocalY = t.trunk * s;
     const trunkLen = trunkTopLocalY - trunkBaseY;
     const segs = 7;
-    const baseHalfW = 7.5 * s, topHalfW = 4 * s;
+    // CONFIRMED BUG FIX (2nd pass -- "this is still a flat line but now
+    // there is like a barely visible oval"): the actual cause wasn't the
+    // top-closing edge shape, it was a WIDTH mismatch -- the trunk used
+    // to stay 8s wide (topHalfW=4*s) all the way to the top, then every
+    // root strand below sprouts from one single point at the trunk's
+    // CENTER (see the ctx.translate(sx, trunkTopY) below). That left a
+    // flat shoulder of solid trunk fill sticking out on each side past
+    // where the roots actually start -- a real flat ledge, which the
+    // shallow 3s bow and the soft collar were never going to hide since
+    // neither one narrows the trunk itself. Tapering topHalfW down near
+    // zero means the trunk polygon itself comes to a point right where
+    // the roots take over, so there's no ledge left to read as flat.
+    const baseHalfW = 7.5 * s, topHalfW = 0.6 * s;
     const trunkSeed = t.x + 313;
     const leftPts = [], rightPts = [];
     const leanDir = pseudoRandom(trunkSeed) < 0.5 ? -1 : 1;
@@ -22563,6 +22589,13 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
     ctx.fillStyle = "#e8dcc0";
     ctx.fillRect(mx - 1.2 * s, my, 2.4 * s, 3 * s);
   } else {
+    // CONFIRMED CHANGE ("add a tomato or two to the basket"): was a
+    // single tomato riding down alone -- a small huddled pile instead
+    // (two smaller ones tucked behind/beside the main one, drawn first
+    // so the front tomato and the rim lip both overlap them) reads as
+    // real cargo rather than one lonely piece of produce.
+    drawTomatoShape(ctx, bx - 2.4 * s, basketY + 1.2 * s, 3.3 * s, 0);
+    drawTomatoShape(ctx, bx + 2.6 * s, basketY + 1 * s, 3 * s, 0);
     drawTomatoShape(ctx, bx, basketY + 0.5 * s, 5 * s, 0);
   }
 
@@ -23031,6 +23064,19 @@ const TOPSY_POT_GAUNTLET_BOUNCE_VY = 9; // flat kick off an upside-down pot -- e
 // deliberate double-hop, but nowhere near enough to clear the ~590px
 // full span in one leap -- landing on the pots stops being optional.
 const TOPSY_POT_GAUNTLET_MAX_DRIFT = 95;
+// CONFIRMED BUG FIX ("still really easy to just jump over all of it
+// regardless of what orientation of the pots is"): MAX_DRIFT above only
+// ever stopped a single flight from crossing multiple pots -- it never
+// stopped an upside-down BOUNCE from still carrying you forward, and a
+// bounce isn't a fail, so holding right and just bouncing off every pot
+// pot-to-pot (upright or not, never mattering which) was a completely
+// safe way through with zero timing. While "pinned" to a pot (see
+// topsyPotGauntlet.pinnedPotX, set the instant a bounce off that pot
+// happens), the drift clamp below uses this much tighter radius instead
+// of the normal one -- so a bounce keeps you hovering near THAT pot
+// until you actually catch it upright, instead of drifting toward the
+// next one for free.
+const TOPSY_POT_GAUNTLET_PIN_RADIUS = 22;
 // 4 layers, 60px apart -- comfortably inside a normal single jump's
 // ~90px reach (vy=12, gravity=0.8/frame => v^2/2g = 90) even without a
 // double jump, so no single hop in the sequence below is ever a forced
@@ -23080,7 +23126,7 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   });
 })();
 const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
-let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false };
+let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false, pinnedPotX: null };
 let topsyPotGauntletWinFlashAt = 0;
 
 function topsyPotUpright(pot) {
