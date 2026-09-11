@@ -4789,15 +4789,28 @@ function applyPhysics(){
   // and you have to land it each one or you fall off and have to start
   // over... jump forward/back and up/down between 3-4 jagged layers,
   // overall movement to the right"). Landing on a pot while it's upright
-  // holds you like a normal platform; landing on one while it's
-  // upside-down fails you immediately, same as missing entirely (see
-  // topsyPotGauntletReset below) -- per the original ask, "you have to
-  // land it each one or you fall off and have to start over."
+  // holds you like a normal platform.
+  //
+  // CONFIRMED BUG FIX (4th pass -- "yeah i dont know that it should be a
+  // full failure. maybe 2 or 3"): tried two harsher versions of this
+  // before -- a free bounce-retry (way 1) that never punished touching a
+  // pot at all, then an instant full reset-to-start (way 2) on ANY wrong-
+  // orientation touch, which felt too harsh given there are 12 pots in a
+  // row. Landed on option 2/3 together instead: an upside-down pot is no
+  // longer solid at all -- it's simply excluded from the catch check
+  // below, so touching one isn't a special event, you just keep falling
+  // straight through it like it was never there. The only real penalty
+  // is the SAME ground-pit fail/reset every other miss already uses
+  // (right below this block) -- so a bad read costs you whatever height
+  // you already had, not an instant trip back to the start line, while
+  // still making "just walk into it" a straightforwardly bad idea rather
+  // than a free ride.
   {
     const playerCenterX = player.x + player.width / 2;
     const playerBottom = player.y;
     let landedPot = null;
     for (const pot of TOPSY_POT_GAUNTLET_POTS) {
+      if (!topsyPotUpright(pot)) continue; // upside-down -- pass straight through, not solid
       // pot 0 (the entry) gets a deliberately wider, taller catch window
       // -- see TOPSY_POT_GAUNTLET_ENTRY_HALF_WIDTH's own comment -- every
       // other pot keeps the ordinary tight band.
@@ -4812,34 +4825,18 @@ function applyPhysics(){
       }
     }
     if (landedPot) {
-      if (topsyPotUpright(landedPot)) {
-        player.y = landedPot.height;
-        player.vy = 0;
-        player.jumping = false;
-        player.usedDoubleJump = false;
-        if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
-          topsyPotGauntlet.rewardGranted = true;
-          addToInventory("goldenLadle");
-          topsyPotGauntletWinFlashAt = performance.now();
-        }
-      } else {
-        // CONFIRMED BUG FIX (3rd pass -- "you can still basically hop
-        // across them fully on the top, cus when they are upside down
-        // you just stay auto hopping on them"): the bounce this used to
-        // do was ME inventing a safety net ("keep jumping on the upside
-        // down pot until it turns right side up") that was never
-        // actually asked for -- the ORIGINAL report said "you have to
-        // land it each one or you fall off and have to start over",
-        // i.e. touching a pot in the wrong orientation should be exactly
-        // as punishing as missing it completely. A bounce, even pinned
-        // in place, is still a free do-over that needs zero real timing
-        // -- you can just hold forward and let it auto-catch you forever
-        // until it happens to be upright, no skill involved. Landing on
-        // an upside-down pot now fails you immediately, same reset as
-        // falling straight to the ground -- the only way through is
-        // actually being airborne AT the moment each pot is upright.
-        topsyPotGauntletReset();
+      player.y = landedPot.height;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      topsyPotGauntlet.standingPotIndex = landedPot.i; // for the visual sink/occlusion, see drawPy's potSink
+      if (landedPot.i === TOPSY_POT_GAUNTLET_POTS.length - 1 && !topsyPotGauntlet.rewardGranted) {
+        topsyPotGauntlet.rewardGranted = true;
+        addToInventory("goldenLadle");
+        topsyPotGauntletWinFlashAt = performance.now();
       }
+    } else {
+      topsyPotGauntlet.standingPotIndex = null;
     }
   }
   // fail/reset -- CONFIRMED BUG FIX ("you can basically just hop on top
@@ -23099,7 +23096,7 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
   });
 })();
 const TOPSY_POT_GAUNTLET_END_X = TOPSY_POT_GAUNTLET_POTS[TOPSY_POT_GAUNTLET_POTS.length - 1].x;
-let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false };
+let topsyPotGauntlet = { rewardGranted: false, flightOriginX: 0, wasJumping: false, standingPotIndex: null };
 let topsyPotGauntletWinFlashAt = 0;
 
 // shared reset used both by missing every pot and landing on one in the
@@ -23157,6 +23154,30 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.stroke();
 }
 
+// CONFIRMED ADD ("when the pot is open at the top, i want to see player
+// actually go inside the pot like partial occlusion"): redraws just the
+// pot's own rim opening ON TOP of whatever's already been drawn (the
+// player, in practice) -- called separately from the normal pot body
+// pass, once per frame, ONLY for the specific pot the player is
+// currently standing in (see topsyPotGauntlet.standingPotIndex and the
+// call site right after the player finishes drawing). Same shape/colors
+// as the rim drawn inside drawTopsyPotGauntletPotBody so it reads as
+// literally the same pot, just the opening now sitting in front of the
+// player's tucked-down legs instead of behind them.
+function drawTopsyPotGauntletFrontRim(sx, sy) {
+  const h = 13, w = 22;
+  const rimY = sy - h * 0.55, rimHalfW = w * 0.7;
+  ctx.fillStyle = "rgba(20,16,14,0.85)";
+  ctx.beginPath();
+  ctx.ellipse(sx, rimY, rimHalfW, h * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#ffd9a0";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.ellipse(sx, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
+  ctx.stroke();
+}
+
 function drawTopsyPotGauntlet(camX) {
   const t = performance.now();
   TOPSY_POT_GAUNTLET_POTS.forEach(pot => {
@@ -23173,6 +23194,24 @@ function drawTopsyPotGauntlet(camX) {
       Math.abs(cyclePos - pot.uprightFraction),
       Math.abs(cyclePos - 1)
     );
+    // CONFIRMED ADD ("2 or 3? idk" -- built both, together): an
+    // upside-down pot that's about to flip upright gets a soft glow that
+    // ramps up over roughly the last quarter of its remaining
+    // upside-down time, plus a pulse that quickens as the flip nears --
+    // gives an actual readable tell to time a landing toward, instead of
+    // each flip being a total surprise the first time you see this pot.
+    if (!upright) {
+      const timeToFlipFrac = 1 - cyclePos; // fraction of the period left before it turns upright
+      const ANTICIPATION_FRACTION = 0.28;
+      if (timeToFlipFrac < ANTICIPATION_FRACTION) {
+        const anticipationT = 1 - timeToFlipFrac / ANTICIPATION_FRACTION;
+        const pulse = 0.7 + 0.3 * Math.sin(t * (0.006 + anticipationT * 0.02));
+        ctx.fillStyle = `rgba(255,225,140,${0.4 * anticipationT * pulse})`;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy - 6, 20 + anticipationT * 7, 16 + anticipationT * 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     const flipWindow = 0.045;
     const flipT = Math.max(0, 1 - distToFlip / flipWindow);
     const scaleY = upright
@@ -65408,7 +65447,16 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
+// CONFIRMED CHANGE ("when the pot is open at the top, i want to see
+// player actually go inside the pot like partial occlusion"): same
+// sink-the-sprite idiom as the nest above -- standing on an upright pot
+// (see topsyPotGauntlet.standingPotIndex, set in applyPhysics) tucks the
+// legs down a few px so the body actually reads as IN the pot's opening,
+// not just balanced on its rim. Paired with drawTopsyPotGauntletFrontRim
+// redrawing the near lip on top of the player afterward -- see that call
+// below, right after the player finishes drawing.
+const potSink = (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null) ? 7 : 0;
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66090,6 +66138,15 @@ if (currentScene === "spring" && peanutVine.mounted && peanutVine.grown && peanu
 // snuggled right up against the player, not partially hidden behind anything.
 if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
+}
+
+// CONFIRMED ADD ("i want to see player actually go inside the pot like
+// partial occlusion"): pairs with potSink above -- redraws the rim of
+// whichever pot the player is currently standing in, on top of the
+// already-drawn player, so the legs read as tucked inside the opening.
+if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null) {
+  const stoodPot = TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex];
+  if (stoodPot) drawTopsyPotGauntletFrontRim(stoodPot.x - camX, gy - stoodPot.height);
 }
 
 drawCrown(camX);
