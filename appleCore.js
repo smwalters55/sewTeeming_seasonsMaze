@@ -18732,7 +18732,7 @@ function updateFungusPulleyRide(deltaTime) {
 // (and moving the slide out to the new edge, see TOPSY_SPIRAL_SLIDE_X)
 // pushes that clearance zone well clear of the meadow's whole right-side
 // range instead of trying to re-tune the spawn formula around it.
-const TOPSYTURVY_WIDTH = 3750; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as everything else from the cart onward, so the world still ends with the same margin past TOPSY_SPIRAL_SLIDE_X (= WIDTH-50) it always did
+const TOPSYTURVY_WIDTH = 4050; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as everything else from the cart onward, so the world still ends with the same margin past TOPSY_SPIRAL_SLIDE_X (= WIDTH-50) it always did
 const TOPSYTURVY_SPAWN_X = 200; // just inside the land, not right at its own edge
 
 // CONFIRMED ADD ("also we still neaed the old school wooden sign saying
@@ -18810,7 +18810,10 @@ const topsyTurvyTrees = [
   // (topsyTurvyRootPlatforms, which fan out ~40px horizontally from
   // wherever it's planted) right up against the gauntlet's own airspace.
   // Was 2260.
-  { x: 1250, scale: 0.85, trunk: 230 }
+  // CONFIRMED CHANGE ("too close to the house, move more to the right"):
+  // +300, same delta and same 100px "just past the cart" gap as
+  // TOPSY_CART_X's own move -- see its comment.
+  { x: 1550, scale: 0.85, trunk: 230 }
 ];
 
 // CONFIRMED CHANGE ("make tree roots so you can jump on top them"): a
@@ -18913,7 +18916,7 @@ const topsyTurvyPig = { homeX: 900, x: 900, dir: 1, range: 50, speed: 18 };
 // remember breathing room breeeathing room"): pushed further right
 // again, clear of the now-much-bigger house and the cart/tall-tree
 // cluster, with real open ground on both sides.
-const TOPSY_WELL_X = 2880; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with everything from the cart onward, to clear the new pot gauntlet. Was 2300 (itself already shifted +250 before that, from 2050, along with the invert chain/sky garden).
+const TOPSY_WELL_X = 3180; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580 along with everything from the cart onward, to clear the new pot gauntlet. Was 2300 (itself already shifted +250 before that, from 2050, along with the invert chain/sky garden).
 
 // CONFIRMED ADD ("player jumps to platform, gets turned upside down
 // while sticking to the platform, is able to jump but it is downwards")
@@ -18957,7 +18960,7 @@ const TOPSY_WELL_X = 2880; // CONFIRMED CHANGE ("move stuff to the right as appr
 // untouched, so every already-tuned reachability relationship in this
 // chain (see its own comments below) carries over exactly as-is.
 const TOPSY_INVERT_PLATFORMS = [
-  { x: 2360, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
+  { x: 2660, height: 194, width: 70 }, // attach height ~140 above ground -- same double-jump reach as the original single platform
   // CONFIRMED CHANGE ("jump budget still a lil too high" pass): raised
   // from 114 -- gives the hop up to platform2 a bit more margin under
   // the same launch budget. Not the actual fix for the reported skip
@@ -18965,16 +18968,16 @@ const TOPSY_INVERT_PLATFORMS = [
   // platform2's own raise just came out of the same reachability-
   // simulation pass and were left in since they only add headroom, never
   // remove it.
-  { x: 2460, height: 150, width: 70 }, // the original dive-down target
+  { x: 2760, height: 150, width: 70 }, // the original dive-down target
   // CONFIRMED FIX (reachability simulation): this used to sit at the
   // SAME x as platform0 (1780) directly below it -- any climb heading
   // back toward that column would cross platform0's own attach height
   // first and get vacuumed onto it, making this platform essentially
   // unreachable. Shifted off that column (1830) so a launch toward it
   // doesn't pass through platform0 on the way.
-  { x: 2410, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
-  { x: 2480, height: 342, width: 70 },
-  { x: 2340, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
+  { x: 2710, height: 250, width: 70 }, // climbing back up and left -- first of the new hops
+  { x: 2780, height: 342, width: 70 },
+  { x: 2640, height: 424, width: 110, rest: true }, // CONFIRMED ADD: the "jump on it briefly and continue" rest chunk -- wider than the others, roughly the middle of the chain
   // CONFIRMED CHANGE ("some of it being horizontal not just an upward
   // climb", then "make it more sideways to the right, moving the highest
   // platform w reward further to the right as well"): the sideways
@@ -18986,7 +18989,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // (1705-1815) on x alone now, so the earlier height-tuning trick
   // needed for the old 1650 platform (see its own now-removed comment)
   // isn't needed here.
-  { x: 2510, height: 450, width: 70 },
+  { x: 2810, height: 450, width: 70 },
   // CONFIRMED CHANGE ("jump budget still a lil too high" -- reachability
   // simulation found platform3 (342) could launch straight past this one
   // and land directly on the platform after it (524, now 565), skipping
@@ -18995,7 +18998,7 @@ const TOPSY_INVERT_PLATFORMS = [
   // either side of it (450 -> here, here -> the next one up) both still
   // clear it with real margin -- verified via the same frame-by-frame
   // simulation used everywhere else in this chain.
-  { x: 2580, height: 480, width: 70 },
+  { x: 2880, height: 480, width: 70 },
   // climb resumes -- shifted +150/+170 right of where these used to sit
   // (1880/1780) to match the rest of the rightward move, same relative
   // shape (small hop up, then a bit back left before the capstone) as
@@ -19008,8 +19011,8 @@ const TOPSY_INVERT_PLATFORMS = [
   // skip (its own required rise now exceeds the launch budget from the
   // rest platform) while the legitimate hop up from 480 still clears
   // with real margin.
-  { x: 2630, height: 565, width: 70 },
-  { x: 2530, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
+  { x: 2930, height: 565, width: 70 },
+  { x: 2830, height: 612, width: 70 } // last hop before the sky-garden capstone (TOPSY_SKY_GARDEN) just above/beside it
 ];
 // CONFIRMED CHANGE ("the invert platform is when i jump to it i land on
 // top... i want to be able to jump on it but going downwards", now
@@ -19086,7 +19089,7 @@ const TOPSY_INVERT_DIVE_GRAVITY = 0.05;
 // the right as well"): shifted +170 along with the last invert chunk
 // (now x1950) so it still overlaps that chunk's own catch band and a
 // straight-up launch from it lands here. Was x1765 (spanned 1765-1895).
-const TOPSY_SKY_GARDEN = { x: 2515, height: 690, width: 130 }; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as the invert chain it caps
+const TOPSY_SKY_GARDEN = { x: 2815, height: 690, width: 130 }; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as the invert chain it caps
 // CONFIRMED ADD ("soft cap after the highest platform like it goes up
 // waaay too high"): the invert chain's own light dive gravity gives a
 // big rise budget so the bigger hops are reachable (see
@@ -19160,7 +19163,7 @@ const TOPSY_WELL_SPILL_PER_PX = 0.0026; // fraction of a full bucket lost per px
 // clear ground on every side.
 // CONFIRMED CHANGE ("move everything to the right ... breathing room"):
 // shifted right along with the well, gap between them held steady.
-const TOPSY_SEEDPLOT_X = 3230; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as TOPSY_WELL_X, keeping the same gap between them. Was 2650 (itself already shifted +250 from 2400).
+const TOPSY_SEEDPLOT_X = 3530; // CONFIRMED CHANGE ("move stuff to the right as appropriate"): +580, same delta as TOPSY_WELL_X, keeping the same gap between them. Was 2650 (itself already shifted +250 from 2400).
 const TOPSY_SEEDPLOT_WATER_ROUNDS = 3;
 const topsyWindSeedPlot = {
   dug: false,
@@ -19888,7 +19891,16 @@ function drawTopsySpiralSlideRoom(camX) {
 // bring tomatoes back to the chef, then cross again) but that's crossing
 // the gauntlet three times total, which is too much -- simple "grab
 // tomatoes, then cross" reads better.
-const TOPSY_CART_X = 1150;
+// CONFIRMED CHANGE ("the tomatoes and tree are way too close to the
+// house. move more to the right. and then everything else to the right
+// of it more to the right like i asked"): +300 from 1150, opening up a
+// real gap from the house (x=1080) instead of the cramped ~70px it had.
+// Everything downstream (the tree just past it, the gauntlet, the
+// invert-platform chain, sky garden, well, seed plot, world width) got
+// the exact same +300 so every existing gap between them stays intact --
+// this is a uniform rightward translation of the whole back half of the
+// scene, not a re-layout.
+const TOPSY_CART_X = 1450;
 // CONFIRMED CHANGE ("make the cart larger... you cant reach that taller
 // trees roots from floating on cart area"): the cart itself got bigger
 // (see drawTopsyTurvyCart below), so its landing hitbox/wander range
@@ -23057,11 +23069,16 @@ function drawTopsyTurvyPigPots() {
 // CONFIRMED CHANGE ("gauntlet plus the rest moved more to the right"):
 // shifted +250 (1300 -> 1550) to open up real room between the chef's
 // house/cart/tree and the gauntlet's own entry, instead of squeezing the
-// cart+tree into the old tight gap. The new END_X (2140) still lands
-// comfortably clear of the invert-platform chain's own nearest point
-// (x=2340, its "rest" platform) with ~200px to spare, so nothing
-// downstream of the gauntlet needed to move.
-const TOPSY_POT_GAUNTLET_START_X = 1550;
+// cart+tree into the old tight gap.
+// CONFIRMED CHANGE ("too close to the house... everything else to the
+// right of it more to the right like i asked"): another +300 (1550 ->
+// 1850), same delta as TOPSY_CART_X's own move so the gap from the
+// tree to here stays exactly what it was. The invert-platform chain,
+// sky garden, well, seed plot, and world width all got this same +300,
+// so the ~200px margin between the gauntlet's END_X and the chain's
+// nearest platform is preserved automatically -- this whole back half
+// of the scene just slid right as one block.
+const TOPSY_POT_GAUNTLET_START_X = 1850;
 // CONFIRMED ADD ("please spawn me right in front of it"): TEMPORARY
 // debug spawn, per this session's standing hand-edit convention -- drops
 // the player right at the pot gauntlet's own entry line, already in the
@@ -23215,50 +23232,166 @@ function drawTopsyPotGauntletSoupPit(camX) {
   if (endSx < -20 || startSx > canvas.width + 20) return;
   const pitW = endSx - startSx;
   const pitTop = gy, pitH = 34;
+  // CONFIRMED FIX ("dont have soup be a hard rectangle stop. make it
+  // gradually get smaller and smaller. like make it look like its
+  // inside a pot sort of kind of shape"): the old version was a plain
+  // fillRect -- flat top edge, hard vertical edges at both ends. Now the
+  // depth tapers down to ~0 over `taper` px at each end (a quadratic
+  // curve, same idiom as the real pots' own rounded belly), so the
+  // surface reads as a big basin/cauldron cross-section instead of a
+  // rectangle that just starts and stops.
+  const taper = Math.min(70, pitW * 0.22);
 
+  // CONFIRMED FIX ("flip the soup upside down"): the first pass bulged
+  // UP out of the ground (full depth in the middle, tapering to nothing
+  // at the edges) which read as a raised mound. Mirrored vertically so
+  // it's a proper sunken pit instead -- flat rim right at ground level
+  // (pitTop) all the way across (that's what closePath's own straight
+  // line back to the start point draws), dipping down to pitTop+pitH in
+  // the middle and tapering back up to meet the rim at both ends. Same
+  // taper/quadratic idiom as before, just reflected.
+  ctx.beginPath();
+  ctx.moveTo(startSx, pitTop);
+  ctx.quadraticCurveTo(startSx, pitTop + pitH * 0.9, startSx + taper, pitTop + pitH);
+  ctx.lineTo(endSx - taper, pitTop + pitH);
+  ctx.quadraticCurveTo(endSx, pitTop + pitH * 0.9, endSx, pitTop);
+  ctx.closePath();
   const grad = ctx.createLinearGradient(0, pitTop, 0, pitTop + pitH);
   grad.addColorStop(0, "#ff9a3d");
   grad.addColorStop(0.4, "#e8611f");
   grad.addColorStop(1, "#8f2a0c");
   ctx.fillStyle = grad;
-  ctx.fillRect(startSx, pitTop, pitW, pitH);
+  ctx.fill();
 
-  // a darker simmering rim right at the surface -- separates the pit
-  // visually from the ordinary ground just before/after it
-  ctx.fillStyle = "rgba(60,14,4,0.55)";
-  ctx.fillRect(startSx, pitTop, pitW, 4);
+  const pitPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(startSx, pitTop);
+    ctx.quadraticCurveTo(startSx, pitTop + pitH * 0.9, startSx + taper, pitTop + pitH);
+    ctx.lineTo(endSx - taper, pitTop + pitH);
+    ctx.quadraticCurveTo(endSx, pitTop + pitH * 0.9, endSx, pitTop);
+    ctx.closePath();
+  };
 
-  // slow-rising bubbles, wrapped/looped per-bubble via its own phase so
-  // they don't all pop in sync -- same pseudoRandom idiom used elsewhere
-  // for deterministic per-item variety without storing per-bubble state
-  const BUBBLE_COUNT = Math.max(3, Math.round(pitW / 26));
+  // CONFIRMED FIX ("it kind of looks like the soup is coming up above
+  // the ground??"): the flip alone (swapping which edge is flat vs
+  // curvy) wasn't enough -- without any actual depth/lighting cue, a
+  // bright fill sitting flush with the ground line reads as "a raised
+  // patch AT the ground" either way. Borrowed the real pots' own
+  // "dark hollow opening" idiom (see drawTopsyPotGauntletPotBody's rim)
+  // instead: a dark shadow band right at the rim, so the FIRST thing the
+  // eye hits at ground level is a shadowed lip, not a bright crest -- the
+  // hot color only shows once you're looking past that lip, down into
+  // the pit. Clipped to the pit shape so it only darkens the opening,
+  // not the ground around it.
+  ctx.save();
+  pitPath();
+  ctx.clip();
+  const rimShadow = ctx.createLinearGradient(0, pitTop, 0, pitTop + 10);
+  rimShadow.addColorStop(0, "rgba(20,14,10,0.65)");
+  rimShadow.addColorStop(1, "rgba(20,14,10,0)");
+  ctx.fillStyle = rimShadow;
+  ctx.fillRect(startSx - 5, pitTop, pitW + 10, 12);
+  ctx.restore();
+
+  // a thin bright highlight along the actual opening line only (not the
+  // sunken floor curve) -- "the rim itself catches a little light,"
+  // instead of tracing the concave curve like it's a lit convex crest
+  ctx.strokeStyle = "rgba(255,214,150,0.45)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(startSx, pitTop + 0.5);
+  ctx.lineTo(endSx, pitTop + 0.5);
+  ctx.stroke();
+
+  // small rising bubbles, clipped to the pit so they don't pop up out
+  // past the tapered ends -- kept modest-sized so they read as bubbles,
+  // not blobs. Same pseudoRandom idiom used elsewhere for deterministic
+  // per-item variety without storing per-bubble state.
+  ctx.save();
+  pitPath();
+  ctx.clip();
+  const BUBBLE_COUNT = Math.max(3, Math.round(pitW / 30));
   for (let i = 0; i < BUBBLE_COUNT; i++) {
-    const bx = startSx + ((i + 0.5) / BUBBLE_COUNT) * pitW + (pseudoRandom(i * 7.1) - 0.5) * 14;
+    const bx = startSx + ((i + 0.5) / BUBBLE_COUNT) * pitW + (pseudoRandom(i * 7.1) - 0.5) * 12;
     if (bx < -10 || bx > canvas.width + 10) continue;
     const cycleMs = 1400 + pseudoRandom(i * 3.3) * 900;
     const phase = pseudoRandom(i * 5.7) * cycleMs;
-    const bt = ((t + phase) % cycleMs) / cycleMs; // 0 (forms at bottom) -> 1 (pops at surface)
-    const r = 2 + pseudoRandom(i * 9.2) * 2.5;
+    const bt = ((t + phase) % cycleMs) / cycleMs; // 0 (forms at the pit floor) -> 1 (pops at the rim)
+    const r = 1.3 + pseudoRandom(i * 9.2) * 1.4;
     const by = pitTop + pitH - 4 - bt * (pitH - 8);
-    const alpha = bt < 0.85 ? 0.55 : 0.55 * (1 - (bt - 0.85) / 0.15);
+    const alpha = bt < 0.85 ? 0.5 : 0.5 * (1 - (bt - 0.85) / 0.15);
     ctx.fillStyle = `rgba(255,214,150,${alpha})`;
     ctx.beginPath();
     ctx.arc(bx, by, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // faint steam wisps drifting up off the surface -- reinforces "hot"
-  for (let i = 0; i < Math.max(2, Math.round(pitW / 90)); i++) {
-    const wx = startSx + ((i + 0.5) / Math.max(2, Math.round(pitW / 90))) * pitW;
-    const cycleMs = 2200;
-    const wt = ((t + i * 700) % cycleMs) / cycleMs;
-    const wy = pitTop - wt * 22;
-    const alpha = 0.22 * (1 - wt);
-    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.lineWidth = 2;
+  // CONFIRMED ADD ("lets also get more movement in the soup like...
+  // swirlies or something"): slow drifting swirl marks across the
+  // surface, on top of the bubbles -- short curved arcs (a partial
+  // spiral hook, not a full circle) that drift sideways and fade in/out
+  // on their own loop, same pseudoRandom per-item variety idiom as the
+  // bubbles/steam. Reads as the broth's surface slowly churning, not
+  // just popping bubbles. Stays inside the same pit clip already active.
+  const SWIRL_COUNT = Math.max(2, Math.round(pitW / 70));
+  for (let i = 0; i < SWIRL_COUNT; i++) {
+    const cycleMs = 3200 + pseudoRandom(i * 2.1) * 1400;
+    const st = ((t + pseudoRandom(i * 5.3) * cycleMs) % cycleMs) / cycleMs; // 0 -> 1 one full drift+fade loop
+    const driftX = (st - 0.5) * 46;
+    const sx2 = startSx + ((i + 0.5) / SWIRL_COUNT) * pitW + driftX;
+    if (sx2 < startSx - 4 || sx2 > endSx + 4) continue;
+    const sy2 = pitTop + pitH * (0.45 + 0.3 * Math.sin(i * 2.3));
+    const radius = 6 + pseudoRandom(i * 6.6) * 3;
+    const rot = t * 0.0009 + i * 1.7; // slow continuous spin, not a loop-bound angle
+    const alpha = 0.28 * Math.sin(st * Math.PI);
+    if (alpha <= 0.01) continue;
+    ctx.strokeStyle = `rgba(255,200,120,${alpha})`;
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(wx - 3, wy + 10);
-    ctx.quadraticCurveTo(wx + 4, wy + 2, wx - 2, wy - 8);
+    ctx.arc(sx2, sy2, radius, rot, rot + Math.PI * 1.3);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // CONFIRMED FIX ("still having the steam particles going in that
+  // direction. also show them coming out into the air pls"): steam
+  // still rises straight up (same direction as before the flip -- the
+  // flip only changed which way the SOUP bulges, not which way heat
+  // rises), but now starts down near the local pit floor (using the
+  // same taper falloff as the fill/clip shape, so a wisp placed near a
+  // tapered end starts shallow and one placed in the middle starts
+  // deep) and climbs past the rim (pitTop) into open air above the
+  // ground -- unclipped, so the part that's above the rim is genuinely
+  // visible "coming out into the air" instead of stopping right at the
+  // opening. Two short S-curves per plume so each reads as an actual
+  // curl, not a single faint line.
+  const STEAM_COUNT = Math.max(2, Math.round(pitW / 100));
+  for (let i = 0; i < STEAM_COUNT; i++) {
+    const wx = startSx + ((i + 0.5) / STEAM_COUNT) * pitW + (pseudoRandom(i * 4.4) - 0.5) * 10;
+    if (wx < -14 || wx > canvas.width + 14) continue;
+    // local pit depth at this wisp's x, so wisps near the tapered ends
+    // emerge from a shallower start than ones over the deep middle
+    const distFromStart = Math.max(0, Math.min(taper, wx - startSx));
+    const distFromEnd = Math.max(0, Math.min(taper, endSx - wx));
+    const edgeFrac = Math.min(distFromStart, distFromEnd) / Math.max(1, taper);
+    const localDepth = pitH * Math.min(1, edgeFrac);
+    const baseY = pitTop + Math.max(pitH * 0.3, localDepth * 0.85);
+
+    const cycleMs = 2400 + pseudoRandom(i * 6.6) * 700;
+    const wt = ((t + pseudoRandom(i * 8.8) * cycleMs) % cycleMs) / cycleMs; // 0 (at the pit floor) -> 1 (dissipated high in the air)
+    const rise = wt * (pitH * 0.6 + 30); // climbs from the floor well past the rim, out into the open air
+    const sway = Math.sin(wt * Math.PI * 2.2 + i) * 2.5;
+    const alpha = 0.3 * Math.sin(wt * Math.PI); // fades in, peaks mid-rise, fades out
+    if (alpha <= 0.01) continue;
+    const wy = baseY - rise;
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = 1.3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.quadraticCurveTo(wx + sway, wy - 5, wx - sway * 0.6, wy - 10);
+    ctx.quadraticCurveTo(wx + sway * 0.4, wy - 14, wx, wy - 18);
     ctx.stroke();
   }
 }
