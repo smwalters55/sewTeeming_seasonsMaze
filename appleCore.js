@@ -23156,6 +23156,20 @@ const TOPSY_POT_GAUNTLET_LAYOUT = [
   { dx: 60, layer: 2 }, { dx: 45, layer: 3 }, { dx: 55, layer: 1 },
   { dx: 50, layer: 2 }
 ];
+// CONFIRMED CHANGE ("should the pots be less random or a little slower
+// ... that might be too obvious. can we try something like that with a
+// semi wide ish but not too much jitter window?"): a pure traveling
+// wave (every pot's phase a clean multiple of the same step) reads as
+// solvable-by-counting after a few tries and turns right back into
+// "thing to do quickly" once you've learned the beat. This keeps the
+// wave as the readable backbone -- shared period, fixed phase step down
+// the row -- but adds a capped random wobble per pot on top
+// (TOPSY_POT_GAUNTLET_JITTER, +-12% of a period) so you can't just
+// count off the previous pot with total confidence. Wide enough to
+// matter, not so wide it drowns the wave back into independent noise.
+const TOPSY_POT_GAUNTLET_PERIOD = 2700; // shared -- see TOPSY_POT_GAUNTLET_WAVE_STEP's own comment for why a shared period is what makes the wave readable at all
+const TOPSY_POT_GAUNTLET_WAVE_STEP = 0.14; // phase offset between neighboring pots, as a fraction of one period -- the wave's visible crest spans roughly 7 pots (1/0.14) before repeating
+const TOPSY_POT_GAUNTLET_JITTER = 0.12; // +-12% of a period, layered on top of the wave step per pot
 const TOPSY_POT_GAUNTLET_POTS = (() => {
   let x = TOPSY_POT_GAUNTLET_START_X;
   return TOPSY_POT_GAUNTLET_LAYOUT.map((p, i) => {
@@ -23179,12 +23193,11 @@ const TOPSY_POT_GAUNTLET_POTS = (() => {
       i,
       x,
       height: TOPSY_POT_GAUNTLET_LAYER_HEIGHTS[p.layer],
-      // staggered per-pot flip timing (own period + phase) so the whole
-      // row never reads as one synced blink -- same "no two are ever in
-      // the same part of their cycle" idea the tomato cart's own float
-      // cycle already uses.
-      period: 1900 + pseudoRandom(i * 71 + 5) * 900,
-      phase: pseudoRandom(i * 37 + 11) * 10000,
+      // wave step down the row, plus a bounded per-pot jitter on top --
+      // see TOPSY_POT_GAUNTLET_JITTER's own comment just above.
+      period: TOPSY_POT_GAUNTLET_PERIOD,
+      phase: i * TOPSY_POT_GAUNTLET_PERIOD * TOPSY_POT_GAUNTLET_WAVE_STEP
+        + (pseudoRandom(i * 53 + 7) - 0.5) * 2 * TOPSY_POT_GAUNTLET_JITTER * TOPSY_POT_GAUNTLET_PERIOD,
       uprightFraction
     };
   });
