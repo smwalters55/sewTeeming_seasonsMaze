@@ -4862,22 +4862,27 @@ function applyPhysics(){
       if (player.x > centerX + lockHalfW) player.x = centerX + lockHalfW;
     }
   }
-  // WALL -- CONFIRMED ADD ("we need to make it like probably impassable
-  // to get across by just walking under the pots"): under the current
-  // land-and-wait design every pot catches on contact regardless of
-  // orientation (see the LOCK block above), so the ONLY way to be
+  // BOUNCE-BACK -- CONFIRMED REVERT ("no i like the bounce back jutter
+  // thing lets go back to that"): a brief hard-wall version of this
+  // (flat clamp right at the entry line) replaced the original
+  // teleport-back, but Sam preferred the original stutter. Under the
+  // current land-and-wait design every pot catches on contact regardless
+  // of orientation (see the LOCK block above), so the ONLY way to be
   // grounded at y<=0 inside the gauntlet's own span with nothing locked
   // is to never have engaged with a pot at all -- i.e. just walked in
-  // along the real ground underneath them. A hard stop right at the
-  // entry line, not a teleport-back -- reads as an actual wall instead of
-  // a stutter/bounce-back loop, and it's a true wall: nothing here lets
-  // player.x cross it while grounded and not standing on a pot.
+  // along the real ground underneath them. Bounced well back of the
+  // entry line (not just clamped to it) so that holding the direction
+  // key keeps re-triggering this every frame -- that repeated snap-back
+  // IS the visible "jutter." Paired with a visual hazard now too (the
+  // hot-soup pit -- see drawTopsyPotGauntletSoupPit) so it reads as "the
+  // ground here is dangerous," not just an invisible wall.
   {
     const px = player.x + player.width / 2;
     const wallX = TOPSY_POT_GAUNTLET_START_X - 6;
     const inGauntletSpan = px > wallX && px < TOPSY_POT_GAUNTLET_END_X + 40;
     if (inGauntletSpan && player.y <= 0 && !player.jumping && topsyPotGauntlet.standingPotIndex == null) {
-      player.x = wallX - player.width / 2;
+      const bounceBackX = TOPSY_POT_GAUNTLET_START_X - 90;
+      player.x = bounceBackX - player.width / 2;
       player.vx = 0;
     }
   }
@@ -23192,48 +23197,70 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.stroke();
 }
 
-// CONFIRMED ADD (4th pass on this -- "just have the 'outside' 'front'
-// of the pot occluding the player, not show the 'inside' of the pot"):
-// the previous pass drew a little bowl shape PLUS a separate dark
-// "rim opening" ellipse on top of it, and that dark ellipse read as a
-// hole/smudge the player was half-falling into rather than as "the
-// pot's front wall is in front of you". This pass draws exactly one
-// shape: a solid pot-colored wedge (same gradient/stroke as the real
-// pot body) that sits in front of the player's now-sunk legs (see
-// potSink) and masks them -- no separate interior/hole shape at all.
-// Anchored to the player's own feet (footX/footY, the same values the
-// sprite itself just drew at) rather than the background pot's world
-// position -- that's what kept earlier attempts from floating out of
-// sync (camera/sink offsets shift the two independently).
-function drawTopsyPotGauntletOcclusion(footX, footY) {
-  // CONFIRMED FIX ("player is sticking out on the sides, i want the
-  // full width of the player in the pot"): halfW was 14 (28px total),
-  // narrower than player.width (40px), so the player's shoulders stuck
-  // out past the wedge on both sides. halfW is now derived from the
-  // actual player width plus a little margin so it always fully covers
-  // the sprite regardless of any future width tuning.
-  const halfW = player.width / 2 + 4, wallH = 13;
-  const topY = footY - wallH;
-  const grad = ctx.createLinearGradient(footX - halfW, 0, footX + halfW, 0);
-  grad.addColorStop(0, "#b5622e");
-  grad.addColorStop(0.5, "#d97f45");
-  grad.addColorStop(1, "#b5622e");
+// CONFIRMED ADD ("i want to make a visual block on the below the
+// gauntlet like maybe hot soup or something... so it's obvious you have
+// to jump on through the pots"): paired with the BOUNCE-BACK block in
+// applyPhysics (the actual mechanic -- walking under here bounces you
+// back) so the ground itself now LOOKS dangerous instead of being an
+// invisible wall you only discover by bumping into it. Spans the exact
+// same range the bounce-back guards (TOPSY_POT_GAUNTLET_START_X-6 to
+// TOPSY_POT_GAUNTLET_END_X+40), drawn right on the ground strip, with
+// slow-rising bubbles for a "this is hot/bubbling" read. Drawn BEFORE
+// drawTopsyPotGauntlet's own pots (see call site) so the pots visually
+// float above/over it, reinforcing "land on these, don't touch that."
+function drawTopsyPotGauntletSoupPit(camX) {
+  const t = performance.now();
+  const startSx = (TOPSY_POT_GAUNTLET_START_X - 6) - camX;
+  const endSx = (TOPSY_POT_GAUNTLET_END_X + 40) - camX;
+  if (endSx < -20 || startSx > canvas.width + 20) return;
+  const pitW = endSx - startSx;
+  const pitTop = gy, pitH = 34;
+
+  const grad = ctx.createLinearGradient(0, pitTop, 0, pitTop + pitH);
+  grad.addColorStop(0, "#ff9a3d");
+  grad.addColorStop(0.4, "#e8611f");
+  grad.addColorStop(1, "#8f2a0c");
   ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(footX - halfW, topY);
-  ctx.quadraticCurveTo(footX - halfW * 1.08, footY - wallH * 0.35, footX - halfW * 0.85, footY);
-  ctx.quadraticCurveTo(footX, footY + 2, footX + halfW * 0.85, footY);
-  ctx.quadraticCurveTo(footX + halfW * 1.08, footY - wallH * 0.35, footX + halfW, topY);
-  ctx.closePath();
-  ctx.fill();
-  // just the top rim edge of this front wall -- no dark interior, no
-  // second hollow ellipse. reads as "the pot's near wall", not a hole.
-  ctx.strokeStyle = "#ffd9a0";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(footX - halfW * 0.95, topY + 1);
-  ctx.quadraticCurveTo(footX, topY - 1.5, footX + halfW * 0.95, topY + 1);
-  ctx.stroke();
+  ctx.fillRect(startSx, pitTop, pitW, pitH);
+
+  // a darker simmering rim right at the surface -- separates the pit
+  // visually from the ordinary ground just before/after it
+  ctx.fillStyle = "rgba(60,14,4,0.55)";
+  ctx.fillRect(startSx, pitTop, pitW, 4);
+
+  // slow-rising bubbles, wrapped/looped per-bubble via its own phase so
+  // they don't all pop in sync -- same pseudoRandom idiom used elsewhere
+  // for deterministic per-item variety without storing per-bubble state
+  const BUBBLE_COUNT = Math.max(3, Math.round(pitW / 26));
+  for (let i = 0; i < BUBBLE_COUNT; i++) {
+    const bx = startSx + ((i + 0.5) / BUBBLE_COUNT) * pitW + (pseudoRandom(i * 7.1) - 0.5) * 14;
+    if (bx < -10 || bx > canvas.width + 10) continue;
+    const cycleMs = 1400 + pseudoRandom(i * 3.3) * 900;
+    const phase = pseudoRandom(i * 5.7) * cycleMs;
+    const bt = ((t + phase) % cycleMs) / cycleMs; // 0 (forms at bottom) -> 1 (pops at surface)
+    const r = 2 + pseudoRandom(i * 9.2) * 2.5;
+    const by = pitTop + pitH - 4 - bt * (pitH - 8);
+    const alpha = bt < 0.85 ? 0.55 : 0.55 * (1 - (bt - 0.85) / 0.15);
+    ctx.fillStyle = `rgba(255,214,150,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // faint steam wisps drifting up off the surface -- reinforces "hot"
+  for (let i = 0; i < Math.max(2, Math.round(pitW / 90)); i++) {
+    const wx = startSx + ((i + 0.5) / Math.max(2, Math.round(pitW / 90))) * pitW;
+    const cycleMs = 2200;
+    const wt = ((t + i * 700) % cycleMs) / cycleMs;
+    const wy = pitTop - wt * 22;
+    const alpha = 0.22 * (1 - wt);
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(wx - 3, wy + 10);
+    ctx.quadraticCurveTo(wx + 4, wy + 2, wx - 2, wy - 8);
+    ctx.stroke();
+  }
 }
 
 function drawTopsyPotGauntlet(camX) {
@@ -25453,6 +25480,7 @@ function drawTopsyTurvyScene(camX) {
   topsyMeadowSeeds.forEach(seed => drawTopsyMeadowDandelion(camX, seed));
   drawTopsyMeadowScatterBurst(camX);
   drawTopsySpiralSlide(camX);
+  drawTopsyPotGauntletSoupPit(camX);
   drawTopsyPotGauntlet(camX);
   drawTopsyAmbientWindSeeds(camX);
   drawTopsyUpsideDownBirds(camX);
@@ -65505,16 +65533,16 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-// CONFIRMED ADD (3rd pass -- "put player inside the pot when its facing
-// upward have some occlusion pls"): same sink-the-sprite idiom as the
-// nest above. Gated to genuinely STANDING on an upright pot specifically
-// (not while locked/pinned on an upside-down one -- "when its facing
-// upward") -- see drawTopsyPotGauntletOcclusion's call site for the
-// matching redraw-on-top-of-the-player piece.
-const onUprightGauntletPot = currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
-  topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex]);
-const potSink = onUprightGauntletPot ? 6 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
+// CONFIRMED REMOVE ("dont draw the pot occlusion on the player like
+// that. ahhhh maybe this is too hard to do with the windy stuff"):
+// tried this "sink the sprite + draw a front wall over it" idiom four
+// times (floating oval, disliked outright, a dark hole read as a
+// smudge, then too narrow) and it never landed -- dropping it rather
+// than iterating a 5th time. The hot-soup pit under the gauntlet (see
+// drawTopsyPotGauntletSoupPit) already gives a clear "don't walk under
+// here" visual, so the pots themselves go back to drawing plainly with
+// no occlusion trick.
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66196,15 +66224,6 @@ if (currentScene === "spring" && peanutVine.mounted && peanutVine.grown && peanu
 // snuggled right up against the player, not partially hidden behind anything.
 if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
-}
-
-// CONFIRMED ADD (3rd pass -- "put player inside the pot when its facing
-// upward have some occlusion pls"): gated to standingPotIndex AND the
-// pot currently being upright, matching "when its facing upward" -- no
-// occlusion while locked/pinned on an upside-down one.
-if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
-    topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex])) {
-  drawTopsyPotGauntletOcclusion(px + player.width / 2, drawPy + player.height);
 }
 
 drawCrown(camX);
