@@ -20102,7 +20102,14 @@ const topsyChefSpicePuzzle = {
 // piece's own proportions), a tighter room around it reads as a small,
 // stuffed-full space instead of a spacious gallery with furniture
 // floating around in it.
-const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 130; // the little room spans the house's own x +/- this
+// CONFIRMED CHANGE ("make the space larger as needed... everything is so
+// messed up and chunked together"): pulled back OUT from 130 (then 190,
+// still too tight once actually checked against the furniture) -- the
+// spice shelf/jars/recipe card and the chef's own pot were fighting for
+// room in too tight a box and reading as one crammed pile. This is the
+// room's real half-width; see drawTopsyChefSpicePuzzle/drawTopsyChefBack
+// for how the two clusters now actually use the extra space to sit apart.
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 260; // the little room spans the house's own x +/- this
 // CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
 // way every OTHER upside-down surface in this land works -- these reuse
 // the exact same dip-then-launch/light-gravity float as
@@ -20142,8 +20149,17 @@ const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 130; // the little room spans the house's
 // the outdoor chain's own ~137px light-gravity float budget (see
 // TOPSY_INVERT_LAUNCH_VY's own comment), so the whole climb is always
 // makeable.
+// CONFIRMED CHANGE ("make room larger vertically i dont want this
+// crowded at all, and spread the furniture out a bit more
+// horizontally"): every piece pushed further apart on x (was a 190px
+// span end to end, now ~310px, using the room's own wider half-width --
+// see TOPSY_CHEF_INTERIOR_HALF_WIDTH below), and armchair/plant/couch
+// raised higher too for real extra vertical climb. Table stays at its
+// original height -- it's still the one required to be reachable by an
+// ordinary first jump from the floor -- everything above it just has
+// more room to breathe on the way up.
 const TOPSY_CHEF_FURNITURE_PLATFORMS = [
-  { x: topsyTurvyHouses[0].x - 105, height: 115, width: 66, kind: "armchair" },
+  { x: topsyTurvyHouses[0].x - 170, height: 130, width: 66, kind: "armchair" },
   // CONFIRMED BUG FIX: height must stay >= the player's own 54px
   // height for its attach point (height - player.height) to be
   // non-negative -- a lower value than that is never actually
@@ -20152,18 +20168,18 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
   // was about the cable's visual length, which is now capped
   // regardless of this value (see drawLegCable/TOPSY_CHEF_LEG_CABLE_MAX)
   // -- so this can stay a real, reachable height instead.
-  { x: topsyTurvyHouses[0].x - 38, height: 70, width: 44, kind: "table" },
-  { x: topsyTurvyHouses[0].x + 15, height: 140, width: 26, kind: "plant" },
-  { x: topsyTurvyHouses[0].x + 85, height: 165, width: 90, kind: "couch" }
+  { x: topsyTurvyHouses[0].x - 70, height: 70, width: 44, kind: "table" },
+  { x: topsyTurvyHouses[0].x + 20, height: 170, width: 26, kind: "plant" },
+  { x: topsyTurvyHouses[0].x + 140, height: 210, width: 90, kind: "couch" }
 ];
 // a modest margin above the tallest furniture piece -- see its own use
 // right next to the outdoor TOPSY_INVERT_SOFT_CEILING check.
-const TOPSY_CHEF_INTERIOR_SOFT_CEILING = 180;
-// CONFIRMED CHANGE ("a liittle larger vertically"): taller room (was
-// 170) to give the new, more spread-out furniture heights above real
-// headroom to climb through instead of immediately crowding the
-// ceiling band.
-const TOPSY_CHEF_INTERIOR_ROOM_HEIGHT = 230; // the drawn room's own ceiling line, above the soft ceiling with a little headroom
+const TOPSY_CHEF_INTERIOR_SOFT_CEILING = 230;
+// CONFIRMED CHANGE ("make room larger vertically i dont want this
+// crowded at all"): taller again (was 230, before that 170) to keep
+// real headroom above the now-taller couch/plant instead of immediately
+// crowding the ceiling band.
+const TOPSY_CHEF_INTERIOR_ROOM_HEIGHT = 280; // the drawn room's own ceiling line, above the soft ceiling with a little headroom
 
 // CONFIRMED CHANGE (see topsyWell/topsyWindSeedPlot's own comment for
 // the full quote this implements): the well's dip/fill animation, the
@@ -20419,8 +20435,14 @@ function updateTopsyChefInterior(deltaTime) {
 
   // simple room walls -- keeps the player from wandering out into the
   // rest of the (undrawn, while in here) outdoor world
+  // CONFIRMED BUG FIX ("the pic you sent player is currently outside of
+  // the room halfway"): player.x is the sprite's LEFT edge, so clamping
+  // the max with only half the width left a full half-body's worth of
+  // the player poking through the right wall (the min side was fine,
+  // since player.x itself IS the left edge). Both sides now keep the
+  // same real clearance from their wall.
   const roomLeft = grumpyHouse.x - TOPSY_CHEF_INTERIOR_HALF_WIDTH + player.width / 2;
-  const roomRight = grumpyHouse.x + TOPSY_CHEF_INTERIOR_HALF_WIDTH - player.width / 2;
+  const roomRight = grumpyHouse.x + TOPSY_CHEF_INTERIOR_HALF_WIDTH - player.width / 2 - player.width;
   if (player.x < roomLeft) player.x = roomLeft;
   if (player.x > roomRight) player.x = roomRight;
 
@@ -20443,7 +20465,12 @@ function updateTopsyChefInterior(deltaTime) {
   let spaceHandledByJar = false;
   if (!topsyChefSpicePuzzle.solved && keys.spaceJustPressed && !player.jumping && !player.topsyInverted) {
     for (const jar of TOPSY_CHEF_SPICE_JARS) {
-      const jarX = grumpyHouse.x + jar.dx;
+      // CONFIRMED CHANGE ("everything is so messed up and chunked
+      // together"): the -45 here has to match drawTopsyChefSpicePuzzle's
+      // own baseX shift exactly, or the drawn jars and their actual
+      // interact hitboxes drift apart (the same class of bug the jar
+      // layout hit earlier this session).
+      const jarX = grumpyHouse.x + jar.dx + 10;
       if (Math.abs((player.x + player.width / 2) - jarX) < 15) {
         spaceHandledByJar = true;
         const needed = TOPSY_CHEF_SPICE_ORDER[topsyChefSpicePuzzle.progress];
@@ -20458,7 +20485,10 @@ function updateTopsyChefInterior(deltaTime) {
           topsyChefSpicePuzzle.flights.push({
             type: jar.type,
             x0: jarX, y0: gy - 30,
-            x1: grumpyHouse.x + 55, y1: gy - 20,
+            // CONFIRMED CHANGE: must match drawTopsyChefBack's new call-site
+            // offset (cx + 100) below, or the flight lands somewhere the pot
+            // visually isn't anymore.
+            x1: grumpyHouse.x + 170, y1: gy - 20,
             startedAt: performance.now(),
             duration: 620
           });
@@ -20629,27 +20659,17 @@ function drawTopsyChefInterior(camX) {
 
   drawTopsyChefSpicePuzzle(camX);
 
-  // CONFIRMED CHANGE ("the rat cooking should be a little to the right,
-  // not directly under in the middle of the furniture"): was dead
-  // center (cx), sitting right underneath the densest part of the
-  // furniture cluster -- shifted into the open gap between the plant
-  // and the couch instead.
-  drawTopsyChefBack(cx + 55, camX);
+  // CONFIRMED CHANGE ("everything is so messed up and chunked
+  // together"): pushed further right again (55 -> 100) now that the
+  // room itself is wider -- the spice shelf/jars/recipe card moved left
+  // into their own space (see drawTopsyChefSpicePuzzle), so the pot
+  // needs to sit clearly right of them, not just barely past center.
+  drawTopsyChefBack(cx + 170, camX);
   drawTopsyChefSpiceFlights(camX);
 
-  // CONFIRMED ADD: the exit nudge, same plain monospace hint style as
-  // the entry one drawn at the outdoor window -- only shown while it'd
-  // actually do something (standing normally, not mid a furniture hop),
-  // matching updateTopsyChefInterior's own down-press condition exactly.
-  if (!player.jumping && !player.topsyInverted) {
-    ctx.globalAlpha = 0.8;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.font = "10px ui-monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("press DOWN or SPACE to step back outside", cx, canvas.height - 12);
-    ctx.textAlign = "left";
-    ctx.globalAlpha = 1;
-  }
+  // CONFIRMED REMOVED ("remove the hint text"): the exit nudge used to
+  // print "press DOWN or SPACE to step back outside" here every frame --
+  // taken out entirely, not replaced with anything.
 }
 
 // CONFIRMED REWORK ("i want an actual interact puzzle not just a jump
@@ -20778,7 +20798,19 @@ function drawTopsyChefSpiceIcon(type, s) {
 function drawTopsyChefSpicePuzzle(camX) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
   if (!grumpyHouse) return;
-  const baseX = grumpyHouse.x - camX;
+  // CONFIRMED CHANGE ("everything is so messed up and chunked together"):
+  // used to sit dead center, right where the chef's own pot (see
+  // drawTopsyChefBack's call site) was ALSO drawn -- the two visibly
+  // overlapped. Shifted left into its own clear span of the now-wider
+  // room instead, with a real gap to the pot on the right.
+  // CONFIRMED CHANGE (found while checking the earlier -60 offset against
+  // a screenshot): the low-hanging armchair/table pieces (heights 115/70,
+  // closest to the floor) were still poking into the recipe card no
+  // matter how far the shelf shifted left -- the card kept landing right
+  // under them. Repositioned to sit under the plant instead (height 140,
+  // clears the card with real headroom), pot pushed further right in turn
+  // so the two clusters still don't crowd each other.
+  const baseX = grumpyHouse.x - camX + 10;
   const shelfY = gy - 8;
 
   // the shelf itself
