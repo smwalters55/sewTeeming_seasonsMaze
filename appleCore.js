@@ -92,11 +92,14 @@ function resetAllPlayerModeFlags() {
   player.topsyDandelionBounceFlight = false;
   player.mushroomHopActive = false;
   player.launchSteerable = false;
+  player.inChefPotDive = false;
   poolDive.active = false;
   poolSlideExit.active = false;
   topsySpiralSlideRoom.active = false;
   topsySpiralSlideRoom.t = 0;
   fungusPulleyRide.t = 0;
+  topsyChefPotDive.active = false;
+  topsyChefPotDive.phase = null;
 }
 
 window.addEventListener("keydown", e => {
@@ -251,6 +254,12 @@ const player = {
   // the whole downward dive, not just while actually touching the
   // platform.
   topsyInverted: false,
+  // CONFIRMED ADD (pot-dive finale): true for the whole dive/swirl/pop-
+  // out/dry cutscene once the chef-house recipe puzzle solves -- see
+  // topsyChefPotDive and updateTopsyChefPotDive. Position is driven
+  // entirely by that update function, same pattern as onFan/onPendulum/
+  // etc. (applyPhysics early-returns while this is set).
+  inChefPotDive: false,
   // CONFIRMED ADD ("make player more wobbly on the towers... add a
   // little wiggle"): true only while actually resting on the pig's pot
   // stack or the tea critter's cup stack THIS frame (see the dynamic-
@@ -3326,6 +3335,11 @@ function applyPhysics(){
   // same idea for the rabbit-shuttle — position is driven by updateRabbitShuttle()
   if (rabbitShuttle.mounted) return;
 
+  // same idea for the chef-house pot-dive finale cutscene -- position
+  // while diving/swirling/popping out/drying off is driven entirely by
+  // updateTopsyChefPotDive()
+  if (player.inChefPotDive) return;
+
   // same idea for the sandbox's upward fan toy -- position while
   // hovering is driven entirely by updateSandboxFan()
   if (player.onFan) return;
@@ -4030,6 +4044,16 @@ function applyPhysics(){
                 topsyChefSpicePuzzle.solved = true;
                 topsyChefSpicePuzzle.solvedAt = performance.now();
                 addToInventory("secretSpice");
+                // CONFIRMED ADD (pot-dive finale): kick off the dive ->
+                // swirl -> pop-out -> dry cutscene the instant the last
+                // ingredient lands, from wherever the player's actually
+                // standing (usually still up on the final anchor/piece).
+                topsyChefPotDive.active = true;
+                topsyChefPotDive.phase = "dive";
+                topsyChefPotDive.phaseStart = performance.now();
+                topsyChefPotDive.homeX = player.x;
+                topsyChefPotDive.homeY = player.y;
+                player.inChefPotDive = true;
               }
             } else {
               // CONFIRMED FIX ("sometimes when you get the green leaf it
@@ -20166,6 +20190,20 @@ const topsyChefSpicePuzzle = {
   hintUntil: null,
   flights: [] // in-flight "ingredient arcing into the pot" animations -- see drawTopsyChefSpiceFlights
 };
+// CONFIRMED ADD ("what if after get all the ingredients player gets
+// animation of going into the ratatouille and swirling then pops out
+// dripping wet for a few beats then its all dried off and we continue
+// on way"): the finale reward cutscene, kicked off the instant the
+// puzzle solves (see the solved=true block in applyPhysics' furniture-
+// catch loop). Four beats -- dive in, swirl around inside the pot
+// (player hidden), pop back out dripping, dry off -- each with its own
+// duration below. player.inChefPotDive gates normal physics/input the
+// same way every other "position driven by its own update function"
+// flag in this file does (see applyPhysics' onFan/onPendulum/etc. early
+// -returns) -- see updateTopsyChefPotDive for the actual motion and
+// drawTopsyChefPotDiveFX for the splash/swirl/drip visuals.
+const TOPSY_CHEF_POT_DIVE_DURATION = { dive: 480, swirl: 900, popout: 420, dry: 950 };
+let topsyChefPotDive = { active: false, phase: null, phaseStart: 0, homeX: 0, homeY: 0 };
 // CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
 // the room... also i cant jump up or move left or right"): widened so
 // there's actual open floor to walk/jump around in instead of the
@@ -20623,6 +20661,69 @@ const TOPSY_WIND_STRENGTH = 34; // px/sec at peak gust
 // over roughly a second and a half rather than snapping instantly.
 const TOPSY_CHEF_SOFTEN_RATE = 1.8;
 
+// CONFIRMED ADD (pot-dive finale): drives player.x/y for all four beats
+// of the dive/swirl/popout/dry cutscene, same "own update function owns
+// position while a mode-lock flag is set" pattern as updateSandboxFan
+// and friends. Each phase reads its own duration off
+// TOPSY_CHEF_POT_DIVE_DURATION and advances to the next once its window
+// elapses; the final "dry" phase clears everything and hands control
+// back exactly where the player was standing when the puzzle solved.
+function updateTopsyChefPotDive(grumpyHouse) {
+  if (!topsyChefPotDive.active) return;
+  const potX = grumpyHouse.x + 170 - player.width / 2;
+  const now = performance.now();
+  const elapsed = now - topsyChefPotDive.phaseStart;
+  const dur = TOPSY_CHEF_POT_DIVE_DURATION[topsyChefPotDive.phase];
+
+  if (topsyChefPotDive.phase === "dive") {
+    // leap/slide toward the pot, settling to floor height as it closes
+    // in -- smoothstep so it eases in and out rather than sliding at a
+    // constant rate
+    const t = Math.min(1, elapsed / dur);
+    const ease = t * t * (3 - 2 * t);
+    player.x = topsyChefPotDive.homeX + (potX - topsyChefPotDive.homeX) * ease;
+    player.y = topsyChefPotDive.homeY * (1 - ease);
+    player.vy = 0;
+    if (t >= 1) {
+      topsyChefPotDive.phase = "swirl";
+      topsyChefPotDive.phaseStart = now;
+    }
+  } else if (topsyChefPotDive.phase === "swirl") {
+    // fully submerged/hidden -- see the player-draw guard keyed off this
+    // phase -- parked right at the pot while drawTopsyChefPotDiveFX
+    // spins a ripple over it
+    player.x = potX;
+    player.y = 0;
+    if (elapsed >= dur) {
+      topsyChefPotDive.phase = "popout";
+      topsyChefPotDive.phaseStart = now;
+    }
+  } else if (topsyChefPotDive.phase === "popout") {
+    // a little upward hop out of the pot, arcing back toward home while
+    // rising and falling
+    const t = Math.min(1, elapsed / dur);
+    const arc = Math.sin(t * Math.PI) * 36;
+    player.x = potX + (topsyChefPotDive.homeX - potX) * t;
+    player.y = arc;
+    if (t >= 1) {
+      topsyChefPotDive.phase = "dry";
+      topsyChefPotDive.phaseStart = now;
+      player.x = topsyChefPotDive.homeX;
+      player.y = 0;
+    }
+  } else if (topsyChefPotDive.phase === "dry") {
+    player.x = topsyChefPotDive.homeX;
+    player.y = 0;
+    if (elapsed >= dur) {
+      topsyChefPotDive.active = false;
+      topsyChefPotDive.phase = null;
+      player.inChefPotDive = false;
+      player.vy = 0;
+      player.jumping = false;
+    }
+  }
+}
+
 // CONFIRMED ADD ("lets do the chef house peek, but let me also be able
 // to jump upside down on the furniture no reward or anything"): the
 // room's own tiny update -- just walls to keep the player inside, and
@@ -20633,6 +20734,12 @@ const TOPSY_CHEF_SOFTEN_RATE = 1.8;
 function updateTopsyChefInterior(deltaTime) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
   if (!grumpyHouse) return;
+
+  // pot-dive finale cutscene, if it's currently running -- see its own
+  // comment for the phase breakdown. Runs before the room-wall clamp
+  // below since it drives player.x/y directly; the clamp is harmless
+  // either way since the dive path stays well within the room.
+  updateTopsyChefPotDive(grumpyHouse);
 
   // simple room walls -- keeps the player from wandering out into the
   // rest of the (undrawn, while in here) outdoor world
@@ -20664,7 +20771,7 @@ function updateTopsyChefInterior(deltaTime) {
   const playerCenterX = player.x + player.width / 2;
   const nearChefDoor = Math.abs(playerCenterX - grumpyHouse.x) < TOPSY_CHEF_DOOR_HALF_WIDTH;
   if (keys.downJustPressed && nearChefDoor &&
-      !player.jumping && !player.topsyInverted) {
+      !player.jumping && !player.topsyInverted && !player.inChefPotDive) {
     topsyChefInteriorActive = false;
     player.x = topsyChefInteriorReturn.x;
     player.y = topsyChefInteriorReturn.y;
@@ -21726,6 +21833,100 @@ function drawTopsyChefSpiceFlights(camX) {
       });
     }
   });
+}
+
+// CONFIRMED ADD (pot-dive finale, "going into the ratatouille and
+// swirling then pops out dripping wet for a few beats then its all
+// dried off"): all the visual flourish for the cutscene -- a closing
+// ripple as the dive lands, a spinning swirl + rising steam while the
+// player's hidden inside the pot, and a few beats of dripping water
+// droplets tapering into a little dry-off poof once they're back out.
+// Drawn from the shared post-player slot in the top-level draw() (see
+// its own comment) so the drips/steam actually layer on top of the
+// player sprite, not behind it.
+function drawTopsyChefPotDiveFX(camX) {
+  if (!topsyChefPotDive.active) return;
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  if (!grumpyHouse) return;
+  const potSx = grumpyHouse.x + 170 - camX;
+  const potSy = gy - 20;
+  const now = performance.now();
+  const elapsed = now - topsyChefPotDive.phaseStart;
+
+  if (topsyChefPotDive.phase === "dive") {
+    // a quick ripple right as the dive closes the last stretch in
+    const t = Math.min(1, elapsed / TOPSY_CHEF_POT_DIVE_DURATION.dive);
+    if (t > 0.65) {
+      const rt = (t - 0.65) / 0.35;
+      ctx.strokeStyle = `rgba(200,120,90,${0.5 * (1 - rt)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(potSx, potSy, 10 + rt * 16, 5 + rt * 7, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (topsyChefPotDive.phase === "swirl") {
+    // spinning ripple bands right at the pot's mouth while the player's
+    // fully submerged and hidden (see the player-draw guard)
+    const spin = now * 0.012;
+    for (let i = 0; i < 3; i++) {
+      const a = spin + i * (Math.PI * 2 / 3);
+      const rx = 12 + Math.sin(now * 0.006 + i) * 2;
+      ctx.strokeStyle = `rgba(210,140,100,${0.45 - i * 0.1})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(potSx, potSy, rx, rx * 0.45, a, 0, Math.PI * 1.4);
+      ctx.stroke();
+    }
+    // a couple of steam wisps rising off the pot while it's "cooking"
+    for (let i = 0; i < 2; i++) {
+      const wt = (now * 0.001 + i * 0.5) % 1;
+      const dir = i === 0 ? -1 : 1;
+      ctx.strokeStyle = `rgba(255,255,255,${0.3 * (1 - wt)})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(potSx + dir * 6, potSy - 8 - wt * 20);
+      ctx.quadraticCurveTo(potSx + dir * 10, potSy - 18 - wt * 20, potSx + dir * 5, potSy - 28 - wt * 20);
+      ctx.stroke();
+    }
+  } else if (topsyChefPotDive.phase === "popout" || topsyChefPotDive.phase === "dry") {
+    // dripping wet droplets falling off the player for a few beats,
+    // tapering out as "dry" progresses
+    const px = player.x - camX + player.width / 2;
+    const pyTop = gy - player.height - player.y;
+    const dryT = topsyChefPotDive.phase === "dry" ? Math.min(1, elapsed / TOPSY_CHEF_POT_DIVE_DURATION.dry) : 0;
+    const dripAlpha = topsyChefPotDive.phase === "popout" ? 1 : Math.max(0, 1 - dryT * 1.6);
+    if (dripAlpha > 0) {
+      // CONFIRMED CHANGE (verification screenshot check): the droplets
+      // read as almost invisible flecks at real game scale -- bumped
+      // size and opacity up, same "too subtle to register" fix this
+      // session already applied to the catch splash and pot flash.
+      for (let i = 0; i < 4; i++) {
+        const seed = i * 2.3;
+        const fallT = (now * 0.0015 + seed) % 1;
+        const dx = Math.sin(seed * 3.1) * player.width * 0.35;
+        const dy = pyTop + player.height * 0.3 + fallT * player.height * 0.9;
+        ctx.fillStyle = `rgba(120,180,220,${0.85 * dripAlpha * (1 - fallT)})`;
+        ctx.beginPath();
+        ctx.ellipse(px + dx, dy, 2.4, 3.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // once fully dry, a little poof + sparkle punctuates "all dried off"
+    if (topsyChefPotDive.phase === "dry" && dryT > 0.7 && dryT < 1) {
+      const pt = (dryT - 0.7) / 0.3;
+      ctx.fillStyle = `rgba(255,255,255,${0.35 * (1 - pt)})`;
+      ctx.beginPath();
+      ctx.ellipse(px, pyTop + player.height * 0.4, 14 + pt * 10, 10 + pt * 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(px, pyTop + player.height * 0.2);
+      ctx.globalAlpha = 1 - pt;
+      ctx.fillStyle = "#fff6d8";
+      drawTopsyChefSparkleGlyph(4 + pt * 3);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 }
 
 // One furniture piece, hanging upside-down from the ceiling. Local
@@ -67195,7 +67396,13 @@ if (currentScene !== "pool" && !inPotGauntletShadowSpan) {
 // "player disappears, only shadow visible." The pool has no ground-level
 // hole-fall concept this clip was protecting against, so it's simply
 // exempted outright rather than trying to extend the height math.
-if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly above ground — worth drawing
+// CONFIRMED ADD (pot-dive finale): fully hide the player sprite during
+// the "swirl" phase -- they're meant to read as submerged inside the
+// pot, and drawTopsyChefPotDiveFX draws the ripple/steam over the pot
+// in their place. Every other phase (dive/popout/dry) still draws
+// normally, same body, just repositioned by updateTopsyChefPotDive.
+if ((currentScene === "pool" || drawPy < gy + cameraY) &&
+    !(topsyChefPotDive.active && topsyChefPotDive.phase === "swirl")) { // still at least partly above ground — worth drawing
   ctx.save();
   ctx.beginPath();
   // widened well past the sprite's own bounding box -- the clip only
@@ -67301,8 +67508,17 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   const topsyStackWobbleTilt = (currentScene === "topsyturvy" && player.topsyRidingStack)
     ? Math.sin(performance.now() * 0.006) * 0.15
     : 0;
+  // CONFIRMED ADD (pot-dive finale, "dripping wet... then its all dried
+  // off"): a quick decaying shake during the "dry" phase -- the classic
+  // wet-dog shake-off, same additive-tilt mechanism as everything else
+  // in this sum. Scoped to that one phase so the dive/swirl/popout beats
+  // stay upright.
+  const topsyChefPotDiveDryShake = (topsyChefPotDive.active && topsyChefPotDive.phase === "dry")
+    ? Math.sin((performance.now() - topsyChefPotDive.phaseStart) * 0.045) * 0.22 *
+      Math.exp(-(performance.now() - topsyChefPotDive.phaseStart) / 500)
+    : 0;
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -67716,6 +67932,11 @@ if (currentScene === "forest") {
     drawSandboxBallPitBalls(camX, true);
     ctx.restore();
   }
+} else if (currentScene === "topsyturvy" && topsyChefInteriorActive && topsyChefPotDive.active) {
+  // pot-dive finale splash/swirl/drip FX, drawn AFTER the player so the
+  // droplets/steam actually read as on top of the sprite -- see its own
+  // comment for the phase-by-phase breakdown.
+  drawTopsyChefPotDiveFX(camX);
 }
 
 
