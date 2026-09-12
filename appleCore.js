@@ -20202,7 +20202,12 @@ const topsyChefSpicePuzzle = {
 // CONFIRMED CHANGE ("i kinda want more than just a little jump to get
 // the things"): widened again (260 -> 320) to fit the new stepping-stone
 // hop out to each ingredient peg with real gaps, not a cram.
-const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 320; // the little room spans the house's own x +/- this
+// CONFIRMED CHANGE ("moving eggplant to the left of the leaf item...
+// make it a lil harder"): widened again (320 -> 380) to make real room
+// for the eggplant's new spot just past the armchair, plus the west
+// pegs pushed further out to stay clear of it -- see
+// TOPSY_CHEF_FURNITURE_PLATFORMS and TOPSY_CHEF_WEB_ANCHORS below.
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 380; // the little room spans the house's own x +/- this
 // CONFIRMED ADD ("down only near the door"): how close to the door
 // (centered on the house itself, same x the player always spawns at on
 // the way in) counts as "at the door" for the down-to-exit check in
@@ -20275,14 +20280,15 @@ const TOPSY_CHEF_DOOR_HALF_WIDTH = 30;
 // 2nd, added later) is the table itself, crossed well before it's its
 // turn, and potato (needed 3rd) is nowhere in this chain at all, it's
 // out on its own standalone peg clear across the room
-// (TOPSY_CHEF_WEB_ANCHORS) -- and tofu (needed 4th) is back in the
-// furniture chain, past the DECOY couch, meaning the real solve path is:
-// climb the table (tomato, not yet its turn) to the armchair (bellPepper,
-// correct), drop back down and land on the table again (tomato, now
-// correct), then walk all the way across to the potato peg, then walk
-// all the way BACK and re-climb past the (now-harmless, already-used)
-// table and armchair to reach the plant. No straight line anywhere in
-// that.
+// (TOPSY_CHEF_WEB_ANCHORS) -- and eggplant (needed 4th, was tofu) sits
+// one step PAST the armchair (see its own comment just below), meaning
+// the real solve path is: climb the table (tomato, not yet its turn) to
+// the armchair (bellPepper, correct), drop back down and land on the
+// table again (tomato, now correct), then walk all the way across to
+// the potato peg, then walk all the way BACK, re-climb past the (now-
+// harmless, already-used) table and armchair, and keep going one more
+// hop past it to finally reach the eggplant. No straight line anywhere
+// in that.
 // CONFIRMED FIX ("says leaf still hasnt been got yet"): a wrong/out-of-
 // order catch used to zero your whole progress back to 0 -- but any
 // tagged anchor your jump ARC crosses counts as a landing whether you
@@ -20309,14 +20315,15 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
   // the armchair well before it's actually its turn, and have to come
   // back down and land on it again once bellPepper's done.
   { x: topsyTurvyHouses[0].x - 70, height: 70, width: 44, kind: "table", spiceType: "tomato" },
-  // CONFIRMED CHANGE ("move one of the items over to the left so its a
-  // little more of a challenge" / tofu -> eggplant swap): was at +20,
-  // right next to the table -- shifted to -20 (still a clean 15px gap
-  // off the table's own edge, no new overlap) so the LAST leg of the
-  // solve -- coming back from the potato peg way out on the east wall
-  // -- is a genuinely longer crossing instead of landing almost right
-  // next to where you started.
-  { x: topsyTurvyHouses[0].x - 20, height: 170, width: 26, kind: "plant", spiceType: "eggplant" },
+  // CONFIRMED CHANGE ("i wonder about moving eggplant to the left of
+  // the leaf item [the armchair/bellPepper] ... make it a lil harder"):
+  // was at -20, right next to the table -- moved again, this time PAST
+  // the armchair to -240 (a real 24px+ gap off the armchair's own edge,
+  // see the room-width comment above), so the last leg of the solve
+  // now has to climb one step further past bellPepper's own anchor
+  // instead of stopping just short of it. A plain single jump from the
+  // armchair (dx ~50-60, dh 40 up) easily covers the gap.
+  { x: topsyTurvyHouses[0].x - 240, height: 170, width: 26, kind: "plant", spiceType: "eggplant" },
   // CONFIRMED CHANGE ("says leaf still hasnt been got yet" wrong-catch
   // bug): landing here out of sequence used to reset your whole run --
   // now it's harmless, just doesn't advance you (see the catch loop in
@@ -20348,8 +20355,11 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
 const TOPSY_CHEF_WEB_ANCHORS = [
   { x: topsyTurvyHouses[0].x + 240, height: 70, width: 40, kind: "pegStep" }, // untagged stepping stone toward the potato peg
   { x: topsyTurvyHouses[0].x + 290, height: 150, width: 30, kind: "peg", spiceType: "potato" },
-  { x: topsyTurvyHouses[0].x - 240, height: 70, width: 40, kind: "pegStep" }, // untagged stepping stone toward the garlic peg
-  { x: topsyTurvyHouses[0].x - 290, height: 150, width: 30, kind: "peg", spiceType: "garlic" } // decoy
+  // CONFIRMED CHANGE (eggplant's new spot at -240 pushed these further
+  // out -- was -240/-290, now -300/-350, with real ~15px+ gaps off
+  // eggplant, each other, and the (now also wider) west wall.
+  { x: topsyTurvyHouses[0].x - 300, height: 70, width: 40, kind: "pegStep" }, // untagged stepping stone toward the garlic peg
+  { x: topsyTurvyHouses[0].x - 350, height: 150, width: 30, kind: "peg", spiceType: "garlic" } // decoy
 ];
 // CONFIRMED ADD: the one list every piece of shared physics (the catch
 // loop, the launch-guard lookup) actually walks while in this room --
@@ -20960,9 +20970,12 @@ function drawTopsyChefInterior(camX) {
   // hintUntil gets set on entry. Deliberately vague/in-character rather
   // than spelling the mechanic out directly.
   if (topsyChefSpicePuzzle.hintUntil && performance.now() < topsyChefSpicePuzzle.hintUntil) {
+    // CONFIRMED CHANGE ("i dont like 'paws' anything that is weird,
+    // player dont have paws" -- picked the "airborne chef's rule"
+    // option): dropped the paws reference entirely.
     drawFittedSpeechBubble(ctx, cx + 90, gy - 110, [
-      "Oh, and don't let your paws touch the floor 'til it's done --",
-      "a proper ratatouille waits for no one!"
+      "Airborne chef's rule: no floor, no rest,",
+      "'til the last ingredient's in the pot!"
     ]);
   }
 
@@ -21027,64 +21040,144 @@ function drawTopsyChefSpiceIcon(type, s) {
     ctx.lineTo(2 * s, -6.5 * s);
     ctx.stroke();
   } else if (type === "potato") {
-    ctx.fillStyle = "#c9a06a";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 6.5 * s, 5 * s, 0.25, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#8a6a42";
-    ctx.lineWidth = 0.8 * s;
-    ctx.stroke();
-    // a couple of little sprout-eye dots
-    ctx.fillStyle = "#7a5a36";
-    [[-1.5, -1], [2, 1.5]].forEach(([dx, dy]) => {
-      ctx.beginPath();
-      ctx.arc(dx * s, dy * s, 0.7 * s, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  } else if (type === "eggplant") {
-    // CONFIRMED CHANGE ("wait does tofu even ever go in ratatouille" --
-    // it doesn't; also fixes the earlier "white graph thing... no idea
-    // what that is" complaint, since that turned out to be tofu's old
-    // square-with-crossing-lines icon): swapped tofu for an actual
-    // ratatouille ingredient, eggplant -- a glossy purple teardrop body
-    // with a little green cap/stem, unmistakable as a vegetable.
-    const bodyGrad = ctx.createLinearGradient(-4 * s, -4 * s, 4 * s, 6 * s);
-    bodyGrad.addColorStop(0, "#8a5a9e");
-    bodyGrad.addColorStop(1, "#4a2a5e");
+    // CONFIRMED CHANGE ("i thought it was a cookie"): a smooth tan
+    // ellipse with a couple of solid brown dots is exactly a chocolate
+    // chip cookie's silhouette. Real potatoes are lumpy/irregular, not
+    // perfectly round, so the body's now a bezier blob with a couple of
+    // knobby bulges; the flat "chip" dots are replaced with small dark
+    // crescent-shaped eye INDENTS (each with a tiny sprout curl off one
+    // of them, the classic potato tell) plus a couple of faint dirt
+    // specks instead of big solid dots.
+    const bodyGrad = ctx.createLinearGradient(-6 * s, -5 * s, 6 * s, 5 * s);
+    bodyGrad.addColorStop(0, "#d4ab74");
+    bodyGrad.addColorStop(0.55, "#c0925a");
+    bodyGrad.addColorStop(1, "#96693c");
     ctx.fillStyle = bodyGrad;
+    // CONFIRMED CHANGE ("make the potato a little more wobbly shaped"):
+    // the first wobble pass used many EVEN-sized lobes, which read as a
+    // scalloped cloud/flower (arguably worse than the cookie problem
+    // this whole redesign started from). Dialed it WAY back: basically
+    // a plain squashed oval (only 4 long curves, like the very first
+    // version), just with each corner nudged a slightly different,
+    // modest amount so it's subtly lopsided instead of a repeating
+    // pattern or a perfect ellipse.
     ctx.beginPath();
-    ctx.moveTo(0, -3 * s);
-    ctx.quadraticCurveTo(5 * s, -2 * s, 4.5 * s, 3 * s);
-    ctx.quadraticCurveTo(4 * s, 7.5 * s, 0, 8 * s);
-    ctx.quadraticCurveTo(-4 * s, 7.5 * s, -4.5 * s, 3 * s);
-    ctx.quadraticCurveTo(-5 * s, -2 * s, 0, -3 * s);
+    ctx.moveTo(-6.2 * s, -0.4 * s);
+    ctx.bezierCurveTo(-5.8 * s, -4 * s, -2.6 * s, -5.2 * s, 0.4 * s, -4.8 * s);
+    ctx.bezierCurveTo(3.6 * s, -4.6 * s, 6.6 * s, -2.4 * s, 6.2 * s, 0.8 * s);
+    ctx.bezierCurveTo(6 * s, 3.8 * s, 3 * s, 5.4 * s, -0.4 * s, 5 * s);
+    ctx.bezierCurveTo(-3.6 * s, 4.7 * s, -6.6 * s, 3 * s, -6.2 * s, -0.4 * s);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "#3a1e48";
+    ctx.strokeStyle = "#7a5630";
+    ctx.lineWidth = 0.7 * s;
+    ctx.stroke();
+    // soft highlight so it doesn't read flat
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(-2 * s, -1.8 * s, 2.2 * s, 1.2 * s, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // eye indents -- small dark dimple ovals, not solid round dots or
+    // eyelash-shaped arcs (an earlier pass's three arcs happened to land
+    // like two eyes + a smiling mouth, which read as a cartoon face
+    // rather than a potato -- scattered them irregularly instead, as
+    // thin flattened dimples angled with the surface)
+    ctx.fillStyle = "rgba(110,76,40,0.55)";
+    [[-3.4, -1.6, 0.3, 0.8], [3, -2.2, -0.4, 0.65], [4, 2.2, 0.6, 0.5]].forEach(([dx, dy, rot, sz]) => {
+      ctx.save();
+      ctx.translate(dx * s, dy * s);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, sz * s, sz * 0.5 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+    // a couple of faint dirt specks
+    ctx.fillStyle = "rgba(110,76,40,0.35)";
+    [[3.4, -2.4, 0.5], [-3.6, 2.6, 0.4]].forEach(([dx, dy, r]) => {
+      ctx.beginPath();
+      ctx.arc(dx * s, dy * s, r * s, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // one little green sprout curling off an eye -- the classic
+    // "this potato has been in the pantry a while" tell
+    ctx.strokeStyle = "#6a9450";
+    ctx.lineWidth = 0.6 * s;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-3.4 * s, -1.6 * s);
+    ctx.quadraticCurveTo(-2.6 * s, -2.4 * s, -1.4 * s, -3.4 * s);
+    ctx.stroke();
+  } else if (type === "eggplant") {
+    // CONFIRMED CHANGE ("wait does tofu even ever go in ratatouille" --
+    // it doesn't): swapped tofu for an actual ratatouille ingredient,
+    // eggplant.
+    // CONFIRMED CHANGE ("make the eggplant look more like eggplant"):
+    // the first pass pinched to a sharp POINT at the bottom and bulged
+    // widest right up near the stem, which read more like a purple
+    // onion or a droplet. Real aubergines are narrow at the stem, widen
+    // gradually, and end in a gently ROUNDED (not pointed) bottom, plus
+    // usually a slight asymmetric lean rather than a perfectly straight
+    // body. Rebuilt with bezier curves for that lean/taper, and the
+    // bottom now closes with two curves meeting smoothly instead of a
+    // sharp V.
+    // CONFIRMED CHANGE (round-out check at full display size showed it
+    // reading as a plum/fig, not an eggplant): stretched the body taller
+    // and narrower -- classic aubergine proportions are noticeably
+    // longer than wide -- and swapped the thin 3-point leaf sprig for a
+    // proper wide, flared, star-pointed CALYX cap sitting flush on the
+    // shoulders (the papery green crown real eggplants have), which is
+    // what actually cues "eggplant" over "purple fruit" at a glance.
+    const bodyGrad = ctx.createLinearGradient(-3.5 * s, -4 * s, 3.5 * s, 9 * s);
+    bodyGrad.addColorStop(0, "#a878bc");
+    bodyGrad.addColorStop(0.45, "#6a3a80");
+    bodyGrad.addColorStop(1, "#341a42");
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(-0.4 * s, -3.2 * s);
+    ctx.bezierCurveTo(2.2 * s, -3 * s, 4.2 * s, 0.5 * s, 4 * s, 4 * s);
+    ctx.bezierCurveTo(3.8 * s, 7.8 * s, 1.6 * s, 10.2 * s, -0.6 * s, 10 * s);
+    ctx.bezierCurveTo(-2.8 * s, 9.8 * s, -4.3 * s, 7.2 * s, -4 * s, 3.4 * s);
+    ctx.bezierCurveTo(-3.7 * s, -0.5 * s, -2.4 * s, -3.4 * s, -0.4 * s, -3.2 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#2a1638";
     ctx.lineWidth = 0.7 * s;
     ctx.stroke();
     // a soft highlight so the glossy body doesn't read flat
-    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.fillStyle = "rgba(255,255,255,0.32)";
     ctx.beginPath();
-    ctx.ellipse(-1.8 * s, 0.5 * s, 1.4 * s, 3 * s, -0.15, 0, Math.PI * 2);
+    ctx.ellipse(-1.3 * s, 1 * s, 1 * s, 4.2 * s, -0.15, 0, Math.PI * 2);
     ctx.fill();
-    // green cap + short stem on top
+    // wide flared calyx cap + short stem on top, following the lean --
+    // a scalloped 5-lobe crown (rounded lobes via quadratic curves, not
+    // a sharp star polygon -- the star's inner points crossed the outer
+    // ones and read as a jagged ninja-star rather than a leafy cap)
     ctx.fillStyle = "#4d8a3f";
     ctx.beginPath();
-    ctx.moveTo(0, -3 * s);
-    ctx.lineTo(-3 * s, -5.2 * s);
-    ctx.lineTo(-1 * s, -4.6 * s);
-    ctx.lineTo(0, -6.4 * s);
-    ctx.lineTo(1 * s, -4.6 * s);
-    ctx.lineTo(3 * s, -5.2 * s);
+    // lobe tips sit on a wide flat ellipse (fanned out sideways over the
+    // shoulders); valleys pull in close to the stem base between them
+    const capCx = -0.4, capCy = -3.4, tipRx = 3.4, tipRy = 1.1, valR = 0.9, lobes = 5;
+    const tipAt = a => [capCx + tipRx * Math.cos(a), capCy - Math.abs(Math.sin(a)) * tipRy - 0.3];
+    const valAt = a => [capCx + valR * Math.cos(a), capCy - Math.abs(Math.sin(a)) * valR * 0.4];
+    const firstVal = valAt(-Math.PI / 2 - Math.PI / lobes);
+    ctx.moveTo(firstVal[0] * s, firstVal[1] * s);
+    for (let i = 0; i < lobes; i++) {
+      const aTip = -Math.PI / 2 + (i / lobes) * Math.PI * 2;
+      const aNext = -Math.PI / 2 + ((i + 1) / lobes) * Math.PI * 2;
+      const tip = tipAt(aTip);
+      const val = valAt(aNext);
+      ctx.quadraticCurveTo(tip[0] * s, tip[1] * s, val[0] * s, val[1] * s);
+    }
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#2f5a26";
-    ctx.lineWidth = 0.7 * s;
+    ctx.lineWidth = 0.6 * s;
+    ctx.stroke();
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(0, -6.4 * s);
-    ctx.lineTo(0, -8.5 * s);
+    ctx.moveTo(-0.4 * s, -3.6 * s);
+    ctx.lineTo(-0.7 * s, -6.2 * s);
     ctx.stroke();
   } else if (type === "basil") {
     ctx.fillStyle = "#4d8a3f";
