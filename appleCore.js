@@ -182,8 +182,14 @@ const camera = { topDown:false, locked:false };
 // directly and never touches topsyChefInteriorReturn (it stays stuck at
 // its {x:0,y:0} default), so pressing down to leave sent the player to
 // literal world origin -- "the start of topsy turvy" -- instead of back
-// outside the house. Reverted to "autumn", the real game start.
-const DEBUG_START_SCENE = "autumn";
+// outside the house.
+// CONFIRMED CHANGE ("spawn me in the house like i already asked"): back
+// on for active recipe-puzzle testing. This time the topsyturvy debug
+// block below also sets topsyChefInteriorReturn, so the earlier
+// world-origin exit bug can't recur while this is on. TEMPORARY -- flip
+// back to "autumn" once done testing, per this file's standing
+// convention (see the comment on this const above).
+const DEBUG_START_SCENE = "topsyturvy";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -20728,41 +20734,154 @@ function drawTopsyChefWallDecor(camX, ceilingY) {
 
   // a small framed picture off to one side -- a rat chef silhouette
   // with a tomato, straight out of the movie's own kitchen-wall art
+  // CONFIRMED CHANGE ("is there art behind the recipe sign, what is
+  // that square... make it just a little larger"): this was the "square"
+  // being asked about -- reading unclearly small at its original size.
+  // Scaled up ~35% in place (everything below stays authored in the
+  // same original local coordinates, just wrapped in a scale transform)
+  // rather than hand-doubling every number.
   const frameX = baseX - 210;
   const frameY = ceilingY + 24;
+  ctx.save();
+  ctx.translate(frameX, frameY);
+  ctx.scale(1.35, 1.35);
   ctx.fillStyle = "#5c4326";
-  roundRect(ctx, frameX - 14, frameY - 11, 28, 22, 2);
+  roundRect(ctx, -14, -11, 28, 22, 2);
   ctx.fill();
   ctx.strokeStyle = "#3a2a18";
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.fillStyle = "#e8d9b8";
-  roundRect(ctx, frameX - 11, frameY - 8, 22, 16, 1);
+  roundRect(ctx, -11, -8, 22, 16, 1);
   ctx.fill();
   ctx.fillStyle = "#6b4a2c";
   ctx.beginPath();
-  ctx.ellipse(frameX - 2, frameY + 2, 4, 2.6, 0, 0, Math.PI * 2);
+  ctx.ellipse(-2, 2, 4, 2.6, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(frameX - 6.5, frameY - 0.5, 1.6, 0, Math.PI * 2);
+  ctx.arc(-6.5, -0.5, 1.6, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "#3a2a18";
   ctx.lineWidth = 0.4;
   ctx.beginPath();
-  ctx.moveTo(frameX - 8, frameY - 1.5);
-  ctx.lineTo(frameX - 9.5, frameY - 3);
+  ctx.moveTo(-8, -1.5);
+  ctx.lineTo(-9.5, -3);
   ctx.stroke();
   ctx.fillStyle = "#c94a3a";
   ctx.beginPath();
-  ctx.arc(frameX + 5, frameY + 3, 2.4, 0, Math.PI * 2);
+  ctx.arc(5, 3, 2.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = "#3a8a3a";
   ctx.beginPath();
-  ctx.moveTo(frameX + 5, frameY + 0.7);
-  ctx.lineTo(frameX + 4.3, frameY - 0.6);
-  ctx.lineTo(frameX + 5.8, frameY - 0.4);
+  ctx.moveTo(5, 0.7);
+  ctx.lineTo(4.3, -0.6);
+  ctx.lineTo(5.8, -0.4);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+
+  // CONFIRMED ADD ("put a lil art piece in this center open space...
+  // tomato and eggplant shaking hands"): a third little framed picture,
+  // centered between the rat-chef frame and the herb bunch, in the open
+  // stretch of wall over the pot -- two cartoon veggie characters (a
+  // tomato and an eggplant, each with simple stick arms and a face)
+  // clasping hands in the middle, same frame styling as the rat-chef
+  // piece so all three read as one consistent set of kitchen wall art.
+  // CONFIRMED FIX (first placement sat directly behind/under the
+  // recipe card -- same x as cardX and only 24px below the ceiling,
+  // right in the card's own 46px-tall box): dropped well down the wall,
+  // clear of the card above and any furniture/anchors below, into the
+  // actual open stretch of wallpaper the request pointed at.
+  const shakeX = baseX;
+  const shakeY = ceilingY + 140;
+  ctx.fillStyle = "#5c4326";
+  roundRect(ctx, shakeX - 15, shakeY - 11, 30, 22, 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2a18";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#e8d9b8";
+  roundRect(ctx, shakeX - 12, shakeY - 8, 24, 16, 1);
+  ctx.fill();
+  // tomato character on the left -- round red body, tiny green cap,
+  // one stick arm reaching right
+  ctx.strokeStyle = "#8a5a2c";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(shakeX - 6.5, shakeY + 1.5);
+  ctx.lineTo(shakeX - 1.5, shakeY - 0.5);
+  ctx.stroke();
+  ctx.fillStyle = "#c94a3a";
+  ctx.beginPath();
+  ctx.arc(shakeX - 7.5, shakeY + 2, 3.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a8a3a";
+  ctx.beginPath();
+  ctx.moveTo(shakeX - 7.5, shakeY - 1.2);
+  ctx.lineTo(shakeX - 8.6, shakeY - 2.6);
+  ctx.lineTo(shakeX - 6.9, shakeY - 2.2);
+  ctx.lineTo(shakeX - 7.5, shakeY - 3.4);
+  ctx.lineTo(shakeX - 6.4, shakeY - 2.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#2a1810";
+  [-1, 1].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(shakeX - 7.5 + dx * 1.1, shakeY + 1.2, 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.strokeStyle = "#2a1810";
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  ctx.arc(shakeX - 7.5, shakeY + 2.4, 0.9, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+  // eggplant character on the right -- purple oval body with a small
+  // calyx, stick arm reaching left, mirroring the tomato's pose
+  ctx.strokeStyle = "#8a5a2c";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(shakeX + 6.5, shakeY + 1.8);
+  ctx.lineTo(shakeX + 1.5, shakeY - 0.2);
+  ctx.stroke();
+  ctx.fillStyle = "#6a3a80";
+  ctx.beginPath();
+  ctx.ellipse(shakeX + 7.5, shakeY + 2.2, 2.6, 3.6, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#4d8a3f";
+  ctx.beginPath();
+  ctx.moveTo(shakeX + 6.6, shakeY - 1.6);
+  ctx.lineTo(shakeX + 5.6, shakeY - 2.8);
+  ctx.lineTo(shakeX + 7.1, shakeY - 2.6);
+  ctx.lineTo(shakeX + 7.6, shakeY - 3.6);
+  ctx.lineTo(shakeX + 8.4, shakeY - 2.4);
+  ctx.lineTo(shakeX + 9.2, shakeY - 2.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#f0e8f4";
+  [-1, 1].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(shakeX + 7.6 + dx * 1.1, shakeY + 1.5, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#2a1810";
+  [-1, 1].forEach(dx => {
+    ctx.beginPath();
+    ctx.arc(shakeX + 7.6 + dx * 1.1, shakeY + 1.5, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.strokeStyle = "#2a1810";
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  ctx.arc(shakeX + 7.5, shakeY + 2.9, 0.8, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+  // the clasped "hands" right in the middle
+  ctx.fillStyle = "#c98a5a";
+  ctx.beginPath();
+  ctx.ellipse(shakeX, shakeY, 1.5, 1, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a5a2c";
+  ctx.lineWidth = 0.35;
+  ctx.stroke();
 
   // a hanging bunch of dried herbs off the other side of the room --
   // tied stems with a few leafy sprigs, distinct from the pegs' own
@@ -21128,6 +21247,12 @@ function drawTopsyChefSpiceIcon(type, s) {
     // proper wide, flared, star-pointed CALYX cap sitting flush on the
     // shoulders (the papery green crown real eggplants have), which is
     // what actually cues "eggplant" over "purple fruit" at a glance.
+    // CONFIRMED CHANGE ("a lil more irregular, eggplants are a lil
+    // thinner in the middle"): the body was a smooth, uniformly bulging
+    // teardrop -- real aubergines usually have a gentle waist/pinch
+    // partway down before bulging out again toward the bottom, so this
+    // adds that narrowing on both sides around the mid-length instead of
+    // one continuous outward curve.
     const bodyGrad = ctx.createLinearGradient(-3.5 * s, -4 * s, 3.5 * s, 9 * s);
     bodyGrad.addColorStop(0, "#a878bc");
     bodyGrad.addColorStop(0.45, "#6a3a80");
@@ -21135,10 +21260,12 @@ function drawTopsyChefSpiceIcon(type, s) {
     ctx.fillStyle = bodyGrad;
     ctx.beginPath();
     ctx.moveTo(-0.4 * s, -3.2 * s);
-    ctx.bezierCurveTo(2.2 * s, -3 * s, 4.2 * s, 0.5 * s, 4 * s, 4 * s);
-    ctx.bezierCurveTo(3.8 * s, 7.8 * s, 1.6 * s, 10.2 * s, -0.6 * s, 10 * s);
-    ctx.bezierCurveTo(-2.8 * s, 9.8 * s, -4.3 * s, 7.2 * s, -4 * s, 3.4 * s);
-    ctx.bezierCurveTo(-3.7 * s, -0.5 * s, -2.4 * s, -3.4 * s, -0.4 * s, -3.2 * s);
+    ctx.bezierCurveTo(2.4 * s, -3 * s, 4.4 * s, -0.8 * s, 4.2 * s, 1.6 * s);
+    ctx.bezierCurveTo(4 * s, 3 * s, 3 * s, 3.2 * s, 3.3 * s, 4.6 * s);
+    ctx.bezierCurveTo(3.6 * s, 6.8 * s, 1.8 * s, 9.2 * s, -0.6 * s, 10 * s);
+    ctx.bezierCurveTo(-3 * s, 9.7 * s, -4.5 * s, 7.2 * s, -4.1 * s, 4.9 * s);
+    ctx.bezierCurveTo(-3.8 * s, 3.5 * s, -4.6 * s, 3 * s, -4.3 * s, 1.4 * s);
+    ctx.bezierCurveTo(-4.1 * s, -0.8 * s, -2.5 * s, -3.4 * s, -0.4 * s, -3.2 * s);
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = "#2a1638";
@@ -21860,7 +21987,14 @@ function drawTopsyChefCoffeeTable(w, reach, wobble) {
   // edge, a wider two-tone saucer with a visible rim ring, and a couple
   // of thin steam curls so it unmistakably reads as a hot drink.
   {
-    const cupX = hw * 0.42;
+    // CONFIRMED CHANGE ("make the teacup wobble when you jump on the
+    // table"): the wobble math itself was already wired up (cupWobble =
+    // wobble*10, driven by tp.lastLandTime same as the whole table's own
+    // tilt) -- but the cup sat close enough to center that the player's
+    // own sprite, standing right on the table, covered most of it while
+    // the wobble was actually happening. Pushed further toward the edge
+    // so it's clear of the player and the wobble reads.
+    const cupX = hw * 0.62;
     const cupWobble = wobble * 10;
     ctx.save();
     ctx.translate(cupX, topSurface - 0.3);
@@ -24346,10 +24480,21 @@ const TOPSY_POT_GAUNTLET_START_X = 1850;
 if (DEBUG_START_SCENE === "topsyturvy") {
   // player.x = TOPSY_POT_GAUNTLET_START_X - 60;
   // player.y = 0;
+  // CONFIRMED FIX (re-enabling this spawn, per the earlier bug found
+  // this session): last time this was on, topsyChefInteriorReturn never
+  // got set, so exiting the house dropped the player at world origin.
+  // Set it here too, right outside the house door, so down-to-exit
+  // still works correctly while this debug spawn is on.
+  const grumpyHouseDebug = topsyTurvyHouses.find(h => h.grumpy);
+  topsyChefInteriorReturn.x = grumpyHouseDebug.x;
+  topsyChefInteriorReturn.y = 0;
   topsyChefInteriorActive = true;
   topsyChef.sequencePhase = "done";
-  player.x = topsyTurvyHouses.find(h => h.grumpy).x - 40;
+  player.x = grumpyHouseDebug.x - 40;
   player.y = 0;
+  if (!topsyChefSpicePuzzle.solved) {
+    topsyChefSpicePuzzle.hintUntil = performance.now() + 5000;
+  }
 }
 // CONFIRMED CHANGE ("still relatively easy to almost hop all the way
 // over"): 26 -> 22. This is the second lever alongside the extra pots
