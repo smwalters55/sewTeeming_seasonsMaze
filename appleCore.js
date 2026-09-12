@@ -186,14 +186,14 @@ const camera = { topDown:false, locked:false };
 // its {x:0,y:0} default), so pressing down to leave sent the player to
 // literal world origin -- "the start of topsy turvy" -- instead of back
 // outside the house.
-// CONFIRMED CHANGE ("start me at the bottom of topsy turvey tree the
-// fungus tree pls"): switched off the chef-interior spawn and back onto
-// the "forest" case below, which already drops the player at the base of
-// the fungus climb (FOREST_FUNGUS_TREE_X - 40) with the river bridge
-// pre-completed so the teleport actually sticks. TEMPORARY -- flip back
-// to "autumn" once done testing, per this file's standing convention (see
-// the comment on this const above).
-const DEBUG_START_SCENE = "forest";
+// CONFIRMED CHANGE ("can you start me w wind seed bucket shovel"):
+// switched off the forest/fungus-tree spawn and onto "topsyturvy" below,
+// which now drops the player at the sky garden's seed plot with the
+// shovel/windSeed/bucket already in inventory for testing the dig->
+// plant->water sequence. TEMPORARY -- flip back to "autumn" once done
+// testing, per this file's standing convention (see the comment on this
+// const above).
+const DEBUG_START_SCENE = "topsyturvy";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -24797,34 +24797,37 @@ function drawTopsyTurvyPigPots() {
 // nearest platform is preserved automatically -- this whole back half
 // of the scene just slid right as one block.
 const TOPSY_POT_GAUNTLET_START_X = 1850;
-// CONFIRMED CHANGE ("spawn me inside the house"): TEMPORARY debug
-// spawn, per this session's standing hand-edit convention -- was
-// dropping the player at the pot gauntlet's entry line for the lock
-// mechanic testing; now drops straight inside the chef's house interior
-// instead (already in the topsyturvy scene, see DEBUG_START_SCENE
-// above), skipping the walk-in from the land's entrance AND the
-// window-entry prompt, so the new recipe puzzle/room layout can be
-// played and checked directly on load. Revert alongside DEBUG_START_SCENE
-// once no longer needed for testing -- the old pot-gauntlet spawn line
-// is left commented just below in case that testing resumes later.
+// CONFIRMED CHANGE ("can you start me w wind seed bucket shovel"):
+// TEMPORARY debug spawn, per this session's standing hand-edit
+// convention -- swapped out the earlier chef-interior spawn (left
+// commented just below in case that testing resumes later) for the sky
+// garden's seed plot instead. Drops the player right next to
+// TOPSY_SEEDPLOT_X with all three seed-plot tools already in inventory
+// (shovel, windSeed, bucket -- see updateTopsyWindSeedPlot's own
+// dig->plant->water sequence) and the shovel already held, so the whole
+// sequence can be tested directly without backtracking through the land
+// to actually earn each tool first. Revert alongside DEBUG_START_SCENE
+// once no longer needed for testing.
 if (DEBUG_START_SCENE === "topsyturvy") {
-  // player.x = TOPSY_POT_GAUNTLET_START_X - 60;
+  // CONFIRMED CHANGE ("spawn me inside the house"): the earlier
+  // chef-interior debug spawn -- left here commented rather than
+  // deleted, in case chef-house testing resumes later.
+  // const grumpyHouseDebug = topsyTurvyHouses.find(h => h.grumpy);
+  // topsyChefInteriorReturn.x = grumpyHouseDebug.x;
+  // topsyChefInteriorReturn.y = 0;
+  // topsyChefInteriorActive = true;
+  // topsyChef.sequencePhase = "done";
+  // player.x = grumpyHouseDebug.x - 40;
   // player.y = 0;
-  // CONFIRMED FIX (re-enabling this spawn, per the earlier bug found
-  // this session): last time this was on, topsyChefInteriorReturn never
-  // got set, so exiting the house dropped the player at world origin.
-  // Set it here too, right outside the house door, so down-to-exit
-  // still works correctly while this debug spawn is on.
-  const grumpyHouseDebug = topsyTurvyHouses.find(h => h.grumpy);
-  topsyChefInteriorReturn.x = grumpyHouseDebug.x;
-  topsyChefInteriorReturn.y = 0;
-  topsyChefInteriorActive = true;
-  topsyChef.sequencePhase = "done";
-  player.x = grumpyHouseDebug.x - 40;
+  // if (!topsyChefSpicePuzzle.solved) {
+  //   topsyChefSpicePuzzle.hintUntil = performance.now() + 5000;
+  // }
+  player.x = TOPSY_SEEDPLOT_X - 40;
   player.y = 0;
-  if (!topsyChefSpicePuzzle.solved) {
-    topsyChefSpicePuzzle.hintUntil = performance.now() + 5000;
-  }
+  addToInventory("shovel");
+  addToInventory("windSeed");
+  addToInventory("bucket");
+  heldItem = "shovel";
 }
 // CONFIRMED CHANGE ("still relatively easy to almost hop all the way
 // over"): 26 -> 22. This is the second lever alongside the extra pots
