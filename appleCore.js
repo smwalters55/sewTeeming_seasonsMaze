@@ -4044,16 +4044,17 @@ function applyPhysics(){
                 topsyChefSpicePuzzle.solved = true;
                 topsyChefSpicePuzzle.solvedAt = performance.now();
                 addToInventory("secretSpice");
-                // CONFIRMED ADD (pot-dive finale): kick off the dive ->
-                // swirl -> pop-out -> dry cutscene the instant the last
-                // ingredient lands, from wherever the player's actually
-                // standing (usually still up on the final anchor/piece).
+                // CONFIRMED ADD (pot-dive finale): arms the "pending"
+                // beat -- normal physics/input keep running (player.
+                // inChefPotDive isn't set here) until the player actually
+                // lands on the floor, see updateTopsyChefPotDive. Doesn't
+                // matter that they're usually still up on the final
+                // anchor/piece right now; the pending phase is exactly
+                // what waits that out.
                 topsyChefPotDive.active = true;
-                topsyChefPotDive.phase = "dive";
+                topsyChefPotDive.phase = "pending";
                 topsyChefPotDive.phaseStart = performance.now();
-                topsyChefPotDive.homeX = player.x;
-                topsyChefPotDive.homeY = player.y;
-                player.inChefPotDive = true;
+                topsyChefPotDive.groundedAt = null;
               }
             } else {
               // CONFIRMED FIX ("sometimes when you get the green leaf it
@@ -20193,17 +20194,30 @@ const topsyChefSpicePuzzle = {
 // CONFIRMED ADD ("what if after get all the ingredients player gets
 // animation of going into the ratatouille and swirling then pops out
 // dripping wet for a few beats then its all dried off and we continue
-// on way"): the finale reward cutscene, kicked off the instant the
-// puzzle solves (see the solved=true block in applyPhysics' furniture-
-// catch loop). Four beats -- dive in, swirl around inside the pot
-// (player hidden), pop back out dripping, dry off -- each with its own
-// duration below. player.inChefPotDive gates normal physics/input the
-// same way every other "position driven by its own update function"
-// flag in this file does (see applyPhysics' onFan/onPendulum/etc. early
-// -returns) -- see updateTopsyChefPotDive for the actual motion and
+// on way"): the finale reward cutscene. Five beats now -- pending (a
+// beat of normal control/gravity right after solving, so the puzzle's
+// last landing doesn't get yanked out from under the player), dive in,
+// swirl around inside the pot (player hidden), pop back out dripping,
+// dry off -- each with its own duration below.
+// CONFIRMED CHANGE ("wait till player first lands on the ground maybe?
+// or just take a few beats before starting... slow it waaay down"):
+// the sequence used to grab control the INSTANT the puzzle solved,
+// which usually meant mid-air, still up on the final furniture piece --
+// jarring. Added the "pending" beat: normal physics/input keep running
+// (player.inChefPotDive isn't set yet) until the player's genuinely
+// landed on the floor, PLUS a short extra pause once grounded so it
+// doesn't feel like an instant snap the moment their feet touch, with a
+// timeout fallback in case they somehow never come down. Every phase
+// duration below was also roughly doubled per "slow it waaay down".
+// player.inChefPotDive gates normal physics/input the same way every
+// other "position driven by its own update function" flag in this file
+// does (see applyPhysics' onFan/onPendulum/etc. early-returns) -- see
+// updateTopsyChefPotDive for the actual motion and
 // drawTopsyChefPotDiveFX for the splash/swirl/drip visuals.
-const TOPSY_CHEF_POT_DIVE_DURATION = { dive: 480, swirl: 900, popout: 420, dry: 950 };
-let topsyChefPotDive = { active: false, phase: null, phaseStart: 0, homeX: 0, homeY: 0 };
+const TOPSY_CHEF_POT_DIVE_DURATION = { dive: 1000, swirl: 2000, popout: 800, dry: 1800 };
+const TOPSY_CHEF_POT_DIVE_PENDING_PAUSE = 500; // beat of normal control once grounded, before the dive actually starts
+const TOPSY_CHEF_POT_DIVE_PENDING_MAX = 3000; // fallback in case the player somehow never lands
+let topsyChefPotDive = { active: false, phase: null, phaseStart: 0, homeX: 0, homeY: 0, groundedAt: null };
 // CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
 // the room... also i cant jump up or move left or right"): widened so
 // there's actual open floor to walk/jump around in instead of the
@@ -20675,7 +20689,38 @@ function updateTopsyChefPotDive(grumpyHouse) {
   const elapsed = now - topsyChefPotDive.phaseStart;
   const dur = TOPSY_CHEF_POT_DIVE_DURATION[topsyChefPotDive.phase];
 
-  if (topsyChefPotDive.phase === "dive") {
+  if (topsyChefPotDive.phase === "pending") {
+    // normal physics/input are still fully in control here (player.
+    // inChefPotDive isn't set until this phase ends) -- just watching
+    // for a genuine floor landing, plus a short beat of normal control
+    // once grounded so the dive doesn't snap in the instant their feet
+    // touch. Times out on its own if they somehow never come down.
+    const grounded = player.y <= 0 && !player.jumping;
+    if (grounded) {
+      if (topsyChefPotDive.groundedAt == null) topsyChefPotDive.groundedAt = now;
+    } else {
+      topsyChefPotDive.groundedAt = null;
+    }
+    const pausedLongEnough = topsyChefPotDive.groundedAt != null &&
+      (now - topsyChefPotDive.groundedAt) > TOPSY_CHEF_POT_DIVE_PENDING_PAUSE;
+    const timedOut = elapsed > TOPSY_CHEF_POT_DIVE_PENDING_MAX;
+    if (pausedLongEnough || timedOut) {
+      topsyChefPotDive.phase = "dive";
+      topsyChefPotDive.phaseStart = now;
+      topsyChefPotDive.homeX = player.x;
+      topsyChefPotDive.homeY = player.y;
+      player.inChefPotDive = true;
+      player.vy = 0;
+      player.jumping = false;
+      // CONFIRMED FIX ("dont make player go upside down"): waiting for a
+      // real ground landing already clears this most of the time (see
+      // topsyInverted's own "only cleared by a genuine ground landing"
+      // comment), but the timeout fallback path can reach here without
+      // one, so clear it explicitly too -- the cutscene should never
+      // play upside-down.
+      player.topsyInverted = false;
+    }
+  } else if (topsyChefPotDive.phase === "dive") {
     // leap/slide toward the pot, settling to floor height as it closes
     // in -- smoothstep so it eases in and out rather than sliding at a
     // constant rate
@@ -20771,7 +20816,7 @@ function updateTopsyChefInterior(deltaTime) {
   const playerCenterX = player.x + player.width / 2;
   const nearChefDoor = Math.abs(playerCenterX - grumpyHouse.x) < TOPSY_CHEF_DOOR_HALF_WIDTH;
   if (keys.downJustPressed && nearChefDoor &&
-      !player.jumping && !player.topsyInverted && !player.inChefPotDive) {
+      !player.jumping && !player.topsyInverted && !player.inChefPotDive && !topsyChefPotDive.active) {
     topsyChefInteriorActive = false;
     player.x = topsyChefInteriorReturn.x;
     player.y = topsyChefInteriorReturn.y;
@@ -21900,14 +21945,26 @@ function drawTopsyChefPotDiveFX(camX) {
       // read as almost invisible flecks at real game scale -- bumped
       // size and opacity up, same "too subtle to register" fix this
       // session already applied to the catch splash and pot flash.
+      // CONFIRMED CHANGE ("i want them soup colored but i dont want it
+      // to look like blood"): switched from plain blue "water" droplets
+      // to a warm orange-amber tone matching the ratatouille itself
+      // (also just makes more sense -- they were dunked in the pot, not
+      // water). Kept it orange-forward rather than red, with a small
+      // lighter gloss highlight on each drop, specifically so it reads
+      // as thick sauce rather than anything blood-like.
       for (let i = 0; i < 4; i++) {
         const seed = i * 2.3;
         const fallT = (now * 0.0015 + seed) % 1;
         const dx = Math.sin(seed * 3.1) * player.width * 0.35;
         const dy = pyTop + player.height * 0.3 + fallT * player.height * 0.9;
-        ctx.fillStyle = `rgba(120,180,220,${0.85 * dripAlpha * (1 - fallT)})`;
+        const a = dripAlpha * (1 - fallT);
+        ctx.fillStyle = `rgba(214,120,42,${0.85 * a})`;
         ctx.beginPath();
         ctx.ellipse(px + dx, dy, 2.4, 3.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(250,196,120,${0.55 * a})`;
+        ctx.beginPath();
+        ctx.ellipse(px + dx - 0.6, dy - 0.8, 0.8, 1.2, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
