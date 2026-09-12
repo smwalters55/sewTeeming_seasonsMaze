@@ -186,14 +186,13 @@ const camera = { topDown:false, locked:false };
 // its {x:0,y:0} default), so pressing down to leave sent the player to
 // literal world origin -- "the start of topsy turvy" -- instead of back
 // outside the house.
-// CONFIRMED CHANGE ("can you start me w wind seed bucket shovel"):
-// switched off the forest/fungus-tree spawn and onto "topsyturvy" below,
-// which now drops the player at the sky garden's seed plot with the
-// shovel/windSeed/bucket already in inventory for testing the dig->
-// plant->water sequence. TEMPORARY -- flip back to "autumn" once done
-// testing, per this file's standing convention (see the comment on this
-// const above).
-const DEBUG_START_SCENE = "topsyturvy";
+// CONFIRMED CHANGE ("spawn me at the bottom fungus tree pls"): switched
+// back off the seed-plot spawn and onto "forest" below, which drops the
+// player at the base of the fungus climb (FOREST_FUNGUS_TREE_X - 40) with
+// the river bridge pre-completed so the teleport actually sticks.
+// TEMPORARY -- flip back to "autumn" once done testing, per this file's
+// standing convention (see the comment on this const above).
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -18448,6 +18447,15 @@ if (DEBUG_START_SCENE === "forest") {
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
   player.x = FOREST_FUNGUS_TREE_X - 40;
   player.y = 0;
+  // CONFIRMED CHANGE ("ok byut now the inventory is gone?" -- the
+  // shovel/windSeed/bucket grant only lived in the topsyturvy debug
+  // block, which stopped running the moment this "forest" spawn took
+  // over): granting the same three seed-plot tools here too, so
+  // switching between debug spawns doesn't silently drop them.
+  addToInventory("shovel");
+  addToInventory("windSeed");
+  addToInventory("bucket");
+  heldItem = "shovel";
 }
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
