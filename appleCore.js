@@ -21260,7 +21260,11 @@ function drawTopsyChefInterior(camX) {
   // by the pot, for a few seconds after stepping in -- see where
   // hintUntil gets set on entry. Deliberately vague/in-character rather
   // than spelling the mechanic out directly.
-  if (topsyChefSpicePuzzle.hintUntil && performance.now() < topsyChefSpicePuzzle.hintUntil) {
+  // CONFIRMED FIX ("the dialogue should not appear after the collecting
+  // has completed"): the hintUntil timer could still be running (or get
+  // re-set) right as the last ingredient lands, so it kept popping up
+  // over the pot-dive finale. Gated on the puzzle not being solved yet.
+  if (!topsyChefSpicePuzzle.solved && topsyChefSpicePuzzle.hintUntil && performance.now() < topsyChefSpicePuzzle.hintUntil) {
     // CONFIRMED CHANGE ("i dont like 'paws' anything that is weird,
     // player dont have paws" -- picked the "airborne chef's rule"
     // option): dropped the paws reference entirely.
@@ -67666,13 +67670,21 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
       const spinT = Math.max(0, (t - 0.5) / 0.5);
       topsyChefPotDiveSpin = spinT * spinT * 0.35;
     } else if (topsyChefPotDive.phase === "swirl") {
-      const t = spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.swirl;
-      topsyChefPotDiveSpin = 0.35 + t * Math.PI * 4;
+      // CONFIRMED FIX ("this is not look right" -- a continuous multi-turn
+      // spin on a boxy sprite, clipped by a straight soup line, produced
+      // ugly artifacts frame to frame: a sharp diamond tip poking out, or
+      // a lone eye sliced off-center, never a coherent head. Swapped the
+      // full spin for a small back-and-forth wobble locked to the same
+      // orbit angle driving the x-sweep in updateTopsyChefPotDive, so the
+      // head tilts gently toward whichever way it's swirling instead of
+      // tumbling all the way around.
+      const loopT = spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.swirl;
+      const angle = loopT * Math.PI * 2 * 2.5;
+      topsyChefPotDiveSpin = Math.sin(angle) * 0.3;
     } else if (topsyChefPotDive.phase === "popout") {
+      // settles the small swirl wobble back to upright as they pop out
       const t = Math.min(1, spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.popout);
-      const spinAtPopoutStart = 0.35 + Math.PI * 4;
-      const remainder = spinAtPopoutStart % (Math.PI * 2);
-      topsyChefPotDiveSpin = remainder * (1 - t) * (1 - t); // ease out, lands upright
+      topsyChefPotDiveSpin = 0.3 * (1 - t) * (1 - t);
     }
   }
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
