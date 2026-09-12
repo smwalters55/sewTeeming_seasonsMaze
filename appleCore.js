@@ -23512,112 +23512,118 @@ function drawTopsyPotGauntletSoupPit(camX) {
 // close to the soup's own colors to read as a separate object) for a
 // dark cast-iron one instead -- real contrast between "the dark pot"
 // and "the glowing orange soup inside it."
+// CONFIRMED REBUILD ("still looks pasted on"): the previous version tried
+// to peek a thin sliver of wall out past the soup's own taper (a flat
+// trapezoid trough), which read as a stray black mark next to the soup
+// rather than a pot -- there just wasn't enough of it showing to read as
+// "a pot" at all. This version instead reuses the EXACT belly-bulge
+// silhouette idiom the small gauntlet pots already use (flare out wider
+// than the rim, curve back to a rounded single-point bottom -- see
+// drawTopsyPotGauntletPotBody), just stretched hugely wide, so a real
+// unmistakable rounded pot belly bulges out below and around the soup
+// instead of a disconnected notch.
 function drawTopsyPotGauntletBigPot(camX) {
   const startSx = (TOPSY_POT_GAUNTLET_START_X - 6) - camX;
   const endSx = (TOPSY_POT_GAUNTLET_END_X + 40) - camX;
   if (endSx < -20 || startSx > canvas.width + 20) return;
-  const margin = 26; // how far this pot's own wall pokes out past the soup's own taper, each side
-  const bigStartSx = startSx - margin, bigEndSx = endSx + margin;
-  const pitW = bigEndSx - bigStartSx;
-  const rimY = gy; // exactly the soup pit's own rim height -- see the comment above for why
-  const bottomY = gy + 44; // well below the soup's own floor, so a rounded exterior shows peeking out beneath it
-  const taper = Math.min(95, pitW * 0.14);
+  const rimHalfSpan = (endSx - startSx) / 2 + 6; // rim sits just past the soup's own outer edge
+  const midX = (startSx + endSx) / 2;
+  const rimY = gy; // exactly the soup pit's own rim height, so the soup fill covers the opening cleanly
+  const bulge = 55; // how much wider the belly flares than the rim -- this is what actually reads as "a pot"
+  const bellyHalfSpan = rimHalfSpan + bulge;
+  const bellyY = rimY + 46;
+  const bottomY = rimY + 92;
+  const rimLx = midX - rimHalfSpan, rimRx = midX + rimHalfSpan;
+  const bellyLx = midX - bellyHalfSpan, bellyRx = midX + bellyHalfSpan;
 
-  const outline = () => {
+  // two curve segments per side (rim->belly, belly->bottom) so the belly
+  // point is an actual point ON the path, not just a bezier control point
+  // pulling the curve from a distance -- that mismatch was why the handles
+  // (placed at the belly coordinate) floated away from the rendered edge
+  // last time instead of touching it.
+  const outline = (padX, padY) => {
     ctx.beginPath();
-    ctx.moveTo(bigStartSx, rimY);
-    ctx.quadraticCurveTo(bigStartSx, bottomY, bigStartSx + taper, bottomY);
-    ctx.lineTo(bigEndSx - taper, bottomY);
-    ctx.quadraticCurveTo(bigEndSx, bottomY, bigEndSx, rimY);
+    ctx.moveTo(rimLx - padX, rimY);
+    ctx.quadraticCurveTo(bellyLx - padX, rimY, bellyLx - padX, bellyY);
+    ctx.quadraticCurveTo(bellyLx - padX, bottomY, midX, bottomY + padY);
+    ctx.quadraticCurveTo(bellyRx + padX, bottomY, bellyRx + padX, bellyY);
+    ctx.quadraticCurveTo(bellyRx + padX, rimY, rimRx + padX, rimY);
+    ctx.lineTo(rimLx - padX, rimY);
     ctx.closePath();
   };
 
-  // soft ground-contact shadow FIRST, well outside the pot's own silhouette,
-  // so the pot reads as sitting IN the ground rather than a decal stamped on
-  // top of it -- this is the piece that was missing and made it look "pasted on"
+  // soft ground-contact shadow first, wider than the belly itself, so the
+  // pot reads as sitting IN the ground with the ground softly falling away
+  // around it, instead of a decal stamped flat on top of it
   ctx.save();
-  const shadowGrad = ctx.createRadialGradient(
-    (bigStartSx + bigEndSx) / 2, rimY, pitW * 0.25,
-    (bigStartSx + bigEndSx) / 2, rimY, pitW * 0.62
-  );
-  shadowGrad.addColorStop(0, "rgba(20,14,12,0.38)");
+  const shadowGrad = ctx.createRadialGradient(midX, rimY + 20, bellyHalfSpan * 0.3, midX, rimY + 20, bellyHalfSpan * 1.15);
+  shadowGrad.addColorStop(0, "rgba(20,14,12,0.4)");
   shadowGrad.addColorStop(1, "rgba(20,14,12,0)");
   ctx.fillStyle = shadowGrad;
   ctx.beginPath();
-  ctx.ellipse((bigStartSx + bigEndSx) / 2, rimY, pitW * 0.62, 22, 0, 0, Math.PI * 2);
+  ctx.ellipse(midX, rimY + 20, bellyHalfSpan * 1.15, 40, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // heavy dark outline pass, same idiom as the small pots, so the
-  // whole thing keeps a crisp silhouette against the ground
-  ctx.save();
-  ctx.translate(0, 0);
-  ctx.lineJoin = "round";
+  // heavy dark outline pass, same idiom as the small pots, so the whole
+  // thing keeps a crisp silhouette against the ground
   ctx.fillStyle = "rgba(10,9,8,0.9)";
-  ctx.beginPath();
-  ctx.moveTo(bigStartSx - 3, rimY);
-  ctx.quadraticCurveTo(bigStartSx - 3, bottomY + 3, bigStartSx + taper, bottomY + 3);
-  ctx.lineTo(bigEndSx - taper, bottomY + 3);
-  ctx.quadraticCurveTo(bigEndSx + 3, bottomY + 3, bigEndSx + 3, rimY);
-  ctx.lineTo(bigStartSx - 3, rimY);
+  outline(3, 3);
   ctx.fill();
-  ctx.restore();
 
-  // dark cast-iron gradient -- same dark-metal palette the pig's own
-  // iron pots use (TOPSY_PIG_POTS), deliberately far from the soup's
-  // own orange/red so the two never blend into each other
+  // dark cast-iron gradient -- same dark-metal palette the pig's own iron
+  // pots use (TOPSY_PIG_POTS), deliberately far from the soup's own
+  // orange/red so the two never blend into each other
   const grad = ctx.createLinearGradient(0, rimY, 0, bottomY);
   grad.addColorStop(0, "#5b5450");
-  grad.addColorStop(0.5, "#3a3532");
+  grad.addColorStop(0.45, "#3a3532");
   grad.addColorStop(1, "#211d1b");
   ctx.fillStyle = grad;
-  outline();
+  outline(0, 0);
   ctx.fill();
 
-  // horizontal (side-to-side) shading pass on top of the vertical gradient --
-  // without this the walls read as a flat trapezoid instead of a rounded
-  // cylindrical pot; a soft highlight left-of-center plus dark falloff at
-  // both extreme edges sells the curvature
+  // horizontal (side-to-side) shading pass on top of the vertical gradient
+  // -- a soft highlight left-of-center plus dark falloff at both extreme
+  // edges sells the roundness of the belly instead of it reading flat
   ctx.save();
-  outline();
+  outline(0, 0);
   ctx.clip();
-  const roundGrad = ctx.createLinearGradient(bigStartSx, 0, bigEndSx, 0);
-  roundGrad.addColorStop(0, "rgba(0,0,0,0.35)");
+  const roundGrad = ctx.createLinearGradient(bellyLx, 0, bellyRx, 0);
+  roundGrad.addColorStop(0, "rgba(0,0,0,0.4)");
   roundGrad.addColorStop(0.22, "rgba(0,0,0,0)");
-  roundGrad.addColorStop(0.42, "rgba(255,255,255,0.10)");
+  roundGrad.addColorStop(0.4, "rgba(255,255,255,0.12)");
   roundGrad.addColorStop(0.62, "rgba(0,0,0,0)");
-  roundGrad.addColorStop(1, "rgba(0,0,0,0.4)");
+  roundGrad.addColorStop(1, "rgba(0,0,0,0.45)");
   ctx.fillStyle = roundGrad;
-  ctx.fillRect(bigStartSx, rimY, pitW, bottomY - rimY + 4);
+  ctx.fillRect(bellyLx, rimY, bellyRx - bellyLx, bottomY - rimY + 4);
   ctx.restore();
 
-  // rim highlight along the actual opening line -- cool cream/metal
-  // tone instead of the soup's own warm cream, so the rim itself
-  // doesn't blend into the soup's own bubble/rim highlight color
+  // rim highlight along the actual opening line -- cool cream/metal tone
+  // instead of the soup's own warm cream, so the rim doesn't blend into
+  // the soup's own bubble/rim highlight color
   ctx.strokeStyle = "#d9cdb8";
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(bigStartSx, rimY + 0.5);
-  ctx.lineTo(bigEndSx, rimY + 0.5);
+  ctx.moveTo(rimLx, rimY + 0.5);
+  ctx.lineTo(rimRx, rimY + 0.5);
   ctx.stroke();
 
-  // two big loop handles at the outer edges, in the SAME dark cast-iron
-  // family as the body (was left bronze/orange before, which is why it
-  // read as a mismatched sticker glued onto the dark pot) -- dark outer
-  // pass plus a thin metal highlight inner pass, like the body's own
-  // rim highlight, so the handle reads as forged from the same metal
-  [[bigStartSx, -1], [bigEndSx, 1]].forEach(([hx, side]) => {
+  // two big loop handles anchored right at the belly's widest point (not
+  // floating off past the rim in empty air), same dark cast-iron family as
+  // the body with a thin metal highlight, so they read as forged from the
+  // same metal, not a mismatched sticker glued on
+  [[bellyLx, -1], [bellyRx, 1]].forEach(([hx, side]) => {
     ctx.strokeStyle = "#1c1815";
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.arc(hx, rimY + 12, 10, Math.PI * 0.15, Math.PI * 1.85, side < 0);
+    ctx.arc(hx, bellyY - 6, 13, Math.PI * 0.15, Math.PI * 1.85, side < 0);
     ctx.stroke();
 
     ctx.strokeStyle = "#8a8480";
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(hx, rimY + 12, 10, Math.PI * 0.2, Math.PI * 0.85, side < 0);
+    ctx.arc(hx, bellyY - 6, 13, Math.PI * 0.2, Math.PI * 0.85, side < 0);
     ctx.stroke();
   });
 }
