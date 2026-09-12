@@ -2875,7 +2875,7 @@ function handleInput(){
         // through the furniture's own attachY would instantly re-grab
         // the very piece you just launched from.
         player.topsyGuardPlatform = (topsyChefInteriorActive
-          ? TOPSY_CHEF_FURNITURE_PLATFORMS
+          ? TOPSY_CHEF_ALL_PLATFORMS
           : TOPSY_INVERT_PLATFORMS
         ).find(tp => Math.abs((tp.height - player.height) - player.y) < 0.01) || null;
         player.jumping = true;
@@ -3949,7 +3949,7 @@ function applyPhysics(){
     // furniture list instead of the outdoor chain while inside that
     // room -- same catch loop, same mechanic, just a different (much
     // smaller) set of platforms.
-    for (const tp of (topsyChefInteriorActive ? TOPSY_CHEF_FURNITURE_PLATFORMS : TOPSY_INVERT_PLATFORMS)) {
+    for (const tp of (topsyChefInteriorActive ? TOPSY_CHEF_ALL_PLATFORMS : TOPSY_INVERT_PLATFORMS)) {
       const attachY = tp.height - player.height;
       if (tp === player.topsyGuardPlatform) {
         if (player.y > attachY + 4) {
@@ -3972,6 +3972,49 @@ function applyPhysics(){
         // drawTopsyChefFurniturePiece can play a short decaying wobble
         // on whichever piece the player just landed on.
         if (topsyChefInteriorActive && !alreadyResting) tp.lastLandTime = performance.now();
+        // CONFIRMED REWORK ("remove the jars, jump to different things on
+        // the wall to make a spider web"): this is now WHERE the recipe
+        // puzzle actually lives -- a genuinely fresh catch (!alreadyResting,
+        // so resting there for multiple frames doesn't re-fire) on a
+        // spiceType-tagged anchor is exactly the old "press space at the
+        // right jar" moment, just reached by actually landing a jump.
+        // alreadyUsed guards re-crossing an anchor you already correctly
+        // used earlier in the sequence (the solve path deliberately routes
+        // back PAST the armchair on the way to the plant -- see
+        // TOPSY_CHEF_FURNITURE_PLATFORMS' own comment) so that revisit is
+        // harmless instead of wrongly resetting your progress.
+        if (topsyChefInteriorActive && !alreadyResting && tp.spiceType && !topsyChefSpicePuzzle.solved) {
+          const spiceIdx = TOPSY_CHEF_SPICE_ORDER.indexOf(tp.spiceType);
+          const alreadyUsed = spiceIdx !== -1 && spiceIdx < topsyChefSpicePuzzle.progress;
+          if (!alreadyUsed) {
+            const needed = TOPSY_CHEF_SPICE_ORDER[topsyChefSpicePuzzle.progress];
+            if (tp.spiceType === needed) {
+              topsyChefSpicePuzzle.progress++;
+              topsyChefSpicePuzzle.pokedAt = performance.now();
+              topsyChefSpicePuzzle.pokedType = tp.spiceType;
+              // CONFIRMED CARRIED OVER ("each part having a lovely
+              // animation of being added, super important"): same flight
+              // -> pot arc as before, just launched from wherever on the
+              // wall you actually caught it instead of from a jar.
+              topsyChefSpicePuzzle.flights.push({
+                type: tp.spiceType,
+                x0: tp.x, y0: gy - tp.height,
+                x1: topsyTurvyHouses[0].x + 170, y1: gy - 20,
+                startedAt: performance.now(),
+                duration: 620
+              });
+              if (topsyChefSpicePuzzle.progress >= TOPSY_CHEF_SPICE_ORDER.length) {
+                topsyChefSpicePuzzle.solved = true;
+                topsyChefSpicePuzzle.solvedAt = performance.now();
+                addToInventory("secretSpice");
+              }
+            } else {
+              topsyChefSpicePuzzle.wrongAt = performance.now();
+              topsyChefSpicePuzzle.wrongType = tp.spiceType;
+              topsyChefSpicePuzzle.progress = tp.spiceType === TOPSY_CHEF_SPICE_ORDER[0] ? 1 : 0;
+            }
+          }
+        }
         player.y = attachY;
         player.vy = 0;
         player.jumping = false;
@@ -20035,40 +20078,26 @@ const topsyChefInteriorReturn = { x: 0, y: 0 };
 // CONFIRMED ADD ("i want an actual interact puzzle not just a jump and
 // grab"), CONFIRMED EXPAND ("add ingredients like tofu and potatoes and
 // bell peppers... each part having a lovely animation of being added,
-// super important"): the recipe-order ingredient puzzle at the chef's
-// stove. Five jars/crates (TOPSY_CHEF_SPICE_JARS), three of which
-// belong in the dish in a specific order (TOPSY_CHEF_SPICE_ORDER) shown
-// on a recipe card pinned right next to them; the other two (garlic,
-// basil) are decoys that don't belong in THIS order. Getting a jar
-// right launches it on a little arcing flight into the chef's own pot
-// (topsyChefSpicePuzzle.flights, animated in drawTopsyChefSpicePuzzle)
-// -- see updateTopsyChefInterior for the interact logic.
+// super important"), CONFIRMED REWORK ("remove the jars, jump to
+// different things on the wall to make a spider web... the recipe
+// puzzle is honestly super boring"): the recipe-order ingredient puzzle
+// at the chef's stove. Used to be five jars on a shelf you walked up to
+// and pressed space at -- that's gone. Now the tagged furniture pieces
+// and web-anchor pegs you already jump around on (TOPSY_CHEF_FURNITURE_
+// PLATFORMS/TOPSY_CHEF_WEB_ANCHORS, both defined a little further down)
+// ARE the jars: landing on one is what "adds" it. Getting one right
+// launches it on a little arcing flight into the chef's own pot
+// (topsyChefSpicePuzzle.flights, animated in drawTopsyChefSpiceFlights)
+// -- see the furniture-catch loop in applyPhysics for the actual
+// interact logic now.
 const TOPSY_CHEF_SPICE_ORDER = ["bellPepper", "potato", "tofu"];
-const TOPSY_CHEF_SPICE_JARS = [
-  // CONFIRMED BUG FIX (found while verifying): the room's own walk clamp
-  // (roomLeft/roomRight in updateTopsyChefInterior, +/-TOPSY_CHEF_INTERIOR_
-  // HALF_WIDTH inset by half the player's width) means the player's
-  // reachable CENTER x only goes down to houseX-90, not all the way to
-  // houseX-130 -- the original dx values (-128 down to -8) put "garlic"
-  // and "bellPepper" both past that limit, so standing "at" garlic
-  // actually clamped to the same spot as bellPepper and misidentified
-  // the jar. Repositioned the whole row comfortably inside the real
-  // reachable range, and spaced 32px apart (was 30) with the interact
-  // radius trimmed 22 -> 15 so neighboring jars' pickup zones can never
-  // overlap (15+15=30 < 32).
-  { type: "garlic", dx: -64 }, // decoy
-  { type: "bellPepper", dx: -32 },
-  { type: "potato", dx: 0 },
-  { type: "tofu", dx: 32 },
-  { type: "basil", dx: 64 } // decoy
-];
 const topsyChefSpicePuzzle = {
   progress: 0,
   solved: false,
-  pokedAt: null, pokedType: null, // last CORRECT jar press + which jar, for a small per-jar confirm pulse
-  wrongAt: null, wrongType: null, // last WRONG jar press + which jar, for a brief shake/reset cue
-  solvedAt: null, // drives the "found it" flourish once, in drawTopsyChefSpicePuzzle
-  flights: [] // in-flight "ingredient arcing into the pot" animations -- see drawTopsyChefSpicePuzzle
+  pokedAt: null, pokedType: null, // last CORRECT catch + which ingredient, for a small per-anchor confirm pulse
+  wrongAt: null, wrongType: null, // last WRONG catch + which ingredient, for a brief shake/reset cue
+  solvedAt: null, // drives the "found it" flourish once, in drawTopsyChefSpiceAnchorBadges
+  flights: [] // in-flight "ingredient arcing into the pot" animations -- see drawTopsyChefSpiceFlights
 };
 // CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
 // the room... also i cant jump up or move left or right"): widened so
@@ -20158,8 +20187,31 @@ const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 260; // the little room spans the house's
 // original height -- it's still the one required to be reachable by an
 // ordinary first jump from the floor -- everything above it just has
 // more room to breathe on the way up.
+// CONFIRMED REWORK ("this really really isnt it... remove the jars, jump
+// to different things on the wall to make a spider web... the recipe
+// puzzle is honestly super boring"): the whole walk-up-and-press-space
+// recipe puzzle is GONE. The furniture climb you already jump around on
+// up here now doubles as the puzzle itself -- three of these pieces (plus
+// two new standalone web-anchor pegs just below, TOPSY_CHEF_WEB_ANCHORS)
+// carry a spiceType tag; landing on one for real (see the furniture-catch
+// loop in applyPhysics) is what "adds" that ingredient, same right/wrong/
+// reset rules the jars used to enforce, just triggered by an actual jump
+// instead of a button press. `basil` (couch) is a decoy -- landing there
+// out of sequence resets you same as any wrong pick.
+// CONFIRMED CHANGE ("sometimes you have to skip one to get to the next
+// correct order one, and then go back... i just really dont want a clean
+// straight line through them"): the spatial layout deliberately does NOT
+// match the recipe order. bellPepper (needed 1st) sits on the armchair,
+// the very first thing reachable off the table -- but potato (needed
+// 2nd) is nowhere in this chain at all, it's out on its own standalone
+// peg clear across the room (TOPSY_CHEF_WEB_ANCHORS) -- and tofu (needed
+// 3rd) is back in the furniture chain, past the DECOY couch, meaning the
+// real solve path is: climb to the armchair, drop back to the floor,
+// walk all the way across to the potato peg, then walk all the way BACK
+// and re-climb past the (now-harmless, already-used) armchair to reach
+// the plant. No straight line anywhere in that.
 const TOPSY_CHEF_FURNITURE_PLATFORMS = [
-  { x: topsyTurvyHouses[0].x - 170, height: 130, width: 66, kind: "armchair" },
+  { x: topsyTurvyHouses[0].x - 170, height: 130, width: 66, kind: "armchair", spiceType: "bellPepper" },
   // CONFIRMED BUG FIX: height must stay >= the player's own 54px
   // height for its attach point (height - player.height) to be
   // non-negative -- a lower value than that is never actually
@@ -20168,10 +20220,30 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
   // was about the cable's visual length, which is now capped
   // regardless of this value (see drawLegCable/TOPSY_CHEF_LEG_CABLE_MAX)
   // -- so this can stay a real, reachable height instead.
+  // Deliberately left un-tagged -- just the first, easy stepping stone
+  // into the rest of the chain, same as it always was.
   { x: topsyTurvyHouses[0].x - 70, height: 70, width: 44, kind: "table" },
-  { x: topsyTurvyHouses[0].x + 20, height: 170, width: 26, kind: "plant" },
-  { x: topsyTurvyHouses[0].x + 140, height: 210, width: 90, kind: "couch" }
+  { x: topsyTurvyHouses[0].x + 20, height: 170, width: 26, kind: "plant", spiceType: "tofu" },
+  { x: topsyTurvyHouses[0].x + 140, height: 210, width: 90, kind: "couch", spiceType: "basil" } // decoy
 ];
+// CONFIRMED ADD (see the big furniture-array comment above): two
+// standalone wall-mounted web anchors, way out past either end of the
+// furniture chain -- not part of the climb at all, each reachable with
+// one plain jump straight from the floor. potato (needed 2nd) has to be
+// fetched from clear across the room from the armchair; garlic is a
+// decoy sitting the same distance out on the OPPOSITE side, so
+// wandering toward "the far side of the room" alone doesn't give away
+// which peg is the real one.
+const TOPSY_CHEF_WEB_ANCHORS = [
+  { x: topsyTurvyHouses[0].x + 230, height: 80, width: 30, kind: "peg", spiceType: "potato" },
+  { x: topsyTurvyHouses[0].x - 230, height: 80, width: 30, kind: "peg", spiceType: "garlic" } // decoy
+];
+// CONFIRMED ADD: the one list every piece of shared physics (the catch
+// loop, the launch-guard lookup) actually walks while in this room --
+// furniture and pegs behave identically as far as landing/catching goes,
+// they just render completely differently (drawTopsyChefFurniturePiece
+// vs drawTopsyChefWebAnchorPeg).
+const TOPSY_CHEF_ALL_PLATFORMS = [...TOPSY_CHEF_FURNITURE_PLATFORMS, ...TOPSY_CHEF_WEB_ANCHORS];
 // a modest margin above the tallest furniture piece -- see its own use
 // right next to the outdoor TOPSY_INVERT_SOFT_CEILING check.
 const TOPSY_CHEF_INTERIOR_SOFT_CEILING = 230;
@@ -20446,78 +20518,23 @@ function updateTopsyChefInterior(deltaTime) {
   if (player.x < roomLeft) player.x = roomLeft;
   if (player.x > roomRight) player.x = roomRight;
 
-  // CONFIRMED REWORK ("um noooo that is not a puzzle" -- the earlier
-  // climb-the-furniture-and-grab-it version was pulled entirely; "i want
-  // an actual interact puzzle not just a jump and grab"): a real little
-  // recipe-order puzzle instead, at floor level right by the chef's own
-  // stove -- no furniture climbing involved. Four spice jars sit on a
-  // shelf (see TOPSY_CHEF_SPICE_JARS); a recipe card pinned nearby shows
-  // 3 of them in a specific order (TOPSY_CHEF_SPICE_ORDER, the 4th --
-  // cinnamon -- is a decoy that doesn't belong in the dish at all).
-  // Walking up to a jar and pressing space "adds" it if it's next in the
-  // order; the right jar at the wrong TIME (out of sequence) gently
-  // resets progress back to the start instead of just doing nothing, so
-  // getting it wrong is legible, not silent.
-  // Checked BEFORE the exit block below and sets spaceHandledByJar so
-  // pressing space next to a jar can't ALSO immediately trigger "exit
-  // the house" -- both share the same "standing normally on the floor"
-  // condition space-to-exit uses.
-  let spaceHandledByJar = false;
-  if (!topsyChefSpicePuzzle.solved && keys.spaceJustPressed && !player.jumping && !player.topsyInverted) {
-    for (const jar of TOPSY_CHEF_SPICE_JARS) {
-      // CONFIRMED CHANGE ("everything is so messed up and chunked
-      // together"): the -45 here has to match drawTopsyChefSpicePuzzle's
-      // own baseX shift exactly, or the drawn jars and their actual
-      // interact hitboxes drift apart (the same class of bug the jar
-      // layout hit earlier this session).
-      const jarX = grumpyHouse.x + jar.dx + 10;
-      if (Math.abs((player.x + player.width / 2) - jarX) < 15) {
-        spaceHandledByJar = true;
-        const needed = TOPSY_CHEF_SPICE_ORDER[topsyChefSpicePuzzle.progress];
-        if (jar.type === needed) {
-          topsyChefSpicePuzzle.progress++;
-          topsyChefSpicePuzzle.pokedAt = performance.now();
-          topsyChefSpicePuzzle.pokedType = jar.type;
-          // CONFIRMED ADD ("each part having a lovely animation of being
-          // added, super important"): launch this ingredient on a little
-          // arc from its jar into the chef's own pot -- see the flight
-          // animation in drawTopsyChefSpicePuzzle.
-          topsyChefSpicePuzzle.flights.push({
-            type: jar.type,
-            x0: jarX, y0: gy - 30,
-            // CONFIRMED CHANGE: must match drawTopsyChefBack's new call-site
-            // offset (cx + 100) below, or the flight lands somewhere the pot
-            // visually isn't anymore.
-            x1: grumpyHouse.x + 170, y1: gy - 20,
-            startedAt: performance.now(),
-            duration: 620
-          });
-          if (topsyChefSpicePuzzle.progress >= TOPSY_CHEF_SPICE_ORDER.length) {
-            topsyChefSpicePuzzle.solved = true;
-            topsyChefSpicePuzzle.solvedAt = performance.now();
-            addToInventory("secretSpice");
-          }
-        } else {
-          // wrong jar for where we are in the sequence -- reset, but if
-          // this jar happens to BE the correct first ingredient, count it
-          // as having just started over instead of ignoring the press
-          topsyChefSpicePuzzle.wrongAt = performance.now();
-          topsyChefSpicePuzzle.wrongType = jar.type;
-          topsyChefSpicePuzzle.progress = jar.type === TOPSY_CHEF_SPICE_ORDER[0] ? 1 : 0;
-        }
-        break;
-      }
-    }
-  }
+  // CONFIRMED REWORK ("this really really isnt it... remove the jars,
+  // jump to different things on the wall to make a spider web... the
+  // recipe puzzle is honestly super boring"): the old walk-up-and-press-
+  // space jar puzzle lived right here -- it's gone. The puzzle now
+  // triggers entirely from actually landing a jump on a tagged furniture
+  // piece or web anchor peg (see the furniture-catch loop in
+  // applyPhysics, right where topsyInverted gets set), so there's nothing
+  // left for this function to check on space press at all.
 
   // press down OR space while standing normally on the floor (not mid a
-  // furniture hop, and not just handled by a spice jar above) to step
-  // back outside -- no item, no proximity check needed, just "you're on
-  // solid ground and you want to leave."
+  // furniture/web-anchor hop) to step back outside -- no item, no
+  // proximity check needed, just "you're on solid ground and you want to
+  // leave."
   // CONFIRMED CHANGE ("make space bar to get out too"): space already
   // means "enter" at the window outside, so letting it also mean "exit"
   // in here keeps the whole peek-inside interaction on one single key.
-  if ((keys.downJustPressed || (keys.spaceJustPressed && !spaceHandledByJar)) &&
+  if ((keys.downJustPressed || keys.spaceJustPressed) &&
       !player.jumping && !player.topsyInverted) {
     topsyChefInteriorActive = false;
     player.x = topsyChefInteriorReturn.x;
@@ -20657,13 +20674,27 @@ function drawTopsyChefInterior(camX) {
   // sync with where the player actually lands.
   TOPSY_CHEF_FURNITURE_PLATFORMS.forEach(tp => drawTopsyChefFurniturePiece(tp, camX));
 
+  // CONFIRMED ADD ("jump to different things on the wall to make a
+  // spider web"): the two standalone web-anchor pegs, way out past
+  // either end of the furniture -- same TOPSY_CHEF_WEB_ANCHORS array the
+  // physics walks, drawn as simple wall-mounted pegs rather than actual
+  // furniture (see drawTopsyChefWebAnchorPeg).
+  TOPSY_CHEF_WEB_ANCHORS.forEach(tp => drawTopsyChefWebAnchorPeg(tp, camX));
+
+  // the recipe card -- purely a reference now, nothing to walk up to or
+  // press space at (see drawTopsyChefSpicePuzzle's own comment)
   drawTopsyChefSpicePuzzle(camX);
 
+  // the ingredient badge/glow/wobble feedback that used to live on the
+  // jars themselves now floats above whichever anchor actually carries
+  // that spiceType -- see drawTopsyChefSpiceAnchorBadges
+  drawTopsyChefSpiceAnchorBadges(camX);
+
   // CONFIRMED CHANGE ("everything is so messed up and chunked
-  // together"): pushed further right again (55 -> 100) now that the
-  // room itself is wider -- the spice shelf/jars/recipe card moved left
-  // into their own space (see drawTopsyChefSpicePuzzle), so the pot
-  // needs to sit clearly right of them, not just barely past center.
+  // together"): pushed further right (now clear of both the furniture
+  // chain AND the far-side web anchors) so the room's two "destinations"
+  // -- the puzzle anchors, and the pot you're actually delivering
+  // ingredients to -- read as clearly separate.
   drawTopsyChefBack(cx + 170, camX);
   drawTopsyChefSpiceFlights(camX);
 
@@ -20673,15 +20704,13 @@ function drawTopsyChefInterior(camX) {
 }
 
 // CONFIRMED REWORK ("i want an actual interact puzzle not just a jump
-// and grab"): the recipe-order spice puzzle's whole visual -- a small
-// shelf holding the four jars right by the chef's own stove, a recipe
-// card pinned above it showing the 3-ingredient order, per-jar
-// correct/wrong feedback, and the one-time "solved" flourish. See
-// TOPSY_CHEF_SPICE_ORDER/TOPSY_CHEF_SPICE_JARS and
-// updateTopsyChefInterior's own interact logic just above.
+// and grab", later "remove the jars, jump to different things on the
+// wall to make a spider web"): one small icon per spice type, reused on
+// the recipe card and on every tagged anchor's badge (see
+// drawTopsyChefSpiceAnchorBadges) so the two always visually match up.
+// See TOPSY_CHEF_SPICE_ORDER and the furniture-catch loop in
+// applyPhysics for the actual interact logic.
 function drawTopsyChefSpiceIcon(type, s) {
-  // one small icon per spice type, reused both on the jars themselves
-  // and on the recipe card so the two always visually match up
   if (type === "garlic") {
     ctx.fillStyle = "#f3ead6";
     ctx.strokeStyle = "#c9b98f";
@@ -20795,34 +20824,19 @@ function drawTopsyChefSpiceIcon(type, s) {
   }
 }
 
+// CONFIRMED REWORK ("remove the jars, jump to different things on the
+// wall to make a spider web"): no more shelf, no more jars -- just the
+// recipe card itself, pinned up on the back wall as a pure reference
+// (what order to catch things in), since there's nothing left here to
+// walk up to or press space at. The per-ingredient glow/wobble feedback
+// that used to live on the jars now lives on the anchors themselves,
+// see drawTopsyChefSpiceAnchorBadges just below.
 function drawTopsyChefSpicePuzzle(camX) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
   if (!grumpyHouse) return;
-  // CONFIRMED CHANGE ("everything is so messed up and chunked together"):
-  // used to sit dead center, right where the chef's own pot (see
-  // drawTopsyChefBack's call site) was ALSO drawn -- the two visibly
-  // overlapped. Shifted left into its own clear span of the now-wider
-  // room instead, with a real gap to the pot on the right.
-  // CONFIRMED CHANGE (found while checking the earlier -60 offset against
-  // a screenshot): the low-hanging armchair/table pieces (heights 115/70,
-  // closest to the floor) were still poking into the recipe card no
-  // matter how far the shelf shifted left -- the card kept landing right
-  // under them. Repositioned to sit under the plant instead (height 140,
-  // clears the card with real headroom), pot pushed further right in turn
-  // so the two clusters still don't crowd each other.
-  const baseX = grumpyHouse.x - camX + 10;
-  const shelfY = gy - 8;
+  const cardX = grumpyHouse.x - camX;
+  const cardY = gy - 232; // high on the back wall, clear of every anchor's reach
 
-  // the shelf itself
-  ctx.fillStyle = "#6b4a2c";
-  ctx.fillRect(baseX - 78, shelfY, 156, 6);
-  ctx.fillStyle = "#4a3220";
-  ctx.fillRect(baseX - 78, shelfY + 6, 156, 2);
-
-  // recipe card, pinned on the wall right above the shelf -- shows the
-  // 3-ingredient order with small arrows between them, and a checkmark
-  // over each step already completed so progress is always legible
-  const cardX = baseX, cardY = shelfY - 46;
   ctx.fillStyle = "rgba(255,250,238,0.95)";
   roundRect(ctx, cardX - 40, cardY - 20, 80, 40, 4);
   ctx.fill();
@@ -20859,93 +20873,111 @@ function drawTopsyChefSpicePuzzle(camX) {
   });
   ctx.textAlign = "left";
 
-  // the five jars/crates themselves, each with a wobble/flash reacting
-  // to the most recent correct or wrong press at that specific jar
-  const now = performance.now();
-  TOPSY_CHEF_SPICE_JARS.forEach(jar => {
-    const jx = baseX + jar.dx;
-    const jy = shelfY;
-    // CONFIRMED ADD: a jar already used earlier in the current correct
-    // sequence shows empty (its ingredient is genuinely in the pot now)
-    // instead of still showing a full jar sitting right there.
-    const orderIdx = TOPSY_CHEF_SPICE_ORDER.indexOf(jar.type);
-    const alreadyUsed = orderIdx !== -1 && orderIdx < topsyChefSpicePuzzle.progress;
-    const isNextNeeded = !topsyChefSpicePuzzle.solved && jar.type === TOPSY_CHEF_SPICE_ORDER[topsyChefSpicePuzzle.progress];
+  // one-time "solved" flourish, right over the card
+  if (topsyChefSpicePuzzle.solved && topsyChefSpicePuzzle.solvedAt != null) {
+    const since = performance.now() - topsyChefSpicePuzzle.solvedAt;
+    if (since < 900) {
+      const t = since / 900;
+      ctx.fillStyle = `rgba(255,235,170,${0.6 * (1 - t)})`;
+      ctx.beginPath();
+      ctx.ellipse(cardX, cardY - 26, 40 + t * 20, 14 + t * 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - t)})`;
+      ctx.font = "10px ui-monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("that's the recipe!", cardX, cardY - 46 - t * 12);
+      ctx.textAlign = "left";
+    }
+  }
+}
 
-    const sincePoke = topsyChefSpicePuzzle.pokedType === jar.type ? now - topsyChefSpicePuzzle.pokedAt : Infinity;
-    const sinceWrong = topsyChefSpicePuzzle.wrongType === jar.type ? now - topsyChefSpicePuzzle.wrongAt : Infinity;
+// CONFIRMED ADD ("jump to different things on the wall to make a spider
+// web"): a small wall-mounted peg for each standalone web anchor
+// (TOPSY_CHEF_WEB_ANCHORS) -- a few threads converging on a dark nail,
+// same "hangs from the attach line" convention drawTopsyChefFurniturePiece
+// uses (so the shared wobble-on-landing timer just works here too), but
+// deliberately tiny and plain: these aren't furniture, they're just
+// where the web is anchored to the wall.
+function drawTopsyChefWebAnchorPeg(tp, camX) {
+  const sx = tp.x - camX;
+  const topY = gy - tp.height;
+  const sinceLand = performance.now() - (tp.lastLandTime || -1e9);
+  const wobbling = sinceLand >= 0 && sinceLand < TOPSY_CHEF_WOBBLE_DURATION;
+  const wobble = wobbling ? Math.sin(sinceLand * 0.032) * Math.exp(-sinceLand / 200) * 0.18 : 0;
+  ctx.save();
+  ctx.translate(sx, topY);
+  ctx.rotate(wobble);
+  ctx.strokeStyle = "rgba(235,235,240,0.6)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-tp.width / 2, -20);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(tp.width / 2, -20);
+  ctx.moveTo(0, -34);
+  ctx.lineTo(0, 0);
+  ctx.stroke();
+  ctx.fillStyle = "#3f3f47";
+  ctx.beginPath();
+  ctx.arc(0, -3, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#232328";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// CONFIRMED ADD (see drawTopsyChefSpicePuzzle's own comment): the
+// per-ingredient glow/pulse/wobble feedback that used to live on the
+// jars, now floating just above whichever anchor (furniture piece or
+// web-anchor peg) actually carries that spiceType -- walks the same
+// TOPSY_CHEF_ALL_PLATFORMS list the physics catch loop does, so a badge
+// can never drift from the anchor it's actually describing.
+function drawTopsyChefSpiceAnchorBadges(camX) {
+  const now = performance.now();
+  TOPSY_CHEF_ALL_PLATFORMS.forEach(tp => {
+    if (!tp.spiceType) return;
+    const bx = tp.x - camX;
+    const by = gy - tp.height - 16;
+    const orderIdx = TOPSY_CHEF_SPICE_ORDER.indexOf(tp.spiceType);
+    const alreadyUsed = orderIdx !== -1 && orderIdx < topsyChefSpicePuzzle.progress;
+    const isNextNeeded = !topsyChefSpicePuzzle.solved && tp.spiceType === TOPSY_CHEF_SPICE_ORDER[topsyChefSpicePuzzle.progress];
+
+    const sincePoke = topsyChefSpicePuzzle.pokedType === tp.spiceType ? now - topsyChefSpicePuzzle.pokedAt : Infinity;
+    const sinceWrong = topsyChefSpicePuzzle.wrongType === tp.spiceType ? now - topsyChefSpicePuzzle.wrongAt : Infinity;
     const wobbling = sinceWrong < 300;
-    const jitter = wobbling ? Math.sin(sinceWrong * 0.09) * 3 * (1 - sinceWrong / 300) : 0;
     const pulsing = sincePoke < 400;
     const pulse = pulsing ? Math.sin((sincePoke / 400) * Math.PI) : 0;
 
-    // a soft glow under the jar that's currently the correct next pick --
-    // the only hint given beyond the recipe card itself
-    if (isNextNeeded) {
+    // a soft glow over whichever anchor is currently the correct next
+    // catch -- the only hint given beyond the recipe card itself
+    if (isNextNeeded && !alreadyUsed) {
       ctx.fillStyle = `rgba(255,230,140,${0.25 + 0.15 * Math.sin(now * 0.004)})`;
       ctx.beginPath();
-      ctx.ellipse(jx, jy - 12, 14, 16, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx, by, 14, 16, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     if (pulsing) {
       ctx.fillStyle = `rgba(120,220,120,${0.5 * (1 - sincePoke / 400)})`;
       ctx.beginPath();
-      ctx.ellipse(jx, jy - 12, 16 + pulse * 6, 18 + pulse * 6, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx, by, 16 + pulse * 6, 18 + pulse * 6, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     if (wobbling) {
       ctx.fillStyle = `rgba(220,80,70,${0.35 * (1 - sinceWrong / 300)})`;
       ctx.beginPath();
-      ctx.ellipse(jx, jy - 12, 15, 17, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx, by, 15, 17, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    ctx.save();
-    ctx.translate(jx + jitter, jy);
-    // glass jar body -- a used jar reads visibly emptier/duller
-    ctx.fillStyle = alreadyUsed ? "rgba(210,230,235,0.22)" : "rgba(210,230,235,0.55)";
-    ctx.strokeStyle = alreadyUsed ? "rgba(120,140,145,0.4)" : "rgba(120,140,145,0.8)";
-    ctx.lineWidth = 1.2;
-    roundRect(ctx, -9, -24, 18, 24, 3);
-    ctx.fill();
-    ctx.stroke();
-    // lid
-    ctx.fillStyle = alreadyUsed ? "#b8a888" : "#8a6a42";
-    ctx.fillRect(-7, -27, 14, 4);
-    // the ingredient icon sitting inside the jar -- hidden once used,
-    // since it just flew off into the pot (see the flight animation)
+    // the badge icon itself -- gone once that ingredient's actually been
+    // caught and used, since it just flew off into the pot
     if (!alreadyUsed) {
       ctx.save();
-      ctx.translate(0, -12);
-      drawTopsyChefSpiceIcon(jar.type, 1);
+      ctx.translate(bx, by);
+      drawTopsyChefSpiceIcon(tp.spiceType, 1.15);
       ctx.restore();
     }
-    ctx.restore();
   });
-
-  // CONFIRMED ADD ("each part having a lovely animation of being added,
-  // super important"): every correct pick arcs from its jar into the
-  // chef's own pot -- see drawTopsyChefSpiceFlights, called separately
-  // AFTER drawTopsyChefBack (the pot itself) so the flight arcs and
-  // splash actually land ON TOP of the drawn pot instead of getting
-  // painted over by it.
-
-  // one-time "solved" flourish, right over the shelf
-  if (topsyChefSpicePuzzle.solved && topsyChefSpicePuzzle.solvedAt != null) {
-    const since = now - topsyChefSpicePuzzle.solvedAt;
-    if (since < 900) {
-      const t = since / 900;
-      ctx.fillStyle = `rgba(255,235,170,${0.6 * (1 - t)})`;
-      ctx.beginPath();
-      ctx.ellipse(baseX, shelfY - 6, 40 + t * 20, 14 + t * 14, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - t)})`;
-      ctx.font = "10px ui-monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("that's the recipe!", baseX, shelfY - 30 - t * 12);
-      ctx.textAlign = "left";
-    }
-  }
 }
 
 // CONFIRMED SPLIT (found while verifying): drawn separately from the
