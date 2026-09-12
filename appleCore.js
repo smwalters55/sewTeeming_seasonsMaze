@@ -21992,7 +21992,7 @@ function drawTopsyTurvyHouse(camX, h) {
         // you bring me two tomatoes'"): reads as one continuous grumpy-
         // -then-bargaining line now, instead of two separate flat
         // statements.
-        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop - 6 * s), [
           "Shoo! Stop peeking in windows!",
           "...unless you bring me two tomatoes for my ratatouille!"
         ]);
@@ -22006,7 +22006,7 @@ function drawTopsyTurvyHouse(camX, h) {
         // old "come by anytime" was too vague to actually point anyone
         // at the peek-inside window -- swapped for a soft, in-character
         // nudge that says what to actually do next.
-        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 30 * s), [
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop - 6 * s), [
           "Mmm, perfect! Just what my",
           "ratatouille needed. Go on, take a peek inside."
         ]);
@@ -23122,7 +23122,12 @@ if (DEBUG_START_SCENE === "topsyturvy") {
 // the difference back toward the original 26 rather than reverting all
 // the way, so the catch window is still a little tighter than before
 // this whole tuning pass started.
-const TOPSY_POT_GAUNTLET_HALF_WIDTH = 25; // landable half-width of a single pot's rim
+// CONFIRMED CHANGE ("still kinda hard maaaybe too hard... make it
+// slightly more forgiving for landing"): widened a bit again. Not
+// touching the wave/jitter timing this time since that's the part
+// that's actually supposed to be the challenge -- just giving a little
+// more room to actually land once you've timed it right.
+const TOPSY_POT_GAUNTLET_HALF_WIDTH = 29; // landable half-width of a single pot's rim
 // CONFIRMED CHANGE ("the pot line is both too hard, and then if you get
 // something right in the beginning its way too easy... i want them to
 // NEED to go inside the pots, not just full jump over them, minimum
@@ -65803,16 +65808,20 @@ const duckHeadDrop = (typeof playerDuckAmount !== "undefined" ? playerDuckAmount
 playerVisualDX = pileWobble.x;
 playerVisualDY = drawPy - (gy + cameraY - player.height - player.y) + duckHeadDrop;
 
-// CONFIRMED BUG FIX ("shadow in water shouldnt be there while
-// swimming"): both of these are a GROUND shadow/contact tint, pinned to
-// the fixed ground line (gy+cameraY) regardless of the player's own
-// depth -- correct everywhere else (you're always standing on or falling
-// toward actual ground), but the pool has no ground under the swimmer at
-// all, so this was drawing a stray dark blob hovering near the water's
-// surface no matter how deep the player actually was. Simply skipped for
-// the pool scene, same "no ground-level concept here" treatment the
-// visibility-gate/ground-clip fixes just below already gave it.
-if (currentScene !== "pool") {
+// CONFIRMED BUG FIX ("no this weird looking thing still happening" --
+// a dark smudge floating on the soup pit's surface while up on a
+// gauntlet pot): same root cause as the pool fix just below -- this
+// ellipse is pinned to the fixed ground line (gy+cameraY) no matter
+// where the player actually is. That's correct when solid ground is
+// really there, but inside the pot gauntlet span the "ground" at that
+// x is either open air under a floating pot or the soup pit's surface,
+// so the shadow was drawing right on top of the soup, nowhere near the
+// player who's actually up on a pot. Same span the ambient wind is
+// already suppressed in (see inPotGauntletSpan above).
+const inPotGauntletShadowSpan = currentScene === "topsyturvy" &&
+  player.x + player.width / 2 > TOPSY_POT_GAUNTLET_START_X - 80 &&
+  player.x + player.width / 2 < TOPSY_POT_GAUNTLET_END_X + 80;
+if (currentScene !== "pool" && !inPotGauntletShadowSpan) {
   // shadow shrinks along with the body sinking in -- pinned to the
   // visual ground line, which itself scrolls with cameraY in tunnel
   // town's climbing shaft (a no-op everywhere else, since cameraY is 0)
