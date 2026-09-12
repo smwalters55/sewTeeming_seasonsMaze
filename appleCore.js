@@ -4001,7 +4001,11 @@ function applyPhysics(){
                 x0: tp.x, y0: gy - tp.height,
                 x1: topsyTurvyHouses[0].x + 170, y1: gy - 20,
                 startedAt: performance.now(),
-                duration: 620
+                // CONFIRMED CHANGE ("make the swoop from when got it to soup
+                // inside a little slower"): was 620ms, felt like a snap-cut.
+                // The pruning filter below (f.duration + 420) reads this
+                // value directly so it stays in sync automatically.
+                duration: 950
               });
               if (topsyChefSpicePuzzle.progress >= TOPSY_CHEF_SPICE_ORDER.length) {
                 topsyChefSpicePuzzle.solved = true;
@@ -20138,7 +20142,10 @@ const topsyChefSpicePuzzle = {
 // room in too tight a box and reading as one crammed pile. This is the
 // room's real half-width; see drawTopsyChefSpicePuzzle/drawTopsyChefBack
 // for how the two clusters now actually use the extra space to sit apart.
-const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 260; // the little room spans the house's own x +/- this
+// CONFIRMED CHANGE ("i kinda want more than just a little jump to get
+// the things"): widened again (260 -> 320) to fit the new stepping-stone
+// hop out to each ingredient peg with real gaps, not a cram.
+const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 320; // the little room spans the house's own x +/- this
 // CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
 // way every OTHER upside-down surface in this land works -- these reuse
 // the exact same dip-then-launch/light-gravity float as
@@ -20228,15 +20235,31 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
 ];
 // CONFIRMED ADD (see the big furniture-array comment above): two
 // standalone wall-mounted web anchors, way out past either end of the
-// furniture chain -- not part of the climb at all, each reachable with
-// one plain jump straight from the floor. potato (needed 2nd) has to be
-// fetched from clear across the room from the armchair; garlic is a
-// decoy sitting the same distance out on the OPPOSITE side, so
-// wandering toward "the far side of the room" alone doesn't give away
-// which peg is the real one.
+// furniture chain -- not part of the climb at all. potato (needed 2nd)
+// has to be fetched from clear across the room from the armchair;
+// garlic is a decoy sitting the same distance out on the OPPOSITE side,
+// so wandering toward "the far side of the room" alone doesn't give
+// away which peg is the real one.
+// CONFIRMED CHANGE ("i kinda want more than just a little jump to get
+// the things"): each ingredient peg used to be a single plain hop
+// straight off the floor (height 80) -- raised well past ordinary-jump
+// range (150, needs a real double jump) and given its own low stepping-
+// stone peg on the way there, same two-hop shape as the furniture
+// chain's own table -> armchair opener, so reaching either one is a
+// real short climb, not a hop.
+// CONFIRMED CHANGE: re-spaced now that the room is HALF_WIDTH=320 -- the
+// old +/-180/+/-230 offsets were left over from the narrower 260-wide
+// room and crowded the couch (couch spans roughly +95..+185, the old
+// stepping stone at +180 landed almost on top of it) and the wall (the
+// old peg at +/-230 only had ~90px of clearance, fine before, cramped
+// now). Solved for real ~15px+ gaps on every side: armchair -> gap ->
+// stepping stone -> gap -> peg -> gap -> wall, worked out the same way
+// on the couch side.
 const TOPSY_CHEF_WEB_ANCHORS = [
-  { x: topsyTurvyHouses[0].x + 230, height: 80, width: 30, kind: "peg", spiceType: "potato" },
-  { x: topsyTurvyHouses[0].x - 230, height: 80, width: 30, kind: "peg", spiceType: "garlic" } // decoy
+  { x: topsyTurvyHouses[0].x + 240, height: 70, width: 40, kind: "pegStep" }, // untagged stepping stone toward the potato peg
+  { x: topsyTurvyHouses[0].x + 290, height: 150, width: 30, kind: "peg", spiceType: "potato" },
+  { x: topsyTurvyHouses[0].x - 240, height: 70, width: 40, kind: "pegStep" }, // untagged stepping stone toward the garlic peg
+  { x: topsyTurvyHouses[0].x - 290, height: 150, width: 30, kind: "peg", spiceType: "garlic" } // decoy
 ];
 // CONFIRMED ADD: the one list every piece of shared physics (the catch
 // loop, the launch-guard lookup) actually walks while in this room --
@@ -20552,6 +20575,104 @@ function updateTopsyChefInterior(deltaTime) {
   }
 }
 
+// CONFIRMED ADD ("lets add more furniture or plants or art on the
+// walls... like what else is in ratatouille"): pure background dressing,
+// centered on the house so it scrolls in world space same as everything
+// else -- a small framed kitchen picture on one side, a hanging herb
+// bunch on the other. None of it is a platform (not in
+// TOPSY_CHEF_ALL_PLATFORMS), it's just there to make the now much-larger
+// room feel lived-in instead of empty.
+// CONFIRMED FIX (self-caught in review): the first pass also drew a
+// centered rail of hanging pots/pans right where the recipe card
+// already lives (same x, nearly the same y), so it visually collided
+// with the card and read as clutter -- dropped the rail entirely and
+// kept only the two side pieces, tucked in the empty wall space outside
+// the furniture/card cluster where nothing else is drawn. Also swapped
+// the right-side piece from another garlic braid (the potato/garlic
+// web-anchor pegs already draw one of those) to a hanging herb bunch so
+// the two decorations read as different things, not a duplicate.
+function drawTopsyChefWallDecor(camX, ceilingY) {
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  if (!grumpyHouse) return;
+  const baseX = grumpyHouse.x - camX;
+
+  // a small framed picture off to one side -- a rat chef silhouette
+  // with a tomato, straight out of the movie's own kitchen-wall art
+  const frameX = baseX - 210;
+  const frameY = ceilingY + 24;
+  ctx.fillStyle = "#5c4326";
+  roundRect(ctx, frameX - 14, frameY - 11, 28, 22, 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2a18";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#e8d9b8";
+  roundRect(ctx, frameX - 11, frameY - 8, 22, 16, 1);
+  ctx.fill();
+  ctx.fillStyle = "#6b4a2c";
+  ctx.beginPath();
+  ctx.ellipse(frameX - 2, frameY + 2, 4, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(frameX - 6.5, frameY - 0.5, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2a18";
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(frameX - 8, frameY - 1.5);
+  ctx.lineTo(frameX - 9.5, frameY - 3);
+  ctx.stroke();
+  ctx.fillStyle = "#c94a3a";
+  ctx.beginPath();
+  ctx.arc(frameX + 5, frameY + 3, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a8a3a";
+  ctx.beginPath();
+  ctx.moveTo(frameX + 5, frameY + 0.7);
+  ctx.lineTo(frameX + 4.3, frameY - 0.6);
+  ctx.lineTo(frameX + 5.8, frameY - 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  // a hanging bunch of dried herbs off the other side of the room --
+  // tied stems with a few leafy sprigs, distinct from the pegs' own
+  // garlic/chili braid look
+  const herbX = baseX + 210;
+  const herbTop = ceilingY + 20;
+  ctx.strokeStyle = "#7a5a30";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(herbX, herbTop);
+  ctx.lineTo(herbX, herbTop + 10);
+  ctx.stroke();
+  // the tie knot
+  ctx.fillStyle = "#5c4326";
+  ctx.beginPath();
+  ctx.ellipse(herbX, herbTop + 11, 2.4, 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // a fan of leafy sprigs hanging down from the tie
+  for (let i = -2; i <= 2; i++) {
+    const spread = i * 4.5;
+    const sway = Math.sin(performance.now() * 0.0012 + i) * 1.2;
+    ctx.strokeStyle = "#4a7a3a";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(herbX, herbTop + 12);
+    ctx.quadraticCurveTo(herbX + spread * 0.6 + sway, herbTop + 20, herbX + spread + sway, herbTop + 28);
+    ctx.stroke();
+    // a couple of tiny leaves along each stem
+    ctx.fillStyle = "#5a9146";
+    for (let j = 1; j <= 2; j++) {
+      const t = j / 3;
+      const lx = herbX + (spread + sway) * t;
+      const ly = herbTop + 12 + (28 - 12) * t;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 1.6, 0.9, spread * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
 // CONFIRMED ADD ("lets do the chef house peek, but let me also be able
 // to jump upside down on the furniture"): the room's whole visual --
 // wallpaper/floor/ceiling beams, the three furniture pieces hanging
@@ -20666,6 +20787,15 @@ function drawTopsyChefInterior(camX) {
     ctx.lineTo(rightWallX, floorY);
     ctx.stroke();
   }
+
+  // CONFIRMED ADD ("lets add more furniture or plants or art on the
+  // walls... like what else is in ratatouille"): purely decorative
+  // background dressing -- a hanging pot-and-pan rack, a little framed
+  // kitchen picture, and a hanging garlic/chili braid -- filling out
+  // the now-much-larger room instead of leaving the wide back wall
+  // empty. None of this is in TOPSY_CHEF_ALL_PLATFORMS, so it has zero
+  // effect on the puzzle or collision.
+  drawTopsyChefWallDecor(camX, ceilingY);
 
   // the three ceiling-hung furniture pieces, drawn back-to-front by
   // height so nearer/taller ones don't get weirdly clipped by farther
@@ -20893,36 +21023,93 @@ function drawTopsyChefSpicePuzzle(camX) {
 
 // CONFIRMED ADD ("jump to different things on the wall to make a spider
 // web"): a small wall-mounted peg for each standalone web anchor
-// (TOPSY_CHEF_WEB_ANCHORS) -- a few threads converging on a dark nail,
-// same "hangs from the attach line" convention drawTopsyChefFurniturePiece
-// uses (so the shared wobble-on-landing timer just works here too), but
-// deliberately tiny and plain: these aren't furniture, they're just
-// where the web is anchored to the wall.
+// (TOPSY_CHEF_WEB_ANCHORS).
+// CONFIRMED REWORK ("what is the white graph thing supposed to be i dont
+// like that... lets do like what else is in ratatouille" / "i dont like
+// the dots, lets add more furniture or plants or art on the walls"): the
+// old look was just a couple of thin threads converging on a plain dark
+// dot -- unreadable as anything, and asked-for twice in different words.
+// Replaced with an actual little wall bracket (the flat ledge the player
+// lands on) with a real French-kitchen item hanging from its own nail
+// just above: a hanging ladle for the plain stepping-stone pegs, a
+// hanging braided bundle of garlic bulbs/dried chilis for the two
+// ingredient pegs -- both straight out of a Ratatouille-style kitchen
+// wall, and both distinct enough to actually tell the two peg kinds
+// apart at a glance.
 function drawTopsyChefWebAnchorPeg(tp, camX) {
   const sx = tp.x - camX;
   const topY = gy - tp.height;
   const sinceLand = performance.now() - (tp.lastLandTime || -1e9);
   const wobbling = sinceLand >= 0 && sinceLand < TOPSY_CHEF_WOBBLE_DURATION;
   const wobble = wobbling ? Math.sin(sinceLand * 0.032) * Math.exp(-sinceLand / 200) * 0.18 : 0;
+  const hw = tp.width / 2;
   ctx.save();
   ctx.translate(sx, topY);
   ctx.rotate(wobble);
-  ctx.strokeStyle = "rgba(235,235,240,0.6)";
-  ctx.lineWidth = 1;
+
+  // the wall bracket itself -- a small wood wedge forming the flat
+  // ledge at y=0 (same "attach line is the piece's own top surface"
+  // convention every other platform in this room uses), mounted back
+  // to a nail higher up the wall.
+  ctx.fillStyle = "#7a5738";
   ctx.beginPath();
-  ctx.moveTo(-tp.width / 2, -20);
-  ctx.lineTo(0, 0);
-  ctx.lineTo(tp.width / 2, -20);
-  ctx.moveTo(0, -34);
-  ctx.lineTo(0, 0);
-  ctx.stroke();
-  ctx.fillStyle = "#3f3f47";
-  ctx.beginPath();
-  ctx.arc(0, -3, 4, 0, Math.PI * 2);
+  ctx.moveTo(-hw, 0);
+  ctx.lineTo(hw, 0);
+  ctx.lineTo(hw * 0.35, -9);
+  ctx.lineTo(-hw * 0.35, -9);
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#232328";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#4a3220";
+  ctx.lineWidth = 0.8;
   ctx.stroke();
+  ctx.strokeStyle = "rgba(60,60,65,0.7)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.lineTo(0, -22);
+  ctx.stroke();
+  ctx.fillStyle = "#2c2c30";
+  ctx.beginPath();
+  ctx.arc(0, -22, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (tp.kind === "pegStep") {
+    // a hanging ladle -- long thin handle down to a small round bowl
+    ctx.strokeStyle = "#8c8c94";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(hw * 0.5, -21);
+    ctx.lineTo(hw * 0.75, -8);
+    ctx.stroke();
+    ctx.fillStyle = "#a0a0a8";
+    ctx.beginPath();
+    ctx.ellipse(hw * 0.8, -4, 3.4, 2.6, 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5c5c64";
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  } else {
+    // a braided bundle -- alternating garlic bulbs and dried chilis
+    // strung on a cord, dangling beside the bracket
+    ctx.strokeStyle = "#8a6a3a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hw * 0.5, -21);
+    ctx.lineTo(hw * 0.6, -6);
+    ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const by = -18 + i * 5;
+      const isGarlic = i % 2 === 0;
+      ctx.fillStyle = isGarlic ? "#efe6cf" : "#c9432f";
+      ctx.beginPath();
+      ctx.ellipse(hw * 0.6, by, isGarlic ? 2.6 : 2.1, isGarlic ? 3 : 3.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = isGarlic ? "#c9b98a" : "#8a2e20";
+      ctx.lineWidth = 0.4;
+      ctx.stroke();
+    }
+  }
+
   ctx.restore();
 }
 
@@ -21286,46 +21473,92 @@ function drawTopsyChefCoffeeTable(w, reach, wobble) {
   // body, a stroked handle loop, and a visible tea-dark rim -- plus its
   // own extra jiggle (on top of the whole table's wobble) since it's a
   // loose item resting on the surface, not part of the table itself.
+  // CONFIRMED CHANGE ("make the teacup look more like a teacup it isnt
+  // understandable as that rn"): the straight-edged trapezoid body read
+  // as a random blob at this size -- scaled the whole thing up, gave
+  // the body a real curved taper (quadraticCurveTo, not straight lines)
+  // with a distinct darker base and lighter rim band, a bigger more
+  // open handle loop drawn OUTSIDE the body instead of grazing its
+  // edge, a wider two-tone saucer with a visible rim ring, and a couple
+  // of thin steam curls so it unmistakably reads as a hot drink.
   {
-    const cupX = hw * 0.4;
+    const cupX = hw * 0.42;
     const cupWobble = wobble * 10;
     ctx.save();
     ctx.translate(cupX, topSurface - 0.3);
     ctx.rotate(cupWobble);
-    // saucer
+    ctx.scale(1.5, 1.5);
+    // saucer -- wide flat ellipse with a raised rim ring
     ctx.fillStyle = "#f4ece0";
     ctx.beginPath();
-    ctx.ellipse(0, 0, 3.4, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 4.2, 1.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#c9b8a0";
     ctx.lineWidth = 0.4;
     ctx.stroke();
-    // cup body -- tapered, wider at the rim than the base
-    ctx.fillStyle = "#fdfaf4";
+    ctx.strokeStyle = "rgba(180,160,130,0.6)";
+    ctx.lineWidth = 0.3;
     ctx.beginPath();
-    ctx.moveTo(-2.1, -0.6);
-    ctx.lineTo(2.1, -0.6);
-    ctx.lineTo(1.5, -3.2);
-    ctx.lineTo(-1.5, -3.2);
+    ctx.ellipse(0, -0.1, 2.9, 1.0, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // cup body -- curved taper, darker toward the base, lighter at rim
+    const bodyGrad = ctx.createLinearGradient(0, -3.6, 0, -0.5);
+    bodyGrad.addColorStop(0, "#fdfaf4");
+    bodyGrad.addColorStop(1, "#e6d9c2");
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(-1.3, -0.5);
+    ctx.quadraticCurveTo(-1.7, -2.2, -1.9, -3.6);
+    ctx.lineTo(1.9, -3.6);
+    ctx.quadraticCurveTo(1.7, -2.2, 1.3, -0.5);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "#c9b8a0";
+    ctx.strokeStyle = "#b8a488";
     ctx.lineWidth = 0.4;
     ctx.stroke();
-    // colored stripe near the rim
+    // colored stripe band around the body
     ctx.fillStyle = "#d9647c";
-    ctx.fillRect(-2, -3.5, 4, 0.6);
-    // rim opening, dark tea visible inside
+    ctx.beginPath();
+    ctx.moveTo(-1.75, -3.0);
+    ctx.lineTo(1.75, -3.0);
+    ctx.lineTo(1.85, -2.4);
+    ctx.lineTo(-1.85, -2.4);
+    ctx.closePath();
+    ctx.fill();
+    // rim -- a bright ellipse ring with dark tea visible inside
+    ctx.fillStyle = "#fdfaf4";
+    ctx.beginPath();
+    ctx.ellipse(0, -3.6, 1.95, 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = "#5a3420";
     ctx.beginPath();
-    ctx.ellipse(0, -3.2, 1.5, 0.55, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -3.6, 1.55, 0.46, 0, 0, Math.PI * 2);
     ctx.fill();
-    // handle -- small stroked loop on one side
-    ctx.strokeStyle = "#c9b8a0";
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = "#b8a488";
+    ctx.lineWidth = 0.35;
     ctx.beginPath();
-    ctx.ellipse(2.3, -1.9, 0.9, 0.7, 0, -Math.PI * 0.6, Math.PI * 0.6);
+    ctx.ellipse(0, -3.6, 1.95, 0.62, 0, 0, Math.PI * 2);
     ctx.stroke();
+    // handle -- a real open loop standing clear of the body so it
+    // reads as a handle, not a smudge on the side
+    ctx.strokeStyle = "#c9b8a0";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.ellipse(2.55, -1.9, 1.15, 0.95, 0, -Math.PI * 0.75, Math.PI * 0.75);
+    ctx.stroke();
+    // two thin steam curls drifting up from the rim
+    const steamT = performance.now() * 0.002;
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 0.35;
+    [-0.7, 0.6].forEach((sx0, i) => {
+      ctx.beginPath();
+      ctx.moveTo(sx0, -3.9);
+      ctx.quadraticCurveTo(
+        sx0 + Math.sin(steamT + i) * 1.1, -6.2,
+        sx0 + Math.sin(steamT * 0.7 + i) * 0.6, -8.4
+      );
+      ctx.stroke();
+    });
     ctx.restore();
   }
 
@@ -21544,6 +21777,22 @@ function drawTopsyChefBack(potX, camX) {
   const potY = gy;
   const t = performance.now() * 0.001;
 
+  // CONFIRMED ADD ("i want the celebration of adding the ingredients to
+  // be more great like maybe there is for a moment faster swirling and
+  // more steam and like glimmers spinning out of the soup, more
+  // movement"): a brief energetic burst every time an ingredient
+  // actually lands correctly, keyed off topsyChefSpicePuzzle.pokedAt --
+  // the exact same "last correct catch" timestamp the anchor badges
+  // already pulse from, so this needs no state of its own. celebPower
+  // is 1 right at the moment of landing and eases down to 0 over
+  // celebWindow ms; everything below (stir speed, bob, steam count,
+  // hat wiggle, the glimmers) scales off it, so it's one single knob.
+  const celebWindow = 900;
+  const sincePoke = topsyChefSpicePuzzle.pokedAt ? performance.now() - topsyChefSpicePuzzle.pokedAt : Infinity;
+  const celebrating = sincePoke < celebWindow;
+  const celebT = celebrating ? sincePoke / celebWindow : 1;
+  const celebPower = celebrating ? (1 - celebT) * (1 - celebT) : 0; // eased -- most of the punch right at the start
+
   // little stove/table the pot sits on
   ctx.fillStyle = "#6b4a2c";
   roundRect(ctx, potX - 20, potY - 10, 40, 10, 2);
@@ -21570,12 +21819,50 @@ function drawTopsyChefBack(potX, camX) {
   // CONFIRMED CHANGE ("make smoke coming out of soup...not circles??
   // make it look more like flowy smoke"): same drawFlowySmoke wisps the
   // chimney now uses, just warm/white instead of grey.
-  drawFlowySmoke(potX, potY - 24, 4, 2200, "rgba(255,250,240,");
+  // CONFIRMED CHANGE ("more steam" during the celebration burst): extra
+  // wisps and a shorter cycle (so they visibly hurry) while celebPower
+  // is up, easing back to the normal plain 4-wisp/2200ms cycle.
+  drawFlowySmoke(
+    potX, potY - 24,
+    4 + Math.round(celebPower * 5),
+    2200 - celebPower * 1300,
+    "rgba(255,250,240,"
+  );
+
+  // CONFIRMED ADD ("glimmers spinning out of the soup"): a handful of
+  // little sparkles spinning outward off the pot's own rim right as an
+  // ingredient lands -- pure angle/time math derived straight from
+  // celebT, same "no particle array, just a formula" shape as the pulse
+  // rings elsewhere in this room, so it can never leak or accumulate.
+  if (celebrating) {
+    const glimmerCount = 7;
+    for (let i = 0; i < glimmerCount; i++) {
+      const ang = (i / glimmerCount) * Math.PI * 2 + celebT * 7;
+      const dist = 4 + celebT * 24;
+      const gx = potX + Math.cos(ang) * dist;
+      const gyPos = (potY - 16) + Math.sin(ang) * dist * 0.4 - celebT * 10; // flattened to the pot's own ellipse, drifting up as it fades
+      const alpha = celebPower * 0.95;
+      ctx.save();
+      ctx.translate(gx, gyPos);
+      ctx.rotate(ang * 2 + celebT * 5);
+      ctx.fillStyle = `rgba(255,238,180,${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(0, -3.2); ctx.lineTo(0.9, -0.6); ctx.lineTo(3.2, 0);
+      ctx.lineTo(0.9, 0.6); ctx.lineTo(0, 3.2); ctx.lineTo(-0.9, 0.6);
+      ctx.lineTo(-3.2, 0); ctx.lineTo(-0.9, -0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 
   // the chef, from behind, standing right at the pot -- small idle bob
   // plus a stirring wobble on the near-side arm/shoulder
-  const bob = Math.abs(Math.sin(t * 3)) * 1.6;
-  const stir = Math.sin(t * 5) * 3;
+  // CONFIRMED CHANGE ("faster swirling... more movement"): both speed up
+  // and swing wider for a moment right as an ingredient lands, riding
+  // the same celebPower burst as the steam/glimmers above.
+  const bob = Math.abs(Math.sin(t * (3 + celebPower * 6))) * (1.6 + celebPower * 2.2);
+  const stir = Math.sin(t * (5 + celebPower * 11)) * (3 + celebPower * 3.5);
   const bx = potX - 22, by = potY - bob;
   ctx.save();
   ctx.translate(bx, by);
@@ -21649,6 +21936,17 @@ function drawTopsyChefBack(potX, camX) {
   // a shading gradient on the puff itself plus a fan of gathered pleat
   // creases running from the band up to the crown, the real construction
   // detail that reads as "cloth toque" rather than a plain white blob.
+  // CONFIRMED ADD ("and the chef hat wiggling a little"): a small
+  // constant idle sway, plus a much bigger/faster wobble layered on top
+  // during the celebration burst (celebPower, defined up top) -- rotated
+  // around the hat's own base (0,-26), the point where it actually sits
+  // on the head, so it reads as the hat itself tipping side to side
+  // rather than the whole rat leaning.
+  const hatWiggle = Math.sin(t * 2.2) * 0.035 + celebPower * Math.sin(t * 16) * 0.11;
+  ctx.save();
+  ctx.translate(0, -26);
+  ctx.rotate(hatWiggle);
+  ctx.translate(0, 26);
   const hatBandGrad = ctx.createLinearGradient(0, -29, 0, -23);
   hatBandGrad.addColorStop(0, "#f4f0e8");
   hatBandGrad.addColorStop(1, "#d8d2c4");
@@ -21700,6 +21998,7 @@ function drawTopsyChefBack(potX, camX) {
   ctx.beginPath();
   ctx.ellipse(0, -26, 5.6, 1.9, 0, 0.15, Math.PI - 0.15);
   ctx.stroke();
+  ctx.restore(); // closes the hat-wiggle pivot rotation
 
   ctx.restore();
 }
