@@ -170,7 +170,20 @@ const camera = { topDown:false, locked:false };
 // start) once you're done testing sandbox things -- this is a testing
 // convenience, not the real game's intro, so it shouldn't stay on
 // "sandbox" for normal play.
-const DEBUG_START_SCENE = "topsyturvy";
+// CONFIRMED BUG FIX ("we need to just be outside the house, not at the
+// start of topsy turvey" -- exiting the chef interior was landing the
+// player at world origin): this had been left hand-edited to
+// "topsyturvy" this whole session (from the much earlier "spawn me
+// inside the house" debug request) instead of being reverted once that
+// testing was done, per this file's own standing convention just above.
+// That meant EVERY real page load was skipping the actual game start and
+// forcing straight into the chef interior via the DEBUG_START_SCENE ===
+// "topsyturvy" block below -- which sets topsyChefInteriorActive=true
+// directly and never touches topsyChefInteriorReturn (it stays stuck at
+// its {x:0,y:0} default), so pressing down to leave sent the player to
+// literal world origin -- "the start of topsy turvy" -- instead of back
+// outside the house. Reverted to "autumn", the real game start.
+const DEBUG_START_SCENE = "autumn";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -4003,7 +4016,7 @@ function applyPhysics(){
                 startedAt: performance.now(),
                 // CONFIRMED CHANGE ("make the swoop from when got it to soup
                 // inside a little slower"): was 620ms, felt like a snap-cut.
-                // The pruning filter below (f.duration + 420) reads this
+                // The pruning filter below (f.duration + 550) reads this
                 // value directly so it stays in sync automatically.
                 duration: 950
               });
@@ -4013,9 +4026,20 @@ function applyPhysics(){
                 addToInventory("secretSpice");
               }
             } else {
+              // CONFIRMED FIX ("sometimes when you get the green leaf it
+              // looks checked, but then you try to get the cookie thing
+              // and it says leaf still hasnt been got yet"): a wrong/
+              // out-of-order catch used to zero your whole progress back
+              // out -- but the room is wide enough now that just jumping
+              // TOWARD the anchor you actually want can clip a decoy or
+              // an out-of-order piece along the way (any tagged anchor
+              // your arc crosses counts as a landing, intentional or
+              // not), so this was wiping real progress on pure accidents.
+              // A wrong pick now just doesn't advance you -- still a
+              // "nope" (the flash/wobble feedback below still fires), but
+              // it can't erase something you already actually got.
               topsyChefSpicePuzzle.wrongAt = performance.now();
               topsyChefSpicePuzzle.wrongType = tp.spiceType;
-              topsyChefSpicePuzzle.progress = tp.spiceType === TOPSY_CHEF_SPICE_ORDER[0] ? 1 : 0;
             }
           }
         }
@@ -4160,6 +4184,19 @@ function applyPhysics(){
       // outside the sandbox.
       forestFungusClimb.streak = 0;
       forestFungusClimb.level = 0;
+      // CONFIRMED ADD ("what if you have to be up top the whole time
+      // getting them in a row and if you touch the ground you have to
+      // start over"): same "a real ground landing resets it, no partial
+      // credit" idea as every other reset in this block -- touching real
+      // ground with any spice progress already banked sends the whole
+      // chef puzzle back to square one. Only fires on an actual plain
+      // ground landing (this branch), never on landing on a furniture
+      // piece/web-anchor peg (those go through the catch loop above and
+      // set topsyInverted = true instead, so they never reach here).
+      if (topsyChefInteriorActive && topsyChefSpicePuzzle.progress > 0 && !topsyChefSpicePuzzle.solved) {
+        topsyChefSpicePuzzle.progress = 0;
+        topsyChefSpicePuzzle.groundedAt = performance.now();
+      }
     }
   }
 
@@ -20094,13 +20131,28 @@ const topsyChefInteriorReturn = { x: 0, y: 0 };
 // (topsyChefSpicePuzzle.flights, animated in drawTopsyChefSpiceFlights)
 // -- see the furniture-catch loop in applyPhysics for the actual
 // interact logic now.
-const TOPSY_CHEF_SPICE_ORDER = ["bellPepper", "potato", "tofu"];
+// CONFIRMED CHANGE ("i think maybe one more ingredient"): added tomato --
+// tagged onto the existing table stepping stone rather than any new
+// platform (no layout change needed, it was already the very first thing
+// climbed on the way to the armchair). Kept the order non-monotonic with
+// where each piece actually sits (bellPepper @ armchair, tomato @ table,
+// potato @ the far peg, tofu @ the plant) so reaching it still isn't a
+// clean straight line: you'll stand on the table (tomato, needed 2nd)
+// on your way UP to the armchair (bellPepper, needed 1st) well before
+// it's actually tomato's turn, and won't get credit for it until you
+// come back down and land on it again once bellPepper's done.
+const TOPSY_CHEF_SPICE_ORDER = ["bellPepper", "tomato", "potato", "eggplant"];
 const topsyChefSpicePuzzle = {
   progress: 0,
   solved: false,
   pokedAt: null, pokedType: null, // last CORRECT catch + which ingredient, for a small per-anchor confirm pulse
   wrongAt: null, wrongType: null, // last WRONG catch + which ingredient, for a brief shake/reset cue
   solvedAt: null, // drives the "found it" flourish once, in drawTopsyChefSpiceAnchorBadges
+  // CONFIRMED ADD ("touch the ground and start over"): last time a plain
+  // ground landing wiped an in-progress run, for the same kind of brief
+  // flash the wrong-catch shake gets -- see the ground-landing branch in
+  // applyPhysics and drawTopsyChefSpicePuzzle's own card flourish.
+  groundedAt: null,
   flights: [] // in-flight "ingredient arcing into the pot" animations -- see drawTopsyChefSpiceFlights
 };
 // CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
@@ -20146,6 +20198,12 @@ const topsyChefSpicePuzzle = {
 // the things"): widened again (260 -> 320) to fit the new stepping-stone
 // hop out to each ingredient peg with real gaps, not a cram.
 const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 320; // the little room spans the house's own x +/- this
+// CONFIRMED ADD ("down only near the door"): how close to the door
+// (centered on the house itself, same x the player always spawns at on
+// the way in) counts as "at the door" for the down-to-exit check in
+// updateTopsyChefInterior -- see drawTopsyChefDoorMat for the matching
+// visual marker on the floor.
+const TOPSY_CHEF_DOOR_HALF_WIDTH = 30;
 // CONFIRMED ADD: furniture stuck to the ceiling, upside down, the same
 // way every OTHER upside-down surface in this land works -- these reuse
 // the exact same dip-then-launch/light-gravity float as
@@ -20201,22 +20259,35 @@ const TOPSY_CHEF_INTERIOR_HALF_WIDTH = 320; // the little room spans the house's
 // up here now doubles as the puzzle itself -- three of these pieces (plus
 // two new standalone web-anchor pegs just below, TOPSY_CHEF_WEB_ANCHORS)
 // carry a spiceType tag; landing on one for real (see the furniture-catch
-// loop in applyPhysics) is what "adds" that ingredient, same right/wrong/
-// reset rules the jars used to enforce, just triggered by an actual jump
-// instead of a button press. `basil` (couch) is a decoy -- landing there
-// out of sequence resets you same as any wrong pick.
+// loop in applyPhysics) is what "adds" that ingredient. `basil` (couch)
+// is a decoy -- landing there out of sequence just doesn't advance you
+// (see the "wrong catch" fix below).
 // CONFIRMED CHANGE ("sometimes you have to skip one to get to the next
 // correct order one, and then go back... i just really dont want a clean
 // straight line through them"): the spatial layout deliberately does NOT
 // match the recipe order. bellPepper (needed 1st) sits on the armchair,
-// the very first thing reachable off the table -- but potato (needed
-// 2nd) is nowhere in this chain at all, it's out on its own standalone
-// peg clear across the room (TOPSY_CHEF_WEB_ANCHORS) -- and tofu (needed
-// 3rd) is back in the furniture chain, past the DECOY couch, meaning the
-// real solve path is: climb to the armchair, drop back to the floor,
-// walk all the way across to the potato peg, then walk all the way BACK
-// and re-climb past the (now-harmless, already-used) armchair to reach
-// the plant. No straight line anywhere in that.
+// the very first thing reachable off the table -- but tomato (needed
+// 2nd, added later) is the table itself, crossed well before it's its
+// turn, and potato (needed 3rd) is nowhere in this chain at all, it's
+// out on its own standalone peg clear across the room
+// (TOPSY_CHEF_WEB_ANCHORS) -- and tofu (needed 4th) is back in the
+// furniture chain, past the DECOY couch, meaning the real solve path is:
+// climb the table (tomato, not yet its turn) to the armchair (bellPepper,
+// correct), drop back down and land on the table again (tomato, now
+// correct), then walk all the way across to the potato peg, then walk
+// all the way BACK and re-climb past the (now-harmless, already-used)
+// table and armchair to reach the plant. No straight line anywhere in
+// that.
+// CONFIRMED FIX ("says leaf still hasnt been got yet"): a wrong/out-of-
+// order catch used to zero your whole progress back to 0 -- but any
+// tagged anchor your jump ARC crosses counts as a landing whether you
+// meant to or not, so a jump aimed at a real target could clip a decoy
+// on the way and wipe progress you'd already earned. Wrong catches now
+// just don't advance you (see the catch loop below) -- still a "nope"
+// flash, but it can't erase something already banked. Separately (see
+// the ground-landing branch in applyPhysics), touching real GROUND with
+// any progress banked does still send you back to 0 -- that's the actual
+// "stay off the ground" challenge now, not random decoy grazes.
 const TOPSY_CHEF_FURNITURE_PLATFORMS = [
   { x: topsyTurvyHouses[0].x - 170, height: 130, width: 66, kind: "armchair", spiceType: "bellPepper" },
   // CONFIRMED BUG FIX: height must stay >= the player's own 54px
@@ -20227,10 +20298,24 @@ const TOPSY_CHEF_FURNITURE_PLATFORMS = [
   // was about the cable's visual length, which is now capped
   // regardless of this value (see drawLegCable/TOPSY_CHEF_LEG_CABLE_MAX)
   // -- so this can stay a real, reachable height instead.
-  // Deliberately left un-tagged -- just the first, easy stepping stone
-  // into the rest of the chain, same as it always was.
-  { x: topsyTurvyHouses[0].x - 70, height: 70, width: 44, kind: "table" },
-  { x: topsyTurvyHouses[0].x + 20, height: 170, width: 26, kind: "plant", spiceType: "tofu" },
+  // CONFIRMED CHANGE ("i think maybe one more ingredient"): used to be
+  // deliberately left un-tagged as just the easy first stepping stone --
+  // now carries tomato (needed 2nd), so you cross it on your way up to
+  // the armchair well before it's actually its turn, and have to come
+  // back down and land on it again once bellPepper's done.
+  { x: topsyTurvyHouses[0].x - 70, height: 70, width: 44, kind: "table", spiceType: "tomato" },
+  // CONFIRMED CHANGE ("move one of the items over to the left so its a
+  // little more of a challenge" / tofu -> eggplant swap): was at +20,
+  // right next to the table -- shifted to -20 (still a clean 15px gap
+  // off the table's own edge, no new overlap) so the LAST leg of the
+  // solve -- coming back from the potato peg way out on the east wall
+  // -- is a genuinely longer crossing instead of landing almost right
+  // next to where you started.
+  { x: topsyTurvyHouses[0].x - 20, height: 170, width: 26, kind: "plant", spiceType: "eggplant" },
+  // CONFIRMED CHANGE ("says leaf still hasnt been got yet" wrong-catch
+  // bug): landing here out of sequence used to reset your whole run --
+  // now it's harmless, just doesn't advance you (see the catch loop in
+  // applyPhysics).
   { x: topsyTurvyHouses[0].x + 140, height: 210, width: 90, kind: "couch", spiceType: "basil" } // decoy
 ];
 // CONFIRMED ADD (see the big furniture-array comment above): two
@@ -20550,14 +20635,14 @@ function updateTopsyChefInterior(deltaTime) {
   // applyPhysics, right where topsyInverted gets set), so there's nothing
   // left for this function to check on space press at all.
 
-  // press down OR space while standing normally on the floor (not mid a
-  // furniture/web-anchor hop) to step back outside -- no item, no
-  // proximity check needed, just "you're on solid ground and you want to
-  // leave."
-  // CONFIRMED CHANGE ("make space bar to get out too"): space already
-  // means "enter" at the window outside, so letting it also mean "exit"
-  // in here keeps the whole peek-inside interaction on one single key.
-  if ((keys.downJustPressed || keys.spaceJustPressed) &&
+  // CONFIRMED CHANGE ("lets not have spacebar to leave anymore lets do
+  // down only near the door"): space used to also work anywhere on the
+  // floor -- now it's down only, and only within a small zone at the
+  // door (centered on the house itself, where the player always spawns
+  // when stepping inside) rather than anywhere on the floor at all.
+  const playerCenterX = player.x + player.width / 2;
+  const nearChefDoor = Math.abs(playerCenterX - grumpyHouse.x) < TOPSY_CHEF_DOOR_HALF_WIDTH;
+  if (keys.downJustPressed && nearChefDoor &&
       !player.jumping && !player.topsyInverted) {
     topsyChefInteriorActive = false;
     player.x = topsyChefInteriorReturn.x;
@@ -20571,7 +20656,37 @@ function updateTopsyChefInterior(deltaTime) {
   // poof after) -- see the push into topsyChefSpicePuzzle.flights above
   if (topsyChefSpicePuzzle.flights.length) {
     const now = performance.now();
-    topsyChefSpicePuzzle.flights = topsyChefSpicePuzzle.flights.filter(f => now - f.startedAt < f.duration + 420);
+    // CONFIRMED CHANGE: the splash window in drawTopsyChefSpiceFlights
+    // grew from 420ms to 550ms (see its own comment) -- kept in sync
+    // here too, or the splash would visibly cut off mid-fade.
+    topsyChefSpicePuzzle.flights = topsyChefSpicePuzzle.flights.filter(f => now - f.startedAt < f.duration + 550);
+  }
+}
+
+// CONFIRMED ADD ("down only near the door"): a small woven mat on the
+// floor, dead center on the house -- exactly the zone
+// TOPSY_CHEF_DOOR_HALF_WIDTH checks in updateTopsyChefInterior, so the
+// player has an actual visual cue for where "the door" is instead of
+// the down-to-exit zone being invisible.
+function drawTopsyChefDoorMat(camX, floorY) {
+  const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
+  if (!grumpyHouse) return;
+  const mx = grumpyHouse.x - camX;
+  ctx.fillStyle = "#8a4a3a";
+  roundRect(ctx, mx - TOPSY_CHEF_DOOR_HALF_WIDTH, floorY - 3, TOPSY_CHEF_DOOR_HALF_WIDTH * 2, 5, 2);
+  ctx.fill();
+  ctx.strokeStyle = "#5c2e22";
+  ctx.lineWidth = 0.8;
+  roundRect(ctx, mx - TOPSY_CHEF_DOOR_HALF_WIDTH, floorY - 3, TOPSY_CHEF_DOOR_HALF_WIDTH * 2, 5, 2);
+  ctx.stroke();
+  // a couple of woven stripe lines so it reads as a mat, not a plank
+  ctx.strokeStyle = "rgba(255,240,220,0.35)";
+  ctx.lineWidth = 0.8;
+  for (let sx = -TOPSY_CHEF_DOOR_HALF_WIDTH + 8; sx < TOPSY_CHEF_DOOR_HALF_WIDTH - 4; sx += 10) {
+    ctx.beginPath();
+    ctx.moveTo(mx + sx, floorY - 2.5);
+    ctx.lineTo(mx + sx, floorY + 1.5);
+    ctx.stroke();
   }
 }
 
@@ -20797,6 +20912,12 @@ function drawTopsyChefInterior(camX) {
   // effect on the puzzle or collision.
   drawTopsyChefWallDecor(camX, ceilingY);
 
+  // CONFIRMED ADD ("down only near the door"): a small floor mat marking
+  // exactly where "the door" is for the down-to-exit check above --
+  // centered on the house, the same spot the player always spawns at on
+  // the way in.
+  drawTopsyChefDoorMat(camX, floorY);
+
   // the three ceiling-hung furniture pieces, drawn back-to-front by
   // height so nearer/taller ones don't get weirdly clipped by farther
   // ones -- reuses the SAME TOPSY_CHEF_FURNITURE_PLATFORMS array the
@@ -20903,22 +21024,50 @@ function drawTopsyChefSpiceIcon(type, s) {
       ctx.arc(dx * s, dy * s, 0.7 * s, 0, Math.PI * 2);
       ctx.fill();
     });
-  } else if (type === "tofu") {
-    ctx.fillStyle = "#f5f1e6";
-    roundRect(ctx, -5.5 * s, -5.5 * s, 11 * s, 11 * s, 1.5 * s);
-    ctx.fill();
-    ctx.strokeStyle = "#d8d0ba";
-    ctx.lineWidth = 0.9 * s;
-    ctx.stroke();
-    // a couple of faint interior lines so it reads as a cube of tofu,
-    // not just a blank white square
-    ctx.strokeStyle = "rgba(180,172,150,0.6)";
-    ctx.lineWidth = 0.6 * s;
+  } else if (type === "eggplant") {
+    // CONFIRMED CHANGE ("wait does tofu even ever go in ratatouille" --
+    // it doesn't; also fixes the earlier "white graph thing... no idea
+    // what that is" complaint, since that turned out to be tofu's old
+    // square-with-crossing-lines icon): swapped tofu for an actual
+    // ratatouille ingredient, eggplant -- a glossy purple teardrop body
+    // with a little green cap/stem, unmistakable as a vegetable.
+    const bodyGrad = ctx.createLinearGradient(-4 * s, -4 * s, 4 * s, 6 * s);
+    bodyGrad.addColorStop(0, "#8a5a9e");
+    bodyGrad.addColorStop(1, "#4a2a5e");
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
-    ctx.moveTo(-5.5 * s, -1.5 * s);
-    ctx.lineTo(5.5 * s, -1.5 * s);
-    ctx.moveTo(-1.5 * s, -5.5 * s);
-    ctx.lineTo(-1.5 * s, 5.5 * s);
+    ctx.moveTo(0, -3 * s);
+    ctx.quadraticCurveTo(5 * s, -2 * s, 4.5 * s, 3 * s);
+    ctx.quadraticCurveTo(4 * s, 7.5 * s, 0, 8 * s);
+    ctx.quadraticCurveTo(-4 * s, 7.5 * s, -4.5 * s, 3 * s);
+    ctx.quadraticCurveTo(-5 * s, -2 * s, 0, -3 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#3a1e48";
+    ctx.lineWidth = 0.7 * s;
+    ctx.stroke();
+    // a soft highlight so the glossy body doesn't read flat
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(-1.8 * s, 0.5 * s, 1.4 * s, 3 * s, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+    // green cap + short stem on top
+    ctx.fillStyle = "#4d8a3f";
+    ctx.beginPath();
+    ctx.moveTo(0, -3 * s);
+    ctx.lineTo(-3 * s, -5.2 * s);
+    ctx.lineTo(-1 * s, -4.6 * s);
+    ctx.lineTo(0, -6.4 * s);
+    ctx.lineTo(1 * s, -4.6 * s);
+    ctx.lineTo(3 * s, -5.2 * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#2f5a26";
+    ctx.lineWidth = 0.7 * s;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, -6.4 * s);
+    ctx.lineTo(0, -8.5 * s);
     ctx.stroke();
   } else if (type === "basil") {
     ctx.fillStyle = "#4d8a3f";
@@ -20939,6 +21088,33 @@ function drawTopsyChefSpiceIcon(type, s) {
     ctx.moveTo(0, 2 * s);
     ctx.lineTo(0, -6 * s);
     ctx.stroke();
+  } else if (type === "tomato") {
+    // CONFIRMED ADD ("i think maybe one more ingredient"): round red
+    // body with a little star-shaped green calyx on top, same simple
+    // "shape + stem" language as bellPepper/basil above.
+    ctx.fillStyle = "#c9432f";
+    ctx.beginPath();
+    ctx.ellipse(0, 0.5 * s, 6 * s, 5.6 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8a2e20";
+    ctx.lineWidth = 0.8 * s;
+    ctx.stroke();
+    // a soft highlight so the round body doesn't read flat
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(-2 * s, -2 * s, 1.8 * s, 1.2 * s, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    // the leafy calyx on top
+    ctx.fillStyle = "#4d8a3f";
+    for (let i = 0; i < 5; i++) {
+      const ang = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -5 * s);
+      ctx.lineTo(Math.cos(ang) * 3.4 * s, -5 * s + Math.sin(ang) * 3.4 * s);
+      ctx.lineTo(Math.cos(ang + 0.5) * 1.6 * s, -5 * s + Math.sin(ang + 0.5) * 1.6 * s);
+      ctx.closePath();
+      ctx.fill();
+    }
   } else if (type === "cinnamon") {
     ctx.strokeStyle = "#8a5a2e";
     ctx.lineWidth = 2.4 * s;
@@ -20961,14 +21137,69 @@ function drawTopsyChefSpiceIcon(type, s) {
 // walk up to or press space at. The per-ingredient glow/wobble feedback
 // that used to live on the jars now lives on the anchors themselves,
 // see drawTopsyChefSpiceAnchorBadges just below.
+// CONFIRMED ADD ("what is the cookie thing or the white graph things...
+// maybe make one like a cute spice container"): each ingredient on the
+// card used to be a bare icon (the potato's tan blob-with-two-dots read
+// as a cookie) connected to its neighbor by a short line, which just
+// looked like an unlabeled flowchart. Wrapped every icon in an actual
+// little glass spice jar with a lid instead -- a jar reads as "an
+// ingredient for the soup" on its own regardless of what's drawn inside
+// it, and dropping the connecting lines (order is already conveyed by
+// left-to-right position + the checkmark) gets rid of the "graph" look
+// entirely.
+function drawTopsyChefSpiceJarIcon(type, s) {
+  const w = 13 * s, h = 18 * s;
+  // jar body -- pale glass with a soft highlight streak
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  roundRect(ctx, -w / 2, -h * 0.32, w, h * 0.72, 3 * s);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(120,100,70,0.55)";
+  ctx.lineWidth = 0.8 * s;
+  roundRect(ctx, -w / 2, -h * 0.32, w, h * 0.72, 3 * s);
+  ctx.stroke();
+  // the ingredient itself, visible "inside" the jar
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, -w / 2 + 0.6, -h * 0.32 + 0.6, w - 1.2, h * 0.72 - 1.2, 2.4 * s);
+  ctx.clip();
+  ctx.translate(0, h * 0.1);
+  ctx.scale(0.6, 0.6);
+  drawTopsyChefSpiceIcon(type, s);
+  ctx.restore();
+  // glass highlight streak, drawn over the contents
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 0.9 * s;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.28, -h * 0.22);
+  ctx.lineTo(-w * 0.28, h * 0.28);
+  ctx.stroke();
+  // lid + knob
+  ctx.fillStyle = "#8a6a3a";
+  roundRect(ctx, -w * 0.42, -h * 0.5, w * 0.84, h * 0.22, 2 * s);
+  ctx.fill();
+  ctx.strokeStyle = "#5c4326";
+  ctx.lineWidth = 0.6 * s;
+  roundRect(ctx, -w * 0.42, -h * 0.5, w * 0.84, h * 0.22, 2 * s);
+  ctx.stroke();
+  ctx.fillStyle = "#5c4326";
+  ctx.beginPath();
+  ctx.ellipse(0, -h * 0.5, w * 0.14, h * 0.045, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawTopsyChefSpicePuzzle(camX) {
   const grumpyHouse = topsyTurvyHouses.find(h => h.grumpy);
   if (!grumpyHouse) return;
   const cardX = grumpyHouse.x - camX;
   const cardY = gy - 232; // high on the back wall, clear of every anchor's reach
+  // CONFIRMED CHANGE ("one more ingredient"): card widened to fit a 4th
+  // jar -- was 80x40 for 3 icons at 22px spacing, now 116x46 for 4 jars
+  // at 28px spacing (jars are physically bigger than the old bare icons).
+  const cardW = 24 + (TOPSY_CHEF_SPICE_ORDER.length - 1) * 28 + 24;
+  const spacing = 28;
 
   ctx.fillStyle = "rgba(255,250,238,0.95)";
-  roundRect(ctx, cardX - 40, cardY - 20, 80, 40, 4);
+  roundRect(ctx, cardX - cardW / 2, cardY - 23, cardW, 46, 4);
   ctx.fill();
   ctx.strokeStyle = "#2b2b2b";
   ctx.lineWidth = 1;
@@ -20976,28 +21207,25 @@ function drawTopsyChefSpicePuzzle(camX) {
   ctx.fillStyle = "#2b2b2b";
   ctx.font = "8px ui-monospace";
   ctx.textAlign = "center";
-  ctx.fillText("ratatouille needs:", cardX, cardY - 8);
+  ctx.fillText("ratatouille needs:", cardX, cardY - 10);
+  const startX = cardX - ((TOPSY_CHEF_SPICE_ORDER.length - 1) * spacing) / 2;
   TOPSY_CHEF_SPICE_ORDER.forEach((type, i) => {
-    const ix = cardX - 22 + i * 22;
+    const ix = startX + i * spacing;
     ctx.save();
-    ctx.translate(ix, cardY + 6);
-    drawTopsyChefSpiceIcon(type, 1);
+    ctx.translate(ix, cardY + 7);
+    drawTopsyChefSpiceJarIcon(type, 1);
     ctx.restore();
     if (i < topsyChefSpicePuzzle.progress) {
-      ctx.strokeStyle = "#3a8a3a";
-      ctx.lineWidth = 1.6;
+      ctx.fillStyle = "#3a8a3a";
       ctx.beginPath();
-      ctx.moveTo(ix - 5, cardY + 6);
-      ctx.lineTo(ix - 1, cardY + 10);
-      ctx.lineTo(ix + 6, cardY - 2);
-      ctx.stroke();
-    }
-    if (i < TOPSY_CHEF_SPICE_ORDER.length - 1) {
-      ctx.strokeStyle = "#8a7a5a";
-      ctx.lineWidth = 1;
+      ctx.arc(ix + 8, cardY - 1, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.moveTo(ix + 8, cardY + 6);
-      ctx.lineTo(ix + 14, cardY + 6);
+      ctx.moveTo(ix + 5.5, cardY - 1);
+      ctx.lineTo(ix + 7.3, cardY + 1.3);
+      ctx.lineTo(ix + 10.5, cardY - 3.5);
       ctx.stroke();
     }
   });
@@ -21016,6 +21244,26 @@ function drawTopsyChefSpicePuzzle(camX) {
       ctx.font = "10px ui-monospace";
       ctx.textAlign = "center";
       ctx.fillText("that's the recipe!", cardX, cardY - 46 - t * 12);
+      ctx.textAlign = "left";
+    }
+  }
+
+  // CONFIRMED ADD ("touch the ground and start over"): a brief "back to
+  // the floor!" flash over the card, same shape as the solved flourish
+  // above but red instead of gold, so a ground-touch reset is obviously
+  // communicated instead of the checkmarks just silently vanishing.
+  if (topsyChefSpicePuzzle.groundedAt != null) {
+    const since = performance.now() - topsyChefSpicePuzzle.groundedAt;
+    if (since < 700) {
+      const t = since / 700;
+      ctx.fillStyle = `rgba(220,90,70,${0.5 * (1 - t)})`;
+      ctx.beginPath();
+      ctx.ellipse(cardX, cardY - 26, 40 + t * 16, 14 + t * 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${0.9 * (1 - t)})`;
+      ctx.font = "9px ui-monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("touched down -- starting over!", cardX, cardY - 44 - t * 10);
       ctx.textAlign = "left";
     }
   }
@@ -21074,35 +21322,43 @@ function drawTopsyChefWebAnchorPeg(tp, camX) {
   ctx.fill();
 
   if (tp.kind === "pegStep") {
-    // a hanging ladle -- long thin handle down to a small round bowl
+    // CONFIRMED FIX ("the spoon decoy, make it aligned with the thing
+    // its on a little more"): the ladle used to hang from hw*0.5 out to
+    // hw*0.8 -- almost off the bracket's own far edge, reading as
+    // floating next to it rather than actually hanging off its nail.
+    // Pulled in close to the nail (x=0) instead, just a slight natural
+    // sideways dangle rather than a big sideways swing.
     ctx.strokeStyle = "#8c8c94";
     ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.moveTo(hw * 0.5, -21);
-    ctx.lineTo(hw * 0.75, -8);
+    ctx.moveTo(hw * 0.12, -21);
+    ctx.lineTo(hw * 0.22, -7);
     ctx.stroke();
     ctx.fillStyle = "#a0a0a8";
     ctx.beginPath();
-    ctx.ellipse(hw * 0.8, -4, 3.4, 2.6, 0.25, 0, Math.PI * 2);
+    ctx.ellipse(hw * 0.26, -3, 3.4, 2.6, 0.25, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#5c5c64";
     ctx.lineWidth = 0.6;
     ctx.stroke();
   } else {
+    // CONFIRMED FIX (same "aligned with the thing its on" fix as the
+    // ladle above): pulled in from hw*0.5/0.6 to a slight dangle close
+    // to the nail, same reasoning.
     // a braided bundle -- alternating garlic bulbs and dried chilis
     // strung on a cord, dangling beside the bracket
     ctx.strokeStyle = "#8a6a3a";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(hw * 0.5, -21);
-    ctx.lineTo(hw * 0.6, -6);
+    ctx.moveTo(hw * 0.12, -21);
+    ctx.lineTo(hw * 0.2, -6);
     ctx.stroke();
     for (let i = 0; i < 4; i++) {
       const by = -18 + i * 5;
       const isGarlic = i % 2 === 0;
       ctx.fillStyle = isGarlic ? "#efe6cf" : "#c9432f";
       ctx.beginPath();
-      ctx.ellipse(hw * 0.6, by, isGarlic ? 2.6 : 2.1, isGarlic ? 3 : 3.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(hw * 0.2, by, isGarlic ? 2.6 : 2.1, isGarlic ? 3 : 3.4, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = isGarlic ? "#c9b98a" : "#8a2e20";
       ctx.lineWidth = 0.4;
@@ -21198,25 +21454,37 @@ function drawTopsyChefSpiceFlights(camX) {
       // impact, a bigger/bolder splash ring, and four flung droplets
       // instead of two, over a slightly longer window -- then this
       // flight prunes itself out of the array (see updateTopsyChefInterior)
+      // CONFIRMED CHANGE ("maybe a splash part of it as well" -- asked
+      // again without realizing this was already here, so it clearly
+      // wasn't reading as one): scaled the whole thing up further --
+      // bigger flash, a second outer ring right behind the first, more
+      // droplets flung higher -- and stretched the window (420 -> 550)
+      // to match the slower catch celebration above, so it doesn't feel
+      // like it cuts off right as the stir/steam burst is still going.
       const since = now - f.startedAt - f.duration;
-      const st = Math.min(1, since / 420);
+      const st = Math.min(1, since / 550);
       // instant bright flash, gone almost immediately -- the actual
       // "impact" beat
-      if (since < 120) {
-        ctx.fillStyle = `rgba(255,250,225,${0.85 * (1 - since / 120)})`;
+      if (since < 150) {
+        ctx.fillStyle = `rgba(255,250,225,${0.9 * (1 - since / 150)})`;
         ctx.beginPath();
-        ctx.ellipse(fx1, f.y1, 10, 6, 0, 0, Math.PI * 2);
+        ctx.ellipse(fx1, f.y1, 14, 8, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.strokeStyle = `rgba(255,240,200,${0.75 * (1 - st)})`;
-      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = `rgba(255,240,200,${0.8 * (1 - st)})`;
+      ctx.lineWidth = 2.4;
       ctx.beginPath();
-      ctx.ellipse(fx1, f.y1, 5 + st * 18, 2.5 + st * 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(fx1, f.y1, 6 + st * 24, 3 + st * 10, 0, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = `rgba(255,232,170,${0.85 * (1 - st)})`;
-      [-1.4, -0.5, 0.5, 1.4].forEach(dir => {
+      ctx.strokeStyle = `rgba(255,225,170,${0.5 * (1 - st)})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.ellipse(fx1, f.y1, 3 + st * 15, 1.6 + st * 6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,232,170,${0.9 * (1 - st)})`;
+      [-1.6, -0.9, -0.3, 0.3, 0.9, 1.6].forEach(dir => {
         ctx.beginPath();
-        ctx.arc(fx1 + dir * (5 + st * 11), f.y1 - Math.abs(dir) * st * 3 - st * 14, 2 * (1 - st * 0.4), 0, Math.PI * 2);
+        ctx.arc(fx1 + dir * (6 + st * 14), f.y1 - Math.abs(dir) * st * 4 - st * 18, 2.2 * (1 - st * 0.4), 0, Math.PI * 2);
         ctx.fill();
       });
     }
@@ -21765,6 +22033,23 @@ function drawTopsyChefLoveCouch(w, reach, wobble) {
   drawLegCable(0, legsBottom, reach);
 }
 
+// CONFIRMED FIX ("idk about the random like feather looking things"):
+// both glimmer bursts around the pot used an 8-point elongated star
+// (long thin spikes on the diagonals too) that read as a little feather
+// or leaf at this size, not a sparkle. Replaced with a proper 4-point
+// twinkle glyph -- pinched cross shape via quadraticCurveTo, the classic
+// "sparkle" silhouette -- shared by both the per-catch glimmers and the
+// bigger finale ring so they read as the same kind of effect.
+function drawTopsyChefSparkleGlyph(sz) {
+  ctx.beginPath();
+  ctx.moveTo(0, -sz);
+  ctx.quadraticCurveTo(sz * 0.18, -sz * 0.18, sz, 0);
+  ctx.quadraticCurveTo(sz * 0.18, sz * 0.18, 0, sz);
+  ctx.quadraticCurveTo(-sz * 0.18, sz * 0.18, -sz, 0);
+  ctx.quadraticCurveTo(-sz * 0.18, -sz * 0.18, 0, -sz);
+  ctx.closePath();
+}
+
 // CONFIRMED ADD (per the "talk before build": "the rat chef backside
 // with the hat on kinda bobbing and stirring or something"): drawn
 // right-side up on the real floor (this is the one thing in the room
@@ -21787,11 +22072,29 @@ function drawTopsyChefBack(potX, camX) {
   // is 1 right at the moment of landing and eases down to 0 over
   // celebWindow ms; everything below (stir speed, bob, steam count,
   // hat wiggle, the glimmers) scales off it, so it's one single knob.
-  const celebWindow = 900;
+  // CONFIRMED CHANGE ("when things are added, make the animation a lil
+  // slower"): was 900ms, felt rushed right after the flight's own 950ms
+  // swoop -- stretched out so the stir/steam/glimmer burst lingers a
+  // beat longer instead of snapping back to idle almost immediately.
+  const celebWindow = 1300;
   const sincePoke = topsyChefSpicePuzzle.pokedAt ? performance.now() - topsyChefSpicePuzzle.pokedAt : Infinity;
   const celebrating = sincePoke < celebWindow;
   const celebT = celebrating ? sincePoke / celebWindow : 1;
   const celebPower = celebrating ? (1 - celebT) * (1 - celebT) : 0; // eased -- most of the punch right at the start
+
+  // CONFIRMED ADD ("i want there to be a better animation when all the
+  // ingredients are complete"): the last ingredient already rides the
+  // normal celebPower burst above like any other catch -- this is a
+  // SEPARATE, bigger, longer finale layered on top of it once the whole
+  // recipe is actually done, keyed off topsyChefSpicePuzzle.solvedAt.
+  // finalePower rises then falls smoothly across the whole window
+  // (sin curve, not a hard decay) so the payoff has a real build instead
+  // of just instantly being at full strength then fading.
+  const finaleWindow = 2400;
+  const sinceSolved = topsyChefSpicePuzzle.solvedAt ? performance.now() - topsyChefSpicePuzzle.solvedAt : Infinity;
+  const inFinale = sinceSolved < finaleWindow;
+  const finaleT = inFinale ? sinceSolved / finaleWindow : 0;
+  const finalePower = inFinale ? Math.sin(finaleT * Math.PI) : 0;
 
   // little stove/table the pot sits on
   ctx.fillStyle = "#6b4a2c";
@@ -21824,8 +22127,8 @@ function drawTopsyChefBack(potX, camX) {
   // is up, easing back to the normal plain 4-wisp/2200ms cycle.
   drawFlowySmoke(
     potX, potY - 24,
-    4 + Math.round(celebPower * 5),
-    2200 - celebPower * 1300,
+    4 + Math.round(Math.max(celebPower, finalePower) * 5),
+    2200 - Math.max(celebPower, finalePower) * 1300,
     "rgba(255,250,240,"
   );
 
@@ -21846,14 +22149,39 @@ function drawTopsyChefBack(potX, camX) {
       ctx.translate(gx, gyPos);
       ctx.rotate(ang * 2 + celebT * 5);
       ctx.fillStyle = `rgba(255,238,180,${alpha})`;
-      ctx.beginPath();
-      ctx.moveTo(0, -3.2); ctx.lineTo(0.9, -0.6); ctx.lineTo(3.2, 0);
-      ctx.lineTo(0.9, 0.6); ctx.lineTo(0, 3.2); ctx.lineTo(-0.9, 0.6);
-      ctx.lineTo(-3.2, 0); ctx.lineTo(-0.9, -0.6);
-      ctx.closePath();
+      drawTopsyChefSparkleGlyph(3.2);
       ctx.fill();
       ctx.restore();
     }
+  }
+
+  // CONFIRMED ADD (finale, see finaleWindow's own comment above): a
+  // second, bigger ring of sparkles in a spread of warm colors (not just
+  // gold) spinning further out and higher than the per-catch glimmers,
+  // for the one moment the whole recipe actually comes together.
+  if (inFinale) {
+    const finaleColors = ["255,238,180", "255,190,160", "200,230,160", "255,255,255"];
+    const ringCount = 12;
+    for (let i = 0; i < ringCount; i++) {
+      const ang = (i / ringCount) * Math.PI * 2 - finaleT * 5;
+      const dist = 10 + finaleT * 46;
+      const fx = potX + Math.cos(ang) * dist;
+      const fyPos = (potY - 20) + Math.sin(ang) * dist * 0.45 - finaleT * 30;
+      const alpha = finalePower * (0.85 - finaleT * 0.3);
+      ctx.save();
+      ctx.translate(fx, fyPos);
+      ctx.rotate(ang * 2 - finaleT * 6);
+      ctx.fillStyle = `rgba(${finaleColors[i % finaleColors.length]},${Math.max(0, alpha)})`;
+      drawTopsyChefSparkleGlyph(2.6 + (i % 3) * 0.6);
+      ctx.fill();
+      ctx.restore();
+    }
+    // a soft warm halo pulse right over the pot, the same idea as the
+    // card's own gold flourish ellipse but grounded at the actual pot
+    ctx.fillStyle = `rgba(255,225,150,${finalePower * 0.3})`;
+    ctx.beginPath();
+    ctx.ellipse(potX, potY - 20, 26 + finaleT * 14, 16 + finaleT * 10, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // the chef, from behind, standing right at the pot -- small idle bob
