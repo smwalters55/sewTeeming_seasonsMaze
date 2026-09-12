@@ -20153,6 +20153,11 @@ const topsyChefSpicePuzzle = {
   // flash the wrong-catch shake gets -- see the ground-landing branch in
   // applyPhysics and drawTopsyChefSpicePuzzle's own card flourish.
   groundedAt: null,
+  // CONFIRMED ADD (NPC hint): timestamp until which the chef's little
+  // "stay off the floor" aside stays on screen -- set fresh each time
+  // the player steps into the room (see the window-entry trigger) as
+  // long as the recipe isn't solved yet.
+  hintUntil: null,
   flights: [] // in-flight "ingredient arcing into the pot" animations -- see drawTopsyChefSpiceFlights
 };
 // CONFIRMED CHANGE ("make this smaller. the furniture fill up most of
@@ -20948,6 +20953,18 @@ function drawTopsyChefInterior(camX) {
   // ingredients to -- read as clearly separate.
   drawTopsyChefBack(cx + 170, camX);
   drawTopsyChefSpiceFlights(camX);
+
+  // CONFIRMED ADD ("add a like npc dialogue... a vague hint you have to
+  // stay up to do it all"): a brief mumbled aside from the chef, right
+  // by the pot, for a few seconds after stepping in -- see where
+  // hintUntil gets set on entry. Deliberately vague/in-character rather
+  // than spelling the mechanic out directly.
+  if (topsyChefSpicePuzzle.hintUntil && performance.now() < topsyChefSpicePuzzle.hintUntil) {
+    drawFittedSpeechBubble(ctx, cx + 90, gy - 110, [
+      "Oh, and don't let your paws touch the floor 'til it's done --",
+      "a proper ratatouille waits for no one!"
+    ]);
+  }
 
   // CONFIRMED REMOVED ("remove the hint text"): the exit nudge used to
   // print "press DOWN or SPACE to step back outside" here every frame --
@@ -22491,6 +22508,14 @@ function updateTopsyTurvyScene(deltaTime) {
     player.jumping = false;
     player.topsyInverted = false;
     player.usedDoubleJump = false;
+    // CONFIRMED ADD ("add a like npc dialogue... a vague hint you have
+    // to stay up to do it all"): a brief mumbled aside from the chef,
+    // right as you step in, IF the recipe isn't solved yet -- see the
+    // hint bubble drawn near the chef in drawTopsyChefInterior. Doesn't
+    // spell out the mechanic outright, just enough of a nudge.
+    if (!topsyChefSpicePuzzle.solved) {
+      topsyChefSpicePuzzle.hintUntil = performance.now() + 5000;
+    }
     // CONFIRMED BUG FIX ("i cant jump up or move left or right"): you
     // can only ever be near the window at all by having climbed the
     // ladder up to it (onTopsyHouseLadder=true), and this trigger never
