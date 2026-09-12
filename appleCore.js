@@ -21331,7 +21331,10 @@ function updateTopsyTurvyScene(deltaTime) {
   // CONFIRMED CHANGE ("can you enlarge the radius of spacebar getting
   // into the house like i asked"): widened further still (70/40/110 ->
   // 110/60/150) -- the first pass wasn't generous enough.
-  const nearGrumpyWindowForEntry = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 110, 60, 150);
+  // CONFIRMED CHANGE ("widen the radius. again. for clicking spacebar to
+  // get into the house while on ladder"): widened a third time
+  // (110/60/150 -> 150/90/190).
+  const nearGrumpyWindowForEntry = grumpyHouse && isPlayerNear(grumpyHouse.x, topsyHouseDoorstepHeight(grumpyHouse), 150, 90, 190);
   if (nearGrumpyWindow && !topsyTurvyGrumpyDialogueShown && !topsyChef.wonOverByTomatoes) {
     topsyTurvyGrumpyLingerT += deltaTime * 1000;
     if (topsyTurvyGrumpyLingerT > 900) topsyTurvyGrumpyDialogueShown = true;
@@ -21992,7 +21995,7 @@ function drawTopsyTurvyHouse(camX, h) {
         // you bring me two tomatoes'"): reads as one continuous grumpy-
         // -then-bargaining line now, instead of two separate flat
         // statements.
-        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop - 6 * s), [
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 55 * s), [
           "Shoo! Stop peeking in windows!",
           "...unless you bring me two tomatoes for my ratatouille!"
         ]);
@@ -22006,7 +22009,7 @@ function drawTopsyTurvyHouse(camX, h) {
         // old "come by anytime" was too vague to actually point anyone
         // at the peek-inside window -- swapped for a soft, in-character
         // nudge that says what to actually do next.
-        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop - 6 * s), [
+        drawFittedSpeechBubble(ctx, sx - 40, y(wallTop + 55 * s), [
           "Mmm, perfect! Just what my",
           "ratatouille needed. Go on, take a peek inside."
         ]);
@@ -23274,40 +23277,6 @@ function drawTopsyPotGauntletPotBody(w, h, colorLite, color, rim) {
   ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.ellipse(0, rimY, rimHalfW, h * 0.14, 0, Math.PI, Math.PI * 2);
-  ctx.stroke();
-}
-
-// CONFIRMED RE-ADD (see the drawPy/potSink comment above for why this
-// was pulled and why it's back): a solid pot-colored wedge covering the
-// player's now-sunk legs (see potSink) -- exactly one shape, no separate
-// dark interior/hole (that's what made an earlier pass read as a smudge
-// the player was falling into). Sized to the player's own width so the
-// sprite doesn't stick out the sides. Anchored to the player's own feet
-// (footX/footY, the same values the sprite itself just drew at) rather
-// than the pot's world position -- with the ambient wind now off inside
-// the gauntlet, the two should finally stay in sync frame to frame.
-function drawTopsyPotGauntletOcclusion(footX, footY) {
-  const halfW = player.width / 2 + 4, wallH = 13;
-  const topY = footY - wallH;
-  const grad = ctx.createLinearGradient(footX - halfW, 0, footX + halfW, 0);
-  grad.addColorStop(0, "#b5622e");
-  grad.addColorStop(0.5, "#d97f45");
-  grad.addColorStop(1, "#b5622e");
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(footX - halfW, topY);
-  ctx.quadraticCurveTo(footX - halfW * 1.08, footY - wallH * 0.35, footX - halfW * 0.85, footY);
-  ctx.quadraticCurveTo(footX, footY + 2, footX + halfW * 0.85, footY);
-  ctx.quadraticCurveTo(footX + halfW * 1.08, footY - wallH * 0.35, footX + halfW, topY);
-  ctx.closePath();
-  ctx.fill();
-  // just the top rim edge of this front wall -- no dark interior, no
-  // second hollow ellipse. reads as "the pot's near wall", not a hole.
-  ctx.strokeStyle = "#ffd9a0";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(footX - halfW * 0.95, topY + 1);
-  ctx.quadraticCurveTo(footX, topY - 1.5, footX + halfW * 0.95, topY + 1);
   ctx.stroke();
 }
 
@@ -65763,26 +65732,14 @@ const floatBob = (typeof floatSubmergeAmount !== "undefined" ? floatSubmergeAmou
 // down into the bowl instead of standing flush on top of it, per direct
 // feedback ("make it look like player is inside nest not floating above it").
 const nestSink = (currentScene === "spring" && peanutVine.mounted && peanutVineAtTop()) ? 9 : 0;
-// CONFIRMED RE-ADD ("since we are no longer having wind while in
-// gauntlet, can we do the occlusion in the pots but correctly this
-// time"): pulled entirely last time after 4 rejected passes (floating
-// oval, a dark hole that read as a smudge, too narrow). The real root
-// cause of at least the "floating/disconnected" complaints wasn't the
-// occlusion shape itself -- it was that the ambient topsy-turvy wind
-// (TOPSY_WIND_STRENGTH) was nudging player.x every frame even while
-// standing on an upright pot, so the character (and anything anchored
-// to it) visibly drifted sideways relative to the pot's own fixed
-// position. That's now suppressed for the whole gauntlet span (see
-// updateTopsyTurvyScene), so the standing position is finally stable
-// enough for this to actually hold still. Reusing the LAST shape that
-// was tried (full player-width solid wedge, no dark interior -- see
-// drawTopsyPotGauntletOcclusion below) since that one was never
-// actually rejected on its own merits, just swept out along with
-// everything else in the same message.
-const onUprightGauntletPot = currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
-  topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex]);
-const potSink = onUprightGauntletPot ? 6 : 0;
-const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink + potSink;
+// CONFIRMED REMOVE ("just no occlude when pot open on top anymore
+// pls"): the pot occlusion effect has now been rejected 5 separate
+// times (floating oval, a dark hole reading as a smudge, too narrow,
+// still "drawing directly on the player" even after the wind-drift fix)
+// -- dropping it for good instead of trying another shape. Standing on
+// a pot no longer sinks/occludes the sprite at all; the pot itself
+// still visually reads as "under the player" from its own art.
+const drawPy = py + sinkAmount + riverWadeSink - floatBob + nestSink;
 
 // CONFIRMED BUG FIX ("leaf crown doesnt lower when player does"): ducking
 // itself is a feet-anchored ctx.scale further down in this same function
@@ -66468,14 +66425,6 @@ if (currentScene === "spring" && peanutVine.mounted && peanutVine.grown && peanu
 // snuggled right up against the player, not partially hidden behind anything.
 if (currentScene === "spring" && vineBirdVisit.state !== "idle") {
   drawVineBirdVisit(camX);
-}
-
-// CONFIRMED RE-ADD -- gated to standingPotIndex AND the pot currently
-// being upright, matching "when its facing upward" from the original
-// ask -- no occlusion while locked/pinned on an upside-down one.
-if (currentScene === "topsyturvy" && topsyPotGauntlet.standingPotIndex != null &&
-    topsyPotUpright(TOPSY_POT_GAUNTLET_POTS[topsyPotGauntlet.standingPotIndex])) {
-  drawTopsyPotGauntletOcclusion(px + player.width / 2, drawPy + player.height);
 }
 
 drawCrown(camX);
