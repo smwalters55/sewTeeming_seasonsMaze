@@ -23556,14 +23556,22 @@ function drawTopsyTurvyPigPots() {
 // nearest platform is preserved automatically -- this whole back half
 // of the scene just slid right as one block.
 const TOPSY_POT_GAUNTLET_START_X = 1850;
-// CONFIRMED ADD ("please spawn me right in front of it"): TEMPORARY
-// debug spawn, per this session's standing hand-edit convention -- drops
-// the player right at the pot gauntlet's own entry line, already in the
-// topsyturvy scene (see DEBUG_START_SCENE above), so testing the new
-// lock mechanic doesn't need a walk-in from the land's entrance first.
-// Revert alongside DEBUG_START_SCENE once no longer needed for testing.
+// CONFIRMED CHANGE ("spawn me inside the house"): TEMPORARY debug
+// spawn, per this session's standing hand-edit convention -- was
+// dropping the player at the pot gauntlet's entry line for the lock
+// mechanic testing; now drops straight inside the chef's house interior
+// instead (already in the topsyturvy scene, see DEBUG_START_SCENE
+// above), skipping the walk-in from the land's entrance AND the
+// window-entry prompt, so the new recipe puzzle/room layout can be
+// played and checked directly on load. Revert alongside DEBUG_START_SCENE
+// once no longer needed for testing -- the old pot-gauntlet spawn line
+// is left commented just below in case that testing resumes later.
 if (DEBUG_START_SCENE === "topsyturvy") {
-  player.x = TOPSY_POT_GAUNTLET_START_X - 60;
+  // player.x = TOPSY_POT_GAUNTLET_START_X - 60;
+  // player.y = 0;
+  topsyChefInteriorActive = true;
+  topsyChef.sequencePhase = "done";
+  player.x = topsyTurvyHouses.find(h => h.grumpy).x - 40;
   player.y = 0;
 }
 // CONFIRMED CHANGE ("still relatively easy to almost hop all the way
