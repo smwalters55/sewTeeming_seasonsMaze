@@ -28501,14 +28501,46 @@ function computeForestSlideChuteGeometry(camX) {
 // the window starts/ends.
 function drawForestSlideChuteNearRail(camX) {
   const geo = computeForestSlideChuteGeometry(camX);
-  const { steps, right, trackRight, halfWidths } = geo;
+  const { steps, right, trackRight, halfWidths, mid } = geo;
   if (right[0].x < -150 && right[right.length - 1].x < -150) return;
   if (right[0].x > canvas.width + 150 && right[right.length - 1].x > canvas.width + 150) return;
 
-  const RAIL_WINDOW = 5; // steps of local reach on either side of the player -- comfortably covers the player's own height (~54px) against this chute's ~10.5px-per-step average spacing, without reaching far enough to snag a distant wobble
-  const playerIdx = Math.round((poolSlideExit.rideProgress || 0) * steps);
-  const idx0Win = Math.max(0, playerIdx - RAIL_WINDOW);
-  const idx1Win = Math.min(steps, playerIdx + RAIL_WINDOW);
+  // CONFIRMED BUG FIX ("you said this was fixed like 8 times, carefully
+  // check it" -- verified via a dense progress sweep in the debug harness:
+  // at several points the near-rail drew a disconnected dark wedge clean
+  // across the player's FACE, not a plausible "rail lip over the legs"
+  // shape -- reproducible at multiple ride progresses, not a one-off).
+  // Two compounding causes, both fixed here:
+  // 1) The old window picked a fixed number of STEPS on either side of the
+  //    player, assuming they're evenly spaced ("~10.5px-per-step
+  //    average"). They aren't -- forestSlideChuteDropCum weights each step
+  //    by a random 0.35-1.75 factor, so consecutive steps can be spaced
+  //    anywhere from a sliver to ~5x the average apart. A fixed step-count
+  //    window could therefore span anywhere from a sliver to well over
+  //    100px of actual screen height depending on local step density.
+  // 2) Even sized correctly, the window was centered on the player's own
+  //    position with no cap on how far it could reach ABOVE their feet --
+  //    and since the near-rail's inner (track-facing) edge sits only
+  //    trackHalfWidth (~13-18px) right of centerline, well inside the
+  //    player's own +/-20px half-width, ANY rail geometry drawn near head
+  //    height will visibly cut across the face, not just skim the outer
+  //    thigh like the original ask ("the edge of the side closest to
+  //    human would partly occlude") intended.
+  // Fixed by windowing on actual on-screen height (cy) relative to the
+  // player's own feet position (player.y, same point the chute geometry
+  // is sampled at) instead of step count -- consistent reach regardless of
+  // local step density -- AND hard-capping the reach above the feet to
+  // well under the sprite's own height, so the rail can only ever cover
+  // roughly the lower third (legs), never climb high enough to touch the
+  // face no matter how the rock jag rolls.
+  const feetIdxF = Math.max(0, Math.min(steps, (poolSlideExit.rideProgress || 0) * steps));
+  const pi0 = Math.floor(feetIdxF), pi1 = Math.min(steps, Math.ceil(feetIdxF));
+  const feetCy = mid[pi0].y + (mid[pi1].y - mid[pi0].y) * (feetIdxF - pi0);
+  const REACH_ABOVE_FEET_PX = player.height * 0.35; // lower third of the sprite only -- never reaches face height
+  const REACH_BELOW_FEET_PX = 40;
+  let idx0Win = 0, idx1Win = steps;
+  for (let i = 0; i <= steps; i++) { if (mid[i].y >= feetCy - REACH_ABOVE_FEET_PX) { idx0Win = i; break; } }
+  for (let i = steps; i >= 0; i--) { if (mid[i].y <= feetCy + REACH_BELOW_FEET_PX) { idx1Win = i; break; } }
   if (idx1Win <= idx0Win) return;
 
   ctx.save();
@@ -28958,13 +28990,37 @@ function drawForestLedgeSkyBackdrop(camX) {
   // given real per-clump height variation so overlapping circles can't
   // stack into another flat plateau line, same fix as the main canopy
   // layers in drawForestScene above.
+  // CONFIRMED CHANGE ("can we make this tree line better. like not just
+  // overlapping circles"): a plain row of same-tone full circles read as
+  // exactly that -- overlapping circles, not treetops. Rebuilt each clump
+  // with the same texturing already used for the main canopy layers back
+  // in drawForestScene: a lopsided second lobe so the outline isn't a
+  // perfect circle, per-clump color/tone jitter instead of one flat
+  // green, a couple of small darker leaf-cluster dots for texture, and a
+  // soft highlight dab catching light on top.
   for (let i = 0; i < 8; i++) {
     const px = centerX + (i - 3.5) * 90 + (pseudoRandom(i * 3.3 + 960) - 0.5) * 50;
-    const r = 40 + pseudoRandom(i * 5.7 + 961) * 26;
-    const hJitter = (pseudoRandom(i * 8.8 + 962) - 0.5) * 40;
-    ctx.fillStyle = `rgba(70,110,60,${0.7 + pseudoRandom(i * 5.7 + 963) * 0.2})`;
+    const r = 38 + pseudoRandom(i * 5.7 + 961) * 24;
+    const hJitter = (pseudoRandom(i * 8.8 + 962) - 0.5) * 44;
+    const tone = pseudoRandom(i * 6.1 + 964);
+    const cy = baseY - 26 + hJitter;
+    ctx.fillStyle = `rgba(${Math.round(56 + tone * 26)},${Math.round(92 + tone * 30)},${Math.round(46 + tone * 18)},${0.78 + tone * 0.18})`;
     ctx.beginPath();
-    ctx.arc(px, baseY - 26 + hJitter, r, 0, Math.PI * 2);
+    ctx.arc(px, cy, r, 0, Math.PI * 2);
+    ctx.arc(px + r * 0.55, cy + r * 0.22, r * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+    for (let k = 0; k < 2; k++) {
+      const seed = i * 7.2 + k * 3.4 + 966;
+      const dx = (pseudoRandom(seed) - 0.5) * r * 1.3;
+      const dy = -pseudoRandom(seed + 1) * r * 0.6;
+      ctx.fillStyle = `rgba(20,32,16,${0.16 + pseudoRandom(seed + 2) * 0.14})`;
+      ctx.beginPath();
+      ctx.ellipse(px + dx, cy + dy, r * 0.28, r * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = `rgba(150,180,110,${0.12 + tone * 0.1})`;
+    ctx.beginPath();
+    ctx.ellipse(px + (pseudoRandom(i * 9.3 + 968) - 0.5) * r * 0.6, cy - r * 0.4, r * 0.32, r * 0.18, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 }
