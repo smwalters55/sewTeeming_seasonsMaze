@@ -20721,24 +20721,44 @@ function updateTopsyChefPotDive(grumpyHouse) {
       player.topsyInverted = false;
     }
   } else if (topsyChefPotDive.phase === "dive") {
-    // leap/slide toward the pot, settling to floor height as it closes
-    // in -- smoothstep so it eases in and out rather than sliding at a
-    // constant rate
+    // CONFIRMED FIX ("what is this this should never look like this" --
+    // the flat floor-slide plus the old big spin-in made it look like the
+    // player just toppled sideways next to the pot instead of diving).
+    // Added an actual hop arc -- rises then comes back down right as they
+    // reach the pot -- so it reads as a leap into the pot rather than a
+    // slide-and-tip. The spin magnitude for this phase is dialed way down
+    // in the totalTilt calc below (a lean-in cue, not a topple).
     const t = Math.min(1, elapsed / dur);
     const ease = t * t * (3 - 2 * t);
     player.x = topsyChefPotDive.homeX + (potX - topsyChefPotDive.homeX) * ease;
-    player.y = topsyChefPotDive.homeY * (1 - ease);
+    player.y = topsyChefPotDive.homeY * (1 - ease) + Math.sin(ease * Math.PI) * 22;
     player.vy = 0;
     if (t >= 1) {
       topsyChefPotDive.phase = "swirl";
       topsyChefPotDive.phaseStart = now;
     }
   } else if (topsyChefPotDive.phase === "swirl") {
-    // fully submerged/hidden -- see the player-draw guard keyed off this
-    // phase -- parked right at the pot while drawTopsyChefPotDiveFX
-    // spins a ripple over it
-    player.x = potX;
-    player.y = 0;
+    // CONFIRMED CHANGE ("make it so we see player swirling around head up
+    // via the top of the soup bowl"): used to sit dead-center in the pot
+    // the whole phase. Now actually orbits around the pot's center --
+    // small circular sweep in x plus a gentle head-bob in y -- so from the
+    // side view they visibly loop around inside the bowl with their head
+    // staying up above the soup line (drawTopsyChefPotDiveFX anchors the
+    // soup surface to the pot itself, not to the player, so the bob reads
+    // as bobbing IN the soup rather than the soup chasing them).
+    // CONFIRMED CHANGE ("like a pointer finger pointing upward, swirled in
+    // a circle -- we see the top segment swirling"): a vertical bob read
+    // as bobbing up and down, not swirling. Dropped the y bob -- the
+    // player sits at a steady depth in the pot (mostly submerged, see the
+    // fixed soup line in drawTopsyChefPotDiveFX) and only sweeps side to
+    // side in x, which from this side-on camera is exactly how a circular
+    // stir reads: just the top segment (the head) visibly tracing back
+    // and forth above the soup line while the rest stays under.
+    const loopT = elapsed / dur;
+    const angle = loopT * Math.PI * 2 * 2.5;
+    const orbitR = 15;
+    player.x = potX + Math.cos(angle) * orbitR;
+    player.y = 2;
     if (elapsed >= dur) {
       topsyChefPotDive.phase = "popout";
       topsyChefPotDive.phaseStart = now;
@@ -21933,6 +21953,53 @@ function drawTopsyChefPotDiveFX(camX) {
       ctx.quadraticCurveTo(potSx + dir * 10, potSy - 18 - wt * 20, potSx + dir * 5, potSy - 28 - wt * 20);
       ctx.stroke();
     }
+    // CONFIRMED ADD (pot-dive finale, "actually swirled visually"): the
+    // player now stays visible and spinning through "swirl" (see the
+    // totalTilt spin term and the x-orbit in updateTopsyChefPotDive)
+    // instead of vanishing, so without this they'd just look like they're
+    // spinning next to the pot rather than IN it.
+    // CONFIRMED CHANGE ("like a pointer finger pointing upward, swirled in
+    // a circle -- we see the top segment swirling"): the soup surface is
+    // now a FIXED line anchored to the pot itself (not chasing the
+    // player's position), set high enough that only the top of the
+    // player -- the "fingertip" -- pokes out while they orbit side to
+    // side underneath it. The opaque fill covers the pot's full interior
+    // (wide enough for the whole orbit sweep), so the body is always
+    // hidden and only the head is ever visible above the line.
+    const bowlHalfW = player.width * 0.62 + 15;
+    // CONFIRMED FIX (visual QA: the first factor put the line ABOVE the
+    // player's own top edge, so the whole sprite -- head included -- sat
+    // under it, invisible). player.height=54, and the top of the sprite
+    // sits at (gy - height - player.y); this line needs to fall well
+    // below that so roughly the top third (head/shoulders) pokes out.
+    const soupLineY = potSy - player.height * 0.3;
+    const bob = Math.sin(now * 0.01) * 1.5;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(potSx - bowlHalfW, soupLineY + bob);
+    ctx.quadraticCurveTo(potSx - bowlHalfW, gy, potSx - bowlHalfW * 0.7, gy);
+    ctx.lineTo(potSx + bowlHalfW * 0.7, gy);
+    ctx.quadraticCurveTo(potSx + bowlHalfW, gy, potSx + bowlHalfW, soupLineY + bob);
+    ctx.closePath();
+    ctx.clip();
+    // CONFIRMED CHANGE ("dont make it see through"): first pass was
+    // translucent enough that the player's own outfit still read plainly
+    // through the "soup" -- bumped to solid/near-opaque fills so it
+    // actually reads as thick ratatouille sitting on top of them, not a
+    // colored tint.
+    ctx.fillStyle = "rgba(200,108,46,0.97)";
+    ctx.fillRect(potSx - bowlHalfW, soupLineY + bob - 6, bowlHalfW * 2, player.height + 40);
+    ctx.fillStyle = "rgba(182,96,40,1)";
+    ctx.beginPath();
+    ctx.ellipse(potSx, soupLineY + bob, bowlHalfW, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // a bright rim right at the "surface" line so the edge actually reads
+    ctx.strokeStyle = "rgba(250,196,120,0.65)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(potSx, soupLineY + bob, bowlHalfW, 5.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
   } else if (topsyChefPotDive.phase === "popout" || topsyChefPotDive.phase === "dry") {
     // dripping wet droplets falling off the player for a few beats,
     // tapering out as "dry" progresses
@@ -67453,13 +67520,14 @@ if (currentScene !== "pool" && !inPotGauntletShadowSpan) {
 // "player disappears, only shadow visible." The pool has no ground-level
 // hole-fall concept this clip was protecting against, so it's simply
 // exempted outright rather than trying to extend the height math.
-// CONFIRMED ADD (pot-dive finale): fully hide the player sprite during
-// the "swirl" phase -- they're meant to read as submerged inside the
-// pot, and drawTopsyChefPotDiveFX draws the ripple/steam over the pot
-// in their place. Every other phase (dive/popout/dry) still draws
-// normally, same body, just repositioned by updateTopsyChefPotDive.
-if ((currentScene === "pool" || drawPy < gy + cameraY) &&
-    !(topsyChefPotDive.active && topsyChefPotDive.phase === "swirl")) { // still at least partly above ground — worth drawing
+// CONFIRMED CHANGE (pot-dive finale, "make better animation of player
+// going into and being actually swirled visually"): used to fully hide
+// the player during "swirl" -- but "actually swirled VISUALLY" means
+// they need to stay visible and spin, not vanish. Now drawn normally
+// through every phase (the spin itself lives in totalTilt below, and
+// drawTopsyChefPotDiveFX layers a soup-line overlay after the player to
+// sell "waist-deep in the pot" while they twirl).
+if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly above ground — worth drawing
   ctx.save();
   ctx.beginPath();
   // widened well past the sprite's own bounding box -- the clip only
@@ -67574,8 +67642,41 @@ if ((currentScene === "pool" || drawPy < gy + cameraY) &&
     ? Math.sin((performance.now() - topsyChefPotDive.phaseStart) * 0.045) * 0.22 *
       Math.exp(-(performance.now() - topsyChefPotDive.phaseStart) / 500)
     : 0;
+  // CONFIRMED ADD (pot-dive finale, "make better animation of player
+  // going into and being actually swirled visually and coming out"): an
+  // actual spin, not just position/hide -- ramps in as the dive closes
+  // the last stretch to the pot (reads as getting caught in the pull),
+  // keeps spinning fast the whole "swirl" beat (now genuinely visible,
+  // see the player-draw guard above), then decelerates back down to a
+  // clean multiple of a full turn during "popout" so they land upright
+  // exactly as "dry" begins. Computed fresh each frame from phase +
+  // elapsed, same stateless "derive from a timestamp" pattern as every
+  // other burst/celebration animation in this file -- nothing to store
+  // or leak between phases.
+  let topsyChefPotDiveSpin = 0;
+  if (topsyChefPotDive.active) {
+    const spinNow = performance.now();
+    const spinElapsed = spinNow - topsyChefPotDive.phaseStart;
+    if (topsyChefPotDive.phase === "dive") {
+      // CONFIRMED FIX ("this should never look like this" -- a full
+      // ~103 degree tip mid-dive read as toppling over next to the pot,
+      // not diving in). Just a small forward lean-in cue now; the real
+      // spin happens once they're actually in the pot during "swirl".
+      const t = Math.min(1, spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.dive);
+      const spinT = Math.max(0, (t - 0.5) / 0.5);
+      topsyChefPotDiveSpin = spinT * spinT * 0.35;
+    } else if (topsyChefPotDive.phase === "swirl") {
+      const t = spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.swirl;
+      topsyChefPotDiveSpin = 0.35 + t * Math.PI * 4;
+    } else if (topsyChefPotDive.phase === "popout") {
+      const t = Math.min(1, spinElapsed / TOPSY_CHEF_POT_DIVE_DURATION.popout);
+      const spinAtPopoutStart = 0.35 + Math.PI * 4;
+      const remainder = spinAtPopoutStart % (Math.PI * 2);
+      topsyChefPotDiveSpin = remainder * (1 - t) * (1 - t); // ease out, lands upright
+    }
+  }
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
