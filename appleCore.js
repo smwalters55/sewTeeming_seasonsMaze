@@ -416,7 +416,8 @@ const ITEM_ICONS = {
   stone: "🪨",
   aragonite: "🟠",
   geode: "🪨",
-  windSeed: "🍃"
+  windSeed: "🍃",
+  secretSpice: "🧄" // hidden up on the ceiling couch in the chef's house -- see TOPSY_CHEF_FURNITURE_PLATFORMS' "couch" entry
 };
 
 // the bucket is stateful (empty/filling/full), unlike every other item
@@ -20027,6 +20028,10 @@ const TOPSY_CHEF_PIG_WALK_SPEED = 70; // px/s, faster than its own idle patrol -
 // plumbing (previousScene, leadsTo, etc.) for what's meant to be a
 // quick, low-stakes peek, not a whole new destination.
 let topsyChefInteriorActive = false;
+// timestamp of the moment the hidden garlic clove (see
+// updateTopsyChefInterior's own pickup check) was actually collected --
+// null until then, drives a short "found it" flash in drawTopsyChefInterior
+let topsyChefSecretSpiceFoundAt = null;
 // where outside to put the player back once they leave -- captured the
 // moment they step in, restored the moment they step out.
 const topsyChefInteriorReturn = { x: 0, y: 0 };
@@ -20398,6 +20403,24 @@ function updateTopsyChefInterior(deltaTime) {
     player.jumping = false;
     player.topsyInverted = false;
   }
+
+  // CONFIRMED ADD ("something to find/interact with" + "a small
+  // task/mini-puzzle" for the house interior): a clove of garlic tucked
+  // up on the couch -- the tallest, farthest piece in the furniture
+  // chain, so actually reaching it means hopping table -> armchair ->
+  // plant -> couch, the same climb the room's furniture already
+  // supports. No new mechanic, just a reason to do the full climb once.
+  // Space while resting on that piece (player.topsyInverted, same state
+  // landing on any ceiling furniture sets) picks it up -- doesn't clash
+  // with space-to-exit above since that's gated to NOT topsyInverted.
+  if (!inventory.secretSpice) {
+    const couch = TOPSY_CHEF_FURNITURE_PLATFORMS.find(tp => tp.kind === "couch");
+    if (couch && player.topsyInverted && keys.spaceJustPressed &&
+        Math.abs((player.x + player.width / 2) - couch.x) < couch.width / 2 + 10) {
+      addToInventory("secretSpice");
+      topsyChefSecretSpiceFoundAt = performance.now();
+    }
+  }
 }
 
 // CONFIRMED ADD ("lets do the chef house peek, but let me also be able
@@ -20522,6 +20545,8 @@ function drawTopsyChefInterior(camX) {
   // sync with where the player actually lands.
   TOPSY_CHEF_FURNITURE_PLATFORMS.forEach(tp => drawTopsyChefFurniturePiece(tp, camX));
 
+  drawTopsyChefSecretSpice(camX);
+
   // CONFIRMED CHANGE ("the rat cooking should be a little to the right,
   // not directly under in the middle of the furniture"): was dead
   // center (cx), sitting right underneath the densest part of the
@@ -20542,6 +20567,92 @@ function drawTopsyChefInterior(camX) {
     ctx.textAlign = "left";
     ctx.globalAlpha = 1;
   }
+}
+
+// CONFIRMED ADD ("something to find/interact with" + "a small
+// task/mini-puzzle" for the house interior): a clove of garlic tucked
+// into the couch cushions -- the couch is the tallest, farthest piece
+// in the furniture chain (see TOPSY_CHEF_FURNITURE_PLATFORMS), so
+// actually reaching it means climbing the full table -> armchair ->
+// plant -> couch hop, not just walking up to it. A slow bob plus a
+// little sparkle glint gives it away as "something here" without
+// spelling it out in text. Drawn upright (not flipped with the couch
+// itself) so it reads clearly as a small loose object resting in the
+// cushions, not a fourth piece of hanging furniture.
+function drawTopsyChefSecretSpice(camX) {
+  if (inventory.secretSpice) {
+    // CONFIRMED ADD: a brief "found it" flash right where it was sitting,
+    // so the pickup reads as an actual event, not a silent disappearance.
+    if (topsyChefSecretSpiceFoundAt != null) {
+      const since = performance.now() - topsyChefSecretSpiceFoundAt;
+      if (since < 700) {
+        const couch = TOPSY_CHEF_FURNITURE_PLATFORMS.find(tp => tp.kind === "couch");
+        const sx = couch.x - camX, sy = gy - couch.height - 16;
+        const t = since / 700;
+        ctx.fillStyle = `rgba(255,235,170,${0.6 * (1 - t)})`;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 10 + t * 16, 8 + t * 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - t)})`;
+        ctx.font = "10px ui-monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("found a clove of garlic!", sx, sy - 18 - t * 10);
+        ctx.textAlign = "left";
+      }
+    }
+    return;
+  }
+  const couch = TOPSY_CHEF_FURNITURE_PLATFORMS.find(tp => tp.kind === "couch");
+  if (!couch) return;
+  const sx = couch.x - camX;
+  const bob = Math.sin(performance.now() * 0.0026) * 2.5;
+  const sy = gy - couch.height - 16 + bob;
+
+  // small sparkle glint, orbiting slowly -- the "hey, look here" cue
+  const t = performance.now() * 0.002;
+  [0, Math.PI].forEach(off => {
+    const a = t + off;
+    const gx = sx + Math.cos(a) * 13, gyy = sy + Math.sin(a) * 9 - 4;
+    const alpha = 0.35 + 0.35 * Math.sin(t * 2 + off);
+    ctx.strokeStyle = `rgba(255,244,200,${Math.max(0, alpha)})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(gx - 3, gyy);
+    ctx.lineTo(gx + 3, gyy);
+    ctx.moveTo(gx, gyy - 3);
+    ctx.lineTo(gx, gyy + 3);
+    ctx.stroke();
+  });
+
+  // the clove itself -- two rounded off-white segments cupped together,
+  // a small green sprout tip poking up
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.fillStyle = "#f3ead6";
+  ctx.strokeStyle = "#c9b98f";
+  ctx.lineWidth = 1;
+  [-2.6, 2.6].forEach(dx => {
+    ctx.save();
+    ctx.translate(dx, 0);
+    ctx.rotate(dx > 0 ? 0.18 : -0.18);
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.quadraticCurveTo(4.5, -3, 3, 6);
+    ctx.quadraticCurveTo(0, 8.5, -3, 6);
+    ctx.quadraticCurveTo(-4.5, -3, 0, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  });
+  ctx.strokeStyle = "#7a9b5a";
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, -7);
+  ctx.lineTo(0, -12);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // One furniture piece, hanging upside-down from the ceiling. Local
