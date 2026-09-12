@@ -186,13 +186,14 @@ const camera = { topDown:false, locked:false };
 // its {x:0,y:0} default), so pressing down to leave sent the player to
 // literal world origin -- "the start of topsy turvy" -- instead of back
 // outside the house.
-// CONFIRMED CHANGE ("spawn me in the house like i already asked"): back
-// on for active recipe-puzzle testing. This time the topsyturvy debug
-// block below also sets topsyChefInteriorReturn, so the earlier
-// world-origin exit bug can't recur while this is on. TEMPORARY -- flip
-// back to "autumn" once done testing, per this file's standing
-// convention (see the comment on this const above).
-const DEBUG_START_SCENE = "topsyturvy";
+// CONFIRMED CHANGE ("start me at the bottom of topsy turvey tree the
+// fungus tree pls"): switched off the chef-interior spawn and back onto
+// the "forest" case below, which already drops the player at the base of
+// the fungus climb (FOREST_FUNGUS_TREE_X - 40) with the river bridge
+// pre-completed so the teleport actually sticks. TEMPORARY -- flip back
+// to "autumn" once done testing, per this file's standing convention (see
+// the comment on this const above).
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
