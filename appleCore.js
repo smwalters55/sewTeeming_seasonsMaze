@@ -22007,11 +22007,21 @@ function drawTopsyChefPotDiveFX(camX) {
     ctx.ellipse(potSx, soupLineY + bob, bowlHalfW, 9, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    // a bright rim right at the "surface" line so the edge actually reads
+    // CONFIRMED BUG FIX ("there is like a weird line kind of like an arc
+    // that moves around on top of it" -- the player spinning in the pot):
+    // this rim highlight used to be a FULL, unclipped ellipse outline --
+    // the top half of that ring sits ABOVE the soup line by its own
+    // 5.5px minor radius, drawn AFTER the player (this whole function
+    // runs in the post-player pass), so that top arc floated directly in
+    // front of the visible head/face, bobbing with `bob` -- exactly the
+    // stray moving line reported. Only the FRONT (lower) half-arc is a
+    // real "near rim" a viewer would expect to see in front of anything;
+    // the back half is on the far side of the bowl and belongs behind the
+    // visible player, not drawn in front of them at all.
     ctx.strokeStyle = "rgba(250,196,120,0.65)";
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.ellipse(potSx, soupLineY + bob, bowlHalfW, 5.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(potSx, soupLineY + bob, bowlHalfW, 5.5, 0, 0, Math.PI);
     ctx.stroke();
   } else if (topsyChefPotDive.phase === "popout" || topsyChefPotDive.phase === "dry") {
     // dripping wet droplets falling off the player for a few beats,
@@ -24291,6 +24301,85 @@ function drawFungusTrunkPulley(sx, y, s, side, bottomLocalHeight, topLocalHeight
   ctx.beginPath();
   ctx.arc(railX, bottomY, 2.6 * s, 0, Math.PI * 2);
   ctx.fill();
+
+  // CONFIRMED CHANGE ("i want player to actually go up on the basket not
+  // just up the line by itself" -- then, after a first attempt wrapped a
+  // belt-shaped rim around the player's own body and got "this def is not
+  // it... we want to be on top the tomato filled basket"): during a real
+  // ride, this basket stops running its own independent up/down/up cycle
+  // and instead locks to the player's exact ride height (see
+  // updateFungusPulleyRide's player.y), scaled up enough to plausibly
+  // carry them, with the player simply standing on top of it -- so this
+  // whole draw call still happens in the normal PRE-player pass (same as
+  // every other frame), no separate post-player redraw needed at all,
+  // since nothing needs to wrap in front of the player this time. Resumes
+  // its own ambient idle cycle the instant the ride ends.
+  if (player.onFungusPulleyRide) {
+    const rideScale = s * 2.05;
+    const basketY = y(player.y) - 3 * s; // rim sits just under the player's feet, not exactly at them, so it visibly carries their weight instead of clipping through the rim line
+    const bx = railX;
+    const bw = 12 * rideScale, bh = 8.5 * rideScale;
+
+    ctx.strokeStyle = "#8a7250";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(railX, topY);
+    ctx.lineTo(bx, basketY - 6 * rideScale);
+    ctx.stroke();
+
+    // tomato cargo tucked in beside the player's feet, clear of the
+    // middle where they're actually standing
+    [-0.62, 0.58].forEach(f => drawTomatoShape(ctx, bx + bw * f, basketY + 1 * rideScale, 3.6 * rideScale / s, 0));
+
+    const bodyGrad = ctx.createLinearGradient(bx - bw * 0.6, 0, bx + bw * 0.6, 0);
+    bodyGrad.addColorStop(0, "#5e4526");
+    bodyGrad.addColorStop(0.28, "#8a6a3e");
+    bodyGrad.addColorStop(0.5, "#a88251");
+    bodyGrad.addColorStop(0.72, "#8a6a3e");
+    bodyGrad.addColorStop(1, "#5e4526");
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(bx - bw * 0.56, basketY);
+    ctx.quadraticCurveTo(bx - bw * 0.63, basketY + bh * 0.6, bx - bw * 0.3, basketY + bh);
+    ctx.quadraticCurveTo(bx, basketY + bh * 1.15, bx + bw * 0.3, basketY + bh);
+    ctx.quadraticCurveTo(bx + bw * 0.63, basketY + bh * 0.6, bx + bw * 0.56, basketY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#3a2818";
+    ctx.lineWidth = 0.8 * rideScale;
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(45,30,15,0.55)";
+    ctx.lineWidth = 0.6 * rideScale;
+    [-0.44, -0.16, 0.16, 0.44].forEach(f => {
+      ctx.beginPath();
+      ctx.moveTo(bx + bw * f, basketY);
+      ctx.quadraticCurveTo(bx + bw * f * 0.7, basketY + bh * 0.65, bx + bw * f * 0.32, basketY + bh * 1.02);
+      ctx.stroke();
+    });
+    ctx.strokeStyle = "rgba(60,40,20,0.5)";
+    ctx.lineWidth = 0.7 * rideScale;
+    [0.22, 0.48, 0.74].forEach(f => {
+      ctx.beginPath();
+      ctx.moveTo(bx - bw * 0.56 * (1 - f * 0.6), basketY + bh * f);
+      ctx.quadraticCurveTo(bx, basketY + bh * (f + 0.1), bx + bw * 0.56 * (1 - f * 0.6), basketY + bh * f);
+      ctx.stroke();
+    });
+
+    // rim drawn last, front half only, so it reads as wrapping the near
+    // side of the basket the player is standing in rather than a full
+    // halo floating around their ankles
+    ctx.fillStyle = "#9a7a48";
+    ctx.beginPath();
+    ctx.ellipse(bx, basketY, bw * 0.56, 2.6 * rideScale, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = "#5a4020";
+    ctx.lineWidth = 1.3 * rideScale;
+    ctx.beginPath();
+    ctx.ellipse(bx, basketY, bw * 0.56, 2.6 * rideScale, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    return;
+  }
 
   // one continuous loop: up carrying a mushroom, back down carrying a
   // tomato, eased in/out at each end rather than linear
@@ -27858,6 +27947,14 @@ function drawForestFungusClimb(camX) {
   // covers whatever the current climb height is). Stays drawn LAST, after
   // the mats, since it's meant to read as clearly in front on its own
   // rope rather than tucked into the bark like the nook/door.
+  // CONFIRMED CHANGE ("i want player to actually go up on the basket not
+  // just up the line by itself" -- then "we want to be on top the tomato
+  // filled basket"): during a real ride, drawFungusTrunkPulley itself now
+  // draws an enlarged version of this same basket locked to the player's
+  // exact ride height instead of its own idle cycle, with the player
+  // simply standing on top of it -- see its own comment for why that
+  // replaced an earlier attempt that wrapped a rim around the player's
+  // body instead. Nothing extra needed here.
   drawFungusTrunkPulley(sx, fungusY, FUNGUS_VIGNETTE_SCALE, 1, 60, topLevelHeight + 80);
 }
 
@@ -28554,8 +28651,27 @@ function drawForestSlideChuteNearRail(camX) {
   for (let i = steps; i >= 0; i--) { if (mid[i].y <= feetCy + REACH_BELOW_FEET_PX) { idx1Win = i; break; } }
   if (idx1Win <= idx0Win) return;
 
+  // CONFIRMED BUG FIX ("cascading of the slide behind the player but also
+  // sort of in front of... that should not happen" -- root-caused via a
+  // debug-harness dump of the actual gradient bounds vs. the window's real
+  // on-screen position): this gradient's x0/x1 were always anchored to
+  // STEP 0 -- the very top of the whole chute -- while the window drawn
+  // here can sit anywhere along the chute's full jagged run as the ride
+  // progresses. Since the chute meanders left/right a lot over its length,
+  // by the time the player was partway down, the window's actual x
+  // (confirmed e.g. ~436-492px at ride progress 0.4) had drifted well
+  // outside the gradient's defined range (~332-370px at that same point,
+  // still measured from step 0) -- canvas gradients clamp anything past
+  // their last stop to that stop's flat color, so the whole window silently
+  // rendered as one solid near-black blob (the last stop, #332e27) instead
+  // of an actual light-to-dark rail gradient. That's the "weird arc/gap"
+  // that seemed to jump around: it was this fully-desaturated clamped patch
+  // popping in and out as the window moved further from step 0. Anchored to
+  // the window's OWN current x range instead, so the gradient always
+  // matches what's actually being filled, at every ride progress.
   ctx.save();
-  const grad = ctx.createLinearGradient(trackRight[0].x, 0, right[0].x + 10, 0);
+  const gradAnchorIdx = Math.round((idx0Win + idx1Win) / 2);
+  const grad = ctx.createLinearGradient(trackRight[gradAnchorIdx].x, 0, right[gradAnchorIdx].x + 10, 0);
   grad.addColorStop(0, "#4a4338");
   grad.addColorStop(0.5, "#5a5245");
   grad.addColorStop(1, "#332e27");
