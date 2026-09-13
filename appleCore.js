@@ -68345,29 +68345,20 @@ if (currentScene === "pool") {
 drawPoolDiveSplash(camX);
 drawPoolSlideDust(camX);
 
-// CONFIRMED CHANGE ("a slight little edge on each side of the slide like
-// a normal slide has, carve in rock. the edge of the side closest most to
-// human would partly occlude player sliding down depending on shape of
-// that slide side at each timepoint"): same "redraw the same asset over
-// the player" technique as the pool critters/nest just above -- the near
-// (right) side rail is drawn a second time here, after the player, so its
-// own jagged height wraps back in front of the sprite wherever the rail
-// happens to reach further in at that point along the chute. Gated tight
-// to the actual ride (real forest scene, real chute descent already
-// swapped in) so normal exploration near the chute isn't affected -- the
-// single background pass in drawForestSlideChute already covers that.
-if (currentScene === "forest" && poolSlideExit.active && poolSlideExit.swapped &&
-    poolSlideExit.phase === "slide") {
-  // drawForestSlideChute (and this shared-geometry near-rail twin) both
-  // use bare `gy` and expect to run inside drawForestScene's own
-  // ctx.translate(0, cameraY) wrapper -- this post-player section runs
-  // outside that wrapper (same reasoning as the pool critters redraw
-  // just above), so it has to be reapplied by hand here too.
-  ctx.save();
-  ctx.translate(0, cameraY);
-  drawForestSlideChuteNearRail(camX);
-  ctx.restore();
-}
+// CONFIRMED REMOVAL ("this is still broken" -- reacting to the near-rail
+// occlusion patch above, after multiple rounds of trying to fix the shape
+// and coloring of the dark wedge it drew next to the player -- direct
+// follow-up confirmed both "the hard notch/edge shape itself" AND "it
+// shouldn't cover the character at all"): rather than keep tuning a
+// redraw-over-the-player effect that's been wrong through several attempts
+// (see this file's own git history of "fixed like 8 times" on this exact
+// spot), the near (right) rail no longer gets a second post-player redraw
+// at all -- the single background pass in drawForestSlideChute already
+// draws the full chute, near rail included, so the player now just slides
+// down in front of it normally with nothing wrapping back over them.
+// drawForestSlideChuteNearRail itself is left defined below (unused) in
+// case a real "rail passes in front" effect is wanted again later, but
+// nothing calls it anymore.
 
 // CONFIRMED CHANGE ("make it look like player is inside nest not floating
 // above it") -- the nest's first pass only ever drew once, as part of the
