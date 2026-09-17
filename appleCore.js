@@ -4757,7 +4757,7 @@ function applyPhysics(){
     const allTopsyPlatforms = (topsyWindSeedPlot.grown
       ? topsyTurvyRootPlatforms.concat(topsyDandelionRootPlatforms, [topsyDandelionHeadPlatform])
       : topsyTurvyRootPlatforms
-    ).concat([TOPSY_SKY_GARDEN], meadowPlatforms); // the invert-platform chain's own capstone -- see its comment above
+    ).concat([TOPSY_SKY_GARDEN], meadowPlatforms, topsyEntranceDandelionRootPlatforms, [topsyEntranceDandelionHeadPlatform]); // the invert-platform chain's own capstone -- see its comment above. Entrance dandelion is always fully grown, so its platforms are added unconditionally, not gated behind topsyWindSeedPlot.grown like the big one.
     // CONFIRMED ADD ("werent we going to do that you can jump on the
     // pans and now teacups and wobble along with them?"): the pig's pot
     // stack and the tea critter's cup stack are now standable too, using
@@ -19489,6 +19489,38 @@ function topsyMeadowSeedRootPlatforms(seed) {
   return platforms;
 }
 
+// CONFIRMED ADD ("i want the intro upside down flower to be jumpable"):
+// the small decorative entrance dandelion (drawTopsyTurvyEntranceDandelion)
+// was deliberately built with no jumpable roots at all, purely atmospheric
+// -- this makes it a real stand-on-able platform after all, same "hitbox
+// matches the art" rule as every other dandelion in this land. It's
+// geometrically identical to a scale=1 meadow dandelion (same fixed
+// headR=11/stemH=26 the draw function itself uses, no randomization since
+// this one's permanently grown), so this reuses the exact same head/root
+// math as topsyMeadowSeedPlatform/topsyMeadowSeedRootPlatforms rather than
+// inventing new numbers -- just anchored at the fixed entrance x and fed
+// the same seed values drawTopsyTurvyEntranceDandelion's own draw calls
+// use, so the hitboxes line up with the art exactly. Always-there (no
+// growth gating, unlike the big seed-plot dandelion), so these are added
+// to allTopsyPlatforms unconditionally.
+const topsyEntranceDandelionHeadPlatform = {
+  x: TOPSY_ENTRANCE_DANDELION_X - 11 * 0.7,
+  width: 11 * 1.4,
+  height: 11 * 1.8
+};
+const topsyEntranceDandelionRootPlatforms = (() => {
+  const headR = 11, stemH = 26;
+  const anchorHeight = headR * 1.8 + stemH;
+  const platforms = [];
+  TOPSY_SMALL_DANDELION_ROOT_ANGLES.forEach((angle, i) => {
+    if (!TOPSY_MEADOW_ROOT_PLATFORM_ANGLES.includes(angle)) return;
+    const len = 8 + Math.abs(Math.PI / 2 - angle) * 5;
+    const end = computeDendriticStrandEnd(0, 0, angle, len, TOPSY_ENTRANCE_DANDELION_X + i * 233 + 41);
+    platforms.push({ x: TOPSY_ENTRANCE_DANDELION_X + end.x - 7, width: 14, height: anchorHeight + end.y });
+  });
+  return platforms;
+})();
+
 // picks a valid new meadow spot near the seed plot, or returns null if
 // none can be found after a handful of tries (respects spacing from the
 // well, the big dandelion's own base, the world edges, and every other
@@ -19612,6 +19644,17 @@ function topsyPickMeadowSpot() {
 // already uses -- this is a quick shortcut hole, not a whole physical
 // slide to walk/ride along like the pool's own elaborate chute.
 const TOPSY_SPIRAL_SLIDE_X = TOPSYTURVY_WIDTH - 50; // past where any meadow dandelion can spawn (topsyPickMeadowSpot caps at WIDTH-80) -- genuinely "to the right of" the whole meadow cluster, not just the plot
+// CONFIRMED CHANGE ("i want to have the hole at the start of topsy turvy
+// to be the slide" -- then, after a first pass added a whole SEPARATE
+// second hole near the start: "no just use the og [original] spiral hole
+// at the start of topsy turvey for the first hole. i dont want a separate
+// one"): no new hole after all -- the land already HAS a hole right at the
+// very start, TOPSYTURVY_RETURN_X (the portal you arrive through/can
+// leave through, see drawTopsyTurvyReturnPortal), so that existing one now
+// doubles as this same slide's other entrance once unlocked, instead of
+// planting a second one beside it. See its own trigger site (in
+// updateTopsyTurvyScene, alongside TOPSYTURVY_RETURN_X's other checks) and
+// drawTopsyTurvyReturnPortal for the visual switch-over.
 // set the instant the room's own ride finishes and cleared the instant
 // the resulting scene arrival is handled -- lets the shared scene-
 // arrival switch (see its own topsyturvy->forest branches) tell this
@@ -19661,6 +19704,24 @@ function updateTopsySpiralSlide(deltaTime) {
   }
 }
 
+// CONFIRMED CHANGE ("use the og spiral hole at the start of topsy turvey
+// for the first hole, i dont want a separate one"): the OTHER trigger for
+// this same ride -- reuses the land's existing entrance/exit portal
+// (TOPSYTURVY_RETURN_X) once the slide is unlocked, instead of a second
+// planted hole. See the portal's own trigger site (in
+// updateTopsyTurvyScene) for how this and the plain instant-return it
+// otherwise does are chosen between.
+function updateTopsySpiralSlideFromReturnPortal() {
+  if (topsySpiralSlideRoom.active || !topsySpiralSlideUnlocked()) return false;
+  if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
+    topsySpiralSlideRoom.active = true;
+    topsySpiralSlideRoom.t = 0;
+    player.inTopsySpiralSlide = true;
+    return true;
+  }
+  return false;
+}
+
 // the room's own update -- entirely separate from applyPhysics (which
 // just parks the real player and returns early while
 // player.inTopsySpiralSlide, same guard shape as player.inAntFarm) since
@@ -19680,9 +19741,12 @@ function updateTopsySpiralSlideRoom(deltaTime) {
 // swirl) -- purely the entrance now; the actual ride lives entirely in
 // drawTopsySpiralSlideRoom below, which takes over the whole screen
 // while active (see drawTopsyTurvyScene's own early-return).
-function drawTopsySpiralSlide(camX) {
-  if (!topsySpiralSlideUnlocked()) return;
-  const sx = TOPSY_SPIRAL_SLIDE_X - camX;
+// CONFIRMED CHANGE ("use the og spiral hole at the start of topsy turvey"):
+// factored out to its own holeX-parameterized function so the exact same
+// hole art can also be reused at TOPSYTURVY_RETURN_X once unlocked (see
+// drawTopsyTurvyReturnPortal) instead of drawing a second, separate hole.
+function drawTopsySpiralSlideHoleAt(camX, holeX) {
+  const sx = holeX - camX;
   if (sx < -60 || sx > canvas.width + 60) return;
   const t = performance.now() * 0.001;
 
@@ -19706,7 +19770,11 @@ function drawTopsySpiralSlide(camX) {
     ctx.stroke();
   });
   ctx.restore();
+}
 
+function drawTopsySpiralSlide(camX) {
+  if (!topsySpiralSlideUnlocked()) return;
+  drawTopsySpiralSlideHoleAt(camX, TOPSY_SPIRAL_SLIDE_X);
 }
 
 // CONFIRMED CHANGE ("i want the slide to look kiiind of like this [a real
@@ -23189,7 +23257,13 @@ function updateTopsyTurvyScene(deltaTime) {
     startCollectAnimation({ x: TOPSY_SKY_GARDEN.x + TOPSY_SKY_GARDEN.width / 2, y: gy - TOPSY_SKY_GARDEN.height - 18, size: 8, rotation: 0 }, "pinwheel");
   }
 
-  if (keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
+  // CONFIRMED CHANGE ("use the og spiral hole at the start of topsy turvey
+  // for the first hole, i dont want a separate one"): once the spiral
+  // slide's unlocked, this same portal plays the real slide ride instead
+  // of the old instant transition -- see updateTopsySpiralSlideFromReturnPortal's
+  // own comment. Before that, the plain quick-exit behavior is unchanged.
+  if (!updateTopsySpiralSlideFromReturnPortal() &&
+      keys.spaceJustPressed && isPlayerNear(TOPSYTURVY_RETURN_X, 0, 26, 15, 15)) {
     startSeasonTransition("forest");
   }
 
@@ -25645,7 +25719,19 @@ function drawTopsyTeaCritterCups(baseX, baseY) {
   });
 }
 
+// CONFIRMED CHANGE ("i want to have the hole at the start of topsy turvy
+// to be the slide" -- "use the og spiral hole at the start of topsy turvey
+// for the first hole, i dont want a separate one"): once the spiral slide
+// unlocks, this same portal switches over to the actual spiral-hole art
+// (drawTopsySpiralSlideHoleAt, same one used at TOPSY_SPIRAL_SLIDE_X) so
+// it visibly becomes the slide instead of staying a plain 3-ring portal --
+// no second hole planted anywhere else. Before it's unlocked, keeps the
+// original simple portal look, since there's no slide to advertise yet.
 function drawTopsyTurvyReturnPortal(camX) {
+  if (topsySpiralSlideUnlocked()) {
+    drawTopsySpiralSlideHoleAt(camX, TOPSYTURVY_RETURN_X);
+    return;
+  }
   const sx = TOPSYTURVY_RETURN_X - camX, sy = gy;
   const t = performance.now() * 0.003;
   for (let i = 0; i < 3; i++) {
@@ -27085,7 +27171,7 @@ function drawTopsySkyGarden(camX) {
 // small always-bloomed decorative dandelion near the entrance -- see
 // TOPSY_ENTRANCE_DANDELION_X above for why. Deliberately much simpler
 // than drawTopsyWindSeedPlot's grown dandelion (no growth-stage gating,
-// no jumpable roots, no watering ties) since this one's only job is a
+// no watering ties) since this one's only job is a
 // quiet visual echo, not a piece of the actual puzzle.
 function drawTopsyTurvyEntranceDandelion(camX) {
   const dx = TOPSY_ENTRANCE_DANDELION_X - camX;
