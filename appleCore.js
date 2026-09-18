@@ -192,7 +192,10 @@ const camera = { topDown:false, locked:false };
 // the river bridge pre-completed so the teleport actually sticks.
 // TEMPORARY -- flip back to "autumn" once done testing, per this file's
 // standing convention (see the comment on this const above).
-const DEBUG_START_SCENE = "forest";
+// CONFIRMED CHANGE ("spawn me in sandbox pls"): switched to "sandbox" --
+// see the DEBUG_START_SCENE === "sandbox" block further down for the
+// actual spawn position (matches the normal spring->sandbox entry point).
+const DEBUG_START_SCENE = "sandbox";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -13578,6 +13581,13 @@ const peanutVine = {
 if (DEBUG_START_SCENE === "sandbox") {
   discoveredScenes.clouds = true;
   peanutVine.grown = true;
+  // CONFIRMED ADD ("spawn me in sandbox pls"): lands at the same spot the
+  // real spring->sandbox entrance mound drops you at (sandboxReturnMound.x
+  // + 40 = 170) -- hardcoded rather than referencing sandboxReturnMound
+  // itself, since that const isn't declared until much later in the file
+  // and this runs at top-level module-init time (temporal dead zone).
+  player.x = 170;
+  player.y = 0;
 }
 const VINE_GROW_DURATION = 4000;
 const VINE_CLIMB_SPEED = 100; // units/sec while holding up -- raised alongside climbHeight so the taller climb doesn't just take proportionally longer
