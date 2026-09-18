@@ -4585,6 +4585,28 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED FEATURE: the new jump cube's top face is a real landing
+  // platform, same flat-landing-zone pattern as every other sandbox
+  // platform above -- see drawSandboxJumpCube for the matching visual.
+  {
+    const boxCenterX = sandboxJumpCube.x;
+    const halfW = sandboxJumpCube.width / 2;
+    const topHeight = sandboxJumpCube.heightAboveGround;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > boxCenterX - halfW &&
+      player.x < boxCenterX + halfW &&
+      playerBottom <= topHeight &&
+      playerBottom >= topHeight - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = topHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // second return mound (near the ant farm) -- same jumpable-top-face
   // treatment as the first one above.
   {
@@ -67037,6 +67059,131 @@ function drawSandboxSkyDecor(camX) {
   });
 }
 
+// CONFIRMED FEATURE ("make it so i can jump through the torus and maybe
+// on an angle of the cube etc etc something" -> clarified as "yes, those
+// floating sky shapes" + "bring them down to reachable height"): two
+// fixed, ground-level, real-collision structures echoing the decorative
+// floating sky shapes -- a solid cube you can land on top of, and a
+// torus you can jump clean through the hole of. Placed in the open gap
+// between the first fan (x:520) and the bubble wand (x:960). Both sit
+// within an ordinary single jump's reach (~96px measured peak height,
+// verified via the debug harness).
+const sandboxJumpCube = {
+  x: 700,
+  width: 54,
+  heightAboveGround: 66,
+  palette: SANDBOX_SKY_SHAPE_PALETTES[0]
+};
+const sandboxJumpTorus = {
+  x: 860,
+  heightAboveGround: 84, // ring center height -- comfortably within single-jump reach
+  size: 34,
+  palette: SANDBOX_SKY_SHAPE_PALETTES[1]
+};
+const SANDBOX_JUMP_TORUS_HIT_ANIM_MS = 900;
+let sandboxJumpTorusHitFlash = -1e9; // timestamp of last pass-through, drives the hit flash animation
+let sandboxJumpTorusInside = false; // latched, same shape as SANDBOX_ANGLED_TARGETS' own inside flags -- a pass only fires once per entry
+
+// solid faceted cube, same visual language as the sky decor shapes'
+// translucent faceted look, but drawn as a real front/side/top box (not
+// a rotating silhouette) since this one needs an actual flat top face
+// to land on.
+function drawSandboxJumpCube(camX) {
+  const cx = sandboxJumpCube.x - camX;
+  const w = sandboxJumpCube.width, h = sandboxJumpCube.heightAboveGround;
+  const depth = w * 0.45;
+  const groundY = gy;
+  const topY = groundY - h;
+  const pal = sandboxJumpCube.palette;
+
+  ctx.fillStyle = "rgba(30,20,45,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(cx + depth * 0.3, groundY + 4, w / 2 + 8, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const frontGrad = ctx.createLinearGradient(0, topY, 0, groundY);
+  frontGrad.addColorStop(0, pal.face);
+  frontGrad.addColorStop(1, pal.shade);
+  ctx.fillStyle = frontGrad;
+  ctx.fillRect(cx - w / 2, topY, w, h);
+
+  ctx.fillStyle = pal.shade;
+  ctx.beginPath();
+  ctx.moveTo(cx + w / 2, topY);
+  ctx.lineTo(cx + w / 2 + depth * 0.5, topY - depth * 0.35);
+  ctx.lineTo(cx + w / 2 + depth * 0.5, groundY - depth * 0.35);
+  ctx.lineTo(cx + w / 2, groundY);
+  ctx.closePath();
+  ctx.fill();
+
+  // top face -- the actual landing surface, drawn brightest so it reads
+  // clearly as a place to stand
+  ctx.fillStyle = pal.edge;
+  ctx.beginPath();
+  ctx.moveTo(cx - w / 2, topY);
+  ctx.lineTo(cx + w / 2, topY);
+  ctx.lineTo(cx + w / 2 + depth * 0.5, topY - depth * 0.35);
+  ctx.lineTo(cx - w / 2 + depth * 0.5, topY - depth * 0.35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.strokeStyle = pal.edge;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - w / 2, topY, w, h);
+}
+
+// CONFIRMED CHANGE: same gold-spark -> green-flash -> fade language as
+// the angled-trampoline targets' own hit anim, just for a fixed ring
+// instead of a mid-flight one.
+function drawSandboxJumpTorusHitAnim(gx, gy2) {
+  const now = performance.now();
+  const flashAge = now - sandboxJumpTorusHitFlash;
+  if (flashAge >= SANDBOX_JUMP_TORUS_HIT_ANIM_MS) return;
+  const p = flashAge / SANDBOX_JUMP_TORUS_HIT_ANIM_MS;
+  const mixT = Math.min(1, p / 0.6);
+  const rC = Math.round(255 + (35 - 255) * mixT);
+  const gC = Math.round(210 + (165 - 210) * mixT);
+  const bC = Math.round(110 + (60 - 110) * mixT);
+  const alpha = p < 0.7 ? 0.9 : 0.9 * (1 - (p - 0.7) / 0.3);
+  const ringR = 12 + p * 18;
+  ctx.strokeStyle = `rgba(20,35,15,${alpha * 0.5})`;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  if (p < 0.6) drawSparkleBurst(gx, gy2, p / 0.6, 1);
+}
+
+// same ring silhouette as the drifting sky toroid, just fixed at ground-
+// reachable height with a very slow tumble instead of the sky version's
+// full drift/rotate/bob.
+function drawSandboxJumpTorus(camX) {
+  const cx = sandboxJumpTorus.x - camX;
+  const cy = gy - sandboxJumpTorus.heightAboveGround;
+  const now = performance.now() * 0.001;
+  drawSandboxSkyToroid(cx, cy, sandboxJumpTorus.size, now * 0.15, sandboxJumpTorus.palette, 401);
+  drawSandboxJumpTorusHitAnim(cx, cy);
+}
+
+function updateSandboxJumpTorus() {
+  if (currentScene !== "sandbox") { sandboxJumpTorusInside = false; return; }
+  const px = player.x + player.width / 2, py = player.y + player.height * 0.5;
+  const dx = px - sandboxJumpTorus.x, dy = py - sandboxJumpTorus.heightAboveGround;
+  const inside = player.jumping && Math.sqrt(dx * dx + dy * dy) <= sandboxJumpTorus.size * 0.58;
+  if (inside && !sandboxJumpTorusInside) {
+    sandboxJumpTorusHitFlash = performance.now();
+  }
+  sandboxJumpTorusInside = inside;
+}
+
 function drawSandboxScene(camX) {
   // warm, slightly hazy daylight -- an ordinary backyard sky peeking in
   // over the top of the box's own walls
@@ -67171,6 +67318,8 @@ function drawSandboxScene(camX) {
   drawSandMound(sandboxReturnMound2.x, camX, null); // second exit back to spring, near the ant farm -- per direct request
   drawWigStand(camX);
   drawSandboxFan(camX);
+  drawSandboxJumpCube(camX); // real jumpable cube/torus, sitting in the open gap before the bubble wand
+  drawSandboxJumpTorus(camX);
   drawSandboxFan2(camX);
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
@@ -67257,6 +67406,7 @@ function updateSandboxScene(deltaTime) {
 
   updateSandboxFan(deltaTime);
   updateSandboxFan2(deltaTime);
+  updateSandboxJumpTorus();
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
