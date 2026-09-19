@@ -194,10 +194,11 @@ const camera = { topDown:false, locked:false };
 // the river bridge pre-completed so the teleport actually sticks.
 // TEMPORARY -- flip back to "autumn" once done testing, per this file's
 // standing convention (see the comment on this const above).
-// CONFIRMED CHANGE ("spawn me in sandbox pls"): switched to "sandbox" --
-// see the DEBUG_START_SCENE === "sandbox" block further down for the
-// actual spawn position (matches the normal spring->sandbox entry point).
-const DEBUG_START_SCENE = "sandbox";
+// CONFIRMED CHANGE ("spawn me at forest in front of door" -- testing the
+// new winter door): switched to "forest" -- see the DEBUG_START_SCENE
+// === "forest" block further down, now positioned right at the new
+// forest-winter door instead of its old fungus-tree test spot.
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -1033,6 +1034,10 @@ const DOOR_GLOW = {
   forest: { // seen while standing in spring, leads to forest — deep mossy green, darker and stranger than spring's own light green
     stops: ["rgba(90,120,70,0.9)", "rgba(60,90,50,0.75)", "rgba(35,60,32,0.6)"],
     bleed: "55,85,45"
+  },
+  winter: { // seen while standing at the end of forest, leads to winter — icy pale blue-white
+    stops: ["rgba(225,240,250,0.95)", "rgba(185,215,235,0.8)", "rgba(140,180,210,0.6)"],
+    bleed: "160,200,225"
   }
 };
 
@@ -1134,6 +1139,22 @@ const connections = [
     acceptsItemType: null,
     filled: true,
     filledItemType: null
+  },
+  {
+    // WINTER -- new land off the current end of forest (past the rock
+    // climb/pool dive cluster), entered through a real door pair same as
+    // autumn-spring and spring-forest, per direct request ("we will enter
+    // winter like we enter each of the seasons lands-- through a door.
+    // see autumn to spring eg"). Gated on an apple slice, same item as
+    // the other two -- no new collection mechanic needed.
+    id: "forest-winter",
+    doors: {
+      forest: { x: 17600, width: 56, height: 92, leadsTo: "winter" },
+      winter: { x: 200,   width: 56, height: 92, leadsTo: "forest" }
+    },
+    acceptsItemType: "appleSlice",
+    filled: false,
+    filledItemType: null
   }
 ];
 
@@ -1162,7 +1183,8 @@ const sceneMapInfo = {
   ratroom: { label: "Ratroom", x: 95, y: 100, w: 60, h: 30 }, // diagonal nudge to the right, between oak and autumn -- was y:65 (touching/overlapping oak's own box), now sits with a clean 20px gap above and below in the widened oak-to-autumn space. Half-size, since it's a small side room off oak. Reached via the trap door from oak.
   molehole: { label: "Mole Hole", x: 400, y: 250, w: 70, h: 30 }, // below forest, mirroring how ratroom sits off oak -- a small side room reached via the ground hole, not a main-line node. Was y:180 (only a 10px gap below the old forest row); now a full 40px clear of forest's new position.
   tunneltown: { label: "Tunnel Town", x: 460, y: 320, w: 82, h: 30 }, // below mole hole, one more step down -- reached via the second, larger hole inside the mole hole itself. Widened a touch from mole hole's own 70px -- "Tunnel Town" is a couple characters longer than "Mole Hole" and was wrapping awkwardly at the same width. Was y:250; shifted down to keep the same clean 40px gap below mole hole's new position.
-  pool: { label: "Pool", x: 460, y: 90, w: 50, h: 30 } // small side room off forest, same half-size-node treatment as ratroom/mole hole -- reached by walking off the rock climb's own landing ledge, not a standard door pair. Sits above-right of forest's main-line node, mirroring how ratroom sits diagonally off oak.
+  pool: { label: "Pool", x: 460, y: 90, w: 50, h: 30 }, // small side room off forest, same half-size-node treatment as ratroom/mole hole -- reached by walking off the rock climb's own landing ledge, not a standard door pair. Sits above-right of forest's main-line node, mirroring how ratroom sits diagonally off oak.
+  winter: { label: "Winter", x: 580, y: 150 } // continues the main line past forest -- a real door pair, same main-line treatment as autumn/spring/forest
 };
 
 const discoveredScenes = { autumn: true };
@@ -1306,7 +1328,8 @@ const sceneSpawns = {
   molehole: { x: 150 }, // arrives via the ground hole, lands a little in from the entrance
   tunneltown: { x: 150 }, // arrives via the second hole, lands a little in from that entrance
   sandbox: { x: 200 }, // arrives via the sand mound in spring -- see the special-case landing override too
-  pool: { x: 80 } // arrives by walking off the rock climb's ledge -- kept in sync with POOL_SPAWN_X below (can't reference it directly here, this object is built before that const is declared). This fallback is essentially unused, same as sandbox's own, since the real arrival always goes through the previousScene==="forest" branch below.
+  pool: { x: 80 }, // arrives by walking off the rock climb's ledge -- kept in sync with POOL_SPAWN_X below (can't reference it directly here, this object is built before that const is declared). This fallback is essentially unused, same as sandbox's own, since the real arrival always goes through the previousScene==="forest" branch below.
+  winter: { x: connections[8].doors.winter.x - 25 } // arrives via the new forest-winter door, same main-line landing pattern as autumn/spring/forest
 };
 
 /* ======================================================
@@ -1336,6 +1359,17 @@ const placementSlots = [
     onFill: (itemType) => {
       connections[1].filled = true;
       connections[1].filledItemType = itemType;
+    }
+  },
+  {
+    id: "winterDoorwaySlot",
+    x: connections[8].doors.forest.x + connections[8].doors.forest.width / 2,
+    heightAboveGround: 8,
+    acceptsItemType: connections[8].acceptsItemType,
+    filled: false,
+    onFill: (itemType) => {
+      connections[8].filled = true;
+      connections[8].filledItemType = itemType;
     }
   }
 ];
@@ -1528,6 +1562,8 @@ function updateSeasonTransition(deltaTime) {
         player.x = POOL_SPAWN_X; // walked off the ledge into the water right at the pool's entry edge
       } else if (currentScene === "forest" && previousScene === "pool") {
         player.x = FOREST_ROCK_LEDGE.x - FOREST_ROCK_LEDGE.width / 2 + 20; // climb back out onto the ledge itself, clear of the edge you walked off from
+      } else if (currentScene === "forest" && previousScene === "winter") {
+        player.x = connections[8].doors.forest.x - 25; // land right back at the winter door, not the generic spring-side forest spawn
       } else if (currentScene === "topsyturvy" && previousScene === "forest") {
         player.x = TOPSYTURVY_SPAWN_X; // broke through the top of the fungus climb -- lands just inside the land, not right at its own edge
       } else if (currentScene === "forest" && previousScene === "topsyturvy" && topsySpiralSlideJustUsed) {
@@ -17160,6 +17196,14 @@ function drawForestScene(camX) {
   // near FOREST_PLATFORM_DROP_GRACE_MS)
   drawConnectionDoor(ctx, camX, connections[1].doors.forest, connections[1]);
   drawMossyDoorOverlay(camX);
+  // the new winter door -- sits at the current end of forest, past the
+  // rock climb/pool dive cluster. drawConnectionDoor handles the generic
+  // glow/unlock look (keyed off DOOR_GLOW.winter); drawWinterDoorFrost
+  // layers the icy-but-still-forest dressing on top per direct request
+  // ("make the door look icy and wintery but still have some forest
+  // greenery")
+  drawConnectionDoor(ctx, camX, connections[8].doors.forest, connections[8]);
+  drawWinterDoorFrost(camX, connections[8].doors.forest);
   ctx.restore();
 }
 
@@ -18529,27 +18573,23 @@ const FOREST_FLOAT_COLLECTIBLES = [
 // completely unaffected -- only climbing the fungus tree past that
 // height starts moving the camera.
 const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
-// TEMPORARY debug spawn ("start me at the bottom of the fungus tree
-// pls") -- same one-off DEBUG_START_SCENE-keyed pattern as the sandbox
-// case above, not a permanent keybind. Revert alongside DEBUG_START_SCENE
-// once this test spot is no longer needed.
-// CONFIRMED BUG FIX ("reloading the game puts me right here again --
-// always make sure all dependencies are filled when i ask for debug
-// spawns"): a raw teleport past the river isn't enough on its own -- the
-// fungus tree sits on the FAR side of it, and with the river bridge not
-// actually built yet (forestRiverSegmentsStrung/Decked both 0 fresh),
-// the very first physics frame found the player standing over open
-// water with no crossing and snapped them back to a safe spot on the
-// near bank, undoing the teleport before a single screenshot could even
-// be taken (confirmed via a one-off console trace: player.x went
-// 16170 -> 4348 inside that first update() call). Filling in the
-// bridge's own completion state -- the actual real dependency this
-// destination needs -- alongside the position fixes it for good.
+// TEMPORARY debug spawn -- same one-off DEBUG_START_SCENE-keyed pattern
+// as the sandbox case above, not a permanent keybind. Revert alongside
+// DEBUG_START_SCENE once this test spot is no longer needed.
+// CONFIRMED CHANGE ("spawn me at forest in front of door" -- testing the
+// new winter door): retargeted from the old fungus-tree test spot to the
+// new forest-winter door, past the rock climb/pool dive cluster. Keeps
+// the same "fill in every real dependency, not just the position" habit
+// this spot already learned the hard way (see the bridge-fill below) --
+// the winter door sits well past the river crossing, so the bridge still
+// needs to be marked built or the very first physics frame would snap
+// the player back to the near bank before a single screenshot could be
+// taken.
 if (DEBUG_START_SCENE === "forest") {
   forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
   forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
-  player.x = FOREST_FUNGUS_TREE_X - 40;
+  player.x = connections[8].doors.forest.x - 60; // right in front of the new winter door
   player.y = 0;
   // CONFIRMED CHANGE ("ok byut now the inventory is gone?" -- the
   // shovel/windSeed/bucket grant only lived in the topsyturvy debug
@@ -18560,6 +18600,9 @@ if (DEBUG_START_SCENE === "forest") {
   addToInventory("windSeed");
   addToInventory("bucket");
   heldItem = "shovel";
+  // also grant an apple slice so the new winter door can actually be
+  // unlocked/walked through right away while testing, not just looked at
+  addToInventory("appleSlice");
 }
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
@@ -39184,6 +39227,18 @@ function updateForestScene(deltaTime) {
     )
   ) {
     startSeasonTransition("spring");
+  }
+
+  // forward through the new door into winter
+  if (
+    connections[8].filled &&
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(
+      connections[8].doors.forest.x + connections[8].doors.forest.width / 2,
+      0, 30, 6, 6
+    )
+  ) {
+    startSeasonTransition("winter");
   }
 
   // CLOCKWORK GROVE -- lever trigger, windowed gear spin, landing,
@@ -68450,6 +68505,8 @@ if (currentScene === "autumn") {
   drawPoolScene(camX);
 } else if (currentScene === "topsyturvy") {
   drawTopsyTurvyScene(camX);
+} else if (currentScene === "winter") {
+  drawWinterScene(camX);
 }
 
 // worn/in-progress crown — shared across scenes, drawn here so it shows
@@ -69476,6 +69533,190 @@ drawSeasonTransition(ctx);
 }
 }
 /* ======================================================
+   WINTER -- the Magic Faraway Tree's second land, entered through a
+   real door pair off the current end of forest (past the rock climb/
+   pool dive cluster), same "hold an apple slice, walk up, press down"
+   pattern as autumn-spring and spring-forest, per direct request ("we
+   will enter winter like we enter each of the seasons lands-- through
+   a door. see autumn to spring eg"). Kept deliberately small/gentle to
+   start -- per direct request ("lead small initially though. slinky v
+   soon. but we just joined a new land we need to get our bearings"):
+   no mechanics yet, just the door, a soft icy-but-still-forest
+   transition near the entrance opening into a hushed snowy clearing,
+   and ambient falling snow. The slinky (already built and proven in
+   sandbox) is the planned next addition here, not yet wired in.
+   ====================================================== */
+const WINTER_WIDTH = 2400;
+
+// ambient falling snow -- a handful of flakes drifting down and looping,
+// same "cheap, always-on atmosphere" role as forest's own dust motes
+const WINTER_SNOW_COUNT = 60;
+const winterSnow = [];
+for (let i = 0; i < WINTER_SNOW_COUNT; i++) {
+  const seed = i * 13.7;
+  winterSnow.push({
+    x: pseudoRandom(seed) * WINTER_WIDTH,
+    y: pseudoRandom(seed + 1) * 320,
+    r: 1.2 + pseudoRandom(seed + 2) * 2.2,
+    speed: 14 + pseudoRandom(seed + 3) * 22,
+    drift: pseudoRandom(seed + 4) * Math.PI * 2,
+    driftSpeed: 0.4 + pseudoRandom(seed + 5) * 0.6
+  });
+}
+
+function updateWinterSnow(deltaTime) {
+  winterSnow.forEach(f => {
+    f.y += f.speed * deltaTime;
+    f.drift += f.driftSpeed * deltaTime;
+    if (f.y > gy + 10) {
+      f.y = -10;
+      f.x = Math.random() * WINTER_WIDTH;
+    }
+  });
+}
+
+function drawWinterSnow(camX) {
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  winterSnow.forEach(f => {
+    const sx = f.x - camX + Math.sin(f.drift) * 14;
+    if (sx < -10 || sx > canvas.width + 10) return;
+    ctx.beginPath();
+    ctx.arc(sx, f.y, f.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// a simple frosted pine, reused for the treeline both near the door
+// (mixed with green, still-forest sprigs) and further into the clearing
+function drawWinterPine(sx, baseY, scale, snowy) {
+  const h = 90 * scale, w = 34 * scale;
+  ctx.fillStyle = "#2f4a3a";
+  for (let tier = 0; tier < 3; tier++) {
+    const ty = baseY - h * (0.15 + tier * 0.32);
+    const tw = w * (1 - tier * 0.22);
+    ctx.beginPath();
+    ctx.moveTo(sx, ty - h * 0.34);
+    ctx.lineTo(sx - tw, ty);
+    ctx.lineTo(sx + tw, ty);
+    ctx.closePath();
+    ctx.fill();
+    if (snowy) {
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.beginPath();
+      ctx.moveTo(sx, ty - h * 0.34);
+      ctx.lineTo(sx - tw * 0.55, ty - h * 0.06);
+      ctx.lineTo(sx + tw * 0.55, ty - h * 0.06);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#2f4a3a";
+    }
+  }
+  ctx.fillStyle = "#4a3524";
+  ctx.fillRect(sx - 3 * scale, baseY - 6 * scale, 6 * scale, 10 * scale);
+}
+
+// icy frost dressing layered on top of the generic door glow, plus a
+// couple of green sprigs at the base -- "make the door look icy and
+// wintery but still have some forest greenery"
+function drawWinterDoorFrost(camX, doorDef) {
+  const sx = doorDef.x - camX + doorDef.width / 2;
+  if (sx < -80 || sx > canvas.width + 80) return;
+  const topY = gy - doorDef.height;
+
+  // icicles along the top of the frame
+  ctx.fillStyle = "rgba(210,235,250,0.9)";
+  const icicleSeeds = [-24, -14, -4, 8, 20];
+  icicleSeeds.forEach((ox, i) => {
+    const len = 9 + pseudoRandom(i * 5.1) * 10;
+    ctx.beginPath();
+    ctx.moveTo(sx + ox - 3, topY);
+    ctx.lineTo(sx + ox + 3, topY);
+    ctx.lineTo(sx + ox, topY + len);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // frost dusting at the base
+  ctx.fillStyle = "rgba(225,240,250,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(sx, gy, doorDef.width * 0.9, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // a couple of green pine sprigs flanking the base -- still forest,
+  // just dusted with frost
+  [-doorDef.width * 0.75, doorDef.width * 0.75].forEach(ox => {
+    drawWinterPine(sx + ox, gy, 0.5, true);
+  });
+}
+
+function drawWinterScene(camX) {
+  ctx.save();
+
+  // pale, hushed winter sky -- cold blue-lavender at the top, soft near-
+  // white at the horizon, distinct from every other scene's own palette
+  const sky = ctx.createLinearGradient(0, 0, 0, gy);
+  sky.addColorStop(0, "#b9d3e8");
+  sky.addColorStop(1, "#eef5fa");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, gy);
+
+  // ground -- pale snow, very slightly blue in shadow
+  const ground = ctx.createLinearGradient(0, gy, 0, canvas.height);
+  ground.addColorStop(0, "#eef6fb");
+  ground.addColorStop(1, "#d7e6f2");
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+
+  // distant frosted treeline -- soft, pale, parallax-lite (drawn at a
+  // fixed fraction of camX so it drifts slower than the foreground)
+  for (let i = 0; i < 14; i++) {
+    const seed = i * 31.4;
+    const worldX = i * (WINTER_WIDTH / 14) + pseudoRandom(seed) * 60;
+    const sx = worldX - camX * 0.5;
+    if (sx < -60 || sx > canvas.width + 60) continue;
+    ctx.globalAlpha = 0.45;
+    drawWinterPine(sx, gy - 10, 1.1 + pseudoRandom(seed + 1) * 0.5, false);
+    ctx.globalAlpha = 1;
+  }
+
+  // near treeline -- the transition band right past the door (world x
+  // 200-700ish) mixes in real green sprigs so it reads as "this same
+  // forest, just frosted over" before opening into open snow further in
+  for (let i = 0; i < 10; i++) {
+    const seed = i * 17.2 + 500;
+    const worldX = i * (WINTER_WIDTH / 10) + pseudoRandom(seed) * 70;
+    const sx = worldX - camX;
+    if (sx < -50 || sx > canvas.width + 50) continue;
+    const stillForest = worldX < 750; // close to the door -- carries the greenery over
+    drawWinterPine(sx, gy, 1.3 + pseudoRandom(seed + 1) * 0.6, !stillForest || pseudoRandom(seed + 2) > 0.4);
+  }
+
+  drawWinterSnow(camX);
+
+  // the door back to forest -- same generic glow, same icy dressing as
+  // the forest-side view of it
+  drawConnectionDoor(ctx, camX, connections[8].doors.winter, connections[8]);
+  drawWinterDoorFrost(camX, connections[8].doors.winter);
+
+  ctx.restore();
+}
+
+function updateWinterScene(deltaTime) {
+  updateWinterSnow(deltaTime);
+
+  // back through the door to forest
+  if (
+    connections[8].filled &&
+    seasonTransition.phase === "idle" &&
+    pressedDownNear(
+      connections[8].doors.winter.x + connections[8].doors.winter.width / 2,
+      0, 30, 6, 6
+    )
+  ) {
+    startSeasonTransition("forest");
+  }
+}
+/* ======================================================
    MAIN LOOP
    ====================================================== */
 function updateAutumnScene(deltaTime) {
@@ -70208,6 +70449,8 @@ if (currentScene === "autumn") {
   updatePoolScene(deltaTime);
 } else if (currentScene === "topsyturvy") {
   updateTopsyTurvyScene(deltaTime);
+} else if (currentScene === "winter") {
+  updateWinterScene(deltaTime);
 }
 
   // throw the boomerang — spacebar while it's held, works in any scene.
@@ -70380,6 +70623,8 @@ updateSeasonTransition(deltaTime);
   if (currentScene === "pool" && !poolSlideExit.active && cameraX > POOL_WIDTH - canvas.width + 40) cameraX = Math.max(0, POOL_WIDTH - canvas.width + 40);
   // topsy-turvy land's own right-side camera clamp, same small-room pattern
   if (currentScene === "topsyturvy" && cameraX > TOPSYTURVY_WIDTH - canvas.width + 40) cameraX = Math.max(0, TOPSYTURVY_WIDTH - canvas.width + 40);
+  // winter's own right-side camera clamp, same small-land pattern as topsyturvy
+  if (currentScene === "winter" && cameraX > WINTER_WIDTH - canvas.width + 40) cameraX = Math.max(0, WINTER_WIDTH - canvas.width + 40);
   // oak's left side has its own tall bookshelf (x:192) that should be
   // visible/reachable from directly left of the entrance door (x:294) --
   // clamped a little past the shelf's own left edge (~157) so there's a
