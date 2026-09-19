@@ -86,6 +86,7 @@ function resetAllPlayerModeFlags() {
   player.onTopsyHouseLadder = false;
   player.onFungusPulleyRide = false;
   player.onPlayerBubbleRide = false;
+  player.onCarrotSlide = false;
   player.inAntFarm = false;
   player.inTopsySpiralSlide = false;
   player.topsyInverted = false;
@@ -372,6 +373,12 @@ const player = {
   // timer instead of following a scripted path. See
   // updateSandboxPlayerBubble.
   onPlayerBubbleRide: false,
+  // CONFIRMED ADD ("i want to slide down around it once at the top like
+  // the fungus tree slide"): true while sliding down the giant carrot's
+  // spiral -- same "pinned/driven, gravity-exempt" shape as
+  // onFungusPulleyRide, a scripted timed descent rather than free
+  // movement. See updateSandboxCarrotSlide.
+  onCarrotSlide: false,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -3389,6 +3396,10 @@ function applyPhysics(){
   // position while riding is driven entirely by updateSandboxPlayerBubble.
   if (player.onPlayerBubbleRide) return;
 
+  // same idea for the giant carrot's spiral slide-down -- position while
+  // riding is driven entirely by updateSandboxCarrotSlide.
+  if (player.onCarrotSlide) return;
+
   // the ant farm keeps the real player parked at the mount spot the
   // whole visit (only a small drawn icon moves inside the case), but
   // still guarded here so no leftover vy/gravity does anything strange
@@ -4596,7 +4607,7 @@ function applyPhysics(){
     }
   });
   {
-    const halfW = sandboxGiantCarrot.topWidth / 2;
+    const halfW = sandboxGiantCarrotHalfWidthAt(1);
     const platformTop = sandboxGiantCarrot.bodyHeight;
     const playerBottom = player.y;
     if (
@@ -59011,11 +59022,17 @@ function drawSandboxBubbles(camX) {
    request ("full manual glide").
    ====================================================== */
 const SANDBOX_PLAYER_BUBBLE_FORM_MS = 1100; // how long you need to hold at the wand before it fully forms
-const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 4200; // longer than the old automatic drift ("a few beats") -- manual control needs enough time to actually go somewhere with it
-const SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED = 130; // world px/sec in any held direction -- floatier/slower than normal ground speed, reads as drifting rather than running
+// CONFIRMED BUG FIX ("the bubble doesnt make it to the carrot"): the
+// wand (x:1260) to the carrot (x:2200) is a 940px gap. At the old speed/
+// duration (130 glide + 40 auto = 170px/s max, over 4.2s = 714px) a
+// dead-on-target ride still fell ~225px short with zero time left to
+// also climb. Bumped both so a held-right ride comfortably covers the
+// distance with real time left over to climb to one of the steps/top.
+const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 5200;
+const SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED = 190; // world px/sec in any held direction -- floatier/slower than normal ground speed, reads as drifting rather than running
 const SANDBOX_PLAYER_BUBBLE_AUTO_VX = 40; // CONFIRMED CHANGE ("auto starts moving upwards and to the right once bubble is made"): passive base drift, always applied on top of manual steering, so letting go doesn't just hang in place
 const SANDBOX_PLAYER_BUBBLE_AUTO_VY = 32;
-const SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT = 260; // clamp so gliding straight up can't fly the player off the top of the world
+const SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT = 440; // CONFIRMED CHANGE ("make the carrot a lot gigantic-er"): raised alongside the carrot's own height bump so its new top is still actually reachable by gliding there -- see sandboxGiantCarrot.bodyHeight
 const SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS = 400;
 const sandboxPlayerBubble = {
   formT: 0,     // ms held near the wand while forming, 0..SANDBOX_PLAYER_BUBBLE_FORM_MS
@@ -67397,23 +67414,54 @@ function updateSandboxJumpTorus() {
    version of this idea is a later add -- this first pass is just the
    solid climbable landmark itself.
    ====================================================== */
+// CONFIRMED CHANGE ("make the carrot a lot gigantic-er and more
+// realistic looking"): scaled way up (bodyHeight 250 -> 430, base width
+// nearly doubled) and reworked from a plain straight-sided triangle into
+// a real curved carrot silhouette -- a rounded shoulder near the top
+// that bows outward before tapering to a blunt (not knife-sharp) tip,
+// like an actual root vegetable instead of a traffic cone. The player
+// bubble's own max glide height was raised alongside this (see
+// SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT) so the new top is still reachable.
 const sandboxGiantCarrot = {
   x: 2200,
-  baseWidth: 100,  // width where the orange body meets the ground
-  topWidth: 50,    // width where the body ends and the leafy crown starts
-  bodyHeight: 250, // world height of the climbable orange body
-  leafHeight: 46   // extra purely-visual height of the leaf crown above the body
+  baseWidth: 190,  // width at the "shoulder" just above the ground -- a real carrot is widest here, not at the very base
+  tipWidth: 22,    // width at the blunt tip, just below the leafy crown -- never fully pointed
+  bodyHeight: 430, // world height of the climbable orange body
+  leafHeight: 78   // extra purely-visual height of the leaf crown above the body
 };
 // little leaf-shaped ledges spiraling up the body, alternating sides --
 // each a real landing platform. dx is offset from the carrot's own
-// center x, height is world height above ground.
+// center x, height is world height above ground. Respaced across the
+// taller body, staying within an ordinary jump's reach of each other.
 const SANDBOX_GIANT_CARROT_STEPS = [
-  { dx: -40, height: 55 },
-  { dx: 36, height: 105 },
-  { dx: -42, height: 155 },
-  { dx: 38, height: 205 }
+  { dx: -74, height: 55 },
+  { dx: 66, height: 115 },
+  { dx: -78, height: 180 },
+  { dx: 70, height: 245 },
+  { dx: -62, height: 310 },
+  { dx: 54, height: 375 }
 ];
-const SANDBOX_GIANT_CARROT_STEP_WIDTH = 40;
+const SANDBOX_GIANT_CARROT_STEP_WIDTH = 44;
+
+// carrot's own curved silhouette half-width at t (0 = ground, 1 = tip
+// just under the leaves) -- bulges out to its widest a little above the
+// ground (the "shoulder"), then eases into a rounded taper, instead of
+// a straight linear interpolation between two widths.
+function sandboxGiantCarrotHalfWidthAt(t) {
+  const c = sandboxGiantCarrot;
+  const shoulder = 0.14; // where the bulge peaks, as a fraction up the body
+  const shoulderW = c.baseWidth / 2 * 1.06;
+  if (t <= shoulder) {
+    const k = t / shoulder;
+    return (c.baseWidth / 2) + (shoulderW - c.baseWidth / 2) * Math.sin(k * Math.PI / 2);
+  }
+  const k = (t - shoulder) / (1 - shoulder);
+  // eased (not linear) taper -- stays fuller through the middle, then
+  // narrows faster near the tip, which is what gives a carrot its
+  // slightly bulbous-then-pointed profile instead of a straight cone
+  const eased = 1 - Math.pow(1 - k, 1.6);
+  return shoulderW + (c.tipWidth / 2 - shoulderW) * eased;
+}
 
 function drawSandboxGiantCarrotLeaf(cx, cyy, w, flip) {
   ctx.save();
@@ -67435,6 +67483,41 @@ function drawSandboxGiantCarrotLeaf(cx, cyy, w, flip) {
   ctx.restore();
 }
 
+// fuller, frillier fern-like crown leaf -- several notched blades
+// instead of one smooth almond shape, closer to real carrot-top foliage
+function drawSandboxGiantCarrotFrond(cx, cyy, len, ang) {
+  ctx.save();
+  ctx.translate(cx, cyy);
+  ctx.rotate(ang);
+  const bladeGrad = ctx.createLinearGradient(0, 0, 0, -len);
+  bladeGrad.addColorStop(0, "#2f7a3c");
+  bladeGrad.addColorStop(1, "#7fd077");
+  ctx.strokeStyle = bladeGrad;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(len * 0.15, -len * 0.55, 0, -len);
+  ctx.stroke();
+  // little side notches off the main stem, thinning toward the tip --
+  // this is what reads as "fern-like" rather than a solid leaf blob
+  for (let i = 1; i <= 4; i++) {
+    const t = i / 5;
+    const sx = Math.sin(t * Math.PI * 0.3) * len * 0.1;
+    const sy = -t * len;
+    const notchLen = len * 0.22 * (1 - t * 0.5);
+    ctx.strokeStyle = bladeGrad;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + notchLen, sy - notchLen * 0.4);
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx - notchLen, sy - notchLen * 0.4);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawSandboxGiantCarrot(camX) {
   const c = sandboxGiantCarrot;
   const cx = c.x - camX;
@@ -67442,51 +67525,101 @@ function drawSandboxGiantCarrot(camX) {
   const bodyTopY = groundY - c.bodyHeight;
 
   // soft contact shadow, scaled to the whole giant footprint
-  ctx.fillStyle = "rgba(30,20,45,0.22)";
+  ctx.fillStyle = "rgba(30,20,45,0.24)";
   ctx.beginPath();
-  ctx.ellipse(cx, groundY + 4, c.baseWidth / 2 + 14, 10, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, groundY + 5, c.baseWidth / 2 + 20, 13, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // tapered orange body -- a plain triangle-ish taper reads as "giant
-  // carrot" instantly, no need for anything fancier
+  // real curved carrot silhouette, sampled from sandboxGiantCarrotHalfWidthAt
+  // rather than a straight-sided taper -- builds a smooth outline up one
+  // side and back down the other so the bulge/taper reads as one
+  // continuous curve, not a faceted polygon
+  const SAMPLES = 24;
+  const leftPts = [], rightPts = [];
+  for (let i = 0; i <= SAMPLES; i++) {
+    const t = i / SAMPLES;
+    const hw = sandboxGiantCarrotHalfWidthAt(t);
+    const yy = groundY - t * c.bodyHeight;
+    leftPts.push([cx - hw, yy]);
+    rightPts.push([cx + hw, yy]);
+  }
+  // base shading: a left-highlight/right-shadow gradient (light from the
+  // upper-left) instead of a symmetric edge-dark/center-light gradient --
+  // reads as a real lit, curved cylindrical surface rather than a flat
+  // shape with a painted stripe
   const bodyGrad = ctx.createLinearGradient(cx - c.baseWidth / 2, 0, cx + c.baseWidth / 2, 0);
-  bodyGrad.addColorStop(0, "#c9601f");
-  bodyGrad.addColorStop(0.5, "#f0894a");
-  bodyGrad.addColorStop(1, "#c9601f");
+  bodyGrad.addColorStop(0, "#a8501a");
+  bodyGrad.addColorStop(0.28, "#e67a35");
+  bodyGrad.addColorStop(0.5, "#f6a15c");
+  bodyGrad.addColorStop(0.72, "#e06a2a");
+  bodyGrad.addColorStop(1, "#93430f");
   ctx.fillStyle = bodyGrad;
   ctx.beginPath();
-  ctx.moveTo(cx - c.baseWidth / 2, groundY);
-  ctx.lineTo(cx + c.baseWidth / 2, groundY);
-  ctx.lineTo(cx + c.topWidth / 2, bodyTopY);
-  ctx.lineTo(cx - c.topWidth / 2, bodyTopY);
+  ctx.moveTo(leftPts[0][0], leftPts[0][1]);
+  leftPts.forEach(p => ctx.lineTo(p[0], p[1]));
+  for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i][0], rightPts[i][1]);
   ctx.closePath();
   ctx.fill();
 
-  // a handful of curved ridge lines for real carrot texture
-  ctx.strokeStyle = "rgba(150,70,20,0.35)";
+  // a bright soft highlight down the upper-left third, hinting at the
+  // curved surface catching light -- a second translucent pass rather
+  // than baking it into the base gradient, so it stays subtle
+  ctx.save();
+  ctx.clip();
+  const highlightGrad = ctx.createLinearGradient(cx - c.baseWidth / 2, 0, cx - c.baseWidth * 0.05, 0);
+  highlightGrad.addColorStop(0, "rgba(255,235,210,0)");
+  highlightGrad.addColorStop(0.55, "rgba(255,225,190,0.28)");
+  highlightGrad.addColorStop(1, "rgba(255,225,190,0)");
+  ctx.fillStyle = highlightGrad;
+  ctx.fillRect(cx - c.baseWidth / 2, bodyTopY - 10, c.baseWidth, c.bodyHeight + 20);
+  ctx.restore();
+
+  // irregular curved ridge lines for real root-vegetable texture --
+  // varied spacing/curviness (via pseudoRandom) instead of perfectly
+  // even rings, so it doesn't read as machine-turned
+  ctx.strokeStyle = "rgba(120,55,15,0.4)";
   ctx.lineWidth = 2;
-  for (let i = 1; i <= 6; i++) {
-    const t = i / 7;
+  const RIDGES = 11;
+  for (let i = 1; i <= RIDGES; i++) {
+    const t = (i / (RIDGES + 1)) + (pseudoRandom(i * 7.7 + 3) - 0.5) * 0.02;
+    const hw = sandboxGiantCarrotHalfWidthAt(t);
     const yy = groundY - t * c.bodyHeight;
-    const halfW = (c.baseWidth / 2) * (1 - t) + (c.topWidth / 2) * t;
+    const bow = 3 + pseudoRandom(i * 4.1) * 5;
+    const skew = (pseudoRandom(i * 2.3) - 0.5) * 6;
     ctx.beginPath();
-    ctx.moveTo(cx - halfW * 0.8, yy + 5);
-    ctx.quadraticCurveTo(cx, yy - 3, cx + halfW * 0.8, yy + 5);
+    ctx.moveTo(cx - hw * 0.85, yy + bow * 0.4 + skew);
+    ctx.quadraticCurveTo(cx + skew, yy - bow, cx + hw * 0.85, yy + bow * 0.4 - skew);
+    ctx.stroke();
+  }
+  // scattered tiny root-hair flecks for extra close-up texture
+  ctx.strokeStyle = "rgba(120,55,15,0.3)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 26; i++) {
+    const t = pseudoRandom(i * 5.5 + 11);
+    const side = pseudoRandom(i * 3.3 + 1) < 0.5 ? -1 : 1;
+    const hw = sandboxGiantCarrotHalfWidthAt(t) * (0.75 + pseudoRandom(i * 6.6) * 0.2);
+    const yy = groundY - t * c.bodyHeight;
+    const fx = cx + side * hw;
+    ctx.beginPath();
+    ctx.moveTo(fx, yy);
+    ctx.lineTo(fx + side * (3 + pseudoRandom(i * 8.8) * 4), yy + 2);
     ctx.stroke();
   }
 
-  // top platform -- flat cap where the body meets the leaf crown,
-  // matching the collision block below exactly
-  ctx.fillStyle = "#f7a15f";
+  // top platform -- flat cap at the blunt tip where the body meets the
+  // leaf crown, matching the collision block below exactly
+  const tipHalfW = sandboxGiantCarrotHalfWidthAt(1);
+  ctx.fillStyle = "#f6ae6d";
   ctx.beginPath();
-  ctx.ellipse(cx, bodyTopY, c.topWidth / 2, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, bodyTopY, tipHalfW, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // leafy crown, purely decorative
-  for (let i = 0; i < 5; i++) {
-    const ang = -Math.PI / 2 + (i - 2) * 0.42;
-    const len = c.leafHeight * (0.75 + (i % 2) * 0.25);
-    drawSandboxGiantCarrotLeaf(cx + Math.cos(ang) * 6, bodyTopY - Math.sin(ang) * len * 0.3 - len * 0.5, len, i % 2 === 0);
+  // fuller fern-like crown, purely decorative -- more, longer fronds
+  // fanning out than the old simple leaf cluster
+  for (let i = 0; i < 7; i++) {
+    const ang = -Math.PI / 2 + (i - 3) * 0.3 + (pseudoRandom(i * 9.1) - 0.5) * 0.08;
+    const len = c.leafHeight * (0.7 + pseudoRandom(i * 3.4 + 2) * 0.5);
+    drawSandboxGiantCarrotFrond(cx, bodyTopY + 2, len, ang);
   }
 
   // the little leaf-ledge steps spiraling up the body
@@ -67495,6 +67628,73 @@ function drawSandboxGiantCarrot(camX) {
     const sy = groundY - s.height;
     drawSandboxGiantCarrotLeaf(sx, sy, SANDBOX_GIANT_CARROT_STEP_WIDTH, i % 2 === 1);
   });
+}
+
+// CONFIRMED FEATURE ("i want there to be a real good green leafy part
+// at the top that partly occludes player when it up there"): a few big
+// lush fronds drooping down in front, drawn from the shared post-player
+// section of draw() (same technique as the peanut vine/pool loop
+// occlusion redraws) so they render ON TOP of the player sprite while
+// standing up at the crown -- reads as actually standing IN the leaves,
+// not just near them.
+function drawSandboxGiantCarrotCrownOcclusion(camX) {
+  if (currentScene !== "sandbox") return;
+  const c = sandboxGiantCarrot;
+  const nearTop = player.y >= c.bodyHeight - 70;
+  const nearX = Math.abs(player.x + player.width / 2 - c.x) < 100;
+  if (!nearTop || !nearX) return;
+  const cx = c.x - camX;
+  const topY = gy - c.bodyHeight;
+  const t = performance.now() * 0.0006;
+  [-1, -0.35, 0.35, 1].forEach((side, i) => {
+    const ang = -Math.PI / 2 + side * 0.6 + Math.sin(t + i) * 0.05;
+    const len = c.leafHeight * 1.25;
+    drawSandboxGiantCarrotFrond(cx + side * 14, topY + 14, len, ang);
+  });
+}
+
+// CONFIRMED FEATURE ("i want to slide down around it once at the top
+// like the fungus tree slide"): once at the very top, pressing space
+// locks into a scripted spiral descent back to the ground -- same
+// mode-lock pattern as the fungus pulley ride (player.onCarrotSlide,
+// gravity-exempt via the applyPhysics early-return, position driven
+// entirely here). x traces a sine wave hugging the carrot's own tapered
+// silhouette (see sandboxGiantCarrotHalfWidthAt) while y descends
+// linearly, so it reads as winding around the body on the way down
+// rather than just an arbitrary wiggle.
+const sandboxCarrotSlide = { active: false, t: 0 };
+const SANDBOX_CARROT_SLIDE_MS = 2400;
+const SANDBOX_CARROT_SLIDE_TURNS = 2.5; // how many full winds around the body during the descent
+
+function updateSandboxCarrotSlide(deltaTime) {
+  if (player.onCarrotSlide) {
+    sandboxCarrotSlide.t += deltaTime * 1000;
+    const p = Math.min(1, sandboxCarrotSlide.t / SANDBOX_CARROT_SLIDE_MS);
+    const c = sandboxGiantCarrot;
+    const heightT = 1 - p; // 1 at the top, 0 at the ground
+    const hw = sandboxGiantCarrotHalfWidthAt(heightT) * 0.7;
+    player.y = c.bodyHeight * heightT;
+    player.x = c.x - player.width / 2 + Math.sin(p * SANDBOX_CARROT_SLIDE_TURNS * Math.PI * 2) * hw;
+    if (p >= 1) {
+      player.onCarrotSlide = false;
+      sandboxCarrotSlide.active = false;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+    return;
+  }
+
+  if (currentScene !== "sandbox") return;
+  const c = sandboxGiantCarrot;
+  const nearTop = player.y >= c.bodyHeight - 16 && !player.jumping;
+  const nearX = Math.abs(player.x + player.width / 2 - c.x) < 40;
+  if (nearTop && nearX && keys.spaceJustPressed) {
+    player.onCarrotSlide = true;
+    sandboxCarrotSlide.active = true;
+    sandboxCarrotSlide.t = 0;
+  }
 }
 
 function drawSandboxScene(camX) {
@@ -67724,6 +67924,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
   updateSandboxPlayerBubble(deltaTime);
+  updateSandboxCarrotSlide(deltaTime);
   updateSandboxBalanceBall(deltaTime);
   updateSandboxBallPit(deltaTime);
   updateSandboxAntFarm(deltaTime);
@@ -68853,6 +69054,7 @@ if (currentScene === "forest") {
   ctx.translate(0, cameraY);
   drawSandboxPlayerBubbleAroundPlayer(camX);
   drawSandboxPlayerBubblePop(camX);
+  drawSandboxGiantCarrotCrownOcclusion(camX); // leafy crown redraw, in front of the player while standing at the very top
   ctx.restore();
 } else if (currentScene === "topsyturvy" && topsyChefInteriorActive && topsyChefPotDive.active) {
   // pot-dive finale splash/swirl/drip FX, drawn AFTER the player so the
