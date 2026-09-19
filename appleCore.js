@@ -4596,28 +4596,6 @@ function applyPhysics(){
     }
   }
 
-  // CONFIRMED FEATURE: the new jump cube's top face is a real landing
-  // platform, same flat-landing-zone pattern as every other sandbox
-  // platform above -- see drawSandboxJumpCube for the matching visual.
-  {
-    const boxCenterX = sandboxJumpCube.x;
-    const halfW = sandboxJumpCube.width / 2;
-    const topHeight = sandboxJumpCube.heightAboveGround;
-    const playerBottom = player.y;
-    if (
-      player.x + player.width > boxCenterX - halfW &&
-      player.x < boxCenterX + halfW &&
-      playerBottom <= topHeight &&
-      playerBottom >= topHeight - 14 &&
-      player.vy <= 0
-    ) {
-      player.y = topHeight;
-      player.vy = 0;
-      player.jumping = false;
-      player.usedDoubleJump = false;
-    }
-  }
-
   // second return mound (near the ant farm) -- same jumpable-top-face
   // treatment as the first one above.
   {
@@ -58701,7 +58679,7 @@ function drawWigUI() {
    "those bear things"), and a grasshopper leg. Purely a look-at-things
    toy, no gameplay effect.
    ====================================================== */
-const microscopeStation = { x: 780 }; // CONFIRMED CHANGE: moved further right, clear of the fan, for breathing room
+const microscopeStation = { x: 900 }; // CONFIRMED CHANGE ("spread this out a little more and move everything to right"): pushed further right for real breathing room from the fan
 
 function drawMicroscopeStation(camX) {
   const sx = microscopeStation.x - camX;
@@ -58755,7 +58733,7 @@ function drawMicroscopeStation(camX) {
    Purely a charm toy, no gameplay effect -- reuses the same lightweight
    particle-pool pattern as the slinky's sand-dust effect.
    ====================================================== */
-const sandboxBubbleWand = { x: 960 }; // between the microscope and the pendulum, clear of both
+const sandboxBubbleWand = { x: 1260 }; // CONFIRMED CHANGE ("spread this out a little more and move everything to right"): pushed further right, clear of the torus, with real room before the trampoline at 1400
 const SANDBOX_BUBBLE_SPAWN_INTERVAL_MS = 220;
 const SANDBOX_BUBBLE_POP_RADIUS = 16; // how close the player has to get to pop one
 const SANDBOX_BUBBLE_MAX_AGE_MS = 4200; // bubbles that drift this long without popping just fade out on their own
@@ -59057,45 +59035,65 @@ function updateSandboxPlayerBubble(deltaTime) {
 // same rainbow-conic-sheen language as the little floating bubbles
 // (drawSandboxBubbles), just scaled up and recentered on the player each
 // frame instead of drifting on its own path.
+//
+// CONFIRMED CHANGE ("larger and slightly wobblier"): sized up, and now
+// squash-stretches on two overlapping sine waves (one fast/small for a
+// jittery soap-film jiggle, one slow/bigger for a lazier overall bob)
+// instead of a rigid circle -- real soap bubbles never hold a perfectly
+// round silhouette. Wrapped in a save/translate/rotate/scale so every
+// existing arc() call below just keeps drawing a plain circle at (0,0);
+// the transform is what actually turns it into a wobbling ellipse.
 function drawSandboxBubbleDisc(bx, by, r, alpha, seed) {
+  const t = performance.now() * 0.001;
+  const fastWobble = Math.sin(t * 5.2 + seed * 0.3) * 0.07;
+  const slowWobble = Math.sin(t * 1.7 + seed * 0.11) * 0.05;
+  const scaleX = 1 + fastWobble + slowWobble;
+  const scaleY = 1 - fastWobble * 0.8 - slowWobble * 0.9;
+  const jitterRot = Math.sin(t * 2.3 + seed * 0.4) * 0.12;
+
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.rotate(jitterRot);
+  ctx.scale(scaleX, scaleY);
+
   ctx.save();
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.clip();
 
   ctx.fillStyle = `rgba(220,240,252,${0.16 * alpha})`;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
 
   const rainbow = ["#ff5a5a", "#ff9d3f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9", "#ff5a5a"];
   const spin1 = seed * 0.0011 + performance.now() * 0.00006;
   const spin2 = seed * 0.0007 - performance.now() * 0.00004;
 
-  const g1 = ctx.createConicGradient(spin1, bx, by);
+  const g1 = ctx.createConicGradient(spin1, 0, 0);
   rainbow.forEach((c, i) => g1.addColorStop(i / (rainbow.length - 1), c));
   ctx.globalAlpha = 0.4 * alpha;
   ctx.fillStyle = g1;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
 
-  const g2 = ctx.createConicGradient(spin2, bx - r * 0.15, by + r * 0.1);
+  const g2 = ctx.createConicGradient(spin2, -r * 0.15, r * 0.1);
   rainbow.forEach((c, i) => g2.addColorStop(i / (rainbow.length - 1), c));
   ctx.globalAlpha = 0.26 * alpha;
   ctx.fillStyle = g2;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  const centerFade = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+  const centerFade = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
   centerFade.addColorStop(0, `rgba(235,245,255,${0.18 * alpha})`);
   centerFade.addColorStop(0.4, `rgba(235,245,255,${0.03 * alpha})`);
   centerFade.addColorStop(1, "rgba(235,245,255,0)");
   ctx.fillStyle = centerFade;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -59103,12 +59101,14 @@ function drawSandboxBubbleDisc(bx, by, r, alpha, seed) {
   ctx.strokeStyle = `rgba(255,255,255,${0.65 * alpha})`;
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.stroke();
   ctx.fillStyle = `rgba(255,255,255,${0.7 * alpha})`;
   ctx.beginPath();
-  ctx.arc(bx - r * 0.35, by - r * 0.35, r * 0.2, 0, Math.PI * 2);
+  ctx.arc(-r * 0.35, -r * 0.35, r * 0.2, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.restore();
 }
 
 function drawSandboxPlayerBubblePop(camX) {
@@ -59134,13 +59134,16 @@ function drawSandboxPlayerBubbleAroundPlayer(camX) {
   const px = player.x + player.width / 2 - camX;
   const py = gy - player.y - player.height * 0.55;
 
+  // CONFIRMED CHANGE ("larger and slightly wobblier"): bumped up from 34
+  // -- big enough to read as actually enclosing the player, not just
+  // haloing them. The wobble itself lives in drawSandboxBubbleDisc.
   if (player.onPlayerBubbleRide) {
-    drawSandboxBubbleDisc(px, py, 34, 1, 777);
+    drawSandboxBubbleDisc(px, py, 46, 1, 777);
     return;
   }
   if (sandboxPlayerBubble.formT > 0) {
     const formP = sandboxPlayerBubble.formT / SANDBOX_PLAYER_BUBBLE_FORM_MS;
-    drawSandboxBubbleDisc(px, py, 10 + formP * 24, Math.min(1, formP * 1.3), 777);
+    drawSandboxBubbleDisc(px, py, 14 + formP * 32, Math.min(1, formP * 1.3), 777);
   }
 }
 
@@ -67249,14 +67252,8 @@ function drawSandboxSkyDecor(camX) {
 // between the first fan (x:520) and the bubble wand (x:960). Both sit
 // within an ordinary single jump's reach (~96px measured peak height,
 // verified via the debug harness).
-const sandboxJumpCube = {
-  x: 700,
-  width: 54,
-  heightAboveGround: 66,
-  palette: SANDBOX_SKY_SHAPE_PALETTES[0]
-};
 const sandboxJumpTorus = {
-  x: 860,
+  x: 1080,
   heightAboveGround: 84, // ring center height -- comfortably within single-jump reach
   size: 34,
   palette: SANDBOX_SKY_SHAPE_PALETTES[1]
@@ -67264,57 +67261,6 @@ const sandboxJumpTorus = {
 const SANDBOX_JUMP_TORUS_HIT_ANIM_MS = 900;
 let sandboxJumpTorusHitFlash = -1e9; // timestamp of last pass-through, drives the hit flash animation
 let sandboxJumpTorusInside = false; // latched, same shape as SANDBOX_ANGLED_TARGETS' own inside flags -- a pass only fires once per entry
-
-// solid faceted cube, same visual language as the sky decor shapes'
-// translucent faceted look, but drawn as a real front/side/top box (not
-// a rotating silhouette) since this one needs an actual flat top face
-// to land on.
-function drawSandboxJumpCube(camX) {
-  const cx = sandboxJumpCube.x - camX;
-  const w = sandboxJumpCube.width, h = sandboxJumpCube.heightAboveGround;
-  const depth = w * 0.45;
-  const groundY = gy;
-  const topY = groundY - h;
-  const pal = sandboxJumpCube.palette;
-
-  ctx.fillStyle = "rgba(30,20,45,0.2)";
-  ctx.beginPath();
-  ctx.ellipse(cx + depth * 0.3, groundY + 4, w / 2 + 8, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const frontGrad = ctx.createLinearGradient(0, topY, 0, groundY);
-  frontGrad.addColorStop(0, pal.face);
-  frontGrad.addColorStop(1, pal.shade);
-  ctx.fillStyle = frontGrad;
-  ctx.fillRect(cx - w / 2, topY, w, h);
-
-  ctx.fillStyle = pal.shade;
-  ctx.beginPath();
-  ctx.moveTo(cx + w / 2, topY);
-  ctx.lineTo(cx + w / 2 + depth * 0.5, topY - depth * 0.35);
-  ctx.lineTo(cx + w / 2 + depth * 0.5, groundY - depth * 0.35);
-  ctx.lineTo(cx + w / 2, groundY);
-  ctx.closePath();
-  ctx.fill();
-
-  // top face -- the actual landing surface, drawn brightest so it reads
-  // clearly as a place to stand
-  ctx.fillStyle = pal.edge;
-  ctx.beginPath();
-  ctx.moveTo(cx - w / 2, topY);
-  ctx.lineTo(cx + w / 2, topY);
-  ctx.lineTo(cx + w / 2 + depth * 0.5, topY - depth * 0.35);
-  ctx.lineTo(cx - w / 2 + depth * 0.5, topY - depth * 0.35);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.4)";
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  ctx.strokeStyle = pal.edge;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(cx - w / 2, topY, w, h);
-}
 
 // CONFIRMED CHANGE: same gold-spark -> green-flash -> fade language as
 // the angled-trampoline targets' own hit anim, just for a fixed ring
@@ -67499,8 +67445,7 @@ function drawSandboxScene(camX) {
   drawSandMound(sandboxReturnMound2.x, camX, null); // second exit back to spring, near the ant farm -- per direct request
   drawWigStand(camX);
   drawSandboxFan(camX);
-  drawSandboxJumpCube(camX); // real jumpable cube/torus, sitting in the open gap before the bubble wand
-  drawSandboxJumpTorus(camX);
+  drawSandboxJumpTorus(camX); // real jump-through torus, sitting in the gap before the bubble wand
   drawSandboxFan2(camX);
   drawMicroscopeStation(camX);
   drawSandboxBubbleWand(camX);
