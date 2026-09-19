@@ -66898,6 +66898,25 @@ function drawSandboxBalanceBallButterfly(camX) {
     ctx.fill();
   }
 
+  // CONFIRMED CHANGE ("make the balance bubble butterfly more lovely"):
+  // a soft twinkling dust trail behind it as it flutters between portals
+  // -- drawn BEFORE the wings so the butterfly itself sits in front of
+  // its own trail. Faked without stored position history: a handful of
+  // motes offset backward along the flight direction (toward the start
+  // portal), each with its own twinkle phase so they read as sparkling
+  // rather than static dots.
+  const flightDir = b.butterflyDir || 1; // +1 flying rightward (trail extends left), -1 flying leftward
+  for (let m = 0; m < 4; m++) {
+    const back = 5 + m * 4.5;
+    const twinkle = 0.4 + Math.abs(Math.sin(now * 0.008 + m * 1.7)) * 0.6;
+    const mx = bx - flightDir * back * scale;
+    const my = by + Math.sin(now * 0.01 + m * 2.1) * 2.5 * scale;
+    ctx.fillStyle = `rgba(255,225,150,${0.45 * twinkle * scale})`;
+    ctx.beginPath();
+    ctx.arc(mx, my, (1.6 - m * 0.25) * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.save();
   ctx.translate(bx, by);
   ctx.scale(scale * (1 - approachT * 0.55), scale);
@@ -66905,24 +66924,60 @@ function drawSandboxBalanceBallButterfly(camX) {
     ctx.save();
     ctx.scale(dir, 1);
     ctx.rotate(-0.25 - flap * 0.55);
-    ctx.fillStyle = "#ff8a3d";
+    // CONFIRMED CHANGE: proper scalloped wing silhouette (bezier teardrop
+    // with a notched trailing edge) instead of a plain ellipse, filled
+    // with a warm gradient (gold core -> monarch orange -> a dark border)
+    // so it reads as delicate and lit rather than a flat blob.
+    const wingGrad = ctx.createRadialGradient(4, 0, 0.5, 6, 0, 8);
+    wingGrad.addColorStop(0, "#ffd27a");
+    wingGrad.addColorStop(0.55, "#ff9a44");
+    wingGrad.addColorStop(1, "#e0631f");
     ctx.beginPath();
-    ctx.ellipse(6, 0, 7, 4.3, 0, 0, Math.PI * 2);
+    ctx.moveTo(1, 0);
+    ctx.bezierCurveTo(3, -6.5, 11, -6, 12.5, -1);
+    ctx.bezierCurveTo(13.2, 1.5, 10, 2.6, 7.2, 1.4);
+    ctx.bezierCurveTo(9, 4.8, 6, 7, 2, 5.6);
+    ctx.bezierCurveTo(0.4, 4.8, 0, 2, 1, 0);
+    ctx.closePath();
+    ctx.fillStyle = wingGrad;
     ctx.fill();
-    ctx.strokeStyle = "rgba(30,20,10,0.65)";
+    ctx.strokeStyle = "rgba(35,20,8,0.75)";
     ctx.lineWidth = 0.8;
     ctx.stroke();
-    // a couple of dark veining marks, the classic monarch cue
-    ctx.strokeStyle = "rgba(30,20,10,0.5)";
+    // dark veining, same classic monarch cue as before
+    ctx.strokeStyle = "rgba(35,20,8,0.55)";
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    ctx.moveTo(2, -1.5);
-    ctx.lineTo(10, -1);
-    ctx.moveTo(2, 1.5);
-    ctx.lineTo(10, 1.5);
+    ctx.moveTo(2.5, -1.2);
+    ctx.lineTo(10.5, -2.2);
+    ctx.moveTo(2.5, 1.8);
+    ctx.lineTo(8.5, 3.6);
     ctx.stroke();
+    // small white spot markings along the dark border -- the other
+    // classic monarch cue, and what really sells "lovely" up close
+    ctx.fillStyle = "rgba(255,252,245,0.9)";
+    [[10.5, -3.4], [11.8, 0.2], [6.5, 4.6]].forEach(([px, py]) => {
+      ctx.beginPath();
+      ctx.arc(px, py, 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    });
     ctx.restore();
   });
+  // slender curved antennae, a small touch that reads as "delicate"
+  ctx.strokeStyle = "rgba(35,20,8,0.7)";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(0, -1.5);
+  ctx.quadraticCurveTo(-2.2, -4.5, -3.4, -6);
+  ctx.moveTo(0, -1.5);
+  ctx.quadraticCurveTo(2.2, -4.5, 3.4, -6);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(35,20,8,0.7)";
+  ctx.beginPath();
+  ctx.arc(-3.4, -6, 0.55, 0, Math.PI * 2);
+  ctx.arc(3.4, -6, 0.55, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.fillStyle = "#2a1a10";
   ctx.beginPath();
   ctx.ellipse(0, 0, 1.8, 4, 0, 0, Math.PI * 2);
