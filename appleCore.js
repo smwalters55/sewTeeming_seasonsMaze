@@ -4571,6 +4571,48 @@ function applyPhysics(){
     }
   });
 
+  // CONFIRMED FEATURE: giant carrot's leaf-ledge steps + top cap, same
+  // flat-landing-zone pattern as the block pile just above -- see
+  // drawSandboxGiantCarrot for the matching visual. Reaching the upper
+  // ones in practice needs the player bubble's glide (or a lucky big
+  // bounce), since the carrot's real height is well past an ordinary
+  // jump.
+  SANDBOX_GIANT_CARROT_STEPS.forEach(s => {
+    const platformX = sandboxGiantCarrot.x + s.dx;
+    const halfW = SANDBOX_GIANT_CARROT_STEP_WIDTH / 2;
+    const platformTop = s.height;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > platformX - halfW &&
+      player.x < platformX + halfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+  {
+    const halfW = sandboxGiantCarrot.topWidth / 2;
+    const platformTop = sandboxGiantCarrot.bodyHeight;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > sandboxGiantCarrot.x - halfW &&
+      player.x < sandboxGiantCarrot.x + halfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // CONFIRMED CHANGE: the return mound's top face is now a real jumpable
   // platform too, mirroring the entrance mound's own fix over in spring
   // ("make it so we can jump onto center of sandbox") -- per direct
@@ -58971,6 +59013,8 @@ function drawSandboxBubbles(camX) {
 const SANDBOX_PLAYER_BUBBLE_FORM_MS = 1100; // how long you need to hold at the wand before it fully forms
 const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 4200; // longer than the old automatic drift ("a few beats") -- manual control needs enough time to actually go somewhere with it
 const SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED = 130; // world px/sec in any held direction -- floatier/slower than normal ground speed, reads as drifting rather than running
+const SANDBOX_PLAYER_BUBBLE_AUTO_VX = 40; // CONFIRMED CHANGE ("auto starts moving upwards and to the right once bubble is made"): passive base drift, always applied on top of manual steering, so letting go doesn't just hang in place
+const SANDBOX_PLAYER_BUBBLE_AUTO_VY = 32;
 const SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT = 260; // clamp so gliding straight up can't fly the player off the top of the world
 const SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS = 400;
 const sandboxPlayerBubble = {
@@ -58991,13 +59035,19 @@ function updateSandboxPlayerBubble(deltaTime) {
 
   if (player.onPlayerBubbleRide) {
     sandboxPlayerBubble.rideT += dtMs;
-    // CONFIRMED CHANGE ("full manual glide"): free movement in any
-    // direction while riding, gravity-exempt (see the applyPhysics
-    // early-return), instead of a fixed scripted drift. Diagonal input
+    // CONFIRMED CHANGE ("full manual glide" + "auto starts moving
+    // upwards and to the right once bubble is made"): a gentle passive
+    // up-right drift always applies, gravity-exempt (see the
+    // applyPhysics early-return) -- letting go still carries you
+    // somewhere instead of just hovering dead still -- and arrow keys
+    // steer freely on TOP of that base drift. Diagonal manual input
     // isn't speed-normalized -- a small deliberate inconsistency, since
     // a slightly faster diagonal reads as "floaty and a little loose"
     // rather than needing to feel like precise platforming.
-    const step = SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED * (dtMs / 1000);
+    const dtSec = dtMs / 1000;
+    player.x += SANDBOX_PLAYER_BUBBLE_AUTO_VX * dtSec;
+    player.y += SANDBOX_PLAYER_BUBBLE_AUTO_VY * dtSec;
+    const step = SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED * dtSec;
     if (keys.left) player.x -= step;
     if (keys.right) player.x += step;
     if (keys.up) player.y += step;
@@ -67262,7 +67312,13 @@ function drawSandboxSkyDecor(camX) {
 // verified via the debug harness).
 const sandboxJumpTorus = {
   x: 1080,
-  heightAboveGround: 84, // ring center height -- comfortably within single-jump reach
+  // CONFIRMED BUG FIX ("why cant i still not jump on this torus"): the
+  // old height (84) sat close enough to the ~96px single-jump peak that
+  // the window where the player was actually near the ring's center only
+  // lasted a couple frames right at the top of the arc -- easy to miss
+  // even when aimed correctly. Lowered so the catchable window covers a
+  // much wider, more forgiving stretch of a normal jump's rising arc.
+  heightAboveGround: 58,
   size: 34,
   palette: SANDBOX_SKY_SHAPE_PALETTES[1]
 };
@@ -67312,11 +67368,133 @@ function updateSandboxJumpTorus() {
   if (currentScene !== "sandbox") { sandboxJumpTorusInside = false; return; }
   const px = player.x + player.width / 2, py = player.y + player.height * 0.5;
   const dx = px - sandboxJumpTorus.x, dy = py - sandboxJumpTorus.heightAboveGround;
-  const inside = player.jumping && Math.sqrt(dx * dx + dy * dy) <= sandboxJumpTorus.size * 0.58;
+  // CONFIRMED BUG FIX ("why cant i still not jump on this torus"): the
+  // hit radius was a tight 0.58x of the visual ring size -- much smaller
+  // than the ring actually looks onscreen, so it read as "the hole is
+  // right there" while still whiffing. Loosened to 0.95x (most of the
+  // ring's own radius) so lining up with what you can actually see
+  // reliably counts as passing through.
+  const inside = player.jumping && Math.sqrt(dx * dx + dy * dy) <= sandboxJumpTorus.size * 0.95;
   if (inside && !sandboxJumpTorusInside) {
     sandboxJumpTorusHitFlash = performance.now();
   }
   sandboxJumpTorusInside = inside;
+}
+
+/* ======================================================
+   SANDBOX GIANT CARROT -- per direct request ("make the carrot like
+   full gigantic... bubble drops you near it and you just move x to
+   land on it"). A real solid landmark, tall enough that reaching its
+   upper reaches genuinely needs the player bubble's manual glide (max
+   glide height 260, see SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT) rather than
+   ordinary jumping -- the bubble is what makes this reachable at all.
+   Placed in the open gap between the pendulum (x:1900) and the block
+   pile (x:2600). A few little leaf-ledges spiral up it as real
+   platforms, same flat-landing-zone collision pattern as every other
+   sandbox platform, so once you're airborne inside (or just after
+   popping out of) the bubble, drifting your x over any of them lands
+   you same as touching down on solid ground. The "spin down a slide"
+   version of this idea is a later add -- this first pass is just the
+   solid climbable landmark itself.
+   ====================================================== */
+const sandboxGiantCarrot = {
+  x: 2200,
+  baseWidth: 100,  // width where the orange body meets the ground
+  topWidth: 50,    // width where the body ends and the leafy crown starts
+  bodyHeight: 250, // world height of the climbable orange body
+  leafHeight: 46   // extra purely-visual height of the leaf crown above the body
+};
+// little leaf-shaped ledges spiraling up the body, alternating sides --
+// each a real landing platform. dx is offset from the carrot's own
+// center x, height is world height above ground.
+const SANDBOX_GIANT_CARROT_STEPS = [
+  { dx: -40, height: 55 },
+  { dx: 36, height: 105 },
+  { dx: -42, height: 155 },
+  { dx: 38, height: 205 }
+];
+const SANDBOX_GIANT_CARROT_STEP_WIDTH = 40;
+
+function drawSandboxGiantCarrotLeaf(cx, cyy, w, flip) {
+  ctx.save();
+  ctx.translate(cx, cyy);
+  if (flip) ctx.scale(-1, 1);
+  const leafGrad = ctx.createLinearGradient(-w / 2, 0, w / 2, -6);
+  leafGrad.addColorStop(0, "#3f8f4a");
+  leafGrad.addColorStop(1, "#6fc46b");
+  ctx.fillStyle = leafGrad;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 4);
+  ctx.quadraticCurveTo(0, -14, w / 2, -2);
+  ctx.quadraticCurveTo(w * 0.2, 8, -w / 2, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(30,60,25,0.4)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSandboxGiantCarrot(camX) {
+  const c = sandboxGiantCarrot;
+  const cx = c.x - camX;
+  const groundY = gy;
+  const bodyTopY = groundY - c.bodyHeight;
+
+  // soft contact shadow, scaled to the whole giant footprint
+  ctx.fillStyle = "rgba(30,20,45,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY + 4, c.baseWidth / 2 + 14, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // tapered orange body -- a plain triangle-ish taper reads as "giant
+  // carrot" instantly, no need for anything fancier
+  const bodyGrad = ctx.createLinearGradient(cx - c.baseWidth / 2, 0, cx + c.baseWidth / 2, 0);
+  bodyGrad.addColorStop(0, "#c9601f");
+  bodyGrad.addColorStop(0.5, "#f0894a");
+  bodyGrad.addColorStop(1, "#c9601f");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - c.baseWidth / 2, groundY);
+  ctx.lineTo(cx + c.baseWidth / 2, groundY);
+  ctx.lineTo(cx + c.topWidth / 2, bodyTopY);
+  ctx.lineTo(cx - c.topWidth / 2, bodyTopY);
+  ctx.closePath();
+  ctx.fill();
+
+  // a handful of curved ridge lines for real carrot texture
+  ctx.strokeStyle = "rgba(150,70,20,0.35)";
+  ctx.lineWidth = 2;
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 7;
+    const yy = groundY - t * c.bodyHeight;
+    const halfW = (c.baseWidth / 2) * (1 - t) + (c.topWidth / 2) * t;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW * 0.8, yy + 5);
+    ctx.quadraticCurveTo(cx, yy - 3, cx + halfW * 0.8, yy + 5);
+    ctx.stroke();
+  }
+
+  // top platform -- flat cap where the body meets the leaf crown,
+  // matching the collision block below exactly
+  ctx.fillStyle = "#f7a15f";
+  ctx.beginPath();
+  ctx.ellipse(cx, bodyTopY, c.topWidth / 2, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // leafy crown, purely decorative
+  for (let i = 0; i < 5; i++) {
+    const ang = -Math.PI / 2 + (i - 2) * 0.42;
+    const len = c.leafHeight * (0.75 + (i % 2) * 0.25);
+    drawSandboxGiantCarrotLeaf(cx + Math.cos(ang) * 6, bodyTopY - Math.sin(ang) * len * 0.3 - len * 0.5, len, i % 2 === 0);
+  }
+
+  // the little leaf-ledge steps spiraling up the body
+  SANDBOX_GIANT_CARROT_STEPS.forEach((s, i) => {
+    const sx = cx + s.dx;
+    const sy = groundY - s.height;
+    drawSandboxGiantCarrotLeaf(sx, sy, SANDBOX_GIANT_CARROT_STEP_WIDTH, i % 2 === 1);
+  });
 }
 
 function drawSandboxScene(camX) {
@@ -67466,6 +67644,7 @@ function drawSandboxScene(camX) {
   drawSandboxTrampolineTowerTopFlag(camX);
   drawSandboxPendulum(camX);
   drawSandboxPendulumStreak(camX);
+  drawSandboxGiantCarrot(camX);
   drawBlockPile(camX);
   drawSandboxSlinky(camX);
   // CONFIRMED CHANGE: "place player on top of slinky like its resting
