@@ -4624,6 +4624,36 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED FEATURE ("all drifting shapes get real collision"): every
+  // floating sky-decor shape except the one forced toroid (index 4,
+  // which stays a fly-through hole instead -- see
+  // updateSandboxSkyToroidPassthrough) is now a real solid landing
+  // platform, same flat-landing-zone pattern as every other sandbox
+  // platform, using sandboxSkyShapeWorldPos for a stable world position
+  // that keeps working as the shape drifts/bobs on its own parallax
+  // path. These sit well above an ordinary jump's reach -- genuinely
+  // needs the player bubble's glide (or a big trampoline/fan launch) to
+  // reach at all.
+  SANDBOX_SKY_SHAPES.forEach((s, i) => {
+    if (s.sides === "toroid") return;
+    const pos = sandboxSkyShapeWorldPos(s, cameraX);
+    const halfW = s.size * 0.85;
+    const platformTop = pos.worldHeight + s.size * 0.35;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > pos.worldX - halfW &&
+      player.x < pos.worldX + halfW &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 16 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
   // CONFIRMED CHANGE: the return mound's top face is now a real jumpable
   // platform too, mirroring the entrance mound's own fix over in spring
   // ("make it so we can jump onto center of sandbox") -- per direct
@@ -67315,13 +67345,77 @@ function drawSandboxSkyAurora() {
   ctx.restore();
 }
 
+// CONFIRMED FEATURE ("all drifting shapes get real collision"): a
+// world-space position for one sky-decor shape that stays consistent
+// frame to frame regardless of camera position -- unlike the raw
+// sx = worldX - camX*parallax screen conversion the draw loop uses
+// (which is only meaningful for THIS frame's camX), this can be
+// compared directly against player.x/player.y for real collision the
+// same way every other platform in the game is. Algebraically it's the
+// same screen conversion solved backward: screenX = worldX - camX*
+// parallax = (worldX + camX*(1-parallax)) - camX, so this plus -camX
+// reproduces the exact draw-time screen position.
+function sandboxSkyShapeWorldPos(s, camX) {
+  const now = performance.now() * 0.001;
+  const bob = Math.sin(now * 0.5 + s.bobPhase) * s.bobAmp;
+  return {
+    worldX: s.worldX + camX * (1 - s.parallax),
+    worldHeight: gy - (s.y + bob),
+    rotation: s.rotOffset + now * s.rotSpeed
+  };
+}
+
+const SANDBOX_SKY_TOROID_HIT_ANIM_MS = 900;
+let sandboxSkyToroidHitFlash = -1e9; // timestamp of last pass-through
+let sandboxSkyToroidInside = false;  // latched, same shape as every other pass-through trigger in the sandbox
+
+function updateSandboxSkyToroidPassthrough() {
+  if (currentScene !== "sandbox") { sandboxSkyToroidInside = false; return; }
+  const toroid = SANDBOX_SKY_SHAPES[4]; // the one shape forced to "toroid" -- see SANDBOX_SKY_SHAPES' own comment
+  const pos = sandboxSkyShapeWorldPos(toroid, cameraX);
+  const px = player.x + player.width / 2, py = player.y + player.height * 0.5;
+  const dx = px - pos.worldX, dy = py - pos.worldHeight;
+  const inside = player.jumping && Math.sqrt(dx * dx + dy * dy) <= toroid.size * 0.85;
+  if (inside && !sandboxSkyToroidInside) {
+    sandboxSkyToroidHitFlash = performance.now();
+  }
+  sandboxSkyToroidInside = inside;
+}
+
+// same gold-spark -> green-flash -> fade language as the fixed jump
+// torus's own hit anim (drawSandboxJumpTorusHitAnim)
+function drawSandboxSkyToroidHitAnim(gx, gy2) {
+  const now = performance.now();
+  const flashAge = now - sandboxSkyToroidHitFlash;
+  if (flashAge >= SANDBOX_SKY_TOROID_HIT_ANIM_MS) return;
+  const p = flashAge / SANDBOX_SKY_TOROID_HIT_ANIM_MS;
+  const mixT = Math.min(1, p / 0.6);
+  const rC = Math.round(255 + (35 - 255) * mixT);
+  const gC = Math.round(210 + (165 - 210) * mixT);
+  const bC = Math.round(110 + (60 - 110) * mixT);
+  const alpha = p < 0.7 ? 0.9 : 0.9 * (1 - (p - 0.7) / 0.3);
+  const ringR = 12 + p * 20;
+  ctx.strokeStyle = `rgba(20,35,15,${alpha * 0.5})`;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = `rgba(${rC},${gC},${bC},${alpha})`;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.arc(gx, gy2, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  if (p < 0.6) drawSparkleBurst(gx, gy2, p / 0.6, 1);
+}
+
 function drawSandboxSkyDecor(camX) {
   drawSandboxSkyAurora();
   const now = performance.now() * 0.001;
   SANDBOX_SKY_SHAPES.forEach(s => {
     const sx = s.worldX - camX * s.parallax;
-    if (sx < -60 || sx > canvas.width + 60) return;
     const sy = s.y + Math.sin(now * 0.5 + s.bobPhase) * s.bobAmp;
+    if (s.sides === "toroid") drawSandboxSkyToroidHitAnim(sx, sy); // still plays out even while the shape itself has scrolled off-screen, same as every other hit-flash in this file
+    if (sx < -60 || sx > canvas.width + 60) return;
     const rotation = s.rotOffset + now * s.rotSpeed;
     if (s.sides === "toroid") {
       drawSandboxSkyToroid(sx, sy, s.size, rotation, s.palette, s.seed);
@@ -67975,6 +68069,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxFan(deltaTime);
   updateSandboxFan2(deltaTime);
   updateSandboxJumpTorus();
+  updateSandboxSkyToroidPassthrough();
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
