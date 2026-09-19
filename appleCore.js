@@ -85,6 +85,7 @@ function resetAllPlayerModeFlags() {
   player.onBallPitRim = false;
   player.onTopsyHouseLadder = false;
   player.onFungusPulleyRide = false;
+  player.onPlayerBubbleRide = false;
   player.inAntFarm = false;
   player.inTopsySpiralSlide = false;
   player.topsyInverted = false;
@@ -365,6 +366,12 @@ const player = {
   // timed scripted climb rather than up/down-driven. See
   // updateFungusPulleyRide.
   onFungusPulleyRide: false,
+  // CONFIRMED ADD: true while riding the sandbox bubble wand's own
+  // player-sized bubble -- same "pinned/driven, gravity-exempt" shape as
+  // onFungusPulleyRide above, except this one drifts up-and-right on a
+  // timer instead of following a scripted path. See
+  // updateSandboxPlayerBubble.
+  onPlayerBubbleRide: false,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -3377,6 +3384,10 @@ function applyPhysics(){
   // same idea for the fungus tree's pulley-basket shortcut ride --
   // position while riding is driven entirely by updateFungusPulleyRide.
   if (player.onFungusPulleyRide) return;
+
+  // same idea for the sandbox bubble-wand's player-sized bubble ride --
+  // position while riding is driven entirely by updateSandboxPlayerBubble.
+  if (player.onPlayerBubbleRide) return;
 
   // the ant farm keeps the real player parked at the mount spot the
   // whole visit (only a small drawn icon moves inside the case), but
@@ -58964,6 +58975,176 @@ function drawSandboxBubbles(camX) {
 }
 
 /* ======================================================
+   SANDBOX PLAYER BUBBLE -- per direct request ("make the bubble area
+   make a bubble that is created around player, and once it completes
+   it floats them up for a few beats to the right before popping").
+   Holding space at the wand now grows a player-sized bubble around the
+   player instead of the little floating stream; once fully formed it
+   locks into a short automatic ride (mode-lock flag pattern, same shape
+   as onFungusPulleyRide -- see the early-return in applyPhysics and
+   updateSandboxPlayerBubble below driving position directly) drifting
+   up and to the right on its own for a few seconds, then pops and drops
+   the player back into normal gravity. First pass is fully automatic
+   (no steering mid-ride) per direct instruction to get the base working
+   before deciding whether to add player control later.
+   ====================================================== */
+const SANDBOX_PLAYER_BUBBLE_FORM_MS = 1100; // how long you need to hold at the wand before it fully forms
+const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 2600; // "a few beats" -- roughly 2.5s aloft
+const SANDBOX_PLAYER_BUBBLE_RIDE_VX = 60; // world px/sec rightward drift
+const SANDBOX_PLAYER_BUBBLE_RIDE_VY_START = 85; // world px/sec upward at launch, easing off toward the pop (see updateSandboxPlayerBubble)
+const SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS = 400;
+const sandboxPlayerBubble = {
+  formT: 0,     // ms held near the wand while forming, 0..SANDBOX_PLAYER_BUBBLE_FORM_MS
+  rideT: 0,     // ms since the ride launched
+  popped: false,
+  popAgeMs: 0,
+  popX: 0, popY: 0 // world position the pop animation plays at, captured once so it doesn't jump after the ride ends
+};
+
+function updateSandboxPlayerBubble(deltaTime) {
+  const dtMs = deltaTime * 1000;
+
+  if (sandboxPlayerBubble.popped) {
+    sandboxPlayerBubble.popAgeMs += dtMs;
+    if (sandboxPlayerBubble.popAgeMs > SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS) sandboxPlayerBubble.popped = false;
+  }
+
+  if (player.onPlayerBubbleRide) {
+    sandboxPlayerBubble.rideT += dtMs;
+    const rideP = Math.min(1, sandboxPlayerBubble.rideT / SANDBOX_PLAYER_BUBBLE_RIDE_MS);
+    // eases the climb off toward the end (full lift at launch, tapering
+    // to ~0 right before it pops) so it settles into the pop rather than
+    // still visibly rocketing upward the instant it ends
+    const liftT = 1 - rideP;
+    player.x += SANDBOX_PLAYER_BUBBLE_RIDE_VX * (dtMs / 1000);
+    player.y += SANDBOX_PLAYER_BUBBLE_RIDE_VY_START * liftT * (dtMs / 1000);
+    if (sandboxPlayerBubble.rideT >= SANDBOX_PLAYER_BUBBLE_RIDE_MS) {
+      player.onPlayerBubbleRide = false;
+      player.vy = 0; // resumes falling naturally from wherever it popped
+      sandboxPlayerBubble.popped = true;
+      sandboxPlayerBubble.popAgeMs = 0;
+      sandboxPlayerBubble.popX = player.x + player.width / 2;
+      sandboxPlayerBubble.popY = player.y;
+    }
+    return;
+  }
+
+  if (currentScene !== "sandbox") {
+    sandboxPlayerBubble.formT = 0;
+    return;
+  }
+
+  // only grows while standing on the ground right at the wand -- mirrors
+  // the wand's own existing hold-to-blow trigger zone/keys
+  const forming = pressedDownNear(sandboxBubbleWand.x, 0, 26, 18, 18) && !player.jumping && player.y < 4;
+  if (forming) {
+    sandboxPlayerBubble.formT += dtMs;
+    if (sandboxPlayerBubble.formT >= SANDBOX_PLAYER_BUBBLE_FORM_MS) {
+      sandboxPlayerBubble.formT = 0;
+      player.onPlayerBubbleRide = true;
+      sandboxPlayerBubble.rideT = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  } else if (sandboxPlayerBubble.formT > 0) {
+    // let go before it finished forming -- shrinks back down quickly
+    // rather than snapping straight to zero
+    sandboxPlayerBubble.formT = Math.max(0, sandboxPlayerBubble.formT - dtMs * 2.5);
+  }
+}
+
+// same rainbow-conic-sheen language as the little floating bubbles
+// (drawSandboxBubbles), just scaled up and recentered on the player each
+// frame instead of drifting on its own path.
+function drawSandboxBubbleDisc(bx, by, r, alpha, seed) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  ctx.fillStyle = `rgba(220,240,252,${0.16 * alpha})`;
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  const rainbow = ["#ff5a5a", "#ff9d3f", "#ffe64a", "#6ee66e", "#4ac8ff", "#8a6bff", "#ff6bc9", "#ff5a5a"];
+  const spin1 = seed * 0.0011 + performance.now() * 0.00006;
+  const spin2 = seed * 0.0007 - performance.now() * 0.00004;
+
+  const g1 = ctx.createConicGradient(spin1, bx, by);
+  rainbow.forEach((c, i) => g1.addColorStop(i / (rainbow.length - 1), c));
+  ctx.globalAlpha = 0.4 * alpha;
+  ctx.fillStyle = g1;
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  const g2 = ctx.createConicGradient(spin2, bx - r * 0.15, by + r * 0.1);
+  rainbow.forEach((c, i) => g2.addColorStop(i / (rainbow.length - 1), c));
+  ctx.globalAlpha = 0.26 * alpha;
+  ctx.fillStyle = g2;
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  const centerFade = ctx.createRadialGradient(bx, by, 0, bx, by, r);
+  centerFade.addColorStop(0, `rgba(235,245,255,${0.18 * alpha})`);
+  centerFade.addColorStop(0.4, `rgba(235,245,255,${0.03 * alpha})`);
+  centerFade.addColorStop(1, "rgba(235,245,255,0)");
+  ctx.fillStyle = centerFade;
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  ctx.strokeStyle = `rgba(255,255,255,${0.65 * alpha})`;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = `rgba(255,255,255,${0.7 * alpha})`;
+  ctx.beginPath();
+  ctx.arc(bx - r * 0.35, by - r * 0.35, r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSandboxPlayerBubblePop(camX) {
+  if (!sandboxPlayerBubble.popped) return;
+  const p = sandboxPlayerBubble.popAgeMs / SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS;
+  const alpha = 1 - p;
+  const gx = sandboxPlayerBubble.popX - camX, gy2 = gy - sandboxPlayerBubble.popY - 20;
+  for (let s = 0; s < 10; s++) {
+    const ang = (s / 10) * Math.PI * 2;
+    const sr = 24 * (0.5 + p * 1.6);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.85})`;
+    ctx.beginPath();
+    ctx.arc(gx + Math.cos(ang) * sr, gy2 + Math.sin(ang) * sr, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// drawn around the player each frame while forming/riding, from the
+// shared draw() step rather than drawSandboxScene, same reasoning as the
+// slinky rider -- needs to layer with (in this case, ON TOP of) the
+// player sprite, not underneath it in the ground-level prop pass.
+function drawSandboxPlayerBubbleAroundPlayer(camX) {
+  const px = player.x + player.width / 2 - camX;
+  const py = gy - player.y - player.height * 0.55;
+
+  if (player.onPlayerBubbleRide) {
+    drawSandboxBubbleDisc(px, py, 34, 1, 777);
+    return;
+  }
+  if (sandboxPlayerBubble.formT > 0) {
+    const formP = sandboxPlayerBubble.formT / SANDBOX_PLAYER_BUBBLE_FORM_MS;
+    drawSandboxBubbleDisc(px, py, 10 + formP * 24, Math.min(1, formP * 1.3), 777);
+  }
+}
+
+/* ======================================================
    SANDBOX TRAMPOLINE -- classic version, per direct request. Bouncing
    is fully automatic: landing on the mat while falling launches the
    player back up instead of stopping them, with launch speed scaled
@@ -67410,6 +67591,7 @@ function updateSandboxScene(deltaTime) {
   updateSandboxPendulum(deltaTime);
   updateSandboxSlinky(deltaTime);
   updateSandboxBubbles(deltaTime);
+  updateSandboxPlayerBubble(deltaTime);
   updateSandboxBalanceBall(deltaTime);
   updateSandboxBallPit(deltaTime);
   updateSandboxAntFarm(deltaTime);
@@ -68532,6 +68714,14 @@ if (currentScene === "forest") {
     drawSandboxBallPitBalls(camX, true);
     ctx.restore();
   }
+  // CONFIRMED FEATURE: player-sized wand bubble, drawn AFTER the player
+  // so it reads as actually surrounding them rather than sitting behind.
+  // See drawSandboxPlayerBubbleAroundPlayer's own comment.
+  ctx.save();
+  ctx.translate(0, cameraY);
+  drawSandboxPlayerBubbleAroundPlayer(camX);
+  drawSandboxPlayerBubblePop(camX);
+  ctx.restore();
 } else if (currentScene === "topsyturvy" && topsyChefInteriorActive && topsyChefPotDive.active) {
   // pot-dive finale splash/swirl/drip FX, drawn AFTER the player so the
   // droplets/steam actually read as on top of the sprite -- see its own
