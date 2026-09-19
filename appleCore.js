@@ -2789,7 +2789,7 @@ function handleInput(){
   // icon (never gated on topsyWell.dipping) kept right on following you.
   // Frozen here the same way every other scripted "busy" animation in
   // this list already is, so the whole beat plays out in place.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active && !player.onPlayerBubbleRide) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
     if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
@@ -58955,21 +58955,23 @@ function drawSandboxBubbles(camX) {
 /* ======================================================
    SANDBOX PLAYER BUBBLE -- per direct request ("make the bubble area
    make a bubble that is created around player, and once it completes
-   it floats them up for a few beats to the right before popping").
-   Holding space at the wand now grows a player-sized bubble around the
-   player instead of the little floating stream; once fully formed it
-   locks into a short automatic ride (mode-lock flag pattern, same shape
-   as onFungusPulleyRide -- see the early-return in applyPhysics and
-   updateSandboxPlayerBubble below driving position directly) drifting
-   up and to the right on its own for a few seconds, then pops and drops
-   the player back into normal gravity. First pass is fully automatic
-   (no steering mid-ride) per direct instruction to get the base working
-   before deciding whether to add player control later.
+   it floats them up for a few beats to the right before popping" ->
+   then "full manual glide"): holding space at the wand grows a player-
+   sized bubble around the player instead of the little floating stream;
+   once fully formed it locks into a short ride (mode-lock flag pattern,
+   same shape as onFungusPulleyRide -- see the early-return in
+   applyPhysics and updateSandboxPlayerBubble below driving position
+   directly) during which arrow keys freely glide the player around in
+   any direction, gravity-exempt, for a few seconds, then it pops
+   regardless of where you are and drops you back into normal gravity
+   from that spot. First pass was fully automatic (fixed up-right
+   drift); replaced with real player control per direct follow-up
+   request ("full manual glide").
    ====================================================== */
 const SANDBOX_PLAYER_BUBBLE_FORM_MS = 1100; // how long you need to hold at the wand before it fully forms
-const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 2600; // "a few beats" -- roughly 2.5s aloft
-const SANDBOX_PLAYER_BUBBLE_RIDE_VX = 60; // world px/sec rightward drift
-const SANDBOX_PLAYER_BUBBLE_RIDE_VY_START = 85; // world px/sec upward at launch, easing off toward the pop (see updateSandboxPlayerBubble)
+const SANDBOX_PLAYER_BUBBLE_RIDE_MS = 4200; // longer than the old automatic drift ("a few beats") -- manual control needs enough time to actually go somewhere with it
+const SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED = 130; // world px/sec in any held direction -- floatier/slower than normal ground speed, reads as drifting rather than running
+const SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT = 260; // clamp so gliding straight up can't fly the player off the top of the world
 const SANDBOX_PLAYER_BUBBLE_POP_ANIM_MS = 400;
 const sandboxPlayerBubble = {
   formT: 0,     // ms held near the wand while forming, 0..SANDBOX_PLAYER_BUBBLE_FORM_MS
@@ -58989,13 +58991,19 @@ function updateSandboxPlayerBubble(deltaTime) {
 
   if (player.onPlayerBubbleRide) {
     sandboxPlayerBubble.rideT += dtMs;
-    const rideP = Math.min(1, sandboxPlayerBubble.rideT / SANDBOX_PLAYER_BUBBLE_RIDE_MS);
-    // eases the climb off toward the end (full lift at launch, tapering
-    // to ~0 right before it pops) so it settles into the pop rather than
-    // still visibly rocketing upward the instant it ends
-    const liftT = 1 - rideP;
-    player.x += SANDBOX_PLAYER_BUBBLE_RIDE_VX * (dtMs / 1000);
-    player.y += SANDBOX_PLAYER_BUBBLE_RIDE_VY_START * liftT * (dtMs / 1000);
+    // CONFIRMED CHANGE ("full manual glide"): free movement in any
+    // direction while riding, gravity-exempt (see the applyPhysics
+    // early-return), instead of a fixed scripted drift. Diagonal input
+    // isn't speed-normalized -- a small deliberate inconsistency, since
+    // a slightly faster diagonal reads as "floaty and a little loose"
+    // rather than needing to feel like precise platforming.
+    const step = SANDBOX_PLAYER_BUBBLE_GLIDE_SPEED * (dtMs / 1000);
+    if (keys.left) player.x -= step;
+    if (keys.right) player.x += step;
+    if (keys.up) player.y += step;
+    if (keys.down) player.y -= step;
+    player.x = Math.max(0, Math.min(player.x, SANDBOX_WIDTH - player.width));
+    player.y = Math.max(0, Math.min(player.y, SANDBOX_PLAYER_BUBBLE_MAX_HEIGHT));
     if (sandboxPlayerBubble.rideT >= SANDBOX_PLAYER_BUBBLE_RIDE_MS) {
       player.onPlayerBubbleRide = false;
       player.vy = 0; // resumes falling naturally from wherever it popped
