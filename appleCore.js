@@ -69735,14 +69735,19 @@ const WINTER_HIDDEN_ICE_ZONES = [
 // now range from a tight 30px hop to a genuine 170px stretch, instead of
 // the old fairly-even ~200px spacing. See updateWinterScene for the
 // matching "a lil more slip sliding" momentum tuning.
+// CONFIRMED CHANGE ("make more ice platforms move x axis"): only 3 of 7
+// used to drift -- bumped to 6 of 7, keeping just the very first
+// platform (the one right off the ground, lowest stakes) static as a
+// safe, predictable first foothold. The rest now all drift, each with
+// its own amp/speed/phase so they don't move in lockstep.
 const WINTER_SLICK_PLATFORMS = [
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
-  { x: 1850, width: 130, height: 100, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
+  { x: 1850, width: 130, height: 100, driftAmp: 35, driftSpeed: 0.0016, driftPhase: 1.8 },
   { x: 2010, width: 70,  height: 230, driftAmp: 55, driftSpeed: 0.0009, driftPhase: 2.4 },
-  { x: 2240, width: 140, height: 150, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
+  { x: 2240, width: 140, height: 150, driftAmp: 40, driftSpeed: 0.0011, driftPhase: 3.3 },
   { x: 2420, width: 95,  height: 290, driftAmp: 50, driftSpeed: 0.0013, driftPhase: 4.1 },
-  { x: 2610, width: 120, height: 200, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 }
+  { x: 2610, width: 120, height: 200, driftAmp: 42, driftSpeed: 0.001,  driftPhase: 5.2 }
 ];
 
 // current world-x of a slick platform's LEFT edge this frame -- the only
@@ -70366,14 +70371,19 @@ function drawWinterRainbowOverhang(camX) {
     fringeTopPts.push({ x: fx, y: rimTopY + (pseudoRandom(rimSeed + f * 3.7) - 0.5) * 5 });
     fringeBotPts.push({ x: fx, y: rimTopY + 7 + pseudoRandom(fringeSeed + f * 2.1) * 11 });
   }
-  ctx.beginPath();
-  ctx.moveTo(fringeTopPts[0].x, fringeTopPts[0].y);
-  fringeTopPts.forEach(p => ctx.lineTo(p.x, p.y));
-  for (let f = FRINGE_SEGS; f >= 0; f--) ctx.lineTo(fringeBotPts[f].x, fringeBotPts[f].y);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(200,224,238,0.6)";
-  ctx.fill();
-
+  // CONFIRMED CHANGE ("NOT having a flat top of each icicle, blend it in
+  // to the thing its on and into each other not so seperate, have some
+  // color bleeding into the things its on"): the fringe used to be
+  // filled FIRST and the icicles hung from points on its already-drawn
+  // bottom edge -- correct for connection, but each icicle's own top was
+  // still a flat, crisp two-point edge sitting right at that boundary,
+  // reading as a seam where icicle stops and rock starts. Now the
+  // icicles are drawn FIRST, each one's top embedded well up inside
+  // where the fringe will go, and the fringe is painted OVER them
+  // afterward -- since the fringe fill is translucent, this both hides
+  // every icicle's flat top completely (no visible edge, no "separate"
+  // shapes) AND lets each icicle's own color genuinely bleed up into the
+  // rock/ice above it for free, exactly where they actually meet.
   for (let i = 0; i < ICICLE_COUNT; i++) {
     const seed = i * 19.3 + rimSeed;
     // hang each icicle from a point along the fringe's own jagged
@@ -70400,7 +70410,7 @@ function drawWinterRainbowOverhang(camX) {
     const isThick = pseudoRandom(seed + 9) < 0.3; // a minority read as the photos' fatter, snow-crusted ones
     const len = (isThick ? 34 : 46) + pseudoRandom(seed + 1) * (isThick ? 46 : 78);
     const lean = (pseudoRandom(seed + 2) - 0.5) * 8; // tip drifts slightly off-center
-    const tipX = originX + lean;
+    let tipX = originX + lean; // corrected below to match the centerline's actual accumulated drift
     const tipY = originY + len;
 
     // CONFIRMED CHANGE ("they also some should be more than one color all
@@ -70429,20 +70439,42 @@ function drawWinterRainbowOverhang(camX) {
       ];
     }
 
-    const SEGS = 6;
+    // CONFIRMED CHANGE ("more organic shaped please. jagged, some
+    // adkward, like how icicles acutally are"): the smooth eased taper
+    // from the last pass avoided lumps but over-corrected into a shape
+    // that was too clean/uniform -- real icicles have real irregularity
+    // along their own length, not just icicle-to-icicle. Two things
+    // brought back, both tuned lighter than the original overcorrection
+    // that caused the pinched-wine-bottle look: `bump` gives each
+    // segment's WIDTH its own independent wobble on top of the taper
+    // (mild, 0.7-1.3x, so it still trends thinner without a clean line),
+    // and `drift` accumulates a small random sideways nudge segment to
+    // segment so the CENTERLINE itself wanders/kinks rather than running
+    // dead straight from origin to tip -- that's the "some awkward" part,
+    // a real icicle is rarely perfectly true.
+    const SEGS = 7;
     const baseHalfW = (isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isThick ? 3.5 : 2);
-    const leftPts = [{ x: originX - baseHalfW * 0.85, y: originY }];
-    const rightPts = [{ x: originX + baseHalfW * 0.85, y: originY }];
+    // top point sits embedded well up inside the fringe (drawn over this
+    // afterward), not flush at the fringe's own bottom edge -- no flat
+    // top is ever visible, and it merges into whatever neighbors overlap
+    // it there instead of reading as its own separate shape
+    const embedY = originY - 10 - pseudoRandom(seed + 4) * 6;
+    const leftPts = [{ x: originX - baseHalfW * 0.6, y: embedY }];
+    const rightPts = [{ x: originX + baseHalfW * 0.6, y: embedY }];
+    let drift = 0;
     for (let s = 1; s <= SEGS; s++) {
       const tt = s / SEGS;
-      const px = originX + lean * tt;
+      drift += (pseudoRandom(seed + 60 + s * 3.1) - 0.5) * baseHalfW * 0.9;
+      const px = originX + lean * tt + drift;
       const py = originY + len * tt;
-      const envelope = Math.pow(1 - tt, 1.25); // smooth, natural taper -- no per-segment noise in the width itself
-      const hw = Math.max(0.4, baseHalfW * envelope);
-      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * hw * 0.5; // light edge texture only
+      const envelope = Math.pow(1 - tt, 1.15);
+      const bump = 0.7 + pseudoRandom(seed + 40 + s * 2.3) * 0.6;
+      const hw = Math.max(0.4, baseHalfW * envelope * bump);
+      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * hw * 0.7;
       leftPts.push({ x: px - hw + jag, y: py });
       rightPts.push({ x: px + hw + jag, y: py });
     }
+    tipX = originX + lean + drift; // match the melt droplet to the centerline's actual final drift
 
     ctx.beginPath();
     ctx.moveTo(leftPts[0].x, leftPts[0].y);
@@ -70487,13 +70519,30 @@ function drawWinterRainbowOverhang(camX) {
     ctx.fillStyle = `rgba(${tipColor},${dropAlpha})`;
     ctx.fill();
   }
+
+  // the connecting ice fringe itself, painted LAST so it sits over every
+  // icicle's embedded top -- hides the flat tops entirely, fuses them
+  // into one always-connected piece, and (being translucent) lets each
+  // icicle's own color bleed up into it right where they actually meet
+  ctx.beginPath();
+  ctx.moveTo(fringeTopPts[0].x, fringeTopPts[0].y);
+  fringeTopPts.forEach(p => ctx.lineTo(p.x, p.y));
+  for (let f = FRINGE_SEGS; f >= 0; f--) ctx.lineTo(fringeBotPts[f].x, fringeBotPts[f].y);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(200,224,238,0.5)";
+  ctx.fill();
 }
 
-// CONFIRMED CHANGE (same round as WINTER_SLICK_PLATFORMS above): drawn
-// from world height via `gy - p.height`, using winterSlickPlatformX for
-// the same drifting x collision already uses. A simple icy slab look --
-// pale translucent-blue top face, a darker underside edge, and a couple
-// of jagged crack lines so it doesn't read as a plain rectangle.
+// CONFIRMED CHANGE ("make them kind of taper at the ends of them,
+// instead of thin rectangles. like they are slivers of ice actualy"):
+// full rework from a flat slab with square-cut left/right edges into a
+// real tapered sliver -- both ends narrow down to an actual point
+// instead of a hard vertical edge, with a jagged organic profile along
+// the way (same faceted-shard language the rainbow icicles now use)
+// rather than one smooth lens curve. Collision still uses the platform's
+// plain bounding box (p.width) for fairness/predictability -- only the
+// drawn silhouette tapers, so landing still feels like landing on the
+// stated width, it just doesn't LOOK like a rectangle doing it.
 function drawWinterSlickPlatform(camX, p, now) {
   const px = winterSlickPlatformX(p, now) - camX;
   if (px < -p.width - 20 || px > canvas.width + 20) return;
@@ -70503,21 +70552,48 @@ function drawWinterSlickPlatform(camX, p, now) {
   ctx.fillStyle = "rgba(150,170,60,0)"; // no-op reset (keeps globalAlpha state predictable below)
   ctx.globalAlpha = 1;
 
-  // underside -- darker, gives the slab real thickness
-  ctx.fillStyle = "rgba(140,175,200,0.85)";
-  ctx.fillRect(px, topY + 6, p.width, 10);
+  const SEGS = 9;
+  const topPts = [];
+  const botPts = [];
+  for (let s = 0; s <= SEGS; s++) {
+    const t = s / SEGS;
+    const x = px + p.width * t;
+    // envelope tapers to a real point at both ends (0 there) and bulges
+    // in the middle -- an irregular bump per point on top of that, not a
+    // clean sine lens, so it reads as a jagged ice shard rather than a
+    // smooth lozenge
+    const envelope = Math.sin(Math.PI * t);
+    const topBump = 0.55 + pseudoRandom(seed + s * 3.1) * 0.7;
+    const botBump = 0.55 + pseudoRandom(seed + 40 + s * 2.7) * 0.7;
+    topPts.push({ x, y: topY - envelope * 6 * topBump });
+    botPts.push({ x, y: topY + envelope * 9 * botBump });
+  }
 
-  // icy top face
-  const grad = ctx.createLinearGradient(0, topY - 4, 0, topY + 8);
+  // underside -- darker, gives the sliver real thickness, same tapered
+  // silhouette as the top (just the bottom edge instead)
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  for (let s = SEGS; s >= 0; s--) ctx.lineTo(botPts[s].x, botPts[s].y);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(140,175,200,0.85)";
+  ctx.fill();
+
+  // icy top face -- a slightly shallower tapered sliver sitting inside
+  // the underside shape, same points pulled in toward the top edge, so
+  // it reads as a real faceted plane rather than a flat cap
+  const grad = ctx.createLinearGradient(0, topY - 8, 0, topY + 9);
   grad.addColorStop(0, "rgba(225,242,252,0.95)");
   grad.addColorStop(1, "rgba(175,210,230,0.9)");
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.moveTo(px, topY + 8);
-  ctx.lineTo(px, topY - 2);
-  ctx.lineTo(px + p.width * 0.5, topY - 5);
-  ctx.lineTo(px + p.width, topY - 2);
-  ctx.lineTo(px + p.width, topY + 8);
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  for (let s = SEGS; s >= 0; s--) {
+    const t = s / SEGS;
+    const envelope = Math.sin(Math.PI * t);
+    ctx.lineTo(botPts[s].x, topY + envelope * 3);
+  }
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.6)";
@@ -70528,7 +70604,7 @@ function drawWinterSlickPlatform(camX, p, now) {
   // base x so they stay stable regardless of current drift
   for (let c = 0; c < 2; c++) {
     const cSeed = seed + c * 5.1;
-    const startX = px + p.width * (0.25 + c * 0.4);
+    const startX = px + p.width * (0.3 + c * 0.35);
     ctx.beginPath();
     ctx.moveTo(startX, topY - 3);
     ctx.lineTo(startX + (pseudoRandom(cSeed) - 0.5) * 16, topY + 2);
