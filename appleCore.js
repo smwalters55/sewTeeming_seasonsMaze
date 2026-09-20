@@ -5350,6 +5350,33 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED CHANGE ("i need to be able to jump on the branches on this
+  // large tree. well other branches too"): a real landing spot at the
+  // outer end of each of the owl tree's three branches (the main perch
+  // plus the two smaller decorative ones added for variety), not just the
+  // canopy top. Geometry comes from getWinterOwlTreeBranchGeom so this can
+  // never drift out of sync with where the branches are actually drawn --
+  // same shared-geometry approach the slick platforms' drift already uses.
+  getWinterOwlTreeBranchGeom().forEach(b => {
+    const branchWorldX = WINTER_OWL_TREE_X + b.tipXOff;
+    const branchLandingY = -b.tipYOff; // draw-space is gy-relative/inverted vs. player.y's height-above-ground
+    const bLeft = branchWorldX - b.landHalfWidth;
+    const bRight = branchWorldX + b.landHalfWidth;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > bLeft &&
+      player.x < bRight &&
+      playerBottom <= branchLandingY &&
+      playerBottom >= branchLandingY - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = branchLandingY;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  });
+
   // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
   // well so it's both high and wide ish"): plain top-landing collision,
   // same shape as sandbox's own block-pile steps -- ordinary single/
@@ -69911,7 +69938,7 @@ const WINTER_HIDDEN_ICE_ZONES = [];
 // comment above) rather than making both move or both static.
 const WINTER_SLICK_PLATFORMS = [
   { x: 800,  width: 150, height: 40, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0,   practice: true },
-  { x: 1020, width: 120, height: 55, driftAmp: 28, driftSpeed: 0.001,  driftPhase: 1.4, practice: true },
+  { x: 1020, width: 120, height: 85, driftAmp: 28, driftSpeed: 0.001,  driftPhase: 1.4, practice: true }, // CONFIRMED CHANGE ("should it be a lil higher"): raised from 55 -- still a modest first climb, well under the real platforms' own 100-290 range
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
   { x: 1850, width: 130, height: 100, driftAmp: 35, driftSpeed: 0.0016, driftPhase: 1.8 },
@@ -70458,6 +70485,43 @@ function drawWinterBranchStroke(baseX, baseY, tipX, tipY, width) {
   ctx.stroke();
 }
 
+// CONFIRMED CHANGE ("i need to be able to jump on the branches on this
+// large tree. well other branches too"): shared geometry for all three of
+// the owl tree's branches, expressed as screen-space OFFSETS from the
+// tree's own sx/canopyBase/totalH (not absolute positions), so both the
+// draw call below and the new landing collision in applyPhysics read the
+// exact same numbers and can never drift apart -- same "compute once,
+// share" approach winterSlickPlatformX already uses for the slick
+// platforms' drift. `landHalfWidth` is deliberately more generous than the
+// branch's own drawn stroke width, same forgiving-over-strict approach the
+// front trees' own mid-perch already takes.
+function getWinterOwlTreeBranchGeom() {
+  const trunkH = 14 * WINTER_OWL_TREE_SCALE;
+  const canopyBaseOff = -trunkH + 4 * WINTER_OWL_TREE_SCALE; // canopyBase = gy + canopyBaseOff
+  const totalH = 78 * WINTER_OWL_TREE_SCALE;
+
+  const perchBaseXOff = -6;
+  const perchBaseYOff = canopyBaseOff - totalH * 0.66;
+  const perch = {
+    baseXOff: perchBaseXOff, baseYOff: perchBaseYOff,
+    tipXOff: perchBaseXOff + WINTER_OWL_BRANCH_DX, tipYOff: perchBaseYOff + WINTER_OWL_BRANCH_DY,
+    width: 5, landHalfWidth: 22
+  };
+  const branch2BaseXOff = 5, branch2BaseYOff = canopyBaseOff - totalH * 0.36;
+  const branch2 = {
+    baseXOff: branch2BaseXOff, baseYOff: branch2BaseYOff,
+    tipXOff: branch2BaseXOff + 52, tipYOff: branch2BaseYOff - 14,
+    width: 3.4, landHalfWidth: 16
+  };
+  const branch3BaseXOff = -4, branch3BaseYOff = canopyBaseOff - totalH * 0.86;
+  const branch3 = {
+    baseXOff: branch3BaseXOff, baseYOff: branch3BaseYOff,
+    tipXOff: branch3BaseXOff - 34, tipYOff: branch3BaseYOff - 9,
+    width: 2.6, landHalfWidth: 14
+  };
+  return [perch, branch2, branch3];
+}
+
 function drawWinterOwlTree(camX) {
   const sx = WINTER_OWL_TREE_X - camX;
   if (sx < -140 || sx > canvas.width + 140) return;
@@ -70474,14 +70538,12 @@ function drawWinterOwlTree(camX) {
   // reaches out far enough (100px) to clear even the widest row's real
   // extent at that height, so the owl reads clearly against the
   // background instead of melting into the green.
-  const trunkH = 14 * WINTER_OWL_TREE_SCALE;
-  const canopyBase = gy - trunkH + 4 * WINTER_OWL_TREE_SCALE; // mirrors drawWinterPine's own canopyBase math
-  const totalH = 78 * WINTER_OWL_TREE_SCALE;
-  const branchBaseX = sx - 6;
-  const branchBaseY = canopyBase - totalH * 0.66;
-  const branchTipX = branchBaseX + WINTER_OWL_BRANCH_DX;
-  const branchTipY = branchBaseY + WINTER_OWL_BRANCH_DY;
-  drawWinterBranchStroke(branchBaseX, branchBaseY, branchTipX, branchTipY, 5);
+  const [perch, branch2, branch3] = getWinterOwlTreeBranchGeom();
+  const branchBaseX = sx + perch.baseXOff;
+  const branchBaseY = gy + perch.baseYOff;
+  const branchTipX = sx + perch.tipXOff;
+  const branchTipY = gy + perch.tipYOff;
+  drawWinterBranchStroke(branchBaseX, branchBaseY, branchTipX, branchTipY, perch.width);
 
   // CONFIRMED CHANGE ("add a little more variety to the trees... vs just a
   // larger version of exactly what is allready there... maybe a branch
@@ -70490,8 +70552,10 @@ function drawWinterOwlTree(camX) {
   // no owl, just visual character so this tree reads as its own distinct
   // shape rather than a scaled-up copy of a normal front pine. Fixed
   // (not randomized) positions/lengths since this is a one-off named tree.
-  drawWinterBranchStroke(sx + 5, canopyBase - totalH * 0.36, sx + 5 + 52, canopyBase - totalH * 0.36 - 14, 3.4);
-  drawWinterBranchStroke(sx - 4, canopyBase - totalH * 0.86, sx - 4 - 34, canopyBase - totalH * 0.86 - 9, 2.6);
+  // Now also real landing spots (see getWinterOwlTreeBranchGeom/applyPhysics),
+  // not purely decorative.
+  drawWinterBranchStroke(sx + branch2.baseXOff, gy + branch2.baseYOff, sx + branch2.tipXOff, gy + branch2.tipYOff, branch2.width);
+  drawWinterBranchStroke(sx + branch3.baseXOff, gy + branch3.baseYOff, sx + branch3.tipXOff, gy + branch3.tipYOff, branch3.width);
 
   // CONFIRMED BUG FIX ("branch is like stabbing owl"): the owl used to sit
   // almost right on the branch tip point itself, so the branch's own curve
@@ -70729,7 +70793,7 @@ function drawWinterOwlDialogue(camX) {
   const perchWorldX = WINTER_OWL_TREE_X + WINTER_OWL_BRANCH_DX - 4;
   if (!isPlayerNear(perchWorldX, 90, 140, 60, 120)) return;
   const sx = perchWorldX - camX;
-  drawFittedSpeechBubble(ctx, sx - 40, gy - 210, WINTER_OWL_DIALOGUE_LINES);
+  drawFittedSpeechBubble(ctx, sx - 40, gy - 185, WINTER_OWL_DIALOGUE_LINES);
 }
 
 // icy frost dressing layered on top of the generic door glow, plus a
