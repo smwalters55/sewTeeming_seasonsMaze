@@ -5357,6 +5357,7 @@ function applyPhysics(){
   // canopy top. Geometry comes from getWinterOwlTreeBranchGeom so this can
   // never drift out of sync with where the branches are actually drawn --
   // same shared-geometry approach the slick platforms' drift already uses.
+  let onWinterOwlBranch = false;
   getWinterOwlTreeBranchGeom().forEach(b => {
     const branchWorldX = WINTER_OWL_TREE_X + b.tipXOff;
     const branchLandingY = -b.tipYOff; // draw-space is gy-relative/inverted vs. player.y's height-above-ground
@@ -5374,8 +5375,25 @@ function applyPhysics(){
       player.vy = 0;
       player.jumping = false;
       player.usedDoubleJump = false;
+      onWinterOwlBranch = true;
+      // CONFIRMED CHANGE ("make the player align w the branch its on not
+      // just flat always"): lean the sprite to match this branch's own
+      // slope, same "worldX/height-above-ground slope, directly set" math
+      // forestRiverBridgeSlopeAt/forestBridgeTiltAngle already use for the
+      // river bridge's curved deck -- height increases upward (matching
+      // player.y's own convention) and x increases rightward, so a branch
+      // that climbs toward its tip produces the same sign of tilt a rising
+      // bridge slope would.
+      const branchSlope = (-b.tipYOff - (-b.baseYOff)) / (b.tipXOff - b.baseXOff);
+      winterOwlBranchTiltAngle = -branchSlope * 0.7;
     }
   });
+  if (!onWinterOwlBranch && winterOwlBranchTiltAngle !== 0) {
+    // eased back to upright once off the branch entirely, same decay rate
+    // the bridge tilt uses
+    winterOwlBranchTiltAngle *= 0.8;
+    if (Math.abs(winterOwlBranchTiltAngle) < 0.01) winterOwlBranchTiltAngle = 0;
+  }
 
   // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
   // well so it's both high and wide ish"): plain top-landing collision,
@@ -69125,7 +69143,9 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
     }
   }
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
-    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) + balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
+    (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) +
+    (typeof winterOwlBranchTiltAngle !== "undefined" ? winterOwlBranchTiltAngle : 0) +
+    balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -70484,6 +70504,14 @@ function drawWinterBranchStroke(baseX, baseY, tipX, tipY, width) {
   ctx.quadraticCurveTo(midX, midY - width * 0.5, tipX, tipY - width * 0.5);
   ctx.stroke();
 }
+
+// CONFIRMED CHANGE ("make the player align w the branch its on not just
+// flat always"): eased tilt angle so the sprite leans to match whichever
+// owl-tree branch it's currently standing on, same directly-set-then-
+// decay pattern forestBridgeTiltAngle already uses for the river bridge's
+// own sloped deck (see applyPhysics for where this gets set/eased, and
+// the `draw()` function's `totalTilt` sum for where it gets applied).
+let winterOwlBranchTiltAngle = 0;
 
 // CONFIRMED CHANGE ("i need to be able to jump on the branches on this
 // large tree. well other branches too"): shared geometry for all three of
