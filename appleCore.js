@@ -380,6 +380,16 @@ const player = {
   // onFungusPulleyRide, a scripted timed descent rather than free
   // movement. See updateSandboxCarrotSlide.
   onCarrotSlide: false,
+  // CONFIRMED CHANGE ("secret slippy slidy ice areas near the
+  // beginning... player move real quick in whatever direction its
+  // going in at the time"): a lightweight temporary speed-up, NOT a
+  // full mode-lock -- normal jump/gravity/tree-collision all keep
+  // working while this is active, it just adds a burst of extra
+  // horizontal speed for a moment. See WINTER_HIDDEN_ICE_ZONES/
+  // updateWinterScene.
+  onWinterIceSlide: false,
+  winterIceSlideDir: 1,
+  winterIceSlideMs: 0,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -2839,8 +2849,18 @@ function handleInput(){
   // this list already is, so the whole beat plays out in place.
   if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active && !player.onPlayerBubbleRide) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
-    if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
-    if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
+    // CONFIRMED BUG FIX (same shape as the aboutToMountSeesaw fix below):
+    // onWinterIceSlide used to be excluded from the whole outer block,
+    // which also silently swallowed the jump trigger further down --
+    // meaning you could never jump your way out of a slide, directly
+    // contradicting updateWinterScene's own "a genuine jump cancels the
+    // slide early" comment. Now it only suppresses normal left/right
+    // walk input (so it doesn't fight the slide's own player.x +=),
+    // while jumping stays reachable during a slide.
+    if (!player.onWinterIceSlide) {
+      if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
+      if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
+    }
 
     // CONFIRMED BUG FIX ("jump forgiveness is too high... tester went up
     // twice incredibly quickly" on the invert chain): clamp horizontal
@@ -5167,6 +5187,28 @@ function applyPhysics(){
       topsyPotGauntlet.wasJumping = false;
     }
   }
+
+  } else if (currentScene === "winter") {
+
+  // CONFIRMED CHANGE ("i think i want collision physics w the trees up
+  // front in winter rn at least"): solid vertical obstacles, same
+  // "which side is the player's center on" shape as a basic wall/pillar
+  // collision -- simplest reliable way to block passage through a tall,
+  // way-taller-than-jump-height obstacle without needing a platform-top
+  // landing case too. Only WINTER_FRONT_TREES (see its own comment) --
+  // the distant background treeline is parallax decoration, not solid.
+  const winterPlayerCenterX = player.x + player.width / 2;
+  WINTER_FRONT_TREES.forEach(t => {
+    const left = t.x - t.hitHalfWidth;
+    const right = t.x + t.hitHalfWidth;
+    if (player.x + player.width > left && player.x < right) {
+      if (winterPlayerCenterX < t.x) {
+        player.x = left - player.width;
+      } else {
+        player.x = right;
+      }
+    }
+  });
 
   } // end currentScene checks
 
@@ -17207,6 +17249,7 @@ function drawForestScene(camX) {
   // layers the icy-but-still-forest dressing on top per direct request
   // ("make the door look icy and wintery but still have some forest
   // greenery")
+  drawWinterDoorApproach(camX, connections[8].doors.forest);
   drawConnectionDoor(ctx, camX, connections[8].doors.forest, connections[8]);
   drawWinterDoorFrost(camX, connections[8].doors.forest);
   drawWinterDoorGroundFrost(camX, connections[8].doors.forest);
@@ -69554,6 +69597,63 @@ drawSeasonTransition(ctx);
    ====================================================== */
 const WINTER_WIDTH = 2400;
 
+// secret patches of slick ice near the start of winter -- CONFIRMED
+// CHANGE ("maybe have some secret slippy slidy ice areas near the
+// beginning like where you cant see ice is there but it is and player
+// move real quick in whatever direction its going in at the time"):
+// deliberately invisible (no ground marking at all -- the whole point
+// is you don't see it coming) and placed within the near/front treeline
+// band so the trees themselves become the obstacle you have to react to
+// while sliding. See updateWinterScene for the trigger + slide logic.
+const WINTER_HIDDEN_ICE_ZONES = [
+  { x: 340, width: 90 },
+  { x: 920, width: 110 }
+];
+
+// the near/foreground treeline -- built as a real stable array (world x,
+// scale, snowy, a solid collision half-width) instead of recomputed
+// inline in the draw loop, so applyPhysics can reference the EXACT same
+// positions for collision. CONFIRMED CHANGE ("i think i want collision
+// physics w the trees up front in winter rn at least"): only this
+// front layer gets collision -- the distant background treeline is
+// parallax-drifting decoration (drawn at a fraction of camX), not real
+// world-accurate positions, so it stays purely visual.
+const WINTER_FRONT_TREE_COUNT = 10;
+const WINTER_FRONT_TREES = [];
+for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
+  const seed = i * 17.2 + 500;
+  const worldX = i * (WINTER_WIDTH / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
+  const stillForest = worldX < 750; // close to the door -- carries the greenery over
+  const scale = 1.3 + pseudoRandom(seed + 1) * 0.6;
+  WINTER_FRONT_TREES.push({
+    x: worldX,
+    seed,
+    scale,
+    snowy: !stillForest || pseudoRandom(seed + 2) > 0.4,
+    hitHalfWidth: 22 * scale // roughly the canopy's real footprint, a bit inside its visual edge
+  });
+}
+
+// a middle depth layer, between the solid front treeline and the far
+// parallax-lite background one -- CONFIRMED CHANGE ("lets make the
+// trees into like three layers vs the current two"). Same stable-array
+// pattern as the front layer, own parallax factor (between the front
+// layer's 1.0 and the background's 0.5) and its own alpha/scale/spacing
+// so it reads as a real middle distance, not a duplicate of either
+// neighbor. Purely decorative, like the background layer -- no collision.
+const WINTER_MID_TREE_COUNT = 12;
+const WINTER_MID_TREES = [];
+for (let i = 0; i < WINTER_MID_TREE_COUNT; i++) {
+  const seed = i * 21.6 + 4000;
+  const worldX = i * (WINTER_WIDTH / WINTER_MID_TREE_COUNT) + pseudoRandom(seed) * 90;
+  WINTER_MID_TREES.push({
+    x: worldX,
+    seed,
+    scale: 0.95 + pseudoRandom(seed + 1) * 0.4,
+    snowy: pseudoRandom(seed + 2) > 0.15 // almost always snowy -- this layer sits further from the door's own greenery transition
+  });
+}
+
 // ambient falling snow -- a handful of flakes drifting down and looping,
 // same "cheap, always-on atmosphere" role as forest's own dust motes
 const WINTER_SNOW_COUNT = 60;
@@ -69790,6 +69890,111 @@ function drawWinterDoorFrost(camX, doorDef) {
   });
 }
 
+// a much longer, gentler lead-up to the door -- CONFIRMED CHANGE ("this
+// door entrance stands out way too much like. lets get more vibes
+// leading up to it somehow"): the door + its close frost crackle
+// (drawWinterDoorGroundFrost, just below) were reading as a hard cut
+// from plain forest straight to full winter dressing, with nothing
+// building toward it. This spreads a much wider, softer "it's getting
+// colder" zone out in front of the door -- a cool color wash over the
+// ground, scattered frost/snow speckles and a couple of frost-rimed
+// rocks, a few small increasingly-snowy pine sprigs, and a scatter of
+// gently drifting snowflakes -- all fading out with distance so the
+// door is the payoff at the end of a transition, not a wall you walk
+// into. Purely decorative/ambient, drawn behind the door and its close
+// frost crackle.
+function drawWinterDoorApproach(camX, doorDef) {
+  const dx = doorDef.x - camX;
+  const baseX = dx + doorDef.width / 2;
+  const REACH = 560;
+  if (baseX < -REACH - 60 || baseX > canvas.width + 60) return;
+
+  // cool tint wash over the ground, strongest right at the door and
+  // fading to nothing across the approach
+  const left = Math.max(0, baseX - REACH);
+  const right = Math.min(canvas.width, baseX);
+  if (right > left) {
+    const tint = ctx.createLinearGradient(baseX - REACH, 0, baseX, 0);
+    tint.addColorStop(0, "rgba(185,218,240,0)");
+    tint.addColorStop(1, "rgba(185,218,240,0.32)");
+    ctx.fillStyle = tint;
+    ctx.fillRect(left, gy, right - left, canvas.height - gy);
+  }
+
+  // frost-rimed rocks scattered along the approach, for texture variety
+  // beyond just speckles
+  const ROCK_COUNT = 5;
+  for (let i = 0; i < ROCK_COUNT; i++) {
+    const seed = i * 23.3 + 900 + doorDef.x * 0.013;
+    const t = 0.18 + pseudoRandom(seed) * 0.78;
+    const wx = baseX - t * REACH;
+    const wy = gy + 2;
+    if (wx < -20 || wx > canvas.width + 20) continue;
+    const rw = 7 + pseudoRandom(seed + 1) * 6;
+    ctx.fillStyle = "#66655d";
+    ctx.beginPath();
+    ctx.ellipse(wx, wy, rw, rw * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(228,244,252,${0.15 + 0.55 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.ellipse(wx, wy - rw * 0.35, rw * 0.78, rw * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // a few small pine sprigs along the way, growing snowier the closer
+  // they sit to the door -- a visual bridge between plain forest trees
+  // and winter's own fully-frosted ones
+  const SPRIG_COUNT = 4;
+  for (let i = 0; i < SPRIG_COUNT; i++) {
+    const seed = i * 31.9 + 1400 + doorDef.x * 0.013;
+    const t = 0.22 + (i / SPRIG_COUNT) * 0.7 + (pseudoRandom(seed) - 0.5) * 0.12;
+    const wx = baseX - t * REACH;
+    if (wx < -30 || wx > canvas.width + 30) continue;
+    const snowy = pseudoRandom(seed + 1) < (1 - t) * 0.9 + 0.1; // snowier closer to the door
+    drawWinterPine(wx, gy, 0.4 + (1 - t) * 0.25, snowy, seed + 2);
+  }
+
+  // scattered frost/snow ground speckles, denser and brighter closer to
+  // the door
+  const SPECKLE_COUNT = 40;
+  for (let i = 0; i < SPECKLE_COUNT; i++) {
+    const seed = i * 11.7 + 2200 + doorDef.x * 0.013;
+    const t = pseudoRandom(seed);
+    const density = 1 - t;
+    if (pseudoRandom(seed + 3) > density + 0.08) continue; // sparser further out
+    const wx = baseX - t * REACH + (pseudoRandom(seed + 1) - 0.5) * 26;
+    const wy = gy + (pseudoRandom(seed + 2) - 0.5) * 6;
+    if (wx < -10 || wx > canvas.width + 10) continue;
+    const r = (2 + pseudoRandom(seed + 4) * 3) * (0.5 + density * 0.6);
+    ctx.fillStyle = `rgba(230,244,252,${0.3 + density * 0.4})`;
+    ctx.beginPath();
+    ctx.ellipse(wx, wy, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // a handful of gently drifting snowflakes previewing winter's own
+  // snowfall before you're even through the door -- driven off
+  // performance.now() (same lightweight ambient pattern the mole hole's
+  // swaying lanterns already use) rather than a new persistent state array
+  const FLAKE_COUNT = 12;
+  const now = performance.now();
+  const cycleH = 130;
+  for (let i = 0; i < FLAKE_COUNT; i++) {
+    const seed = i * 17.1 + 3100 + doorDef.x * 0.013;
+    const t = pseudoRandom(seed);
+    const alpha = (1 - t) * 0.65;
+    if (alpha < 0.04) continue;
+    const wx = baseX - t * REACH * 0.85 + Math.sin(now * 0.0006 + seed) * 10;
+    if (wx < -10 || wx > canvas.width + 10) continue;
+    const speed = 16 + pseudoRandom(seed + 1) * 14;
+    const fy = (now * speed * 0.001 + pseudoRandom(seed + 2) * cycleH * 37) % cycleH;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(wx, gy - cycleH + fy, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // frost creeping out from under the door, into the forest ground it
 // sits at the edge of -- direct request ("start having some frost
 // coming from under the door and into the jungle land a lil"). Only
@@ -69868,17 +70073,29 @@ function drawWinterScene(camX) {
     ctx.globalAlpha = 1;
   }
 
+  // middle treeline -- a real third depth layer between the distant
+  // background and the solid front line, own parallax factor so it
+  // drifts at its own rate instead of reading as a duplicate of either
+  // neighbor
+  WINTER_MID_TREES.forEach(t => {
+    const sx = t.x - camX * 0.75;
+    if (sx < -55 || sx > canvas.width + 55) return;
+    ctx.globalAlpha = 0.68;
+    drawWinterPine(sx, gy - 5, t.scale, t.snowy, t.seed);
+    ctx.globalAlpha = 1;
+  });
+
   // near treeline -- the transition band right past the door (world x
   // 200-700ish) mixes in real green sprigs so it reads as "this same
-  // forest, just frosted over" before opening into open snow further in
-  for (let i = 0; i < 10; i++) {
-    const seed = i * 17.2 + 500;
-    const worldX = i * (WINTER_WIDTH / 10) + pseudoRandom(seed) * 70;
-    const sx = worldX - camX;
-    if (sx < -50 || sx > canvas.width + 50) continue;
-    const stillForest = worldX < 750; // close to the door -- carries the greenery over
-    drawWinterPine(sx, gy, 1.3 + pseudoRandom(seed + 1) * 0.6, !stillForest || pseudoRandom(seed + 2) > 0.4, seed);
-  }
+  // forest, just frosted over" before opening into open snow further in.
+  // Now drawn from the stable WINTER_FRONT_TREES array (see its own
+  // comment) so these positions exactly match what applyPhysics collides
+  // against, instead of being recomputed inline here.
+  WINTER_FRONT_TREES.forEach(t => {
+    const sx = t.x - camX;
+    if (sx < -50 || sx > canvas.width + 50) return;
+    drawWinterPine(sx, gy, t.scale, t.snowy, t.seed);
+  });
 
   drawWinterSnow(camX);
 
@@ -69890,8 +70107,39 @@ function drawWinterScene(camX) {
   ctx.restore();
 }
 
+const WINTER_ICE_SLIDE_SPEED = 460; // px/s -- noticeably faster than the normal ~180px/s walk
+const WINTER_ICE_SLIDE_MS = 500;
+
 function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
+
+  // secret ice patches -- grounded, moving, and not already sliding is
+  // the only trigger condition (standing still on one does nothing --
+  // the whole idea is it grabs you mid-stride, not that it's a hazard
+  // you can just stand on). Direction is whichever way the player was
+  // actively walking the moment they hit it.
+  if (!player.onWinterIceSlide && player.y <= 0 && !player.jumping && (keys.left || keys.right)) {
+    const feetX = player.x + player.width / 2;
+    const dir = keys.right ? 1 : -1;
+    const onZone = WINTER_HIDDEN_ICE_ZONES.some(z => feetX > z.x && feetX < z.x + z.width);
+    if (onZone) {
+      player.onWinterIceSlide = true;
+      player.winterIceSlideDir = dir;
+      player.winterIceSlideMs = WINTER_ICE_SLIDE_MS;
+    }
+  }
+
+  if (player.onWinterIceSlide) {
+    player.x += player.winterIceSlideDir * WINTER_ICE_SLIDE_SPEED * deltaTime;
+    player.facing = player.winterIceSlideDir;
+    player.winterIceSlideMs -= deltaTime * 1000;
+    // a genuine jump cancels the slide early -- feels more responsive
+    // than being locked to the ice for the full duration if you try to
+    // jump out of it
+    if (player.winterIceSlideMs <= 0 || player.jumping) {
+      player.onWinterIceSlide = false;
+    }
+  }
 
   // back through the door to forest
   if (
