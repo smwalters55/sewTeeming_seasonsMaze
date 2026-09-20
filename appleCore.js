@@ -69720,10 +69720,13 @@ const WINTER_WIDTH = 3400;
 // is you don't see it coming) and placed within the near/front treeline
 // band so the trees themselves become the obstacle you have to react to
 // while sliding. See updateWinterScene for the trigger + slide logic.
-const WINTER_HIDDEN_ICE_ZONES = [
-  { x: 340, width: 90 },
-  { x: 920, width: 110 }
-];
+// CONFIRMED CHANGE ("lets remove the slippery ground ice for now. it
+// kind of just doesnt make sense"): emptied out rather than deleting the
+// mechanic wholesale -- updateWinterScene's trigger/slide logic and the
+// movement-gating exclusion are all still here and harmless with no
+// zones to match against, so this is a clean single-line re-enable
+// (just add zones back) if it comes back later.
+const WINTER_HIDDEN_ICE_ZONES = [];
 
 // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
 // well so it's both high and wide ish... ooooo both!!!" -- answering
@@ -69795,7 +69798,13 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     seed,
     scale,
     snowy: !stillForest || pseudoRandom(seed + 2) > 0.4,
-    hitHalfWidth: 22 * scale, // roughly the canopy's real footprint, a bit inside its visual edge
+    // CONFIRMED BUG FIX ("land width on tree still too wide it look
+    // like i am floating"): 22*scale was deliberately erring high
+    // (favoring floating a couple px over sinking into the canopy) --
+    // per direct correction that's now the wrong tradeoff, narrowed to
+    // roughly the TYPICAL (not worst-case) combined footprint of the
+    // canopy row's two clumps instead.
+    hitHalfWidth: 13 * scale,
     // CONFIRMED CHANGE ("why cant i land on the trees in the front i
     // need to be able to"). CONFIRMED BUG FIX, two rounds -- both found
     // via real screenshots, not just working out the math: first pass
@@ -69827,8 +69836,11 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     // combined footprint -- at the mid row (rows[2], only 2 clumps,
     // spread 14) the real visible ice/foliage is narrower than that, so
     // the player could stand well past where anything is actually drawn.
-    // Narrower dedicated half-width for the mid-perch only.
-    midHalfWidth: 12 * scale
+    // Narrower dedicated half-width for the mid-perch only. CONFIRMED
+    // BUG FIX ("land width on tree still too wide it look like i am
+    // floating"): tightened further, same reasoning as hitHalfWidth
+    // just above -- err narrow, not wide.
+    midHalfWidth: 9 * scale
   });
 }
 
@@ -70105,14 +70117,25 @@ function drawWinterDoorApproach(camX, doorDef) {
   const dx = doorDef.x - camX;
   const baseX = dx + doorDef.width / 2;
   const REACH = 560;
+  // CONFIRMED CHANGE ("need more of th hazy frost on the rightt lightly
+  // of door in forewst"): a light, short-reaching mirror of the ground
+  // frost cracks/clusters already added to the right of the door earlier
+  // -- this is specifically the hazy cool-tint WASH itself (the big soft
+  // ground fog, not the small crack/cluster detail), which previously
+  // only ever spread left. Kept deliberately shorter and lighter (half
+  // the reach, half the peak alpha) than the main leftward wash so it
+  // reads as "a little" rather than mirroring it symmetrically.
+  const REACH_RIGHT_HAZE = 260;
   // CONFIRMED BUG FIX ("if i go one step left all to the right
   // dissappears nooo"): this zone extends REACH px to the LEFT of
   // baseX, not around it -- the old right-side check culled the whole
   // thing the moment baseX alone drifted past the right edge, even
   // though most of the zone (everything from baseX-REACH forward) was
   // still well on screen. Needs to check the zone's actual LEFTMOST
-  // point (baseX - REACH) against the right edge, not baseX itself.
-  if (baseX < -60 || baseX - REACH > canvas.width + 60) return;
+  // point (baseX - REACH) against the right edge, not baseX itself. Also
+  // widened to account for the new rightward haze zone above, so it
+  // isn't culled early when the door itself is just off the left edge.
+  if (baseX + REACH_RIGHT_HAZE < -60 || baseX - REACH > canvas.width + 60) return;
 
   // cool tint wash over the ground -- fades IN from the far edge, holds
   // through the middle of the approach, then fades back OUT again before
@@ -70167,6 +70190,35 @@ function drawWinterDoorApproach(camX, doorDef) {
     }
     ctx.lineTo(right, gy + (pseudoRandom(waveSeed + rightWorld * 0.07) - 0.5) * 9);
     ctx.lineTo(right, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // the light rightward haze -- same world-space-safe wavy-edge approach
+  // as the main wash above (built in world space first, converted to
+  // screen only at the end, so it can't pick up the same camX-jitter bug
+  // that wash had), just shorter and lighter.
+  {
+    const leftWorld2 = baseX + camX;
+    const rightWorld2 = baseX + camX + REACH_RIGHT_HAZE;
+    const left2 = leftWorld2 - camX;
+    const right2 = rightWorld2 - camX;
+    const tint2 = ctx.createLinearGradient(left2, 0, right2, 0);
+    tint2.addColorStop(0, "rgba(185,218,240,0)");
+    tint2.addColorStop(0.25, "rgba(185,218,240,0.16)");
+    tint2.addColorStop(0.75, "rgba(185,218,240,0.16)");
+    tint2.addColorStop(1, "rgba(185,218,240,0)");
+    ctx.fillStyle = tint2;
+    const waveSeed2 = doorDef.x * 0.017 + 900;
+    const step = 22;
+    ctx.beginPath();
+    ctx.moveTo(left2, canvas.height);
+    ctx.lineTo(left2, gy + (pseudoRandom(waveSeed2 + leftWorld2 * 0.07) - 0.5) * 9);
+    for (let wxWorld = leftWorld2 + step; wxWorld < rightWorld2; wxWorld += step) {
+      ctx.lineTo(wxWorld - camX, gy + (pseudoRandom(waveSeed2 + wxWorld * 0.07) - 0.5) * 9);
+    }
+    ctx.lineTo(right2, gy + (pseudoRandom(waveSeed2 + rightWorld2 * 0.07) - 0.5) * 9);
+    ctx.lineTo(right2, canvas.height);
     ctx.closePath();
     ctx.fill();
   }
@@ -70257,11 +70309,15 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
   const dx = doorDef.x - camX;
   const baseX = dx + doorDef.width / 2;
   const REACH = 190;
-  // CONFIRMED BUG FIX (same class of bug as drawWinterDoorApproach's own
-  // fix -- "if i go one step left all to the right dissappears nooo"):
-  // this zone also extends REACH px to the LEFT of baseX, so the right-
-  // side check needs to test the zone's leftmost point, not baseX alone.
-  if (baseX < -40 || baseX - REACH > canvas.width + 40) return;
+  // CONFIRMED CHANGE ("put some that ground frost to the right of the
+  // door too in forest. not too much but some and also having it phase
+  // out"): a shorter, sparser mirror of the same crack/cluster pattern,
+  // spreading toward POSITIVE x this time (back toward the winter side
+  // itself rather than out into the forest) -- deliberately a smaller
+  // reach and lower counts than the main leftward spread so it still
+  // reads as "a little" rather than doubling the effect symmetrically.
+  const REACH_RIGHT = 100;
+  if (baseX + REACH_RIGHT < -40 || baseX - REACH > canvas.width + 40) return;
 
   const CRACK_COUNT = 5;
   for (let c = 0; c < CRACK_COUNT; c++) {
@@ -70290,6 +70346,43 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
     const fy = gy + (pseudoRandom(seed + 2) - 0.5) * 4;
     const alpha = 0.55 * (1 - t);
     const r = 4.5 * (1 - t * 0.6) + pseudoRandom(seed + 3) * 2;
+    ctx.fillStyle = `rgba(225,242,252,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // the smaller rightward spread -- same shapes, same fade-out-with-
+  // distance math (alpha/radius both scale off `1 - t`), just fewer of
+  // them over a shorter reach, and seeded off different offsets so it
+  // doesn't just mirror the left side's exact pattern.
+  const CRACK_COUNT_RIGHT = 2;
+  for (let c = 0; c < CRACK_COUNT_RIGHT; c++) {
+    const seed = c * 13.7 + 600 + doorDef.x * 0.01;
+    const startX = baseX + (pseudoRandom(seed) - 0.5) * doorDef.width * 0.7;
+    const len = REACH_RIGHT * (0.55 + pseudoRandom(seed + 1) * 0.45);
+    const segs = 5;
+    ctx.beginPath();
+    ctx.moveTo(startX, gy - 1);
+    for (let s = 1; s <= segs; s++) {
+      const t = s / segs;
+      const px = startX + len * t + (pseudoRandom(seed + s) - 0.5) * 14;
+      const py = gy - 1 + (pseudoRandom(seed + s + 5) - 0.5) * 5;
+      ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = `rgba(215,238,250,${0.4 * (1 - c * 0.1)})`;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+
+  const CLUSTER_COUNT_RIGHT = 5;
+  for (let i = 0; i < CLUSTER_COUNT_RIGHT; i++) {
+    const seed = i * 7.3 + 800 + doorDef.x * 0.01;
+    const t = pseudoRandom(seed); // 0 (at the door) .. 1 (furthest reach)
+    const fx = baseX + t * REACH_RIGHT + (pseudoRandom(seed + 1) - 0.5) * 20;
+    const fy = gy + (pseudoRandom(seed + 2) - 0.5) * 4;
+    const alpha = 0.45 * (1 - t); // phases out with distance, same as the left side
+    const r = 4 * (1 - t * 0.6) + pseudoRandom(seed + 3) * 1.8;
     ctx.fillStyle = `rgba(225,242,252,${alpha})`;
     ctx.beginPath();
     ctx.ellipse(fx, fy, r, r * 0.45, 0, 0, Math.PI * 2);
@@ -70368,6 +70461,61 @@ function drawWinterRainbowOverhang(camX) {
   ctx.fillStyle = ledgeFadeGrad;
   traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 20);
   ctx.fill();
+
+  // CONFIRMED CHANGE ("i want the thing the icicles are on to be a
+  // looot more organic looking like not just this shape but with more
+  // lines and shaoes and cracks maybe and parts that are shinier/have
+  // light on them than other"): the rock was still just two flat-toned
+  // blobs stacked on each other -- real rock/ice like this reads as
+  // uneven, faceted stone: patches that sit in shadow, patches that
+  // catch the light, and real cracks running through it. Three layers,
+  // all drawn over the base blob and all still safely behind where the
+  // icicles/fringe get drawn next: irregular darker/lighter FACETS
+  // (shadowed folds vs. sunlit faces), jagged CRACK lines (same
+  // stroked-path language the door's own ground frost already uses),
+  // and a handful of small soft GLINTS for actual specular highlights.
+  const FACET_COUNT = 9;
+  for (let i = 0; i < FACET_COUNT; i++) {
+    const fseed = rimSeed + 1100 + i * 13.7;
+    const fx = sx + pseudoRandom(fseed) * OVERHANG_WIDTH;
+    const fy = ledgeY - OVERHANG_HEIGHT * (0.15 + pseudoRandom(fseed + 1) * 0.9);
+    const fr = 30 + pseudoRandom(fseed + 2) * 55;
+    const tone = pseudoRandom(fseed + 3);
+    ctx.fillStyle = tone < 0.5
+      ? `rgba(90,115,135,${0.18 + (0.5 - tone) * 0.3})`   // shadowed fold
+      : `rgba(215,232,242,${0.12 + (tone - 0.5) * 0.4})`; // sunlit face
+    traceIrregularBlob(fx, fy, fr, fseed + 4, 8);
+    ctx.fill();
+  }
+
+  const CRACK_COUNT_ROCK = 6;
+  for (let c = 0; c < CRACK_COUNT_ROCK; c++) {
+    const cseed = rimSeed + 1400 + c * 17.3;
+    let cx = sx + pseudoRandom(cseed) * OVERHANG_WIDTH;
+    let cy = ledgeY - OVERHANG_HEIGHT * (0.2 + pseudoRandom(cseed + 1) * 0.8);
+    const segs = 4 + Math.floor(pseudoRandom(cseed + 2) * 3);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    for (let s = 1; s <= segs; s++) {
+      cx += (pseudoRandom(cseed + s * 3.3) - 0.5) * 36;
+      cy += (pseudoRandom(cseed + s * 3.3 + 1) - 0.3) * 22;
+      ctx.lineTo(cx, cy);
+    }
+    ctx.strokeStyle = `rgba(60,80,95,${0.25 + pseudoRandom(cseed + 9) * 0.2})`;
+    ctx.lineWidth = 1 + pseudoRandom(cseed + 10);
+    ctx.stroke();
+  }
+
+  const GLINT_COUNT = 5;
+  for (let i = 0; i < GLINT_COUNT; i++) {
+    const gseed = rimSeed + 1700 + i * 11.1;
+    const glintX = sx + pseudoRandom(gseed) * OVERHANG_WIDTH;
+    const glintY = ledgeY - OVERHANG_HEIGHT * (0.2 + pseudoRandom(gseed + 1) * 0.75);
+    const glintR = 5 + pseudoRandom(gseed + 2) * 9;
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + pseudoRandom(gseed + 3) * 0.25})`;
+    traceIrregularBlob(glintX, glintY, glintR, gseed + 4, 6);
+    ctx.fill();
+  }
 
   // CONFIRMED CHANGE, full rework ("these look like rainbow upside down
   // wine bottles. make its oraganic shaped, ALWAYS, all connected to
@@ -70611,19 +70759,50 @@ function drawWinterRainbowOverhang(camX) {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // one melting droplet per icicle, falling from the tip on its own
-    // cycle -- cycle length/offset varies per icicle so they don't all
-    // drip in lockstep
-    const cycleMs = 1800 + pseudoRandom(seed + 5) * 1400;
+    // CONFIRMED CHANGE ("i want icicles to look more like they are
+    // actually dripping, rn the little drips kind of just appear all
+    // the sudden. lets see it building up on the icicles"): the droplet
+    // used to pop in at full size the instant its cycle started, right
+    // as it began falling. Split the same cycle into two parts instead:
+    // a BUILD phase where a small bead forms right at the tip and
+    // visibly swells (growing in both size and how far it hangs below
+    // the tip, like surface tension stretching before it lets go), then
+    // a FALL phase that's the original drop-and-fade behavior, now only
+    // starting once the bead is actually full-size.
+    // CONFIRMED CHANGE ("make the build up of drips on icicles a little
+    // slower, a lil more realistic"): longer overall cycle, and the
+    // build phase now eats a bigger share of it (the fall itself stays
+    // relatively quick, same as a real drop letting go and falling fast
+    // once it does). The growth curve is also eased -- slow at first,
+    // accelerating toward the end -- rather than linear, since a real
+    // bead swells gradually then suddenly stretches/necks right before
+    // it detaches.
+    const cycleMs = 3000 + pseudoRandom(seed + 5) * 2200;
     const phase = ((now + pseudoRandom(seed + 6) * cycleMs) % cycleMs) / cycleMs;
     const dropFall = 22;
-    const dropY = tipY + phase * dropFall;
-    const dropAlpha = 0.6 * (1 - phase);
+    const BUILD_FRAC = 0.82;
     const tipColor = icicleColors[icicleColors.length - 1]; // droplet matches whatever hue the icicle actually melts into at its tip
-    ctx.beginPath();
-    ctx.ellipse(tipX, dropY, 1.8, 2.6, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${tipColor},${dropAlpha})`;
-    ctx.fill();
+    let dropY, dropAlpha, dropRX, dropRY;
+    if (phase < BUILD_FRAC) {
+      const buildLinear = phase / BUILD_FRAC; // 0 (nothing yet) -> 1 (full bead, about to let go)
+      const buildT = Math.pow(buildLinear, 1.7); // eased: slow start, accelerating swell near the end
+      dropY = tipY + buildT * 3.5; // stretches down a little as it fills, not just popping into place
+      dropAlpha = 0.6 * Math.min(1, buildLinear * 1.6); // fade-in still reads quickly so it's not invisible for ages
+      dropRX = 1.8 * buildT;
+      dropRY = 2.6 * buildT;
+    } else {
+      const fallT = (phase - BUILD_FRAC) / (1 - BUILD_FRAC); // 0 -> 1 across the actual fall
+      dropY = tipY + 3.5 + fallT * dropFall;
+      dropAlpha = 0.6 * (1 - fallT);
+      dropRX = 1.8;
+      dropRY = 2.6;
+    }
+    if (dropRX > 0.05) {
+      ctx.beginPath();
+      ctx.ellipse(tipX, dropY, dropRX, dropRY, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${tipColor},${dropAlpha})`;
+      ctx.fill();
+    }
   }
 
   // the connecting ice fringe itself, painted LAST so it sits over every
