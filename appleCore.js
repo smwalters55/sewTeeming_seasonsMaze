@@ -2022,6 +2022,34 @@ function organicBlobPath(ctx, cx, cy, rx, ry, seedBase, pointCount) {
   ctx.closePath();
 }
 
+// CONFIRMED CHANGE ("this is also a lot of not ice-organic looking. it has
+// recetnalg eedges. there are like parts that look like even triangles
+// pastedon"): shared helper for turning an ORDERED list of sample points
+// (not evenly spaced around a circle, unlike organicBlobPath above) into a
+// smooth curve instead of a straight-line polygon -- every plain
+// `ctx.lineTo` chain through a jittered point list still reads as hard
+// facets/straight edges up close (exactly the winter rainbow icicles'
+// bodies, the ice fringe they hang from, and the web membranes between
+// them, all called out here), because a jittered POINT isn't the same as a
+// jittered CURVE. Draws through the points' own midpoints via
+// quadraticCurveTo, same trick organicBlobPath already uses for closed
+// blobs, generalized to open chains and to point lists that aren't a
+// regular loop. Assumes the path is already moveTo'd to pts[0] (or, for a
+// larger shape being built across multiple calls, wherever the path
+// currently sits) -- callers close/fill/stroke afterward as usual.
+function smoothPolylineTo(ctx, pts) {
+  if (pts.length === 0) return;
+  if (pts.length === 1) { ctx.lineTo(pts[0].x, pts[0].y); return; }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const cur = pts[i], next = pts[i + 1];
+    const midX = (cur.x + next.x) / 2;
+    const midY = (cur.y + next.y) / 2;
+    ctx.quadraticCurveTo(cur.x, cur.y, midX, midY);
+  }
+  const last = pts[pts.length - 1];
+  ctx.lineTo(last.x, last.y);
+}
+
 // generic hex-color shader (+amt lightens, -amt darkens each channel) --
 // shared utility so any draw function can get a highlight/shadow variant
 // of a base color without hand-picking a second hex value
@@ -70710,17 +70738,27 @@ function drawWinterWateryIce(camX, zone) {
   // raking angle (deep in the middle/front, thinning to nothing at the
   // ends) rather than a flat translucent strip.
   const SEGS = 22;
-  const POOL_DEPTH = 15; // how far the middle's bottom edge bulges down past the top edge
+  // CONFIRMED CHANGE ("this is still the pool a rectangle largely"): the
+  // first taper pass used POOL_DEPTH=15 against a 420px-wide zone -- at
+  // that scale the sin(pi*t) taper is real but nearly imperceptible next to
+  // everything else on screen (trees, icicles), and any camera framing that
+  // doesn't happen to show BOTH exact tapered tips at once reads as a flat
+  // strip with soft edges rather than a pool. Fixed by (1) tripling the
+  // depth so the bulge is actually visible at a glance, not just at the
+  // literal endpoints, and (2) using a steeper envelope curve (power 0.6 on
+  // the sine) so the curve is visibly rounding throughout the middle 60% of
+  // the width instead of staying almost flat until the last few segments.
+  const POOL_DEPTH = 46; // how far the middle's bottom edge bulges down past the top edge
   const topPts = [];
   const botPts = [];
   for (let s = 0; s <= SEGS; s++) {
     const t = s / SEGS;
     const wx = sx + zone.width * t;
     const worldX = wx + camX;
-    const envelope = Math.sin(Math.PI * t); // 0 at both ends, 1 in the middle -- the taper-to-a-point shape
+    const envelope = Math.pow(Math.sin(Math.PI * t), 0.6); // 0 at both ends, 1 in the middle, rounds sooner than a plain sine
     const jag = (pseudoRandom(baseSeed + worldX * 0.05) - 0.5) * 6;
     const topY = top + jag * envelope; // jitter itself also fades out at the tapered ends, not just the depth
-    const botDepth = POOL_DEPTH + (pseudoRandom(baseSeed + 50 + worldX * 0.04) - 0.5) * 5;
+    const botDepth = POOL_DEPTH + (pseudoRandom(baseSeed + 50 + worldX * 0.04) - 0.5) * 8;
     const botY = topY + envelope * botDepth;
     topPts.push({ x: wx, y: topY });
     botPts.push({ x: wx, y: botY });
@@ -70733,6 +70771,17 @@ function drawWinterWateryIce(camX, zone) {
   ctx.closePath();
   ctx.fillStyle = "rgba(190,225,240,0.35)";
   ctx.fill();
+
+  // a thin darker rim along the bottom edge gives the pool a real visible
+  // lip/depth cue instead of relying purely on the fill's own soft alpha
+  // to read as curved -- without this the eye tends to flatten the shape
+  // back into "a band" even when the underlying path is genuinely tapered.
+  ctx.beginPath();
+  ctx.moveTo(botPts[0].x, botPts[0].y);
+  botPts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = "rgba(120,165,185,0.4)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
   const bottom = top + POOL_DEPTH; // approximate deepest point, for the blob/shimmer bounds below
 
@@ -71032,22 +71081,36 @@ function drawWinterRainbowOverhang(camX) {
     // each icicle's own taper is a smooth eased curve with only a light
     // per-segment width `bump` and a `drift` term that lets the
     // centerline itself wander/kink rather than run dead straight.
-    const SEGS = 7;
+    // CONFIRMED BUG FIX, third pass ("there are like parts that look like
+    // even triangles pastedon"): even after the fringe/icicle split and the
+    // smoothPolylineTo curve pass above, these still read as flag/triangle
+    // shapes because the OLD envelope jumped from the narrow embed line to
+    // near-full width by the very first sample segment (tt~0.14 already
+    // gave ~84% of baseHalfW) -- a near-straight-sided cone is exactly a
+    // triangle silhouette no matter how curvy its edges are. Added a
+    // `neckIn` ramp so the width builds gradually over roughly the first
+    // quarter of the icicle's length instead of snapping wide immediately
+    // -- a real narrow neck at the rock, swelling into a belly, THEN
+    // tapering to the tip, rather than one continuous straight cone.
+    const SEGS = 11;
     const baseHalfW = (isCurtain ? 11 : isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isCurtain ? 7 : isThick ? 3.5 : 2);
     // top point sits embedded well up inside the fringe (drawn over this
     // afterward), not flush at the fringe's own bottom edge -- no flat
     // top is ever visible, and it merges into whatever neighbors overlap
     // it there instead of reading as its own separate shape
     const embedY = originY - 10 - pseudoRandom(seed + 4) * 6;
-    const leftPts = [{ x: originX - baseHalfW * 0.6, y: embedY }];
-    const rightPts = [{ x: originX + baseHalfW * 0.6, y: embedY }];
+    const neckHalfW = baseHalfW * 0.28; // real narrow neck at the rock, not a wide flat pennant base
+    const leftPts = [{ x: originX - neckHalfW, y: embedY }];
+    const rightPts = [{ x: originX + neckHalfW, y: embedY }];
     let drift = 0;
     for (let s = 1; s <= SEGS; s++) {
       const tt = s / SEGS;
-      drift += (pseudoRandom(seed + 60 + s * 3.1) - 0.5) * baseHalfW * 0.9;
+      drift += (pseudoRandom(seed + 60 + s * 3.1) - 0.5) * baseHalfW * 0.65;
       const px = originX + lean * tt + drift;
       const py = originY + len * tt;
-      const envelope = Math.pow(1 - tt, 1.15);
+      const neckIn = Math.min(1, tt / 0.28); // 0 at the rock -> 1 by the belly, never snaps straight to full width
+      const taperOut = Math.pow(1 - tt, 1.15);
+      const envelope = neckIn * taperOut;
       const bump = 0.7 + pseudoRandom(seed + 40 + s * 2.3) * 0.6;
       const hw = Math.max(0.4, baseHalfW * envelope * bump);
       const jag = (pseudoRandom(seed + 20 + s) - 0.5) * hw * 0.7;
@@ -71071,11 +71134,22 @@ function drawWinterRainbowOverhang(camX) {
     const webDepth = Math.min(a.len, b.len) * (0.3 + pseudoRandom(a.seed + 900) * 0.3);
     const midX = (a.originX + b.originX) / 2 + (pseudoRandom(a.seed + 901) - 0.5) * 6;
     const midY = Math.min(a.originY, b.originY) + webDepth;
+    // CONFIRMED BUG FIX ("there are like parts that look like even
+    // triangles pastedon"): this used to be a plain 4-point straight-edged
+    // kite (moveTo/lineTo/lineTo/lineTo) -- exactly a flat-sided triangle
+    // shape sitting on top of everything else, which is precisely what got
+    // called out. Run through smoothPolylineTo instead so every corner
+    // becomes a curve control point rather than a hard fold, reading as a
+    // real soft dripping membrane instead of a pasted-on paper triangle.
+    const webPts = [
+      { x: a.originX + a.baseHalfW * 0.5, y: a.embedY },
+      { x: b.originX - b.baseHalfW * 0.5, y: b.embedY },
+      { x: midX + 3, y: midY },
+      { x: midX - 3, y: midY }
+    ];
     ctx.beginPath();
-    ctx.moveTo(a.originX + a.baseHalfW * 0.5, a.embedY);
-    ctx.lineTo(b.originX - b.baseHalfW * 0.5, b.embedY);
-    ctx.lineTo(midX + 3, midY);
-    ctx.lineTo(midX - 3, midY);
+    ctx.moveTo(webPts[0].x, webPts[0].y);
+    smoothPolylineTo(ctx, webPts.slice(1));
     ctx.closePath();
     const webGrad = ctx.createLinearGradient(0, Math.min(a.embedY, b.embedY), 0, midY);
     webGrad.addColorStop(0, `rgba(${a.icicleColors[0]},0.45)`);
@@ -71088,10 +71162,19 @@ function drawWinterRainbowOverhang(camX) {
     const g = icicleGeoms[i];
     const { leftPts, rightPts, originX, originY, tipX, tipY, len, lean, icicleColors, seed, baseHalfW } = g;
 
+    // CONFIRMED BUG FIX ("this is also a lot of not ice-organic looking.
+    // it has recetnalg eedges"): the body outline used to be a plain
+    // straight-line polygon through leftPts/rightPts -- with only SEGS=7
+    // sample points per side, that's few enough straight facets to read
+    // as rectangular/faceted rather than a real tapering sliver of ice,
+    // especially on the wider "curtain" icicles. Routed through
+    // smoothPolylineTo on both sides instead so the same jittered points
+    // become a real curve, not a jagged straight-sided polygon.
     ctx.beginPath();
     ctx.moveTo(leftPts[0].x, leftPts[0].y);
-    for (let s = 1; s < leftPts.length; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
-    for (let s = rightPts.length - 1; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
+    smoothPolylineTo(ctx, leftPts.slice(1));
+    const rightPtsRev = rightPts.slice().reverse();
+    smoothPolylineTo(ctx, rightPtsRev);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, originY, 0, tipY);
     // alpha still fades top-to-tip same as before; hue steps through
@@ -71167,10 +71250,16 @@ function drawWinterRainbowOverhang(camX) {
   // icicle's embedded top -- hides the flat tops entirely, fuses them
   // into one always-connected piece, and (being translucent) lets each
   // icicle's own color bleed up into it right where they actually meet
+  // CONFIRMED BUG FIX ("it has recetnalg eedges"): same straight-line-
+  // through-jittered-points issue as the icicle bodies above -- smoothed
+  // through smoothPolylineTo instead of a plain lineTo chain so the fringe
+  // itself reads as a real lumpy dripping rock lip rather than a many-
+  // sided straight-edged polygon.
   ctx.beginPath();
   ctx.moveTo(fringeTopPts[0].x, fringeTopPts[0].y);
-  fringeTopPts.forEach(p => ctx.lineTo(p.x, p.y));
-  for (let f = FRINGE_SEGS; f >= 0; f--) ctx.lineTo(fringeBotPts[f].x, fringeBotPts[f].y);
+  smoothPolylineTo(ctx, fringeTopPts.slice(1));
+  const fringeBotPtsRev = fringeBotPts.slice().reverse();
+  smoothPolylineTo(ctx, fringeBotPtsRev);
   ctx.closePath();
   // fades alpha out over the same outer ~18% used for the thickness
   // taper above, so the strip both thins AND fades at its ends instead
