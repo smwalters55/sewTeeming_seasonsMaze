@@ -69592,12 +69592,57 @@ function drawWinterSnow(camX) {
   });
 }
 
-// organic frosted pine -- clumped overlapping foliage circles (same
-// "layered cluster" language as drawLeafTree's canopy) instead of clean
-// triangle tiers, with soft snow caps sitting on top of the clumps
-// rather than a flat white overlay. CONFIRMED CHANGE ("way more
-// organically looking... i dont like the triangle trees"): full replace
-// of the original triangle-tier version.
+// a lumpy, non-circular blob path -- jittered points around a rough
+// circle, joined with quadratic curves (not straight lines) so it reads
+// as an irregular organic clump rather than a jagged polygon or a
+// perfect circle. Caller fills/strokes it themselves.
+function traceIrregularBlob(cx, cy, r, seed, points) {
+  ctx.beginPath();
+  let prevX, prevY, firstX, firstY;
+  for (let p = 0; p <= points; p++) {
+    const a = (p / points) * Math.PI * 2;
+    const rr = r * (0.7 + pseudoRandom(seed + p * 3.1) * 0.55);
+    const x = cx + Math.cos(a) * rr;
+    const y = cy + Math.sin(a) * rr * 0.88;
+    if (p === 0) {
+      ctx.moveTo(x, y);
+      firstX = x; firstY = y;
+    } else {
+      const midX = (prevX + x) / 2 + (pseudoRandom(seed + p + 40) - 0.5) * r * 0.2;
+      const midY = (prevY + y) / 2 + (pseudoRandom(seed + p + 55) - 0.5) * r * 0.2;
+      ctx.quadraticCurveTo(midX, midY, x, y);
+    }
+    prevX = x; prevY = y;
+  }
+  ctx.closePath();
+}
+
+// a short spray of individual pine-needle strokes fanning out from a
+// point, reused to texture each foliage clump so it reads as needles
+// rather than a smooth painted blob
+function drawWinterNeedleSpray(cx, cy, r, seed, count, color) {
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  for (let i = 0; i < count; i++) {
+    const s = seed + i * 5.3;
+    const a = pseudoRandom(s) * Math.PI * 2;
+    const len = r * (0.35 + pseudoRandom(s + 1) * 0.5);
+    const ox = cx + Math.cos(a) * r * 0.35;
+    const oy = cy + Math.sin(a) * r * 0.35;
+    ctx.lineWidth = 0.8 + pseudoRandom(s + 2) * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + Math.cos(a) * len, oy + Math.sin(a) * len * 0.9);
+    ctx.stroke();
+  }
+}
+
+// organic frosted pine -- irregular lumpy foliage clumps (not perfect
+// circles) with a pine-needle stroke texture layered on top, instead of
+// clean stacked spheres. CONFIRMED CHANGE ("less just like spheres on
+// top of each other pls some irregularity and leaf or pine needle
+// shapes"): full replace of the circle-cluster version, which was
+// itself already a replacement of the original triangle-tier trees.
 function drawWinterPine(sx, baseY, scale, snowy, seed) {
   // CONFIRMED BUG FIX ("the trees random re-drawn every movement player
   // takes"): seed used to be derived from sx itself, which is a SCREEN
@@ -69630,6 +69675,8 @@ function drawWinterPine(sx, baseY, scale, snowy, seed) {
     { y: 0.75, spread: 7,  count: 2, r: 8.5 }
   ];
   const colorA = "#33503e", colorB = "#3f6249";
+  const needleColorLight = "rgba(90,130,100,0.55)";
+  const needleColorDark = "rgba(20,38,28,0.5)";
 
   rows.forEach((row, ri) => {
     const rowY = canopyBase - totalH * row.y;
@@ -69638,14 +69685,20 @@ function drawWinterPine(sx, baseY, scale, snowy, seed) {
       const bx = sx + (pseudoRandom(s) - 0.5) * row.spread * scale;
       const by = rowY + (pseudoRandom(s + 1) - 0.5) * 6 * scale;
       const r = (row.r + pseudoRandom(s + 2) * 4) * scale;
+
+      // irregular lumpy clump instead of a clean circle
+      traceIrregularBlob(bx, by, r, s + 3, 7);
       ctx.fillStyle = (ri + i) % 2 === 0 ? colorA : colorB;
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
       ctx.fill();
+
+      // pine-needle texture strokes, darker underneath / lighter on top
+      // of the clump so it reads as needle tufts, not a flat fill
+      drawWinterNeedleSpray(bx, by + r * 0.15, r, s + 6, 7, needleColorDark);
+      drawWinterNeedleSpray(bx, by - r * 0.1, r, s + 30, 6, needleColorLight);
+
       if (snowy) {
+        traceIrregularBlob(bx, by - r * 0.4, r * 0.75, s + 60, 6);
         ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.beginPath();
-        ctx.ellipse(bx, by - r * 0.42, r * 0.72, r * 0.42, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
