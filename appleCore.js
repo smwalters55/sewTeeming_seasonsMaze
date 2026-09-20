@@ -5209,24 +5209,44 @@ function applyPhysics(){
   // CONFIRMED CHANGE ("i think i want collision physics w the trees up
   // front in winter rn at least"): solid vertical obstacles, same
   // "which side is the player's center on" shape as a basic wall/pillar
-  // collision -- simplest reliable way to block passage through a tall,
-  // way-taller-than-jump-height obstacle without needing a platform-top
-  // landing case too. Only WINTER_FRONT_TREES (see its own comment) --
-  // the distant background treeline is parallax decoration, not solid.
+  // collision. Only WINTER_FRONT_TREES (see its own comment) -- the
+  // distant background treeline is parallax decoration, not solid.
   // CONFIRMED BUG FIX (found while verifying the new slick platform climb):
-  // this had no height check at all, so a player standing on one of the
-  // new WINTER_SLICK_PLATFORMS (60-320px up) still got shoved sideways by
-  // any tree whose x-column happened to sit underneath them, even though
-  // visually there's nothing there at that height -- trees are ground-
-  // level obstacles, not tall pillars reaching all the way up to the
-  // platform climb. Gated to player.y < 55 (just under the lowest
-  // platform's own 60px height) so ordinary ground-level walking into a
-  // tree is completely unaffected.
+  // the side push used to have no height check at all, so a player
+  // standing on one of the new WINTER_SLICK_PLATFORMS (60-320px up)
+  // still got shoved sideways by any tree whose x-column happened to
+  // sit underneath them, even though visually there's nothing there at
+  // that height -- trees are ground-level obstacles, not tall pillars
+  // reaching all the way up to the platform climb. Gated to
+  // player.y < 55 (just under the lowest platform's own 60px height) so
+  // ordinary ground-level walking into a tree is completely unaffected.
+  // CONFIRMED CHANGE ("why cant i land on the trees in the front i need
+  // to be able to"): a real platform-top landing case added on top of
+  // the existing side-pillar collision -- same shape as sandbox's own
+  // block-pile steps, checked FIRST so a successful landing on the
+  // canopy skips the side push entirely for that tree (otherwise a
+  // player standing right at the canopy's edge could get shoved off by
+  // the very same tree they just landed on).
   const winterPlayerCenterX = player.x + player.width / 2;
-  if (player.y < 55) WINTER_FRONT_TREES.forEach(t => {
+  WINTER_FRONT_TREES.forEach(t => {
     const left = t.x - t.hitHalfWidth;
     const right = t.x + t.hitHalfWidth;
-    if (player.x + player.width > left && player.x < right) {
+    const canopyTop = t.canopyTop;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > left &&
+      player.x < right &&
+      playerBottom <= canopyTop &&
+      playerBottom >= canopyTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = canopyTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      return; // landed on top -- skip the side push below for this tree
+    }
+    if (player.y < 55 && player.x + player.width > left && player.x < right) {
       if (winterPlayerCenterX < t.x) {
         player.x = left - player.width;
       } else {
@@ -69689,13 +69709,22 @@ const WINTER_HIDDEN_ICE_ZONES = [
 // drifting platform carries the player along with its own motion each
 // frame -- so both "your own momentum" and "the platform moves under
 // you" are true at once, per Sam's answer.
+// CONFIRMED CHANGE ("and the platforms need to be at different heights
+// and differing widths between them. a lil more slip sliding"): heights
+// no longer just climb steadily -- real zigzag (up, down, up again) so
+// height alone doesn't tell you where to jump next -- and the GAPS
+// between platforms (not just their own widths, which already varied)
+// now range from a tight 30px hop to a genuine 170px stretch, instead of
+// the old fairly-even ~200px spacing. See updateWinterScene for the
+// matching "a lil more slip sliding" momentum tuning.
 const WINTER_SLICK_PLATFORMS = [
-  { x: 1420, width: 130, height: 60,  driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
-  { x: 1650, width: 110, height: 110, driftAmp: 45, driftSpeed: 0.0011, driftPhase: 0.6 },
-  { x: 1880, width: 120, height: 170, driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
-  { x: 2080, width: 100, height: 235, driftAmp: 55, driftSpeed: 0.0009, driftPhase: 2.4 },
-  { x: 2280, width: 130, height: 285, driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
-  { x: 2450, width: 140, height: 320, driftAmp: 40, driftSpeed: 0.0013, driftPhase: 4.1 }
+  { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
+  { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
+  { x: 1850, width: 130, height: 100, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
+  { x: 2010, width: 70,  height: 230, driftAmp: 55, driftSpeed: 0.0009, driftPhase: 2.4 },
+  { x: 2240, width: 140, height: 150, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
+  { x: 2420, width: 95,  height: 290, driftAmp: 50, driftSpeed: 0.0013, driftPhase: 4.1 },
+  { x: 2610, width: 120, height: 200, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 }
 ];
 
 // current world-x of a slick platform's LEFT edge this frame -- the only
@@ -69728,7 +69757,21 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     seed,
     scale,
     snowy: !stillForest || pseudoRandom(seed + 2) > 0.4,
-    hitHalfWidth: 22 * scale // roughly the canopy's real footprint, a bit inside its visual edge
+    hitHalfWidth: 22 * scale, // roughly the canopy's real footprint, a bit inside its visual edge
+    // CONFIRMED CHANGE ("why cant i land on the trees in the front i
+    // need to be able to"). CONFIRMED BUG FIX, two rounds -- both found
+    // via real screenshots, not just working out the math: first pass
+    // used 98*scale (way high, drawWinterPine's rows are indexed base-
+    // to-tip so that double-counted most of totalH), second pass used
+    // 84*scale from the theoretical worst-case top-clump extent, which
+    // was still visibly floating above the actual canopy in a real
+    // screenshot -- the per-tree jitter on the top clump's own position/
+    // radius means any single tree's REAL top usually sits well under
+    // that worst case. 68*scale matches a real screenshot at actual
+    // player scale; still deliberately erring a little high rather than
+    // low, since floating a couple px is far less noticeable/broken-
+    // looking than sinking into the canopy.
+    canopyTop: 68 * scale
   });
 }
 
@@ -70005,7 +70048,14 @@ function drawWinterDoorApproach(camX, doorDef) {
   const dx = doorDef.x - camX;
   const baseX = dx + doorDef.width / 2;
   const REACH = 560;
-  if (baseX < -REACH - 60 || baseX > canvas.width + 60) return;
+  // CONFIRMED BUG FIX ("if i go one step left all to the right
+  // dissappears nooo"): this zone extends REACH px to the LEFT of
+  // baseX, not around it -- the old right-side check culled the whole
+  // thing the moment baseX alone drifted past the right edge, even
+  // though most of the zone (everything from baseX-REACH forward) was
+  // still well on screen. Needs to check the zone's actual LEFTMOST
+  // point (baseX - REACH) against the right edge, not baseX itself.
+  if (baseX < -60 || baseX - REACH > canvas.width + 60) return;
 
   // cool tint wash over the ground, strongest right at the door and
   // fading to nothing across the approach
@@ -70016,7 +70066,29 @@ function drawWinterDoorApproach(camX, doorDef) {
     tint.addColorStop(0, "rgba(185,218,240,0)");
     tint.addColorStop(1, "rgba(185,218,240,0.32)");
     ctx.fillStyle = tint;
-    ctx.fillRect(left, gy, right - left, canvas.height - gy);
+    // CONFIRMED BUG FIX ("this horizontal line is horible. no. make it
+    // phase out like there are almost never ever horizontal lines
+    // desired in the nature lines"): this used to be a plain fillRect
+    // starting dead flat at y=gy -- fine as long as the horizontal
+    // gradient's own left/right fade was also on screen, but once the
+    // whole approach zone fills the screen width (player standing right
+    // near the door), only the ruler-straight top edge at gy was left
+    // visible, reading as a hard seam right at the ground line. Redrawn
+    // as a real jittered/wavy-topped path instead -- same "coastline"
+    // approach this game already uses for organic edges elsewhere --
+    // so the tint frays into the ground rather than snapping on.
+    const waveSeed = doorDef.x * 0.017;
+    const step = 22;
+    ctx.beginPath();
+    ctx.moveTo(left, canvas.height);
+    ctx.lineTo(left, gy + (pseudoRandom(waveSeed) - 0.5) * 9);
+    for (let wx = left + step; wx < right; wx += step) {
+      ctx.lineTo(wx, gy + (pseudoRandom(waveSeed + wx * 0.07) - 0.5) * 9);
+    }
+    ctx.lineTo(right, gy + (pseudoRandom(waveSeed + right * 0.07) - 0.5) * 9);
+    ctx.lineTo(right, canvas.height);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // frost-rimed rocks scattered along the approach, for texture variety
@@ -70105,7 +70177,11 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
   const dx = doorDef.x - camX;
   const baseX = dx + doorDef.width / 2;
   const REACH = 190;
-  if (baseX < -REACH - 40 || baseX > canvas.width + 40) return;
+  // CONFIRMED BUG FIX (same class of bug as drawWinterDoorApproach's own
+  // fix -- "if i go one step left all to the right dissappears nooo"):
+  // this zone also extends REACH px to the LEFT of baseX, so the right-
+  // side check needs to test the zone's leftmost point, not baseX alone.
+  if (baseX < -40 || baseX - REACH > canvas.width + 40) return;
 
   const CRACK_COUNT = 5;
   for (let c = 0; c < CRACK_COUNT; c++) {
@@ -70181,55 +70257,88 @@ function drawWinterRainbowOverhang(camX) {
   traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.7, OVERHANG_WIDTH / 2.3, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
   ctx.fill();
 
+  // CONFIRMED CHANGE: reworked from plain translucent-gradient wedges to
+  // pull directly from the user's own painted reference art -- organic
+  // wax-drip/flame silhouettes (narrow neck, wider bulging belly, a
+  // rounded bulb bead at the very tip rather than a sharp icicle point),
+  // bold dark outlines around every shape, and mostly-opaque blocked-in
+  // color instead of a soft blended gradient. Each icicle also gets a
+  // second, contrasting bulb color at its tip -- echoing the reference's
+  // orange drip-tendrils topped with rounded blue bulb ends.
   const ICICLE_COUNT = 7;
   const now = performance.now();
+  const OUTLINE = "rgba(35,30,40,0.85)";
   for (let i = 0; i < ICICLE_COUNT; i++) {
     const seed = i * 19.3 + WINTER_RAINBOW_POCKET_X * 0.01;
     const ix = sx + 30 + (OVERHANG_WIDTH - 60) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(seed) - 0.5) * 14;
-    const len = 55 + pseudoRandom(seed + 1) * 60;
-    const topW = 10 + pseudoRandom(seed + 2) * 6;
+    const len = 50 + pseudoRandom(seed + 1) * 52;
+    const topW = 11 + pseudoRandom(seed + 2) * 6;
     const color = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
+    const bulbColor = WINTER_RAINBOW_ICICLE_COLORS[(i + 3) % WINTER_RAINBOW_ICICLE_COLORS.length];
     const topY = ledgeY;
-    const tipY = ledgeY + len;
+    const bellyY = topY + len * 0.62;
+    const bulbY = topY + len; // center of the rounded drip-bead tip
+    const bellyW = topW * (1.15 + pseudoRandom(seed + 7) * 0.35); // bulges out past the neck, like a wax drip
+    const neckW = topW * 0.42; // pinches in below the belly before the bulb
+    const bulbR = topW * 0.6 + pseudoRandom(seed + 8) * 2.5;
+    const wob = (pseudoRandom(seed + 3) - 0.5) * 5;
 
-    // slightly jittered icicle wedge, translucent so it genuinely reads
-    // as melting colored ice rather than a solid colored shape
+    // the tendril body: attaches flush to the ledge, bulges at the belly,
+    // pinches to a narrow neck, then flares into the rounded bulb below
     ctx.beginPath();
     ctx.moveTo(ix - topW / 2, topY);
-    ctx.lineTo(ix + topW / 2, topY);
-    ctx.lineTo(ix + topW * 0.12 + (pseudoRandom(seed + 3) - 0.5) * 4, topY + len * 0.55);
-    ctx.lineTo(ix, tipY);
-    ctx.lineTo(ix - topW * 0.12 - (pseudoRandom(seed + 4) - 0.5) * 4, topY + len * 0.55);
+    ctx.bezierCurveTo(
+      ix - bellyW / 2, topY + len * 0.22,
+      ix - bellyW / 2 + wob, bellyY - len * 0.1,
+      ix - neckW / 2 + wob, bellyY
+    );
+    ctx.lineTo(ix - neckW / 2 + wob, bulbY - bulbR * 0.6);
+    ctx.lineTo(ix + neckW / 2 + wob, bulbY - bulbR * 0.6);
+    ctx.lineTo(ix + neckW / 2 + wob, bellyY);
+    ctx.bezierCurveTo(
+      ix + bellyW / 2 + wob, bellyY - len * 0.1,
+      ix + bellyW / 2, topY + len * 0.22,
+      ix + topW / 2, topY
+    );
     ctx.closePath();
-    const grad = ctx.createLinearGradient(0, topY, 0, tipY);
-    grad.addColorStop(0, `rgba(${color},0.55)`);
-    grad.addColorStop(1, `rgba(${color},0.22)`);
-    ctx.fillStyle = grad;
+    ctx.fillStyle = `rgba(${color},0.82)`;
     ctx.fill();
-    ctx.strokeStyle = `rgba(${color},0.7)`;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    // a thin bright highlight down one side, same "real ice" cue the
-    // door's own icicles use
-    ctx.beginPath();
-    ctx.moveTo(ix - topW * 0.2, topY + 3);
-    ctx.lineTo(ix - topW * 0.05, tipY - 6);
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // one melting droplet per icicle, looping down from the tip on its
+    // the rounded bulb bead at the tip, in a contrasting color with its
+    // own bold outline -- the reference art's blue drip-ends
+    ctx.beginPath();
+    ctx.ellipse(ix + wob, bulbY, bulbR, bulbR * 1.08, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${bulbColor},0.88)`;
+    ctx.fill();
+    ctx.strokeStyle = OUTLINE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // a small flat highlight patch on the belly -- reads as glossy wet
+    // ice/paint rather than a smooth rendered gradient
+    ctx.beginPath();
+    ctx.ellipse(ix - bellyW * 0.18, topY + len * 0.32, bellyW * 0.16, len * 0.1, -0.3, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fill();
+
+    // one melting droplet per icicle, falling from the bulb tip on its
     // own cycle -- cycle length/offset varies per icicle so they don't
     // all drip in lockstep
     const cycleMs = 1800 + pseudoRandom(seed + 5) * 1400;
     const phase = ((now + pseudoRandom(seed + 6) * cycleMs) % cycleMs) / cycleMs;
-    const dropFall = 26;
-    const dropY = tipY + phase * dropFall;
-    const dropAlpha = 0.75 * (1 - phase);
-    ctx.fillStyle = `rgba(${color},${dropAlpha})`;
+    const dropFall = 24;
+    const dropY = bulbY + bulbR + phase * dropFall;
+    const dropAlpha = 0.8 * (1 - phase);
     ctx.beginPath();
-    ctx.ellipse(ix, dropY, 2.4, 3.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(ix + wob, dropY, 2.2, 3.2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${bulbColor},${dropAlpha})`;
     ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = `rgba(35,30,40,${dropAlpha * 0.7})`;
+    ctx.stroke();
   }
 }
 
@@ -70408,9 +70517,14 @@ function updateWinterScene(deltaTime) {
   // player is carried along with whatever the platform itself drifted
   // this frame -- so "your own momentum" and "the platform moves under
   // you" are both true at once.
+  // CONFIRMED CHANGE ("a lil more slip sliding"): friction roughly
+  // halved (260->130) so released momentum carries noticeably further
+  // before settling -- accel eased down a touch too (900->760) so
+  // getting going in the first place also takes a beat, rather than
+  // being instant grip followed by a slippery stop. Max speed unchanged.
   const SLICK_MAX_SPEED = 230;
-  const SLICK_ACCEL = 900;
-  const SLICK_FRICTION = 260;
+  const SLICK_ACCEL = 760;
+  const SLICK_FRICTION = 130;
   if (player.winterSlickPlatformIndex !== -1) {
     const plat = WINTER_SLICK_PLATFORMS[player.winterSlickPlatformIndex];
     const curPlatX = winterSlickPlatformX(plat, performance.now());
