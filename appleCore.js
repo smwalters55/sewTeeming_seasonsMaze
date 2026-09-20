@@ -198,7 +198,12 @@ const camera = { topDown:false, locked:false };
 // new winter door): switched to "forest" -- see the DEBUG_START_SCENE
 // === "forest" block further down, now positioned right at the new
 // forest-winter door instead of its old fungus-tree test spot.
-const DEBUG_START_SCENE = "forest";
+// CONFIRMED CHANGE ("with this next push spawn me in front of the icy
+// platforms pls" -- testing the new platforms/spikes/breathing-room
+// changes): switched to "winter" -- see the new DEBUG_START_SCENE ===
+// "winter" block further down, positioned right at the base of the slick
+// platform climb.
+const DEBUG_START_SCENE = "winter";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -401,6 +406,17 @@ const player = {
   winterSkateVX: 0,
   winterSlickPlatformPrevX: null,
   winterSlickPlatformPrevIndex: -1,
+  // CONFIRMED NEW FEATURE ("translucent watery ice on the ground that
+  // moves you every which way in surprising ways so at least semi
+  // controlled random... like u slip sliding everywhere"): re-derived
+  // every frame in updateWinterScene (same "not a sticky flag" approach
+  // winterSlickPlatformIndex uses) rather than a one-shot trigger like
+  // onWinterIceSlide -- this is meant to feel like standing on ground
+  // that's ALWAYS gently alive while you're on it, not a single launch.
+  // winterWateryVX is the player's own reduced-grip skate momentum,
+  // layered on top of the ambient current updateWinterScene computes.
+  onWateryIce: false,
+  winterWateryVX: 0,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -2873,7 +2889,12 @@ function handleInput(){
     // accelerate/decay skate movement while grounded on one, and jumping
     // off a platform needs to keep working exactly like jumping anywhere
     // else in the game.
-    if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1) {
+    // watery ice (see WINTER_WATERY_ICE_ZONES/updateWinterScene) gets the
+    // same narrow treatment as the slide/slick-platform exclusions above
+    // -- only normal instant-stop left/right walking is suppressed, so it
+    // doesn't fight the zone's own ambient-current + reduced-grip skate
+    // movement, while jumping out of it stays completely normal.
+    if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1 && !player.onWateryIce) {
       if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
       if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
     }
@@ -5207,27 +5228,27 @@ function applyPhysics(){
   } else if (currentScene === "winter") {
 
   // CONFIRMED CHANGE ("i think i want collision physics w the trees up
-  // front in winter rn at least"): solid vertical obstacles, same
-  // "which side is the player's center on" shape as a basic wall/pillar
-  // collision. Only WINTER_FRONT_TREES (see its own comment) -- the
-  // distant background treeline is parallax decoration, not solid.
-  // CONFIRMED BUG FIX (found while verifying the new slick platform climb):
-  // the side push used to have no height check at all, so a player
-  // standing on one of the new WINTER_SLICK_PLATFORMS (60-320px up)
-  // still got shoved sideways by any tree whose x-column happened to
-  // sit underneath them, even though visually there's nothing there at
-  // that height -- trees are ground-level obstacles, not tall pillars
-  // reaching all the way up to the platform climb. Gated to
-  // player.y < 55 (just under the lowest platform's own 60px height) so
-  // ordinary ground-level walking into a tree is completely unaffected.
+  // front in winter rn at least"): originally solid vertical obstacles
+  // (a side-pillar wall/push, same shape a basic wall collision uses),
+  // only for WINTER_FRONT_TREES -- the distant background treeline stays
+  // parallax decoration, not solid.
   // CONFIRMED CHANGE ("why cant i land on the trees in the front i need
   // to be able to"): a real platform-top landing case added on top of
-  // the existing side-pillar collision -- same shape as sandbox's own
-  // block-pile steps, checked FIRST so a successful landing on the
-  // canopy skips the side push entirely for that tree (otherwise a
-  // player standing right at the canopy's edge could get shoved off by
-  // the very same tree they just landed on).
-  const winterPlayerCenterX = player.x + player.width / 2;
+  // the (then still-existing) side-pillar collision -- same shape as
+  // sandbox's own block-pile steps, checked FIRST so a successful
+  // landing on the canopy skips the side push for that tree.
+  // CONFIRMED CHANGE, side-push REMOVED entirely ("i shouldnt not be able
+  // to walk in front of this tree to my left. actually idk if i want to
+  // not be able to walk in front of any tree i think that all front
+  // trees everything else can be walked in front of unless explicitely
+  // decided not to"): the general default flipped -- ground-level
+  // objects should be freely walkable past unless a hazard/wall is
+  // EXPLICITLY wanted, not the other way around. Front trees now only
+  // ever stop the player by being landed on (the canopy/mid-perch cases
+  // right below, both purely opt-in positive platforming surfaces), never
+  // by blocking a walk-through at ground level. If a real "can't walk
+  // past this" wall/tree is ever wanted again, it should be a new,
+  // explicitly-opted-in case -- not this blanket default.
   WINTER_FRONT_TREES.forEach(t => {
     const left = t.x - t.hitHalfWidth;
     const right = t.x + t.hitHalfWidth;
@@ -5274,13 +5295,6 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
       return; // landed on the mid perch -- skip the side push below too
-    }
-    if (player.y < 55 && player.x + player.width > left && player.x < right) {
-      if (winterPlayerCenterX < t.x) {
-        player.x = left - player.width;
-      } else {
-        player.x = right;
-      }
     }
   });
 
@@ -18759,6 +18773,39 @@ if (DEBUG_START_SCENE === "forest") {
   // also grant an apple slice so the new winter door can actually be
   // unlocked/walked through right away while testing, not just looked at
   addToInventory("appleSlice");
+}
+
+// TEMPORARY debug spawn, same one-off pattern as the "forest" block just
+// above. CONFIRMED CHANGE ("with this next push spawn me in front of the
+// icy platforms pls" -- testing the new 3-platform extension, the
+// breathing room before the icicle pocket, and the new spike hazards):
+// drops straight into winter, right before the first (safe, static)
+// slick platform -- currentScene already starts as "winter" via the
+// `let currentScene = DEBUG_START_SCENE` line up top, so this block just
+// fills in the position + the same discovery-flag/inventory dependencies
+// the "forest" block above learned it needed the hard way.
+// CONFIRMED CHANGE ("k spawn me after the spikey ice hazards pls"):
+// moved past the whole platform/spike climb instead of in front of it,
+// to test what's past there (the breathing-room stretch + the watery
+// ice/icicle pocket) without having to actually climb+dodge through it
+// each time.
+// CONFIRMED BUG FIX (same TDZ gotcha as the original spawn point):
+// WINTER_ICE_SPIKE_END is declared much further down the file with
+// `const`, so referencing it here (this block runs at top-level script
+// init, long before that line executes) would throw a temporal-dead-zone
+// ReferenceError. Hardcoded to match its actual computed value instead
+// (max of x+width+driftAmp across WINTER_SLICK_PLATFORMS, currently the
+// last platform: 3180+100+38 = 3318) plus clearance so the spawn sits
+// cleanly past every spike zone, not right at its trailing edge.
+if (DEBUG_START_SCENE === "winter") {
+  discoveredScenes.forest = true;
+  discoveredScenes.winter = true;
+  player.x = 3360;
+  player.y = 0;
+  addToInventory("shovel");
+  addToInventory("windSeed");
+  addToInventory("bucket");
+  heldItem = "shovel";
 }
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
@@ -69710,7 +69757,15 @@ drawSeasonTransition(ctx);
 // (see WINTER_RAINBOW_ICICLES) further past it. Both new areas sit past
 // all existing content (door/hidden ice zones/treeline), so nothing
 // already placed needed to move.
-const WINTER_WIDTH = 3400;
+// CONFIRMED CHANGE ("i want to add a few more platforms... and some
+// breathing room before the icicles area starts"): widened again to fit
+// 3 more platforms past the existing climb plus real open ground before
+// the icicle pocket (moved further out to WINTER_RAINBOW_POCKET_X below).
+// Only i=0 (worldX = jitter alone, no i*step term) is completely
+// unaffected by this -- everything else scales up slightly, but the
+// near-door trees (low i) barely move in absolute terms, so the already
+// screenshot-tuned area right past the door is untouched in practice.
+const WINTER_WIDTH = 4050;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -69758,6 +69813,13 @@ const WINTER_HIDDEN_ICE_ZONES = [];
 // platform (the one right off the ground, lowest stakes) static as a
 // safe, predictable first foothold. The rest now all drift, each with
 // its own amp/speed/phase so they don't move in lockstep.
+// CONFIRMED CHANGE ("i want to add a few more platforms most moving or
+// all moving icy ones before the icicles"): 3 more added continuing the
+// same zigzag, ALL drifting (the original static first platform stays
+// the only non-drifting one, still the safe first foothold) -- and the
+// zigzag trends back DOWN toward ground level over these last three so
+// the climb ends with a natural descent into the flat breathing-room
+// stretch before the icicle pocket, rather than a big drop.
 const WINTER_SLICK_PLATFORMS = [
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
@@ -69765,7 +69827,10 @@ const WINTER_SLICK_PLATFORMS = [
   { x: 2010, width: 70,  height: 230, driftAmp: 55, driftSpeed: 0.0009, driftPhase: 2.4 },
   { x: 2240, width: 140, height: 150, driftAmp: 40, driftSpeed: 0.0011, driftPhase: 3.3 },
   { x: 2420, width: 95,  height: 290, driftAmp: 50, driftSpeed: 0.0013, driftPhase: 4.1 },
-  { x: 2610, width: 120, height: 200, driftAmp: 42, driftSpeed: 0.001,  driftPhase: 5.2 }
+  { x: 2610, width: 120, height: 200, driftAmp: 42, driftSpeed: 0.001,  driftPhase: 5.2 },
+  { x: 2800, width: 110, height: 260, driftAmp: 48, driftSpeed: 0.0014, driftPhase: 0.9 },
+  { x: 3000, width: 130, height: 150, driftAmp: 52, driftSpeed: 0.0012, driftPhase: 2.7 },
+  { x: 3180, width: 100, height: 70,  driftAmp: 38, driftSpeed: 0.0017, driftPhase: 4.5 }
 ];
 
 // current world-x of a slick platform's LEFT edge this frame -- the only
@@ -69842,6 +69907,174 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     // just above -- err narrow, not wide.
     midHalfWidth: 9 * scale
   });
+}
+
+// CONFIRMED CHANGE ("should we do some spiky ice obstacles on ground
+// below the icy moving platforms? so player has to really time their
+// jumps") -- greenlit directly, was already sitting in the winter idea
+// dump as "pairs naturally with the icy platforms." Real stakes: missing
+// a jump and landing on the ground under the climb resets you back to
+// the base of it (see the "winterSpike" fallState mode in
+// updateFallState), so the platforms actually need real timing instead
+// of a fall just being a free do-over.
+//
+// Computed, not hand-placed: covers the ground footprint under the
+// WHOLE slick-platform climb (first platform's x to the last one's
+// rightmost drifted reach), but carves out a gap around any
+// WINTER_FRONT_TREES trunk that happens to fall in that span so a tree
+// can still double as a legit safe bail-out foothold if you're careful,
+// rather than making literally the entire ground lethal. Recomputes
+// cleanly if the platform layout or tree layout ever changes.
+const WINTER_ICE_SPIKE_START = WINTER_SLICK_PLATFORMS[0].x + 20; // a little clear of the very first (safe, static) platform's own footing
+const WINTER_ICE_SPIKE_END = Math.max(...WINTER_SLICK_PLATFORMS.map(p => p.x + p.width + p.driftAmp));
+const WINTER_ICE_SPIKE_ZONES = (() => {
+  const gaps = WINTER_FRONT_TREES
+    .filter(t => t.x > WINTER_ICE_SPIKE_START - 40 && t.x < WINTER_ICE_SPIKE_END + 40)
+    .map(t => ({ from: t.x - t.hitHalfWidth - 14, to: t.x + t.hitHalfWidth + 14 }))
+    .sort((a, b) => a.from - b.from);
+  const zones = [];
+  let cursor = WINTER_ICE_SPIKE_START;
+  gaps.forEach(g => {
+    if (g.from > cursor) zones.push({ x: cursor, width: g.from - cursor });
+    cursor = Math.max(cursor, g.to);
+  });
+  if (cursor < WINTER_ICE_SPIKE_END) zones.push({ x: cursor, width: WINTER_ICE_SPIKE_END - cursor });
+  return zones.filter(z => z.width > 20); // drop slivers too thin to read as a real hazard
+})();
+
+// jagged upward ice spikes filling a ground zone -- same faceted-shard
+// language as the door's own icicles/the rainbow overhang, just pointing
+// UP instead of hanging down. Seeded off each zone's own x so the shape
+// is stable regardless of camera.
+// CONFIRMED CHANGE ("make the ice spikes on the ground a ittle more
+// interesting, less like sorta flat triangles. spikier, more non
+// uniform, some parts shinier like catching light differently than
+// other"): full rework from evenly-spaced flat 5-point triangles (one
+// smooth lean, one shared gradient) into real jagged, clustered ice
+// spikes -- irregular gap-weighted spacing (same clustering approach the
+// rainbow icicles use for their own origins, see
+// drawWinterRainbowOverhang) instead of a fixed SPIKE_W comb, a
+// multi-segment jagged silhouette per spike instead of one smooth lean,
+// a randomized lit/shadow tone + bright facet stroke that flips side per
+// spike (so neighbors visibly catch the light differently rather than
+// sharing one flat gradient), the occasional small specular glint, and
+// small secondary spurs jutting off some spikes' bases for extra
+// spikiness/non-uniformity. Collision stays zone-based (WINTER_ICE_SPIKE_ZONES
+// itself is untouched) so none of this affects the actual hazard.
+function drawWinterIceSpikeZone(camX, zone) {
+  const sx = zone.x - camX;
+  // CONFIRMED BUG FIX ("the spikes that should be to my left disappear
+  // when i am in this specific right-ward position on this tree. spikes
+  // should always be written"): this cull only ever tested the zone's
+  // own LEFT edge (sx) against the screen -- the exact same class of bug
+  // the door approach/ground-frost culling had earlier this session. A
+  // zone can be much wider than one screen (WINTER_ICE_SPIKE_ZONES spans
+  // gaps between trees across the whole climb), so once its left edge
+  // scrolled past the left side of the screen the ENTIRE zone vanished,
+  // including the large chunk of it still visibly on-screen further
+  // right. Now tests the zone's actual rightmost point (sx + zone.width)
+  // against the left bound instead of sx alone.
+  if (sx + zone.width < -40 || sx > canvas.width + 40) return;
+  const zoneSeed = zone.x * 0.02;
+  const TARGET_COUNT = Math.max(2, Math.round(zone.width / 24));
+  const gapWeights = [];
+  let gapSum = 0;
+  for (let i = 0; i < TARGET_COUNT; i++) {
+    const w = 0.35 + pseudoRandom(zoneSeed + 500 + i * 4.1) * 1.7; // small = tight cluster, big = real gap
+    gapWeights.push(w);
+    gapSum += w;
+  }
+  let acc = 0;
+  for (let i = 0; i < TARGET_COUNT; i++) {
+    acc += gapWeights[i];
+    const t = (acc - gapWeights[i] * 0.5) / gapSum;
+    const spikeBaseX = sx + t * zone.width;
+    const seed = zoneSeed + i * 7.7;
+
+    const h = 12 + pseudoRandom(seed) * 34; // real short/tall variety, not one narrow band
+    const hw = 5 + pseudoRandom(seed + 1) * 7;
+    const lean = (pseudoRandom(seed + 2) - 0.5) * 10;
+    const litLeft = pseudoRandom(seed + 8) < 0.5;
+
+    // main spike body -- jagged multi-segment silhouette (drift + jag
+    // per segment, same shape the rainbow icicles' own shafts use)
+    // instead of one smooth lean to a point
+    const SEGS = 4;
+    const leftPts = [{ x: spikeBaseX - hw, y: gy }];
+    const rightPts = [{ x: spikeBaseX + hw, y: gy }];
+    let drift = 0;
+    for (let s = 1; s <= SEGS; s++) {
+      const tt = s / SEGS;
+      drift += (pseudoRandom(seed + 30 + s * 3.3) - 0.5) * hw * 0.5;
+      const px = spikeBaseX + lean * tt + drift;
+      const py = gy - h * tt;
+      const envelope = Math.pow(1 - tt, 1.3);
+      const segHw = Math.max(0.3, hw * envelope) + (pseudoRandom(seed + 40 + s) - 0.5) * hw * 0.3;
+      leftPts.push({ x: px - segHw, y: py });
+      rightPts.push({ x: px + segHw, y: py });
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let s = 1; s < leftPts.length; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
+    for (let s = rightPts.length - 1; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, gy - h, 0, gy);
+    // lit/shadow tone flips per spike instead of every spike sharing the
+    // exact same blue-white gradient -- reads as each one catching
+    // ambient light from a slightly different angle
+    if (litLeft) {
+      grad.addColorStop(0, "rgba(235,248,255,0.97)");
+      grad.addColorStop(1, "rgba(140,172,195,0.9)");
+    } else {
+      grad.addColorStop(0, "rgba(210,230,245,0.95)");
+      grad.addColorStop(1, "rgba(120,155,180,0.92)");
+    }
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // a crisp bright facet stroke down whichever side is "lit" this spike
+    // -- the shiny/catching-light cue, one side only, varying spike to
+    // spike rather than a flat single highlight everywhere
+    ctx.beginPath();
+    if (litLeft) {
+      ctx.moveTo(leftPts[0].x, leftPts[0].y - 2);
+      leftPts.forEach(p => ctx.lineTo(p.x, p.y));
+    } else {
+      ctx.moveTo(rightPts[0].x, rightPts[0].y - 2);
+      rightPts.forEach(p => ctx.lineTo(p.x, p.y));
+    }
+    ctx.strokeStyle = `rgba(255,255,255,${0.35 + pseudoRandom(seed + 9) * 0.35})`;
+    ctx.lineWidth = 1 + pseudoRandom(seed + 10) * 0.8;
+    ctx.stroke();
+
+    // occasional small bright glint near the tip -- a genuine specular
+    // catch-light, not on every spike so it reads as real variation
+    if (pseudoRandom(seed + 11) < 0.3) {
+      ctx.beginPath();
+      ctx.ellipse(leftPts[leftPts.length - 1].x + hw * 0.3, gy - h * 0.75, 1.6, 3, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${0.4 + pseudoRandom(seed + 12) * 0.3})`;
+      ctx.fill();
+    }
+
+    // small secondary spur off the base of some spikes -- a genuinely
+    // different silhouette from the main spike (not a scaled copy),
+    // extra spikiness/non-uniformity along the row
+    if (pseudoRandom(seed + 13) < 0.4) {
+      const spurSide = pseudoRandom(seed + 14) < 0.5 ? -1 : 1;
+      const spurBaseX = spikeBaseX + spurSide * hw * 0.8;
+      const spurH = h * (0.28 + pseudoRandom(seed + 15) * 0.25);
+      const spurHw = hw * 0.4;
+      const spurLean = spurSide * (4 + pseudoRandom(seed + 16) * 6);
+      ctx.beginPath();
+      ctx.moveTo(spurBaseX - spurHw, gy);
+      ctx.lineTo(spurBaseX + spurLean, gy - spurH);
+      ctx.lineTo(spurBaseX + spurHw, gy);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(180,210,228,0.85)";
+      ctx.fill();
+    }
+  }
 }
 
 // a middle depth layer, between the solid front treeline and the far
@@ -70404,7 +70637,12 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
 // and resets on a loop, driven purely by performance.now() math like the
 // door approach's drifting snowflakes -- no new persistent per-frame-
 // updated state needed.
-const WINTER_RAINBOW_POCKET_X = 2950;
+// CONFIRMED CHANGE ("and some breathing room before the icicles area
+// starts"): moved out from 2950 to give real open, flat ground after the
+// last slick platform (now ending around x 3280-3320 with drift) before
+// the icicle pocket begins, instead of arriving right at the base of it
+// off the final jump.
+const WINTER_RAINBOW_POCKET_X = 3500;
 // CONFIRMED BUG FIX ("i shouldnt be able to land on tree when this ice
 // thing is in front of it"): shared here so applyPhysics's own
 // WINTER_FRONT_TREES collision loop can exclude any tree whose x falls
@@ -70420,6 +70658,96 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
   "90,190,255",   // sky
   "170,120,255"   // violet
 ];
+
+// CONFIRMED NEW FEATURE ("potentially having under the icicles it will be
+// somehwat translucent watery ice on the ground that moves you every
+// which way in surprising ways so at least semi controlled random so its
+// like u slip sliding everywhere and the colors will meld together in
+// parts. and this can come up a few times later in winter too just these
+// nice little sections of colorful icicles and associated slipperiness
+// under them"): a ground zone directly under a rainbow icicle pocket --
+// distinct from the (now-disabled) WINTER_HIDDEN_ICE_ZONES both visually
+// (this one's always visible, never a secret) and mechanically (an
+// ongoing ambient current while you're standing in it, not a one-shot
+// launch in whatever direction you were already walking). Deliberately a
+// real array, not a single spot, so more entries can be added under
+// future icicle pockets later in winter without touching the mechanic
+// itself -- each entry just needs an x/width span and which pocket's
+// icicle colors to melt into the ice. Matches the rainbow pocket's own
+// spanLeft/spanRight (see drawWinterRainbowOverhang) with a little extra
+// reach so the ice reads as sitting under the full icicle cluster, not
+// just its narrower center.
+const WINTER_WATERY_ICE_ZONES = [
+  { x: WINTER_RAINBOW_POCKET_X, width: WINTER_RAINBOW_OVERHANG_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS }
+];
+
+// draws the ground-level ice sheet for one WINTER_WATERY_ICE_ZONES entry.
+// A translucent, jittered-edge icy pool (same "never a hard rectangle"
+// language the door's own ground effects use) with several soft radial
+// blobs in the zone's own icicle palette slowly drifting and overlapping
+// -- where two blobs' colors overlap they visually meld together, same
+// spirit as the icicles' own webs above. A thin drifting shimmer line
+// stands in for actual light-on-water movement. Purely cosmetic here;
+// updateWinterScene drives the actual slip-sliding separately.
+function drawWinterWateryIce(camX, zone) {
+  const sx = zone.x - camX;
+  if (sx < -zone.width - 60 || sx > canvas.width + 60) return;
+  const now = performance.now();
+  const top = gy - 7;
+  const bottom = gy + 5;
+  const baseSeed = zone.x * 0.013;
+
+  ctx.beginPath();
+  ctx.moveTo(sx, bottom);
+  ctx.lineTo(sx, top + (pseudoRandom(baseSeed) - 0.5) * 6);
+  const step = 18;
+  for (let wx = sx + step; wx < sx + zone.width; wx += step) {
+    const worldX = wx + camX;
+    ctx.lineTo(wx, top + (pseudoRandom(baseSeed + worldX * 0.05) - 0.5) * 6);
+  }
+  ctx.lineTo(sx + zone.width, top + (pseudoRandom(baseSeed + (zone.x + zone.width) * 0.05) - 0.5) * 6);
+  ctx.lineTo(sx + zone.width, bottom);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(190,225,240,0.35)";
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(sx - 2, top - 6, zone.width + 4, bottom - top + 12);
+  ctx.clip();
+  const BLOB_COUNT = 7;
+  for (let i = 0; i < BLOB_COUNT; i++) {
+    const bseed = baseSeed + i * 31.7;
+    const color = zone.colors[i % zone.colors.length];
+    // each blob drifts back and forth along the zone at its own slow,
+    // independent rate/phase -- smooth wandering, not per-frame noise, so
+    // the colors genuinely meld into each other as they cross rather than
+    // just flickering in place.
+    const driftT = now * (0.00012 + pseudoRandom(bseed) * 0.00008) + bseed;
+    const driftSpan = 0.22 + pseudoRandom(bseed + 5) * 0.16;
+    const baseCx = pseudoRandom(bseed + 1) * zone.width;
+    const cx = sx + Math.max(0, Math.min(zone.width, baseCx + Math.sin(driftT) * driftSpan * zone.width));
+    const cy = top + 4 + pseudoRandom(bseed + 2) * (bottom - top - 4);
+    const r = 24 + pseudoRandom(bseed + 3) * 28;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(${color},0.4)`);
+    grad.addColorStop(1, `rgba(${color},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  const shimmerT = (now * 0.0002 + baseSeed) % 1;
+  const shimmerX = sx + shimmerT * zone.width;
+  ctx.beginPath();
+  ctx.moveTo(shimmerX, top);
+  ctx.lineTo(shimmerX + 14, bottom);
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+}
 
 function drawWinterRainbowOverhang(camX) {
   const sx = WINTER_RAINBOW_POCKET_X - camX;
@@ -70974,6 +71302,13 @@ function drawWinterScene(camX) {
     drawWinterPine(sx, gy, t.scale, t.snowy, t.seed);
   });
 
+  // spiky ice hazards on the ground under the platform climb -- drawn
+  // after the front treeline (just above), so a tree trunk sitting in
+  // one of the gaps WINTER_ICE_SPIKE_ZONES already carves out for it
+  // reads as growing up through the spike field rather than being
+  // covered by it.
+  WINTER_ICE_SPIKE_ZONES.forEach(z => drawWinterIceSpikeZone(camX, z));
+
   drawWinterSnow(camX);
 
   // the door back to forest -- same generic glow, same icy dressing as
@@ -70984,6 +71319,10 @@ function drawWinterScene(camX) {
   // slick platform climb, then the rainbow icicle pocket just past it
   const nowForWinterProps = performance.now();
   WINTER_SLICK_PLATFORMS.forEach(p => drawWinterSlickPlatform(camX, p, nowForWinterProps));
+  // watery ice drawn on the ground before the overhang/icicles above it,
+  // same draw ordering as the spike hazards relative to the treeline --
+  // ground-level hazard first, then whatever's visually above/behind it.
+  WINTER_WATERY_ICE_ZONES.forEach(z => drawWinterWateryIce(camX, z));
   drawWinterRainbowOverhang(camX);
 
   ctx.restore(); // matches the cameraY translate save() above
@@ -70995,6 +71334,32 @@ const WINTER_ICE_SLIDE_MS = 500;
 
 function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
+
+  // mid-fall (spike hit, currently the only winter fallState mode) --
+  // timer/completion handled globally by updateFallState, just don't run
+  // anything else in this scene (ice-slide trigger, slick-platform skate
+  // movement) while it's happening, same pattern updateSpringScene uses.
+  if (fallState.active) {
+    return;
+  }
+
+  // CONFIRMED CHANGE ("should we do some spiky ice obstacles on ground
+  // below the icy moving platforms? so player has to really time their
+  // jumps"): grounded (actually landed, not still mid-jump-arc passing
+  // over) and standing in one of WINTER_ICE_SPIKE_ZONES sends the player
+  // back to the base of the slick platform climb via the same generic
+  // fallState sink-and-reset system the spring holes use, just with its
+  // own "winterSpike" mode (see updateFallState). Guarded on
+  // !fallState.active so it can't retrigger mid-reset.
+  if (!fallState.active && player.y <= 0 && !player.jumping) {
+    const feetX = player.x + player.width / 2;
+    const onSpike = WINTER_ICE_SPIKE_ZONES.some(z => feetX > z.x && feetX < z.x + z.width);
+    if (onSpike) {
+      fallState.active = true;
+      fallState.t = 0;
+      fallState.mode = "winterSpike";
+    }
+  }
 
   // secret ice patches -- grounded, moving, and not already sliding is
   // the only trigger condition (standing still on one does nothing --
@@ -71022,6 +71387,55 @@ function updateWinterScene(deltaTime) {
     if (player.winterIceSlideMs <= 0 || player.jumping) {
       player.onWinterIceSlide = false;
     }
+  }
+
+  // CONFIRMED NEW FEATURE ("potentially having under the icicles it will
+  // be somehwat translucent watery ice on the ground that moves you every
+  // which way in surprising ways so at least semi controlled random so
+  // its like u slip sliding everywhere"): re-derived every frame from
+  // actual position (same approach winterSlickPlatformIndex uses) rather
+  // than a one-shot trigger -- grounded, not jumping, not mid-fall, and
+  // feet inside one of WINTER_WATERY_ICE_ZONES. Unlike WINTER_HIDDEN_ICE_ZONES
+  // (a secret single-direction launch, now disabled) this is always
+  // visible and it's an ONGOING current while you're standing in it, not
+  // a one-shot push.
+  const feetXWatery = player.x + player.width / 2;
+  player.onWateryIce = !fallState.active && player.y <= 0 && !player.jumping &&
+    WINTER_WATERY_ICE_ZONES.some(z => feetXWatery > z.x && feetXWatery < z.x + z.width);
+
+  if (player.onWateryIce) {
+    // "semi controlled random": two slow sine waves at different periods,
+    // both offset by a seed derived from the player's own world position
+    // (so different spots in the zone drift differently, not one global
+    // synced wobble), summed into a single smoothly-wandering current
+    // direction/strength. Deliberately NOT fresh per-frame randomness --
+    // that would just read as jitter, not "slip sliding".
+    const wNow = performance.now();
+    const wSeed = Math.floor(player.x / 40) * 1.7;
+    const wave1 = Math.sin(wNow * 0.00055 + wSeed);
+    const wave2 = Math.sin(wNow * 0.00091 + wSeed * 1.8 + 2.4);
+    const currentDir = wave1 * 0.65 + wave2 * 0.55; // wanders roughly -1.2..1.2
+    const WATERY_ICE_CURRENT = 95;
+    player.x += currentDir * WATERY_ICE_CURRENT * deltaTime;
+
+    // your own input still works, but with real reduced grip -- a weaker,
+    // slower-building version of the slick platforms' skate feel, so you
+    // can fight the current above but never quite get normal instant-stop
+    // walking back while standing in it.
+    const WATERY_ICE_ACCEL = 480;
+    const WATERY_ICE_MAX = 170;
+    if (keys.left) {
+      player.winterWateryVX = Math.max(-WATERY_ICE_MAX, player.winterWateryVX - WATERY_ICE_ACCEL * deltaTime);
+      player.facing = -1;
+    } else if (keys.right) {
+      player.winterWateryVX = Math.min(WATERY_ICE_MAX, player.winterWateryVX + WATERY_ICE_ACCEL * deltaTime);
+      player.facing = 1;
+    } else {
+      player.winterWateryVX *= Math.max(0, 1 - 6 * deltaTime); // decays on its own, no separate friction constant needed
+    }
+    player.x += player.winterWateryVX * deltaTime;
+  } else {
+    player.winterWateryVX = 0;
   }
 
   // CONFIRMED CHANGE ("some slick platforms... ooooo both!!!" -- real
@@ -71482,6 +71896,22 @@ function updateFallState(deltaTime) {
       player.launchGravityMult = 1; // reset, same reasoning as the swing-release site above
       player.launchPeakHeight = player.y;
       player.cloudLandingImmunity = 1500; // ms grace period before the goal-cloud hit check can fire again
+      cameraX = Math.max(0, player.x - canvas.width * 0.4);
+    } else if (fallState.mode === "winterSpike") {
+      // CONFIRMED CHANGE ("should we do some spiky ice obstacles on
+      // ground below the icy moving platforms? so player has to really
+      // time their jumps"): sent back to the base of the slick platform
+      // climb, same clearance the "winter" debug spawn uses, rather than
+      // all the way back to the door -- the penalty is redoing the
+      // climb, not redoing the whole zone.
+      player.x = 1320;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.onWinterIceSlide = false;
+      player.winterSlickPlatformIndex = -1;
+      cameraY = 0;
       cameraX = Math.max(0, player.x - canvas.width * 0.4);
     } else {
       // faze back to the start of the spring zone
