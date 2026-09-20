@@ -5326,6 +5326,30 @@ function applyPhysics(){
     }
   });
 
+  // CONFIRMED CHANGE ("tree that owl is on needs to be jumpable"): the
+  // owl's own dedicated tree (see WINTER_OWL_TREE_X etc. and
+  // drawWinterOwlTree) is a one-off, not part of the WINTER_FRONT_TREES
+  // array, so it needs its own matching top-landing case -- same shape as
+  // the regular front trees just above.
+  {
+    const owlLeft = WINTER_OWL_TREE_X - WINTER_OWL_TREE_HIT_HALF_WIDTH;
+    const owlRight = WINTER_OWL_TREE_X + WINTER_OWL_TREE_HIT_HALF_WIDTH;
+    const owlCanopyTop = WINTER_OWL_TREE_CANOPY_TOP;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > owlLeft &&
+      player.x < owlRight &&
+      playerBottom <= owlCanopyTop &&
+      playerBottom >= owlCanopyTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = owlCanopyTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
+
   // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
   // well so it's both high and wide ish"): plain top-landing collision,
   // same shape as sandbox's own block-pile steps -- ordinary single/
@@ -69880,9 +69904,14 @@ const WINTER_HIDDEN_ICE_ZONES = [];
 // here yet -- just a safe first taste of "this is slippery" before the
 // real climb raises the stakes. Tagged `practice: true` so the spike-zone
 // math can find the real climb's own start without hardcoding an index.
+// CONFIRMED CHANGE ("i want them a bit more to the left"): pulled closer
+// to the owl's tree (still with real clearance -- the owl tree's own
+// collision only spans roughly x 660-740) for a shorter walk before the
+// first taste of slipperiness. Kept one still + one drifting (see the
+// comment above) rather than making both move or both static.
 const WINTER_SLICK_PLATFORMS = [
-  { x: 950,  width: 150, height: 40, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0,   practice: true },
-  { x: 1170, width: 120, height: 55, driftAmp: 28, driftSpeed: 0.001,  driftPhase: 1.4, practice: true },
+  { x: 800,  width: 150, height: 40, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0,   practice: true },
+  { x: 1020, width: 120, height: 55, driftAmp: 28, driftSpeed: 0.001,  driftPhase: 1.4, practice: true },
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
   { x: 1850, width: 130, height: 100, driftAmp: 35, driftSpeed: 0.0016, driftPhase: 1.8 },
@@ -70372,9 +70401,19 @@ function drawWinterPine(sx, baseY, scale, snowy, seed) {
 // before the player ever reaches the platform climb. Placed well clear of
 // both the door's own approach decoration and the first procedural front
 // tree so it reads as its own set-piece, not lost in the treeline.
-const WINTER_OWL_TREE_X = 600;
+// CONFIRMED CHANGE ("move this bigger tree more to the right a little"):
+// nudged further into the clearing, still well clear of the first
+// procedural front tree (~x 380-450) and the practice platforms (~1330+).
+const WINTER_OWL_TREE_X = 700;
 const WINTER_OWL_TREE_SCALE = 3.1; // noticeably bigger/taller than a normal front-layer pine
 const WINTER_OWL_TREE_SEED = 8140;
+// CONFIRMED CHANGE ("tree that owl is on needs to be jumpable"): same
+// canopy-top landing shape/ratios as the regular WINTER_FRONT_TREES use
+// (68*scale, 13*scale -- see their own comments for how those numbers were
+// screenshot-tuned), scaled up to this tree's own bigger size, so its
+// canopy is a real platform like every other front-layer pine.
+const WINTER_OWL_TREE_CANOPY_TOP = 68 * WINTER_OWL_TREE_SCALE;
+const WINTER_OWL_TREE_HIT_HALF_WIDTH = 13 * WINTER_OWL_TREE_SCALE;
 // branch sits partway up the trunk, on whichever side reads as natural for
 // the canopy shape at this scale -- left side. CONFIRMED BUG FIX ("we cant
 // really see the snow owl it blends into the snowy tree too much"): pushed
@@ -70439,7 +70478,7 @@ function drawWinterOwlTree(camX) {
   const canopyBase = gy - trunkH + 4 * WINTER_OWL_TREE_SCALE; // mirrors drawWinterPine's own canopyBase math
   const totalH = 78 * WINTER_OWL_TREE_SCALE;
   const branchBaseX = sx - 6;
-  const branchBaseY = canopyBase - totalH * 0.72;
+  const branchBaseY = canopyBase - totalH * 0.66;
   const branchTipX = branchBaseX + WINTER_OWL_BRANCH_DX;
   const branchTipY = branchBaseY + WINTER_OWL_BRANCH_DY;
   drawWinterBranchStroke(branchBaseX, branchBaseY, branchTipX, branchTipY, 5);
@@ -70454,72 +70493,139 @@ function drawWinterOwlTree(camX) {
   drawWinterBranchStroke(sx + 5, canopyBase - totalH * 0.36, sx + 5 + 52, canopyBase - totalH * 0.36 - 14, 3.4);
   drawWinterBranchStroke(sx - 4, canopyBase - totalH * 0.86, sx - 4 - 34, canopyBase - totalH * 0.86 - 9, 2.6);
 
-  drawSnowyOwl(branchTipX - 4, branchTipY - 3, performance.now());
+  // CONFIRMED BUG FIX ("branch is like stabbing owl"): the owl used to sit
+  // almost right on the branch tip point itself, so the branch's own curve
+  // visually ran straight into its chin/body instead of stopping at its
+  // feet. Raised clear above the tip so the branch reads as something the
+  // owl is standing ON, not through. CONFIRMED CHANGE ("make owl bigger"):
+  // drawSnowyOwl now takes a scale factor.
+  drawSnowyOwl(branchTipX, branchTipY - 20, performance.now(), 1.6);
 }
 
-// a small, simple snowy owl -- mostly white/cream body with light grey
-// speckling, a round forward-facing head fused straight into the body (no
-// real neck, same as a real owl's silhouette), big yellow-and-black eyes,
-// a small dark beak, and two folded wing shapes for a bit of form. Gentle
-// idle animation only: a slow breathing bob and an occasional blink --
-// deliberately calm/still rather than busy, matching a wise-watcher role.
-function drawSnowyOwl(ox, oy, now) {
+// a snowy owl with real plumage variation (cream/buff barring over white,
+// not a flat white blob), a round forward-facing head fused straight into
+// the body (no real neck, same as a real owl's silhouette), big
+// yellow-and-black eyes, a small dark hooked beak, and layered wing
+// feathers for real form/texture -- matching the multi-tone, multi-part
+// construction the game's other creatures use (see drawTopsyTurvyPig)
+// rather than one flat-colored silhouette. Gentle idle animation: a slow
+// breathing bob, an occasional blink, and a periodic feather-ruffle shake.
+// CONFIRMED CHANGE ("just being white doesnt work... make owl a bit more
+// realistic, more aspects to it like other animals"): added real barred/
+// mottled feather texture (short curved strokes, the same "spray" idea
+// drawWinterNeedleSpray already uses for pine needles) across the back and
+// wings, a warmer buff/cream base tone instead of flat white, layered
+// primary-feather shapes on the wingtips instead of plain ellipses,
+// visible brow ridges over the eyes, and proper yellow legs with curled
+// talons gripping the branch instead of two bare lines.
+function drawSnowyOwl(ox, oy, now, scale = 1) {
   const bob = Math.sin(now * 0.0011) * 1.4;
 
-  // CONFIRMED CHANGE ("maybe have owl move a little like. repositions
-  // slightly, wings kind of shuffling sometimes"): a brief "shuffle" beat
-  // every ~7s -- a small lateral resettle plus the folded wings flaring
-  // out and back in, eased in/out so it reads as a quick real gesture, not
-  // a jitter. Pure function of `now` (like the icicle drips/ripples
-  // elsewhere), so no persisted animation state is needed; which way it
-  // shuffles each cycle is picked from a per-cycle seed so it's not always
-  // identical.
+  // CONFIRMED CHANGE ("make the shuffling, wing movement more realistic
+  // like a little shake kind of shuffle no whatever is happening now"):
+  // replaced the old flare-and-resettle (wings widening/rotating open,
+  // body sliding sideways) with a real feather-ruffle SHAKE -- several
+  // quick back-and-forth oscillations within one short burst, decaying in
+  // amplitude, like a bird shivering its feathers back into place, rather
+  // than one smooth gesture. Still a pure function of `now` (like the
+  // icicle drips/ripples elsewhere) so no persisted animation state is
+  // needed, and which burst-to-burst timing varies is picked from a
+  // per-cycle seed.
   const SHUFFLE_CYCLE = 7000;
-  const SHUFFLE_WINDOW = 0.08; // fraction of the cycle the shuffle actually plays across
+  const SHUFFLE_WINDOW = 0.065; // fraction of the cycle the shake actually plays across
   const cyclePos = (now % SHUFFLE_CYCLE) / SHUFFLE_CYCLE;
   const inShuffle = cyclePos < SHUFFLE_WINDOW;
-  const shuffleEase = inShuffle ? Math.sin((cyclePos / SHUFFLE_WINDOW) * Math.PI) : 0; // 0 -> 1 -> 0 across the window
-  const cycleSeed = WINTER_OWL_TREE_SEED + Math.floor(now / SHUFFLE_CYCLE) * 7.7;
-  const shuffleDir = pseudoRandom(cycleSeed) > 0.5 ? 1 : -1;
-  const shiftX = shuffleEase * 2.6 * shuffleDir;
-  const tilt = shuffleEase * 0.1 * shuffleDir;
-  const wingFlare = shuffleEase * 0.35;
+  const shakeT = inShuffle ? cyclePos / SHUFFLE_WINDOW : 0; // 0 -> 1 across the burst
+  const shakeEnvelope = inShuffle ? Math.sin(shakeT * Math.PI) : 0; // fades in, fades out
+  const shake = inShuffle ? Math.sin(shakeT * Math.PI * 9) * shakeEnvelope : 0; // several oscillations per burst
+  const tilt = shake * 0.09;
+  const squash = 1 - Math.abs(shake) * 0.05; // a tiny vertical squash/stretch on each shiver
+  const wingJitter = shake * 0.16;
 
   const cy = oy + bob;
   const bodyW = 15, bodyH = 17;
 
   ctx.save();
-  ctx.translate(ox + shiftX, cy);
+  ctx.translate(ox, cy);
   ctx.rotate(tilt);
+  ctx.scale(scale * (1 + Math.abs(shake) * 0.04), scale * squash);
 
-  // folded wings, slightly behind the body outline, warm-white with a
-  // faint grey edge so the body itself still reads as the brightest shape.
-  // During a shuffle beat they flare out a little wider/rotate further, as
-  // if resettling their footing, then ease back to fully folded.
-  ctx.fillStyle = "#e7ecec";
-  ctx.beginPath();
-  ctx.ellipse(-bodyW * (0.42 + wingFlare * 0.25), 2, bodyW * (0.4 + wingFlare * 0.15), bodyH * 0.55, -0.15 - wingFlare, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(bodyW * (0.42 + wingFlare * 0.25), 2, bodyW * (0.4 + wingFlare * 0.15), bodyH * 0.55, 0.15 + wingFlare, 0, Math.PI * 2);
-  ctx.fill();
+  // folded wings -- built from a base pinion shape plus 3 layered primary-
+  // feather lobes along the trailing edge instead of one plain ellipse, so
+  // they read as real overlapping feathers. Base tone is a warm grey-buff
+  // (not matching the body's white) so the wings visually separate from
+  // the torso the way real contour-vs-flight-feather coloring does.
+  const drawFoldedWing = side => {
+    const baseAngle = side * (0.15 + wingJitter);
+    ctx.save();
+    ctx.translate(side * bodyW * 0.4, 2);
+    ctx.rotate(baseAngle);
+    ctx.fillStyle = "#d8cdb8";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bodyW * 0.36, bodyH * 0.52, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // layered primary feathers along the lower/outer edge
+    for (let f = 0; f < 3; f++) {
+      const ft = f / 2;
+      ctx.fillStyle = f % 2 === 0 ? "#c3b79f" : "#ece4d3";
+      ctx.beginPath();
+      ctx.ellipse(side * (2 + ft * 2.2), bodyH * (0.28 + ft * 0.16), bodyW * 0.16, bodyH * 0.26, side * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // a couple of short dark barring strokes for feather texture
+    ctx.strokeStyle = "rgba(90,78,58,0.4)";
+    ctx.lineWidth = 0.8;
+    for (let b = 0; b < 3; b++) {
+      const by = -bodyH * 0.28 + b * bodyH * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(side * -bodyW * 0.22, by);
+      ctx.quadraticCurveTo(side * bodyW * 0.05, by + 2, side * bodyW * 0.22, by + 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  drawFoldedWing(-1);
+  drawFoldedWing(1);
 
-  // body + head as one fused rounded silhouette
-  ctx.fillStyle = "#ffffff";
+  // body + head as one fused silhouette -- a soft vertical gradient
+  // (bright cream chest fading to a warmer buff back) instead of flat
+  // white, since a single flat fill was the main thing reading as "just
+  // being white."
+  const bodyGrad = ctx.createLinearGradient(0, -bodyH * 0.5, 0, bodyH * 0.5);
+  bodyGrad.addColorStop(0, "#fffdf6");
+  bodyGrad.addColorStop(0.55, "#fbf5e6");
+  bodyGrad.addColorStop(1, "#ecdfc4");
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(0, 0, bodyW * 0.5, bodyH * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // light speckling across the chest/head -- a handful of small soft grey
-  // marks, seeded fixed so they don't re-jitter every frame
-  ctx.fillStyle = "rgba(150,160,165,0.4)";
+  // real barred/mottled plumage texture across the back and chest -- short
+  // curved dashes (feather barbs) at varied sizes/tones, fixed-seeded so
+  // they read as a stable pattern rather than re-jittering every frame,
+  // plus the original small fleck marks layered underneath for density.
   for (let i = 0; i < 6; i++) {
     const sp = pseudoRandom(WINTER_OWL_TREE_SEED + 300 + i * 9.1);
     const spx = (pseudoRandom(WINTER_OWL_TREE_SEED + 310 + i * 9.1) - 0.5) * bodyW * 0.75;
     const spy = -bodyH * 0.32 + sp * bodyH * 0.7;
+    ctx.fillStyle = "rgba(150,138,110,0.35)";
     ctx.beginPath();
     ctx.ellipse(spx, spy, 1.3, 0.9, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+  for (let i = 0; i < 9; i++) {
+    const s = WINTER_OWL_TREE_SEED + 500 + i * 7.3;
+    const bx = (pseudoRandom(s) - 0.5) * bodyW * 0.8;
+    const by = -bodyH * 0.4 + pseudoRandom(s + 1) * bodyH * 0.85;
+    const blen = 2.2 + pseudoRandom(s + 2) * 2.4;
+    const bAngle = (pseudoRandom(s + 3) - 0.5) * 0.6;
+    ctx.strokeStyle = `rgba(120,105,78,${0.22 + pseudoRandom(s + 4) * 0.18})`;
+    ctx.lineWidth = 1.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(bx - Math.cos(bAngle) * blen * 0.5, by - Math.sin(bAngle) * blen * 0.5);
+    ctx.quadraticCurveTo(bx, by - 1, bx + Math.cos(bAngle) * blen * 0.5, by + Math.sin(bAngle) * blen * 0.5);
+    ctx.stroke();
   }
 
   // facial disc -- a subtle flattened lighter ring around the eyes, the
@@ -70528,6 +70634,31 @@ function drawSnowyOwl(ox, oy, now) {
   ctx.beginPath();
   ctx.ellipse(0, -bodyH * 0.16, bodyW * 0.46, bodyH * 0.36, 0, 0, Math.PI * 2);
   ctx.fill();
+  // a thin rim of small dark facial-disc feather flecks, like a real
+  // owl's disc edge, instead of the ring reading as a flat cutout
+  ctx.strokeStyle = "rgba(120,105,78,0.3)";
+  ctx.lineWidth = 0.7;
+  for (let a = 0; a < 10; a++) {
+    const ang = (a / 10) * Math.PI * 2;
+    if (ang > Math.PI * 0.25 && ang < Math.PI * 0.75) continue; // skip the chin gap
+    const rx = Math.cos(ang) * bodyW * 0.44, ry = -bodyH * 0.16 + Math.sin(ang) * bodyH * 0.34;
+    ctx.beginPath();
+    ctx.moveTo(rx * 0.85, ry * 0.85 - bodyH * 0.16 * 0.15);
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+  }
+
+  // soft brow ridges over the eyes -- a small realistic touch real owls
+  // actually have (gives the face a bit more structure than two bare dots)
+  ctx.strokeStyle = "rgba(120,105,78,0.5)";
+  ctx.lineWidth = 1.1;
+  ctx.lineCap = "round";
+  [-1, 1].forEach(side => {
+    ctx.beginPath();
+    ctx.moveTo(side * 1.6, -bodyH * 0.32);
+    ctx.quadraticCurveTo(side * 4.6, -bodyH * 0.38, side * 6.6, -bodyH * 0.26);
+    ctx.stroke();
+  });
 
   // big round eyes, forward-facing (close together) -- slow blink cycle,
   // mostly open, closes briefly on a long slow period so it reads as calm
@@ -70546,6 +70677,11 @@ function drawSnowyOwl(ox, oy, now) {
       ctx.beginPath();
       ctx.ellipse(ex, ey, 1.6, eyeH * 0.55, 0, 0, Math.PI * 2);
       ctx.fill();
+      // small eye-shine highlight for a bit of real life/gloss
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.beginPath();
+      ctx.ellipse(ex + 0.6, ey - eyeH * 0.3, 0.5, 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   });
 
@@ -70558,15 +70694,29 @@ function drawSnowyOwl(ox, oy, now) {
   ctx.closePath();
   ctx.fill();
 
-  // feet gripping the branch -- just enough shape to ground the pose
-  ctx.strokeStyle = "#caa04a";
-  ctx.lineWidth = 1.3;
-  ctx.beginPath();
-  ctx.moveTo(-3.5, bodyH * 0.46);
-  ctx.lineTo(-3.5, bodyH * 0.62);
-  ctx.moveTo(3.5, bodyH * 0.46);
-  ctx.lineTo(3.5, bodyH * 0.62);
-  ctx.stroke();
+  // legs + feet gripping the branch -- real yellow legs with a couple of
+  // curled talon strokes at the tip instead of two bare lines, matching
+  // the level of detail the pig's trotters/hooves get.
+  [-1, 1].forEach(side => {
+    const fx = side * 3.5;
+    ctx.strokeStyle = "#d8a94a";
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(fx, bodyH * 0.44);
+    ctx.lineTo(fx, bodyH * 0.6);
+    ctx.stroke();
+    ctx.strokeStyle = "#7a5a2a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(fx - 1.6, bodyH * 0.6);
+    ctx.quadraticCurveTo(fx - 1.2, bodyH * 0.68, fx - 0.3, bodyH * 0.62);
+    ctx.moveTo(fx, bodyH * 0.62);
+    ctx.quadraticCurveTo(fx, bodyH * 0.7, fx + 0.9, bodyH * 0.65);
+    ctx.moveTo(fx + 1.6, bodyH * 0.6);
+    ctx.quadraticCurveTo(fx + 1.8, bodyH * 0.67, fx + 1, bodyH * 0.63);
+    ctx.stroke();
+  });
 
   ctx.restore();
 }
