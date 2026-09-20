@@ -17209,6 +17209,7 @@ function drawForestScene(camX) {
   // greenery")
   drawConnectionDoor(ctx, camX, connections[8].doors.forest, connections[8]);
   drawWinterDoorFrost(camX, connections[8].doors.forest);
+  drawWinterDoorGroundFrost(camX, connections[8].doors.forest);
   ctx.restore();
 }
 
@@ -69734,6 +69735,54 @@ function drawWinterDoorFrost(camX, doorDef) {
   [-frameWidth * 0.75, frameWidth * 0.75].forEach((ox, i) => {
     drawWinterPine(archCenterX + ox, gy, 0.5, true, doorDef.x * 0.01 + i * 97.3);
   });
+}
+
+// frost creeping out from under the door, into the forest ground it
+// sits at the edge of -- direct request ("start having some frost
+// coming from under the door and into the jungle land a lil"). Only
+// meant to be called from the forest side (the door's world x is fixed
+// either way, so "into the forest" here just means spreading toward
+// negative x, back the way you walked in from). Jagged frost cracks
+// plus small shrinking/fading crystal clusters, seeded off the door's
+// stable world x so it doesn't jitter like the tree bug did.
+function drawWinterDoorGroundFrost(camX, doorDef) {
+  const dx = doorDef.x - camX;
+  const baseX = dx + doorDef.width / 2;
+  const REACH = 190;
+  if (baseX < -REACH - 40 || baseX > canvas.width + 40) return;
+
+  const CRACK_COUNT = 5;
+  for (let c = 0; c < CRACK_COUNT; c++) {
+    const seed = c * 13.7 + doorDef.x * 0.01;
+    const startX = baseX + (pseudoRandom(seed) - 0.5) * doorDef.width * 0.7;
+    const len = REACH * (0.55 + pseudoRandom(seed + 1) * 0.45);
+    const segs = 5;
+    ctx.beginPath();
+    ctx.moveTo(startX, gy - 1);
+    for (let s = 1; s <= segs; s++) {
+      const t = s / segs;
+      const px = startX - len * t + (pseudoRandom(seed + s) - 0.5) * 14;
+      const py = gy - 1 + (pseudoRandom(seed + s + 5) - 0.5) * 5;
+      ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = `rgba(215,238,250,${0.5 * (1 - c * 0.06)})`;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+
+  const CLUSTER_COUNT = 12;
+  for (let i = 0; i < CLUSTER_COUNT; i++) {
+    const seed = i * 7.3 + 200 + doorDef.x * 0.01;
+    const t = pseudoRandom(seed); // 0 (at the door) .. 1 (furthest reach)
+    const fx = baseX - t * REACH + (pseudoRandom(seed + 1) - 0.5) * 20;
+    const fy = gy + (pseudoRandom(seed + 2) - 0.5) * 4;
+    const alpha = 0.55 * (1 - t);
+    const r = 4.5 * (1 - t * 0.6) + pseudoRandom(seed + 3) * 2;
+    ctx.fillStyle = `rgba(225,242,252,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawWinterScene(camX) {
