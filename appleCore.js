@@ -5246,6 +5246,24 @@ function applyPhysics(){
       player.usedDoubleJump = false;
       return; // landed on top -- skip the side push below for this tree
     }
+    // CONFIRMED CHANGE ("i also wnat to be able to jump on part part way
+    // up, not only on top or not at all"): a second landing band partway
+    // up the tree, same top-landing shape as the canopy check above, so
+    // there's a real mid-height perch and not just "top or nothing."
+    const midLanding = t.midLanding;
+    if (
+      player.x + player.width > left &&
+      player.x < right &&
+      playerBottom <= midLanding &&
+      playerBottom >= midLanding - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = midLanding;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      return; // landed on the mid perch -- skip the side push below too
+    }
     if (player.y < 55 && player.x + player.width > left && player.x < right) {
       if (winterPlayerCenterX < t.x) {
         player.x = left - player.width;
@@ -69771,7 +69789,18 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     // player scale; still deliberately erring a little high rather than
     // low, since floating a couple px is far less noticeable/broken-
     // looking than sinking into the canopy.
-    canopyTop: 68 * scale
+    canopyTop: 68 * scale,
+    // CONFIRMED CHANGE ("on front layer trees, i also wnat to be able to
+    // jump on part part way up, not only on top or not at all"): a second,
+    // lower landing lines up with drawWinterPine's own third foliage row
+    // (rows[2], y:0.53 -- a real snow-capped clump, not empty space) so
+    // the mid-landing has something visible to actually stand on. Same
+    // "estimate from the row math, then correct against a real
+    // screenshot" approach canopyTop itself needed two rounds of tuning
+    // for -- starting ratio here is proportional to canopyTop using the
+    // two rows' y-fractions (0.53/0.75), to be checked against a
+    // screenshot and adjusted same as canopyTop was.
+    midLanding: 68 * scale * (0.53 / 0.75)
   });
 }
 
