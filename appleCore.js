@@ -70709,6 +70709,35 @@ const WINTER_WATERY_ICE_ZONES = [
   { x: WINTER_RAINBOW_POCKET_X, width: WINTER_RAINBOW_OVERHANG_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS }
 ];
 
+// CONFIRMED NEW FEATURE ("a drip from above occasionally landing in the
+// pool and giving a small localized push/ripple where it lands, linking
+// the two pieces together" -- "i like the small ripple push thing at least
+// lets do that"): a few independent staggered "a drip just landed here"
+// schedules per zone, computed PURELY from `zone` and the current time --
+// no persisted state, no icicle-geometry duplication needed. Both
+// drawWinterWateryIce (the visual expanding ring) and updateWinterScene
+// (the small outward push while it's fresh) call this same function with
+// the same `now` and always agree on exactly where/when a ripple is live,
+// the same way the icicles' own melt-drip cycles are driven purely off
+// performance.now() rather than a tracked array of drops.
+function getWinterWateryRipples(zone, now) {
+  const ripples = [];
+  const RIPPLE_SCHEDULES = 3; // independent staggered "drip" timers running per zone at once
+  const RIPPLE_LIFE_MS = 700; // how long a ripple visibly expands/fades (and can push) after landing
+  for (let r = 0; r < RIPPLE_SCHEDULES; r++) {
+    const rseed = zone.x * 0.017 + r * 41.3;
+    const cycleMs = 2400 + pseudoRandom(rseed) * 2800;
+    const offsetMs = pseudoRandom(rseed + 1) * cycleMs;
+    const elapsedSinceLand = (now + offsetMs) % cycleMs;
+    if (elapsedSinceLand < RIPPLE_LIFE_MS) {
+      const t = elapsedSinceLand / RIPPLE_LIFE_MS; // 0 (just landed) -> 1 (fully faded)
+      const landX = zone.x + 30 + pseudoRandom(rseed + 2) * Math.max(1, zone.width - 60);
+      ripples.push({ x: landX, t });
+    }
+  }
+  return ripples;
+}
+
 // draws the ground-level ice sheet for one WINTER_WATERY_ICE_ZONES entry.
 // A translucent, jittered-edge icy pool (same "never a hard rectangle"
 // language the door's own ground effects use) with several soft radial
@@ -70785,9 +70814,27 @@ function drawWinterWateryIce(camX, zone) {
 
   const bottom = top + POOL_DEPTH; // approximate deepest point, for the blob/shimmer bounds below
 
+  // CONFIRMED BUG FIX ("the pool shape is better, but the colors are still
+  // in a rectangle line"): the color blobs (and the ripples below) were
+  // being clipped to a plain axis-aligned bounding RECTANGLE around the
+  // pool, not the pool's own tapered shape -- so at the pool's narrow
+  // tapered ends, blobs were still free to fill the full rectangle height
+  // right out to a hard flat edge, which is exactly what reads as "still a
+  // rectangle" no matter how correctly each blob's own position/size
+  // already accounts for the local taper. Clipping to the pool's actual
+  // polygon (the same topPts/botPts path used for the base fill above)
+  // instead means color can now only ever show up where the pool itself
+  // actually has depth.
+  const poolClipPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(topPts[0].x, topPts[0].y);
+    topPts.forEach(p => ctx.lineTo(p.x, p.y));
+    for (let s = SEGS; s >= 0; s--) ctx.lineTo(botPts[s].x, botPts[s].y);
+    ctx.closePath();
+  };
+
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(sx - 2, top - 6, zone.width + 4, bottom - top + 12);
+  poolClipPath();
   ctx.clip();
   const BLOB_COUNT = 7;
   for (let i = 0; i < BLOB_COUNT; i++) {
@@ -70816,6 +70863,50 @@ function drawWinterWateryIce(camX, zone) {
     ctx.ellipse(cx, cy, r, r * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
+
+  // CONFIRMED NEW FEATURE ("a drip from above occasionally landing in the
+  // pool and giving a small localized push/ripple where it lands... i like
+  // the small ripple push thing at least lets do that"): a couple of
+  // expanding, fading rings at each currently-live ripple's landing spot
+  // (see getWinterWateryRipples above) -- a visual echo of a drip from the
+  // icicles overhead actually hitting the pool, tying the two pieces
+  // together the way the color palette already does. Clipped to the same
+  // pool-shape region the color blobs use just above, so a ripple never
+  // visibly pokes out past the tapered pool edges.
+  ctx.save();
+  poolClipPath();
+  ctx.clip();
+  const ripples = getWinterWateryRipples(zone, now);
+  ripples.forEach(rp => {
+    const rx = rp.x - camX;
+    const rT = Math.max(0, Math.min(1, (rp.x - zone.x) / zone.width));
+    const localEnvelope = Math.sin(Math.PI * rT);
+    const ry = top + 3 + (POOL_DEPTH - 3) * 0.4 * localEnvelope;
+    // CONFIRMED TUNING (rings verified mathematically -- getWinterWateryRipples
+    // fires roughly every 1-3s -- but the original radius/alpha were too
+    // subtle to actually notice against the pool at normal play scale):
+    // bumped size and opacity so the payoff is actually felt, not just
+    // technically present.
+    [0, 0.35].forEach(ringDelay => {
+      const ringT = Math.max(0, Math.min(1, (rp.t - ringDelay) / (1 - ringDelay)));
+      if (ringT <= 0 || ringDelay > rp.t) return;
+      const radius = 5 + ringT * 34 * Math.max(0.3, localEnvelope);
+      const alpha = (1 - ringT) * 0.55;
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, radius, radius * 0.4, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    });
+    // a tiny bright splash flash right at the instant of landing
+    if (rp.t < 0.12) {
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, 5 * (1 - rp.t / 0.12), 2.2 * (1 - rp.t / 0.12), 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - rp.t / 0.12)})`;
+      ctx.fill();
+    }
+  });
   ctx.restore();
 
   const shimmerT = (now * 0.0002 + baseSeed) % 1;
@@ -71185,11 +71276,65 @@ function drawWinterRainbowOverhang(camX) {
     const colorStops = icicleColors.length === 1 ? [icicleColors[0], icicleColors[0]] : icicleColors;
     colorStops.forEach((c, ci) => {
       const stopT = ci / (colorStops.length - 1);
-      const alpha = 0.62 - (0.62 - 0.18) * stopT;
+      // CONFIRMED CHANGE ("it still looks like this semi translucent light
+      // wrapper thing or something pasted on"): raised the whole alpha
+      // curve (was 0.62 -> 0.18) -- that low an opacity throughout the
+      // body is exactly what read as thin cellophane/gauze laid over the
+      // rock rather than a solid piece of colored ice. Body stays
+      // reasonably opaque now, still fading toward true translucency only
+      // right at the melting tip.
+      const alpha = 0.82 - (0.82 - 0.22) * stopT;
       grad.addColorStop(stopT, `rgba(${c},${alpha})`);
     });
     ctx.fillStyle = grad;
     ctx.fill();
+
+    // CONFIRMED CHANGE ("i dont know how else to explain how to fix this
+    // to make it look like this is all part of an ice piece and not just
+    // pasted on"): the body above was one perfectly flat gradient wash --
+    // no matter how organic the outline, a flat single-tone fill reads as
+    // a sticker/decal because it has no dimensionality at all. Added real
+    // per-icicle light/shadow shading instead, the same "shadowed fold vs
+    // sunlit face" split the rock ledge above already uses for its own
+    // facets: reconstruct the body's own centerline from the already-
+    // computed left/right edge points, then overlay one half (center to
+    // one edge) with a dark translucent wash and the other half with a
+    // bright one, so every icicle reads as a real faceted 3D sliver
+    // catching light unevenly, not a flat pasted color shape.
+    const centerPts = leftPts.map((p, idx) => ({ x: (p.x + rightPts[idx].x) / 2, y: (p.y + rightPts[idx].y) / 2 }));
+    const shadeLeft = pseudoRandom(seed + 70) < 0.5;
+    const shadowEdgePts = (shadeLeft ? leftPts : rightPts).slice().reverse();
+    const litEdgePts = (shadeLeft ? rightPts : leftPts).slice().reverse();
+
+    ctx.beginPath();
+    ctx.moveTo(centerPts[0].x, centerPts[0].y);
+    smoothPolylineTo(ctx, centerPts.slice(1));
+    smoothPolylineTo(ctx, shadowEdgePts);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(35,45,60,0.22)";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(centerPts[0].x, centerPts[0].y);
+    smoothPolylineTo(ctx, centerPts.slice(1));
+    smoothPolylineTo(ctx, litEdgePts);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fill();
+
+    // a soft icy rim around the whole silhouette -- not a bold cartoon
+    // outline (already tried and explicitly rejected earlier -- "wine
+    // bottles" with "bold black outlines"), just enough definition that
+    // the edge against the rock reads as a real object boundary instead
+    // of a translucent shape that just fades into the background.
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    smoothPolylineTo(ctx, leftPts.slice(1));
+    smoothPolylineTo(ctx, rightPtsRev);
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(70,95,115,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
     // a thin bright highlight down one edge -- the same real-ice cue the
     // door's own rim/icicles use, kept subtle rather than a hard outline
@@ -71266,8 +71411,8 @@ function drawWinterRainbowOverhang(camX) {
   // of reading as a flat rectangle someone pasted on top of the rock.
   const fringeAlphaGrad = ctx.createLinearGradient(spanLeft, 0, spanRight, 0);
   fringeAlphaGrad.addColorStop(0, "rgba(200,224,238,0)");
-  fringeAlphaGrad.addColorStop(0.18, "rgba(200,224,238,0.5)");
-  fringeAlphaGrad.addColorStop(0.82, "rgba(200,224,238,0.5)");
+  fringeAlphaGrad.addColorStop(0.18, "rgba(200,224,238,0.62)");
+  fringeAlphaGrad.addColorStop(0.82, "rgba(200,224,238,0.62)");
   fringeAlphaGrad.addColorStop(1, "rgba(200,224,238,0)");
   ctx.fillStyle = fringeAlphaGrad;
   ctx.fill();
@@ -71565,6 +71710,33 @@ function updateWinterScene(deltaTime) {
       player.winterWateryVX *= Math.max(0, 1 - 6 * deltaTime); // decays on its own, no separate friction constant needed
     }
     player.x += player.winterWateryVX * deltaTime;
+
+    // CONFIRMED NEW FEATURE ("a drip from above occasionally landing in
+    // the pool and giving a small localized push/ripple where it lands...
+    // i like the small ripple push thing at least lets do that"): a brief
+    // outward nudge whenever the player is standing near a ripple that
+    // JUST landed (see getWinterWateryRipples, shared with the visual ring
+    // draw so the push always lines up with what's actually shown on
+    // screen). Continuous force that fades out over both distance and
+    // freshness, rather than a single instant velocity add, so it can't
+    // double-trigger across the several frames a fresh ripple is alive for
+    // -- it just naturally tapers to nothing on its own.
+    const zone = WINTER_WATERY_ICE_ZONES.find(z => feetXWatery > z.x && feetXWatery < z.x + z.width);
+    if (zone) {
+      const ripples = getWinterWateryRipples(zone, wNow);
+      const RIPPLE_PUSH_RADIUS = 75;
+      const RIPPLE_PUSH_FORCE = 260;
+      ripples.forEach(rp => {
+        if (rp.t > 0.3) return; // only push while genuinely fresh, not for its whole fade-out life
+        const dx = feetXWatery - rp.x;
+        const dist = Math.abs(dx);
+        if (dist < 2 || dist > RIPPLE_PUSH_RADIUS) return;
+        const freshness = 1 - rp.t / 0.3;
+        const proximity = 1 - dist / RIPPLE_PUSH_RADIUS;
+        const pushDir = dx > 0 ? 1 : -1;
+        player.x += pushDir * RIPPLE_PUSH_FORCE * freshness * proximity * deltaTime;
+      });
+    }
   } else {
     player.winterWateryVX = 0;
   }
