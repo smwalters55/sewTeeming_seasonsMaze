@@ -70118,15 +70118,25 @@ function drawWinterDoorApproach(camX, doorDef) {
     // as a real jittered/wavy-topped path instead -- same "coastline"
     // approach this game already uses for organic edges elsewhere --
     // so the tint frays into the ground rather than snapping on.
+    // CONFIRMED BUG FIX ("in forest near door the frost like re-
+    // randomixze jitters with every player movement"): the jitter at
+    // each vertex was seeded off `wx`, a SCREEN-space x (left/right are
+    // derived from baseX, which shifts every single frame as camX eases
+    // toward the player). So the same patch of ground sampled a
+    // different pseudoRandom input practically every frame, making the
+    // wavy edge visibly writhe/reshuffle while walking instead of
+    // staying pinned to the ground like every other seeded shape in this
+    // scene. Seed off the WORLD-space x instead (wx + camX) so the wave
+    // shape is stable per ground position regardless of camera easing.
     const waveSeed = doorDef.x * 0.017;
     const step = 22;
     ctx.beginPath();
     ctx.moveTo(left, canvas.height);
-    ctx.lineTo(left, gy + (pseudoRandom(waveSeed) - 0.5) * 9);
+    ctx.lineTo(left, gy + (pseudoRandom(waveSeed + (left + camX) * 0.07) - 0.5) * 9);
     for (let wx = left + step; wx < right; wx += step) {
-      ctx.lineTo(wx, gy + (pseudoRandom(waveSeed + wx * 0.07) - 0.5) * 9);
+      ctx.lineTo(wx, gy + (pseudoRandom(waveSeed + (wx + camX) * 0.07) - 0.5) * 9);
     }
-    ctx.lineTo(right, gy + (pseudoRandom(waveSeed + right * 0.07) - 0.5) * 9);
+    ctx.lineTo(right, gy + (pseudoRandom(waveSeed + (right + camX) * 0.07) - 0.5) * 9);
     ctx.lineTo(right, canvas.height);
     ctx.closePath();
     ctx.fill();
