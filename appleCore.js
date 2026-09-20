@@ -70365,6 +70365,26 @@ function drawWinterRainbowOverhang(camX) {
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fill();
 
+    // CONFIRMED CHANGE (further reference pull from a fuller view of the
+    // same painted piece -- the blue bubble/orb motif isn't just at each
+    // drip's tip, it's scattered as small round accents embedded right in
+    // the body of the shape, like little windows). About half the icicles
+    // get one small outlined bubble sitting partway down the neck, in the
+    // same bulb color as that icicle's own tip, so it reads as the same
+    // family of accent repeated rather than a one-off.
+    if (pseudoRandom(seed + 9) < 0.55) {
+      const bubR = topW * 0.28 + pseudoRandom(seed + 10) * 1.6;
+      const bubY = topY + len * (0.3 + pseudoRandom(seed + 11) * 0.25);
+      const bubX = ix + (pseudoRandom(seed + 12) - 0.5) * (bellyW * 0.4);
+      ctx.beginPath();
+      ctx.ellipse(bubX, bubY, bubR, bubR, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${bulbColor},0.85)`;
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
     // one melting droplet per icicle, falling from the bulb tip on its
     // own cycle -- cycle length/offset varies per icicle so they don't
     // all drip in lockstep
