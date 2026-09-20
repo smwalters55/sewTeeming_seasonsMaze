@@ -69868,7 +69868,21 @@ const WINTER_HIDDEN_ICE_ZONES = [];
 // WINTER_CONTENT_OFFSET below (once, at definition) rather than rewriting
 // every literal, so this whole climb's own internal spacing/shape is
 // untouched and easy to keep reasoning about relative to itself.
+// CONFIRMED CHANGE ("i do like breathing room between the npc and the icy
+// platforms with spikes under. i wonder if we should have like 2 icy
+// platforms in the breathing room so player gets a sense of that they are
+// slippery, before they might get 'injured' and learn it slightly
+// before"): two low, forgiving practice platforms placed in the clearing
+// between the owl's tree and the real climb -- same slick-platform code/
+// feel (drift + the accelerate/decelerate skate physics), but low to the
+// ground and, critically, BEFORE WINTER_ICE_SPIKE_START (see below, which
+// anchors off the first non-practice platform), so there's no fall hazard
+// here yet -- just a safe first taste of "this is slippery" before the
+// real climb raises the stakes. Tagged `practice: true` so the spike-zone
+// math can find the real climb's own start without hardcoding an index.
 const WINTER_SLICK_PLATFORMS = [
+  { x: 950,  width: 150, height: 40, driftAmp: 0,  driftSpeed: 0,      driftPhase: 0,   practice: true },
+  { x: 1170, width: 120, height: 55, driftAmp: 28, driftSpeed: 0.001,  driftPhase: 1.4, practice: true },
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
   { x: 1850, width: 130, height: 100, driftAmp: 35, driftSpeed: 0.0016, driftPhase: 1.8 },
@@ -69979,7 +69993,7 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
 // can still double as a legit safe bail-out foothold if you're careful,
 // rather than making literally the entire ground lethal. Recomputes
 // cleanly if the platform layout or tree layout ever changes.
-const WINTER_ICE_SPIKE_START = WINTER_SLICK_PLATFORMS[0].x + 20; // a little clear of the very first (safe, static) platform's own footing
+const WINTER_ICE_SPIKE_START = WINTER_SLICK_PLATFORMS.find(p => !p.practice).x + 20; // a little clear of the real climb's own first (safe, static) platform -- skips past the two practice platforms in the breathing room, which stay hazard-free
 const WINTER_ICE_SPIKE_END = Math.max(...WINTER_SLICK_PLATFORMS.map(p => p.x + p.width + p.driftAmp));
 const WINTER_ICE_SPIKE_ZONES = (() => {
   const gaps = WINTER_FRONT_TREES
@@ -70193,12 +70207,26 @@ function drawWinterSnow(camX) {
 // circle, joined with quadratic curves (not straight lines) so it reads
 // as an irregular organic clump rather than a jagged polygon or a
 // perfect circle. Caller fills/strokes it themselves.
-function traceIrregularBlob(cx, cy, r, seed, points) {
+// CONFIRMED BUG FIX ("that concave shape doesnt make sense here" -- a big
+// smooth scooped-out arc along the icicle overhang's own rock underside):
+// with the default 0.55 jitter range, a handful of neighboring points can
+// still occasionally roll several small radii in a row, which the
+// quadratic-curve smoothing then reads as ONE big smooth concave sweep --
+// exactly the "cave mouth" bite that doesn't look like real rock/ice.
+// Added an optional jitterRange param (defaults to the original 0.55, so
+// every other existing caller is untouched) so a specific caller can ask
+// for tighter, more numerous small facets instead when it's prone to this.
+function traceIrregularBlob(cx, cy, r, seed, points, jitterRange = 0.55) {
   ctx.beginPath();
   let prevX, prevY, firstX, firstY;
+  // centered on the original hardcoded range's own center (0.975r), so the
+  // default jitterRange=0.55 reproduces the exact original [0.7r, 1.25r]
+  // spread for every existing caller, and a caller passing a smaller
+  // jitterRange (see the rock-overhang mass below) just narrows symmetrically
+  // around that same center instead of shrinking the whole blob.
   for (let p = 0; p <= points; p++) {
     const a = (p / points) * Math.PI * 2;
-    const rr = r * (0.7 + pseudoRandom(seed + p * 3.1) * 0.55);
+    const rr = r * (0.975 - jitterRange / 2 + pseudoRandom(seed + p * 3.1) * jitterRange);
     const x = cx + Math.cos(a) * rr;
     const y = cy + Math.sin(a) * rr * 0.88;
     if (p === 0) {
@@ -70300,6 +70328,38 @@ function drawWinterPine(sx, baseY, scale, snowy, seed) {
       }
     }
   });
+
+  // CONFIRMED CHANGE ("i wonder if we add a little more variety to the
+  // trees"): a small bare twig or two poking out from a mid canopy row,
+  // stable per tree (seeded off the tree's own seed, not randomized every
+  // frame). Kept short and close to the trunk so it doesn't push the
+  // canopy's real footprint past what the screenshot-tuned landing
+  // hitboxes (canopyTop/midLanding/hitHalfWidth) expect -- pure surface
+  // variety, not a shape change.
+  const twigCount = pseudoRandom(seed + 900) > 0.45 ? 2 : 1;
+  for (let tw = 0; tw < twigCount; tw++) {
+    const ts = seed + 910 + tw * 13.7;
+    const twigRow = 1 + Math.floor(pseudoRandom(ts) * 2); // rows[1] or rows[2] -- not the very top or very bottom
+    const twigY = canopyBase - totalH * (rows[twigRow].y + 0.08);
+    const twigSide = pseudoRandom(ts + 1) > 0.5 ? 1 : -1;
+    const twigLen = (7 + pseudoRandom(ts + 2) * 5) * scale;
+    const twigBaseX = sx + twigSide * 4 * scale;
+    const twigTipX = twigBaseX + twigSide * twigLen;
+    const twigTipY = twigY - twigLen * 0.35;
+    ctx.strokeStyle = "#4a3524";
+    ctx.lineWidth = 1.6 * scale;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(twigBaseX, twigY);
+    ctx.lineTo(twigTipX, twigTipY);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 0.9 * scale;
+    ctx.beginPath();
+    ctx.moveTo(twigBaseX, twigY - 1 * scale);
+    ctx.lineTo(twigTipX, twigTipY - 1 * scale);
+    ctx.stroke();
+  }
 }
 
 // CONFIRMED NEW FEATURE ("i want it to be ice animal like... i like snowy
@@ -70316,9 +70376,14 @@ const WINTER_OWL_TREE_X = 600;
 const WINTER_OWL_TREE_SCALE = 3.1; // noticeably bigger/taller than a normal front-layer pine
 const WINTER_OWL_TREE_SEED = 8140;
 // branch sits partway up the trunk, on whichever side reads as natural for
-// the canopy shape at this scale -- left side, roughly a third of the way up
-const WINTER_OWL_BRANCH_DX = -30 * WINTER_OWL_TREE_SCALE * 0.42;
-const WINTER_OWL_BRANCH_DY = -26 * WINTER_OWL_TREE_SCALE;
+// the canopy shape at this scale -- left side. CONFIRMED BUG FIX ("we cant
+// really see the snow owl it blends into the snowy tree too much"): pushed
+// out much further (was -39px total reach, barely into the canopy's own
+// edge) so the tip clears the foliage silhouette and the owl sits against
+// open sky instead of buried in green -- see drawWinterOwlTree for the
+// matching height fix.
+const WINTER_OWL_BRANCH_DX = -125;
+const WINTER_OWL_BRANCH_DY = -20;
 
 // CONFIRMED NEW FEATURE, dialogue drafted together with Sam ("lets draft
 // together the thing it'll say" -> "ya let do h"): vague, fairy-tale,
@@ -70327,9 +70392,32 @@ const WINTER_OWL_BRANCH_DY = -26 * WINTER_OWL_TREE_SCALE;
 const WINTER_OWL_DIALOGUE_LINES = [
   "Snow that gleams and ice that glows,",
   "isn't always what it shows.",
-  "Little wanderer, tread with care --",
+  "Little wanderer, tread with care,",
   "not all that shines will hold you there."
 ];
+
+// shared branch-drawing piece -- a tapered dark wood stroke plus its own
+// thinner snow-cap stroke riding along the top edge, so both the owl's
+// perch and the smaller decorative stubs below read the same way. Returns
+// nothing; caller already knows the tip it asked for.
+function drawWinterBranchStroke(baseX, baseY, tipX, tipY, width) {
+  const midX = baseX + (tipX - baseX) * 0.5;
+  const midY = (baseY + tipY) * 0.5 + width * 1.8;
+  ctx.strokeStyle = "#4a3524";
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+  ctx.stroke();
+  // snow cap along the top of the branch
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = width * 0.48;
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY - width * 0.5);
+  ctx.quadraticCurveTo(midX, midY - width * 0.5, tipX, tipY - width * 0.5);
+  ctx.stroke();
+}
 
 function drawWinterOwlTree(camX) {
   const sx = WINTER_OWL_TREE_X - camX;
@@ -70337,33 +70425,34 @@ function drawWinterOwlTree(camX) {
 
   drawWinterPine(sx, gy, WINTER_OWL_TREE_SCALE, true, WINTER_OWL_TREE_SEED);
 
-  // the low branch itself -- a simple tapered dark wood shape jutting out
-  // from the trunk, angled slightly up, with its own small snow cap so it
-  // reads as a real resting spot rather than a random stick
-  const branchBaseX = sx;
-  const branchBaseY = gy - 20 * WINTER_OWL_TREE_SCALE * 0.3;
-  const branchTipX = sx + WINTER_OWL_BRANCH_DX;
-  const branchTipY = branchBaseY + WINTER_OWL_BRANCH_DY * 0.15;
-  ctx.strokeStyle = "#4a3524";
-  ctx.lineWidth = 5;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(branchBaseX, branchBaseY);
-  ctx.quadraticCurveTo(
-    branchBaseX + (branchTipX - branchBaseX) * 0.5, branchBaseY + 4,
-    branchTipX, branchTipY
-  );
-  ctx.stroke();
-  // snow cap along the top of the branch
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(branchBaseX, branchBaseY - 2.5);
-  ctx.quadraticCurveTo(
-    branchBaseX + (branchTipX - branchBaseX) * 0.5, branchBaseY + 1.5,
-    branchTipX, branchTipY - 2.5
-  );
-  ctx.stroke();
+  // CONFIRMED BUG FIX ("we cant really see the snow owl it blends into the
+  // snowy tree too much"): the old perch branch sat low, right at the
+  // canopy's widest/droopiest row (see drawWinterPine's row0, which can
+  // sag down almost to the ground at this scale), so the owl ended up
+  // buried in dense foliage instead of silhouetted against open sky. The
+  // perch now sits higher, in the vertical gap between the mid and upper
+  // foliage rows (roughly row 0.53-0.75, the two narrowest rows), and
+  // reaches out far enough (100px) to clear even the widest row's real
+  // extent at that height, so the owl reads clearly against the
+  // background instead of melting into the green.
+  const trunkH = 14 * WINTER_OWL_TREE_SCALE;
+  const canopyBase = gy - trunkH + 4 * WINTER_OWL_TREE_SCALE; // mirrors drawWinterPine's own canopyBase math
+  const totalH = 78 * WINTER_OWL_TREE_SCALE;
+  const branchBaseX = sx - 6;
+  const branchBaseY = canopyBase - totalH * 0.72;
+  const branchTipX = branchBaseX + WINTER_OWL_BRANCH_DX;
+  const branchTipY = branchBaseY + WINTER_OWL_BRANCH_DY;
+  drawWinterBranchStroke(branchBaseX, branchBaseY, branchTipX, branchTipY, 5);
+
+  // CONFIRMED CHANGE ("add a little more variety to the trees... vs just a
+  // larger version of exactly what is allready there... maybe a branch
+  // sticking out a little, along w some other branches sticking out"): a
+  // couple of smaller, plain decorative stubs elsewhere on the trunk --
+  // no owl, just visual character so this tree reads as its own distinct
+  // shape rather than a scaled-up copy of a normal front pine. Fixed
+  // (not randomized) positions/lengths since this is a one-off named tree.
+  drawWinterBranchStroke(sx + 5, canopyBase - totalH * 0.36, sx + 5 + 52, canopyBase - totalH * 0.36 - 14, 3.4);
+  drawWinterBranchStroke(sx - 4, canopyBase - totalH * 0.86, sx - 4 - 34, canopyBase - totalH * 0.86 - 9, 2.6);
 
   drawSnowyOwl(branchTipX - 4, branchTipY - 3, performance.now());
 }
@@ -70376,20 +70465,43 @@ function drawWinterOwlTree(camX) {
 // deliberately calm/still rather than busy, matching a wise-watcher role.
 function drawSnowyOwl(ox, oy, now) {
   const bob = Math.sin(now * 0.0011) * 1.4;
+
+  // CONFIRMED CHANGE ("maybe have owl move a little like. repositions
+  // slightly, wings kind of shuffling sometimes"): a brief "shuffle" beat
+  // every ~7s -- a small lateral resettle plus the folded wings flaring
+  // out and back in, eased in/out so it reads as a quick real gesture, not
+  // a jitter. Pure function of `now` (like the icicle drips/ripples
+  // elsewhere), so no persisted animation state is needed; which way it
+  // shuffles each cycle is picked from a per-cycle seed so it's not always
+  // identical.
+  const SHUFFLE_CYCLE = 7000;
+  const SHUFFLE_WINDOW = 0.08; // fraction of the cycle the shuffle actually plays across
+  const cyclePos = (now % SHUFFLE_CYCLE) / SHUFFLE_CYCLE;
+  const inShuffle = cyclePos < SHUFFLE_WINDOW;
+  const shuffleEase = inShuffle ? Math.sin((cyclePos / SHUFFLE_WINDOW) * Math.PI) : 0; // 0 -> 1 -> 0 across the window
+  const cycleSeed = WINTER_OWL_TREE_SEED + Math.floor(now / SHUFFLE_CYCLE) * 7.7;
+  const shuffleDir = pseudoRandom(cycleSeed) > 0.5 ? 1 : -1;
+  const shiftX = shuffleEase * 2.6 * shuffleDir;
+  const tilt = shuffleEase * 0.1 * shuffleDir;
+  const wingFlare = shuffleEase * 0.35;
+
   const cy = oy + bob;
   const bodyW = 15, bodyH = 17;
 
   ctx.save();
-  ctx.translate(ox, cy);
+  ctx.translate(ox + shiftX, cy);
+  ctx.rotate(tilt);
 
   // folded wings, slightly behind the body outline, warm-white with a
-  // faint grey edge so the body itself still reads as the brightest shape
+  // faint grey edge so the body itself still reads as the brightest shape.
+  // During a shuffle beat they flare out a little wider/rotate further, as
+  // if resettling their footing, then ease back to fully folded.
   ctx.fillStyle = "#e7ecec";
   ctx.beginPath();
-  ctx.ellipse(-bodyW * 0.42, 2, bodyW * 0.4, bodyH * 0.55, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(-bodyW * (0.42 + wingFlare * 0.25), 2, bodyW * (0.4 + wingFlare * 0.15), bodyH * 0.55, -0.15 - wingFlare, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.ellipse(bodyW * 0.42, 2, bodyW * 0.4, bodyH * 0.55, 0.15, 0, Math.PI * 2);
+  ctx.ellipse(bodyW * (0.42 + wingFlare * 0.25), 2, bodyW * (0.4 + wingFlare * 0.15), bodyH * 0.55, 0.15 + wingFlare, 0, Math.PI * 2);
   ctx.fill();
 
   // body + head as one fused rounded silhouette
@@ -71135,8 +71247,16 @@ function drawWinterRainbowOverhang(camX) {
   // not real jagged rock. More points at the same jitter range means
   // more, smaller, genuinely rock-like facets instead of a handful of
   // big smooth arcs.
+  // CONFIRMED BUG FIX ("that concave shape doesnt make sense here" --
+  // the smoothed silhouette could still roll several consecutive
+  // small-radius points in a row, which quadraticCurveTo then reads as
+  // one big smooth concave bite instead of small rock-like facets):
+  // tightened jitterRange (0.55 -> 0.32) so no single point can dip far
+  // enough below its neighbors to carve a large scoop, and bumped the
+  // point count up further (22 -> 30) so the facets that remain read as
+  // small and numerous rather than few and large.
   ctx.fillStyle = "#7f9bab";
-  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 22);
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 30, 0.32);
   ctx.fill();
   // CONFIRMED BUG FIX ("there is the hard lines still at the top"): this
   // used to be a flat-alpha overlay blob sitting a fixed distance above
@@ -71151,7 +71271,7 @@ function drawWinterRainbowOverhang(camX) {
   ledgeFadeGrad.addColorStop(0.7, "rgba(210,230,240,0.3)");
   ledgeFadeGrad.addColorStop(1, "rgba(210,230,240,0)");
   ctx.fillStyle = ledgeFadeGrad;
-  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 20);
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 28, 0.32);
   ctx.fill();
 
   // CONFIRMED CHANGE ("i want the thing the icicles are on to be a
