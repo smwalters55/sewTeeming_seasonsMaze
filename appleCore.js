@@ -71136,6 +71136,9 @@ function drawWinterRainbowOverhang(camX) {
     const fLocal = originT * FRINGE_SEGS - ff;
     const originX = fringeBotPts[ff].x + (fringeBotPts[ff + 1].x - fringeBotPts[ff].x) * fLocal;
     const originY = fringeBotPts[ff].y + (fringeBotPts[ff + 1].y - fringeBotPts[ff].y) * fLocal;
+    // the fringe's own TOP edge at this same x -- needed below to keep each
+    // icicle's embedded neck from poking up past the fringe into open rock
+    const localFringeTopY = fringeTopPts[ff].y + (fringeTopPts[ff + 1].y - fringeTopPts[ff].y) * fLocal;
 
     // width now rolls three tiers, not two -- a minority of "curtain"
     // wide ones do real work fusing the row into one mass (they're the
@@ -71188,8 +71191,20 @@ function drawWinterRainbowOverhang(camX) {
     // top point sits embedded well up inside the fringe (drawn over this
     // afterward), not flush at the fringe's own bottom edge -- no flat
     // top is ever visible, and it merges into whatever neighbors overlap
-    // it there instead of reading as its own separate shape
-    const embedY = originY - 10 - pseudoRandom(seed + 4) * 6;
+    // it there instead of reading as its own separate shape.
+    // CONFIRMED BUG FIX ("so why are they hanging above this icy line"):
+    // this used to be a flat `originY - (10 to 16)` offset with no regard
+    // for how thick the fringe actually is at this icicle's own x -- the
+    // fringe's thickness genuinely varies (its own bigWave jitter can make
+    // it as thin as ~3px), so a fixed 10-16px embed depth routinely poked
+    // the icicle's neck (and the webs between close icicles, which anchor
+    // to this same embedY) UP PAST the fringe's own top edge into plain
+    // rock territory -- nothing paints over that area, so the neck/web
+    // color showed there directly, reading as icicles hanging from a point
+    // above the visible icy line instead of growing down from it. Clamped
+    // to never rise above this icicle's own local fringe-top y (with a
+    // small margin so it still tucks in, never poking through).
+    const embedY = Math.max(localFringeTopY + 2, originY - 10 - pseudoRandom(seed + 4) * 6);
     const neckHalfW = baseHalfW * 0.28; // real narrow neck at the rock, not a wide flat pennant base
     const leftPts = [{ x: originX - neckHalfW, y: embedY }];
     const rightPts = [{ x: originX + neckHalfW, y: embedY }];
