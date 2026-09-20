@@ -70309,14 +70309,28 @@ function drawWinterRainbowOverhang(camX) {
   const OVERHANG_HEIGHT = 70;
   const ledgeY = gy - 210; // hangs well above head height, icicles reach down from here
   if (sx < -OVERHANG_WIDTH - 60 || sx > canvas.width + 60) return;
+  const rimSeed = WINTER_RAINBOW_POCKET_X * 0.01;
+  const rimTopY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
 
   // the ledge itself -- a jagged frozen rock mass, same lumpy-blob
   // language as the winter pines' own trunk/canopy clumps
   ctx.fillStyle = "#7f9bab";
   traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 10);
   ctx.fill();
-  ctx.fillStyle = "rgba(210,230,240,0.55)";
-  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.7, OVERHANG_WIDTH / 2.3, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
+  // CONFIRMED BUG FIX ("there is the hard lines still at the top"): this
+  // used to be a flat-alpha overlay blob sitting a fixed distance above
+  // the ledge, so it had its own crisp closed edge floating over the
+  // rock -- a second hard line on top of the fringe's. Switched to a
+  // vertical gradient (solid up top, fully transparent by the time it
+  // reaches where the fringe/icicles begin) and pulled its bottom down
+  // past rimTopY, so it feathers directly into the ice below instead of
+  // ending in its own visible boundary.
+  const ledgeFadeGrad = ctx.createLinearGradient(0, ledgeY - OVERHANG_HEIGHT * 1.3, 0, rimTopY + 20);
+  ledgeFadeGrad.addColorStop(0, "rgba(210,230,240,0.6)");
+  ledgeFadeGrad.addColorStop(0.7, "rgba(210,230,240,0.3)");
+  ledgeFadeGrad.addColorStop(1, "rgba(210,230,240,0)");
+  ctx.fillStyle = ledgeFadeGrad;
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
   ctx.fill();
 
   // CONFIRMED CHANGE, full rework ("these look like rainbow upside down
@@ -70344,8 +70358,6 @@ function drawWinterRainbowOverhang(camX) {
   const now = performance.now();
   const spanLeft = sx + 24;
   const spanRight = sx + OVERHANG_WIDTH - 24;
-  const rimSeed = WINTER_RAINBOW_POCKET_X * 0.01;
-  const rimTopY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
 
   // CONFIRMED BUG FIX, second pass ("they are like triangle flag
   // birthday party flags shaped... organic icicle shapes, a little
@@ -70365,11 +70377,20 @@ function drawWinterRainbowOverhang(camX) {
   const FRINGE_SEGS = 26;
   const fringeTopPts = [];
   const fringeBotPts = [];
+  // CONFIRMED BUG FIX ("there is the hard lines still at the top"): the
+  // top/bottom edges only had a single small per-point jitter (+-2.5 /
+  // +-5.5px), which still reads as a flat ruled line with light static
+  // on it from a distance. Added a second, slower/bigger octave (one
+  // random value shared across every 4 points) UNDER the fine jitter so
+  // the edge genuinely undulates in big lumps like a real dripping rock
+  // lip, not a straight line with texture on it.
   for (let f = 0; f <= FRINGE_SEGS; f++) {
     const t = f / FRINGE_SEGS;
     const fx = spanLeft + (spanRight - spanLeft) * t;
-    fringeTopPts.push({ x: fx, y: rimTopY + (pseudoRandom(rimSeed + f * 3.7) - 0.5) * 5 });
-    fringeBotPts.push({ x: fx, y: rimTopY + 7 + pseudoRandom(fringeSeed + f * 2.1) * 11 });
+    const bigWave = (pseudoRandom(rimSeed + Math.floor(f / 4) * 11) - 0.5) * 20;
+    const fineJag = (pseudoRandom(rimSeed + f * 3.7) - 0.5) * 7;
+    fringeTopPts.push({ x: fx, y: rimTopY + bigWave + fineJag });
+    fringeBotPts.push({ x: fx, y: rimTopY + 9 + bigWave * 0.6 + pseudoRandom(fringeSeed + f * 2.1) * 13 });
   }
   // CONFIRMED CHANGE ("NOT having a flat top of each icicle, blend it in
   // to the thing its on and into each other not so seperate, have some
@@ -70384,44 +70405,60 @@ function drawWinterRainbowOverhang(camX) {
   // every icicle's flat top completely (no visible edge, no "separate"
   // shapes) AND lets each icicle's own color genuinely bleed up into the
   // rock/ice above it for free, exactly where they actually meet.
+  // CONFIRMED CHANGE ("this still looks verrrrrry paste-on. they are
+  // almmost equidistant... merge everything in, like its all one
+  // peiice"): two fixes. (1) origins used to land at i/ICICLE_COUNT with
+  // only a tiny wobble -- a comb, no matter how organic each tooth
+  // looked. Replaced with accumulated random GAP WEIGHTS (small weight =
+  // tight cluster, big weight = wide gap) so real clumps and real gaps
+  // form across the row instead of even spacing. (2) every icicle's full
+  // geometry is now computed FIRST and stored, so a second pass can draw
+  // a translucent fused WEB between any two neighbors that land close
+  // together -- real dripping ice fuses near the top before separating
+  // further down -- underneath the icicle bodies, so close neighbors
+  // read as one continuous dripping mass instead of side-by-side strands.
+  const gapWeights = [];
+  let gapSum = 0;
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    const w = 0.25 + pseudoRandom(rimSeed + 700 + i * 5.3) * 1.9; // wide variance drives real clustering
+    gapWeights.push(w);
+    gapSum += w;
+  }
+  const originTs = [];
+  let acc = 0;
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    acc += gapWeights[i];
+    originTs.push((acc - gapWeights[i] * 0.5) / gapSum);
+  }
+
+  const icicleGeoms = [];
   for (let i = 0; i < ICICLE_COUNT; i++) {
     const seed = i * 19.3 + rimSeed;
     // hang each icicle from a point along the fringe's own jagged
     // underside (interpolated between its nearest two sample points),
     // not from a wide shared slot -- this is what keeps the body itself
     // thin instead of forcing a triangular base.
-    const originT = (i + 0.5) / ICICLE_COUNT + (pseudoRandom(seed) - 0.5) * (0.5 / ICICLE_COUNT);
+    const originT = originTs[i];
     const ff = Math.max(0, Math.min(FRINGE_SEGS - 1, Math.floor(originT * FRINGE_SEGS)));
     const fLocal = originT * FRINGE_SEGS - ff;
     const originX = fringeBotPts[ff].x + (fringeBotPts[ff + 1].x - fringeBotPts[ff].x) * fLocal;
     const originY = fringeBotPts[ff].y + (fringeBotPts[ff + 1].y - fringeBotPts[ff].y) * fLocal;
-    // CONFIRMED CHANGE (real icicle photo references, "somewhere between
-    // these" -- thin elegant needle-like ones on one end, thicker
-    // snow-crusted ones with real width variety on the other): the
-    // strong independent per-segment "bump" was overcorrecting into
-    // lumpy/pinched shafts that no real icicle actually has -- in every
-    // reference photo each individual icicle tapers smoothly along its
-    // OWN length; the variety instead comes from icicle to icicle (some
-    // noticeably thick, some hair-thin, some short, some long hanging
-    // off the same rim). Base width and length now both roll a much
-    // wider per-icicle range so that mix shows up across the row, while
-    // each icicle's own taper is smooth (a gentle eased curve, not
-    // random noise) with only a light edge jag for texture.
-    const isThick = pseudoRandom(seed + 9) < 0.3; // a minority read as the photos' fatter, snow-crusted ones
-    const len = (isThick ? 34 : 46) + pseudoRandom(seed + 1) * (isThick ? 46 : 78);
+
+    // width now rolls three tiers, not two -- a minority of "curtain"
+    // wide ones do real work fusing the row into one mass (they're the
+    // ones that make webs/overlap likely), medium ones are the classic
+    // icicle look, and thin hair ones fill the gaps between.
+    const tierRoll = pseudoRandom(seed + 9);
+    const isCurtain = tierRoll < 0.18;
+    const isThick = !isCurtain && tierRoll < 0.45;
+    const len = (isThick ? 34 : isCurtain ? 26 : 46) + pseudoRandom(seed + 1) * (isThick ? 46 : isCurtain ? 40 : 78);
     const lean = (pseudoRandom(seed + 2) - 0.5) * 8; // tip drifts slightly off-center
     let tipX = originX + lean; // corrected below to match the centerline's actual accumulated drift
     const tipY = originY + len;
 
-    // CONFIRMED CHANGE ("they also some should be more than one color all
-    // melding into eachother within the icicle maybe like a lava lamp"):
-    // roughly half the icicles now carry TWO (sometimes three) rainbow
-    // hues that blend into each other down the shaft via extra gradient
-    // color stops, instead of every icicle being one flat color -- a
-    // real canvas gradient interpolates smoothly between stops on its
-    // own, so stacking 2-3 different hues in one gradient IS the
-    // lava-lamp melt, no extra blending work needed. The rest stay a
-    // single hue so the melded ones still read as an accent, not noise.
+    // roughly half the icicles carry TWO (sometimes three) rainbow hues
+    // that blend into each other down the shaft via extra gradient color
+    // stops, instead of every icicle being one flat color.
     const palN = WINTER_RAINBOW_ICICLE_COLORS.length;
     const colorRoll = pseudoRandom(seed + 9.5);
     let icicleColors;
@@ -70439,21 +70476,11 @@ function drawWinterRainbowOverhang(camX) {
       ];
     }
 
-    // CONFIRMED CHANGE ("more organic shaped please. jagged, some
-    // adkward, like how icicles acutally are"): the smooth eased taper
-    // from the last pass avoided lumps but over-corrected into a shape
-    // that was too clean/uniform -- real icicles have real irregularity
-    // along their own length, not just icicle-to-icicle. Two things
-    // brought back, both tuned lighter than the original overcorrection
-    // that caused the pinched-wine-bottle look: `bump` gives each
-    // segment's WIDTH its own independent wobble on top of the taper
-    // (mild, 0.7-1.3x, so it still trends thinner without a clean line),
-    // and `drift` accumulates a small random sideways nudge segment to
-    // segment so the CENTERLINE itself wanders/kinks rather than running
-    // dead straight from origin to tip -- that's the "some awkward" part,
-    // a real icicle is rarely perfectly true.
+    // each icicle's own taper is a smooth eased curve with only a light
+    // per-segment width `bump` and a `drift` term that lets the
+    // centerline itself wander/kink rather than run dead straight.
     const SEGS = 7;
-    const baseHalfW = (isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isThick ? 3.5 : 2);
+    const baseHalfW = (isCurtain ? 11 : isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isCurtain ? 7 : isThick ? 3.5 : 2);
     // top point sits embedded well up inside the fringe (drawn over this
     // afterward), not flush at the fringe's own bottom edge -- no flat
     // top is ever visible, and it merges into whatever neighbors overlap
@@ -70476,10 +70503,42 @@ function drawWinterRainbowOverhang(camX) {
     }
     tipX = originX + lean + drift; // match the melt droplet to the centerline's actual final drift
 
+    icicleGeoms.push({ originX, originY, embedY, baseHalfW, leftPts, rightPts, tipX, tipY, len, lean, icicleColors, seed });
+  }
+
+  // webs drawn FIRST, underneath every icicle body -- a soft translucent
+  // fused membrane between any two neighbors whose origins land close
+  // together, blending both their colors so the seam between them reads
+  // as one dripping ice mass rather than a gap of visible background.
+  for (let i = 0; i < icicleGeoms.length - 1; i++) {
+    const a = icicleGeoms[i];
+    const b = icicleGeoms[i + 1];
+    const gap = b.originX - a.originX;
+    if (gap > 50) continue;
+    const webDepth = Math.min(a.len, b.len) * (0.3 + pseudoRandom(a.seed + 900) * 0.3);
+    const midX = (a.originX + b.originX) / 2 + (pseudoRandom(a.seed + 901) - 0.5) * 6;
+    const midY = Math.min(a.originY, b.originY) + webDepth;
+    ctx.beginPath();
+    ctx.moveTo(a.originX + a.baseHalfW * 0.5, a.embedY);
+    ctx.lineTo(b.originX - b.baseHalfW * 0.5, b.embedY);
+    ctx.lineTo(midX + 3, midY);
+    ctx.lineTo(midX - 3, midY);
+    ctx.closePath();
+    const webGrad = ctx.createLinearGradient(0, Math.min(a.embedY, b.embedY), 0, midY);
+    webGrad.addColorStop(0, `rgba(${a.icicleColors[0]},0.45)`);
+    webGrad.addColorStop(1, `rgba(${b.icicleColors[0]},0.12)`);
+    ctx.fillStyle = webGrad;
+    ctx.fill();
+  }
+
+  for (let i = 0; i < icicleGeoms.length; i++) {
+    const g = icicleGeoms[i];
+    const { leftPts, rightPts, originX, originY, tipX, tipY, len, lean, icicleColors, seed, baseHalfW } = g;
+
     ctx.beginPath();
     ctx.moveTo(leftPts[0].x, leftPts[0].y);
-    for (let s = 1; s <= SEGS; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
-    for (let s = SEGS; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
+    for (let s = 1; s < leftPts.length; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
+    for (let s = rightPts.length - 1; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, originY, 0, tipY);
     // alpha still fades top-to-tip same as before; hue steps through
