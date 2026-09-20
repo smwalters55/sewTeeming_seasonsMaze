@@ -70694,22 +70694,47 @@ function drawWinterWateryIce(camX, zone) {
   if (sx < -zone.width - 60 || sx > canvas.width + 60) return;
   const now = performance.now();
   const top = gy - 7;
-  const bottom = gy + 5;
   const baseSeed = zone.x * 0.013;
 
-  ctx.beginPath();
-  ctx.moveTo(sx, bottom);
-  ctx.lineTo(sx, top + (pseudoRandom(baseSeed) - 0.5) * 6);
-  const step = 18;
-  for (let wx = sx + step; wx < sx + zone.width; wx += step) {
+  // CONFIRMED CHANGE ("this needs to tape off not rectangle. also show it
+  // coming down a bit in the front so its like, almost a thin oval that
+  // looks like its a pool"): full rework of the base shape -- the old
+  // version was a near-flat top/bottom edge closed off with a hard
+  // vertical wall at each end (a rectangle with light jitter on top,
+  // exactly what was called out). Reworked into a real tapered lens, same
+  // "envelope tapers to a real point at both ends, bulges in the middle"
+  // shape drawWinterSlickPlatform's own icy sliver uses just below --
+  // both edges converge to a single point at sx and sx+zone.width instead
+  // of a vertical wall, and the BOTTOM edge now bulges down further in
+  // the middle than the top does, reading as a shallow pool viewed at a
+  // raking angle (deep in the middle/front, thinning to nothing at the
+  // ends) rather than a flat translucent strip.
+  const SEGS = 22;
+  const POOL_DEPTH = 15; // how far the middle's bottom edge bulges down past the top edge
+  const topPts = [];
+  const botPts = [];
+  for (let s = 0; s <= SEGS; s++) {
+    const t = s / SEGS;
+    const wx = sx + zone.width * t;
     const worldX = wx + camX;
-    ctx.lineTo(wx, top + (pseudoRandom(baseSeed + worldX * 0.05) - 0.5) * 6);
+    const envelope = Math.sin(Math.PI * t); // 0 at both ends, 1 in the middle -- the taper-to-a-point shape
+    const jag = (pseudoRandom(baseSeed + worldX * 0.05) - 0.5) * 6;
+    const topY = top + jag * envelope; // jitter itself also fades out at the tapered ends, not just the depth
+    const botDepth = POOL_DEPTH + (pseudoRandom(baseSeed + 50 + worldX * 0.04) - 0.5) * 5;
+    const botY = topY + envelope * botDepth;
+    topPts.push({ x: wx, y: topY });
+    botPts.push({ x: wx, y: botY });
   }
-  ctx.lineTo(sx + zone.width, top + (pseudoRandom(baseSeed + (zone.x + zone.width) * 0.05) - 0.5) * 6);
-  ctx.lineTo(sx + zone.width, bottom);
+
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(p => ctx.lineTo(p.x, p.y));
+  for (let s = SEGS; s >= 0; s--) ctx.lineTo(botPts[s].x, botPts[s].y);
   ctx.closePath();
   ctx.fillStyle = "rgba(190,225,240,0.35)";
   ctx.fill();
+
+  const bottom = top + POOL_DEPTH; // approximate deepest point, for the blob/shimmer bounds below
 
   ctx.save();
   ctx.beginPath();
@@ -70727,7 +70752,12 @@ function drawWinterWateryIce(camX, zone) {
     const driftSpan = 0.22 + pseudoRandom(bseed + 5) * 0.16;
     const baseCx = pseudoRandom(bseed + 1) * zone.width;
     const cx = sx + Math.max(0, Math.min(zone.width, baseCx + Math.sin(driftT) * driftSpan * zone.width));
-    const cy = top + 4 + pseudoRandom(bseed + 2) * (bottom - top - 4);
+    // the pool is shallower near its tapered ends -- pull blob centers
+    // toward the top edge there instead of letting them sit in empty
+    // space below where the pool has already thinned to nothing
+    const cxT = Math.max(0, Math.min(1, (cx - sx) / zone.width));
+    const localEnvelope = Math.sin(Math.PI * cxT);
+    const cy = top + 4 + pseudoRandom(bseed + 2) * (POOL_DEPTH - 4) * localEnvelope;
     const r = 24 + pseudoRandom(bseed + 3) * 28;
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     grad.addColorStop(0, `rgba(${color},0.4)`);
@@ -71410,8 +71440,20 @@ function updateWinterScene(deltaTime) {
     // synced wobble), summed into a single smoothly-wandering current
     // direction/strength. Deliberately NOT fresh per-frame randomness --
     // that would just read as jitter, not "slip sliding".
+    // CONFIRMED BUG FIX ("pretty often the player kind of just jitters in
+    // place on the ice pool"): wSeed used to be floored to a new value
+    // every 40px (Math.floor(player.x / 40)), a discrete step function of
+    // a value the current itself is continuously nudging -- right at each
+    // 40px boundary, crossing it snapped the phase to a new, effectively
+    // unrelated value, which could easily flip currentDir's sign at
+    // exactly that x, shoving the player back across the boundary, which
+    // flipped it again, trapping them oscillating in place. Switched to a
+    // smooth, continuous function of player.x (no floor) so the phase
+    // drifts gradually as the player moves instead of jumping -- still
+    // varies by position (different spots in the zone still drift
+    // differently), just never discontinuously.
     const wNow = performance.now();
-    const wSeed = Math.floor(player.x / 40) * 1.7;
+    const wSeed = player.x * 0.025;
     const wave1 = Math.sin(wNow * 0.00055 + wSeed);
     const wave2 = Math.sin(wNow * 0.00091 + wSeed * 1.8 + 2.4);
     const currentDir = wave1 * 0.65 + wave2 * 0.55; // wanders roughly -1.2..1.2
