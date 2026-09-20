@@ -69597,8 +69597,15 @@ function drawWinterSnow(camX) {
 // rather than a flat white overlay. CONFIRMED CHANGE ("way more
 // organically looking... i dont like the triangle trees"): full replace
 // of the original triangle-tier version.
-function drawWinterPine(sx, baseY, scale, snowy) {
-  const seed = sx * 0.173 + baseY * 0.061;
+function drawWinterPine(sx, baseY, scale, snowy, seed) {
+  // CONFIRMED BUG FIX ("the trees random re-drawn every movement player
+  // takes"): seed used to be derived from sx itself, which is a SCREEN
+  // position (worldX - camX) -- camX eases toward the player every
+  // single frame (even standing still, right after any move), so the
+  // "random" jitter was actually being recomputed fresh each frame from
+  // a constantly-drifting input, reading as the whole tree twitching/
+  // reshuffling on every step. Every call site now passes its own
+  // already-stable world-space seed instead.
 
   // wavy organic trunk, not a plain rectangle -- same idea as drawLeafTree's
   const trunkH = 14 * scale;
@@ -69668,6 +69675,25 @@ function drawWinterDoorFrost(camX, doorDef) {
 
   if (archCenterX < -80 || archCenterX > canvas.width + 80) return;
 
+  // an icy crust rimming the top of the frame, traced along the exact
+  // same arch curve the door itself is built from -- CONFIRMED CHANGE
+  // ("look like its coming from an icy arc, not hanging in the air above
+  // door"): without this the icicles' own origin points technically sat
+  // right on the frame's outer curve already, but with nothing solid
+  // drawn at that curve they read as floating just above the wood. This
+  // gives them a real surface to visibly grow out of.
+  const rimAngleStart = Math.PI * 1.10;
+  const rimAngleEnd = Math.PI * 1.90;
+  ctx.beginPath();
+  ctx.arc(archCenterX, archCenterY, outerRadius - 1, rimAngleStart, rimAngleEnd, false);
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = "rgba(222,240,252,0.9)";
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  // organic, slightly jagged icicles -- built as an irregular faceted
+  // polygon (straight jittered segments) rather than a smooth curve, per
+  // direct request ("make the ice like kinda slightly jaggedly")
   ctx.fillStyle = "rgba(215,238,250,0.92)";
   const ICICLE_COUNT = 6;
   for (let i = 0; i < ICICLE_COUNT; i++) {
@@ -69676,28 +69702,37 @@ function drawWinterDoorFrost(camX, doorDef) {
     const ox = Math.cos(angle) * outerRadius;
     const oy = Math.sin(angle) * outerRadius;
     const originX = archCenterX + ox;
-    const originY = archCenterY + oy;
+    const originY = archCenterY + oy - 2; // tucks slightly up into the rim stroke so there's no seam
     const seed = i * 9.1 + doorDef.x * 0.01;
-    const len = 10 + pseudoRandom(seed) * 13;
-    const w = 2.2 + pseudoRandom(seed + 1) * 1.6;
+    const len = 11 + pseudoRandom(seed) * 14;
+    const w = 2.6 + pseudoRandom(seed + 1) * 1.8;
     const lean = ox * 0.14; // sides drip slightly outward along the curve, not straight down
-    const midX = originX + lean * 0.5;
-    const midY = originY + len * 0.55;
-    const tipX = originX + lean;
-    const tipY = originY + len + pseudoRandom(seed + 2) * 5;
+
+    const SEGS = 4;
+    const leftPts = [], rightPts = [];
+    for (let s = 0; s <= SEGS; s++) {
+      const tt = s / SEGS;
+      const px = originX + lean * tt;
+      const py = originY + len * tt + (s === SEGS ? pseudoRandom(seed + 2) * 5 : 0);
+      const hw = Math.max(0.4, w * (1 - tt) * (0.6 + pseudoRandom(seed + 10 + s) * 0.7));
+      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * w * 0.5 * (1 - tt * 0.4);
+      leftPts.push({ x: px - hw + jag, y: py });
+      rightPts.push({ x: px + hw + jag, y: py });
+    }
 
     ctx.beginPath();
-    ctx.moveTo(originX - w, originY);
-    ctx.quadraticCurveTo(midX - w * 0.4, midY, tipX, tipY);
-    ctx.quadraticCurveTo(midX + w * 0.4, midY, originX + w, originY);
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let s = 1; s <= SEGS; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
+    for (let s = SEGS; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
     ctx.closePath();
     ctx.fill();
   }
 
   // a couple of green pine sprigs flanking the base -- still forest,
-  // just dusted with frost
-  [-frameWidth * 0.75, frameWidth * 0.75].forEach(ox => {
-    drawWinterPine(archCenterX + ox, gy, 0.5, true);
+  // just dusted with frost. Seeded off the door's own (stable, world-
+  // space) x plus a fixed per-side offset, not off-screen position.
+  [-frameWidth * 0.75, frameWidth * 0.75].forEach((ox, i) => {
+    drawWinterPine(archCenterX + ox, gy, 0.5, true, doorDef.x * 0.01 + i * 97.3);
   });
 }
 
@@ -69727,7 +69762,7 @@ function drawWinterScene(camX) {
     const sx = worldX - camX * 0.5;
     if (sx < -60 || sx > canvas.width + 60) continue;
     ctx.globalAlpha = 0.45;
-    drawWinterPine(sx, gy - 10, 1.1 + pseudoRandom(seed + 1) * 0.5, false);
+    drawWinterPine(sx, gy - 10, 1.1 + pseudoRandom(seed + 1) * 0.5, false, seed);
     ctx.globalAlpha = 1;
   }
 
@@ -69740,7 +69775,7 @@ function drawWinterScene(camX) {
     const sx = worldX - camX;
     if (sx < -50 || sx > canvas.width + 50) continue;
     const stillForest = worldX < 750; // close to the door -- carries the greenery over
-    drawWinterPine(sx, gy, 1.3 + pseudoRandom(seed + 1) * 0.6, !stillForest || pseudoRandom(seed + 2) > 0.4);
+    drawWinterPine(sx, gy, 1.3 + pseudoRandom(seed + 1) * 0.6, !stillForest || pseudoRandom(seed + 2) > 0.4, seed);
   }
 
   drawWinterSnow(camX);
