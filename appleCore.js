@@ -390,6 +390,17 @@ const player = {
   onWinterIceSlide: false,
   winterIceSlideDir: 1,
   winterIceSlideMs: 0,
+  // CONFIRMED CHANGE (slick platform climb -- see WINTER_SLICK_PLATFORMS):
+  // -1 means not currently grounded on one; applyPhysics's winter branch
+  // sets this fresh every frame it lands the platform-landing collision,
+  // same re-derive-every-frame approach as onGround checks elsewhere
+  // rather than a sticky flag. winterSkateVX is the actual momentum
+  // driving the skate feel; winterSlickPlatformPrevX lets the platform's
+  // own drift be carried into the player's position as a per-frame delta.
+  winterSlickPlatformIndex: -1,
+  winterSkateVX: 0,
+  winterSlickPlatformPrevX: null,
+  winterSlickPlatformPrevIndex: -1,
   // CONFIRMED CHANGE ("takes a little too long to build up... walked
   // across the ground mushrooms you would keep doing that cute little
   // hop down the line"): true for the brief window after a ground
@@ -2856,8 +2867,13 @@ function handleInput(){
     // contradicting updateWinterScene's own "a genuine jump cancels the
     // slide early" comment. Now it only suppresses normal left/right
     // walk input (so it doesn't fight the slide's own player.x +=),
-    // while jumping stays reachable during a slide.
-    if (!player.onWinterIceSlide) {
+    // while jumping stays reachable during a slide. Slick platforms
+    // (winterSlickPlatformIndex !== -1) get the same narrow treatment,
+    // for the same reason -- updateWinterScene drives its own
+    // accelerate/decay skate movement while grounded on one, and jumping
+    // off a platform needs to keep working exactly like jumping anywhere
+    // else in the game.
+    if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1) {
       if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
       if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
     }
@@ -5197,8 +5213,17 @@ function applyPhysics(){
   // way-taller-than-jump-height obstacle without needing a platform-top
   // landing case too. Only WINTER_FRONT_TREES (see its own comment) --
   // the distant background treeline is parallax decoration, not solid.
+  // CONFIRMED BUG FIX (found while verifying the new slick platform climb):
+  // this had no height check at all, so a player standing on one of the
+  // new WINTER_SLICK_PLATFORMS (60-320px up) still got shoved sideways by
+  // any tree whose x-column happened to sit underneath them, even though
+  // visually there's nothing there at that height -- trees are ground-
+  // level obstacles, not tall pillars reaching all the way up to the
+  // platform climb. Gated to player.y < 55 (just under the lowest
+  // platform's own 60px height) so ordinary ground-level walking into a
+  // tree is completely unaffected.
   const winterPlayerCenterX = player.x + player.width / 2;
-  WINTER_FRONT_TREES.forEach(t => {
+  if (player.y < 55) WINTER_FRONT_TREES.forEach(t => {
     const left = t.x - t.hitHalfWidth;
     const right = t.x + t.hitHalfWidth;
     if (player.x + player.width > left && player.x < right) {
@@ -5207,6 +5232,35 @@ function applyPhysics(){
       } else {
         player.x = right;
       }
+    }
+  });
+
+  // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
+  // well so it's both high and wide ish"): plain top-landing collision,
+  // same shape as sandbox's own block-pile steps -- ordinary single/
+  // double jumps reach each one in this zigzag. Re-derives
+  // winterSlickPlatformIndex fresh every frame (reset to -1 first) same
+  // as the rest of this branch's "no sticky flags" approach; the actual
+  // skate-momentum/drift-carry logic lives in updateWinterScene, which
+  // reads this index.
+  player.winterSlickPlatformIndex = -1;
+  const winterNowMs = performance.now();
+  WINTER_SLICK_PLATFORMS.forEach((p, pi) => {
+    const platformTop = p.height;
+    const platformX = winterSlickPlatformX(p, winterNowMs);
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > platformX &&
+      player.x < platformX + p.width &&
+      playerBottom <= platformTop &&
+      playerBottom >= platformTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = platformTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.winterSlickPlatformIndex = pi;
     }
   });
 
@@ -69595,7 +69649,15 @@ drawSeasonTransition(ctx);
    and ambient falling snow. The slinky (already built and proven in
    sandbox) is the planned next addition here, not yet wired in.
    ====================================================== */
-const WINTER_WIDTH = 2400;
+// CONFIRMED CHANGE ("well what if its a thing we actually build, in
+// part... but before that i think i do want to do some slick platforms
+// that have cameray follow as well so it's both high and wide ish"):
+// widened from 2400 to fit the new slick-platform climb (see
+// WINTER_SLICK_PLATFORMS below) and the rainbow dripping icicles pocket
+// (see WINTER_RAINBOW_ICICLES) further past it. Both new areas sit past
+// all existing content (door/hidden ice zones/treeline), so nothing
+// already placed needed to move.
+const WINTER_WIDTH = 3400;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -69609,6 +69671,42 @@ const WINTER_HIDDEN_ICE_ZONES = [
   { x: 340, width: 90 },
   { x: 920, width: 110 }
 ];
+
+// CONFIRMED CHANGE ("some slick platforms that have cameray follow as
+// well so it's both high and wide ish... ooooo both!!!" -- answering
+// whether "slick" means the player's own momentum carries them or the
+// platform itself moves: both): a real climb, not decoration. Six
+// platforms zigzagging up and to the right, tall enough to need real
+// cameraY tracking (same pattern as the forest fungus climb/oak/topsy
+// climbs -- see updateWinterScene's own cameraY line) and wide enough
+// that camX has real room to pan too. Each platform has its own slow
+// side-to-side drift (driftAmp/driftSpeed/driftPhase) -- see
+// winterSlickPlatformX() below for the actual per-frame position, used
+// by both collision and drawing so they never disagree. Standing on one
+// disables the player's normal instant-stop walk (see the movement-
+// gating block's own onWinterSlickPlatform check) in favor of a real
+// accelerate/decelerate skate feel (see updateWinterScene), and riding a
+// drifting platform carries the player along with its own motion each
+// frame -- so both "your own momentum" and "the platform moves under
+// you" are true at once, per Sam's answer.
+const WINTER_SLICK_PLATFORMS = [
+  { x: 1420, width: 130, height: 60,  driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
+  { x: 1650, width: 110, height: 110, driftAmp: 45, driftSpeed: 0.0011, driftPhase: 0.6 },
+  { x: 1880, width: 120, height: 170, driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
+  { x: 2080, width: 100, height: 235, driftAmp: 55, driftSpeed: 0.0009, driftPhase: 2.4 },
+  { x: 2280, width: 130, height: 285, driftAmp: 0,  driftSpeed: 0,     driftPhase: 0 },
+  { x: 2450, width: 140, height: 320, driftAmp: 40, driftSpeed: 0.0013, driftPhase: 4.1 }
+];
+
+// current world-x of a slick platform's LEFT edge this frame -- the only
+// thing that actually moves is x (height stays fixed per-platform), so
+// both collision (applyPhysics) and drawing (drawWinterScene) call this
+// same function rather than risking two slightly different formulas
+// drifting out of sync with each other.
+function winterSlickPlatformX(p, now) {
+  if (!p.driftAmp) return p.x;
+  return p.x + Math.sin(now * p.driftSpeed + p.driftPhase) * p.driftAmp;
+}
 
 // the near/foreground treeline -- built as a real stable array (world x,
 // scale, snowy, a solid collision half-width) instead of recomputed
@@ -70043,6 +70141,148 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
   }
 }
 
+// CONFIRMED CHANGE ("my dirpping colrful somewhat translucent icicles
+// dripping i want to start having those be present"): the "dripping
+// rainbow icicles... like they are melting colored water" idea from the
+// original winter brainstorm, previously deferred as maybe too early,
+// now a real (purely decorative, no mechanic yet) pocket past the slick
+// platform climb. A short frozen rock overhang prop gives the icicles
+// something to actually hang FROM (winter otherwise has no ceiling/
+// ledge surface anywhere) -- built the same "already ground-anchored,
+// jagged silhouette" way the door's own icy rim is. Each icicle is a
+// translucent color wedge (a real per-icicle hue, not one rainbow
+// gradient smeared across all of them) with a single droplet that falls
+// and resets on a loop, driven purely by performance.now() math like the
+// door approach's drifting snowflakes -- no new persistent per-frame-
+// updated state needed.
+const WINTER_RAINBOW_POCKET_X = 2950;
+const WINTER_RAINBOW_ICICLE_COLORS = [
+  "255,90,110",   // rose
+  "255,165,60",   // amber
+  "255,225,80",   // gold
+  "110,220,140",  // mint
+  "90,190,255",   // sky
+  "170,120,255"   // violet
+];
+
+function drawWinterRainbowOverhang(camX) {
+  const sx = WINTER_RAINBOW_POCKET_X - camX;
+  const OVERHANG_WIDTH = 340;
+  const OVERHANG_HEIGHT = 70;
+  const ledgeY = gy - 210; // hangs well above head height, icicles reach down from here
+  if (sx < -OVERHANG_WIDTH - 60 || sx > canvas.width + 60) return;
+
+  // the ledge itself -- a jagged frozen rock mass, same lumpy-blob
+  // language as the winter pines' own trunk/canopy clumps
+  ctx.fillStyle = "#7f9bab";
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 10);
+  ctx.fill();
+  ctx.fillStyle = "rgba(210,230,240,0.55)";
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.7, OVERHANG_WIDTH / 2.3, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
+  ctx.fill();
+
+  const ICICLE_COUNT = 7;
+  const now = performance.now();
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    const seed = i * 19.3 + WINTER_RAINBOW_POCKET_X * 0.01;
+    const ix = sx + 30 + (OVERHANG_WIDTH - 60) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(seed) - 0.5) * 14;
+    const len = 55 + pseudoRandom(seed + 1) * 60;
+    const topW = 10 + pseudoRandom(seed + 2) * 6;
+    const color = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
+    const topY = ledgeY;
+    const tipY = ledgeY + len;
+
+    // slightly jittered icicle wedge, translucent so it genuinely reads
+    // as melting colored ice rather than a solid colored shape
+    ctx.beginPath();
+    ctx.moveTo(ix - topW / 2, topY);
+    ctx.lineTo(ix + topW / 2, topY);
+    ctx.lineTo(ix + topW * 0.12 + (pseudoRandom(seed + 3) - 0.5) * 4, topY + len * 0.55);
+    ctx.lineTo(ix, tipY);
+    ctx.lineTo(ix - topW * 0.12 - (pseudoRandom(seed + 4) - 0.5) * 4, topY + len * 0.55);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, topY, 0, tipY);
+    grad.addColorStop(0, `rgba(${color},0.55)`);
+    grad.addColorStop(1, `rgba(${color},0.22)`);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${color},0.7)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // a thin bright highlight down one side, same "real ice" cue the
+    // door's own icicles use
+    ctx.beginPath();
+    ctx.moveTo(ix - topW * 0.2, topY + 3);
+    ctx.lineTo(ix - topW * 0.05, tipY - 6);
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // one melting droplet per icicle, looping down from the tip on its
+    // own cycle -- cycle length/offset varies per icicle so they don't
+    // all drip in lockstep
+    const cycleMs = 1800 + pseudoRandom(seed + 5) * 1400;
+    const phase = ((now + pseudoRandom(seed + 6) * cycleMs) % cycleMs) / cycleMs;
+    const dropFall = 26;
+    const dropY = tipY + phase * dropFall;
+    const dropAlpha = 0.75 * (1 - phase);
+    ctx.fillStyle = `rgba(${color},${dropAlpha})`;
+    ctx.beginPath();
+    ctx.ellipse(ix, dropY, 2.4, 3.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// CONFIRMED CHANGE (same round as WINTER_SLICK_PLATFORMS above): drawn
+// from world height via `gy - p.height`, using winterSlickPlatformX for
+// the same drifting x collision already uses. A simple icy slab look --
+// pale translucent-blue top face, a darker underside edge, and a couple
+// of jagged crack lines so it doesn't read as a plain rectangle.
+function drawWinterSlickPlatform(camX, p, now) {
+  const px = winterSlickPlatformX(p, now) - camX;
+  if (px < -p.width - 20 || px > canvas.width + 20) return;
+  const topY = gy - p.height;
+  const seed = p.x * 0.02;
+
+  ctx.fillStyle = "rgba(150,170,60,0)"; // no-op reset (keeps globalAlpha state predictable below)
+  ctx.globalAlpha = 1;
+
+  // underside -- darker, gives the slab real thickness
+  ctx.fillStyle = "rgba(140,175,200,0.85)";
+  ctx.fillRect(px, topY + 6, p.width, 10);
+
+  // icy top face
+  const grad = ctx.createLinearGradient(0, topY - 4, 0, topY + 8);
+  grad.addColorStop(0, "rgba(225,242,252,0.95)");
+  grad.addColorStop(1, "rgba(175,210,230,0.9)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(px, topY + 8);
+  ctx.lineTo(px, topY - 2);
+  ctx.lineTo(px + p.width * 0.5, topY - 5);
+  ctx.lineTo(px + p.width, topY - 2);
+  ctx.lineTo(px + p.width, topY + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // a couple of jagged surface cracks, seeded off the platform's own
+  // base x so they stay stable regardless of current drift
+  for (let c = 0; c < 2; c++) {
+    const cSeed = seed + c * 5.1;
+    const startX = px + p.width * (0.25 + c * 0.4);
+    ctx.beginPath();
+    ctx.moveTo(startX, topY - 3);
+    ctx.lineTo(startX + (pseudoRandom(cSeed) - 0.5) * 16, topY + 2);
+    ctx.lineTo(startX + (pseudoRandom(cSeed + 1) - 0.5) * 22, topY + 6);
+    ctx.strokeStyle = "rgba(120,160,190,0.55)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
 function drawWinterScene(camX) {
   ctx.save();
 
@@ -70060,6 +70300,18 @@ function drawWinterScene(camX) {
   ground.addColorStop(1, "#d7e6f2");
   ctx.fillStyle = ground;
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+
+  // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
+  // well so it's both high and wide ish"): everything from here down is
+  // ground-level (or climbs up from it, like the platform stack) --
+  // wrapping it in one ctx.translate(0, cameraY) keeps every element's
+  // relative position exactly as authored, same pattern forest/oak/
+  // topsy-turvy's own climbs already use (see updateWinterScene's own
+  // cameraY line). A no-op except while climbing the platforms past the
+  // 150px threshold. The sky/ground gradients above stay OUTSIDE this
+  // translate on purpose -- full-canvas backdrop, not ground-anchored.
+  ctx.save();
+  ctx.translate(0, cameraY);
 
   // distant frosted treeline -- soft, pale, parallax-lite (drawn at a
   // fixed fraction of camX so it drifts slower than the foreground)
@@ -70104,6 +70356,12 @@ function drawWinterScene(camX) {
   drawConnectionDoor(ctx, camX, connections[8].doors.winter, connections[8]);
   drawWinterDoorFrost(camX, connections[8].doors.winter);
 
+  // slick platform climb, then the rainbow icicle pocket just past it
+  const nowForWinterProps = performance.now();
+  WINTER_SLICK_PLATFORMS.forEach(p => drawWinterSlickPlatform(camX, p, nowForWinterProps));
+  drawWinterRainbowOverhang(camX);
+
+  ctx.restore(); // matches the cameraY translate save() above
   ctx.restore();
 }
 
@@ -70141,6 +70399,55 @@ function updateWinterScene(deltaTime) {
     }
   }
 
+  // CONFIRMED CHANGE ("some slick platforms... ooooo both!!!" -- real
+  // player momentum AND the platform itself moving): while grounded on
+  // one of WINTER_SLICK_PLATFORMS (applyPhysics sets
+  // winterSlickPlatformIndex each frame it lands the collision), normal
+  // instant-stop walking is suppressed (see the movement-gating block's
+  // own check) in favor of this accelerate/decay skate feel, and the
+  // player is carried along with whatever the platform itself drifted
+  // this frame -- so "your own momentum" and "the platform moves under
+  // you" are both true at once.
+  const SLICK_MAX_SPEED = 230;
+  const SLICK_ACCEL = 900;
+  const SLICK_FRICTION = 260;
+  if (player.winterSlickPlatformIndex !== -1) {
+    const plat = WINTER_SLICK_PLATFORMS[player.winterSlickPlatformIndex];
+    const curPlatX = winterSlickPlatformX(plat, performance.now());
+    // CONFIRMED BUG FIX (found via testing): only carry the drift delta
+    // when it's the SAME platform as last frame -- prevX/prevIndex are a
+    // single remembered value, not per-platform, so landing on a
+    // DIFFERENT platform than the one tracked last frame (in practice
+    // only reachable by a same-frame hop between two overlapping landing
+    // zones, since a real jump between separate platforms always passes
+    // through an airborne idx===-1 frame that already resets prevX to
+    // null) would otherwise diff this platform's current x against a
+    // totally different platform's stale remembered x and teleport the
+    // player. Comparing the index too closes that edge case for good.
+    if (player.winterSlickPlatformPrevX !== null && player.winterSlickPlatformPrevIndex === player.winterSlickPlatformIndex) {
+      player.x += curPlatX - player.winterSlickPlatformPrevX;
+    }
+    player.winterSlickPlatformPrevX = curPlatX;
+    player.winterSlickPlatformPrevIndex = player.winterSlickPlatformIndex;
+
+    if (keys.left) {
+      player.winterSkateVX = Math.max(-SLICK_MAX_SPEED, player.winterSkateVX - SLICK_ACCEL * deltaTime);
+      player.facing = -1;
+    } else if (keys.right) {
+      player.winterSkateVX = Math.min(SLICK_MAX_SPEED, player.winterSkateVX + SLICK_ACCEL * deltaTime);
+      player.facing = 1;
+    } else if (player.winterSkateVX > 0) {
+      player.winterSkateVX = Math.max(0, player.winterSkateVX - SLICK_FRICTION * deltaTime);
+    } else if (player.winterSkateVX < 0) {
+      player.winterSkateVX = Math.min(0, player.winterSkateVX + SLICK_FRICTION * deltaTime);
+    }
+    player.x += player.winterSkateVX * deltaTime;
+  } else {
+    player.winterSlickPlatformPrevX = null;
+    player.winterSlickPlatformPrevIndex = -1;
+    player.winterSkateVX = 0;
+  }
+
   // back through the door to forest
   if (
     connections[8].filled &&
@@ -70152,6 +70459,14 @@ function updateWinterScene(deltaTime) {
   ) {
     startSeasonTransition("forest");
   }
+
+  // CONFIRMED CHANGE: real cameraY tracking for the new slick-platform
+  // climb ("cameray follow as well so it's both high and wide ish") --
+  // same pattern as forest's fungus climb/oak/topsy-turvy's own climbs,
+  // only kicks in once player.y clears 150 so ordinary ground-level
+  // winter play is completely unaffected. drawWinterScene applies this
+  // via its own ctx.translate(0, cameraY) wrap around ground-level body.
+  cameraY = Math.max(0, player.y - 150);
 }
 /* ======================================================
    MAIN LOOP
