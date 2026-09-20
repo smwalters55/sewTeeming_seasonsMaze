@@ -70308,108 +70308,104 @@ function drawWinterRainbowOverhang(camX) {
   traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.7, OVERHANG_WIDTH / 2.3, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
   ctx.fill();
 
-  // CONFIRMED CHANGE: reworked from plain translucent-gradient wedges to
-  // pull directly from the user's own painted reference art -- organic
-  // wax-drip/flame silhouettes (narrow neck, wider bulging belly, a
-  // rounded bulb bead at the very tip rather than a sharp icicle point),
-  // bold dark outlines around every shape, and mostly-opaque blocked-in
-  // color instead of a soft blended gradient. Each icicle also gets a
-  // second, contrasting bulb color at its tip -- echoing the reference's
-  // orange drip-tendrils topped with rounded blue bulb ends.
+  // CONFIRMED CHANGE, full rework ("these look like rainbow upside down
+  // wine bottles. make its oraganic shaped, ALWAYS, all connected to
+  // eachother at the top and seemlessly into the rock ice thing they are
+  // attached to. they should be elegant, semi translucent, shaped more
+  // like the icycles on the entrace doorway into winter"): the bulb/neck/
+  // belly wax-drip silhouette (and its bold black outlines) is gone
+  // entirely -- direct correction away from that reference-art pull,
+  // back toward this game's own established icicle language
+  // (drawWinterDoorFrost, just above): a faceted, jaggedly-tapering
+  // shard that narrows to a real point, no bulbous end. Every icicle now
+  // shares its exact top-left/top-right vertices with its neighbors (a
+  // single strip of shared boundary points across the whole span, not
+  // independently-placed shapes), so they're ALWAYS physically connected
+  // at the top with no gaps possible, and that shared top edge sits a
+  // couple px up inside the ledge's own fill so it reads as growing
+  // straight out of the rock rather than floating just below it -- same
+  // "tuck the origin into the surface" trick the door's own icicles use.
+  // Translucent per-icicle rainbow color (alpha fades further still
+  // toward the tip, real melting-ice fade instead of a flat block of
+  // color) plus a thin bright highlight stroke is the whole finish --
+  // elegant and simple, matching the door's own icicles' spirit.
   const ICICLE_COUNT = 7;
   const now = performance.now();
-  const OUTLINE = "rgba(35,30,40,0.85)";
+  const spanLeft = sx + 24;
+  const spanRight = sx + OVERHANG_WIDTH - 24;
+  const rimSeed = WINTER_RAINBOW_POCKET_X * 0.01;
+  const topY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
+
+  // one shared, gently wavy top edge across the whole span -- every
+  // icicle's own top-left/top-right corner is a point ON this same line,
+  // guaranteeing they always touch their neighbors
+  const boundaryX = [];
+  const boundaryY = [];
+  for (let b = 0; b <= ICICLE_COUNT; b++) {
+    boundaryX.push(spanLeft + (spanRight - spanLeft) * (b / ICICLE_COUNT));
+    boundaryY.push(topY + (pseudoRandom(rimSeed + b * 3.7) - 0.5) * 5);
+  }
+
   for (let i = 0; i < ICICLE_COUNT; i++) {
-    const seed = i * 19.3 + WINTER_RAINBOW_POCKET_X * 0.01;
-    const ix = sx + 30 + (OVERHANG_WIDTH - 60) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(seed) - 0.5) * 14;
-    const len = 50 + pseudoRandom(seed + 1) * 52;
-    const topW = 11 + pseudoRandom(seed + 2) * 6;
+    const seed = i * 19.3 + rimSeed;
+    const lx = boundaryX[i], ly = boundaryY[i];
+    const rx = boundaryX[i + 1], ry = boundaryY[i + 1];
+    const midX = (lx + rx) / 2;
+    const len = 46 + pseudoRandom(seed + 1) * 58;
+    const lean = (pseudoRandom(seed + 2) - 0.5) * 10; // tip drifts slightly off-center
+    const tipX = midX + lean;
+    const tipY = Math.max(ly, ry) + len;
     const color = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
-    const bulbColor = WINTER_RAINBOW_ICICLE_COLORS[(i + 3) % WINTER_RAINBOW_ICICLE_COLORS.length];
-    const topY = ledgeY;
-    const bellyY = topY + len * 0.62;
-    const bulbY = topY + len; // center of the rounded drip-bead tip
-    const bellyW = topW * (1.15 + pseudoRandom(seed + 7) * 0.35); // bulges out past the neck, like a wax drip
-    const neckW = topW * 0.42; // pinches in below the belly before the bulb
-    const bulbR = topW * 0.6 + pseudoRandom(seed + 8) * 2.5;
-    const wob = (pseudoRandom(seed + 3) - 0.5) * 5;
 
-    // the tendril body: attaches flush to the ledge, bulges at the belly,
-    // pinches to a narrow neck, then flares into the rounded bulb below
-    ctx.beginPath();
-    ctx.moveTo(ix - topW / 2, topY);
-    ctx.bezierCurveTo(
-      ix - bellyW / 2, topY + len * 0.22,
-      ix - bellyW / 2 + wob, bellyY - len * 0.1,
-      ix - neckW / 2 + wob, bellyY
-    );
-    ctx.lineTo(ix - neckW / 2 + wob, bulbY - bulbR * 0.6);
-    ctx.lineTo(ix + neckW / 2 + wob, bulbY - bulbR * 0.6);
-    ctx.lineTo(ix + neckW / 2 + wob, bellyY);
-    ctx.bezierCurveTo(
-      ix + bellyW / 2 + wob, bellyY - len * 0.1,
-      ix + bellyW / 2, topY + len * 0.22,
-      ix + topW / 2, topY
-    );
-    ctx.closePath();
-    ctx.fillStyle = `rgba(${color},0.82)`;
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // the rounded bulb bead at the tip, in a contrasting color with its
-    // own bold outline -- the reference art's blue drip-ends
-    ctx.beginPath();
-    ctx.ellipse(ix + wob, bulbY, bulbR, bulbR * 1.08, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${bulbColor},0.88)`;
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // a small flat highlight patch on the belly -- reads as glossy wet
-    // ice/paint rather than a smooth rendered gradient
-    ctx.beginPath();
-    ctx.ellipse(ix - bellyW * 0.18, topY + len * 0.32, bellyW * 0.16, len * 0.1, -0.3, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.fill();
-
-    // CONFIRMED CHANGE (further reference pull from a fuller view of the
-    // same painted piece -- the blue bubble/orb motif isn't just at each
-    // drip's tip, it's scattered as small round accents embedded right in
-    // the body of the shape, like little windows). About half the icicles
-    // get one small outlined bubble sitting partway down the neck, in the
-    // same bulb color as that icicle's own tip, so it reads as the same
-    // family of accent repeated rather than a one-off.
-    if (pseudoRandom(seed + 9) < 0.55) {
-      const bubR = topW * 0.28 + pseudoRandom(seed + 10) * 1.6;
-      const bubY = topY + len * (0.3 + pseudoRandom(seed + 11) * 0.25);
-      const bubX = ix + (pseudoRandom(seed + 12) - 0.5) * (bellyW * 0.4);
-      ctx.beginPath();
-      ctx.ellipse(bubX, bubY, bubR, bubR, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${bulbColor},0.85)`;
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
+    // faceted, jaggedly-tapering shard -- same shape language as the
+    // door's own icicles (drawWinterDoorFrost above): straight jittered
+    // segments narrowing from the full top width down to a real point,
+    // not a smooth curve and not a bulb.
+    const SEGS = 4;
+    const leftPts = [{ x: lx, y: ly }];
+    const rightPts = [{ x: rx, y: ry }];
+    for (let s = 1; s <= SEGS; s++) {
+      const tt = s / SEGS;
+      const px = midX + lean * tt;
+      const py = ly + (ry - ly) * 0.5 + (tipY - (ly + ry) / 2) * tt;
+      const hw = Math.max(0.5, ((rx - lx) / 2) * (1 - tt) * (0.7 + pseudoRandom(seed + 10 + s) * 0.5));
+      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * (rx - lx) * 0.12 * (1 - tt * 0.5);
+      leftPts.push({ x: px - hw + jag, y: py });
+      rightPts.push({ x: px + hw + jag, y: py });
     }
 
-    // one melting droplet per icicle, falling from the bulb tip on its
-    // own cycle -- cycle length/offset varies per icicle so they don't
-    // all drip in lockstep
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let s = 1; s <= SEGS; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
+    for (let s = SEGS; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, topY, 0, tipY);
+    grad.addColorStop(0, `rgba(${color},0.6)`);
+    grad.addColorStop(1, `rgba(${color},0.18)`);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // a thin bright highlight down one edge -- the same real-ice cue the
+    // door's own rim/icicles use, kept subtle rather than a hard outline
+    ctx.beginPath();
+    ctx.moveTo(lx + (midX - lx) * 0.3, ly + 3);
+    ctx.lineTo(midX + lean * 0.7, topY + len * 0.75);
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // one melting droplet per icicle, falling from the tip on its own
+    // cycle -- cycle length/offset varies per icicle so they don't all
+    // drip in lockstep
     const cycleMs = 1800 + pseudoRandom(seed + 5) * 1400;
     const phase = ((now + pseudoRandom(seed + 6) * cycleMs) % cycleMs) / cycleMs;
-    const dropFall = 24;
-    const dropY = bulbY + bulbR + phase * dropFall;
-    const dropAlpha = 0.8 * (1 - phase);
+    const dropFall = 22;
+    const dropY = tipY + phase * dropFall;
+    const dropAlpha = 0.6 * (1 - phase);
     ctx.beginPath();
-    ctx.ellipse(ix + wob, dropY, 2.2, 3.2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${bulbColor},${dropAlpha})`;
+    ctx.ellipse(tipX, dropY, 1.8, 2.6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${color},${dropAlpha})`;
     ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = `rgba(35,30,40,${dropAlpha * 0.7})`;
-    ctx.stroke();
   }
 }
 
