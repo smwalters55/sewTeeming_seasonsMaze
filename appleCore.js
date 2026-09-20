@@ -5233,13 +5233,22 @@ function applyPhysics(){
     const right = t.x + t.hitHalfWidth;
     const canopyTop = t.canopyTop;
     const playerBottom = player.y;
-    if (
+    // CONFIRMED BUG FIX ("i shouldnt be able to land on tree when this
+    // ice thing is in front of it"): drawWinterRainbowOverhang draws
+    // AFTER the treeline, so any tree whose x falls under its span is
+    // already visually buried behind the rock/icicles there -- standing
+    // on its canopy or mid-perch read as floating inside solid ice.
+    // Only the elevated landings are skipped; ground-level trunk
+    // collision below is untouched since the rock hangs well above
+    // head height and doesn't cover the ground in front of it.
+    const underOverhang = t.x > WINTER_RAINBOW_POCKET_X - 20 && t.x < WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 20;
+    if (!underOverhang && (
       player.x + player.width > left &&
       player.x < right &&
       playerBottom <= canopyTop &&
       playerBottom >= canopyTop - 14 &&
       player.vy <= 0
-    ) {
+    )) {
       player.y = canopyTop;
       player.vy = 0;
       player.jumping = false;
@@ -5251,13 +5260,13 @@ function applyPhysics(){
     // up the tree, same top-landing shape as the canopy check above, so
     // there's a real mid-height perch and not just "top or nothing."
     const midLanding = t.midLanding;
-    if (
+    if (!underOverhang && (
       player.x + player.width > left &&
       player.x < right &&
       playerBottom <= midLanding &&
       playerBottom >= midLanding - 14 &&
       player.vy <= 0
-    ) {
+    )) {
       player.y = midLanding;
       player.vy = 0;
       player.jumping = false;
@@ -5287,9 +5296,22 @@ function applyPhysics(){
     const platformTop = p.height;
     const platformX = winterSlickPlatformX(p, winterNowMs);
     const playerBottom = player.y;
+    // CONFIRMED BUG FIX ("i shouldnt be able to visibly land here the
+    // land radius is too wide"): drawWinterSlickPlatform's tapered
+    // sliver shape (envelope = sin(PI*t)) draws down to a real point --
+    // essentially zero height -- right at both ends of p.width, but
+    // collision used to treat the FULL p.width as landable. That let the
+    // player stand well past where any ice is actually visible, reading
+    // as floating in mid-air. Inset the landable span so it only covers
+    // the part of the sliver with real visible thickness (t roughly
+    // 0.16-0.84, where the sine envelope is already a good way up from
+    // zero), matching the drawn taper instead of the raw rectangle.
+    const landInset = p.width * 0.16;
+    const landLeft = platformX + landInset;
+    const landRight = platformX + p.width - landInset;
     if (
-      player.x + player.width > platformX &&
-      player.x < platformX + p.width &&
+      player.x + player.width > landLeft &&
+      player.x < landRight &&
       playerBottom <= platformTop &&
       playerBottom >= platformTop - 14 &&
       player.vy <= 0
@@ -70103,45 +70125,46 @@ function drawWinterDoorApproach(camX, doorDef) {
   // as a hard vertical seam, going from tinted straight to untinted with
   // no transition. Now both ends fade to zero alpha so the wash frays
   // out on both sides instead of butting against a hard boundary.
-  const left = Math.max(0, baseX - REACH);
-  const right = Math.min(canvas.width, baseX);
-  if (right > left) {
+  // CONFIRMED BUG FIX, SECOND PASS ("the frost in forest in front of
+  // door like to the left still spazzes out... when player moves"): the
+  // first fix (seeding off `wx + camX`) was correct in spirit but still
+  // broken in the common case -- `left`/`right` here used to be CLAMPED
+  // to the screen (Math.max(0, ...) / Math.min(canvas.width, ...)).
+  // Whenever the reach zone's true left edge fell off-screen (i.e.
+  // basically any time you're anywhere near the door, since REACH is
+  // 560px), `left` got pinned to the screen edge (0) instead of its real
+  // world position. The whole per-vertex sample grid is built by walking
+  // `wx` outward from `left` in fixed SCREEN steps -- so once `left`
+  // was screen-clamped instead of world-anchored, every single vertex's
+  // "world" position (wx + camX) silently became camX-dependent again,
+  // sliding continuously as the camera eased while walking. Since
+  // pseudoRandom is a chaotic sin-hash, even a sub-pixel shift in its
+  // input produces a completely different output -- that's exactly the
+  // writhing/reshuffling look. Fixed at the root this time: the sample
+  // grid is built entirely in WORLD space first (leftWorld/rightWorld,
+  // never clamped, always anchored to the door's fixed x), and only
+  // converted to screen coordinates at the very end for drawing. No
+  // vertex's seed ever depends on camX or on-screen clamping again.
+  const leftWorld = baseX + camX - REACH;
+  const rightWorld = baseX + camX;
+  const left = leftWorld - camX;
+  const right = rightWorld - camX;
+  {
     const tint = ctx.createLinearGradient(baseX - REACH, 0, baseX, 0);
     tint.addColorStop(0, "rgba(185,218,240,0)");
     tint.addColorStop(0.18, "rgba(185,218,240,0.32)");
     tint.addColorStop(0.82, "rgba(185,218,240,0.32)");
     tint.addColorStop(1, "rgba(185,218,240,0)");
     ctx.fillStyle = tint;
-    // CONFIRMED BUG FIX ("this horizontal line is horible. no. make it
-    // phase out like there are almost never ever horizontal lines
-    // desired in the nature lines"): this used to be a plain fillRect
-    // starting dead flat at y=gy -- fine as long as the horizontal
-    // gradient's own left/right fade was also on screen, but once the
-    // whole approach zone fills the screen width (player standing right
-    // near the door), only the ruler-straight top edge at gy was left
-    // visible, reading as a hard seam right at the ground line. Redrawn
-    // as a real jittered/wavy-topped path instead -- same "coastline"
-    // approach this game already uses for organic edges elsewhere --
-    // so the tint frays into the ground rather than snapping on.
-    // CONFIRMED BUG FIX ("in forest near door the frost like re-
-    // randomixze jitters with every player movement"): the jitter at
-    // each vertex was seeded off `wx`, a SCREEN-space x (left/right are
-    // derived from baseX, which shifts every single frame as camX eases
-    // toward the player). So the same patch of ground sampled a
-    // different pseudoRandom input practically every frame, making the
-    // wavy edge visibly writhe/reshuffle while walking instead of
-    // staying pinned to the ground like every other seeded shape in this
-    // scene. Seed off the WORLD-space x instead (wx + camX) so the wave
-    // shape is stable per ground position regardless of camera easing.
     const waveSeed = doorDef.x * 0.017;
     const step = 22;
     ctx.beginPath();
     ctx.moveTo(left, canvas.height);
-    ctx.lineTo(left, gy + (pseudoRandom(waveSeed + (left + camX) * 0.07) - 0.5) * 9);
-    for (let wx = left + step; wx < right; wx += step) {
-      ctx.lineTo(wx, gy + (pseudoRandom(waveSeed + (wx + camX) * 0.07) - 0.5) * 9);
+    ctx.lineTo(left, gy + (pseudoRandom(waveSeed + leftWorld * 0.07) - 0.5) * 9);
+    for (let wxWorld = leftWorld + step; wxWorld < rightWorld; wxWorld += step) {
+      ctx.lineTo(wxWorld - camX, gy + (pseudoRandom(waveSeed + wxWorld * 0.07) - 0.5) * 9);
     }
-    ctx.lineTo(right, gy + (pseudoRandom(waveSeed + (right + camX) * 0.07) - 0.5) * 9);
+    ctx.lineTo(right, gy + (pseudoRandom(waveSeed + rightWorld * 0.07) - 0.5) * 9);
     ctx.lineTo(right, canvas.height);
     ctx.closePath();
     ctx.fill();
@@ -70288,6 +70311,13 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
 // door approach's drifting snowflakes -- no new persistent per-frame-
 // updated state needed.
 const WINTER_RAINBOW_POCKET_X = 2950;
+// CONFIRMED BUG FIX ("i shouldnt be able to land on tree when this ice
+// thing is in front of it"): shared here so applyPhysics's own
+// WINTER_FRONT_TREES collision loop can exclude any tree whose x falls
+// under the overhang -- drawWinterRainbowOverhang is drawn AFTER the
+// treeline, so a tree back there is already visually buried behind the
+// rock; landing on it read as standing inside solid stone.
+const WINTER_RAINBOW_OVERHANG_WIDTH = 420;
 const WINTER_RAINBOW_ICICLE_COLORS = [
   "255,90,110",   // rose
   "255,165,60",   // amber
@@ -70305,17 +70335,22 @@ function drawWinterRainbowOverhang(camX) {
   // icicles crowded close together off one edge, not a handful evenly
   // spaced out -- widened so a much larger count still has room to hang
   // without feeling forced.
-  const OVERHANG_WIDTH = 420;
+  const OVERHANG_WIDTH = WINTER_RAINBOW_OVERHANG_WIDTH;
   const OVERHANG_HEIGHT = 70;
   const ledgeY = gy - 210; // hangs well above head height, icicles reach down from here
   if (sx < -OVERHANG_WIDTH - 60 || sx > canvas.width + 60) return;
   const rimSeed = WINTER_RAINBOW_POCKET_X * 0.01;
   const rimTopY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
 
-  // the ledge itself -- a jagged frozen rock mass, same lumpy-blob
-  // language as the winter pines' own trunk/canopy clumps
+  // CONFIRMED BUG FIX ("it still looks copy-pastey"): the rock mass used
+  // to be a single smooth 10-point blob -- at this size (radius ~200px)
+  // that few points reads as a generic rounded balloon with the odd
+  // sharp spike where one point's radius jitter happened to roll high,
+  // not real jagged rock. More points at the same jitter range means
+  // more, smaller, genuinely rock-like facets instead of a handful of
+  // big smooth arcs.
   ctx.fillStyle = "#7f9bab";
-  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 10);
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT / 2, OVERHANG_WIDTH / 2, WINTER_RAINBOW_POCKET_X * 0.01, 22);
   ctx.fill();
   // CONFIRMED BUG FIX ("there is the hard lines still at the top"): this
   // used to be a flat-alpha overlay blob sitting a fixed distance above
@@ -70330,7 +70365,7 @@ function drawWinterRainbowOverhang(camX) {
   ledgeFadeGrad.addColorStop(0.7, "rgba(210,230,240,0.3)");
   ledgeFadeGrad.addColorStop(1, "rgba(210,230,240,0)");
   ctx.fillStyle = ledgeFadeGrad;
-  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 10);
+  traceIrregularBlob(sx + OVERHANG_WIDTH / 2, ledgeY - OVERHANG_HEIGHT * 0.35, OVERHANG_WIDTH / 1.9, WINTER_RAINBOW_POCKET_X * 0.01 + 3, 20);
   ctx.fill();
 
   // CONFIRMED CHANGE, full rework ("these look like rainbow upside down
@@ -70389,8 +70424,19 @@ function drawWinterRainbowOverhang(camX) {
     const fx = spanLeft + (spanRight - spanLeft) * t;
     const bigWave = (pseudoRandom(rimSeed + Math.floor(f / 4) * 11) - 0.5) * 20;
     const fineJag = (pseudoRandom(rimSeed + f * 3.7) - 0.5) * 7;
-    fringeTopPts.push({ x: fx, y: rimTopY + bigWave + fineJag });
-    fringeBotPts.push({ x: fx, y: rimTopY + 9 + bigWave * 0.6 + pseudoRandom(fringeSeed + f * 2.1) * 13 });
+    // CONFIRMED BUG FIX ("the strip that connects them all, shouldnt be
+    // just a transparaent somewhat wobbly regtangle with sharp lines on
+    // the sides"): the strip used to run at near-full thickness right up
+    // to spanLeft/spanRight, so it ended in a hard, dead-straight
+    // vertical wall at both ends -- exactly a "drawn-on rectangle" edge.
+    // `edgeTaper` shrinks its thickness down toward zero over the outer
+    // ~18% of the span on either side, so the ice actually thins out and
+    // melts into the rock instead of just stopping.
+    const edgeTaper = Math.max(0, Math.min(1, t / 0.18, (1 - t) / 0.18));
+    const topY = rimTopY + bigWave + fineJag;
+    const thickness = 9 + bigWave * 0.6 + pseudoRandom(fringeSeed + f * 2.1) * 13;
+    fringeTopPts.push({ x: fx, y: topY });
+    fringeBotPts.push({ x: fx, y: topY + thickness * edgeTaper });
   }
   // CONFIRMED CHANGE ("NOT having a flat top of each icicle, blend it in
   // to the thing its on and into each other not so seperate, have some
@@ -70588,7 +70634,15 @@ function drawWinterRainbowOverhang(camX) {
   fringeTopPts.forEach(p => ctx.lineTo(p.x, p.y));
   for (let f = FRINGE_SEGS; f >= 0; f--) ctx.lineTo(fringeBotPts[f].x, fringeBotPts[f].y);
   ctx.closePath();
-  ctx.fillStyle = "rgba(200,224,238,0.5)";
+  // fades alpha out over the same outer ~18% used for the thickness
+  // taper above, so the strip both thins AND fades at its ends instead
+  // of reading as a flat rectangle someone pasted on top of the rock.
+  const fringeAlphaGrad = ctx.createLinearGradient(spanLeft, 0, spanRight, 0);
+  fringeAlphaGrad.addColorStop(0, "rgba(200,224,238,0)");
+  fringeAlphaGrad.addColorStop(0.18, "rgba(200,224,238,0.5)");
+  fringeAlphaGrad.addColorStop(0.82, "rgba(200,224,238,0.5)");
+  fringeAlphaGrad.addColorStop(1, "rgba(200,224,238,0)");
+  ctx.fillStyle = fringeAlphaGrad;
   ctx.fill();
 }
 
