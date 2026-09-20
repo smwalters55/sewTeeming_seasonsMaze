@@ -1149,7 +1149,12 @@ const connections = [
     // the other two -- no new collection mechanic needed.
     id: "forest-winter",
     doors: {
-      forest: { x: 17600, width: 56, height: 92, leadsTo: "winter" },
+      // CONFIRMED CHANGE ("move the door quite a bit to the right of the
+      // slide end"): was 17600, basically sitting right in the rock
+      // slide's own landing/impact zone (FOREST_SLIDE_END_X ~17510,
+      // impact zone reaches back 130px from there). Moved well clear of
+      // it, real breathing room past the whole rock-climb/slide cluster.
+      forest: { x: 18700, width: 56, height: 92, leadsTo: "winter" },
       winter: { x: 200,   width: 56, height: 92, leadsTo: "forest" }
     },
     acceptsItemType: "appleSlice",
@@ -69586,66 +69591,113 @@ function drawWinterSnow(camX) {
   });
 }
 
-// a simple frosted pine, reused for the treeline both near the door
-// (mixed with green, still-forest sprigs) and further into the clearing
+// organic frosted pine -- clumped overlapping foliage circles (same
+// "layered cluster" language as drawLeafTree's canopy) instead of clean
+// triangle tiers, with soft snow caps sitting on top of the clumps
+// rather than a flat white overlay. CONFIRMED CHANGE ("way more
+// organically looking... i dont like the triangle trees"): full replace
+// of the original triangle-tier version.
 function drawWinterPine(sx, baseY, scale, snowy) {
-  const h = 90 * scale, w = 34 * scale;
-  ctx.fillStyle = "#2f4a3a";
-  for (let tier = 0; tier < 3; tier++) {
-    const ty = baseY - h * (0.15 + tier * 0.32);
-    const tw = w * (1 - tier * 0.22);
-    ctx.beginPath();
-    ctx.moveTo(sx, ty - h * 0.34);
-    ctx.lineTo(sx - tw, ty);
-    ctx.lineTo(sx + tw, ty);
-    ctx.closePath();
-    ctx.fill();
-    if (snowy) {
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      ctx.beginPath();
-      ctx.moveTo(sx, ty - h * 0.34);
-      ctx.lineTo(sx - tw * 0.55, ty - h * 0.06);
-      ctx.lineTo(sx + tw * 0.55, ty - h * 0.06);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#2f4a3a";
-    }
-  }
+  const seed = sx * 0.173 + baseY * 0.061;
+
+  // wavy organic trunk, not a plain rectangle -- same idea as drawLeafTree's
+  const trunkH = 14 * scale;
   ctx.fillStyle = "#4a3524";
-  ctx.fillRect(sx - 3 * scale, baseY - 6 * scale, 6 * scale, 10 * scale);
+  ctx.beginPath();
+  ctx.moveTo(sx - 3.4 * scale, baseY);
+  ctx.quadraticCurveTo(sx - 4.4 * scale, baseY - trunkH * 0.6, sx - 2.2 * scale, baseY - trunkH);
+  ctx.lineTo(sx + 2.2 * scale, baseY - trunkH);
+  ctx.quadraticCurveTo(sx + 4.4 * scale, baseY - trunkH * 0.6, sx + 3.4 * scale, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // rows of jittered, overlapping foliage clumps, tapering upward --
+  // reads as an actual bundled conifer shape rather than crisp geometry
+  const canopyBase = baseY - trunkH + 4 * scale;
+  const totalH = 78 * scale;
+  const rows = [
+    { y: 0.00, spread: 28, count: 3, r: 16 },
+    { y: 0.27, spread: 21, count: 3, r: 13.5 },
+    { y: 0.53, spread: 14, count: 2, r: 11 },
+    { y: 0.75, spread: 7,  count: 2, r: 8.5 }
+  ];
+  const colorA = "#33503e", colorB = "#3f6249";
+
+  rows.forEach((row, ri) => {
+    const rowY = canopyBase - totalH * row.y;
+    for (let i = 0; i < row.count; i++) {
+      const s = seed + ri * 11.3 + i * 4.7;
+      const bx = sx + (pseudoRandom(s) - 0.5) * row.spread * scale;
+      const by = rowY + (pseudoRandom(s + 1) - 0.5) * 6 * scale;
+      const r = (row.r + pseudoRandom(s + 2) * 4) * scale;
+      ctx.fillStyle = (ri + i) % 2 === 0 ? colorA : colorB;
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (snowy) {
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.ellipse(bx, by - r * 0.42, r * 0.72, r * 0.42, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
 }
 
 // icy frost dressing layered on top of the generic door glow, plus a
 // couple of green sprigs at the base -- "make the door look icy and
-// wintery but still have some forest greenery"
+// wintery but still have some forest greenery". Icicles follow the
+// door's actual arch curve (same archRadius/archCenterX/archCenterY math
+// as drawConnectionDoor/drawMossyDoorOverlay), not a flat row floating
+// above it, and each one is an organic drip shape rather than a plain
+// triangle. CONFIRMED CHANGE ("icycles need to be organic looking too
+// not these just triangles. and only go around top of door not in this
+// line"): full replace of the original flat-row version, and the
+// redundant ground-frost ellipse is dropped -- drawConnectionDoor
+// already bleeds the door's own (icy, for this one) glow onto the
+// ground, so this would have just doubled it.
 function drawWinterDoorFrost(camX, doorDef) {
-  const sx = doorDef.x - camX + doorDef.width / 2;
-  if (sx < -80 || sx > canvas.width + 80) return;
-  const topY = gy - doorDef.height;
+  const dx = doorDef.x - camX;
+  const frameWidth = doorDef.width;
+  const frameHeight = doorDef.height;
+  const postWidth = 10;
+  const archRadius = (frameWidth - postWidth * 2) / 2;
+  const archCenterX = dx + frameWidth / 2;
+  const archCenterY = gy - frameHeight + archRadius + postWidth;
+  const outerRadius = archRadius + postWidth;
 
-  // icicles along the top of the frame
-  ctx.fillStyle = "rgba(210,235,250,0.9)";
-  const icicleSeeds = [-24, -14, -4, 8, 20];
-  icicleSeeds.forEach((ox, i) => {
-    const len = 9 + pseudoRandom(i * 5.1) * 10;
+  if (archCenterX < -80 || archCenterX > canvas.width + 80) return;
+
+  ctx.fillStyle = "rgba(215,238,250,0.92)";
+  const ICICLE_COUNT = 6;
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    const t = (i + 0.5) / ICICLE_COUNT; // 0..1 across the visible top sweep
+    const angle = Math.PI + Math.PI * (0.12 + t * 0.76); // inset from both posts, hugs the real dome
+    const ox = Math.cos(angle) * outerRadius;
+    const oy = Math.sin(angle) * outerRadius;
+    const originX = archCenterX + ox;
+    const originY = archCenterY + oy;
+    const seed = i * 9.1 + doorDef.x * 0.01;
+    const len = 10 + pseudoRandom(seed) * 13;
+    const w = 2.2 + pseudoRandom(seed + 1) * 1.6;
+    const lean = ox * 0.14; // sides drip slightly outward along the curve, not straight down
+    const midX = originX + lean * 0.5;
+    const midY = originY + len * 0.55;
+    const tipX = originX + lean;
+    const tipY = originY + len + pseudoRandom(seed + 2) * 5;
+
     ctx.beginPath();
-    ctx.moveTo(sx + ox - 3, topY);
-    ctx.lineTo(sx + ox + 3, topY);
-    ctx.lineTo(sx + ox, topY + len);
+    ctx.moveTo(originX - w, originY);
+    ctx.quadraticCurveTo(midX - w * 0.4, midY, tipX, tipY);
+    ctx.quadraticCurveTo(midX + w * 0.4, midY, originX + w, originY);
     ctx.closePath();
     ctx.fill();
-  });
-
-  // frost dusting at the base
-  ctx.fillStyle = "rgba(225,240,250,0.7)";
-  ctx.beginPath();
-  ctx.ellipse(sx, gy, doorDef.width * 0.9, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
+  }
 
   // a couple of green pine sprigs flanking the base -- still forest,
   // just dusted with frost
-  [-doorDef.width * 0.75, doorDef.width * 0.75].forEach(ox => {
-    drawWinterPine(sx + ox, gy, 0.5, true);
+  [-frameWidth * 0.75, frameWidth * 0.75].forEach(ox => {
+    drawWinterPine(archCenterX + ox, gy, 0.5, true);
   });
 }
 
