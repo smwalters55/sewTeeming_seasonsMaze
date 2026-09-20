@@ -70057,14 +70057,26 @@ function drawWinterDoorApproach(camX, doorDef) {
   // point (baseX - REACH) against the right edge, not baseX itself.
   if (baseX < -60 || baseX - REACH > canvas.width + 60) return;
 
-  // cool tint wash over the ground, strongest right at the door and
-  // fading to nothing across the approach
+  // cool tint wash over the ground -- fades IN from the far edge, holds
+  // through the middle of the approach, then fades back OUT again before
+  // reaching the door itself. CONFIRMED BUG FIX ("the line i already
+  // asked about of icy in forest near door... an absolute no and nees to
+  // be faded in, faded out on the sides"): the wash used to hold its
+  // gradient's peak alpha all the way up to baseX (the door), then the
+  // fill polygon just stopped dead there -- so right where the ground is
+  // still fully exposed next to the door post (before the close frost
+  // detail's own cracks/clusters take over), the wash's right edge read
+  // as a hard vertical seam, going from tinted straight to untinted with
+  // no transition. Now both ends fade to zero alpha so the wash frays
+  // out on both sides instead of butting against a hard boundary.
   const left = Math.max(0, baseX - REACH);
   const right = Math.min(canvas.width, baseX);
   if (right > left) {
     const tint = ctx.createLinearGradient(baseX - REACH, 0, baseX, 0);
     tint.addColorStop(0, "rgba(185,218,240,0)");
-    tint.addColorStop(1, "rgba(185,218,240,0.32)");
+    tint.addColorStop(0.18, "rgba(185,218,240,0.32)");
+    tint.addColorStop(0.82, "rgba(185,218,240,0.32)");
+    tint.addColorStop(1, "rgba(185,218,240,0)");
     ctx.fillStyle = tint;
     // CONFIRMED BUG FIX ("this horizontal line is horible. no. make it
     // phase out like there are almost never ever horizontal lines
