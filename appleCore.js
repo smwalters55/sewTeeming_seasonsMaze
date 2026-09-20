@@ -70334,42 +70334,81 @@ function drawWinterRainbowOverhang(camX) {
   const spanLeft = sx + 24;
   const spanRight = sx + OVERHANG_WIDTH - 24;
   const rimSeed = WINTER_RAINBOW_POCKET_X * 0.01;
-  const topY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
+  const rimTopY = ledgeY - 3; // tucked up into the ledge's own fill -- no seam
 
-  // one shared, gently wavy top edge across the whole span -- every
-  // icicle's own top-left/top-right corner is a point ON this same line,
-  // guaranteeing they always touch their neighbors
-  const boundaryX = [];
-  const boundaryY = [];
-  for (let b = 0; b <= ICICLE_COUNT; b++) {
-    boundaryX.push(spanLeft + (spanRight - spanLeft) * (b / ICICLE_COUNT));
-    boundaryY.push(topY + (pseudoRandom(rimSeed + b * 3.7) - 0.5) * 5);
+  // CONFIRMED BUG FIX, second pass ("they are like triangle flag
+  // birthday party flags shaped... organic icicle shapes, a little
+  // jagged, thinner, tdiderent widths and lengths at different parts"):
+  // the first pass still read as flags because each icicle's own top
+  // edge spanned its FULL slot width before funneling down -- a wide
+  // triangular base is exactly what a pennant flag looks like. Split the
+  // "always connected, seamless into the rock" job and the "individual
+  // icicle" job into two separate pieces instead of asking one shape to
+  // do both: a thin, solid, jagged-bottomed ICE FRINGE first (this is
+  // what's always connected across the whole span and fused into the
+  // ledge -- a real ice formation, not a triangle), then genuinely
+  // slender rainbow icicles hanging down from points along the fringe's
+  // own jagged underside, each free to be its own width/length with no
+  // wide shared base forcing a pennant silhouette.
+  const fringeSeed = rimSeed + 500;
+  const FRINGE_SEGS = 16;
+  const fringeTopPts = [];
+  const fringeBotPts = [];
+  for (let f = 0; f <= FRINGE_SEGS; f++) {
+    const t = f / FRINGE_SEGS;
+    const fx = spanLeft + (spanRight - spanLeft) * t;
+    fringeTopPts.push({ x: fx, y: rimTopY + (pseudoRandom(rimSeed + f * 3.7) - 0.5) * 5 });
+    fringeBotPts.push({ x: fx, y: rimTopY + 7 + pseudoRandom(fringeSeed + f * 2.1) * 11 });
   }
+  ctx.beginPath();
+  ctx.moveTo(fringeTopPts[0].x, fringeTopPts[0].y);
+  fringeTopPts.forEach(p => ctx.lineTo(p.x, p.y));
+  for (let f = FRINGE_SEGS; f >= 0; f--) ctx.lineTo(fringeBotPts[f].x, fringeBotPts[f].y);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(200,224,238,0.6)";
+  ctx.fill();
 
   for (let i = 0; i < ICICLE_COUNT; i++) {
     const seed = i * 19.3 + rimSeed;
-    const lx = boundaryX[i], ly = boundaryY[i];
-    const rx = boundaryX[i + 1], ry = boundaryY[i + 1];
-    const midX = (lx + rx) / 2;
-    const len = 46 + pseudoRandom(seed + 1) * 58;
-    const lean = (pseudoRandom(seed + 2) - 0.5) * 10; // tip drifts slightly off-center
-    const tipX = midX + lean;
-    const tipY = Math.max(ly, ry) + len;
+    // hang each icicle from a point along the fringe's own jagged
+    // underside (interpolated between its nearest two sample points),
+    // not from a wide shared slot -- this is what keeps the body itself
+    // thin instead of forcing a triangular base.
+    const originT = (i + 0.5) / ICICLE_COUNT + (pseudoRandom(seed) - 0.5) * (0.5 / ICICLE_COUNT);
+    const ff = Math.max(0, Math.min(FRINGE_SEGS - 1, Math.floor(originT * FRINGE_SEGS)));
+    const fLocal = originT * FRINGE_SEGS - ff;
+    const originX = fringeBotPts[ff].x + (fringeBotPts[ff + 1].x - fringeBotPts[ff].x) * fLocal;
+    const originY = fringeBotPts[ff].y + (fringeBotPts[ff + 1].y - fringeBotPts[ff].y) * fLocal;
+    // CONFIRMED CHANGE (real icicle photo references, "somewhere between
+    // these" -- thin elegant needle-like ones on one end, thicker
+    // snow-crusted ones with real width variety on the other): the
+    // strong independent per-segment "bump" was overcorrecting into
+    // lumpy/pinched shafts that no real icicle actually has -- in every
+    // reference photo each individual icicle tapers smoothly along its
+    // OWN length; the variety instead comes from icicle to icicle (some
+    // noticeably thick, some hair-thin, some short, some long hanging
+    // off the same rim). Base width and length now both roll a much
+    // wider per-icicle range so that mix shows up across the row, while
+    // each icicle's own taper is smooth (a gentle eased curve, not
+    // random noise) with only a light edge jag for texture.
+    const isThick = pseudoRandom(seed + 9) < 0.3; // a minority read as the photos' fatter, snow-crusted ones
+    const len = (isThick ? 34 : 46) + pseudoRandom(seed + 1) * (isThick ? 46 : 78);
+    const lean = (pseudoRandom(seed + 2) - 0.5) * 8; // tip drifts slightly off-center
+    const tipX = originX + lean;
+    const tipY = originY + len;
     const color = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
 
-    // faceted, jaggedly-tapering shard -- same shape language as the
-    // door's own icicles (drawWinterDoorFrost above): straight jittered
-    // segments narrowing from the full top width down to a real point,
-    // not a smooth curve and not a bulb.
-    const SEGS = 4;
-    const leftPts = [{ x: lx, y: ly }];
-    const rightPts = [{ x: rx, y: ry }];
+    const SEGS = 6;
+    const baseHalfW = (isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isThick ? 3.5 : 2);
+    const leftPts = [{ x: originX - baseHalfW * 0.85, y: originY }];
+    const rightPts = [{ x: originX + baseHalfW * 0.85, y: originY }];
     for (let s = 1; s <= SEGS; s++) {
       const tt = s / SEGS;
-      const px = midX + lean * tt;
-      const py = ly + (ry - ly) * 0.5 + (tipY - (ly + ry) / 2) * tt;
-      const hw = Math.max(0.5, ((rx - lx) / 2) * (1 - tt) * (0.7 + pseudoRandom(seed + 10 + s) * 0.5));
-      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * (rx - lx) * 0.12 * (1 - tt * 0.5);
+      const px = originX + lean * tt;
+      const py = originY + len * tt;
+      const envelope = Math.pow(1 - tt, 1.25); // smooth, natural taper -- no per-segment noise in the width itself
+      const hw = Math.max(0.4, baseHalfW * envelope);
+      const jag = (pseudoRandom(seed + 20 + s) - 0.5) * hw * 0.5; // light edge texture only
       leftPts.push({ x: px - hw + jag, y: py });
       rightPts.push({ x: px + hw + jag, y: py });
     }
@@ -70379,8 +70418,8 @@ function drawWinterRainbowOverhang(camX) {
     for (let s = 1; s <= SEGS; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
     for (let s = SEGS; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
     ctx.closePath();
-    const grad = ctx.createLinearGradient(0, topY, 0, tipY);
-    grad.addColorStop(0, `rgba(${color},0.6)`);
+    const grad = ctx.createLinearGradient(0, originY, 0, tipY);
+    grad.addColorStop(0, `rgba(${color},0.62)`);
     grad.addColorStop(1, `rgba(${color},0.18)`);
     ctx.fillStyle = grad;
     ctx.fill();
@@ -70388,8 +70427,8 @@ function drawWinterRainbowOverhang(camX) {
     // a thin bright highlight down one edge -- the same real-ice cue the
     // door's own rim/icicles use, kept subtle rather than a hard outline
     ctx.beginPath();
-    ctx.moveTo(lx + (midX - lx) * 0.3, ly + 3);
-    ctx.lineTo(midX + lean * 0.7, topY + len * 0.75);
+    ctx.moveTo(originX - baseHalfW * 0.3, originY + 2);
+    ctx.lineTo(originX + lean * 0.7, originY + len * 0.7);
     ctx.strokeStyle = "rgba(255,255,255,0.45)";
     ctx.lineWidth = 1;
     ctx.stroke();
