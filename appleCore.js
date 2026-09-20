@@ -70294,7 +70294,13 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
 
 function drawWinterRainbowOverhang(camX) {
   const sx = WINTER_RAINBOW_POCKET_X - camX;
-  const OVERHANG_WIDTH = 340;
+  // CONFIRMED CHANGE ("have many more icicles i dont want just one per
+  // color of rainbow... pls reflect more on the pictures i just sent
+  // you"): every reference photo shows a dense cluster, a dozen-plus
+  // icicles crowded close together off one edge, not a handful evenly
+  // spaced out -- widened so a much larger count still has room to hang
+  // without feeling forced.
+  const OVERHANG_WIDTH = 420;
   const OVERHANG_HEIGHT = 70;
   const ledgeY = gy - 210; // hangs well above head height, icicles reach down from here
   if (sx < -OVERHANG_WIDTH - 60 || sx > canvas.width + 60) return;
@@ -70329,7 +70335,7 @@ function drawWinterRainbowOverhang(camX) {
   // toward the tip, real melting-ice fade instead of a flat block of
   // color) plus a thin bright highlight stroke is the whole finish --
   // elegant and simple, matching the door's own icicles' spirit.
-  const ICICLE_COUNT = 7;
+  const ICICLE_COUNT = 20;
   const now = performance.now();
   const spanLeft = sx + 24;
   const spanRight = sx + OVERHANG_WIDTH - 24;
@@ -70351,7 +70357,7 @@ function drawWinterRainbowOverhang(camX) {
   // own jagged underside, each free to be its own width/length with no
   // wide shared base forcing a pennant silhouette.
   const fringeSeed = rimSeed + 500;
-  const FRINGE_SEGS = 16;
+  const FRINGE_SEGS = 26;
   const fringeTopPts = [];
   const fringeBotPts = [];
   for (let f = 0; f <= FRINGE_SEGS; f++) {
@@ -70396,7 +70402,32 @@ function drawWinterRainbowOverhang(camX) {
     const lean = (pseudoRandom(seed + 2) - 0.5) * 8; // tip drifts slightly off-center
     const tipX = originX + lean;
     const tipY = originY + len;
-    const color = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
+
+    // CONFIRMED CHANGE ("they also some should be more than one color all
+    // melding into eachother within the icicle maybe like a lava lamp"):
+    // roughly half the icicles now carry TWO (sometimes three) rainbow
+    // hues that blend into each other down the shaft via extra gradient
+    // color stops, instead of every icicle being one flat color -- a
+    // real canvas gradient interpolates smoothly between stops on its
+    // own, so stacking 2-3 different hues in one gradient IS the
+    // lava-lamp melt, no extra blending work needed. The rest stay a
+    // single hue so the melded ones still read as an accent, not noise.
+    const palN = WINTER_RAINBOW_ICICLE_COLORS.length;
+    const colorRoll = pseudoRandom(seed + 9.5);
+    let icicleColors;
+    if (colorRoll < 0.45) {
+      icicleColors = [WINTER_RAINBOW_ICICLE_COLORS[i % palN]];
+    } else if (colorRoll < 0.8) {
+      const c0 = Math.floor(pseudoRandom(seed + 13) * palN);
+      icicleColors = [WINTER_RAINBOW_ICICLE_COLORS[c0], WINTER_RAINBOW_ICICLE_COLORS[(c0 + 1) % palN]];
+    } else {
+      const c0 = Math.floor(pseudoRandom(seed + 13) * palN);
+      icicleColors = [
+        WINTER_RAINBOW_ICICLE_COLORS[c0],
+        WINTER_RAINBOW_ICICLE_COLORS[(c0 + 1) % palN],
+        WINTER_RAINBOW_ICICLE_COLORS[(c0 + 2) % palN]
+      ];
+    }
 
     const SEGS = 6;
     const baseHalfW = (isThick ? 6.5 : 3) + pseudoRandom(seed + 3) * (isThick ? 3.5 : 2);
@@ -70419,8 +70450,17 @@ function drawWinterRainbowOverhang(camX) {
     for (let s = SEGS; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, originY, 0, tipY);
-    grad.addColorStop(0, `rgba(${color},0.62)`);
-    grad.addColorStop(1, `rgba(${color},0.18)`);
+    // alpha still fades top-to-tip same as before; hue steps through
+    // icicleColors along that same span so a multi-color one genuinely
+    // melts from one rainbow hue into the next. A single-color icicle
+    // still gets two stops (same hue, fading alpha) so it fades exactly
+    // like before.
+    const colorStops = icicleColors.length === 1 ? [icicleColors[0], icicleColors[0]] : icicleColors;
+    colorStops.forEach((c, ci) => {
+      const stopT = ci / (colorStops.length - 1);
+      const alpha = 0.62 - (0.62 - 0.18) * stopT;
+      grad.addColorStop(stopT, `rgba(${c},${alpha})`);
+    });
     ctx.fillStyle = grad;
     ctx.fill();
 
@@ -70441,9 +70481,10 @@ function drawWinterRainbowOverhang(camX) {
     const dropFall = 22;
     const dropY = tipY + phase * dropFall;
     const dropAlpha = 0.6 * (1 - phase);
+    const tipColor = icicleColors[icicleColors.length - 1]; // droplet matches whatever hue the icicle actually melts into at its tip
     ctx.beginPath();
     ctx.ellipse(tipX, dropY, 1.8, 2.6, 0, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${color},${dropAlpha})`;
+    ctx.fillStyle = `rgba(${tipColor},${dropAlpha})`;
     ctx.fill();
   }
 }
