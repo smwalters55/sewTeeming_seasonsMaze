@@ -18825,10 +18825,13 @@ if (DEBUG_START_SCENE === "forest") {
 // (max of x+width+driftAmp across WINTER_SLICK_PLATFORMS, currently the
 // last platform: 3180+100+38 = 3318) plus clearance so the spawn sits
 // cleanly past every spike zone, not right at its trailing edge.
+// CONFIRMED CHANGE ("lets move everything to the right to gve breathing
+// room"): the whole climb shifted by WINTER_CONTENT_OFFSET (380), so this
+// hardcoded spawn moves by the same amount: 3360 + 380 = 3740.
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  player.x = 3360;
+  player.x = 3740;
   player.y = 0;
   addToInventory("shovel");
   addToInventory("windSeed");
@@ -69793,7 +69796,20 @@ drawSeasonTransition(ctx);
 // unaffected by this -- everything else scales up slightly, but the
 // near-door trees (low i) barely move in absolute terms, so the already
 // screenshot-tuned area right past the door is untouched in practice.
-const WINTER_WIDTH = 4050;
+// CONFIRMED CHANGE ("lets move everything to the right to gve breathing
+// room" -- making room for a new snowy owl NPC to sit in its own tree
+// right past the door): a single shared offset applied to the front
+// treeline's own generation origin, the slick-platform climb, and the
+// rainbow icicle pocket, opening up a real deliberate clearing between
+// the door and the start of the climb instead of trees/platforms
+// crowding in immediately. WINTER_WIDTH grows by the same amount so
+// nothing at the far end gets pushed off the end of the scene. The mid
+// (background parallax) treeline is deliberately left unshifted/spanning
+// the full width -- it's soft, non-collidable backdrop, so leaving it
+// filling the clearing too just reads as "the clearing is a glade within
+// the forest," not an empty gap.
+const WINTER_CONTENT_OFFSET = 380;
+const WINTER_WIDTH = 4050 + WINTER_CONTENT_OFFSET;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -69848,6 +69864,10 @@ const WINTER_HIDDEN_ICE_ZONES = [];
 // zigzag trends back DOWN toward ground level over these last three so
 // the climb ends with a natural descent into the flat breathing-room
 // stretch before the icicle pocket, rather than a big drop.
+// x values here are the ORIGINAL pre-clearing positions -- shifted by
+// WINTER_CONTENT_OFFSET below (once, at definition) rather than rewriting
+// every literal, so this whole climb's own internal spacing/shape is
+// untouched and easy to keep reasoning about relative to itself.
 const WINTER_SLICK_PLATFORMS = [
   { x: 1400, width: 150, height: 55,  driftAmp: 0,  driftSpeed: 0,      driftPhase: 0 },
   { x: 1600, width: 80,  height: 160, driftAmp: 45, driftSpeed: 0.0012, driftPhase: 0.6 },
@@ -69859,7 +69879,7 @@ const WINTER_SLICK_PLATFORMS = [
   { x: 2800, width: 110, height: 260, driftAmp: 48, driftSpeed: 0.0014, driftPhase: 0.9 },
   { x: 3000, width: 130, height: 150, driftAmp: 52, driftSpeed: 0.0012, driftPhase: 2.7 },
   { x: 3180, width: 100, height: 70,  driftAmp: 38, driftSpeed: 0.0017, driftPhase: 4.5 }
-];
+].map(p => ({ ...p, x: p.x + WINTER_CONTENT_OFFSET }));
 
 // current world-x of a slick platform's LEFT edge this frame -- the only
 // thing that actually moves is x (height stays fixed per-platform), so
@@ -69883,8 +69903,14 @@ const WINTER_FRONT_TREE_COUNT = 10;
 const WINTER_FRONT_TREES = [];
 for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
   const seed = i * 17.2 + 500;
-  const worldX = i * (WINTER_WIDTH / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
-  const stillForest = worldX < 750; // close to the door -- carries the greenery over
+  // CONFIRMED CHANGE ("lets move everything to the right to gve breathing
+  // room"): the treeline used to start filling in from world x~0, right at
+  // the door -- shifted the whole generation origin out by
+  // WINTER_CONTENT_OFFSET so there's a real deliberate clearing first
+  // (room for the new owl tree), same offset the platform climb/icicle
+  // pocket below also got.
+  const worldX = WINTER_CONTENT_OFFSET + i * ((WINTER_WIDTH - WINTER_CONTENT_OFFSET) / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
+  const stillForest = worldX < WINTER_CONTENT_OFFSET + 750; // close to the door -- carries the greenery over
   const scale = 1.3 + pseudoRandom(seed + 1) * 0.6;
   WINTER_FRONT_TREES.push({
     x: worldX,
@@ -70274,6 +70300,174 @@ function drawWinterPine(sx, baseY, scale, snowy, seed) {
       }
     }
   });
+}
+
+// CONFIRMED NEW FEATURE ("i want it to be ice animal like... i like snowy
+// owl... lets move everything to the right to gve breathing room... put
+// him in a lil tree or like maybe tree bigg tall... snowy owl sitting on a
+// low branch with some snow n it"): a real deliberate clearing right past
+// the door (see WINTER_CONTENT_OFFSET above) now holds one dedicated,
+// bigger-than-usual pine with a real low branch, snow-capped, for a snowy
+// owl to perch on -- a wise, vague, rhyming caution about winter's ice
+// before the player ever reaches the platform climb. Placed well clear of
+// both the door's own approach decoration and the first procedural front
+// tree so it reads as its own set-piece, not lost in the treeline.
+const WINTER_OWL_TREE_X = 600;
+const WINTER_OWL_TREE_SCALE = 3.1; // noticeably bigger/taller than a normal front-layer pine
+const WINTER_OWL_TREE_SEED = 8140;
+// branch sits partway up the trunk, on whichever side reads as natural for
+// the canopy shape at this scale -- left side, roughly a third of the way up
+const WINTER_OWL_BRANCH_DX = -30 * WINTER_OWL_TREE_SCALE * 0.42;
+const WINTER_OWL_BRANCH_DY = -26 * WINTER_OWL_TREE_SCALE;
+
+// CONFIRMED NEW FEATURE, dialogue drafted together with Sam ("lets draft
+// together the thing it'll say" -> "ya let do h"): vague, fairy-tale,
+// rhyming -- never names a specific mechanic (platforms/spikes/watery ice),
+// just a general caution to carry forward into the climb ahead.
+const WINTER_OWL_DIALOGUE_LINES = [
+  "Snow that gleams and ice that glows,",
+  "isn't always what it shows.",
+  "Little wanderer, tread with care --",
+  "not all that shines will hold you there."
+];
+
+function drawWinterOwlTree(camX) {
+  const sx = WINTER_OWL_TREE_X - camX;
+  if (sx < -140 || sx > canvas.width + 140) return;
+
+  drawWinterPine(sx, gy, WINTER_OWL_TREE_SCALE, true, WINTER_OWL_TREE_SEED);
+
+  // the low branch itself -- a simple tapered dark wood shape jutting out
+  // from the trunk, angled slightly up, with its own small snow cap so it
+  // reads as a real resting spot rather than a random stick
+  const branchBaseX = sx;
+  const branchBaseY = gy - 20 * WINTER_OWL_TREE_SCALE * 0.3;
+  const branchTipX = sx + WINTER_OWL_BRANCH_DX;
+  const branchTipY = branchBaseY + WINTER_OWL_BRANCH_DY * 0.15;
+  ctx.strokeStyle = "#4a3524";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(branchBaseX, branchBaseY);
+  ctx.quadraticCurveTo(
+    branchBaseX + (branchTipX - branchBaseX) * 0.5, branchBaseY + 4,
+    branchTipX, branchTipY
+  );
+  ctx.stroke();
+  // snow cap along the top of the branch
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(branchBaseX, branchBaseY - 2.5);
+  ctx.quadraticCurveTo(
+    branchBaseX + (branchTipX - branchBaseX) * 0.5, branchBaseY + 1.5,
+    branchTipX, branchTipY - 2.5
+  );
+  ctx.stroke();
+
+  drawSnowyOwl(branchTipX - 4, branchTipY - 3, performance.now());
+}
+
+// a small, simple snowy owl -- mostly white/cream body with light grey
+// speckling, a round forward-facing head fused straight into the body (no
+// real neck, same as a real owl's silhouette), big yellow-and-black eyes,
+// a small dark beak, and two folded wing shapes for a bit of form. Gentle
+// idle animation only: a slow breathing bob and an occasional blink --
+// deliberately calm/still rather than busy, matching a wise-watcher role.
+function drawSnowyOwl(ox, oy, now) {
+  const bob = Math.sin(now * 0.0011) * 1.4;
+  const cy = oy + bob;
+  const bodyW = 15, bodyH = 17;
+
+  ctx.save();
+  ctx.translate(ox, cy);
+
+  // folded wings, slightly behind the body outline, warm-white with a
+  // faint grey edge so the body itself still reads as the brightest shape
+  ctx.fillStyle = "#e7ecec";
+  ctx.beginPath();
+  ctx.ellipse(-bodyW * 0.42, 2, bodyW * 0.4, bodyH * 0.55, -0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(bodyW * 0.42, 2, bodyW * 0.4, bodyH * 0.55, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // body + head as one fused rounded silhouette
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bodyW * 0.5, bodyH * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // light speckling across the chest/head -- a handful of small soft grey
+  // marks, seeded fixed so they don't re-jitter every frame
+  ctx.fillStyle = "rgba(150,160,165,0.4)";
+  for (let i = 0; i < 6; i++) {
+    const sp = pseudoRandom(WINTER_OWL_TREE_SEED + 300 + i * 9.1);
+    const spx = (pseudoRandom(WINTER_OWL_TREE_SEED + 310 + i * 9.1) - 0.5) * bodyW * 0.75;
+    const spy = -bodyH * 0.32 + sp * bodyH * 0.7;
+    ctx.beginPath();
+    ctx.ellipse(spx, spy, 1.3, 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // facial disc -- a subtle flattened lighter ring around the eyes, the
+  // one real "owl" tell beyond the round silhouette
+  ctx.fillStyle = "#f5f2e8";
+  ctx.beginPath();
+  ctx.ellipse(0, -bodyH * 0.16, bodyW * 0.46, bodyH * 0.36, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // big round eyes, forward-facing (close together) -- slow blink cycle,
+  // mostly open, closes briefly on a long slow period so it reads as calm
+  const blinkPhase = (now * 0.00018 + 0.4) % 1;
+  const blinkT = blinkPhase > 0.94 ? 1 - (blinkPhase - 0.94) / 0.06 : 1; // openness, 1 = fully open
+  const eyeH = 4.6 * Math.max(0.08, blinkT);
+  [-1, 1].forEach(side => {
+    const ex = side * 4.2;
+    const ey = -bodyH * 0.18;
+    ctx.fillStyle = "#f5c542";
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 3.4, eyeH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (blinkT > 0.3) {
+      ctx.fillStyle = "#2a2015";
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, 1.6, eyeH * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // small dark hooked beak, right between/under the eyes
+  ctx.fillStyle = "#5a4632";
+  ctx.beginPath();
+  ctx.moveTo(-1.6, -bodyH * 0.04);
+  ctx.lineTo(1.6, -bodyH * 0.04);
+  ctx.lineTo(0, bodyH * 0.1);
+  ctx.closePath();
+  ctx.fill();
+
+  // feet gripping the branch -- just enough shape to ground the pose
+  ctx.strokeStyle = "#caa04a";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(-3.5, bodyH * 0.46);
+  ctx.lineTo(-3.5, bodyH * 0.62);
+  ctx.moveTo(3.5, bodyH * 0.46);
+  ctx.lineTo(3.5, bodyH * 0.62);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// proximity-triggered rhyming caution, same generic isPlayerNear + fitted-
+// speech-bubble pattern every other simple NPC/hint in the game uses
+// (mole shop, geode breaker, tunnel elder, etc) -- always shown while
+// standing near, no branching dialogue state needed for one static beat.
+function drawWinterOwlDialogue(camX) {
+  const perchWorldX = WINTER_OWL_TREE_X + WINTER_OWL_BRANCH_DX - 4;
+  if (!isPlayerNear(perchWorldX, 90, 140, 60, 120)) return;
+  const sx = perchWorldX - camX;
+  drawFittedSpeechBubble(ctx, sx - 40, gy - 210, WINTER_OWL_DIALOGUE_LINES);
 }
 
 // icy frost dressing layered on top of the generic door glow, plus a
@@ -70670,7 +70864,7 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
 // last slick platform (now ending around x 3280-3320 with drift) before
 // the icicle pocket begins, instead of arriving right at the base of it
 // off the final jump.
-const WINTER_RAINBOW_POCKET_X = 3500;
+const WINTER_RAINBOW_POCKET_X = 3500 + WINTER_CONTENT_OFFSET;
 // CONFIRMED BUG FIX ("i shouldnt be able to land on tree when this ice
 // thing is in front of it"): shared here so applyPhysics's own
 // WINTER_FRONT_TREES collision loop can exclude any tree whose x falls
@@ -71581,6 +71775,10 @@ function drawWinterScene(camX) {
     drawWinterPine(sx, gy, t.scale, t.snowy, t.seed);
   });
 
+  // the snowy owl's own tree -- drawn as its own set-piece within the
+  // clearing, not folded into the procedural WINTER_FRONT_TREES loop
+  drawWinterOwlTree(camX);
+
   // spiky ice hazards on the ground under the platform climb -- drawn
   // after the front treeline (just above), so a tree trunk sitting in
   // one of the gaps WINTER_ICE_SPIKE_ZONES already carves out for it
@@ -71603,6 +71801,9 @@ function drawWinterScene(camX) {
   // ground-level hazard first, then whatever's visually above/behind it.
   WINTER_WATERY_ICE_ZONES.forEach(z => drawWinterWateryIce(camX, z));
   drawWinterRainbowOverhang(camX);
+
+  // the owl's own caution, drawn last so it sits on top of everything else
+  drawWinterOwlDialogue(camX);
 
   ctx.restore(); // matches the cameraY translate save() above
   ctx.restore();
