@@ -5260,9 +5260,11 @@ function applyPhysics(){
     // up the tree, same top-landing shape as the canopy check above, so
     // there's a real mid-height perch and not just "top or nothing."
     const midLanding = t.midLanding;
+    const midLeft = t.x - t.midHalfWidth;
+    const midRight = t.x + t.midHalfWidth;
     if (!underOverhang && (
-      player.x + player.width > left &&
-      player.x < right &&
+      player.x + player.width > midLeft &&
+      player.x < midRight &&
       playerBottom <= midLanding &&
       playerBottom >= midLanding - 14 &&
       player.vy <= 0
@@ -5296,22 +5298,13 @@ function applyPhysics(){
     const platformTop = p.height;
     const platformX = winterSlickPlatformX(p, winterNowMs);
     const playerBottom = player.y;
-    // CONFIRMED BUG FIX ("i shouldnt be able to visibly land here the
-    // land radius is too wide"): drawWinterSlickPlatform's tapered
-    // sliver shape (envelope = sin(PI*t)) draws down to a real point --
-    // essentially zero height -- right at both ends of p.width, but
-    // collision used to treat the FULL p.width as landable. That let the
-    // player stand well past where any ice is actually visible, reading
-    // as floating in mid-air. Inset the landable span so it only covers
-    // the part of the sliver with real visible thickness (t roughly
-    // 0.16-0.84, where the sine envelope is already a good way up from
-    // zero), matching the drawn taper instead of the raw rectangle.
-    const landInset = p.width * 0.16;
-    const landLeft = platformX + landInset;
-    const landRight = platformX + p.width - landInset;
+    // CONFIRMED CHANGE ("no for the ice platforms yu should be able to
+    // lnd on the tapered tip"): a prior pass inset the landable span to
+    // avoid the tapered ends -- reverted per direct correction, full
+    // p.width is landable again including the tapered tip.
     if (
-      player.x + player.width > landLeft &&
-      player.x < landRight &&
+      player.x + player.width > platformX &&
+      player.x < platformX + p.width &&
       playerBottom <= platformTop &&
       playerBottom >= platformTop - 14 &&
       player.vy <= 0
@@ -69827,7 +69820,15 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
     // for -- starting ratio here is proportional to canopyTop using the
     // two rows' y-fractions (0.53/0.75), to be checked against a
     // screenshot and adjusted same as canopyTop was.
-    midLanding: 68 * scale * (0.53 / 0.75)
+    midLanding: 68 * scale * (0.53 / 0.75),
+    // CONFIRMED BUG FIX ("the tree landing width being too wide"): the
+    // mid-perch used to share hitHalfWidth (22*scale) with the full
+    // canopy check, but that width was calibrated to the canopy row's
+    // combined footprint -- at the mid row (rows[2], only 2 clumps,
+    // spread 14) the real visible ice/foliage is narrower than that, so
+    // the player could stand well past where anything is actually drawn.
+    // Narrower dedicated half-width for the mid-perch only.
+    midHalfWidth: 12 * scale
   });
 }
 
