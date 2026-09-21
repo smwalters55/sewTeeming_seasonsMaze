@@ -69990,6 +69990,15 @@ function winterSlickPlatformX(p, now) {
 // parallax-drifting decoration (drawn at a fraction of camX), not real
 // world-accurate positions, so it stays purely visual.
 const WINTER_FRONT_TREE_COUNT = 10;
+// CONFIRMED CHANGE ("lets move this tree to the right of me in front of
+// platform a lil to the left"): the procedural formula below places tree
+// index 2 right around x~1190-1260, which lands it overlapping the first
+// practice platform (x 1180-1330) -- a per-index override table lets one
+// specific tree get nudged off its formula position without touching the
+// generation loop for every other tree. Moved to sit ahead of the SECOND
+// practice platform (x 1400+) instead, a little left of it rather than
+// dead-center in front.
+const WINTER_FRONT_TREE_X_OVERRIDES = { 2: 1365 };
 const WINTER_FRONT_TREES = [];
 for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
   const seed = i * 17.2 + 500;
@@ -69999,7 +70008,9 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
   // WINTER_CONTENT_OFFSET so there's a real deliberate clearing first
   // (room for the new owl tree), same offset the platform climb/icicle
   // pocket below also got.
-  const worldX = WINTER_CONTENT_OFFSET + i * ((WINTER_WIDTH - WINTER_CONTENT_OFFSET) / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
+  const worldX = WINTER_FRONT_TREE_X_OVERRIDES[i] !== undefined
+    ? WINTER_FRONT_TREE_X_OVERRIDES[i]
+    : WINTER_CONTENT_OFFSET + i * ((WINTER_WIDTH - WINTER_CONTENT_OFFSET) / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
   const stillForest = worldX < WINTER_CONTENT_OFFSET + 750; // close to the door -- carries the greenery over
   const scale = 1.3 + pseudoRandom(seed + 1) * 0.6;
   WINTER_FRONT_TREES.push({
