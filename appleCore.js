@@ -71278,7 +71278,7 @@ for (let i = 0; i < WINTER_BREATHER_SNOWFLAKE_COUNT; i++) {
   winterBreatherSnowflakes.push({
     x: WINTER_BREATHER_ZONE_START + pseudoRandom(seed) * (WINTER_BREATHER_ZONE_END - WINTER_BREATHER_ZONE_START),
     y: pseudoRandom(seed + 1) * 260,
-    size: 7 + pseudoRandom(seed + 2) * 5,
+    size: 4.5 + pseudoRandom(seed + 2) * 3.5,
     speed: 6 + pseudoRandom(seed + 3) * 5, // notably slower/gentler than drawWinterSnow's ambient flakes
     rot: pseudoRandom(seed + 4) * Math.PI * 2,
     rotSpeed: (pseudoRandom(seed + 5) - 0.5) * 0.25,
