@@ -485,7 +485,11 @@ const player = {
   // horizontal push (see winterIceClimbRelease), so without this a slow
   // starting drift could leave the player sitting inside the very hold
   // they just left long enough to get silently re-caught by it.
-  iceAxeLaunchOriginIdx: -1
+  iceAxeLaunchOriginIdx: -1,
+  // avalanche hazard (winter) -- when the last snowball hit landed, purely
+  // for a brief visual hit-cue; the actual slow/wobble reuses the shared
+  // playerWoozyT system everything else's "dazed" state already runs on
+  avalancheHitFlashAt: 0
 };
 
 /* ======================================================
@@ -5629,6 +5633,46 @@ function applyPhysics(){
       player.winterSlickPlatformIndex = pi;
     }
   });
+
+  // CONFIRMED NEW FEATURE (avalanche hill): ground-height across the hill
+  // zone. CONFIRMED BUG FIX (found via real-keyboard testing, not just
+  // tick()-based testing): a tolerance-banded re-snap (the shape every
+  // OTHER ground check in this branch uses -- "is the surface within a
+  // few px of the player, close enough to catch") works fine for a
+  // discrete platform edge, but breaks down on a CONTINUOUS incline this
+  // steep: any single real frame where the ground drops more than the
+  // tolerance allows leaves the player in free-fall with nothing to
+  // re-snap to (since gravity takes a few frames to build up fall speed,
+  // and the receding ground keeps outrunning it), and they fall straight
+  // through the hill to true ground level -- reproduced reliably with
+  // real timed input, though a clean tick()-based test at a fixed
+  // deltaTime never showed it, confirming it's a real per-frame-size
+  // sensitivity, not a logic error in the height function itself. Fixed
+  // by splitting into two cases: while actually grounded and not
+  // jumping, the player is unconditionally glued to the hill's own
+  // height every frame (the only way to leave the ground here is a real
+  // jump, which sets player.jumping elsewhere, so this can't fight a
+  // legitimate jump) -- while airborne and descending, a normal
+  // tolerance-banded landing check re-grounds them once they're actually
+  // close to the surface again, same shape as every other landing check.
+  {
+    const feetXHill = player.x + player.width / 2;
+    if (feetXHill > WINTER_AVALANCHE_START_X - 5 && feetXHill < WINTER_AVALANCHE_END_X + 5) {
+      const hillHeight = winterAvalancheHillHeightAt(feetXHill);
+      if (!player.jumping) {
+        player.y = hillHeight;
+        player.vy = 0;
+      } else if (player.vy <= 0) {
+        const heightDiff = hillHeight - player.y;
+        if (heightDiff >= -10 && heightDiff <= 10) {
+          player.y = hillHeight;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+        }
+      }
+    }
+  }
 
   // WINTER ICE CLIMB -- the real landing ledge at the top, same plain
   // top-landing shape as everything else in this branch (sandbox's own
@@ -70104,6 +70148,14 @@ drawSeasonTransition(ctx);
 // filling the clearing too just reads as "the clearing is a glade within
 // the forest," not an empty gap.
 const WINTER_CONTENT_OFFSET = 380;
+// CONFIRMED NEW FEATURE ("avalanche" set piece, added between the watery
+// ice pool and the breather stretch -- see WINTER_AVALANCHE_START_X and
+// friends near WINTER_RAINBOW_POCKET_X below for the zone's own extent):
+// just a width reservation here, folded into WINTER_PRE_CLIMB_WIDTH below
+// the same way WINTER_CONTENT_OFFSET itself is, so everything downstream
+// (breather stretch, ice climb wall, WINTER_WIDTH) shifts right by this
+// amount automatically with no other constant needing to be touched.
+const WINTER_AVALANCHE_WIDTH = 900;
 // CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
 // further past the old end (right at the icicle pocket's own edge) to fit
 // a real quiet stretch of open ground past the rainbow icicles/watery ice
@@ -70119,7 +70171,7 @@ const WINTER_CONTENT_OFFSET = 380;
 // referencing this name unchanged; the real WINTER_WIDTH is declared fresh
 // further down, once the climb/ledge's own extent is known, and picks up
 // this same value as its own starting point.
-const WINTER_PRE_CLIMB_WIDTH = 4850 + WINTER_CONTENT_OFFSET;
+const WINTER_PRE_CLIMB_WIDTH = 4850 + WINTER_CONTENT_OFFSET + WINTER_AVALANCHE_WIDTH;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -71489,6 +71541,326 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
   "170,120,255"   // violet
 ];
 
+// CONFIRMED NEW FEATURE ("something before the ice climb" brainstorm --
+// "you keep walking past the ice water and then walk past a large hill
+// you cant see top of then as you get further right avalanche starts
+// happening and you need to jump/double jump from incoming rolling snow"):
+// a real hill the ground itself climbs over (not a jump-between-platforms
+// climb -- a continuous walked slope, same idea as autumn's own `ramps`
+// array height-interpolation but winter didn't have one yet), sitting
+// right after the watery ice pool and before the existing breather
+// stretch. Deliberately placed here rather than reordering forest (see
+// winter_ideas.md for that whole discussion) -- this is winter's own new
+// "thing to do" so the ice climb right after the door doesn't read as an
+// immediate repeat of forest's rock-pool climb.
+const WINTER_AVALANCHE_START_X = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 40;
+const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH;
+// peak sits a bit before the midpoint -- confirmed design ("walking by
+// big snow hill b4 avalesnche also kinda a breather in itself" + "lets
+// start w hill flattening out" for how the section ends): a longer, more
+// gradual back half so the descent/flattening genuinely reads as the
+// danger tapering off, not a symmetric wedge.
+const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.4;
+const WINTER_AVALANCHE_PEAK_HEIGHT = 230; // comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
+// smoothstep-based hill height at a given world x -- 0 outside the zone,
+// rising to WINTER_AVALANCHE_PEAK_HEIGHT at the peak, easing back to 0 by
+// the end. Shared by both the ground-collision snap (applyPhysics's own
+// winter branch) and the hill's own visual silhouette, so the walked
+// surface and the drawn hill can never drift apart.
+function winterAvalancheHillHeightAt(x) {
+  if (x <= WINTER_AVALANCHE_START_X || x >= WINTER_AVALANCHE_END_X) return 0;
+  const rising = x <= WINTER_AVALANCHE_PEAK_X;
+  const segStart = rising ? WINTER_AVALANCHE_START_X : WINTER_AVALANCHE_PEAK_X;
+  const segEnd = rising ? WINTER_AVALANCHE_PEAK_X : WINTER_AVALANCHE_END_X;
+  const t = (x - segStart) / (segEnd - segStart);
+  const eased = t * t * (3 - 2 * t); // smoothstep -- rounds the peak instead of a sharp wedge
+  return rising ? WINTER_AVALANCHE_PEAK_HEIGHT * eased : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - eased);
+}
+
+// CONFIRMED NEW FEATURE (avalanche snowball hazard, direct spec quote:
+// "as you get further right avalanche starts happening and you need to
+// jum[p/double jump from incoming rolling snow"): snowballs crest the
+// slope ahead of the player and roll DOWN toward them (world -x, since
+// the player is walking uphill in +x) -- a genuine "something's coming
+// at you" dodge, not just more platforming. A quiet walk-up first (no
+// spawns until WINTER_AVALANCHE_TRIGGER_X), spawns taper off partway
+// down the back slope so the hill visibly flattening out is what ends
+// the hazard, matching "lets start w hill flattening out." Unlike most
+// of winter's ambient effects this genuinely needs persisted state (real
+// rolling objects with hit-once tracking), same category as fallState or
+// the ice climb's own held-hold tracking, not the "pure function of
+// performance.now()" style the purely decorative effects use.
+const WINTER_AVALANCHE_TRIGGER_X = WINTER_AVALANCHE_START_X + 140; // "walking by big snow hill b4 avalanche also kinda a breather in itself" -- real quiet distance before anything spawns
+const WINTER_AVALANCHE_SPAWN_END_X = WINTER_AVALANCHE_PEAK_X + (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X) * 0.3;
+const WINTER_AVALANCHE_BALL_SPEED = 230; // px/sec, rolling toward -x
+const WINTER_AVALANCHE_SMALL_RADIUS = 15;
+const WINTER_AVALANCHE_BIG_RADIUS = 25;
+// clear heights calibrated against the real jump arcs: a plain jump
+// (vy=12, ~0.65/frame gravity) peaks around ~110px, so small balls sit
+// well within a normal jump's reach while big ones genuinely need the
+// weaker second boost stacked on top -- "sum need 2x jump" confirmed.
+const WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT = 55;
+// CONFIRMED TUNING (measured via real jump-arc testing): a plain single
+// jump peaks around 95px, so 118 was actually unreachable by anything
+// short of a frame-perfect double-jump timing -- lowered to sit just
+// above the single-jump ceiling so ANY reasonably-timed double jump
+// (tested clearing 120px+ even with mediocre ~100ms timing between
+// presses) reliably clears it, while a single jump alone still can't.
+const WINTER_AVALANCHE_BIG_CLEAR_HEIGHT = 100;
+const WINTER_AVALANCHE_TELEGRAPH_MS = 550; // dust-puff warning at the spawn point before a ball actually starts rolling, same "read it, then react" idea as the icicle pocket's drip warning
+// the window (in px either side of the ball's center) where a hit is even
+// checked. This is deliberately narrower than radius + player half-width --
+// a plain "player is standing in the ball's footprint" hitbox made the ball's
+// dwell time inside the window (~320ms at BALL_SPEED) almost exactly as long
+// as a double jump's time spent above BIG_CLEAR_HEIGHT (~330ms), leaving
+// only a ~40ms sliver of press timing that actually cleared it -- basically
+// frame-perfect and un-fun. Narrowing the window shrinks the dwell time
+// without touching the actual jump physics, so a normally-timed double jump
+// (started a beat before the ball arrives) comfortably overlaps it instead
+// of needing to be phase-perfect.
+const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
+
+let winterAvalancheSnowballs = [];
+let winterAvalancheSpawnTimer = 1200;
+
+// CONFIRMED CHANGE ("we make extra woozy w additional hits"): reuses the
+// SAME global playerWoozyT/WOOZY_MS every other "dazed" state in the game
+// already runs on (book-pile falls in oak, same 0.4x speed + sway wobble
+// -- see WOOZY_MS's own definition) rather than inventing a parallel
+// stun system. Getting hit again while still woozy ADDS more time on top
+// instead of just refreshing back to the base duration, so chaining hits
+// is genuinely dangerous -- capped at 2.5x the base so it can't lock the
+// player out indefinitely.
+function winterAvalancheHitPlayer() {
+  playerWoozyT = Math.min(playerWoozyT + WOOZY_MS * (playerWoozyT > 0 ? 0.65 : 1), WOOZY_MS * 2.5);
+  player.avalancheHitFlashAt = performance.now();
+  player.x -= 18; // a little knockback -- costs some forward progress on top of the slow, without a hard stop
+}
+
+function updateWinterAvalanche(deltaTime) {
+  const feetX = player.x + player.width / 2;
+
+  if (feetX > WINTER_AVALANCHE_TRIGGER_X && feetX < WINTER_AVALANCHE_SPAWN_END_X) {
+    winterAvalancheSpawnTimer -= deltaTime * 1000;
+    if (winterAvalancheSpawnTimer <= 0) {
+      const spawnSeed = performance.now() * 0.001 + winterAvalancheSnowballs.length * 3.7;
+      const big = pseudoRandom(spawnSeed) < 0.4;
+      const spawnX = Math.min(WINTER_AVALANCHE_END_X - 30, feetX + 480 + pseudoRandom(spawnSeed + 1) * 160);
+      winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", spawnedAt: performance.now(), hit: false });
+      winterAvalancheSpawnTimer = 1500 + pseudoRandom(spawnSeed + 2) * 1100;
+    }
+  } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
+    // walked back out toward the pool side -- clear the hazard so
+    // re-entering the zone always starts clean, same "no sticky flags
+    // carried across a re-approach" approach the rest of winter uses
+    winterAvalancheSnowballs = [];
+    winterAvalancheSpawnTimer = 900;
+  }
+
+  const moveAmt = WINTER_AVALANCHE_BALL_SPEED * deltaTime;
+  winterAvalancheSnowballs = winterAvalancheSnowballs.filter(b => {
+    const telegraphing = performance.now() - b.spawnedAt < WINTER_AVALANCHE_TELEGRAPH_MS;
+    if (!telegraphing) b.x -= moveAmt;
+    if (b.x < WINTER_AVALANCHE_START_X - 80) return false; // rolled past the player and off the near edge
+
+    if (!b.hit && !telegraphing) {
+      const hitHalfWidth = WINTER_AVALANCHE_HIT_HALF_WIDTH[b.size];
+      if (Math.abs(feetX - b.x) < hitHalfWidth) {
+        const clearHeight = b.size === "big" ? WINTER_AVALANCHE_BIG_CLEAR_HEIGHT : WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT;
+        // measure clearance against the ground under the PLAYER's own feet, not
+        // the ball's -- the ball is still uphill of the player when this check
+        // window first opens, so using its local hill height inflated the
+        // required jump height by however much the slope rises over that gap
+        if (player.y < winterAvalancheHillHeightAt(feetX) + clearHeight) {
+          b.hit = true;
+          winterAvalancheHitPlayer();
+        }
+      }
+    }
+    return true;
+  });
+}
+
+// CONFIRMED NEW FEATURE (avalanche hill visuals): a big soft looming peak
+// drawn behind everything, scaled taller than the walkable ridge and
+// extending well past the top of the canvas -- "walk past a large hill
+// you cant see top of" is the whole point, so this is deliberately NOT
+// scaled to fit the screen. Drawn at a slightly slower parallax factor
+// than the walkable ground itself so it reads as further back/bigger,
+// same depth trick the mid treeline already uses.
+function drawWinterAvalancheBackdrop(camX) {
+  const baseX = WINTER_AVALANCHE_PEAK_X - camX * 0.85;
+  if (baseX < -400 || baseX > canvas.width + 400) return;
+  const STEPS = 20;
+  const zoneStart = WINTER_AVALANCHE_START_X - 200;
+  const zoneEnd = zoneStart + WINTER_AVALANCHE_WIDTH + 400;
+  ctx.fillStyle = "rgba(214,228,238,0.75)";
+  ctx.beginPath();
+  ctx.moveTo(zoneStart - camX * 0.85, gy + 40);
+  for (let s = 0; s <= STEPS; s++) {
+    const x = zoneStart + (s / STEPS) * (zoneEnd - zoneStart);
+    const h = winterAvalancheHillHeightAt(x) * 2.35;
+    const sx = x - camX * 0.85;
+    const sy = gy - h - 260; // pushed up well past the canvas top -- the summit is never meant to be reached by eye
+    ctx.lineTo(sx, sy);
+  }
+  ctx.lineTo(zoneEnd - camX * 0.85, gy + 40);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// the walkable ridge itself -- a real snow-and-rock silhouette following
+// the exact same winterAvalancheHillHeightAt profile the physics collision
+// uses, so what you see is always what you stand on. Textured with soft
+// rock facets peeking through (same "alternating lit/shadow polygon
+// scatter" principle as the ice wall, just a snowy rock palette instead
+// of ice) rather than the smooth flat fill everything used before this
+// session's texture passes.
+function drawWinterAvalancheHill(camX) {
+  const baseX = WINTER_AVALANCHE_PEAK_X - camX;
+  if (baseX < -300 || baseX > canvas.width + 300) return;
+
+  drawWinterAvalancheBackdrop(camX);
+
+  const STEPS = 30;
+  const pts = [];
+  for (let s = 0; s <= STEPS; s++) {
+    const x = WINTER_AVALANCHE_START_X - 60 + (s / STEPS) * (WINTER_AVALANCHE_WIDTH + 120);
+    pts.push({ x: x - camX, y: gy - winterAvalancheHillHeightAt(x) });
+  }
+  const grad = ctx.createLinearGradient(baseX, gy, baseX, gy - WINTER_AVALANCHE_PEAK_HEIGHT);
+  grad.addColorStop(0, "#dce8f0");
+  grad.addColorStop(1, "#f6fafc");
+  ctx.fillStyle = grad;
+  const hillPath = new Path2D();
+  hillPath.moveTo(pts[0].x, gy + 20);
+  pts.forEach(p => hillPath.lineTo(p.x, p.y));
+  hillPath.lineTo(pts[pts.length - 1].x, gy + 20);
+  hillPath.closePath();
+  ctx.fill(hillPath);
+
+  ctx.save();
+  ctx.clip(hillPath);
+  const FACET_COUNT = 16;
+  for (let f = 0; f < FACET_COUNT; f++) {
+    const fseed = f * 27.1 + 6600;
+    const fx = WINTER_AVALANCHE_START_X + pseudoRandom(fseed) * WINTER_AVALANCHE_WIDTH;
+    const fy = gy - winterAvalancheHillHeightAt(fx) + pseudoRandom(fseed + 1) * 40 - 15;
+    const fr = 26 + pseudoRandom(fseed + 2) * 34;
+    const rocky = pseudoRandom(fseed + 3) < 0.35;
+    ctx.fillStyle = rocky ? "rgba(130,120,110,0.16)" : (pseudoRandom(fseed + 4) > 0.5 ? "rgba(255,255,255,0.35)" : "rgba(150,175,195,0.14)");
+    ctx.beginPath();
+    const PTS = 5 + Math.floor(pseudoRandom(fseed + 5) * 3);
+    for (let p = 0; p <= PTS; p++) {
+      const ang = (p / PTS) * Math.PI * 2 + fseed;
+      const rr = fr * (0.7 + pseudoRandom(fseed + 10 + p) * 0.5);
+      const px = (fx - camX) + Math.cos(ang) * rr;
+      const py = fy + Math.sin(ang) * rr * 0.55;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // a lit ridge line along the top so the silhouette reads as a real
+  // snowy crest, not a flat gradient fill
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+}
+
+// a small dust-puff telegraph at a snowball's spawn point before it
+// actually starts rolling -- "read it, then react" window, same idea as
+// the icicle pocket's own drip warning
+function drawWinterAvalancheTelegraph(camX, b, tFrac) {
+  const sx = b.x - camX;
+  const sy = gy - winterAvalancheHillHeightAt(b.x) - 6;
+  const grow = 0.4 + tFrac * 0.9;
+  ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - tFrac * 0.4)})`;
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + b.spawnedAt * 0.01;
+    const r = 10 * grow;
+    ctx.beginPath();
+    ctx.ellipse(sx + Math.cos(ang) * r, sy - Math.abs(Math.sin(ang)) * r * 0.6, 4 * grow, 3 * grow, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawWinterAvalancheSnowballs(camX) {
+  const now = performance.now();
+  winterAvalancheSnowballs.forEach(b => {
+    const age = now - b.spawnedAt;
+    if (age < WINTER_AVALANCHE_TELEGRAPH_MS) {
+      drawWinterAvalancheTelegraph(camX, b, age / WINTER_AVALANCHE_TELEGRAPH_MS);
+      return;
+    }
+    const radius = b.size === "big" ? WINTER_AVALANCHE_BIG_RADIUS : WINTER_AVALANCHE_SMALL_RADIUS;
+    const sx = b.x - camX;
+    const sy = gy - winterAvalancheHillHeightAt(b.x) - radius;
+    if (sx < -60 || sx > canvas.width + 60) return;
+
+    // motion streaks trailing behind (to the right, since it rolls left)
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const t = (i + 1) / 3;
+      ctx.beginPath();
+      ctx.moveTo(sx + radius * (0.6 + t * 0.5), sy - radius * 0.3 + t * radius * 0.5);
+      ctx.lineTo(sx + radius * (1.3 + t * 0.6), sy - radius * 0.3 + t * radius * 0.5);
+      ctx.stroke();
+    }
+
+    // a soft drop shadow under the ball so it reads as a solid rolling
+    // object against the pale backdrop mountain instead of nearly
+    // disappearing into it
+    ctx.fillStyle = "rgba(90,105,120,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + radius * 0.55, radius * 0.9, radius * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, radius, radius, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(95,120,145,0.85)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // packed-snow texture + a rolling spin cue -- a couple of arcs that
+    // rotate with elapsed time so it visibly reads as tumbling, not sliding
+    ctx.strokeStyle = "rgba(110,135,160,0.6)";
+    ctx.lineWidth = 1.3;
+    const spin = age * 0.006;
+    for (let i = 0; i < 2; i++) {
+      const ang = spin + i * Math.PI;
+      ctx.beginPath();
+      ctx.arc(sx, sy, radius * 0.6, ang, ang + Math.PI * 0.7);
+      ctx.stroke();
+    }
+  });
+}
+
+// a brief snow-burst flash right where the player got clipped -- purely a
+// function of (now - avalancheHitFlashAt), same one-shot "no persisted
+// particle state" approach as the ice climb's own slip flash
+function drawWinterAvalancheHitFlash(camX) {
+  const elapsed = performance.now() - player.avalancheHitFlashAt;
+  if (elapsed < 0 || elapsed > 420) return;
+  const t = elapsed / 420;
+  const px = player.x - camX + player.width / 2;
+  const py = gy - player.y - player.height * 0.5; // called from inside the ctx.translate(0, cameraY) block, same as drawWinterIceClimbSlipFlash -- no manual +cameraY needed here
+  ctx.fillStyle = `rgba(255,255,255,${0.7 * (1 - t)})`;
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const r = 6 + t * 26;
+    ctx.beginPath();
+    ctx.ellipse(px + Math.cos(ang) * r, py + Math.sin(ang) * r * 0.7, 4 * (1 - t) + 1, 3 * (1 - t) + 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // CONFIRMED NEW FEATURE ("a little breather stretch afterwards, maybe
 // oooo what about a few fractal like snoflakes smalll falling down
 // gently"): a quiet stretch of open ground past the rainbow icicle
@@ -71502,7 +71874,7 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
 // detail rather than just more background noise. Purely decorative, same
 // "derive everything from performance.now(), nothing persisted beyond a
 // simple loop-reset" approach as the rest of winter's ambient effects.
-const WINTER_BREATHER_ZONE_START = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 60;
+const WINTER_BREATHER_ZONE_START = WINTER_AVALANCHE_END_X + 60; // used to key off the pool directly -- now starts after the new avalanche hill instead, per the "avalanche happens before the quiet breather stretch" ordering
 const WINTER_BREATHER_ZONE_END = WINTER_PRE_CLIMB_WIDTH - 60;
 const WINTER_BREATHER_SNOWFLAKE_COUNT = 7;
 const winterBreatherSnowflakes = [];
@@ -73556,6 +73928,12 @@ function drawWinterScene(camX) {
   WINTER_WATERY_ICE_ZONES.forEach(z => drawWinterWateryIce(camX, z));
   drawWinterRainbowOverhang(camX);
 
+  // the avalanche hill -- sits between the watery ice pool and the quiet
+  // breather stretch (see WINTER_AVALANCHE_START_X and friends)
+  drawWinterAvalancheHill(camX);
+  drawWinterAvalancheSnowballs(camX);
+  drawWinterAvalancheHitFlash(camX);
+
   // quiet breather stretch just past the icicle pocket -- a few small
   // fractal snowflakes drifting down, distinct from the general ambient snow
   drawWinterBreatherSnowflakes(camX);
@@ -73577,6 +73955,7 @@ const WINTER_ICE_SLIDE_MS = 500;
 function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
   updateWinterBreatherSnowflakes(deltaTime);
+  updateWinterAvalanche(deltaTime);
 
   // WINTER ICE CLIMB -- grip decay. A pure time check (not position/
   // gravity), so it lives here rather than in applyPhysics -- once a held
