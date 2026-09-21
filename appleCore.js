@@ -463,7 +463,20 @@ const player = {
   // mid-flight check immediately re-grabbed that same handhold in the
   // same frame, undoing the release before a single frame of flight ever
   // happened.
-  rockJustReleased: false
+  rockJustReleased: false,
+  // WINTER ICE CLIMB -- same manual grab/release/launch shape as the
+  // forest rock climb above (deliberately reused wholesale, right down to
+  // the same handhold gap/launch-arc numbers, so it's the same "climby not
+  // bouncy" precision-hop feel), plus one new wrinkle: ice doesn't hold
+  // forever. See WINTER_ICE_HOLD_GRIP_MS and the grip-decay check in
+  // updateWinterScene -- outstay a hold's welcome and it lets go on its
+  // own, slipping the player back down rather than requiring a miss.
+  // -1 when not gripping anything; otherwise the index into WINTER_ICE_HOLDS.
+  iceAxeClingIndex: -1,
+  iceAxeJustGrabbed: false, // same same-frame-double-fire guard as rockJustGrabbed
+  iceAxeJustReleased: false, // same same-frame-double-fire guard as rockJustReleased
+  iceAxeGrabbedAt: 0, // performance.now() of the current grab -- grip decay is measured from this
+  iceAxeSlipFlashAt: 0 // performance.now() of the last involuntary slip, purely for the visual ice-chip burst (see drawWinterIceClimbSlipFlash) -- 0 means "none pending"
 };
 
 /* ======================================================
@@ -2908,7 +2921,7 @@ function handleInput(){
   // icon (never gated on topsyWell.dipping) kept right on following you.
   // Frozen here the same way every other scripted "busy" animation in
   // this list already is, so the whole beat plays out in place.
-  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active && !player.onPlayerBubbleRide) {
+  if (!camera.topDown && seasonTransition.phase === "idle" && !fallState.active && !swing.mounted && !player.launched && !cloudLanding.active && !rabbitShuttle.mounted && !peanutVine.mounted && !vines.some(v => v.mounted) && !seesaw.mounted && !moleholeRoots.some(r => r.mounted) && !mineCart.active && !activeDig && !topsyWell.dipping && !player.inAntFarm && !player.inBallPit && !player.onBallPitLadder && !player.onTopsyHouseLadder && !sandboxAntFarm.teleporting && player.rockClingIndex === -1 && player.iceAxeClingIndex === -1 && currentScene !== "pool" && !poolDive.active && !poolSlideExit.active && !player.onPlayerBubbleRide) {
     const woozySpeedFactor = playerWoozyT > 0 ? 0.4 : 1;
     // CONFIRMED BUG FIX (same shape as the aboutToMountSeesaw fix below):
     // onWinterIceSlide used to be excluded from the whole outer block,
@@ -2982,6 +2995,14 @@ function handleInput(){
         FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
           Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
 
+      // WINTER ICE CLIMB -- same manual-grab shape as the rock climb's own
+      // nearRockHandhold just above (deliberately identical radius/band
+      // feel, same reasoning: its own priority branch so a press can grab
+      // at any point mid-air, not just when double-jump-eligible).
+      const nearIceAxeHold = currentScene === "winter" && player.jumping && player.iceAxeClingIndex === -1 &&
+        WINTER_ICE_HOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < WINTER_ICE_HOLD_RADIUS &&
+          Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND);
+
       // CONFIRMED ADD ("player jumps to platform, gets turned upside down
       // while sticking to the platform... is able to jump but it is
       // downwards"): only true while actually resting on TOPSY_INVERT_PLATFORM
@@ -3026,6 +3047,19 @@ function handleInput(){
         player.launched = false;
         player.launchSteerable = false;
         player.rockJustGrabbed = true; // see this flag's own comment on the player object
+      } else if (nearIceAxeHold) {
+        // grab -- snap to the hold and freeze here (see applyPhysics' own
+        // early return for player.iceAxeClingIndex), and start the grip-
+        // decay clock (see WINTER_ICE_HOLD_GRIP_MS / updateWinterScene)
+        player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(nearIceAxeHold);
+        player.x = nearIceAxeHold.x - player.width / 2;
+        player.y = nearIceAxeHold.height;
+        player.vx = 0;
+        player.vy = 0;
+        player.launched = false;
+        player.launchSteerable = false;
+        player.iceAxeJustGrabbed = true; // see this flag's own comment on the player object
+        player.iceAxeGrabbedAt = performance.now();
       } else if (onTopsyInvertPlatform) {
         // CONFIRMED REWORK ("pressing up actually first brings u down
         // just a little then takes u bback up, where you can catch a
@@ -3187,6 +3221,29 @@ function handleInput(){
     player.jumping = true;
     player.usedDoubleJump = false;
     player.rockJustReleased = true; // same guard forestRockClimbRelease uses, see that flag's own comment
+  }
+
+  // WINTER ICE CLIMB -- same Up-releases-toward-the-next-hold / Down-drops
+  // shape as the rock climb pair just above, same rockJustGrabbed-style
+  // same-frame guard.
+  if (currentScene === "winter" && player.iceAxeClingIndex !== -1 && keys.upJustPressed) {
+    if (player.iceAxeJustGrabbed) {
+      player.iceAxeJustGrabbed = false;
+    } else {
+      winterIceClimbRelease();
+    }
+  }
+  if (currentScene === "winter" && player.iceAxeClingIndex !== -1 && keys.downJustPressed && !player.iceAxeJustGrabbed) {
+    const releasedHold = WINTER_ICE_HOLDS[player.iceAxeClingIndex];
+    player.iceAxeClingIndex = -1;
+    player.x += releasedHold.dir * (WINTER_ICE_HOLD_RADIUS + 16);
+    player.vx = 0;
+    player.vy = -2;
+    player.launched = false;
+    player.launchSteerable = false;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    player.iceAxeJustReleased = true; // same guard winterIceClimbRelease uses, see that flag's own comment
   }
 
   // CONFIRMED ADD ("and if you press down it brings you down all the way
@@ -3386,6 +3443,14 @@ function applyPhysics(){
   // above.
   if (player.rockClingIndex !== -1) return;
 
+  // same idea for the winter ice climb's manual grab -- see
+  // winterIceClimbRelease and the grab branch in the input handler above.
+  // Grip-decay (letting go on its own if held too long) is a per-frame
+  // TIME check, not a position/gravity one, so it lives in
+  // updateWinterScene (which has deltaTime/performance.now() in hand)
+  // rather than here.
+  if (player.iceAxeClingIndex !== -1) return;
+
   // POOL DIVE -- scripted jump-off-the-ledge + splash sequence owns the
   // player's position entirely for its short duration (see updatePoolDive
   // and startPoolDive's own comments). Same early-return shape as the
@@ -3473,6 +3538,28 @@ function applyPhysics(){
       player.usedDoubleJump = false;
       player.launched = false;
       player.launchSteerable = false;
+      return;
+    }
+  }
+
+  // same soft-catch-while-falling idea for the winter ice climb -- see the
+  // forest rock climb's own version just above for the full reasoning
+  // (airborne-only via player.jumping, so ordinary ground walking near the
+  // wall's base is unaffected).
+  if (currentScene === "winter" && player.jumping && player.vy <= 0) {
+    const fallCatch = WINTER_ICE_HOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < WINTER_ICE_HOLD_RADIUS &&
+      Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND);
+    if (fallCatch) {
+      player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(fallCatch);
+      player.x = fallCatch.x - player.width / 2;
+      player.y = fallCatch.height;
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      player.launched = false;
+      player.launchSteerable = false;
+      player.iceAxeGrabbedAt = performance.now();
       return;
     }
   }
@@ -3579,6 +3666,28 @@ function applyPhysics(){
         // guard against. Setting it anyway left it dangling true into
         // FUTURE frames, where it wrongly ate the very next real release
         // press as if it were an echo of this grab.
+        return;
+      }
+    }
+  }
+
+  // same mid-flight manual re-grab for the winter ice climb -- see the
+  // rock climb's own version just above for the full reasoning.
+  if (player.launched && currentScene === "winter" && keys.upJustPressed && player.iceAxeClingIndex === -1) {
+    if (player.iceAxeJustReleased) {
+      player.iceAxeJustReleased = false;
+    } else {
+      const midFlightHit = WINTER_ICE_HOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < WINTER_ICE_HOLD_RADIUS &&
+        Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND);
+      if (midFlightHit) {
+        player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(midFlightHit);
+        player.x = midFlightHit.x - player.width / 2;
+        player.y = midFlightHit.height;
+        player.vx = 0;
+        player.vy = 0;
+        player.launched = false;
+        player.launchSteerable = false;
+        player.iceAxeGrabbedAt = performance.now();
         return;
       }
     }
@@ -3774,6 +3883,33 @@ function applyPhysics(){
     // mid-flight fungus/tower catches already use above.
     if (currentScene === "forest" && player.vy <= 0) {
       const ledge = FOREST_ROCK_LEDGE;
+      const platformTop = ledge.height;
+      if (
+        player.x + player.width > ledge.x - ledge.width / 2 &&
+        player.x < ledge.x + ledge.width / 2 &&
+        player.y <= platformTop &&
+        player.y >= platformTop - 14
+      ) {
+        player.y = platformTop;
+        player.vx = 0;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.launched = false;
+        player.launchSteerable = false;
+        return;
+      }
+    }
+
+    // same dedicated in-flight ledge catch for the winter ice climb's own
+    // top ledge (WINTER_ICE_LEDGE) -- see the FOREST_ROCK_LEDGE block just
+    // above for the full reasoning (this whole launched-flight branch
+    // never falls through to the generic top-landing code checked later in
+    // applyPhysics, and the release arc's own peak approaches the ledge's
+    // height from below without ever crossing above it, so this needs the
+    // same in-band-and-descending shape rather than a crossing check).
+    if (currentScene === "winter" && player.vy <= 0) {
+      const ledge = WINTER_ICE_LEDGE;
       const platformTop = ledge.height;
       if (
         player.x + player.width > ledge.x - ledge.width / 2 &&
@@ -5433,6 +5569,28 @@ function applyPhysics(){
       player.winterSlickPlatformIndex = pi;
     }
   });
+
+  // WINTER ICE CLIMB -- the real landing ledge at the top, same plain
+  // top-landing shape as everything else in this branch (sandbox's own
+  // block-pile steps pattern).
+  {
+    const l = WINTER_ICE_LEDGE;
+    const left = l.x - l.width / 2;
+    const right = l.x + l.width / 2;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > left &&
+      player.x < right &&
+      playerBottom <= l.height &&
+      playerBottom >= l.height - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = l.height;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    }
+  }
 
   } // end currentScene checks
 
@@ -69892,7 +70050,16 @@ const WINTER_CONTENT_OFFSET = 380;
 // -- see WINTER_BREATHER_ZONE_START/END and the fractal-snowflake ambience
 // below. Nothing else currently sits out this far, so this is a clean
 // extend with no other content to reflow.
-const WINTER_WIDTH = 4850 + WINTER_CONTENT_OFFSET;
+// CONFIRMED CHANGE ("ice cliiiimn"): this used to just BE WINTER_WIDTH --
+// renamed once the ice climb (see WINTER_ICE_CLIMB_X and friends, well
+// below) needed to extend the real WINTER_WIDTH further still. Everything
+// that only ever cared about "the span up through the breather stretch"
+// (front/mid treeline generation, background snow scatter -- all top-level
+// arrays built before the ice climb's own constants exist yet) keeps
+// referencing this name unchanged; the real WINTER_WIDTH is declared fresh
+// further down, once the climb/ledge's own extent is known, and picks up
+// this same value as its own starting point.
+const WINTER_PRE_CLIMB_WIDTH = 4850 + WINTER_CONTENT_OFFSET;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -70022,7 +70189,7 @@ for (let i = 0; i < WINTER_FRONT_TREE_COUNT; i++) {
   // pocket below also got.
   const worldX = WINTER_FRONT_TREE_X_OVERRIDES[i] !== undefined
     ? WINTER_FRONT_TREE_X_OVERRIDES[i]
-    : WINTER_CONTENT_OFFSET + i * ((WINTER_WIDTH - WINTER_CONTENT_OFFSET) / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
+    : WINTER_CONTENT_OFFSET + i * ((WINTER_PRE_CLIMB_WIDTH - WINTER_CONTENT_OFFSET) / WINTER_FRONT_TREE_COUNT) + pseudoRandom(seed) * 70;
   const stillForest = worldX < WINTER_CONTENT_OFFSET + 750; // close to the door -- carries the greenery over
   const scale = 1.3 + pseudoRandom(seed + 1) * 0.6;
   WINTER_FRONT_TREES.push({
@@ -70255,7 +70422,7 @@ const WINTER_MID_TREE_COUNT = 12;
 const WINTER_MID_TREES = [];
 for (let i = 0; i < WINTER_MID_TREE_COUNT; i++) {
   const seed = i * 21.6 + 4000;
-  const worldX = i * (WINTER_WIDTH / WINTER_MID_TREE_COUNT) + pseudoRandom(seed) * 90;
+  const worldX = i * (WINTER_PRE_CLIMB_WIDTH / WINTER_MID_TREE_COUNT) + pseudoRandom(seed) * 90;
   WINTER_MID_TREES.push({
     x: worldX,
     seed,
@@ -70271,7 +70438,7 @@ const winterSnow = [];
 for (let i = 0; i < WINTER_SNOW_COUNT; i++) {
   const seed = i * 13.7;
   winterSnow.push({
-    x: pseudoRandom(seed) * WINTER_WIDTH,
+    x: pseudoRandom(seed) * WINTER_PRE_CLIMB_WIDTH,
     y: pseudoRandom(seed + 1) * 320,
     r: 1.2 + pseudoRandom(seed + 2) * 2.2,
     speed: 14 + pseudoRandom(seed + 3) * 22,
@@ -71276,7 +71443,7 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
 // "derive everything from performance.now(), nothing persisted beyond a
 // simple loop-reset" approach as the rest of winter's ambient effects.
 const WINTER_BREATHER_ZONE_START = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 60;
-const WINTER_BREATHER_ZONE_END = WINTER_WIDTH - 60;
+const WINTER_BREATHER_ZONE_END = WINTER_PRE_CLIMB_WIDTH - 60;
 const WINTER_BREATHER_SNOWFLAKE_COUNT = 7;
 const winterBreatherSnowflakes = [];
 for (let i = 0; i < WINTER_BREATHER_SNOWFLAKE_COUNT; i++) {
@@ -71345,6 +71512,330 @@ function drawWinterBreatherSnowflakes(camX) {
     if (sx < -20 || sx > canvas.width + 20) return;
     drawFractalSnowflake(sx, f.y, f.size, f.rot);
   });
+}
+
+/* ======================================================
+   WINTER ICE CLIMB -- "ice axe" grab/decay/launch climb
+   ====================================================== */
+// CONFIRMED NEW FEATURE ("ok mmmm yeah ice cliiiimn and then we can
+// snowboard down or something. yeah start scope ice climb but we gotta
+// make it really good"): the winter payoff right after the breather
+// stretch -- picked over ice skating/snowboarding specifically because
+// skating right here would just double up on the watery ice pocket's own
+// "sliding around on ice" beat a few hundred px back; this is a real
+// change of rhythm instead (vertical, deliberate, climby), with skating/
+// boarding saved for later, further out, as the earned release AFTER this
+// climb rather than competing with the slip pool for the same feeling.
+//
+// Mechanically this deliberately reuses the forest rock climb's own
+// grab/release/launch shape wholesale -- same manual up-to-grab, up-to-
+// release-toward-the-next-hold, down-to-drop, same precisely-swept
+// (non-steerable) launch arc from grip to grip -- right down to reusing
+// its exact handhold gap numbers (70px x / 75px y) and launch tilt/speed,
+// since that arc is a pure function of those gaps plus the shared
+// launched-flight gravity model (LAUNCH_GRAVITY/FLOATY_FALL_GRAVITY,
+// identical in every scene) -- already proven to land precisely, no new
+// sweep needed. See FOREST_ROCK_HANDHOLDS' own comment for the full
+// reasoning behind those specific numbers.
+//
+// What's actually NEW, and the whole reason this earns its own set-piece
+// rather than reading as a forest-climb reskin: grip decay. A grabbed hold
+// doesn't hold forever -- WINTER_ICE_HOLD_GRIP_MS after a grab, if you
+// haven't released toward the next hold (or dropped) on your own, the ice
+// lets go on its own and you SLIP -- not a hard reset, a real punishing
+// slide back a couple holds (see winterIceClimbSlip, called from
+// updateWinterScene), so every hang carries real tension without one
+// missed beat costing the whole climb. Each hold's own crack radiates out
+// and widens the longer it's held (see drawWinterIceHold) -- a diegetic
+// grip meter instead of a HUD bar.
+const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 160;
+const WINTER_ICE_HOLD_DX = 70; // same gap the forest rock climb uses -- see that constant's own comment
+const WINTER_ICE_HOLD_FIRST_HEIGHT = 55;
+const WINTER_ICE_HOLD_DY = 75;
+const WINTER_ICE_HOLD_COUNT = 9; // taller than the rock climb's 7 -- "gotta make it really good," and the grip-decay tension carries a longer climb without it dragging
+const WINTER_ICE_HOLDS = Array.from({ length: WINTER_ICE_HOLD_COUNT }, (_, i) => ({
+  x: WINTER_ICE_CLIMB_X + (i % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
+  height: WINTER_ICE_HOLD_FIRST_HEIGHT + i * WINTER_ICE_HOLD_DY,
+  dir: i % 2 === 0 ? 1 : -1 // which way the release launch pushes FROM this hold (toward the next one's side)
+}));
+const WINTER_ICE_HOLD_RADIUS = 48; // same generous grab window as the rock climb -- a deliberate press, no reason to make the grab itself fiddly
+const WINTER_ICE_HOLD_BAND = 58;
+const WINTER_ICE_CLIMB_TILT = 14.5; // identical to FOREST_ROCK_CLIMB_TILT/SPEED -- same DX/DY gaps, same shared launch-gravity model, so the same swept arc lands precisely here too
+const WINTER_ICE_CLIMB_SPEED = 6.5;
+// how long a grabbed hold's grip lasts before it lets go on its own --
+// tuned to feel like real hang-in-there tension: long enough to actually
+// look up and time the next release, short enough that camping is never safe
+const WINTER_ICE_HOLD_GRIP_MS = 1700;
+// how many holds a slip drops you -- a real setback, not a full restart
+const WINTER_ICE_SLIP_HOLDS_BACK = 2;
+const WINTER_ICE_SLIP_FLASH_MS = 500;
+
+const WINTER_ICE_LEDGE = {
+  x: WINTER_ICE_CLIMB_X + (WINTER_ICE_HOLD_COUNT % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
+  height: WINTER_ICE_HOLD_FIRST_HEIGHT + WINTER_ICE_HOLD_COUNT * WINTER_ICE_HOLD_DY,
+  width: 260
+};
+
+// the real WINTER_WIDTH, now that the ice climb/ledge's own extent is
+// known -- see WINTER_PRE_CLIMB_WIDTH's own comment for why this couldn't
+// just be declared back where that one is. A little landing room past the
+// ledge itself, room to breathe at the top (and a natural spot for the
+// snowboard-down payoff to start from, later).
+const WINTER_WIDTH = WINTER_ICE_LEDGE.x + WINTER_ICE_LEDGE.width / 2 + 320;
+
+// shared by the grab branches (input handler) and the release below --
+// launches using whichever hold player.iceAxeClingIndex currently points at.
+function winterIceClimbRelease() {
+  const idx = player.iceAxeClingIndex;
+  const hold = WINTER_ICE_HOLDS[idx];
+  const rad = WINTER_ICE_CLIMB_TILT * Math.PI / 180;
+  player.vx = Math.sin(rad) * WINTER_ICE_CLIMB_SPEED * hold.dir;
+  player.vy = Math.cos(rad) * WINTER_ICE_CLIMB_SPEED;
+  player.launched = true;
+  player.launchGravityMult = 1;
+  player.launchSteerable = false; // same "precise, not steerable" reasoning as the rock climb
+  player.jumping = true;
+  player.usedDoubleJump = false;
+  player.iceAxeClingIndex = -1;
+  player.iceAxeJustReleased = true;
+}
+
+// the involuntary "grip ran out" slip -- called from updateWinterScene once
+// WINTER_ICE_HOLD_GRIP_MS elapses on a held hold. Drops the player back
+// WINTER_ICE_SLIP_HOLDS_BACK holds, re-gripping there with a fresh grip
+// clock (reads as "you scrabbled and caught yourself a couple holds
+// down"), or all the way to solid ground at the climb's base if there
+// aren't enough holds below to catch on.
+function winterIceClimbSlip() {
+  const idx = player.iceAxeClingIndex;
+  const targetIdx = idx - WINTER_ICE_SLIP_HOLDS_BACK;
+  player.iceAxeSlipFlashAt = performance.now();
+  player.launched = false;
+  player.launchSteerable = false;
+  player.vx = 0;
+  player.vy = 0;
+  if (targetIdx >= 0) {
+    const hold = WINTER_ICE_HOLDS[targetIdx];
+    player.iceAxeClingIndex = targetIdx;
+    player.x = hold.x - player.width / 2;
+    player.y = hold.height;
+    player.jumping = true;
+    player.usedDoubleJump = false;
+    player.iceAxeGrabbedAt = performance.now();
+  } else {
+    player.iceAxeClingIndex = -1;
+    player.x = WINTER_ICE_CLIMB_X - WINTER_ICE_HOLD_DX / 2 - player.width / 2 - 20;
+    player.y = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+  }
+}
+
+// jagged world-space wall edge x at a given height -- same layered-noise
+// approach as forestRockWallEdgeX, own icy proportions/seed offsets so the
+// two walls don't read as reskins sharing an identical silhouette.
+function winterIceWallEdgeX(t, side) {
+  const baseHalfW = 80 - t * 18;
+  const coarse = (pseudoRandom(side * 4.21 + t * 8.3 + 700) - 0.5) * 26;
+  const fine = (pseudoRandom(side * 9.63 + t * 19.1 + 750) - 0.5) * 12;
+  return side * baseHalfW + coarse + fine;
+}
+function winterIceWallTopHeight() {
+  return WINTER_ICE_LEDGE.height + 40;
+}
+function winterIceWallEdgesAt(height) {
+  const t = Math.max(0, Math.min(1, height / winterIceWallTopHeight()));
+  return {
+    left: WINTER_ICE_CLIMB_X + winterIceWallEdgeX(t, -1),
+    right: WINTER_ICE_CLIMB_X + winterIceWallEdgeX(t, 1)
+  };
+}
+
+function drawWinterIceWall(camX) {
+  const topHeight = winterIceWallTopHeight();
+  const baseX = WINTER_ICE_CLIMB_X - camX;
+  if (baseX < -260 || baseX > canvas.width + 260) return;
+  const STEPS = 24;
+  const leftPts = [], rightPts = [];
+  for (let s = 0; s <= STEPS; s++) {
+    const height = (s / STEPS) * topHeight;
+    const edges = winterIceWallEdgesAt(height);
+    leftPts.push({ x: edges.left - camX, y: gy - height });
+    rightPts.push({ x: edges.right - camX, y: gy - height });
+  }
+  const grad = ctx.createLinearGradient(baseX, gy, baseX, gy - topHeight);
+  grad.addColorStop(0, "#a9c9dd");
+  grad.addColorStop(0.55, "#c7dfee");
+  grad.addColorStop(1, "#f0f8fc");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(leftPts[0].x, leftPts[0].y);
+  leftPts.forEach(p => ctx.lineTo(p.x, p.y));
+  for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
+  ctx.closePath();
+  ctx.fill();
+
+  // a scatter of long diagonal crack lines for real ice texture,
+  // deterministic per climb rather than shimmering every frame
+  ctx.strokeStyle = "rgba(110,150,178,0.32)";
+  ctx.lineWidth = 1.3;
+  for (let c = 0; c < 12; c++) {
+    const seed = c * 13.7 + 800;
+    const h0 = pseudoRandom(seed) * topHeight;
+    const side = pseudoRandom(seed + 1) > 0.5 ? 1 : -1;
+    const edges0 = winterIceWallEdgesAt(h0);
+    const x0 = (side === 1 ? edges0.right : edges0.left) - camX;
+    const y0 = gy - h0;
+    const len = 30 + pseudoRandom(seed + 2) * 55;
+    const ang = (pseudoRandom(seed + 3) - 0.5) * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 - side * (10 + Math.abs(Math.sin(ang)) * len), y0 - Math.cos(ang) * len);
+    ctx.stroke();
+  }
+
+  // a soft lit rim along the right edge, like the sun catching one face of the gully
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  rightPts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+}
+
+// CONFIRMED NEW FEATURE, per direct request ("we gotta make it really
+// good"): each hold bridges from the wall's own real jagged edge out to
+// the grip point (same "real outcropping, not a floating blob" reasoning
+// as drawForestRockHandhold), with a small embedded ice-axe pick/handle at
+// the grip itself, and -- the one genuinely new visual idea here -- a
+// crack that radiates out from the CURRENTLY GRIPPED hold and visibly
+// widens the longer it's held, standing in for a grip-meter HUD element
+// without needing one.
+function drawWinterIceHold(camX, h, idx) {
+  const sy = gy - h.height;
+  const sx = h.x - camX;
+  const edges = winterIceWallEdgesAt(h.height);
+  const wallEdgeX = h.dir === 1 ? edges.left : edges.right;
+  const wallSx = wallEdgeX - camX;
+  const seed = idx * 19.13 + 300;
+
+  ctx.fillStyle = "#c3dcea";
+  ctx.beginPath();
+  ctx.moveTo(wallSx, sy - 15 - (pseudoRandom(seed) - 0.5) * 8);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6, sy - 8);
+  ctx.lineTo(sx + (pseudoRandom(seed + 2) - 0.5) * 6, sy + 9);
+  ctx.lineTo(wallSx, sy + 14 + (pseudoRandom(seed + 3) - 0.5) * 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.beginPath();
+  ctx.moveTo(wallSx, sy - 15 - (pseudoRandom(seed) - 0.5) * 8);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6, sy - 8);
+  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6 - 3, sy - 5);
+  ctx.lineTo(wallSx, sy - 9 - (pseudoRandom(seed) - 0.5) * 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // the grip knob itself
+  ctx.fillStyle = "#dcecf5";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 17, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(110,145,170,0.5)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // a small embedded ice axe -- wooden handle + a steel pick angled into
+  // the wall, tilted toward whichever side this hold pushes off from
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(h.dir === 1 ? -0.5 : 0.5);
+  ctx.fillStyle = "#5b4632";
+  ctx.fillRect(-2, -14, 4, 16);
+  ctx.fillStyle = "#8c8c92";
+  ctx.beginPath();
+  ctx.moveTo(-2, -14);
+  ctx.lineTo(10, -20);
+  ctx.lineTo(3, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // grip-decay crack -- only on the hold currently being held, growing
+  // outward the longer it's held
+  if (player.iceAxeClingIndex === idx) {
+    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / WINTER_ICE_HOLD_GRIP_MS);
+    if (frac > 0.15) {
+      const crackGrow = Math.pow(Math.max(0, frac - 0.15) / 0.85, 1.3);
+      ctx.strokeStyle = `rgba(90,130,160,${0.35 + crackGrow * 0.5})`;
+      ctx.lineWidth = 1 + crackGrow * 1.2;
+      for (let a = 0; a < 5; a++) {
+        const ang = (a / 5) * Math.PI * 2 + seed;
+        const len = 6 + crackGrow * 17;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.7);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawWinterIceLedge(camX) {
+  const l = WINTER_ICE_LEDGE;
+  const sx = l.x - camX;
+  const sy = gy - l.height;
+  ctx.fillStyle = "#c9dfec";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 6, l.width / 2, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#eef7fc";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, l.width / 2, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.beginPath();
+  ctx.ellipse(sx - l.width * 0.18, sy - 4, l.width * 0.22, 6, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawWinterIceClimb(camX) {
+  drawWinterIceWall(camX);
+  WINTER_ICE_HOLDS.forEach((h, idx) => drawWinterIceHold(camX, h, idx));
+  drawWinterIceLedge(camX);
+}
+
+// a quick burst of small angular ice chips at the player's own position,
+// purely a function of (now - iceAxeSlipFlashAt) -- same "no persisted
+// particle state" approach as the rest of winter's ambient effects, just
+// one-shot instead of looping.
+function drawWinterIceClimbSlipFlash(camX) {
+  if (!player.iceAxeSlipFlashAt) return;
+  const age = performance.now() - player.iceAxeSlipFlashAt;
+  if (age > WINTER_ICE_SLIP_FLASH_MS) return;
+  const t = age / WINTER_ICE_SLIP_FLASH_MS;
+  const cx = player.x + player.width / 2 - camX;
+  const cy = gy - player.y - player.height / 2;
+  for (let i = 0; i < 7; i++) {
+    const ang = (i / 7) * Math.PI * 2 + i * 1.3;
+    const dist = t * (22 + i * 7);
+    const px = cx + Math.cos(ang) * dist;
+    const py = cy + Math.sin(ang) * dist - t * 12;
+    // the flecks were nearly invisible against the icy wall/sky (their old
+    // fill was too close to the background's own pale blue-white) -- a
+    // brighter white fill plus a real steel-blue outline gives them enough
+    // contrast to actually read against every winter backdrop they can
+    // appear over (open sky, wall, snow).
+    ctx.fillStyle = `rgba(255,255,255,${(1 - t) * 0.95})`;
+    ctx.strokeStyle = `rgba(70,115,145,${(1 - t) * 0.9})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4);
+    ctx.lineTo(px + 4, py + 2.5);
+    ctx.lineTo(px - 2.5, py + 3.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
 }
 
 // CONFIRMED NEW FEATURE ("potentially having under the icicles it will be
@@ -72280,6 +72771,10 @@ function drawWinterScene(camX) {
   // fractal snowflakes drifting down, distinct from the general ambient snow
   drawWinterBreatherSnowflakes(camX);
 
+  // the ice axe climb -- the real payoff past the breather stretch
+  drawWinterIceClimb(camX);
+  drawWinterIceClimbSlipFlash(camX);
+
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
 
@@ -72293,6 +72788,14 @@ const WINTER_ICE_SLIDE_MS = 500;
 function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
   updateWinterBreatherSnowflakes(deltaTime);
+
+  // WINTER ICE CLIMB -- grip decay. A pure time check (not position/
+  // gravity), so it lives here rather than in applyPhysics -- once a held
+  // hold's grip window runs out, it lets go on its own (see
+  // winterIceClimbSlip's own comment for why this isn't a hard reset).
+  if (player.iceAxeClingIndex !== -1 && performance.now() - player.iceAxeGrabbedAt > WINTER_ICE_HOLD_GRIP_MS) {
+    winterIceClimbSlip();
+  }
 
   // mid-fall (spike hit, currently the only winter fallState mode) --
   // timer/completion handled globally by updateFallState, just don't run
