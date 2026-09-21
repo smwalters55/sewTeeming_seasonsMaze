@@ -2950,7 +2950,24 @@ function handleInput(){
     // -- only normal instant-stop left/right walking is suppressed, so it
     // doesn't fight the zone's own ambient-current + reduced-grip skate
     // movement, while jumping out of it stays completely normal.
-    if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1 && !player.onWateryIce) {
+    // CONFIRMED BUG FIX ("when i am not in it yet but walking to it and
+    // pressing rightarrow, sometimes it just spazzes out keeping me at
+    // the edge of it"): this used to check player.onWateryIce directly,
+    // but that flag is only refreshed once per frame, later, inside
+    // updateWinterScene -- so right at the zone's edge it's always
+    // reading LAST frame's answer, not this one. Stepping across the
+    // boundary this frame doesn't suppress this frame's normal walk (it
+    // still sees "outside" from before), so you walk further in on top
+    // of whatever the current also just did to you; then next frame the
+    // now-stale "inside" flag suppresses normal walk again even if the
+    // current already shoved you back outside that same instant -- a real
+    // one-frame-lag feedback loop that traps you oscillating right at the
+    // edge. Recomputing the zone membership fresh, right here, off the
+    // CURRENT position, keeps this check and this frame in sync and
+    // closes that loop.
+    const wateryHereNow = currentScene === "winter" && !player.jumping &&
+      WINTER_WATERY_ICE_ZONES.some(z => { const fx = player.x + player.width / 2; return fx > z.x && fx < z.x + z.width; });
+    if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1 && !wateryHereNow) {
       if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
       if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
     }
@@ -71887,12 +71904,44 @@ function drawWinterIceWall(camX) {
   grad.addColorStop(0.55, "#c7dfee");
   grad.addColorStop(1, "#f0f8fc");
   ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.moveTo(leftPts[0].x, leftPts[0].y);
-  leftPts.forEach(p => ctx.lineTo(p.x, p.y));
-  for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i].x, rightPts[i].y);
-  ctx.closePath();
-  ctx.fill();
+  const wallPath = new Path2D();
+  wallPath.moveTo(leftPts[0].x, leftPts[0].y);
+  leftPts.forEach(p => wallPath.lineTo(p.x, p.y));
+  for (let i = rightPts.length - 1; i >= 0; i--) wallPath.lineTo(rightPts[i].x, rightPts[i].y);
+  wallPath.closePath();
+  ctx.fill(wallPath);
+
+  // CONFIRMED CHANGE ("the rest of the ice wall better too like more
+  // realistic like how i have asked about th e other hanging ice thing
+  // rn that has the icicles on it"): a scatter of large, soft angular ice
+  // FACETS clipped to the wall's own silhouette, alternating faintly
+  // lighter/darker, so the surface reads as broken, uneven ice actually
+  // catching light differently across itself -- the same faceted-shard
+  // language the rainbow icicles use -- instead of one smooth flat
+  // gradient with only crack lines drawn over it.
+  ctx.save();
+  ctx.clip(wallPath);
+  const FACET_COUNT = 22;
+  for (let f = 0; f < FACET_COUNT; f++) {
+    const fseed = f * 31.7 + 4200;
+    const fx = baseX + (pseudoRandom(fseed) - 0.5) * 260;
+    const fy = gy - pseudoRandom(fseed + 1) * topHeight;
+    const fr = 30 + pseudoRandom(fseed + 2) * 55;
+    const lit = pseudoRandom(fseed + 3) > 0.5;
+    ctx.fillStyle = lit ? "rgba(255,255,255,0.14)" : "rgba(90,130,160,0.11)";
+    ctx.beginPath();
+    const PTS = 5 + Math.floor(pseudoRandom(fseed + 4) * 3);
+    for (let p = 0; p <= PTS; p++) {
+      const ang = (p / PTS) * Math.PI * 2 + fseed;
+      const rr = fr * (0.7 + pseudoRandom(fseed + 10 + p) * 0.6);
+      const px = fx + Math.cos(ang) * rr;
+      const py = fy + Math.sin(ang) * rr * 0.7;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 
   // a scatter of long diagonal crack lines for real ice texture,
   // deterministic per climb rather than shimmering every frame
@@ -71932,71 +71981,76 @@ function drawWinterIceWall(camX) {
 function drawWinterIceHold(camX, h, idx) {
   const sy = gy - h.height;
   const sx = h.x - camX;
-  const edges = winterIceWallEdgesAt(h.height);
-  const wallEdgeX = h.dir === 1 ? edges.left : edges.right;
-  const wallSx = wallEdgeX - camX;
   const seed = idx * 19.13 + 300;
 
-  ctx.fillStyle = "#c3dcea";
-  ctx.beginPath();
-  ctx.moveTo(wallSx, sy - 15 - (pseudoRandom(seed) - 0.5) * 8);
-  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6, sy - 8);
-  ctx.lineTo(sx + (pseudoRandom(seed + 2) - 0.5) * 6, sy + 9);
-  ctx.lineTo(wallSx, sy + 14 + (pseudoRandom(seed + 3) - 0.5) * 8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.4)";
-  ctx.beginPath();
-  ctx.moveTo(wallSx, sy - 15 - (pseudoRandom(seed) - 0.5) * 8);
-  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6, sy - 8);
-  ctx.lineTo(sx + (pseudoRandom(seed + 1) - 0.5) * 6 - 3, sy - 5);
-  ctx.lineTo(wallSx, sy - 9 - (pseudoRandom(seed) - 0.5) * 8);
-  ctx.closePath();
-  ctx.fill();
-
-  // CONFIRMED CHANGE ("i want like a thing that looks like organic ice
-  // ledges, and ice cracks, that the axe actually goes into. with a
-  // little more animation on that") -- direct follow-up that the plain
-  // white ellipse "grip knob" just read as a dot, not a real surface. The
-  // hold is now a jagged, irregular ice-shelf outline (per-hold seeded, so
-  // no two look identical), stretched out toward the side the hold pushes
-  // off from -- and it carries real crack texture BAKED INTO it, all
-  // fanning from one single strike point (ssx,ssy -- see
-  // winterIceHoldStrikePoint) that the ice axe itself physically plants
-  // into on every grab, instead of hovering near the hold. That shared
-  // strike point is what makes the axe visibly go INTO the ice rather
-  // than just floating beside it.
+  // CONFIRMED CHANGE ("can we remove the 'shelves' on the ice wall, just
+  // having the cracks and holds visible pls"): both the wall-bridging
+  // wedge that used to connect out to the grip point AND the jagged
+  // ice-shelf outline at the grip itself are gone -- no more solid shapes
+  // sticking out of the wall. What's left is just a small hold marker (a
+  // dimple in the ice, roughly where a real grip point would be) plus the
+  // crack texture, which was always the part actually carrying the
+  // gameplay information anyway.
   const { ssx, ssy } = winterIceHoldStrikePoint(sx, sy, h.dir);
   const ledgeSeed = seed + 90;
   // CONFIRMED CHANGE ("some weak, some shallow, holds" / wide multi-path
   // wall rework): sizeScale (set per-hold in winterIceBuildHolds) is a
   // HINT toward quality, not a guarantee -- mostly correlated but with
   // real seeded exceptions, so you can't just read hold size as a safety
-  // meter. Fill color only distinguishes weak (the one quality that's
-  // MEANT to be visually spottable) from everything else -- shallow
-  // deliberately looks like it could be anything.
+  // meter. Now scales the small hold marker and crack reach instead of a
+  // whole shelf. Fill color only distinguishes weak (the one quality
+  // that's MEANT to be visually spottable) from everything else --
+  // shallow deliberately looks like it could be anything.
   const scale = h.sizeScale || 1;
-  ctx.fillStyle = h.quality === "weak" ? "#c1cfd8" : "#dcecf5";
+
+  // CONFIRMED CHANGE ("make the simple markings look better not just like
+  // ovals... make it look like holds int he ice!!"): the marker is no
+  // longer a flat filled ellipse. It's a small carved notch: a dark
+  // shadow pool sunk into the ice first (so the hold reads as a real
+  // pocket, not a sticker on top), then an irregular faceted polygon
+  // (not a smooth ellipse) for the icy lip around the pocket, then one
+  // lit facet and one shadow facet layered on top of that so it catches
+  // light like a real chipped ice surface instead of a flat color wash --
+  // same lit/shadow-facet principle as the rainbow icicles, just scaled
+  // down to hold size.
+  const markSeed = ledgeSeed + 200;
+  const rx = 7 * scale, ry = 5.2 * scale;
+
+  ctx.fillStyle = "rgba(40,65,85,0.35)";
   ctx.beginPath();
-  const LEDGE_PTS = 7;
-  for (let p = 0; p <= LEDGE_PTS; p++) {
-    const ang = (p / LEDGE_PTS) * Math.PI * 2;
-    const jag = 0.7 + pseudoRandom(ledgeSeed + p) * 0.5;
-    const rx = (14 + h.dir * 7) * jag * scale;
-    const ry = 10 * jag * scale;
-    const px = sx + h.dir * 5 * scale + Math.cos(ang) * rx;
-    const py = sy + Math.sin(ang) * ry;
+  ctx.ellipse(sx + 1.2 * scale, sy + 1.4 * scale, rx * 0.8, ry * 0.75, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const NOTCH_PTS = 6 + Math.floor(pseudoRandom(markSeed) * 2);
+  ctx.fillStyle = h.quality === "weak" ? "#aebfc9" : "#c3dcea";
+  ctx.beginPath();
+  for (let p = 0; p <= NOTCH_PTS; p++) {
+    const ang = (p / NOTCH_PTS) * Math.PI * 2 + markSeed;
+    const rr = 0.75 + pseudoRandom(markSeed + 1 + p) * 0.4;
+    const px = sx + Math.cos(ang) * rx * rr;
+    const py = sy + Math.sin(ang) * ry * rr;
     if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(110,145,170,0.55)";
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(90,125,150,0.5)";
+  ctx.lineWidth = 1;
   ctx.stroke();
-  // a bright top-lit facet, like real ice catching light
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
+
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.beginPath();
-  ctx.ellipse(sx + h.dir * 3 * scale, sy - 5, 8 * scale, 4 * scale, h.dir * 0.3, 0, Math.PI * 2);
+  ctx.moveTo(sx - rx * 0.55, sy - ry * 0.5);
+  ctx.lineTo(sx + rx * 0.1, sy - ry * 0.75);
+  ctx.lineTo(sx - rx * 0.05, sy - ry * 0.05);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(70,100,125,0.3)";
+  ctx.beginPath();
+  ctx.moveTo(sx + rx * 0.15, sy + ry * 0.15);
+  ctx.lineTo(sx + rx * 0.7, sy + ry * 0.35);
+  ctx.lineTo(sx + rx * 0.35, sy + ry * 0.75);
+  ctx.closePath();
   ctx.fill();
 
   // CONFIRMED CHANGE: only WEAK holds get a baked-in visible fracture
