@@ -71862,7 +71862,16 @@ function drawWinterAvalancheBackdrop(camX) {
     const x = zoneStart + (s / STEPS) * (zoneEnd - zoneStart);
     const h = winterAvalancheBackdropHeightAt(x);
     const sx = x - camX * 0.85;
-    const sy = gy - h - 260; // pushed up well past the canvas top -- the summit is never meant to be reached by eye
+    // CONFIRMED BUG FIX ("whatis this why is this rectangle", screenshot):
+    // a flat "-260" used to be added here regardless of h, meant to push
+    // the peak up well past the canvas top -- but applied uniformly, it
+    // also lifted the FLAT parts of the zone (h near 0, right where this
+    // shape is supposed to taper down to nothing) up into a hard-edged
+    // 260px-tall rectangle instead of tapering to the ground like every
+    // other silhouette here. The lift now scales down WITH h instead of
+    // being a constant, so it still pushes the summit up out of view but
+    // genuinely pinches to zero-height (and zero lift) at both true ends.
+    const sy = gy - h - 260 * Math.min(1, h / (WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * 0.5));
     ctx.lineTo(sx, sy);
   }
   ctx.lineTo(zoneEnd - camX * 0.85, gy + 40);
@@ -71958,11 +71967,41 @@ function drawWinterAvalancheHill(camX) {
 
 function drawWinterAvalancheSnowballs(camX) {
   const now = performance.now();
+  const feetX = player.x + player.width / 2;
   winterAvalancheSnowballs.forEach(b => {
     const age = now - b.spawnedAt;
     const radius = b.size === "big" ? WINTER_AVALANCHE_BIG_RADIUS : WINTER_AVALANCHE_SMALL_RADIUS;
     const sx = b.x - camX;
-    const groundSy = gy - winterAvalancheHillHeightAt(b.x) - radius;
+    const foregroundH = winterAvalancheHillHeightAt(b.x);
+    // CONFIRMED CHANGE ("the snoball should not jsut be appearing near
+    // where i am here. they should be rolling down from on the mountain
+    // slightly behind me onto this mountain in a way that physically
+    // makes sense"): a freshly-spawned ball used to sit right on the
+    // walkable ridge's own height curve even while still far off-screen,
+    // so the only cue it was "arriving from the mountain" was horizontal
+    // distance -- vertically it always read as level with the player,
+    // same slope, just far away. Now a ball still far from the player
+    // visually rides the much taller BACKDROP mountain's own height
+    // curve instead (partially -- ARRIVE_LIFT_FRACTION keeps it grounded
+    // enough to still read as "on a slope", not teleported to the full
+    // backdrop peak) and a matching small scale-down for depth, then
+    // blends smoothly down onto the walkable ridge's real height as it
+    // gets closer -- so it now visibly descends from the taller slope
+    // behind/above and arrives onto the player's own path, rather than
+    // simply popping into existence already on it. The blend fully
+    // resolves well outside the actual hit-detection window (which only
+    // ever checks a ~15px sliver right at the player's feet), so this is
+    // a pure visual layer -- dodge timing/collision are untouched.
+    const distToPlayer = Math.abs(b.x - feetX);
+    const ARRIVE_START = 780; // still this far out (or further): fully riding the backdrop's height
+    const ARRIVE_END = 260; // by this close: fully settled onto the walkable ridge's own height
+    const arriveBlend = Math.max(0, Math.min(1, (distToPlayer - ARRIVE_END) / (ARRIVE_START - ARRIVE_END)));
+    const ARRIVE_LIFT_FRACTION = 0.4; // how much of the backdrop/foreground height gap to actually apply -- full 1.0 would put a distant ball way up near the true summit, which reads as teleporting rather than descending a connected slope
+    const backdropH = winterAvalancheBackdropHeightAt(b.x);
+    const liftedH = foregroundH + Math.max(0, backdropH - foregroundH) * ARRIVE_LIFT_FRACTION * arriveBlend;
+    const depthScale = 1 - arriveBlend * 0.3; // a little smaller while still up the slope, for a simple depth cue
+    const drawRadius = radius * depthScale; // draw-only radius -- the real hitbox (WINTER_AVALANCHE_HIT_HALF_WIDTH) is untouched by this, purely visual
+    const groundSy = gy - liftedH - drawRadius;
     if (sx < -60 || sx > canvas.width + 60) return;
 
     // CONFIRMED NEW FEATURE ("also want some to have a light bounce"): a
@@ -71970,7 +72009,7 @@ function drawWinterAvalancheSnowballs(camX) {
     // staying glued to the slope -- purely a visual bob, the ground-height
     // collision check is untouched by it.
     const bouncePhase = (age % 420) / 420;
-    const bounceOffset = b.bouncy ? Math.abs(Math.sin(bouncePhase * Math.PI)) * radius * 0.6 : 0;
+    const bounceOffset = b.bouncy ? Math.abs(Math.sin(bouncePhase * Math.PI)) * drawRadius * 0.6 : 0;
     const sy = groundSy - bounceOffset;
 
     // motion streaks trailing behind the direction of travel
@@ -71979,8 +72018,8 @@ function drawWinterAvalancheSnowballs(camX) {
     for (let i = 0; i < 3; i++) {
       const t = (i + 1) / 3;
       ctx.beginPath();
-      ctx.moveTo(sx - b.dir * radius * (0.6 + t * 0.5), sy - radius * 0.3 + t * radius * 0.5);
-      ctx.lineTo(sx - b.dir * radius * (1.3 + t * 0.6), sy - radius * 0.3 + t * radius * 0.5);
+      ctx.moveTo(sx - b.dir * drawRadius * (0.6 + t * 0.5), sy - drawRadius * 0.3 + t * drawRadius * 0.5);
+      ctx.lineTo(sx - b.dir * drawRadius * (1.3 + t * 0.6), sy - drawRadius * 0.3 + t * drawRadius * 0.5);
       ctx.stroke();
     }
 
@@ -71988,10 +72027,10 @@ function drawWinterAvalancheSnowballs(camX) {
     // shrinking a little as a bouncy ball lifts further off it -- reads
     // as a solid rolling object against the pale backdrop mountain
     // instead of nearly disappearing into it
-    const shadowScale = 1 - Math.min(0.5, bounceOffset / (radius * 2));
+    const shadowScale = 1 - Math.min(0.5, bounceOffset / (drawRadius * 2));
     ctx.fillStyle = "rgba(90,105,120,0.22)";
     ctx.beginPath();
-    ctx.ellipse(sx, groundSy + radius * 0.55, radius * 0.9 * shadowScale, radius * 0.32 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, groundSy + drawRadius * 0.55, drawRadius * 0.9 * shadowScale, drawRadius * 0.32 * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // CONFIRMED CHANGE ("maek the snowablls way nicer like. not just
@@ -72007,7 +72046,7 @@ function drawWinterAvalancheSnowballs(camX) {
     const bumpPath = new Path2D();
     for (let i = 0; i <= BUMP_PTS; i++) {
       const ang = (i / BUMP_PTS) * Math.PI * 2 + spin;
-      const bumpR = radius * (0.85 + pseudoRandom(vs + i) * 0.28);
+      const bumpR = drawRadius * (0.85 + pseudoRandom(vs + i) * 0.28);
       const px = sx + Math.cos(ang) * bumpR;
       const py = sy + Math.sin(ang) * bumpR;
       if (i === 0) bumpPath.moveTo(px, py); else bumpPath.lineTo(px, py);
@@ -72028,10 +72067,10 @@ function drawWinterAvalancheSnowballs(camX) {
     for (let i = 0; i < PATCH_COUNT; i++) {
       const pseed = vs + i * 11.3;
       const pang = (pseudoRandom(pseed) * Math.PI * 2) + spin;
-      const pdist = radius * (0.15 + pseudoRandom(pseed + 1) * 0.45);
+      const pdist = drawRadius * (0.15 + pseudoRandom(pseed + 1) * 0.45);
       const px = sx + Math.cos(pang) * pdist;
       const py = sy + Math.sin(pang) * pdist;
-      const pr = radius * (0.22 + pseudoRandom(pseed + 2) * 0.2);
+      const pr = drawRadius * (0.22 + pseudoRandom(pseed + 2) * 0.2);
       const lit = pseudoRandom(pseed + 3) > 0.45;
       ctx.fillStyle = lit ? "rgba(255,255,255,0.55)" : "rgba(120,145,170,0.28)";
       ctx.beginPath();
@@ -72043,7 +72082,7 @@ function drawWinterAvalancheSnowballs(camX) {
     const shadeAng = spin + Math.PI * 0.65;
     ctx.fillStyle = "rgba(110,135,160,0.22)";
     ctx.beginPath();
-    ctx.ellipse(sx + Math.cos(shadeAng) * radius * 0.35, sy + Math.sin(shadeAng) * radius * 0.35, radius * 0.85, radius * 0.6, shadeAng, 0, Math.PI * 2);
+    ctx.ellipse(sx + Math.cos(shadeAng) * drawRadius * 0.35, sy + Math.sin(shadeAng) * drawRadius * 0.35, drawRadius * 0.85, drawRadius * 0.6, shadeAng, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   });
