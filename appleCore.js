@@ -477,7 +477,15 @@ const player = {
   iceAxeSlipFlashAt: 0, // performance.now() of the last involuntary slip, purely for the visual ice-chip burst (see drawWinterIceClimbSlipFlash) -- 0 means "none pending"
   iceAxeReleaseHoldIdx: -1, // which WINTER_ICE_HOLDS index the axe last pulled free from, for the pull-out animation (see drawWinterIceAxeSwing)
   iceAxeReleasedAt: 0, // performance.now() of that release/slip -- 0 means "none pending"
-  iceAxeWindSeed: 0 // set fresh per launch (winterIceClimbRelease) -- phases the mid-air wind gust so consecutive hops don't all drift the same way
+  iceAxeWindSeed: 0, // set fresh per launch (winterIceClimbRelease) -- phases the mid-air wind gust so consecutive hops don't all drift the same way
+  // the hold index a current in-flight launch departed FROM -- excluded
+  // from both mid-flight catch checks (see the winter fallCatch/
+  // midFlightHit blocks in applyPhysics) for the whole flight, not just a
+  // short window. Needed because a release now starts with zero baseline
+  // horizontal push (see winterIceClimbRelease), so without this a slow
+  // starting drift could leave the player sitting inside the very hold
+  // they just left long enough to get silently re-caught by it.
+  iceAxeLaunchOriginIdx: -1
 };
 
 /* ======================================================
@@ -3562,8 +3570,19 @@ function applyPhysics(){
   // (airborne-only via player.jumping, so ordinary ground walking near the
   // wall's base is unaffected).
   if (currentScene === "winter" && player.jumping && player.vy <= 0) {
+    // CONFIRMED BUG FIX (wide multi-path wall rework): a release now
+    // starts with NO baseline horizontal push (see winterIceClimbRelease
+    // -- placement is all steering/wind now), so right after releasing,
+    // the player can still be sitting almost exactly where the hold they
+    // just left is, both in x AND y (the hold's own generous BAND covers
+    // a good chunk of early ascent). Without this exclusion, this exact
+    // catch would immediately re-grab the SAME hold you just released
+    // from before you ever got anywhere -- excluding it for a short
+    // window after release (same idea as iceAxeJustReleased below) fixes
+    // that.
     const fallCatch = WINTER_ICE_HOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < WINTER_ICE_HOLD_RADIUS &&
-      Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND);
+      Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND &&
+      WINTER_ICE_HOLDS.indexOf(h) !== player.iceAxeLaunchOriginIdx);
     if (fallCatch) {
       player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(fallCatch);
       player.x = fallCatch.x - player.width / 2;
@@ -3693,7 +3712,8 @@ function applyPhysics(){
       player.iceAxeJustReleased = false;
     } else {
       const midFlightHit = WINTER_ICE_HOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < WINTER_ICE_HOLD_RADIUS &&
-        Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND);
+        Math.abs(player.y - h.height) < WINTER_ICE_HOLD_BAND &&
+        WINTER_ICE_HOLDS.indexOf(h) !== player.iceAxeLaunchOriginIdx);
       if (midFlightHit) {
         player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(midFlightHit);
         player.x = midFlightHit.x - player.width / 2;
@@ -71573,46 +71593,96 @@ function drawWinterBreatherSnowflakes(camX) {
 // drawWinterIceAxeSwing -- rather than a tool that's just already sitting
 // there embedded, which is the single biggest reason the first pass read
 // as a reskin: nothing was actually happening as you climbed.
+// CONFIRMED REWORK ("maybe not have the just back and forth only left and
+// right going up. like, maybe there are a few different paths. the rock
+// wall is a lot wider. and some paths are just not feasable, but you can
+// only see that too much before you actually try it" + "like some weak,
+// some shallow, holds"): the climb is no longer one strict zigzag column
+// (one hold per height step, always alternating sides). It's now a real
+// WIDE field of holds, 2-3 real candidates per height band ("row"), so
+// there's an actual route to read and choose between, not just a fixed
+// sequence with a grip-decay timer bolted on. Three hold qualities now
+// exist instead of a binary weak flag:
+//   - strong: secure, no surprises.
+//   - weak: visibly pre-cracked (a real static fracture mark, see
+//     drawWinterIceHold) BEFORE you ever grab it -- a risk you can see
+//     and route around -- and it crumbles if you linger (no hard
+//     stopwatch-feeling timer anymore, see WINTER_ICE_HOLD_GRIP_MS_*).
+//   - shallow: the new "you can only find out by touching it" hold --
+//     no visible tell, looks like it could be anything, and ALWAYS gives
+//     way shortly after you grab it (WINTER_ICE_SHALLOW_HOLD_MS) no
+//     matter how fast you react -- it was never a real hold, so there's
+//     no reaction window to speak of, just a route-reading mistake.
+// Visual size (sizeScale below) leans toward matching quality but is a
+// HINT, not a guarantee -- real seeded exceptions (a small hold that's
+// actually rock solid, etc) so you can't just solve the wall by eye
+// after a couple of climbs.
 const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 160;
-const WINTER_ICE_HOLD_DX = 70; // same gap the forest rock climb uses -- see that constant's own comment
-const WINTER_ICE_HOLD_FIRST_HEIGHT = 55;
-const WINTER_ICE_HOLD_DY = 75;
-const WINTER_ICE_HOLD_COUNT = 9; // taller than the rock climb's 7 -- "gotta make it really good," and the grip-decay tension carries a longer climb without it dragging
-const WINTER_ICE_HOLDS = Array.from({ length: WINTER_ICE_HOLD_COUNT }, (_, i) => ({
-  x: WINTER_ICE_CLIMB_X + (i % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
-  height: WINTER_ICE_HOLD_FIRST_HEIGHT + i * WINTER_ICE_HOLD_DY,
-  dir: i % 2 === 0 ? 1 : -1, // which way the release launch pushes FROM this hold (toward the next one's side)
-  // CONFIRMED CHANGE ("this needs to be significantly different an
-  // legit"): roughly a third of the wall is pre-cracked/weak -- a much
-  // shorter grip window, and visibly so before you ever grab it (see
-  // drawWinterIceHold) -- so reading the wall ahead of time actually
-  // matters. Never the very first hold, so the climb always opens safe.
-  weak: i > 0 && pseudoRandom(i * 7.3 + 50) > 0.55
-}));
+const WINTER_ICE_ROW_FIRST_HEIGHT = 55;
+const WINTER_ICE_ROW_DY = 75; // same vertical gap the old single-path climb used
+const WINTER_ICE_ROW_COUNT = 9; // same overall climb height as before
+const WINTER_ICE_ROW_SLOT_OFFSETS = [-100, 0, 100]; // candidate x offsets from a row's own center
+
+function winterIceBuildHolds() {
+  const holds = [];
+  // row 0 -- always exactly one hold, dead center, guaranteed strong: a
+  // clean, safe opening grab with no read required, same as the old
+  // "never the very first hold" guarantee.
+  holds.push({ x: WINTER_ICE_CLIMB_X, height: WINTER_ICE_ROW_FIRST_HEIGHT, dir: 1, quality: "strong", sizeScale: 1.15, row: 0, col: 0 });
+  for (let row = 1; row < WINTER_ICE_ROW_COUNT; row++) {
+    const rowSeed = row * 41.7 + 900;
+    const numSlots = pseudoRandom(rowSeed) > 0.45 ? 3 : 2;
+    const slots = numSlots === 3 ? [0, 1, 2] : (pseudoRandom(rowSeed + 0.5) > 0.5 ? [0, 2] : [0, 1]);
+    const rowHolds = slots.map((slot, col) => {
+      const holdSeed = rowSeed + col * 11.3 + 5;
+      const jitterX = (pseudoRandom(holdSeed + 1) - 0.5) * 16;
+      const jitterY = (pseudoRandom(holdSeed + 2) - 0.5) * 10;
+      const qRoll = pseudoRandom(holdSeed + 3);
+      const quality = qRoll < 0.45 ? "strong" : qRoll < 0.72 ? "weak" : "shallow";
+      const x = WINTER_ICE_CLIMB_X + WINTER_ICE_ROW_SLOT_OFFSETS[slot] + jitterX;
+      return { x, height: WINTER_ICE_ROW_FIRST_HEIGHT + row * WINTER_ICE_ROW_DY + jitterY, dir: x >= WINTER_ICE_CLIMB_X ? 1 : -1, quality, row, col, holdSeed };
+    });
+    // a real SURVIVABLE option always exists on every row, even if the
+    // dice rolled every candidate shallow -- reading the wall should
+    // always be POSSIBLE, even when it's genuinely hard. Forces the
+    // fallback to weak rather than strong, on purpose: weak still has a
+    // visible tell and is survivable, but doesn't flatten the row's risk
+    // back down to "actually perfectly safe" the way forcing strong would.
+    if (!rowHolds.some(h => h.quality !== "shallow")) rowHolds[0].quality = "weak";
+    rowHolds.forEach(h => {
+      const sizeRoll = pseudoRandom(h.holdSeed + 4);
+      const misleading = pseudoRandom(h.holdSeed + 5) < 0.2; // ~1 in 5 subverts the visual hint on purpose
+      const wantsBig = h.quality === "strong";
+      const readsBig = misleading ? !wantsBig : wantsBig;
+      h.sizeScale = readsBig ? 1.05 + sizeRoll * 0.3 : 0.75 + sizeRoll * 0.25;
+    });
+    holds.push(...rowHolds);
+  }
+  return holds;
+}
+const WINTER_ICE_HOLDS = winterIceBuildHolds();
 const WINTER_ICE_HOLD_RADIUS = 48; // same generous grab window as the rock climb -- a deliberate press, no reason to make the grab itself fiddly
 const WINTER_ICE_HOLD_BAND = 58;
-const WINTER_ICE_CLIMB_TILT = 14.5; // identical to FOREST_ROCK_CLIMB_TILT/SPEED -- same DX/DY gaps, same shared launch-gravity model, so the same swept arc lands precisely here too
+const WINTER_ICE_CLIMB_TILT = 14.5; // still used for the launch's own vertical arc shaping -- see winterIceClimbRelease for why the horizontal component no longer uses this directly
 const WINTER_ICE_CLIMB_SPEED = 6.5;
-// how long a grabbed hold's grip lasts before it lets go on its own,
-// per hold strength -- tightened hard from an earlier 1700ms-flat pass
-// (which was loose enough that normal, confident climbing never actually
-// felt the decay) down to real constant pressure: even a STRONG hold
-// wants you moving soon, and a WEAK one barely gives you time to look up
-// before it's gone.
+// how long a grabbed STRONG/WEAK hold's grip lasts before it lets go on
+// its own -- tightened hard from an earlier 1700ms-flat pass (which was
+// loose enough that normal, confident climbing never actually felt the
+// decay) down to real constant pressure. Doesn't apply to shallow holds
+// at all -- see WINTER_ICE_SHALLOW_HOLD_MS, a completely separate,
+// unavoidable timer.
 const WINTER_ICE_HOLD_GRIP_MS_STRONG = 1000;
-// bumped up from the first pass (550) once the axe-swing release gate
-// below made 380ms of every hold non-negotiable -- 550 would have left a
-// weak hold only ~170ms of real reactive window after the strike lands,
-// which read as unfair rather than urgent. 680 keeps a weak hold
-// meaningfully tighter than a strong one (1000) while still giving you a
-// real beat to react once the axe is actually planted in.
 const WINTER_ICE_HOLD_GRIP_MS_WEAK = 680;
 function winterIceHoldGripMs(idx) {
   const h = WINTER_ICE_HOLDS[idx];
-  return h && h.weak ? WINTER_ICE_HOLD_GRIP_MS_WEAK : WINTER_ICE_HOLD_GRIP_MS_STRONG;
+  return h && h.quality === "weak" ? WINTER_ICE_HOLD_GRIP_MS_WEAK : WINTER_ICE_HOLD_GRIP_MS_STRONG;
 }
-// how many holds a slip drops you -- a real setback, not a full restart
-const WINTER_ICE_SLIP_HOLDS_BACK = 2;
+// a shallow hold ALWAYS crumbles shortly after you grab it -- no amount
+// of fast reaction saves it, because it was never a real hold. Timed to
+// land just after the axe's own strike animation finishes (see
+// WINTER_ICE_AXE_SWING_MS below), so the sequence reads clearly: the axe
+// swings in, strikes... and the ice gives way right under it.
+const WINTER_ICE_SHALLOW_HOLD_MS = 470;
 const WINTER_ICE_SLIP_FLASH_MS = 500;
 // mid-air wind gusts on every ice-climb launch -- see the winter check in
 // applyPhysics's launched branch. Modest amplitude since the flight is
@@ -71623,9 +71693,9 @@ const WINTER_ICE_WIND_FREQ = 0.005;
 const WINTER_ICE_WIND_AMP = 0.5;
 
 const WINTER_ICE_LEDGE = {
-  x: WINTER_ICE_CLIMB_X + (WINTER_ICE_HOLD_COUNT % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
-  height: WINTER_ICE_HOLD_FIRST_HEIGHT + WINTER_ICE_HOLD_COUNT * WINTER_ICE_HOLD_DY,
-  width: 260
+  x: WINTER_ICE_CLIMB_X,
+  height: WINTER_ICE_ROW_FIRST_HEIGHT + WINTER_ICE_ROW_COUNT * WINTER_ICE_ROW_DY,
+  width: 320 // widened along with the wall -- catches a launch from anywhere across the final row's spread of candidates
 };
 
 // the real WINTER_WIDTH, now that the ice climb/ledge's own extent is
@@ -71641,20 +71711,23 @@ function winterIceClimbRelease() {
   const idx = player.iceAxeClingIndex;
   const hold = WINTER_ICE_HOLDS[idx];
   const rad = WINTER_ICE_CLIMB_TILT * Math.PI / 180;
-  player.vx = Math.sin(rad) * WINTER_ICE_CLIMB_SPEED * hold.dir;
+  // CONFIRMED CHANGE (wide multi-path wall rework): no more baked-in
+  // horizontal push toward THIS hold's own side. With real path choice --
+  // a hold's next-row options can be left, right, or straight up -- a
+  // fixed per-hold bias would just fight whichever way you actually want
+  // to go. The launch now starts neutral (vx 0) and horizontal placement
+  // comes entirely from active steering + the wind gust (see the winter
+  // check in applyPhysics's launched branch) -- you aim yourself at
+  // whichever candidate hold you're going for.
+  player.vx = 0;
   player.vy = Math.cos(rad) * WINTER_ICE_CLIMB_SPEED;
   player.launched = true;
   player.launchGravityMult = 1;
-  // CONFIRMED CHANGE ("significantly different an legit" from the rock
-  // climb's fixed arc): every ice-climb hop is steerable AND wind-blown
-  // (see the winter wind check in applyPhysics) -- an active aim-and-
-  // correct beat instead of "press up, trust the arc." Default
-  // launchSteerAccel/launchSteerMax (see the player object) already give
-  // a gentle, fair nudge.
   player.launchSteerable = true;
-  player.launchBaseVx = player.vx;
+  player.launchBaseVx = 0;
   player.launchSteerOffset = 0;
   player.iceAxeWindSeed = idx * 1.7 + 4;
+  player.iceAxeLaunchOriginIdx = idx;
   player.jumping = true;
   player.usedDoubleJump = false;
   // for the ice-axe pull-free animation (see drawWinterIceAxeSwing) --
@@ -71666,15 +71739,49 @@ function winterIceClimbRelease() {
   player.iceAxeJustReleased = true;
 }
 
-// the involuntary "grip ran out" slip -- called from updateWinterScene once
-// winterIceHoldGripMs(idx) elapses on a held hold. Drops the player back
-// WINTER_ICE_SLIP_HOLDS_BACK holds, re-gripping there with a fresh grip
-// clock (reads as "you scrabbled and caught yourself a couple holds
-// down"), or all the way to solid ground at the climb's base if there
-// aren't enough holds below to catch on.
+// CONFIRMED NEW ("it drops you down a little, like 1-3 levels depending
+// what and where holds are below you. but def doesnt just fall to the
+// hold closest below. but maybe the 2nd closest below. or 3rd. and
+// doesnt have to be directly down but close ish. and if none really
+// close directly down you just fall further down until there is one
+// within some width"): real downward search instead of a fixed "go back
+// N holds" index hop, since holds no longer live on one single-file
+// path. Looks at every hold below fromHold's height, starting with a
+// narrow horizontal tolerance and widening it (falling further down)
+// until it finds SOMETHING within reach; then, among up to the 3
+// nearest-by-height candidates found, picks one weighted toward closer
+// but genuinely not always the closest -- a real "you scrabbled and
+// caught something, not necessarily the first thing" fall.
+function winterIceFindFallDest(fromHold) {
+  const below = WINTER_ICE_HOLDS.filter(h => h.height < fromHold.height - 20).sort((a, b) => b.height - a.height);
+  let tolerance = 130;
+  let candidates = [];
+  while (candidates.length === 0 && tolerance <= 650) {
+    candidates = below.filter(h => Math.abs(h.x - fromHold.x) <= tolerance).slice(0, 3);
+    tolerance += 130;
+  }
+  if (candidates.length === 0) return null;
+  const weights = [0.55, 0.3, 0.15].slice(0, candidates.length);
+  const wsum = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * wsum;
+  for (let i = 0; i < candidates.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
+}
+
+// the involuntary "this hold gave way" slip -- called from
+// updateWinterScene once a held hold's own budget runs out, whether
+// that's a strong/weak hold you overstayed (winterIceHoldGripMs) or a
+// shallow one that was never real to begin with (WINTER_ICE_SHALLOW_HOLD_MS,
+// always). Falls to a real search result (see winterIceFindFallDest) --
+// a genuine "you scrabbled and caught yourself somewhere lower," not a
+// scripted "back exactly N holds" -- or all the way to solid ground at
+// the climb's base if nothing at all catches you.
 function winterIceClimbSlip() {
   const idx = player.iceAxeClingIndex;
-  const targetIdx = idx - WINTER_ICE_SLIP_HOLDS_BACK;
+  const hold = WINTER_ICE_HOLDS[idx];
   player.iceAxeSlipFlashAt = performance.now();
   // the axe rips free too, not just the chip burst -- reuses the same
   // pull-free animation a deliberate release gets (see
@@ -71685,17 +71792,17 @@ function winterIceClimbSlip() {
   player.launchSteerable = false;
   player.vx = 0;
   player.vy = 0;
-  if (targetIdx >= 0) {
-    const hold = WINTER_ICE_HOLDS[targetIdx];
-    player.iceAxeClingIndex = targetIdx;
-    player.x = hold.x - player.width / 2;
-    player.y = hold.height;
+  const dest = winterIceFindFallDest(hold);
+  if (dest) {
+    player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(dest);
+    player.x = dest.x - player.width / 2;
+    player.y = dest.height;
     player.jumping = true;
     player.usedDoubleJump = false;
     player.iceAxeGrabbedAt = performance.now();
   } else {
     player.iceAxeClingIndex = -1;
-    player.x = WINTER_ICE_CLIMB_X - WINTER_ICE_HOLD_DX / 2 - player.width / 2 - 20;
+    player.x = WINTER_ICE_CLIMB_X - player.width / 2;
     player.y = 0;
     player.jumping = false;
     player.usedDoubleJump = false;
@@ -71706,7 +71813,11 @@ function winterIceClimbSlip() {
 // approach as forestRockWallEdgeX, own icy proportions/seed offsets so the
 // two walls don't read as reskins sharing an identical silhouette.
 function winterIceWallEdgeX(t, side) {
-  const baseHalfW = 80 - t * 18;
+  // widened hard (was 80-t*18) to actually hold 2-3 spread-out candidate
+  // holds per row (see WINTER_ICE_ROW_SLOT_OFFSETS, +-100 from center)
+  // with real margin -- the old single-file wall only ever needed to fit
+  // one hold +-35 from center.
+  const baseHalfW = 190 - t * 55;
   const coarse = (pseudoRandom(side * 4.21 + t * 8.3 + 700) - 0.5) * 26;
   const fine = (pseudoRandom(side * 9.63 + t * 19.1 + 750) - 0.5) * 12;
   return side * baseHalfW + coarse + fine;
@@ -71820,15 +71931,23 @@ function drawWinterIceHold(camX, h, idx) {
   // than just floating beside it.
   const { ssx, ssy } = winterIceHoldStrikePoint(sx, sy, h.dir);
   const ledgeSeed = seed + 90;
-  ctx.fillStyle = h.weak ? "#c1cfd8" : "#dcecf5";
+  // CONFIRMED CHANGE ("some weak, some shallow, holds" / wide multi-path
+  // wall rework): sizeScale (set per-hold in winterIceBuildHolds) is a
+  // HINT toward quality, not a guarantee -- mostly correlated but with
+  // real seeded exceptions, so you can't just read hold size as a safety
+  // meter. Fill color only distinguishes weak (the one quality that's
+  // MEANT to be visually spottable) from everything else -- shallow
+  // deliberately looks like it could be anything.
+  const scale = h.sizeScale || 1;
+  ctx.fillStyle = h.quality === "weak" ? "#c1cfd8" : "#dcecf5";
   ctx.beginPath();
   const LEDGE_PTS = 7;
   for (let p = 0; p <= LEDGE_PTS; p++) {
     const ang = (p / LEDGE_PTS) * Math.PI * 2;
     const jag = 0.7 + pseudoRandom(ledgeSeed + p) * 0.5;
-    const rx = (14 + h.dir * 7) * jag;
-    const ry = 10 * jag;
-    const px = sx + h.dir * 5 + Math.cos(ang) * rx;
+    const rx = (14 + h.dir * 7) * jag * scale;
+    const ry = 10 * jag * scale;
+    const px = sx + h.dir * 5 * scale + Math.cos(ang) * rx;
     const py = sy + Math.sin(ang) * ry;
     if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
@@ -71840,32 +71959,48 @@ function drawWinterIceHold(camX, h, idx) {
   // a bright top-lit facet, like real ice catching light
   ctx.fillStyle = "rgba(255,255,255,0.45)";
   ctx.beginPath();
-  ctx.ellipse(sx + h.dir * 3, sy - 5, 8, 4, h.dir * 0.3, 0, Math.PI * 2);
+  ctx.ellipse(sx + h.dir * 3 * scale, sy - 5, 8 * scale, 4 * scale, h.dir * 0.3, 0, Math.PI * 2);
   ctx.fill();
 
-  // baked-in fracture texture, always present (faint on a strong hold,
-  // visibly worse pre-touch on a weak one) so a weak hold is something you
-  // can spot and route around, not just a nasty surprise once you're
-  // already hanging from it
-  const baseCrackCount = h.weak ? 4 : 2;
-  const baseCrackAlpha = h.weak ? 0.5 : 0.22;
-  ctx.strokeStyle = `rgba(100,135,160,${baseCrackAlpha})`;
-  ctx.lineWidth = 1;
-  for (let a = 0; a < baseCrackCount; a++) {
-    const ang = pseudoRandom(ledgeSeed + 40 + a) * Math.PI * 2;
-    const len = 5 + pseudoRandom(ledgeSeed + 50 + a) * (h.weak ? 9 : 6);
-    ctx.beginPath();
-    ctx.moveTo(ssx, ssy);
-    ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
-    ctx.stroke();
+  // CONFIRMED CHANGE: only WEAK holds get a baked-in visible fracture
+  // tell now -- that's the one category you're meant to be able to spot
+  // and route around before ever touching it. SHALLOW holds get none at
+  // all: they're the ones you only find out about by actually grabbing
+  // (see WINTER_ICE_SHALLOW_HOLD_MS / winterIceClimbSlip). Strong holds
+  // keep a faint hairline or two, same as before, just for texture.
+  if (h.quality === "weak") {
+    ctx.strokeStyle = "rgba(100,135,160,0.5)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 4; a++) {
+      const ang = pseudoRandom(ledgeSeed + 40 + a) * Math.PI * 2;
+      const len = (5 + pseudoRandom(ledgeSeed + 50 + a) * 9) * scale;
+      ctx.beginPath();
+      ctx.moveTo(ssx, ssy);
+      ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
+      ctx.stroke();
+    }
+  } else if (h.quality === "strong") {
+    ctx.strokeStyle = "rgba(100,135,160,0.22)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 2; a++) {
+      const ang = pseudoRandom(ledgeSeed + 40 + a) * Math.PI * 2;
+      const len = (5 + pseudoRandom(ledgeSeed + 50 + a) * 6) * scale;
+      ctx.beginPath();
+      ctx.moveTo(ssx, ssy);
+      ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
+      ctx.stroke();
+    }
   }
 
   // grip-decay crack -- only on the hold currently being held, growing
   // outward from the strike point (the exact spot the axe is planted
   // into) the longer it's held, with a slow pulse on top of the growth so
-  // it doesn't just sit static once it's out
+  // it doesn't just sit static once it's out. Uses each quality's own
+  // real budget -- shallow grows MUCH faster since it's on a fixed,
+  // unavoidable timer rather than a reactive one.
   if (player.iceAxeClingIndex === idx) {
-    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / winterIceHoldGripMs(idx));
+    const budget = h.quality === "shallow" ? WINTER_ICE_SHALLOW_HOLD_MS : winterIceHoldGripMs(idx);
+    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / budget);
     if (frac > 0.1) {
       const crackGrow = Math.pow(Math.max(0, frac - 0.1) / 0.9, 1.3);
       const pulse = 0.85 + Math.sin(performance.now() * 0.012) * 0.15;
@@ -73042,10 +73177,16 @@ function updateWinterScene(deltaTime) {
 
   // WINTER ICE CLIMB -- grip decay. A pure time check (not position/
   // gravity), so it lives here rather than in applyPhysics -- once a held
-  // hold's grip window runs out, it lets go on its own (see
-  // winterIceClimbSlip's own comment for why this isn't a hard reset).
-  if (player.iceAxeClingIndex !== -1 && performance.now() - player.iceAxeGrabbedAt > winterIceHoldGripMs(player.iceAxeClingIndex)) {
-    winterIceClimbSlip();
+  // hold's own budget runs out, it lets go on its own (see
+  // winterIceClimbSlip's own comment for why this isn't a hard reset). A
+  // shallow hold uses its own separate, unavoidable budget
+  // (WINTER_ICE_SHALLOW_HOLD_MS) instead of the reactive strong/weak one.
+  if (player.iceAxeClingIndex !== -1) {
+    const heldHold = WINTER_ICE_HOLDS[player.iceAxeClingIndex];
+    const budget = heldHold.quality === "shallow" ? WINTER_ICE_SHALLOW_HOLD_MS : winterIceHoldGripMs(player.iceAxeClingIndex);
+    if (performance.now() - player.iceAxeGrabbedAt > budget) {
+      winterIceClimbSlip();
+    }
   }
 
   // mid-fall (spike hit, currently the only winter fallState mode) --
