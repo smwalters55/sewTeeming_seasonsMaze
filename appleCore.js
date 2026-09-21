@@ -69880,7 +69880,13 @@ drawSeasonTransition(ctx);
 // filling the clearing too just reads as "the clearing is a glade within
 // the forest," not an empty gap.
 const WINTER_CONTENT_OFFSET = 380;
-const WINTER_WIDTH = 4050 + WINTER_CONTENT_OFFSET;
+// CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
+// further past the old end (right at the icicle pocket's own edge) to fit
+// a real quiet stretch of open ground past the rainbow icicles/watery ice
+// -- see WINTER_BREATHER_ZONE_START/END and the fractal-snowflake ambience
+// below. Nothing else currently sits out this far, so this is a clean
+// extend with no other content to reflow.
+const WINTER_WIDTH = 4850 + WINTER_CONTENT_OFFSET;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -71229,7 +71235,11 @@ function drawWinterDoorGroundFrost(camX, doorDef) {
 // last slick platform (now ending around x 3280-3320 with drift) before
 // the icicle pocket begins, instead of arriving right at the base of it
 // off the final jump.
-const WINTER_RAINBOW_POCKET_X = 3500 + WINTER_CONTENT_OFFSET;
+// CONFIRMED CHANGE ("lets also give more breathing room a lil before the
+// icicles section"): pushed out further still (3500 -> 3780) -- the real
+// climb's own last platform reaches out to about x 3698 with its drift,
+// so this widens the flat gap before the pocket from ~180px to ~460px.
+const WINTER_RAINBOW_POCKET_X = 3780 + WINTER_CONTENT_OFFSET;
 // CONFIRMED BUG FIX ("i shouldnt be able to land on tree when this ice
 // thing is in front of it"): shared here so applyPhysics's own
 // WINTER_FRONT_TREES collision loop can exclude any tree whose x falls
@@ -71245,6 +71255,91 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
   "90,190,255",   // sky
   "170,120,255"   // violet
 ];
+
+// CONFIRMED NEW FEATURE ("a little breather stretch afterwards, maybe
+// oooo what about a few fractal like snoflakes smalll falling down
+// gently"): a quiet stretch of open ground past the rainbow icicle
+// pocket/watery ice, deliberately asking nothing of the player -- a beat
+// to exhale after the platform climb + spikes + icicles + slip-pool all
+// landed back to back. Its one bit of ambience is a handful of real
+// fractal-branched snowflakes (six-armed, each arm with its own small
+// side branches, unlike the plain dot-snow drawWinterSnow already scatters
+// across the whole level) drifting down slowly -- bigger, slower and much
+// sparser than the ambient snow, so they read as a special, savorable
+// detail rather than just more background noise. Purely decorative, same
+// "derive everything from performance.now(), nothing persisted beyond a
+// simple loop-reset" approach as the rest of winter's ambient effects.
+const WINTER_BREATHER_ZONE_START = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 60;
+const WINTER_BREATHER_ZONE_END = WINTER_WIDTH - 60;
+const WINTER_BREATHER_SNOWFLAKE_COUNT = 7;
+const winterBreatherSnowflakes = [];
+for (let i = 0; i < WINTER_BREATHER_SNOWFLAKE_COUNT; i++) {
+  const seed = i * 22.3 + 9100;
+  winterBreatherSnowflakes.push({
+    x: WINTER_BREATHER_ZONE_START + pseudoRandom(seed) * (WINTER_BREATHER_ZONE_END - WINTER_BREATHER_ZONE_START),
+    y: pseudoRandom(seed + 1) * 260,
+    size: 7 + pseudoRandom(seed + 2) * 5,
+    speed: 6 + pseudoRandom(seed + 3) * 5, // notably slower/gentler than drawWinterSnow's ambient flakes
+    rot: pseudoRandom(seed + 4) * Math.PI * 2,
+    rotSpeed: (pseudoRandom(seed + 5) - 0.5) * 0.25,
+    drift: pseudoRandom(seed + 6) * Math.PI * 2,
+    driftSpeed: 0.15 + pseudoRandom(seed + 7) * 0.2
+  });
+}
+function updateWinterBreatherSnowflakes(deltaTime) {
+  winterBreatherSnowflakes.forEach((f, i) => {
+    f.y += f.speed * deltaTime;
+    f.rot += f.rotSpeed * deltaTime;
+    f.drift += f.driftSpeed * deltaTime;
+    if (f.y > gy + 20) {
+      f.y = -20;
+      const seed = i * 22.3 + 9100 + performance.now() * 0.0001;
+      f.x = WINTER_BREATHER_ZONE_START + pseudoRandom(seed) * (WINTER_BREATHER_ZONE_END - WINTER_BREATHER_ZONE_START);
+    }
+  });
+}
+// a real six-armed fractal snowflake -- a main spoke per arm with two
+// smaller side-branches at a few points along it, the classic "real
+// snowflake" silhouette, rather than a plain dot/asterisk.
+function drawFractalSnowflake(cx, cy, size, rot) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 1;
+  ctx.lineCap = "round";
+  for (let arm = 0; arm < 6; arm++) {
+    ctx.save();
+    ctx.rotate((arm / 6) * Math.PI * 2);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -size);
+    ctx.stroke();
+    [0.4, 0.65, 0.85].forEach(t => {
+      const by = -size * t;
+      const blen = size * (1 - t) * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(0, by);
+      ctx.lineTo(blen * 0.62, by - blen * 0.62);
+      ctx.moveTo(0, by);
+      ctx.lineTo(-blen * 0.62, by - blen * 0.62);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.1, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fill();
+  ctx.restore();
+}
+function drawWinterBreatherSnowflakes(camX) {
+  winterBreatherSnowflakes.forEach(f => {
+    const sx = f.x - camX + Math.sin(f.drift) * 10;
+    if (sx < -20 || sx > canvas.width + 20) return;
+    drawFractalSnowflake(sx, f.y, f.size, f.rot);
+  });
+}
 
 // CONFIRMED NEW FEATURE ("potentially having under the icicles it will be
 // somehwat translucent watery ice on the ground that moves you every
@@ -72175,6 +72270,10 @@ function drawWinterScene(camX) {
   WINTER_WATERY_ICE_ZONES.forEach(z => drawWinterWateryIce(camX, z));
   drawWinterRainbowOverhang(camX);
 
+  // quiet breather stretch just past the icicle pocket -- a few small
+  // fractal snowflakes drifting down, distinct from the general ambient snow
+  drawWinterBreatherSnowflakes(camX);
+
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
 
@@ -72187,6 +72286,7 @@ const WINTER_ICE_SLIDE_MS = 500;
 
 function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
+  updateWinterBreatherSnowflakes(deltaTime);
 
   // mid-fall (spike hit, currently the only winter fallState mode) --
   // timer/completion handled globally by updateFallState, just don't run
