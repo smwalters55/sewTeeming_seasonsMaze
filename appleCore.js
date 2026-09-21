@@ -70190,7 +70190,10 @@ const WINTER_AVALANCHE_WIDTH = 2600;
 // referencing this name unchanged; the real WINTER_WIDTH is declared fresh
 // further down, once the climb/ledge's own extent is known, and picks up
 // this same value as its own starting point.
-const WINTER_PRE_CLIMB_WIDTH = 4850 + WINTER_CONTENT_OFFSET + WINTER_AVALANCHE_WIDTH;
+// CONFIRMED CHANGE ("more breathing room between hill and the ice
+// climb"): widened by another 300 on top of everything else already
+// folded in here.
+const WINTER_PRE_CLIMB_WIDTH = 5150 + WINTER_CONTENT_OFFSET + WINTER_AVALANCHE_WIDTH;
 
 // secret patches of slick ice near the start of winter -- CONFIRMED
 // CHANGE ("maybe have some secret slippy slidy ice areas near the
@@ -71665,7 +71668,7 @@ const WINTER_AVALANCHE_TELEGRAPH_MS = 550; // dust-puff warning at the spawn poi
 const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
 
 let winterAvalancheSnowballs = [];
-let winterAvalancheSpawnTimer = 700;
+let winterAvalancheSpawnTimer = 1300;
 
 // CONFIRMED CHANGE ("we make extra woozy w additional hits"): reuses the
 // SAME global playerWoozyT/WOOZY_MS every other "dazed" state in the game
@@ -71710,18 +71713,29 @@ function updateWinterAvalanche(deltaTime) {
         ? Math.max(WINTER_AVALANCHE_START_X + 30, Math.min(spawnX, WINTER_AVALANCHE_PEAK_X - 20))
         : Math.min(WINTER_AVALANCHE_END_X - 30, Math.max(spawnX, WINTER_AVALANCHE_PEAK_X + 20));
       const bouncy = pseudoRandom(spawnSeed + 5) < 0.35; // "want some to have a light bounce" -- purely a visual hop, doesn't change the hitbox
-      winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", dir, bouncy, spawnedAt: performance.now(), hit: false });
-      // CONFIRMED CHANGE ("waaay biggre... max two balls rn" / "An Event,
-      // and activity"): interval roughly halved so the much longer hill
-      // stays busy with traffic instead of feeling sparse.
-      winterAvalancheSpawnTimer = 750 + pseudoRandom(spawnSeed + 2) * 550;
+      // fixed per-ball seed for its visual texture (irregular clumped
+      // silhouette, embedded packed-snow patches) -- stored once so the
+      // shape stays consistent frame to frame instead of re-rolling
+      const visualSeed = spawnSeed * 7.3 + 900;
+      winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", dir, bouncy, visualSeed, spawnedAt: performance.now(), hit: false });
+      // CONFIRMED TUNING ("balls sometimes roll too fast/too many where
+      // it impossible to not get hit like 3-4 times in a row"): the
+      // "make it waaay bigger" pass above had shortened this to
+      // 750-1300ms, which was too tight against how long a single
+      // double-jump dodge actually takes to play out (jump, wait for the
+      // gap, double jump, then the ball needs to fully clear) -- back-to-
+      // back balls could arrive before the player had recovered from the
+      // last one. Eased back up; the much longer hill (2600px, see
+      // WINTER_AVALANCHE_WIDTH) still means plenty of total balls over a
+      // full crossing without any single pair being unfairly close.
+      winterAvalancheSpawnTimer = 1500 + pseudoRandom(spawnSeed + 2) * 900;
     }
   } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
     // walked back out toward the pool side -- clear the hazard so
     // re-entering the zone always starts clean, same "no sticky flags
     // carried across a re-approach" approach the rest of winter uses
     winterAvalancheSnowballs = [];
-    winterAvalancheSpawnTimer = 600;
+    winterAvalancheSpawnTimer = 1100;
   }
 
   const moveAmt = WINTER_AVALANCHE_BALL_SPEED * deltaTime;
@@ -71930,24 +71944,58 @@ function drawWinterAvalancheSnowballs(camX) {
     ctx.ellipse(sx, groundSy + radius * 0.55, radius * 0.9 * shadowScale, radius * 0.32 * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // CONFIRMED CHANGE ("maek the snowablls way nicer like. not just
+    // balls. a lil more texture to them"): swapped the plain filled
+    // circle for a real irregular packed-snow clump -- a bumpy silhouette
+    // (not a perfect circle) plus a few embedded darker/lit patches, all
+    // rotating together with the same spin the tumble cue already used,
+    // so the lumps visibly tumble instead of sitting static on a
+    // spinning circle.
+    const spin = age * 0.006;
+    const vs = b.visualSeed;
+    const BUMP_PTS = 8;
+    const bumpPath = new Path2D();
+    for (let i = 0; i <= BUMP_PTS; i++) {
+      const ang = (i / BUMP_PTS) * Math.PI * 2 + spin;
+      const bumpR = radius * (0.85 + pseudoRandom(vs + i) * 0.28);
+      const px = sx + Math.cos(ang) * bumpR;
+      const py = sy + Math.sin(ang) * bumpR;
+      if (i === 0) bumpPath.moveTo(px, py); else bumpPath.lineTo(px, py);
+    }
+    bumpPath.closePath();
+
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.ellipse(sx, sy, radius, radius, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fill(bumpPath);
     ctx.strokeStyle = "rgba(95,120,145,0.85)";
     ctx.lineWidth = 2;
-    ctx.stroke();
-    // packed-snow texture + a rolling spin cue -- a couple of arcs that
-    // rotate with elapsed time so it visibly reads as tumbling, not sliding
-    ctx.strokeStyle = "rgba(110,135,160,0.6)";
-    ctx.lineWidth = 1.3;
-    const spin = age * 0.006;
-    for (let i = 0; i < 2; i++) {
-      const ang = spin + i * Math.PI;
+    ctx.stroke(bumpPath);
+
+    ctx.save();
+    ctx.clip(bumpPath);
+    // a few embedded packed-snow patches -- fixed relative angle/offset
+    // per ball, rotating as one with the clump instead of independently
+    const PATCH_COUNT = 3;
+    for (let i = 0; i < PATCH_COUNT; i++) {
+      const pseed = vs + i * 11.3;
+      const pang = (pseudoRandom(pseed) * Math.PI * 2) + spin;
+      const pdist = radius * (0.15 + pseudoRandom(pseed + 1) * 0.45);
+      const px = sx + Math.cos(pang) * pdist;
+      const py = sy + Math.sin(pang) * pdist;
+      const pr = radius * (0.22 + pseudoRandom(pseed + 2) * 0.2);
+      const lit = pseudoRandom(pseed + 3) > 0.45;
+      ctx.fillStyle = lit ? "rgba(255,255,255,0.55)" : "rgba(120,145,170,0.28)";
       ctx.beginPath();
-      ctx.arc(sx, sy, radius * 0.6, ang, ang + Math.PI * 0.7);
-      ctx.stroke();
+      ctx.ellipse(px, py, pr, pr * 0.75, pang, 0, Math.PI * 2);
+      ctx.fill();
     }
+    // a soft directional shade on the underside so the clump reads as
+    // round, not flat -- also rotates with the ball
+    const shadeAng = spin + Math.PI * 0.65;
+    ctx.fillStyle = "rgba(110,135,160,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(sx + Math.cos(shadeAng) * radius * 0.35, sy + Math.sin(shadeAng) * radius * 0.35, radius * 0.85, radius * 0.6, shadeAng, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   });
 }
 
@@ -74009,6 +74057,18 @@ function drawWinterScene(camX) {
     ctx.globalAlpha = 1;
   });
 
+  // CONFIRMED BUG FIX ("should not see tree under taper"): the avalanche
+  // hill's own draw used to happen much later, after both the front and
+  // mid treelines -- but its now much wider taper apron (see the
+  // breathing-room fix above) can genuinely overlap where those
+  // decorative trees are scattered, and being drawn on top of them, its
+  // pale ground strip painted right over the top of tree foliage instead
+  // of sitting behind it. Moved to draw before both treelines so trees
+  // naturally render on top wherever they overlap, same "ground first,
+  // then whatever's visually above it" ordering already used for the ice
+  // spike zones and watery ice just below.
+  drawWinterAvalancheHill(camX);
+
   // near treeline -- the transition band right past the door (world x
   // 200-700ish) mixes in real green sprigs so it reads as "this same
   // forest, just frosted over" before opening into open snow further in.
@@ -74048,9 +74108,10 @@ function drawWinterScene(camX) {
   WINTER_WATERY_ICE_ZONES.forEach(z => drawWinterWateryIce(camX, z));
   drawWinterRainbowOverhang(camX);
 
-  // the avalanche hill -- sits between the watery ice pool and the quiet
-  // breather stretch (see WINTER_AVALANCHE_START_X and friends)
-  drawWinterAvalancheHill(camX);
+  // the avalanche hill itself is drawn earlier now, before the treelines
+  // (see the comment up there) -- its dynamic hazards stay here though,
+  // same as the ice climb's own slip flash below, so they read clearly
+  // above ground-level scenery
   drawWinterAvalancheSnowballs(camX);
   drawWinterAvalancheHitFlash(camX);
 
