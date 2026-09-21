@@ -5695,7 +5695,24 @@ function applyPhysics(){
     }
     const feetXHillFinal = player.x + player.width / 2; // re-derived in case the wall block above just moved player.x
     const onHillNow = feetXHillFinal > WINTER_AVALANCHE_START_X - 5 && feetXHillFinal < WINTER_AVALANCHE_END_X + 5;
-    if (onHillNow) {
+    // CONFIRMED BUGFIX (caught during real-jump verification of the new
+    // hop platforms, "lets do like 2 or 3 little things to just hop up
+    // on"): this block's own unconditional ground-glue (needed elsewhere
+    // to stop jitter on the hill's continuous incline) doesn't know
+    // anything about the slick-platform check earlier this same tick --
+    // so even the instant a player successfully landed on one of the new
+    // hop platforms floating above the hill, this ran right after it and
+    // immediately snapped player.y back down to the raw hill height under
+    // their feet, undoing the landing before a single frame could render
+    // it. A real jump-arc test showed the apex reliably clearing each
+    // platform's required height, yet the player always ended up back on
+    // the hill's own ground, never resting on the platform -- exactly
+    // this. Fixed by skipping the hill's own glue entirely whenever
+    // winterSlickPlatformIndex says they're validly standing on a
+    // platform right now (set fresh earlier this same tick) -- it
+    // naturally reverts to -1, and the hill glue resumes, the moment they
+    // actually leave the platform's own footprint.
+    if (onHillNow && player.winterSlickPlatformIndex === -1) {
       const hillHeight = winterAvalancheHillHeightAt(feetXHillFinal);
       if (!player.jumping) {
         player.y = hillHeight;
@@ -71824,6 +71841,65 @@ function winterAvalancheHillHeightAt(x) {
   return Math.max(0, base + winterAvalancheHillRipple(x));
 }
 
+// CONFIRMED NEW FEATURE ("lets do like 2 or 3 little things to just hop up
+// on and its a lil icy slippery that also makes the balls behave dif on
+// the mountain range"): a few small icy outcrops on the hill itself, each
+// a real jump above the local terrain, positioned as a fraction along the
+// zone so they scale automatically if the hill's own width/geometry ever
+// changes again. Reuses the existing slick-platform system wholesale
+// (WINTER_SLICK_PLATFORMS/winterSlickPlatformX/drawWinterSlickPlatform,
+// already built for the earlier ice-spike climb) rather than writing a
+// second one from scratch -- that system's collision, drift-carry skate
+// momentum, and visuals all already deliver exactly "icy slippery to
+// stand on," for free, just by appending entries to its array. The only
+// genuinely new part is the ball-side behavior below. Heights are each
+// platform's own LOCAL terrain height (not a flat number), so they sit a
+// real jump above wherever they actually are on the hill regardless of
+// the ripple terrain under them.
+const WINTER_AVALANCHE_HOP_PLATFORMS = [
+  { xT: 0.30, hopAbove: 78, width: 110, driftAmp: 22, driftSpeed: 0.0013, driftPhase: 1.1 },
+  { xT: 0.58, hopAbove: 82, width: 100, driftAmp: 26, driftSpeed: 0.0011, driftPhase: 2.6 },
+  { xT: 0.80, hopAbove: 74, width: 120, driftAmp: 18, driftSpeed: 0.0015, driftPhase: 4.0 }
+].map(p => {
+  const x = WINTER_AVALANCHE_START_X + p.xT * WINTER_AVALANCHE_WIDTH;
+  return {
+    x: x - p.width / 2,
+    width: p.width,
+    height: winterAvalancheHillHeightAt(x) + p.hopAbove,
+    driftAmp: p.driftAmp,
+    driftSpeed: p.driftSpeed,
+    driftPhase: p.driftPhase,
+    avalancheHop: true // tags these so the ball-deflection pass below can find just these, not every slick platform in winter
+  };
+});
+WINTER_SLICK_PLATFORMS.push(...WINTER_AVALANCHE_HOP_PLATFORMS);
+
+// CONFIRMED NEW FEATURE, the ball-behavior half of the hop platforms
+// above ("makes the balls behave dif on the mountain range"): a ball
+// crossing under one gets knocked into a real deflected bounce -- bigger
+// and choppier than the ridge's own single smooth launch arc, and (per
+// "behave DIFFERENT", not just "also bounce") sometimes a ball still mid-
+// bounce here gets its size's normal roll briefly interrupted into a
+// stutter-step rather than one clean arc, so these read as a distinct
+// hazard-side wrinkle, not just three more ridges. Purely a visual/height
+// offset like the ridge arc -- collision still uses the real foregroundH.
+function winterAvalancheHopDeflect(bx, dir, visualSeed) {
+  let extra = 0;
+  for (const plat of WINTER_AVALANCHE_HOP_PLATFORMS) {
+    const centerX = plat.x + plat.width / 2;
+    const RANGE = 150;
+    const distFromCenter = bx - centerX;
+    if (distFromCenter > -RANGE && distFromCenter < RANGE) {
+      const t = 1 - Math.abs(distFromCenter) / RANGE;
+      // two quick stacked bounces instead of one smooth hump -- reads as
+      // properly knocked around rather than just lofted
+      const bounce = Math.abs(Math.sin(t * Math.PI * 1.8));
+      extra = Math.max(extra, bounce * 34 * t);
+    }
+  }
+  return extra;
+}
+
 // CONFIRMED NEW FEATURE (avalanche snowball hazard, direct spec quote:
 // "as you get further right avalanche starts happening and you need to
 // jum[p/double jump from incoming rolling snow"): snowballs crest the
@@ -71853,6 +71929,11 @@ function winterAvalancheHillHeightAt(x) {
 const WINTER_AVALANCHE_TRIGGER_X = WINTER_AVALANCHE_START_X + 140; // "walking by big snow hill b4 avalanche also kinda a breather in itself" -- real quiet distance before anything spawns
 const WINTER_AVALANCHE_SPAWN_END_X = WINTER_AVALANCHE_END_X - (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X) * 0.2; // stop spawning fresh ones in the final stretch, where the hill is flattening out and there'd be no runway left to threaten with
 const WINTER_AVALANCHE_BALL_SPEED = 230; // px/sec, direction is per-ball (see below), always downhill from wherever it spawned
+// shared between the spawn logic (how much uphill room counts as "enough
+// to not look like a pop-in") and the mountain-arrival visual (the
+// distance at which a ball is still considered "far/up on the backdrop")
+// -- kept as one named constant so the two stay honest with each other.
+const WINTER_AVALANCHE_ARRIVE_START = 780;
 const WINTER_AVALANCHE_SMALL_RADIUS = 15;
 const WINTER_AVALANCHE_BIG_RADIUS = 25;
 // clear heights calibrated against the real jump arcs: a plain jump
@@ -71933,51 +72014,71 @@ function updateWinterAvalanche(deltaTime) {
       // already rolling, by the time it's created -- the player only
       // ever sees it arrive already in motion from off-camera, never pop in.
       const leadDist = 950 + pseudoRandom(spawnSeed + 1) * 350;
-      let spawnX = feetX - dir * leadDist;
       // CONFIRMED BUG FIX ("bals should not roll up mountain only come
-      // down" / "going to the right"): near the peak, feetX - dir*leadDist
-      // could land PAST the peak on the opposite slope from where dir was
-      // picked (e.g. a player approaching the peak could get a ball spawned
-      // just over the far side, still carrying the near side's dir) -- that
-      // ball's own local downhill direction didn't match the dir it was
-      // given, so it visibly rolled backward, uphill, toward the peak.
-      // Clamping the spawn to stay strictly on the SAME side of the peak
-      // as the dir it was assigned guarantees a ball's direction always
-      // matches the slope it's actually sitting on.
+      // down" / "going to the right"): a ball's dir has to match the
+      // LOCAL slope at wherever it actually spawns (downhill is -x on the
+      // ascending half, +x on the descending half) or it visibly rolls
+      // backward, uphill. That means a ball assigned dir=-1 (meant to
+      // threaten from the near/ascending side) can only ever spawn
+      // somewhere in [START_X, PEAK_X) -- how much of THAT range is
+      // actually still uphill of the player (and therefore both a valid
+      // spawn AND on a trajectory that reaches them) shrinks the closer
+      // the player already is to the peak.
       //
-      // CONFIRMED BUG FIX, real playtest report ("so the balls arnt
-      // coming off the higher mountain they are still coming out of the
-      // middle of the mountain player is on?? at the top of that one"):
-      // that flat clamp above (stopping dead at PEAK_X -+ 20) is exactly
-      // why -- a player standing near the true peak has almost no real
-      // "uphill of me, same side" room left before hitting that boundary,
-      // so spawnX got squashed down to right next to the peak (and right
-      // next to the player) no matter how big leadDist was, completely
-      // defeating both the off-screen-spawn fix AND the mountain-arrival
-      // visual (which needs real distance-to-player to have anything to
-      // blend over). Folding the overshoot back across the boundary
-      // instead of clamping flat against it preserves the ball's real
-      // intended distance from the player (it lands the same distance
-      // short of the peak that it would have overshot past it), so balls
-      // spawned while the player is at the very top still start a full
-      // leadDist away -- which, per the mountain-arrival visual, reads as
-      // coming down from the taller backdrop peak, not popping out of the
-      // player's own ridge.
+      // CONFIRMED BUG FIX, two rounds of real playtest reports on the
+      // same underlying issue ("so the balls arnt coming off the higher
+      // mountain they are still coming out of the middle of the mountain
+      // player is on?? at the top of that one", then later "duuuude why
+      // am i still seeing balls appear out of nowhere" after the first
+      // fix only actually helped a player standing almost exactly AT the
+      // peak): the first attempt at this clamped the overshoot flat
+      // against the peak boundary, which parked balls right next to the
+      // player. The second attempt tried to preserve the full leadDist by
+      // reflecting the overshoot back across the boundary instead -- but
+      // that reflection isn't monotonic in how far from the player it
+      // lands (its real distance works out to |2*room - leadDist|, which
+      // only happens to be close to leadDist when room is near 0), so for
+      // a player anywhere in roughly the far half of a slope relative to
+      // the peak -- most of a normal walk, not an edge case -- it could
+      // land the "supposedly far away" ball almost on top of them. A full
+      // walkthrough test (not just parking at the exact peak) confirmed
+      // real on-screen spawns as close as ~50-450px.
+      //
+      // The actual fix: stop pretending a full leadDist is always
+      // achievable on a fixed side. Use as much of leadDist as the real
+      // uphill room on that side allows (Math.min), so the distance
+      // degrades smoothly and truthfully as the player nears the peak
+      // instead of folding into something unpredictable. And when there
+      // genuinely isn't enough room left to spawn something meaningfully
+      // off-screen (room below the visual arrival system's own ARRIVE_START
+      // threshold -- i.e. it would read as "appeared out of nowhere" no
+      // matter what number we picked), just skip this spawn attempt
+      // entirely rather than force an unfair/immersion-breaking one; the
+      // timer still resets below, so it tries again shortly, typically
+      // by which point the player has moved and room has changed.
+      const MIN_SPAWN_ROOM = WINTER_AVALANCHE_ARRIVE_START;
+      let spawnX = null;
       if (dir === -1) {
         const boundary = WINTER_AVALANCHE_PEAK_X - 20;
-        if (spawnX > boundary) spawnX = boundary - (spawnX - boundary);
-        spawnX = Math.max(WINTER_AVALANCHE_START_X + 30, spawnX);
+        const room = boundary - feetX;
+        if (room >= MIN_SPAWN_ROOM) {
+          spawnX = Math.max(WINTER_AVALANCHE_START_X + 30, feetX + Math.min(leadDist, room));
+        }
       } else {
         const boundary = WINTER_AVALANCHE_PEAK_X + 20;
-        if (spawnX < boundary) spawnX = boundary + (boundary - spawnX);
-        spawnX = Math.min(WINTER_AVALANCHE_END_X - 30, spawnX);
+        const room = feetX - boundary;
+        if (room >= MIN_SPAWN_ROOM) {
+          spawnX = Math.min(WINTER_AVALANCHE_END_X - 30, feetX - Math.min(leadDist, room));
+        }
       }
-      const bouncy = pseudoRandom(spawnSeed + 5) < 0.35; // "want some to have a light bounce" -- purely a visual hop, doesn't change the hitbox
-      // fixed per-ball seed for its visual texture (irregular clumped
-      // silhouette, embedded packed-snow patches) -- stored once so the
-      // shape stays consistent frame to frame instead of re-rolling
-      const visualSeed = spawnSeed * 7.3 + 900;
-      winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", dir, bouncy, visualSeed, spawnedAt: performance.now(), hit: false });
+      if (spawnX !== null) {
+        const bouncy = pseudoRandom(spawnSeed + 5) < 0.35; // "want some to have a light bounce" -- purely a visual hop, doesn't change the hitbox
+        // fixed per-ball seed for its visual texture (irregular clumped
+        // silhouette, embedded packed-snow patches) -- stored once so the
+        // shape stays consistent frame to frame instead of re-rolling
+        const visualSeed = spawnSeed * 7.3 + 900;
+        winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", dir, bouncy, visualSeed, spawnedAt: performance.now(), hit: false });
+      }
       // CONFIRMED TUNING ("balls sometimes roll too fast/too many where
       // it impossible to not get hit like 3-4 times in a row"): the
       // "make it waaay bigger" pass above had shortened this to
@@ -72085,18 +72186,42 @@ function winterAvalancheDistantLayerHeightAt(layer, x) {
   const peakH = WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * layer.heightScale;
   return Math.max(30, peakH * layer.baseFrac + wobble * peakH * (1 - layer.baseFrac));
 }
+// CONFIRMED BUGFIX ("this like layer across everything on ground i think
+// supposed to be there but if i step once to the left it disappears",
+// screenshot): the layer's own skyline function never tapers to 0 (by
+// design, so it reads as an unbroken distant range rather than a bounded
+// zone) -- but it used to be gated purely by a hard on/off cull with a
+// huge 1400px pad on each side of the backdrop. That padding reached well
+// past where the avalanche hill actually is, into completely unrelated
+// parts of the winter scene (the icicle/door decorations, in the report),
+// where a translucent full-canvas-width band suddenly popping in read as
+// exactly what it looked like -- a stray gray layer over everything, with
+// a hard single-step pop at the cull boundary since there was no fade.
+// Replaced with a real smooth fade: alpha eases in/out over a modest
+// margin around the backdrop's own extent (based on the world x at the
+// center of the current view, so it's one continuous value, not a
+// per-vertex flicker), fully 0 well before it'd ever reach unrelated
+// scenery, and it's skipped entirely (not just drawn transparent) once
+// that fade genuinely bottoms out.
+const WINTER_AVALANCHE_DISTANT_FADE_MARGIN = 500;
+function winterAvalancheDistantLayerAlpha(camX, layer) {
+  const viewCenterWorldX = canvas.width / 2 + camX * layer.parallax;
+  const start = WINTER_AVALANCHE_BACKDROP_START_X;
+  const end = WINTER_AVALANCHE_BACKDROP_END_X;
+  if (viewCenterWorldX < start) {
+    return winterAvalancheSmootherstep(Math.max(0, Math.min(1, (viewCenterWorldX - (start - WINTER_AVALANCHE_DISTANT_FADE_MARGIN)) / WINTER_AVALANCHE_DISTANT_FADE_MARGIN)));
+  }
+  if (viewCenterWorldX > end) {
+    return winterAvalancheSmootherstep(Math.max(0, Math.min(1, ((end + WINTER_AVALANCHE_DISTANT_FADE_MARGIN) - viewCenterWorldX) / WINTER_AVALANCHE_DISTANT_FADE_MARGIN)));
+  }
+  return 1;
+}
 function drawWinterAvalancheDistantLayer(camX, layer) {
-  // gated on roughly the same vicinity as the backdrop mountain (with
-  // generous extra padding, since being the furthest-back layer it can
-  // reasonably come into view a bit before/after the backdrop does) --
-  // without this these would show across the ENTIRE winter scene instead
-  // of reading as specifically this mountain range's own distant company
-  const zoneStart = WINTER_AVALANCHE_BACKDROP_START_X - 1400;
-  const zoneEnd = WINTER_AVALANCHE_BACKDROP_END_X + 1400;
-  const zoneStartSx = zoneStart - camX * layer.parallax;
-  const zoneEndSx = zoneEnd - camX * layer.parallax;
-  if (zoneEndSx < -100 || zoneStartSx > canvas.width + 100) return;
+  const alpha = winterAvalancheDistantLayerAlpha(camX, layer);
+  if (alpha <= 0.01) return;
   const STEPS = 36;
+  ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.fillStyle = layer.color;
   ctx.beginPath();
   ctx.moveTo(-20, gy + 40);
@@ -72109,6 +72234,7 @@ function drawWinterAvalancheDistantLayer(camX, layer) {
   ctx.lineTo(canvas.width + 20, gy + 40);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
 }
 const WINTER_AVALANCHE_BACKDROP_START_X = WINTER_AVALANCHE_START_X - 550;
 const WINTER_AVALANCHE_BACKDROP_END_X = WINTER_AVALANCHE_END_X + 550;
@@ -72358,7 +72484,7 @@ function drawWinterAvalancheSnowballs(camX) {
     // ever checks a ~15px sliver right at the player's feet), so this is
     // a pure visual layer -- dodge timing/collision are untouched.
     const distToPlayer = Math.abs(b.x - feetX);
-    const ARRIVE_START = 780; // still this far out (or further): fully riding the backdrop's height
+    const ARRIVE_START = WINTER_AVALANCHE_ARRIVE_START; // still this far out (or further): fully riding the backdrop's height
     const ARRIVE_END = 260; // by this close: fully settled onto the walkable ridge's own height
     const arriveBlend = Math.max(0, Math.min(1, (distToPlayer - ARRIVE_END) / (ARRIVE_START - ARRIVE_END)));
     const ARRIVE_LIFT_FRACTION = 0.4; // how much of the backdrop/foreground height gap to actually apply -- full 1.0 would put a distant ball way up near the true summit, which reads as teleporting rather than descending a connected slope
@@ -72384,7 +72510,11 @@ function drawWinterAvalancheSnowballs(camX) {
         ridgeArc = Math.sin(arcT * Math.PI * 0.5) * WINTER_AVALANCHE_RIDGE_STEP_HEIGHT * 0.75;
       }
     }
-    const groundSy = gy - liftedH - drawRadius - ridgeArc;
+    // hop platforms' own deflection (see winterAvalancheHopDeflect above)
+    // -- independent of the ridge arc, a ball can pass near both in the
+    // same run and get both effects stacked
+    const hopDeflect = winterAvalancheHopDeflect(b.x, b.dir, b.visualSeed);
+    const groundSy = gy - liftedH - drawRadius - ridgeArc - hopDeflect;
     if (sx < -60 || sx > canvas.width + 60) return;
 
     // CONFIRMED NEW FEATURE ("also want some to have a light bounce"): a
@@ -72635,7 +72765,14 @@ function drawWinterBreatherSnowflakes(camX) {
 // HINT, not a guarantee -- real seeded exceptions (a small hold that's
 // actually rock solid, etc) so you can't just solve the wall by eye
 // after a couple of climbs.
-const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 160;
+// CONFIRMED TUNING ("more chill space between the mountain range and the
+// ice climb"): the avalanche hill grew a lot this round (nearly doubled
+// width, taller peak, a jump-required ridge, a second rise) and the old
+// 160px gap after it was sized for the original, much smaller hill --
+// after all of that intensity, dropping straight into the ice climb's
+// own precision-timing challenge read as too rushed. Widened to a real
+// breather stretch.
+const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 650;
 const WINTER_ICE_ROW_FIRST_HEIGHT = 55;
 const WINTER_ICE_ROW_DY = 75; // same vertical gap the old single-path climb used
 const WINTER_ICE_ROW_COUNT = 9; // same overall climb height as before
@@ -73729,7 +73866,22 @@ function drawWinterWateryIce(camX, zone) {
   // literal endpoints, and (2) using a steeper envelope curve (power 0.6 on
   // the sine) so the curve is visibly rounding throughout the middle 60% of
   // the width instead of staying almost flat until the last few segments.
-  const POOL_DEPTH = 46; // how far the middle's bottom edge bulges down past the top edge
+  // CONFIRMED CHANGE ("make ice pool more like an oval so it is covering
+  // more of the ground behind it looking naturally, or idk something rn
+  // it looks pasted on w the new ice of the mountain range thing"): the
+  // shape itself was still a thin sliver (420 wide, only 46 deep -- close
+  // to a 9:1 ratio, reading as a line with a bulge rather than a real
+  // pool footprint) AND its base fill was a single flat, hard-edged
+  // polygon with a crisp uniform alpha -- exactly what reads as "pasted
+  // on" next to everything else here, which is all soft/jittered/faded
+  // at its edges. Deepened toward a real oval footprint (~4:1 instead of
+  // ~9:1) and the base fill + rim now draw through a soft blur so the
+  // boundary genuinely dissolves into the surrounding snow instead of
+  // being a hard cutout, while the color blobs/ripples on top stay crisp
+  // (they're already soft radial gradients of their own, and blurring
+  // those too would just muddy the color-meld detail that was a direct
+  // ask earlier).
+  const POOL_DEPTH = 92; // how far the middle's bottom edge bulges down past the top edge
   const topPts = [];
   const botPts = [];
   for (let s = 0; s <= SEGS; s++) {
@@ -73745,6 +73897,8 @@ function drawWinterWateryIce(camX, zone) {
     botPts.push({ x: wx, y: botY });
   }
 
+  ctx.save();
+  ctx.filter = "blur(5px)"; // softens the base shape's own boundary into the snow instead of a hard cutout edge
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(p => ctx.lineTo(p.x, p.y));
@@ -73763,6 +73917,7 @@ function drawWinterWateryIce(camX, zone) {
   ctx.strokeStyle = "rgba(120,165,185,0.4)";
   ctx.lineWidth = 2;
   ctx.stroke();
+  ctx.restore();
 
   const bottom = top + POOL_DEPTH; // approximate deepest point, for the blob/shimmer bounds below
 
