@@ -71904,10 +71904,30 @@ function drawWinterIceWall(camX) {
   grad.addColorStop(0.55, "#c7dfee");
   grad.addColorStop(1, "#f0f8fc");
   ctx.fillStyle = grad;
+  // CONFIRMED BUG FIX ("do not a rectangle top like how you can see that
+  // in the top right corner"): the wall polygon used to close with one
+  // straight line directly from the top-left sample point to the
+  // top-right sample point -- both at the exact same height, so the very
+  // top of the wall was a perfectly flat horizontal cut. Combined with
+  // the gradient's near-white top color, that flat cap read as a plain
+  // pale rectangle poking out wherever it wasn't fully covered by the
+  // ledge. Replaced with a jagged crown of small ice teeth (always
+  // pointing UP, never dipping below the flat line) so the wall's own
+  // top silhouette is broken and icy instead of a clean rectangle.
+  const CROWN_PTS = 7;
+  const crownPts = [];
+  for (let c = 0; c <= CROWN_PTS; c++) {
+    const t = c / CROWN_PTS;
+    const x = leftPts[STEPS].x + (rightPts[STEPS].x - leftPts[STEPS].x) * t;
+    const jseed = c * 13.7 + 5300;
+    const jag = pseudoRandom(jseed) * 34;
+    crownPts.push({ x, y: leftPts[STEPS].y - jag });
+  }
   const wallPath = new Path2D();
   wallPath.moveTo(leftPts[0].x, leftPts[0].y);
   leftPts.forEach(p => wallPath.lineTo(p.x, p.y));
-  for (let i = rightPts.length - 1; i >= 0; i--) wallPath.lineTo(rightPts[i].x, rightPts[i].y);
+  crownPts.forEach(p => wallPath.lineTo(p.x, p.y));
+  for (let i = rightPts.length - 2; i >= 0; i--) wallPath.lineTo(rightPts[i].x, rightPts[i].y);
   wallPath.closePath();
   ctx.fill(wallPath);
 
@@ -72463,36 +72483,82 @@ function drawWinterIceLedge(camX) {
   ctx.ellipse(sx - l.width * 0.16, sy - 6, l.width * 0.2, 5, -0.1, 0, Math.PI * 2);
   ctx.fill();
 
-  // small icicles hanging off the front lip, same faceted-shard tapering
-  // language as the rainbow icicles/handholds, scaled down
-  for (let i = 0; i < 4; i++) {
+  // CONFIRMED CHANGE ("do better icicles and add like 2 more"): six now
+  // instead of four, spread a little wider across the lip, and each one
+  // is a real faceted shard instead of a plain symmetric taper -- a
+  // slight root collar where it meets the ledge, a subtle off-center
+  // bulge partway down (real icicles rarely taper in one clean line), a
+  // lit facet AND a shadow facet (not just a highlight streak) for real
+  // roundness, and about a third of them get a small rounded drip bulb
+  // at the tip instead of a bare point.
+  const ICICLE_COUNT = 6;
+  for (let i = 0; i < ICICLE_COUNT; i++) {
     const iseed = seed + 900 + i * 41.3;
-    const ix = sx - hw + 0.15 * l.width + (l.width * 0.7) * (i / 3) + (pseudoRandom(iseed) - 0.5) * 18;
+    const ix = sx - hw + 0.1 * l.width + (l.width * 0.8) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(iseed) - 0.5) * 16;
     const iy0 = sy + 14 + (pseudoRandom(iseed + 1) - 0.5) * 8;
-    const len = 16 + pseudoRandom(iseed + 2) * 22;
-    const neckW = 3 + pseudoRandom(iseed + 3) * 2;
+    const len = 16 + pseudoRandom(iseed + 2) * 26;
+    const neckW = 3 + pseudoRandom(iseed + 3) * 2.5;
+    const bulgeT = 0.4 + pseudoRandom(iseed + 4) * 0.2;
+    const bulgeOut = (pseudoRandom(iseed + 5) - 0.5) * neckW * 1.2;
+    const hasDrip = pseudoRandom(iseed + 6) < 0.35;
+    const tipLen = hasDrip ? len * 0.88 : len;
+
+    // root collar -- a small dark band where the icicle meets the ledge,
+    // so it reads as growing out of the ice rather than pasted on
+    ctx.fillStyle = "rgba(70,105,130,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(ix, iy0, neckW * 1.15, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.fillStyle = "#d8ecf5";
     ctx.beginPath();
     ctx.moveTo(ix - neckW, iy0);
     ctx.lineTo(ix + neckW, iy0);
-    ctx.lineTo(ix + neckW * 0.3, iy0 + len * 0.7);
-    ctx.lineTo(ix, iy0 + len);
-    ctx.lineTo(ix - neckW * 0.4, iy0 + len * 0.7);
+    ctx.lineTo(ix + neckW * 0.45 + bulgeOut * 0.5, iy0 + tipLen * bulgeT);
+    ctx.lineTo(ix + neckW * 0.2, iy0 + tipLen * 0.8);
+    ctx.lineTo(ix, iy0 + tipLen);
+    ctx.lineTo(ix - neckW * 0.25, iy0 + tipLen * 0.8);
+    ctx.lineTo(ix - neckW * 0.5 + bulgeOut * 0.5, iy0 + tipLen * bulgeT);
     ctx.closePath();
     ctx.fill();
+
+    if (hasDrip) {
+      ctx.fillStyle = "#d8ecf5";
+      ctx.beginPath();
+      ctx.ellipse(ix, iy0 + len, neckW * 0.55, neckW * 0.65, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(ix - neckW * 0.15, iy0 + len - neckW * 0.15, neckW * 0.2, neckW * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // lit facet (front-left) and shadow facet (back-right) instead of
+    // one flat highlight streak -- real roundness, not a shiny stripe
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.beginPath();
-    ctx.moveTo(ix - neckW * 0.6, iy0 + 2);
+    ctx.moveTo(ix - neckW * 0.7, iy0 + 2);
     ctx.lineTo(ix - neckW * 0.1, iy0 + 2);
-    ctx.lineTo(ix - neckW * 0.2, iy0 + len * 0.55);
+    ctx.lineTo(ix - neckW * 0.15 + bulgeOut * 0.3, iy0 + tipLen * 0.6);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = "rgba(70,105,130,0.22)";
+    ctx.beginPath();
+    ctx.moveTo(ix + neckW * 0.3, iy0 + 3);
+    ctx.lineTo(ix + neckW * 0.85, iy0 + 3);
+    ctx.lineTo(ix + neckW * 0.3 + bulgeOut * 0.4, iy0 + tipLen * 0.65);
+    ctx.closePath();
+    ctx.fill();
+
     ctx.strokeStyle = "rgba(90,125,150,0.35)";
     ctx.lineWidth = 0.8;
     ctx.beginPath();
     ctx.moveTo(ix - neckW, iy0);
-    ctx.lineTo(ix + neckW * 0.3, iy0 + len * 0.7);
-    ctx.lineTo(ix, iy0 + len);
+    ctx.lineTo(ix - neckW * 0.5 + bulgeOut * 0.5, iy0 + tipLen * bulgeT);
+    ctx.lineTo(ix, iy0 + tipLen);
+    ctx.moveTo(ix + neckW, iy0);
+    ctx.lineTo(ix + neckW * 0.45 + bulgeOut * 0.5, iy0 + tipLen * bulgeT);
+    ctx.lineTo(ix, iy0 + tipLen);
     ctx.stroke();
   }
 }
