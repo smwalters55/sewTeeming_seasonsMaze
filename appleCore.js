@@ -71621,7 +71621,6 @@ const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 160;
 const WINTER_ICE_ROW_FIRST_HEIGHT = 55;
 const WINTER_ICE_ROW_DY = 75; // same vertical gap the old single-path climb used
 const WINTER_ICE_ROW_COUNT = 9; // same overall climb height as before
-const WINTER_ICE_ROW_SLOT_OFFSETS = [-100, 0, 100]; // candidate x offsets from a row's own center
 
 function winterIceBuildHolds() {
   const holds = [];
@@ -71632,23 +71631,54 @@ function winterIceBuildHolds() {
   for (let row = 1; row < WINTER_ICE_ROW_COUNT; row++) {
     const rowSeed = row * 41.7 + 900;
     const numSlots = pseudoRandom(rowSeed) > 0.45 ? 3 : 2;
-    const slots = numSlots === 3 ? [0, 1, 2] : (pseudoRandom(rowSeed + 0.5) > 0.5 ? [0, 2] : [0, 1]);
-    const rowHolds = slots.map((slot, col) => {
+    // CONFIRMED BUG FIX ("it seems like there is a clean straight up line
+    // on the left side"): candidate x offsets used to come from one FIXED
+    // array of slots (-100/0/100), so "the left one" landed at almost the
+    // exact same x on every single row -- a real, reliable, repeatable
+    // path up one side, which defeats the entire point of a wide,
+    // unpredictable wall. Each row now gets its own random spread instead
+    // -- a per-row "laneShift" moves the whole row's candidates left or
+    // right, and a 2-candidate row picks from a few different spread
+    // shapes (not always "left+right", sometimes "left+center" or
+    // "center+right") -- so no consistent column ever forms.
+    const laneShift = (pseudoRandom(rowSeed + 0.2) - 0.5) * 90;
+    let baseOffsets;
+    if (numSlots === 3) {
+      baseOffsets = [-95, 0, 95];
+    } else {
+      const shape = pseudoRandom(rowSeed + 0.5);
+      baseOffsets = shape < 0.34 ? [-85, 25] : shape < 0.67 ? [-25, 85] : [-90, 90];
+    }
+    const rowHolds = baseOffsets.map((offset, col) => {
       const holdSeed = rowSeed + col * 11.3 + 5;
-      const jitterX = (pseudoRandom(holdSeed + 1) - 0.5) * 16;
+      const jitterX = (pseudoRandom(holdSeed + 1) - 0.5) * 18;
       const jitterY = (pseudoRandom(holdSeed + 2) - 0.5) * 10;
       const qRoll = pseudoRandom(holdSeed + 3);
-      const quality = qRoll < 0.45 ? "strong" : qRoll < 0.72 ? "weak" : "shallow";
-      const x = WINTER_ICE_CLIMB_X + WINTER_ICE_ROW_SLOT_OFFSETS[slot] + jitterX;
+      // CONFIRMED CHANGE ("it is almost decaying too fast... confusing why
+      // i keep dropping"): shallow trimmed back a bit (was ~28% of rolled
+      // holds, now ~22%) -- still a real, common thing to run into, just
+      // not so constant that every other grab is an unavoidable drop.
+      const quality = qRoll < 0.48 ? "strong" : qRoll < 0.78 ? "weak" : "shallow";
+      const rawX = WINTER_ICE_CLIMB_X + offset + laneShift + jitterX;
+      // clamped to stay well inside the wall's own edges at every height
+      // (baseHalfW tapers down to ~135 at the very top -- see
+      // winterIceWallEdgeX)
+      const x = Math.max(WINTER_ICE_CLIMB_X - 120, Math.min(WINTER_ICE_CLIMB_X + 120, rawX));
       return { x, height: WINTER_ICE_ROW_FIRST_HEIGHT + row * WINTER_ICE_ROW_DY + jitterY, dir: x >= WINTER_ICE_CLIMB_X ? 1 : -1, quality, row, col, holdSeed };
     });
     // a real SURVIVABLE option always exists on every row, even if the
     // dice rolled every candidate shallow -- reading the wall should
     // always be POSSIBLE, even when it's genuinely hard. Forces the
-    // fallback to weak rather than strong, on purpose: weak still has a
-    // visible tell and is survivable, but doesn't flatten the row's risk
-    // back down to "actually perfectly safe" the way forcing strong would.
-    if (!rowHolds.some(h => h.quality !== "shallow")) rowHolds[0].quality = "weak";
+    // fallback to weak rather than strong (still has a visible tell and
+    // is survivable, without flattening the row back to "actually
+    // perfectly safe"). CONFIRMED BUG FIX: this used to always land on
+    // rowHolds[0] specifically -- combined with the old fixed-slot bug
+    // above, that meant the "guaranteed safe-ish" hold was disproportionately
+    // the SAME left-side position every time too. Now picks a random
+    // candidate in the row instead.
+    if (!rowHolds.some(h => h.quality !== "shallow")) {
+      rowHolds[Math.floor(pseudoRandom(rowSeed + 0.9) * rowHolds.length)].quality = "weak";
+    }
     rowHolds.forEach(h => {
       const sizeRoll = pseudoRandom(h.holdSeed + 4);
       const misleading = pseudoRandom(h.holdSeed + 5) < 0.2; // ~1 in 5 subverts the visual hint on purpose
@@ -71670,9 +71700,14 @@ const WINTER_ICE_CLIMB_SPEED = 6.5;
 // loose enough that normal, confident climbing never actually felt the
 // decay) down to real constant pressure. Doesn't apply to shallow holds
 // at all -- see WINTER_ICE_SHALLOW_HOLD_MS, a completely separate,
-// unavoidable timer.
-const WINTER_ICE_HOLD_GRIP_MS_STRONG = 1000;
-const WINTER_ICE_HOLD_GRIP_MS_WEAK = 680;
+// unavoidable timer. CONFIRMED CHANGE ("it is almost decaying too fast
+// though... it is confusing why i keep dropping"): loosened both back up
+// a bit from the previous pass (1000/680) -- between the swing-lock
+// eating 380ms of every hold regardless, the wider wall meaning more
+// hops overall, and shallow holds already dropping you unavoidably, the
+// full stack was adding up to more total drops than felt readable.
+const WINTER_ICE_HOLD_GRIP_MS_STRONG = 1150;
+const WINTER_ICE_HOLD_GRIP_MS_WEAK = 800;
 function winterIceHoldGripMs(idx) {
   const h = WINTER_ICE_HOLDS[idx];
   return h && h.quality === "weak" ? WINTER_ICE_HOLD_GRIP_MS_WEAK : WINTER_ICE_HOLD_GRIP_MS_STRONG;
@@ -71681,8 +71716,10 @@ function winterIceHoldGripMs(idx) {
 // of fast reaction saves it, because it was never a real hold. Timed to
 // land just after the axe's own strike animation finishes (see
 // WINTER_ICE_AXE_SWING_MS below), so the sequence reads clearly: the axe
-// swings in, strikes... and the ice gives way right under it.
-const WINTER_ICE_SHALLOW_HOLD_MS = 470;
+// swings in, strikes... and the ice gives way right under it. Bumped
+// slightly (470->530) along with the strong/weak loosening above, same
+// reasoning.
+const WINTER_ICE_SHALLOW_HOLD_MS = 530;
 const WINTER_ICE_SLIP_FLASH_MS = 500;
 // mid-air wind gusts on every ice-climb launch -- see the winter check in
 // applyPhysics's launched branch. Modest amplitude since the flight is
@@ -71992,27 +72029,53 @@ function drawWinterIceHold(camX, h, idx) {
     }
   }
 
-  // grip-decay crack -- only on the hold currently being held, growing
-  // outward from the strike point (the exact spot the axe is planted
-  // into) the longer it's held, with a slow pulse on top of the growth so
-  // it doesn't just sit static once it's out. Uses each quality's own
-  // real budget -- shallow grows MUCH faster since it's on a fixed,
-  // unavoidable timer rather than a reactive one.
+  // grip-decay feedback -- only on the hold currently being held.
+  // CONFIRMED CHANGE ("it is confusing why i keep dropping"): weak and
+  // shallow now look genuinely different while they fail, not just
+  // "the same crack, faster" -- so a drop reads as a specific, learnable
+  // cause instead of one generic unexplained thing. Weak keeps the
+  // original blue spiderweb crack, growing from the strike point over
+  // its own real (reactive) budget. Shallow instead shows an immediate,
+  // fast-spreading grey-white give-way -- it isn't cracking so much as
+  // visibly caving in, present from the moment you grab it (no 10%
+  // warm-up delay) since there was never really a decision window to
+  // signal.
   if (player.iceAxeClingIndex === idx) {
-    const budget = h.quality === "shallow" ? WINTER_ICE_SHALLOW_HOLD_MS : winterIceHoldGripMs(idx);
-    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / budget);
-    if (frac > 0.1) {
-      const crackGrow = Math.pow(Math.max(0, frac - 0.1) / 0.9, 1.3);
-      const pulse = 0.85 + Math.sin(performance.now() * 0.012) * 0.15;
-      ctx.strokeStyle = `rgba(90,130,160,${(0.35 + crackGrow * 0.55) * pulse})`;
-      ctx.lineWidth = 1 + crackGrow * 1.4;
-      for (let a = 0; a < 6; a++) {
-        const ang = (a / 6) * Math.PI * 2 + seed;
-        const len = 6 + crackGrow * 19;
+    if (h.quality === "shallow") {
+      const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / WINTER_ICE_SHALLOW_HOLD_MS);
+      const grow = Math.pow(frac, 0.7);
+      ctx.strokeStyle = `rgba(140,150,155,${0.5 + grow * 0.4})`;
+      ctx.lineWidth = 1.5 + grow * 2;
+      for (let a = 0; a < 7; a++) {
+        const ang = (a / 7) * Math.PI * 2 + seed * 1.7;
+        const len = 4 + grow * 24;
         ctx.beginPath();
         ctx.moveTo(ssx, ssy);
         ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
         ctx.stroke();
+      }
+      // a spreading dull shadow underneath -- reads as "sinking/caving",
+      // distinct from weak's clean crack lines
+      ctx.fillStyle = `rgba(120,130,135,${grow * 0.35})`;
+      ctx.beginPath();
+      ctx.ellipse(ssx, ssy + 3, 6 + grow * 16, 4 + grow * 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const budget = winterIceHoldGripMs(idx);
+      const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / budget);
+      if (frac > 0.1) {
+        const crackGrow = Math.pow(Math.max(0, frac - 0.1) / 0.9, 1.3);
+        const pulse = 0.85 + Math.sin(performance.now() * 0.012) * 0.15;
+        ctx.strokeStyle = `rgba(90,130,160,${(0.35 + crackGrow * 0.55) * pulse})`;
+        ctx.lineWidth = 1 + crackGrow * 1.4;
+        for (let a = 0; a < 6; a++) {
+          const ang = (a / 6) * Math.PI * 2 + seed;
+          const len = 6 + crackGrow * 19;
+          ctx.beginPath();
+          ctx.moveTo(ssx, ssy);
+          ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
+          ctx.stroke();
+        }
       }
     }
   }
