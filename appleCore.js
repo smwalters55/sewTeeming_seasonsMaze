@@ -72393,7 +72393,31 @@ function drawWinterIceLedge(camX) {
   // small icicles hanging off the lip, and a soft snow cap -- distinctly
   // ice, not a recolored rock.
 
-  // front face: jagged, stepping down toward the wall below the lip
+  // CONFIRMED CHANGE ("icicles look pasted on amke them blend ina t the
+  // top"): icicle positions/sizes are now computed FIRST, before the
+  // front face is drawn, so the face's own bottom edge can taper down
+  // into a small point at each icicle's exact spot -- the icicle then
+  // starts growing right from that tapered tip instead of floating a
+  // separate collar shape partway up a flat face. Same fill silhouette,
+  // no seam between "ledge" and "icicle."
+  const ICICLE_COUNT = 6;
+  const faceBottomY = sy + 36;
+  const icicles = [];
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    const iseed = seed + 900 + i * 41.3;
+    const ix = sx - hw + 0.1 * l.width + (l.width * 0.8) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(iseed) - 0.5) * 16;
+    const len = 16 + pseudoRandom(iseed + 2) * 26;
+    const neckW = 3 + pseudoRandom(iseed + 3) * 2.5;
+    const bulgeT = 0.4 + pseudoRandom(iseed + 4) * 0.2;
+    const bulgeOut = (pseudoRandom(iseed + 5) - 0.5) * neckW * 1.2;
+    const hasDrip = pseudoRandom(iseed + 6) < 0.35;
+    const notchDepth = 7 + pseudoRandom(iseed + 7) * 7;
+    icicles.push({ ix, len, neckW, bulgeT, bulgeOut, hasDrip, notchDepth, iy0: faceBottomY + notchDepth });
+  }
+  const icDesc = [...icicles].sort((a, b) => b.ix - a.ix);
+
+  // front face: jagged, stepping down toward the wall below the lip,
+  // its own bottom edge tapering into a point at each icicle base
   ctx.fillStyle = "#9dc2d8";
   ctx.beginPath();
   ctx.moveTo(sx - hw, sy + 6);
@@ -72403,8 +72427,14 @@ function drawWinterIceLedge(camX) {
     const jag = (pseudoRandom(seed + p) - 0.5) * 16;
     ctx.lineTo(sx - hw + t * l.width, sy + 6 + jag + Math.sin(t * Math.PI) * 8);
   }
-  ctx.lineTo(sx + hw, sy + 36);
-  ctx.lineTo(sx - hw, sy + 36);
+  ctx.lineTo(sx + hw, faceBottomY);
+  icDesc.forEach(ic => {
+    const nw = ic.neckW + 2;
+    ctx.lineTo(ic.ix + nw, faceBottomY);
+    ctx.lineTo(ic.ix, ic.iy0);
+    ctx.lineTo(ic.ix - nw, faceBottomY);
+  });
+  ctx.lineTo(sx - hw, faceBottomY);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "rgba(70,105,130,0.18)";
@@ -72415,8 +72445,14 @@ function drawWinterIceLedge(camX) {
     const jag = (pseudoRandom(seed + p) - 0.5) * 16;
     ctx.lineTo(sx - hw + t * l.width, sy + 6 + jag + Math.sin(t * Math.PI) * 8 + 10);
   }
-  ctx.lineTo(sx + hw, sy + 36);
-  ctx.lineTo(sx - hw, sy + 36);
+  ctx.lineTo(sx + hw, faceBottomY);
+  icDesc.forEach(ic => {
+    const nw = ic.neckW + 2;
+    ctx.lineTo(ic.ix + nw, faceBottomY);
+    ctx.lineTo(ic.ix, ic.iy0 - 2);
+    ctx.lineTo(ic.ix - nw, faceBottomY);
+  });
+  ctx.lineTo(sx - hw, faceBottomY);
   ctx.closePath();
   ctx.fill();
 
@@ -72483,32 +72519,19 @@ function drawWinterIceLedge(camX) {
   ctx.ellipse(sx - l.width * 0.16, sy - 6, l.width * 0.2, 5, -0.1, 0, Math.PI * 2);
   ctx.fill();
 
-  // CONFIRMED CHANGE ("do better icicles and add like 2 more"): six now
-  // instead of four, spread a little wider across the lip, and each one
-  // is a real faceted shard instead of a plain symmetric taper -- a
-  // slight root collar where it meets the ledge, a subtle off-center
-  // bulge partway down (real icicles rarely taper in one clean line), a
-  // lit facet AND a shadow facet (not just a highlight streak) for real
-  // roundness, and about a third of them get a small rounded drip bulb
-  // at the tip instead of a bare point.
-  const ICICLE_COUNT = 6;
-  for (let i = 0; i < ICICLE_COUNT; i++) {
-    const iseed = seed + 900 + i * 41.3;
-    const ix = sx - hw + 0.1 * l.width + (l.width * 0.8) * (i / (ICICLE_COUNT - 1)) + (pseudoRandom(iseed) - 0.5) * 16;
-    const iy0 = sy + 14 + (pseudoRandom(iseed + 1) - 0.5) * 8;
-    const len = 16 + pseudoRandom(iseed + 2) * 26;
-    const neckW = 3 + pseudoRandom(iseed + 3) * 2.5;
-    const bulgeT = 0.4 + pseudoRandom(iseed + 4) * 0.2;
-    const bulgeOut = (pseudoRandom(iseed + 5) - 0.5) * neckW * 1.2;
-    const hasDrip = pseudoRandom(iseed + 6) < 0.35;
+  // CONFIRMED CHANGE ("do better icicles and add like 2 more" / then
+  // "icicles look pasted on amke them blend ina t the top"): six of
+  // them, each a real faceted shard -- a subtle off-center bulge partway
+  // down (real icicles rarely taper in one clean line), a lit facet AND
+  // a shadow facet (not just a highlight streak) for real roundness, and
+  // about a third get a small rounded drip bulb at the tip instead of a
+  // bare point. The separate "root collar" stub that used to sit on top
+  // of a flat face (the actual pasted-on look) is gone -- the face's own
+  // bottom edge now tapers to a point at exactly this x (see icicles/
+  // icDesc above), so the neck picks up right where the ice face itself
+  // narrows to nothing. No seam to paste over.
+  for (const { ix, iy0, len, neckW, bulgeT, bulgeOut, hasDrip } of icicles) {
     const tipLen = hasDrip ? len * 0.88 : len;
-
-    // root collar -- a small dark band where the icicle meets the ledge,
-    // so it reads as growing out of the ice rather than pasted on
-    ctx.fillStyle = "rgba(70,105,130,0.25)";
-    ctx.beginPath();
-    ctx.ellipse(ix, iy0, neckW * 1.15, 2.4, 0, 0, Math.PI * 2);
-    ctx.fill();
 
     ctx.fillStyle = "#d8ecf5";
     ctx.beginPath();
