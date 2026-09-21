@@ -42497,8 +42497,8 @@ function updateBookPileFalls(deltaTime) {
     }
   }
   playerWasFalling = player.vy < 0;
-
-  if (playerWoozyT > 0) playerWoozyT = Math.max(0, playerWoozyT - dtMs);
+  // playerWoozyT's own decay now lives in the main update() loop (see its
+  // own comment there) so it ticks down in every scene, not just oak.
 
   // advance any pile currently mid-scatter back toward settled
   Object.keys(pileFallState).forEach(key => {
@@ -70170,7 +70170,11 @@ const WINTER_CONTENT_OFFSET = 380;
 // the same way WINTER_CONTENT_OFFSET itself is, so everything downstream
 // (breather stretch, ice climb wall, WINTER_WIDTH) shifts right by this
 // amount automatically with no other constant needing to be touched.
-const WINTER_AVALANCHE_WIDTH = 900;
+// CONFIRMED CHANGE ("make this like waaaay biggre you pass over it with
+// max two balls rn" / "i wnat this this be An Event, and activity. not
+// juust quick passing through."): nearly tripled from the original 900 so
+// the section is a genuine sustained gauntlet instead of a quick pass-through.
+const WINTER_AVALANCHE_WIDTH = 2600;
 // CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
 // further past the old end (right at the icicle pocket's own edge) to fit
 // a real quiet stretch of open ground past the rainbow icicles/watery ice
@@ -71572,7 +71576,9 @@ const WINTER_RAINBOW_ICICLE_COLORS = [
 // after the icicle pocket/watery ice used to be a flat +40px, which put
 // the hill's own front trees almost flush against the pocket's overhang --
 // widened to a real breathing gap.
-const WINTER_AVALANCHE_START_X = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 220;
+// CONFIRMED CHANGE ("more breathingroom pls"): widened again -- the first
+// pass (40 -> 220) still read as tight against the icicle pocket's trees.
+const WINTER_AVALANCHE_START_X = WINTER_RAINBOW_POCKET_X + WINTER_RAINBOW_OVERHANG_WIDTH + 420;
 const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH;
 // peak sits a bit before the midpoint -- confirmed design ("walking by
 // big snow hill b4 avalesnche also kinda a breather in itself" + "lets
@@ -71659,7 +71665,7 @@ const WINTER_AVALANCHE_TELEGRAPH_MS = 550; // dust-puff warning at the spawn poi
 const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
 
 let winterAvalancheSnowballs = [];
-let winterAvalancheSpawnTimer = 1200;
+let winterAvalancheSpawnTimer = 700;
 
 // CONFIRMED CHANGE ("we make extra woozy w additional hits"): reuses the
 // SAME global playerWoozyT/WOOZY_MS every other "dazed" state in the game
@@ -71689,17 +71695,33 @@ function updateWinterAvalanche(deltaTime) {
       // just always be -1 anymore.
       const dir = feetX <= WINTER_AVALANCHE_PEAK_X ? -1 : 1;
       const leadDist = 420 + pseudoRandom(spawnSeed + 1) * 200;
-      const spawnX = Math.max(WINTER_AVALANCHE_START_X + 30, Math.min(WINTER_AVALANCHE_END_X - 30, feetX - dir * leadDist));
+      let spawnX = feetX - dir * leadDist;
+      // CONFIRMED BUG FIX ("bals should not roll up mountain only come
+      // down" / "going to the right"): near the peak, feetX - dir*leadDist
+      // could land PAST the peak on the opposite slope from where dir was
+      // picked (e.g. a player approaching the peak could get a ball spawned
+      // just over the far side, still carrying the near side's dir) -- that
+      // ball's own local downhill direction didn't match the dir it was
+      // given, so it visibly rolled backward, uphill, toward the peak.
+      // Clamping the spawn to stay strictly on the SAME side of the peak
+      // as the dir it was assigned guarantees a ball's direction always
+      // matches the slope it's actually sitting on.
+      spawnX = dir === -1
+        ? Math.max(WINTER_AVALANCHE_START_X + 30, Math.min(spawnX, WINTER_AVALANCHE_PEAK_X - 20))
+        : Math.min(WINTER_AVALANCHE_END_X - 30, Math.max(spawnX, WINTER_AVALANCHE_PEAK_X + 20));
       const bouncy = pseudoRandom(spawnSeed + 5) < 0.35; // "want some to have a light bounce" -- purely a visual hop, doesn't change the hitbox
       winterAvalancheSnowballs.push({ x: spawnX, size: big ? "big" : "small", dir, bouncy, spawnedAt: performance.now(), hit: false });
-      winterAvalancheSpawnTimer = 1500 + pseudoRandom(spawnSeed + 2) * 1100;
+      // CONFIRMED CHANGE ("waaay biggre... max two balls rn" / "An Event,
+      // and activity"): interval roughly halved so the much longer hill
+      // stays busy with traffic instead of feeling sparse.
+      winterAvalancheSpawnTimer = 750 + pseudoRandom(spawnSeed + 2) * 550;
     }
   } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
     // walked back out toward the pool side -- clear the hazard so
     // re-entering the zone always starts clean, same "no sticky flags
     // carried across a re-approach" approach the rest of winter uses
     winterAvalancheSnowballs = [];
-    winterAvalancheSpawnTimer = 900;
+    winterAvalancheSpawnTimer = 600;
   }
 
   const moveAmt = WINTER_AVALANCHE_BALL_SPEED * deltaTime;
@@ -71788,18 +71810,29 @@ function drawWinterAvalancheHill(camX) {
 
   const STEPS = 30;
   const pts = [];
+  const bottomPts = [];
   for (let s = 0; s <= STEPS; s++) {
     const x = WINTER_AVALANCHE_START_X - 60 + (s / STEPS) * (WINTER_AVALANCHE_WIDTH + 120);
-    pts.push({ x: x - camX, y: gy - winterAvalancheHillHeightAt(x) });
+    const h = winterAvalancheHillHeightAt(x);
+    pts.push({ x: x - camX, y: gy - h });
+    // CONFIRMED BUG FIX ("this is not yet tapered"): the polygon's bottom
+    // edge used to be a flat gy+20 across the ENTIRE width, so even where
+    // the top edge's height curve had already smoothly eased to ~0, the
+    // shape still carried a constant 20px-tall strip with a hard vertical
+    // edge right where the polygon started/ended -- that box edge, not
+    // the height curve, was the real "not tapered" seam. Tying the bottom
+    // offset to the same height curve makes the whole polygon pinch down
+    // to a genuine zero-thickness point at both true ends instead.
+    bottomPts.push({ x: x - camX, y: gy + 20 * Math.min(1, h / 40) });
   }
   const grad = ctx.createLinearGradient(baseX, gy, baseX, gy - WINTER_AVALANCHE_PEAK_HEIGHT);
   grad.addColorStop(0, "#dce8f0");
   grad.addColorStop(1, "#f6fafc");
   ctx.fillStyle = grad;
   const hillPath = new Path2D();
-  hillPath.moveTo(pts[0].x, gy + 20);
+  hillPath.moveTo(bottomPts[0].x, bottomPts[0].y);
   pts.forEach(p => hillPath.lineTo(p.x, p.y));
-  hillPath.lineTo(pts[pts.length - 1].x, gy + 20);
+  for (let i = bottomPts.length - 1; i >= 0; i--) hillPath.lineTo(bottomPts[i].x, bottomPts[i].y);
   hillPath.closePath();
   ctx.fill(hillPath);
 
@@ -71825,6 +71858,7 @@ function drawWinterAvalancheHill(camX) {
     ctx.closePath();
     ctx.fill();
   }
+
   ctx.restore();
 
   // a lit ridge line along the top so the silhouette reads as a real
@@ -74799,6 +74833,16 @@ function update(){
 const now = performance.now();
 const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
 lastTime = now;
+
+  // CONFIRMED BUG FIX ("wonky still continues forever after a ball hit"):
+  // playerWoozyT's own decay used to live inside updateBookPileFalls,
+  // which only ever runs from updateOakScene -- so getting winded by an
+  // avalanche ball in winter set the timer, but nothing was ever ticking
+  // it back down outside of Oak, leaving the player permanently wonky.
+  // Moved here so it decays every frame regardless of which scene is
+  // active; the oak book-pile code still just SETS playerWoozyT on a
+  // fall, it no longer also owns decrementing it.
+  if (playerWoozyT > 0) playerWoozyT = Math.max(0, playerWoozyT - deltaTime * 1000);
 
   if (bookReader.active || bookReader.opening || bookReader.closing) {
     updateBookReader(deltaTime);
