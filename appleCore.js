@@ -1200,6 +1200,12 @@ const connections = [
   }
 ];
 
+// roughly "3 inches" of screen space, per direct request -- how much empty
+// world past the winter door's own right edge the forest camera is allowed
+// to reveal before hard-stopping (see the forest right-side camera clamp
+// further down, next to the other small room-cut clamps).
+const FOREST_WINTER_DOOR_CAMERA_MARGIN = 130;
+
 /* ======================================================
    MAP (fog-of-war, graph-driven — replaces the old
    hardcoded HTML nodes). Nodes = scenes, edges = connections.
@@ -73470,6 +73476,16 @@ updateSeasonTransition(deltaTime);
   // just below the "standing wall" block earlier in this function.)
   if (currentScene === "autumn" && hayBales.toppled && cameraX > AUTUMN_END_ROOM_CUT_X - canvas.width + 40) {
     cameraX = AUTUMN_END_ROOM_CUT_X - canvas.width + 40;
+  }
+  // CONFIRMED CHANGE ("leave like 3 inches max of visibility of cameraX to
+  // right of the winter door in forest and then hard stop camera there") --
+  // same small-margin room-cut pattern as the autumn/oak clamps just above,
+  // just anchored off the winter door's own right edge instead of a fixed
+  // world x. Winter itself keeps its own separate right-side clamp (see
+  // WINTER_WIDTH above) and isn't touched by this -- the camera still
+  // follows the player normally to the right once through the door.
+  if (currentScene === "forest" && cameraX > connections[8].doors.forest.x + connections[8].doors.forest.width - canvas.width + FOREST_WINTER_DOOR_CAMERA_MARGIN) {
+    cameraX = connections[8].doors.forest.x + connections[8].doors.forest.width - canvas.width + FOREST_WINTER_DOOR_CAMERA_MARGIN;
   }
 
   keys.leftJustPressed = false;
