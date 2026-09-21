@@ -3231,7 +3231,18 @@ function handleInput(){
   if (currentScene === "winter" && player.iceAxeClingIndex !== -1 && keys.upJustPressed) {
     if (player.iceAxeJustGrabbed) {
       player.iceAxeJustGrabbed = false;
-    } else {
+    } else if (performance.now() - player.iceAxeGrabbedAt >= WINTER_ICE_AXE_SWING_MS) {
+      // CONFIRMED CHANGE ("i dont really see the axe swing. also it is v v
+      // v easy to just keep clicking uparrow and go up the whole thing
+      // quickly the exact same as rock climb to pool") -- a real gate, not
+      // just a visual: the strike has to actually finish landing before
+      // you can release toward the next hold. This single change fixes
+      // both complaints at once -- the swing is no longer skippable (you
+      // physically cannot climb faster than it plays), and pure Up-mashing
+      // no longer collapses this into rock climb's rhythm, since there's
+      // now a real floor on how fast one hold-to-hold cycle can go. An
+      // early press is just ignored (not queued) -- press Up again once
+      // it's struck in.
       winterIceClimbRelease();
     }
   }
@@ -71589,7 +71600,13 @@ const WINTER_ICE_CLIMB_SPEED = 6.5;
 // wants you moving soon, and a WEAK one barely gives you time to look up
 // before it's gone.
 const WINTER_ICE_HOLD_GRIP_MS_STRONG = 1000;
-const WINTER_ICE_HOLD_GRIP_MS_WEAK = 550;
+// bumped up from the first pass (550) once the axe-swing release gate
+// below made 380ms of every hold non-negotiable -- 550 would have left a
+// weak hold only ~170ms of real reactive window after the strike lands,
+// which read as unfair rather than urgent. 680 keeps a weak hold
+// meaningfully tighter than a strong one (1000) while still giving you a
+// real beat to react once the axe is actually planted in.
+const WINTER_ICE_HOLD_GRIP_MS_WEAK = 680;
 function winterIceHoldGripMs(idx) {
   const h = WINTER_ICE_HOLDS[idx];
   return h && h.weak ? WINTER_ICE_HOLD_GRIP_MS_WEAK : WINTER_ICE_HOLD_GRIP_MS_STRONG;
@@ -71789,52 +71806,77 @@ function drawWinterIceHold(camX, h, idx) {
   ctx.closePath();
   ctx.fill();
 
-  // the grip knob itself -- a weak hold reads visibly worse even before
-  // you ever touch it (a duller, slightly grey-frosted fill) so the wall
-  // can actually be read/route-planned ahead of time
-  ctx.fillStyle = h.weak ? "#c7d3da" : "#dcecf5";
+  // CONFIRMED CHANGE ("i want like a thing that looks like organic ice
+  // ledges, and ice cracks, that the axe actually goes into. with a
+  // little more animation on that") -- direct follow-up that the plain
+  // white ellipse "grip knob" just read as a dot, not a real surface. The
+  // hold is now a jagged, irregular ice-shelf outline (per-hold seeded, so
+  // no two look identical), stretched out toward the side the hold pushes
+  // off from -- and it carries real crack texture BAKED INTO it, all
+  // fanning from one single strike point (ssx,ssy -- see
+  // winterIceHoldStrikePoint) that the ice axe itself physically plants
+  // into on every grab, instead of hovering near the hold. That shared
+  // strike point is what makes the axe visibly go INTO the ice rather
+  // than just floating beside it.
+  const { ssx, ssy } = winterIceHoldStrikePoint(sx, sy, h.dir);
+  const ledgeSeed = seed + 90;
+  ctx.fillStyle = h.weak ? "#c1cfd8" : "#dcecf5";
   ctx.beginPath();
-  ctx.ellipse(sx, sy, 17, 12, 0, 0, Math.PI * 2);
+  const LEDGE_PTS = 7;
+  for (let p = 0; p <= LEDGE_PTS; p++) {
+    const ang = (p / LEDGE_PTS) * Math.PI * 2;
+    const jag = 0.7 + pseudoRandom(ledgeSeed + p) * 0.5;
+    const rx = (14 + h.dir * 7) * jag;
+    const ry = 10 * jag;
+    const px = sx + h.dir * 5 + Math.cos(ang) * rx;
+    const py = sy + Math.sin(ang) * ry;
+    if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(110,145,170,0.5)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(110,145,170,0.55)";
+  ctx.lineWidth = 1.2;
   ctx.stroke();
+  // a bright top-lit facet, like real ice catching light
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.beginPath();
+  ctx.ellipse(sx + h.dir * 3, sy - 5, 8, 4, h.dir * 0.3, 0, Math.PI * 2);
+  ctx.fill();
 
-  // CONFIRMED CHANGE ("this needs to be significantly different an
-  // legit"): a weak hold shows a real pre-existing fracture BEFORE it's
-  // ever grabbed -- a couple of short static crack lines, seeded/stable
-  // per hold (not the grip-decay crack below, which only ever appears on
-  // the currently-held hold and grows from nothing) -- so a weak hold is
-  // something you can spot and plan around, not just a nasty surprise
-  // once you're already hanging from it.
-  if (h.weak) {
-    ctx.strokeStyle = "rgba(100,130,155,0.55)";
-    ctx.lineWidth = 1;
-    for (let a = 0; a < 3; a++) {
-      const ang = pseudoRandom(seed + 40 + a) * Math.PI * 2;
-      const len = 5 + pseudoRandom(seed + 50 + a) * 6;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.7);
-      ctx.stroke();
-    }
+  // baked-in fracture texture, always present (faint on a strong hold,
+  // visibly worse pre-touch on a weak one) so a weak hold is something you
+  // can spot and route around, not just a nasty surprise once you're
+  // already hanging from it
+  const baseCrackCount = h.weak ? 4 : 2;
+  const baseCrackAlpha = h.weak ? 0.5 : 0.22;
+  ctx.strokeStyle = `rgba(100,135,160,${baseCrackAlpha})`;
+  ctx.lineWidth = 1;
+  for (let a = 0; a < baseCrackCount; a++) {
+    const ang = pseudoRandom(ledgeSeed + 40 + a) * Math.PI * 2;
+    const len = 5 + pseudoRandom(ledgeSeed + 50 + a) * (h.weak ? 9 : 6);
+    ctx.beginPath();
+    ctx.moveTo(ssx, ssy);
+    ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
+    ctx.stroke();
   }
 
   // grip-decay crack -- only on the hold currently being held, growing
-  // outward the longer it's held (per-hold grip window, see
-  // winterIceHoldGripMs -- a weak hold's crack grows visibly faster)
+  // outward from the strike point (the exact spot the axe is planted
+  // into) the longer it's held, with a slow pulse on top of the growth so
+  // it doesn't just sit static once it's out
   if (player.iceAxeClingIndex === idx) {
     const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / winterIceHoldGripMs(idx));
-    if (frac > 0.15) {
-      const crackGrow = Math.pow(Math.max(0, frac - 0.15) / 0.85, 1.3);
-      ctx.strokeStyle = `rgba(90,130,160,${0.35 + crackGrow * 0.5})`;
-      ctx.lineWidth = 1 + crackGrow * 1.2;
-      for (let a = 0; a < 5; a++) {
-        const ang = (a / 5) * Math.PI * 2 + seed;
-        const len = 6 + crackGrow * 17;
+    if (frac > 0.1) {
+      const crackGrow = Math.pow(Math.max(0, frac - 0.1) / 0.9, 1.3);
+      const pulse = 0.85 + Math.sin(performance.now() * 0.012) * 0.15;
+      ctx.strokeStyle = `rgba(90,130,160,${(0.35 + crackGrow * 0.55) * pulse})`;
+      ctx.lineWidth = 1 + crackGrow * 1.4;
+      for (let a = 0; a < 6; a++) {
+        const ang = (a / 6) * Math.PI * 2 + seed;
+        const len = 6 + crackGrow * 19;
         ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.7);
+        ctx.moveTo(ssx, ssy);
+        ctx.lineTo(ssx + Math.cos(ang) * len, ssy + Math.sin(ang) * len * 0.7);
         ctx.stroke();
       }
     }
@@ -71858,9 +71900,25 @@ function drawIceAxeShape(dir) {
   ctx.fill();
 }
 
-const WINTER_ICE_AXE_SWING_MS = 220; // how long the strike-in takes
-const WINTER_ICE_AXE_IMPACT_MS = 180; // small flecks right after the strike lands
-const WINTER_ICE_AXE_PULL_MS = 160; // quick yank-free on release/slip
+// CONFIRMED CHANGE ("i dont really see the axe swing" / "a little more
+// animation on that") -- lengthened and enlarged across the board so the
+// swing actually reads at normal unzoomed gameplay scale/speed, not just
+// in a zoomed screenshot.
+const WINTER_ICE_AXE_SWING_MS = 380; // how long the strike-in takes
+const WINTER_ICE_AXE_IMPACT_MS = 240; // shock ring + flecks right after the strike lands
+const WINTER_ICE_AXE_PULL_MS = 200; // quick yank-free on release/slip
+
+// the single point a held hold's axe physically plants into -- shared by
+// drawWinterIceHold (crack origin) and drawWinterIceAxeSwing (axe pivot),
+// so the pick always visibly lands exactly where the ice cracks from.
+// Offset out to the ledge's own jutting side (the direction the hold
+// pushes off toward), which keeps it clear of the player's own sprite --
+// the player stands centered ON the hold, so anchoring near the hold's
+// own center point (an earlier pass) put the axe almost entirely behind
+// the player's body once again.
+function winterIceHoldStrikePoint(sx, sy, dir) {
+  return { ssx: sx + dir * 24, ssy: sy - 4 };
+}
 
 // CONFIRMED NEW FEATURE ("i want ice pick animation, at absolute
 // minimum"), after direct feedback that the ice climb read as "literally
@@ -71882,7 +71940,8 @@ const WINTER_ICE_AXE_PULL_MS = 160; // quick yank-free on release/slip
 // instead, offset toward the side the hold pushes off from, keeps the axe
 // clearly clear of the sprite in every pose.
 function winterIceAxeAnchor(sx, sy, dir) {
-  return { ax: sx + dir * 12, ay: sy - player.height - 4 };
+  const p = winterIceHoldStrikePoint(sx, sy, dir);
+  return { ax: p.ssx, ay: p.ssy };
 }
 
 function drawWinterIceAxeSwing(camX) {
@@ -71904,11 +71963,13 @@ function drawWinterIceAxeSwing(camX) {
       const ease = t * t * t;
       const restAngle = h.dir === 1 ? -0.5 : 0.5;
       // raised-overhead windup, swinging DOWN into the strike -- kept
-      // under a quarter turn (1.6rad ~= 92deg) so it reads as a clean arm
-      // swing rather than wrapping past vertical into a confusing flip.
-      const windAngle = restAngle - h.dir * 1.6;
+      // under a half turn (1.9rad ~= 109deg) so it reads as a clean big
+      // arm swing rather than wrapping past vertical into a confusing
+      // flip. Widened + raised further than the first pass per "i dont
+      // really see the axe swing".
+      const windAngle = restAngle - h.dir * 1.9;
       const angle = windAngle + (restAngle - windAngle) * ease;
-      const raise = (1 - ease) * 22;
+      const raise = (1 - ease) * 34;
       ctx.save();
       ctx.translate(ax, ay - raise);
       ctx.rotate(angle - (h.dir === 1 ? -0.5 : 0.5)); // drawIceAxeShape applies its own base rotate, so undo the double-count
@@ -71920,16 +71981,23 @@ function drawWinterIceAxeSwing(camX) {
       ctx.translate(ax, ay);
       drawIceAxeShape(h.dir);
       ctx.restore();
-      // a quick burst of small impact flecks right after the strike lands
+      // a real strike impact right after landing -- an expanding shock
+      // ring plus a burst of flecks, both bigger than the first pass
+      // ("a little more animation on that")
       if (since < WINTER_ICE_AXE_SWING_MS + WINTER_ICE_AXE_IMPACT_MS) {
         const it = (since - WINTER_ICE_AXE_SWING_MS) / WINTER_ICE_AXE_IMPACT_MS;
         const seed = player.iceAxeClingIndex * 19.13 + 300;
-        for (let a = 0; a < 4; a++) {
-          const ang = (a / 4) * Math.PI * 2 + seed;
-          const dist = it * 10;
+        ctx.strokeStyle = `rgba(230,244,250,${(1 - it) * 0.8})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(ax, ay, 3 + it * 13, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let a = 0; a < 6; a++) {
+          const ang = (a / 6) * Math.PI * 2 + seed;
+          const dist = it * 14;
           ctx.fillStyle = `rgba(230,244,250,${(1 - it) * 0.9})`;
           ctx.beginPath();
-          ctx.arc(ax + Math.cos(ang) * dist, ay + Math.sin(ang) * dist, 1.6, 0, Math.PI * 2);
+          ctx.arc(ax + Math.cos(ang) * dist, ay + Math.sin(ang) * dist, 2.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
