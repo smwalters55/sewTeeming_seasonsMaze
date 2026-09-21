@@ -5669,7 +5669,8 @@ function applyPhysics(){
   // close to the surface again, same shape as every other landing check.
   {
     const feetXHill = player.x + player.width / 2;
-    if (feetXHill > WINTER_AVALANCHE_START_X - 5 && feetXHill < WINTER_AVALANCHE_END_X + 5) {
+    const onHillNow = feetXHill > WINTER_AVALANCHE_START_X - 5 && feetXHill < WINTER_AVALANCHE_END_X + 5;
+    if (onHillNow) {
       const hillHeight = winterAvalancheHillHeightAt(feetXHill);
       if (!player.jumping) {
         player.y = hillHeight;
@@ -5683,6 +5684,32 @@ function applyPhysics(){
           player.usedDoubleJump = false;
         }
       }
+      // CONFIRMED CHANGE ("have bottom of player flush on hill not this
+      // like horizontal angle thing"): the player sprite stayed perfectly
+      // upright the whole walk, so on anything but dead-flat ground its
+      // flat bottom edge visibly floated above/cut into the sloped
+      // surface instead of sitting flush against it -- especially
+      // obvious now that the hill has real varied grade (the mountain-
+      // range ripple terrain). Reuses the exact same "slope, directly
+      // set" approach as the owl tree branch tilt and the river bridge
+      // deck tilt: sample the hill's own height function a few px to
+      // either side of the player's feet to get the true local slope
+      // (works for the smooth base curve AND the ripple texture on top,
+      // since it's the same function physics already stands on), and
+      // lean the sprite to match it every frame while grounded here --
+      // not eased in, since the hill's grade can change from one frame
+      // to the next as the player walks and there's no single "gotcha
+      // this branch" moment to ease from the way the owl branch has.
+      const TILT_SAMPLE = 24;
+      const hL = winterAvalancheHillHeightAt(feetXHill - TILT_SAMPLE);
+      const hR = winterAvalancheHillHeightAt(feetXHill + TILT_SAMPLE);
+      const hillSlope = (hR - hL) / (TILT_SAMPLE * 2);
+      winterAvalancheHillTiltAngle = -hillSlope * 0.7;
+    } else if (winterAvalancheHillTiltAngle !== 0) {
+      // eased back to upright once off the hill entirely, same decay
+      // rate the owl branch/bridge tilts use
+      winterAvalancheHillTiltAngle *= 0.8;
+      if (Math.abs(winterAvalancheHillTiltAngle) < 0.01) winterAvalancheHillTiltAngle = 0;
     }
   }
 
@@ -69428,6 +69455,7 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   const totalTilt = swayAngle + mineCartTipLean + (typeof forestGearRideAngle !== "undefined" ? forestGearRideAngle : 0) +
     (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) +
     (typeof winterOwlBranchTiltAngle !== "undefined" ? winterOwlBranchTiltAngle : 0) +
+    (typeof winterAvalancheHillTiltAngle !== "undefined" ? winterAvalancheHillTiltAngle : 0) +
     balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
@@ -70174,7 +70202,13 @@ const WINTER_CONTENT_OFFSET = 380;
 // max two balls rn" / "i wnat this this be An Event, and activity. not
 // juust quick passing through."): nearly tripled from the original 900 so
 // the section is a genuine sustained gauntlet instead of a quick pass-through.
-const WINTER_AVALANCHE_WIDTH = 2600;
+// CONFIRMED CHANGE ("make the whole thing a lot bigger!! ... have this
+// more like a mountain range slightly, ya? not jsut a hill"): widened
+// again, nearly doubled, so a straight run through genuinely takes a
+// while and there's real room for the ridge line itself to read as a
+// range (see the ripple terrain in winterAvalancheHillHeightAt below)
+// instead of one hill-shaped bump.
+const WINTER_AVALANCHE_WIDTH = 4600;
 // CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
 // further past the old end (right at the icicle pocket's own edge) to fit
 // a real quiet stretch of open ground past the rainbow icicles/watery ice
@@ -70836,6 +70870,7 @@ function drawWinterBranchStroke(baseX, baseY, tipX, tipY, width) {
 // own sloped deck (see applyPhysics for where this gets set/eased, and
 // the `draw()` function's `totalTilt` sum for where it gets applied).
 let winterOwlBranchTiltAngle = 0;
+let winterAvalancheHillTiltAngle = 0;
 
 // CONFIRMED CHANGE ("i need to be able to jump on the branches on this
 // large tree. well other branches too"): shared geometry for all three of
@@ -71589,8 +71624,9 @@ const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH
 // gradual back half so the descent/flattening genuinely reads as the
 // danger tapering off, not a symmetric wedge.
 const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.4;
-// CONFIRMED FIX ("even taller and bigger"): raised again from 320.
-const WINTER_AVALANCHE_PEAK_HEIGHT = 460; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
+// CONFIRMED FIX ("even taller and bigger" / "make the whole thing a lot
+// bigger!!"): raised again, twice now (320 -> 460 -> 560).
+const WINTER_AVALANCHE_PEAK_HEIGHT = 560; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
 function winterAvalancheSmootherstep(t) {
   return t * t * t * (t * (t * 6 - 15) + 10); // zero slope AND zero curvature at t=0/1
 }
@@ -71615,26 +71651,43 @@ function winterAvalancheDirBias(feetX) {
 // surface and the drawn hill can never drift apart.
 //
 // CONFIRMED CHANGE ("make the hill down on right have parts that get a
-// little flatter, then a little steeper, etc"): the descending half used
-// to be one clean smootherstep taper the whole way down. It now layers a
-// couple of gentle undulations on top of that same base curve -- an
-// envelope that's zero right at the peak and zero right at the true end
-// (so the taper fixes from the last round are untouched) but rises in
-// the middle, modulating a small sine-wave terrace pattern so the slope
-// genuinely eases off and steepens back up a few times on the way down,
-// instead of monotonically softening the whole way.
+// little flatter, then a little steeper, etc"), then pushed further
+// ("some parts are slightly flattning out, some a little mini bump, some
+// steeper, like have this more like a mountain range slightly, ya? not
+// jsut a hill" / "need more hops"): the descending half first got a
+// couple of gentle undulations layered on top of its base taper. That's
+// now generalized into a real ripple applied across the WHOLE zone (both
+// the ascending AND descending halves), not just the way down -- three
+// stacked sine waves at different frequencies/phases so the walk up
+// genuinely has its own little bumps and flat stretches too, not just a
+// single clean rise to one peak. The ripple's own envelope is zero at
+// the two true ends (so the earlier taper fix is still untouched) and
+// its amplitude is kept modest relative to WINTER_AVALANCHE_PEAK_HEIGHT
+// so the single true peak (still a smootherstep rise/fall to
+// WINTER_AVALANCHE_PEAK_X) stays the tallest point and the overall
+// silhouette still reads as one main ascent/descent with a real ridge of
+// smaller ups and downs along it -- a mountain RANGE, not a repeating
+// sawtooth.
+function winterAvalancheHillRipple(x) {
+  const zt = (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_START_X);
+  const clamped = Math.min(1, Math.max(0, zt));
+  const envelope = Math.sin(clamped * Math.PI); // 0 at both true ends, 1 at the zone's midpoint
+  return (
+    Math.sin(zt * 15.5 + 1.3) * 0.5 +
+    Math.sin(zt * 28 - 0.7) * 0.26 +
+    Math.sin(zt * 6.4 + 2.1) * 0.75 // the big, slow wave -- reads as separate mini-summits/saddles along the ridge, the "mountain range" part of the ask
+  ) * envelope * WINTER_AVALANCHE_PEAK_HEIGHT * 0.11;
+}
 function winterAvalancheHillHeightAt(x) {
   if (x <= WINTER_AVALANCHE_START_X || x >= WINTER_AVALANCHE_END_X) return 0;
   const rising = x <= WINTER_AVALANCHE_PEAK_X;
-  if (rising) {
-    const t = (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X);
-    return WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheSmootherstep(t);
-  }
-  const t = (x - WINTER_AVALANCHE_PEAK_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
-  const base = WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t));
-  const envelope = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); // 0 at the peak and at the true end, peaks mid-descent
-  const terraces = (Math.sin(t * 9.5) * 0.5 + Math.sin(t * 19 + 1.7) * 0.28) * envelope * WINTER_AVALANCHE_PEAK_HEIGHT * 0.1;
-  return Math.max(0, base + terraces);
+  const t = rising
+    ? (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X)
+    : (x - WINTER_AVALANCHE_PEAK_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
+  const base = rising
+    ? WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheSmootherstep(t)
+    : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t));
+  return Math.max(0, base + winterAvalancheHillRipple(x));
 }
 
 // CONFIRMED NEW FEATURE (avalanche snowball hazard, direct spec quote:
@@ -71773,10 +71826,21 @@ function updateWinterAvalanche(deltaTime) {
       // double-jump dodge actually takes to play out (jump, wait for the
       // gap, double jump, then the ball needs to fully clear) -- back-to-
       // back balls could arrive before the player had recovered from the
-      // last one. Eased back up; the much longer hill (2600px, see
+      // last one. Eased back up; the much longer hill (see
       // WINTER_AVALANCHE_WIDTH) still means plenty of total balls over a
       // full crossing without any single pair being unfairly close.
-      winterAvalancheSpawnTimer = 1500 + pseudoRandom(spawnSeed + 2) * 900;
+      // CONFIRMED TUNING ("make balls a lil more frequent maybe? player
+      // go downhill so fast only like 1 or 2 balls come down after if
+      // just continue with eg rightarrow and then hit the bottome"):
+      // sped back up from 1500-2400ms -- the zone is now also much wider
+      // (WINTER_AVALANCHE_WIDTH nearly doubled), so a straight run
+      // through covers a lot more ground per spawn tick, and this alone
+      // pushes the total-balls-per-crossing back up well past the old
+      // count without the interval needing to get as tight as the
+      // earlier "waaay bigger" round's 750-1300ms did (that was
+      // specifically walked back for pileup-feeling unfair -- still
+      // worth keeping some daylight from it).
+      winterAvalancheSpawnTimer = 1000 + pseudoRandom(spawnSeed + 2) * 600;
     }
   } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
     // walked back out toward the pool side -- clear the hazard so
@@ -71826,6 +71890,21 @@ const WINTER_AVALANCHE_BACKDROP_PEAK_X = WINTER_AVALANCHE_PEAK_X + WINTER_AVALAN
 const WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT = WINTER_AVALANCHE_PEAK_HEIGHT * 2.5;
 const WINTER_AVALANCHE_BACKDROP_START_X = WINTER_AVALANCHE_START_X - 550;
 const WINTER_AVALANCHE_BACKDROP_END_X = WINTER_AVALANCHE_END_X + 550;
+// CONFIRMED CHANGE ("more like a mountain range slightly, ya? not jsut a
+// hill"): the looming backdrop mountain gets the same ripple treatment
+// as the walkable ridge (its own frequencies/phases so the two don't
+// read as copies of each other) so it shows real sub-peaks and saddles
+// along its own skyline instead of one smooth triangular summit.
+function winterAvalancheBackdropRipple(x) {
+  const zt = (x - WINTER_AVALANCHE_BACKDROP_START_X) / (WINTER_AVALANCHE_BACKDROP_END_X - WINTER_AVALANCHE_BACKDROP_START_X);
+  const clamped = Math.min(1, Math.max(0, zt));
+  const envelope = Math.sin(clamped * Math.PI);
+  return (
+    Math.sin(zt * 11.5 - 0.4) * 0.6 +
+    Math.sin(zt * 21 + 1.9) * 0.3 +
+    Math.sin(zt * 4.8 + 0.6) * 0.8
+  ) * envelope * WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * 0.1;
+}
 function winterAvalancheBackdropHeightAt(x) {
   if (x <= WINTER_AVALANCHE_BACKDROP_START_X || x >= WINTER_AVALANCHE_BACKDROP_END_X) return 0;
   const rising = x <= WINTER_AVALANCHE_BACKDROP_PEAK_X;
@@ -71833,7 +71912,8 @@ function winterAvalancheBackdropHeightAt(x) {
   const segEnd = rising ? WINTER_AVALANCHE_BACKDROP_PEAK_X : WINTER_AVALANCHE_BACKDROP_END_X;
   const t = (x - segStart) / (segEnd - segStart);
   const eased = winterAvalancheSmootherstep(t);
-  return rising ? WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * eased : WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * (1 - eased);
+  const base = rising ? WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * eased : WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * (1 - eased);
+  return Math.max(0, base + winterAvalancheBackdropRipple(x));
 }
 
 // a big soft looming peak drawn behind everything, its own taller/offset
@@ -71843,7 +71923,7 @@ function winterAvalancheBackdropHeightAt(x) {
 // slower parallax factor than the walkable ground itself so it reads as
 // further back/bigger, same depth trick the mid treeline already uses.
 function drawWinterAvalancheBackdrop(camX) {
-  const STEPS = 26;
+  const STEPS = 44; // bumped up alongside the wider zone + added ripple detail so the curve still samples smoothly instead of visibly faceting
   const zoneStart = WINTER_AVALANCHE_BACKDROP_START_X;
   const zoneEnd = WINTER_AVALANCHE_BACKDROP_END_X;
   // CONFIRMED BUG FIX ("hill dissappears/reappears when should already be
@@ -71888,6 +71968,23 @@ function drawWinterAvalancheBackdrop(camX) {
 // session's texture passes.
 function drawWinterAvalancheHill(camX) {
   const baseX = WINTER_AVALANCHE_PEAK_X - camX;
+  // CONFIRMED BUG FIX ("hill dissappears when im here" -- reported while
+  // standing well past the walkable ridge's own end): the backdrop
+  // mountain is deliberately WIDER than the walkable ridge (extends 550px
+  // past each true end) and scrolls at its own slower 0.85 parallax
+  // factor, so its own true on-screen extent doesn't line up with the
+  // foreground ridge's. drawWinterAvalancheBackdrop already computes its
+  // own correct cull check internally -- but it used to only ever get
+  // CALLED from inside this function, AFTER the foreground's own
+  // (narrower, faster-parallax) early-return already bailed out, so once
+  // the player walked far enough past the ridge's own end that the
+  // foreground cull tripped, the backdrop never even got a chance to run
+  // its own check and draw itself, even while it was still genuinely
+  // visible on screen. Backdrop now always gets called first, unguarded,
+  // and decides for itself whether it's in view; only the foreground
+  // ridge (silhouette + rock facets below) is gated by the narrower check.
+  drawWinterAvalancheBackdrop(camX);
+
   // CONFIRMED BUG FIX ("hill dissappears/reappears when should already be
   // in view due to camera view"): this used to cull the ENTIRE hill draw
   // based only on how close the peak was to the camera -- fine near the
@@ -71901,9 +71998,7 @@ function drawWinterAvalancheHill(camX) {
   const hillEndSx = WINTER_AVALANCHE_END_X + 60 - camX;
   if (hillEndSx < -50 || hillStartSx > canvas.width + 50) return;
 
-  drawWinterAvalancheBackdrop(camX);
-
-  const STEPS = 30;
+  const STEPS = 52; // bumped up alongside the wider zone + added ripple detail so the curve still samples smoothly instead of visibly faceting
   const pts = [];
   const bottomPts = [];
   for (let s = 0; s <= STEPS; s++) {
@@ -71933,7 +72028,7 @@ function drawWinterAvalancheHill(camX) {
 
   ctx.save();
   ctx.clip(hillPath);
-  const FACET_COUNT = 16;
+  const FACET_COUNT = 28; // scaled up with the wider zone so rock/snow texture density stays consistent instead of thinning out
   for (let f = 0; f < FACET_COUNT; f++) {
     const fseed = f * 27.1 + 6600;
     const fx = WINTER_AVALANCHE_START_X + pseudoRandom(fseed) * WINTER_AVALANCHE_WIDTH;
