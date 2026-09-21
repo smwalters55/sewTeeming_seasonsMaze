@@ -71921,7 +71921,9 @@ function drawWinterIceWall(camX) {
   // gradient with only crack lines drawn over it.
   ctx.save();
   ctx.clip(wallPath);
-  const FACET_COUNT = 22;
+  // CONFIRMED CHANGE ("make ice a lil better still. more texture"):
+  // bumped up from 22 to 34 large facets for denser broken-ice coverage.
+  const FACET_COUNT = 34;
   for (let f = 0; f < FACET_COUNT; f++) {
     const fseed = f * 31.7 + 4200;
     const fx = baseX + (pseudoRandom(fseed) - 0.5) * 260;
@@ -71939,6 +71941,22 @@ function drawWinterIceWall(camX) {
       if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.closePath();
+    ctx.fill();
+  }
+
+  // a finer layer of small frost-grain flecks on top of the big facets --
+  // much smaller and sparser than the facets, just enough grain that the
+  // surface doesn't read as smooth paint between them.
+  const SPECKLE_COUNT = 70;
+  for (let s = 0; s < SPECKLE_COUNT; s++) {
+    const sseed = s * 17.9 + 9600;
+    const sx = baseX + (pseudoRandom(sseed) - 0.5) * 280;
+    const sy = gy - pseudoRandom(sseed + 1) * topHeight;
+    const sr = 1.2 + pseudoRandom(sseed + 2) * 2.4;
+    const lit = pseudoRandom(sseed + 3) > 0.4;
+    ctx.fillStyle = lit ? "rgba(255,255,255,0.4)" : "rgba(80,115,140,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, sr, sr * 0.75, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
@@ -71960,6 +71978,63 @@ function drawWinterIceWall(camX) {
     ctx.moveTo(x0, y0);
     ctx.lineTo(x0 - side * (10 + Math.abs(Math.sin(ang)) * len), y0 - Math.cos(ang) * len);
     ctx.stroke();
+  }
+
+  // CONFIRMED CHANGE ("make ice a lil better still... some parts like
+  // sticking out"): real 3D outcroppings now break the wall's own
+  // silhouette instead of every texture element staying flush and
+  // clipped to it -- small clusters of angular ice chunks anchored at
+  // the wall's edge and pushed out PAST it, each with a lit facet and a
+  // shadow facet for actual relief, plus a soft contact shadow where
+  // they meet the wall so they read as projecting outward, not painted
+  // on flat.
+  const OUTCROP_COUNT = 9;
+  for (let o = 0; o < OUTCROP_COUNT; o++) {
+    const oseed = o * 47.3 + 7100;
+    const oh = pseudoRandom(oseed) * topHeight * 0.94 + topHeight * 0.03;
+    const edgesO = winterIceWallEdgesAt(oh);
+    const side = pseudoRandom(oseed + 1) > 0.5 ? 1 : -1;
+    const ox = (side === 1 ? edgesO.right : edgesO.left) - camX;
+    const oy = gy - oh;
+    const push = 10 + pseudoRandom(oseed + 2) * 16;
+    const size = 14 + pseudoRandom(oseed + 3) * 16;
+
+    ctx.fillStyle = "rgba(70,105,130,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(ox + side * push * 0.4, oy + size * 0.35, size * 0.65, size * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const CPTS = 5 + Math.floor(pseudoRandom(oseed + 4) * 2);
+    const pts = [];
+    for (let p = 0; p < CPTS; p++) {
+      const ang = (p / CPTS) * Math.PI * 2 + oseed;
+      const rr = size * (0.6 + pseudoRandom(oseed + 10 + p) * 0.7);
+      pts.push({ x: ox + side * push + Math.cos(ang) * rr, y: oy + Math.sin(ang) * rr * 0.8 });
+    }
+    ctx.fillStyle = "#d3e8f2";
+    ctx.beginPath();
+    pts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90,125,150,0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(ox + side * push, oy - size * 0.15);
+    ctx.lineTo(ox + side * (push + size * 0.6), oy - size * 0.05);
+    ctx.lineTo(ox + side * push * 0.5, oy + size * 0.15);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(70,105,130,0.28)";
+    ctx.beginPath();
+    ctx.moveTo(ox, oy + size * 0.1);
+    ctx.lineTo(ox + side * push * 0.6, oy + size * 0.35);
+    ctx.lineTo(ox + side * push * 0.2, oy - size * 0.25);
+    ctx.closePath();
+    ctx.fill();
   }
 
   // a soft lit rim along the right edge, like the sun catching one face of the gully
@@ -72286,18 +72361,140 @@ function drawWinterIceLedge(camX) {
   const l = WINTER_ICE_LEDGE;
   const sx = l.x - camX;
   const sy = gy - l.height;
-  ctx.fillStyle = "#c9dfec";
+  const hw = l.width / 2;
+  const seed = 8800;
+
+  // CONFIRMED CHANGE ("chnage the top a lot it is the exact same as the
+  // rock pool climb top rn"): this used to literally be drawForestRockLedge
+  // with the fill colors swapped to blue -- same two smooth ellipses plus
+  // a highlight ellipse, so of course it read as identical. Rebuilt as a
+  // real jagged ice shelf instead: a broken, angular front face (not a
+  // rounded rim), an irregular faceted top surface (not a smooth oval),
+  // small icicles hanging off the lip, and a soft snow cap -- distinctly
+  // ice, not a recolored rock.
+
+  // front face: jagged, stepping down toward the wall below the lip
+  ctx.fillStyle = "#9dc2d8";
   ctx.beginPath();
-  ctx.ellipse(sx, sy + 6, l.width / 2, 20, 0, 0, Math.PI * 2);
+  ctx.moveTo(sx - hw, sy + 6);
+  const FACE_PTS = 9;
+  for (let p = 0; p <= FACE_PTS; p++) {
+    const t = p / FACE_PTS;
+    const jag = (pseudoRandom(seed + p) - 0.5) * 16;
+    ctx.lineTo(sx - hw + t * l.width, sy + 6 + jag + Math.sin(t * Math.PI) * 8);
+  }
+  ctx.lineTo(sx + hw, sy + 36);
+  ctx.lineTo(sx - hw, sy + 36);
+  ctx.closePath();
   ctx.fill();
+  ctx.fillStyle = "rgba(70,105,130,0.18)";
+  ctx.beginPath();
+  ctx.moveTo(sx - hw, sy + 20);
+  for (let p = 0; p <= FACE_PTS; p++) {
+    const t = p / FACE_PTS;
+    const jag = (pseudoRandom(seed + p) - 0.5) * 16;
+    ctx.lineTo(sx - hw + t * l.width, sy + 6 + jag + Math.sin(t * Math.PI) * 8 + 10);
+  }
+  ctx.lineTo(sx + hw, sy + 36);
+  ctx.lineTo(sx - hw, sy + 36);
+  ctx.closePath();
+  ctx.fill();
+
+  // top surface: an irregular faceted polygon instead of a smooth ellipse
+  const TOP_PTS = 12;
+  const topPath = new Path2D();
+  const topOutline = [];
+  for (let p = 0; p <= TOP_PTS; p++) {
+    const t = p / TOP_PTS;
+    const ang = Math.PI + t * Math.PI;
+    const rx = hw * (0.94 + pseudoRandom(seed + 40 + p) * 0.1);
+    const ry = (13 + pseudoRandom(seed + 60 + p) * 6);
+    topOutline.push({ x: sx + Math.cos(ang) * rx, y: sy + Math.sin(ang) * ry });
+  }
+  topPath.moveTo(topOutline[0].x, topOutline[0].y);
+  topOutline.forEach(pt => topPath.lineTo(pt.x, pt.y));
+  topPath.closePath();
   ctx.fillStyle = "#eef7fc";
+  ctx.fill(topPath);
+  ctx.strokeStyle = "rgba(120,160,185,0.45)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke(topPath);
+
+  // faceted texture + thin cracks on the top surface, clipped to its own outline
+  ctx.save();
+  ctx.clip(topPath);
+  for (let f = 0; f < 7; f++) {
+    const fseed = seed + 200 + f * 23.4;
+    const fx = sx + (pseudoRandom(fseed) - 0.5) * l.width * 0.85;
+    const fy = sy - pseudoRandom(fseed + 1) * 10;
+    const fr = 16 + pseudoRandom(fseed + 2) * 22;
+    const lit = pseudoRandom(fseed + 3) > 0.5;
+    ctx.fillStyle = lit ? "rgba(255,255,255,0.5)" : "rgba(110,150,178,0.14)";
+    ctx.beginPath();
+    const PTS = 5 + Math.floor(pseudoRandom(fseed + 4) * 2);
+    for (let p = 0; p <= PTS; p++) {
+      const ang = (p / PTS) * Math.PI * 2 + fseed;
+      const rr = fr * (0.7 + pseudoRandom(fseed + 10 + p) * 0.5);
+      const px = fx + Math.cos(ang) * rr;
+      const py = fy + Math.sin(ang) * rr * 0.5;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = "rgba(120,160,185,0.3)";
+  ctx.lineWidth = 1;
+  for (let c = 0; c < 3; c++) {
+    const cseed = seed + 500 + c * 31.1;
+    const cx = sx + (pseudoRandom(cseed) - 0.5) * l.width * 0.7;
+    const cy = sy - pseudoRandom(cseed + 1) * 8;
+    const len = 14 + pseudoRandom(cseed + 2) * 16;
+    const ang = pseudoRandom(cseed + 3) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ang) * len, cy + Math.sin(ang) * len * 0.4);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // a soft snow cap highlight toward the back
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
   ctx.beginPath();
-  ctx.ellipse(sx, sy, l.width / 2, 16, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx - l.width * 0.16, sy - 6, l.width * 0.2, 5, -0.1, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.65)";
-  ctx.beginPath();
-  ctx.ellipse(sx - l.width * 0.18, sy - 4, l.width * 0.22, 6, -0.1, 0, Math.PI * 2);
-  ctx.fill();
+
+  // small icicles hanging off the front lip, same faceted-shard tapering
+  // language as the rainbow icicles/handholds, scaled down
+  for (let i = 0; i < 4; i++) {
+    const iseed = seed + 900 + i * 41.3;
+    const ix = sx - hw + 0.15 * l.width + (l.width * 0.7) * (i / 3) + (pseudoRandom(iseed) - 0.5) * 18;
+    const iy0 = sy + 14 + (pseudoRandom(iseed + 1) - 0.5) * 8;
+    const len = 16 + pseudoRandom(iseed + 2) * 22;
+    const neckW = 3 + pseudoRandom(iseed + 3) * 2;
+    ctx.fillStyle = "#d8ecf5";
+    ctx.beginPath();
+    ctx.moveTo(ix - neckW, iy0);
+    ctx.lineTo(ix + neckW, iy0);
+    ctx.lineTo(ix + neckW * 0.3, iy0 + len * 0.7);
+    ctx.lineTo(ix, iy0 + len);
+    ctx.lineTo(ix - neckW * 0.4, iy0 + len * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.moveTo(ix - neckW * 0.6, iy0 + 2);
+    ctx.lineTo(ix - neckW * 0.1, iy0 + 2);
+    ctx.lineTo(ix - neckW * 0.2, iy0 + len * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90,125,150,0.35)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(ix - neckW, iy0);
+    ctx.lineTo(ix + neckW * 0.3, iy0 + len * 0.7);
+    ctx.lineTo(ix, iy0 + len);
+    ctx.stroke();
+  }
 }
 
 function drawWinterIceClimb(camX) {
