@@ -464,19 +464,20 @@ const player = {
   // same frame, undoing the release before a single frame of flight ever
   // happened.
   rockJustReleased: false,
-  // WINTER ICE CLIMB -- same manual grab/release/launch shape as the
-  // forest rock climb above (deliberately reused wholesale, right down to
-  // the same handhold gap/launch-arc numbers, so it's the same "climby not
-  // bouncy" precision-hop feel), plus one new wrinkle: ice doesn't hold
-  // forever. See WINTER_ICE_HOLD_GRIP_MS and the grip-decay check in
-  // updateWinterScene -- outstay a hold's welcome and it lets go on its
-  // own, slipping the player back down rather than requiring a miss.
+  // WINTER ICE CLIMB -- starts from the forest rock climb's grab/release/
+  // launch shape (same handhold gap numbers) but is deliberately pushed
+  // well past a reskin -- see the big comment above WINTER_ICE_CLIMB_X for
+  // the full "why" on each of grip decay, weak holds, wind, and the real
+  // ice-axe swing animation.
   // -1 when not gripping anything; otherwise the index into WINTER_ICE_HOLDS.
   iceAxeClingIndex: -1,
   iceAxeJustGrabbed: false, // same same-frame-double-fire guard as rockJustGrabbed
   iceAxeJustReleased: false, // same same-frame-double-fire guard as rockJustReleased
-  iceAxeGrabbedAt: 0, // performance.now() of the current grab -- grip decay is measured from this
-  iceAxeSlipFlashAt: 0 // performance.now() of the last involuntary slip, purely for the visual ice-chip burst (see drawWinterIceClimbSlipFlash) -- 0 means "none pending"
+  iceAxeGrabbedAt: 0, // performance.now() of the current grab -- grip decay AND the axe's swing-in strike animation are both measured from this
+  iceAxeSlipFlashAt: 0, // performance.now() of the last involuntary slip, purely for the visual ice-chip burst (see drawWinterIceClimbSlipFlash) -- 0 means "none pending"
+  iceAxeReleaseHoldIdx: -1, // which WINTER_ICE_HOLDS index the axe last pulled free from, for the pull-out animation (see drawWinterIceAxeSwing)
+  iceAxeReleasedAt: 0, // performance.now() of that release/slip -- 0 means "none pending"
+  iceAxeWindSeed: 0 // set fresh per launch (winterIceClimbRelease) -- phases the mid-air wind gust so consecutive hops don't all drift the same way
 };
 
 /* ======================================================
@@ -3049,8 +3050,9 @@ function handleInput(){
         player.rockJustGrabbed = true; // see this flag's own comment on the player object
       } else if (nearIceAxeHold) {
         // grab -- snap to the hold and freeze here (see applyPhysics' own
-        // early return for player.iceAxeClingIndex), and start the grip-
-        // decay clock (see WINTER_ICE_HOLD_GRIP_MS / updateWinterScene)
+        // early return for player.iceAxeClingIndex), and start both the
+        // grip-decay clock (see winterIceHoldGripMs / updateWinterScene)
+        // and the axe's swing-in strike animation (drawWinterIceAxeSwing)
         player.iceAxeClingIndex = WINTER_ICE_HOLDS.indexOf(nearIceAxeHold);
         player.x = nearIceAxeHold.x - player.width / 2;
         player.y = nearIceAxeHold.height;
@@ -3235,6 +3237,8 @@ function handleInput(){
   }
   if (currentScene === "winter" && player.iceAxeClingIndex !== -1 && keys.downJustPressed && !player.iceAxeJustGrabbed) {
     const releasedHold = WINTER_ICE_HOLDS[player.iceAxeClingIndex];
+    player.iceAxeReleaseHoldIdx = player.iceAxeClingIndex; // pull-free animation, see drawWinterIceAxeSwing
+    player.iceAxeReleasedAt = performance.now();
     player.iceAxeClingIndex = -1;
     player.x += releasedHold.dir * (WINTER_ICE_HOLD_RADIUS + 16);
     player.vx = 0;
@@ -3714,6 +3718,14 @@ function applyPhysics(){
       if (keys.right) player.launchSteerOffset += player.launchSteerAccel;
       player.launchSteerOffset = Math.max(-player.launchSteerMax, Math.min(player.launchSteerMax, player.launchSteerOffset));
       player.vx = player.launchBaseVx + player.launchSteerOffset;
+    }
+    // WINTER ICE CLIMB -- mid-air wind gust, on top of the steering above.
+    // A pure function of time (not accumulated into vx permanently), so it
+    // self-corrects rather than compounding into a runaway drift -- see
+    // WINTER_ICE_WIND_FREQ/AMP's own comment for why this is paired with
+    // launchSteerable rather than left to fight unassisted.
+    if (currentScene === "winter") {
+      player.vx += Math.sin(performance.now() * WINTER_ICE_WIND_FREQ + player.iceAxeWindSeed) * WINTER_ICE_WIND_AMP;
     }
     player.x += player.vx;
 
@@ -71527,27 +71539,29 @@ function drawWinterBreatherSnowflakes(camX) {
 // boarding saved for later, further out, as the earned release AFTER this
 // climb rather than competing with the slip pool for the same feeling.
 //
-// Mechanically this deliberately reuses the forest rock climb's own
-// grab/release/launch shape wholesale -- same manual up-to-grab, up-to-
-// release-toward-the-next-hold, down-to-drop, same precisely-swept
-// (non-steerable) launch arc from grip to grip -- right down to reusing
-// its exact handhold gap numbers (70px x / 75px y) and launch tilt/speed,
-// since that arc is a pure function of those gaps plus the shared
-// launched-flight gravity model (LAUNCH_GRAVITY/FLOATY_FALL_GRAVITY,
-// identical in every scene) -- already proven to land precisely, no new
-// sweep needed. See FOREST_ROCK_HANDHOLDS' own comment for the full
-// reasoning behind those specific numbers.
-//
-// What's actually NEW, and the whole reason this earns its own set-piece
-// rather than reading as a forest-climb reskin: grip decay. A grabbed hold
-// doesn't hold forever -- WINTER_ICE_HOLD_GRIP_MS after a grab, if you
-// haven't released toward the next hold (or dropped) on your own, the ice
-// lets go on its own and you SLIP -- not a hard reset, a real punishing
-// slide back a couple holds (see winterIceClimbSlip, called from
-// updateWinterScene), so every hang carries real tension without one
-// missed beat costing the whole climb. Each hold's own crack radiates out
-// and widens the longer it's held (see drawWinterIceHold) -- a diegetic
-// grip meter instead of a HUD bar.
+// Mechanically this STARTS from the forest rock climb's grab/release/
+// launch shape (same manual up-to-grab, up-to-release-toward-the-next-
+// hold, down-to-drop -- right down to reusing its exact handhold gap
+// numbers, 70px x / 75px y, and launch tilt/speed, since that arc is a
+// pure function of those gaps plus the shared launched-flight gravity
+// model) but is deliberately pushed further in several real directions
+// after direct feedback that a first pass read as "literally the same as
+// rock climb but white": (1) grip decay -- see WINTER_ICE_HOLD_GRIP_MS_*
+// below, now tight enough to be a felt, constant pressure in normal play
+// rather than an edge case you'd only hit by dawdling; (2) WEAK holds --
+// roughly a third of the wall (never the very first hold) is pre-cracked,
+// visibly so (see drawWinterIceHold's own frost-fracture marks) BEFORE
+// you ever grab it, so the climb becomes a real route-read -- rock climb
+// has no equivalent "some holds are worse than others" layer at all; (3)
+// WIND -- unlike the rock climb's fixed, non-steerable swept arc, every
+// ice-climb launch is genuinely steerable (see winterIceClimbRelease) AND
+// gets pushed around by a real mid-air gust (see the winter wind check in
+// applyPhysics's launched branch), so each hop is an active aim-and-
+// correct skill moment instead of "press up, trust the arc"; (4) a real
+// swung ice-axe strike animation on every grab -- see
+// drawWinterIceAxeSwing -- rather than a tool that's just already sitting
+// there embedded, which is the single biggest reason the first pass read
+// as a reskin: nothing was actually happening as you climbed.
 const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 160;
 const WINTER_ICE_HOLD_DX = 70; // same gap the forest rock climb uses -- see that constant's own comment
 const WINTER_ICE_HOLD_FIRST_HEIGHT = 55;
@@ -71556,19 +71570,40 @@ const WINTER_ICE_HOLD_COUNT = 9; // taller than the rock climb's 7 -- "gotta mak
 const WINTER_ICE_HOLDS = Array.from({ length: WINTER_ICE_HOLD_COUNT }, (_, i) => ({
   x: WINTER_ICE_CLIMB_X + (i % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
   height: WINTER_ICE_HOLD_FIRST_HEIGHT + i * WINTER_ICE_HOLD_DY,
-  dir: i % 2 === 0 ? 1 : -1 // which way the release launch pushes FROM this hold (toward the next one's side)
+  dir: i % 2 === 0 ? 1 : -1, // which way the release launch pushes FROM this hold (toward the next one's side)
+  // CONFIRMED CHANGE ("this needs to be significantly different an
+  // legit"): roughly a third of the wall is pre-cracked/weak -- a much
+  // shorter grip window, and visibly so before you ever grab it (see
+  // drawWinterIceHold) -- so reading the wall ahead of time actually
+  // matters. Never the very first hold, so the climb always opens safe.
+  weak: i > 0 && pseudoRandom(i * 7.3 + 50) > 0.55
 }));
 const WINTER_ICE_HOLD_RADIUS = 48; // same generous grab window as the rock climb -- a deliberate press, no reason to make the grab itself fiddly
 const WINTER_ICE_HOLD_BAND = 58;
 const WINTER_ICE_CLIMB_TILT = 14.5; // identical to FOREST_ROCK_CLIMB_TILT/SPEED -- same DX/DY gaps, same shared launch-gravity model, so the same swept arc lands precisely here too
 const WINTER_ICE_CLIMB_SPEED = 6.5;
-// how long a grabbed hold's grip lasts before it lets go on its own --
-// tuned to feel like real hang-in-there tension: long enough to actually
-// look up and time the next release, short enough that camping is never safe
-const WINTER_ICE_HOLD_GRIP_MS = 1700;
+// how long a grabbed hold's grip lasts before it lets go on its own,
+// per hold strength -- tightened hard from an earlier 1700ms-flat pass
+// (which was loose enough that normal, confident climbing never actually
+// felt the decay) down to real constant pressure: even a STRONG hold
+// wants you moving soon, and a WEAK one barely gives you time to look up
+// before it's gone.
+const WINTER_ICE_HOLD_GRIP_MS_STRONG = 1000;
+const WINTER_ICE_HOLD_GRIP_MS_WEAK = 550;
+function winterIceHoldGripMs(idx) {
+  const h = WINTER_ICE_HOLDS[idx];
+  return h && h.weak ? WINTER_ICE_HOLD_GRIP_MS_WEAK : WINTER_ICE_HOLD_GRIP_MS_STRONG;
+}
 // how many holds a slip drops you -- a real setback, not a full restart
 const WINTER_ICE_SLIP_HOLDS_BACK = 2;
 const WINTER_ICE_SLIP_FLASH_MS = 500;
+// mid-air wind gusts on every ice-climb launch -- see the winter check in
+// applyPhysics's launched branch. Modest amplitude since the flight is
+// also genuinely steerable now (see winterIceClimbRelease) -- the two
+// together are meant to feel like actively fighting a gust, not like
+// unfair randomness you can't react to.
+const WINTER_ICE_WIND_FREQ = 0.005;
+const WINTER_ICE_WIND_AMP = 0.5;
 
 const WINTER_ICE_LEDGE = {
   x: WINTER_ICE_CLIMB_X + (WINTER_ICE_HOLD_COUNT % 2 === 0 ? -WINTER_ICE_HOLD_DX / 2 : WINTER_ICE_HOLD_DX / 2),
@@ -71593,15 +71628,29 @@ function winterIceClimbRelease() {
   player.vy = Math.cos(rad) * WINTER_ICE_CLIMB_SPEED;
   player.launched = true;
   player.launchGravityMult = 1;
-  player.launchSteerable = false; // same "precise, not steerable" reasoning as the rock climb
+  // CONFIRMED CHANGE ("significantly different an legit" from the rock
+  // climb's fixed arc): every ice-climb hop is steerable AND wind-blown
+  // (see the winter wind check in applyPhysics) -- an active aim-and-
+  // correct beat instead of "press up, trust the arc." Default
+  // launchSteerAccel/launchSteerMax (see the player object) already give
+  // a gentle, fair nudge.
+  player.launchSteerable = true;
+  player.launchBaseVx = player.vx;
+  player.launchSteerOffset = 0;
+  player.iceAxeWindSeed = idx * 1.7 + 4;
   player.jumping = true;
   player.usedDoubleJump = false;
+  // for the ice-axe pull-free animation (see drawWinterIceAxeSwing) --
+  // captured before clingIndex resets below, so the draw code can still
+  // find which hold to animate pulling loose from.
+  player.iceAxeReleaseHoldIdx = idx;
+  player.iceAxeReleasedAt = performance.now();
   player.iceAxeClingIndex = -1;
   player.iceAxeJustReleased = true;
 }
 
 // the involuntary "grip ran out" slip -- called from updateWinterScene once
-// WINTER_ICE_HOLD_GRIP_MS elapses on a held hold. Drops the player back
+// winterIceHoldGripMs(idx) elapses on a held hold. Drops the player back
 // WINTER_ICE_SLIP_HOLDS_BACK holds, re-gripping there with a fresh grip
 // clock (reads as "you scrabbled and caught yourself a couple holds
 // down"), or all the way to solid ground at the climb's base if there
@@ -71610,6 +71659,11 @@ function winterIceClimbSlip() {
   const idx = player.iceAxeClingIndex;
   const targetIdx = idx - WINTER_ICE_SLIP_HOLDS_BACK;
   player.iceAxeSlipFlashAt = performance.now();
+  // the axe rips free too, not just the chip burst -- reuses the same
+  // pull-free animation a deliberate release gets (see
+  // drawWinterIceAxeSwing) so it doesn't just silently vanish off the wall.
+  player.iceAxeReleaseHoldIdx = idx;
+  player.iceAxeReleasedAt = performance.now();
   player.launched = false;
   player.launchSteerable = false;
   player.vx = 0;
@@ -71735,8 +71789,10 @@ function drawWinterIceHold(camX, h, idx) {
   ctx.closePath();
   ctx.fill();
 
-  // the grip knob itself
-  ctx.fillStyle = "#dcecf5";
+  // the grip knob itself -- a weak hold reads visibly worse even before
+  // you ever touch it (a duller, slightly grey-frosted fill) so the wall
+  // can actually be read/route-planned ahead of time
+  ctx.fillStyle = h.weak ? "#c7d3da" : "#dcecf5";
   ctx.beginPath();
   ctx.ellipse(sx, sy, 17, 12, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -71744,26 +71800,31 @@ function drawWinterIceHold(camX, h, idx) {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // a small embedded ice axe -- wooden handle + a steel pick angled into
-  // the wall, tilted toward whichever side this hold pushes off from
-  ctx.save();
-  ctx.translate(sx, sy);
-  ctx.rotate(h.dir === 1 ? -0.5 : 0.5);
-  ctx.fillStyle = "#5b4632";
-  ctx.fillRect(-2, -14, 4, 16);
-  ctx.fillStyle = "#8c8c92";
-  ctx.beginPath();
-  ctx.moveTo(-2, -14);
-  ctx.lineTo(10, -20);
-  ctx.lineTo(3, -10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  // CONFIRMED CHANGE ("this needs to be significantly different an
+  // legit"): a weak hold shows a real pre-existing fracture BEFORE it's
+  // ever grabbed -- a couple of short static crack lines, seeded/stable
+  // per hold (not the grip-decay crack below, which only ever appears on
+  // the currently-held hold and grows from nothing) -- so a weak hold is
+  // something you can spot and plan around, not just a nasty surprise
+  // once you're already hanging from it.
+  if (h.weak) {
+    ctx.strokeStyle = "rgba(100,130,155,0.55)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 3; a++) {
+      const ang = pseudoRandom(seed + 40 + a) * Math.PI * 2;
+      const len = 5 + pseudoRandom(seed + 50 + a) * 6;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.7);
+      ctx.stroke();
+    }
+  }
 
   // grip-decay crack -- only on the hold currently being held, growing
-  // outward the longer it's held
+  // outward the longer it's held (per-hold grip window, see
+  // winterIceHoldGripMs -- a weak hold's crack grows visibly faster)
   if (player.iceAxeClingIndex === idx) {
-    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / WINTER_ICE_HOLD_GRIP_MS);
+    const frac = Math.min(1, (performance.now() - player.iceAxeGrabbedAt) / winterIceHoldGripMs(idx));
     if (frac > 0.15) {
       const crackGrow = Math.pow(Math.max(0, frac - 0.15) / 0.85, 1.3);
       ctx.strokeStyle = `rgba(90,130,160,${0.35 + crackGrow * 0.5})`;
@@ -71776,6 +71837,127 @@ function drawWinterIceHold(camX, h, idx) {
         ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.7);
         ctx.stroke();
       }
+    }
+  }
+}
+
+// the ice axe itself, drawn as one small reusable shape (handle + pick,
+// tilted toward `dir`) so both the swing/rest/pull-out states below and
+// the impact flecks share one exact silhouette. Origin-centered, caller
+// translates/rotates.
+function drawIceAxeShape(dir) {
+  ctx.rotate(dir === 1 ? -0.5 : 0.5);
+  ctx.fillStyle = "#5b4632";
+  ctx.fillRect(-2, -14, 4, 16);
+  ctx.fillStyle = "#8c8c92";
+  ctx.beginPath();
+  ctx.moveTo(-2, -14);
+  ctx.lineTo(10, -20);
+  ctx.lineTo(3, -10);
+  ctx.closePath();
+  ctx.fill();
+}
+
+const WINTER_ICE_AXE_SWING_MS = 220; // how long the strike-in takes
+const WINTER_ICE_AXE_IMPACT_MS = 180; // small flecks right after the strike lands
+const WINTER_ICE_AXE_PULL_MS = 160; // quick yank-free on release/slip
+
+// CONFIRMED NEW FEATURE ("i want ice pick animation, at absolute
+// minimum"), after direct feedback that the ice climb read as "literally
+// the rock climb but white" -- the single biggest reason was that nothing
+// was actually HAPPENING as you climbed: every hold showed an axe already
+// sitting there embedded, static, whether you'd ever touched it or not.
+// This replaces that with one real axe that belongs to the PLAYER, not
+// the wall: it swings in and strikes on every grab (with a little impact
+// flash), rests planted while held, and yanks free again on release or a
+// grip-decay slip. Purely a function of iceAxeGrabbedAt/iceAxeReleasedAt
+// (no persisted animation state), same philosophy as everything else
+// ambient in this game. Drawn once here rather than per-hold in
+// drawWinterIceHold, since at most one hold is ever mid-animation.
+// where the axe's own pivot sits relative to a hold, given the PLAYER's
+// own sprite is anchored at the hold's foot-level (sx,sy) -- anchoring the
+// axe there too (as an early pass did) put it almost entirely BEHIND the
+// player's own body, since the player is drawn on top of the whole scene
+// afterward (see draw()'s call order). Anchoring near head/shoulder height
+// instead, offset toward the side the hold pushes off from, keeps the axe
+// clearly clear of the sprite in every pose.
+function winterIceAxeAnchor(sx, sy, dir) {
+  return { ax: sx + dir * 12, ay: sy - player.height - 4 };
+}
+
+function drawWinterIceAxeSwing(camX) {
+  const now = performance.now();
+
+  // currently gripped (or just struck in) -- swing-in, then rest
+  if (player.iceAxeClingIndex !== -1) {
+    const h = WINTER_ICE_HOLDS[player.iceAxeClingIndex];
+    const sx = h.x - camX;
+    const sy = gy - h.height;
+    const { ax, ay } = winterIceAxeAnchor(sx, sy, h.dir);
+    const since = now - player.iceAxeGrabbedAt;
+    if (since < WINTER_ICE_AXE_SWING_MS) {
+      const t = since / WINTER_ICE_AXE_SWING_MS;
+      // ease-IN, not out -- a real chop holds the windup/anticipation for
+      // most of the duration, then snaps fast into the strike right at
+      // the end, rather than smoothly drifting the whole time (which read
+      // as barely-there motion, not an actual swing)
+      const ease = t * t * t;
+      const restAngle = h.dir === 1 ? -0.5 : 0.5;
+      // raised-overhead windup, swinging DOWN into the strike -- kept
+      // under a quarter turn (1.6rad ~= 92deg) so it reads as a clean arm
+      // swing rather than wrapping past vertical into a confusing flip.
+      const windAngle = restAngle - h.dir * 1.6;
+      const angle = windAngle + (restAngle - windAngle) * ease;
+      const raise = (1 - ease) * 22;
+      ctx.save();
+      ctx.translate(ax, ay - raise);
+      ctx.rotate(angle - (h.dir === 1 ? -0.5 : 0.5)); // drawIceAxeShape applies its own base rotate, so undo the double-count
+      drawIceAxeShape(h.dir);
+      ctx.restore();
+    } else {
+      // planted, at rest
+      ctx.save();
+      ctx.translate(ax, ay);
+      drawIceAxeShape(h.dir);
+      ctx.restore();
+      // a quick burst of small impact flecks right after the strike lands
+      if (since < WINTER_ICE_AXE_SWING_MS + WINTER_ICE_AXE_IMPACT_MS) {
+        const it = (since - WINTER_ICE_AXE_SWING_MS) / WINTER_ICE_AXE_IMPACT_MS;
+        const seed = player.iceAxeClingIndex * 19.13 + 300;
+        for (let a = 0; a < 4; a++) {
+          const ang = (a / 4) * Math.PI * 2 + seed;
+          const dist = it * 10;
+          ctx.fillStyle = `rgba(230,244,250,${(1 - it) * 0.9})`;
+          ctx.beginPath();
+          ctx.arc(ax + Math.cos(ang) * dist, ay + Math.sin(ang) * dist, 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    return;
+  }
+
+  // not currently gripping -- but if a release/slip just happened, show
+  // the axe yanking free from that hold for a beat before it's gone
+  if (player.iceAxeReleaseHoldIdx !== -1 && player.iceAxeReleasedAt) {
+    const since = now - player.iceAxeReleasedAt;
+    if (since < WINTER_ICE_AXE_PULL_MS) {
+      const h = WINTER_ICE_HOLDS[player.iceAxeReleaseHoldIdx];
+      const sx = h.x - camX;
+      const sy = gy - h.height;
+      const { ax, ay } = winterIceAxeAnchor(sx, sy, h.dir);
+      const t = since / WINTER_ICE_AXE_PULL_MS;
+      const ease = t * t; // ease-in -- starts planted, accelerates away
+      const restAngle = h.dir === 1 ? -0.5 : 0.5;
+      const pullAngle = restAngle + h.dir * 1.4;
+      const angle = restAngle + (pullAngle - restAngle) * ease;
+      const pull = ease * 14;
+      ctx.save();
+      ctx.globalAlpha = 1 - ease * 0.6;
+      ctx.translate(ax - h.dir * pull * 0.5, ay - pull);
+      ctx.rotate(angle - (h.dir === 1 ? -0.5 : 0.5));
+      drawIceAxeShape(h.dir);
+      ctx.restore();
     }
   }
 }
@@ -71802,6 +71984,7 @@ function drawWinterIceClimb(camX) {
   drawWinterIceWall(camX);
   WINTER_ICE_HOLDS.forEach((h, idx) => drawWinterIceHold(camX, h, idx));
   drawWinterIceLedge(camX);
+  drawWinterIceAxeSwing(camX);
 }
 
 // a quick burst of small angular ice chips at the player's own position,
@@ -72793,7 +72976,7 @@ function updateWinterScene(deltaTime) {
   // gravity), so it lives here rather than in applyPhysics -- once a held
   // hold's grip window runs out, it lets go on its own (see
   // winterIceClimbSlip's own comment for why this isn't a hard reset).
-  if (player.iceAxeClingIndex !== -1 && performance.now() - player.iceAxeGrabbedAt > WINTER_ICE_HOLD_GRIP_MS) {
+  if (player.iceAxeClingIndex !== -1 && performance.now() - player.iceAxeGrabbedAt > winterIceHoldGripMs(player.iceAxeClingIndex)) {
     winterIceClimbSlip();
   }
 
