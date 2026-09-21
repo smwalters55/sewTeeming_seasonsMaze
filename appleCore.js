@@ -71589,26 +71589,52 @@ const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH
 // gradual back half so the descent/flattening genuinely reads as the
 // danger tapering off, not a symmetric wedge.
 const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.4;
-// CONFIRMED FIX ("make hill taller"): raised from 230.
-const WINTER_AVALANCHE_PEAK_HEIGHT = 320; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
+// CONFIRMED FIX ("even taller and bigger"): raised again from 320.
+const WINTER_AVALANCHE_PEAK_HEIGHT = 460; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
+function winterAvalancheSmootherstep(t) {
+  return t * t * t * (t * (t * 6 - 15) + 10); // zero slope AND zero curvature at t=0/1
+}
+// how far on either side of the peak the direction pick eases through
+// near-even odds instead of snapping straight to "always this side".
+const WINTER_AVALANCHE_DIR_BIAS_BAND = 420;
+// returns a value in roughly [-1, 1]: negative favors dir=-1 (ball on the
+// near/ascending side), positive favors dir=+1 (descending side). Used
+// as a soft weight for the spawn coin-flip in updateWinterAvalanche
+// instead of a hard feetX<=PEAK_X cutoff -- see the comment at that call
+// site for why.
+function winterAvalancheDirBias(feetX) {
+  const t = Math.max(-1, Math.min(1, (feetX - WINTER_AVALANCHE_PEAK_X) / WINTER_AVALANCHE_DIR_BIAS_BAND));
+  const eased = Math.sign(t) * winterAvalancheSmootherstep(Math.abs(t));
+  const drift = Math.sin(performance.now() * 0.00011) * 0.15; // slow independent wobble so a stationary player right at the peak doesn't settle into a fixed 50/50 forever either
+  return eased + drift;
+}
 // smootherstep-based hill height at a given world x -- 0 outside the zone,
 // rising to WINTER_AVALANCHE_PEAK_HEIGHT at the peak, easing back to 0 by
 // the end. Shared by both the ground-collision snap (applyPhysics's own
 // winter branch) and the hill's own visual silhouette, so the walked
 // surface and the drawn hill can never drift apart.
+//
+// CONFIRMED CHANGE ("make the hill down on right have parts that get a
+// little flatter, then a little steeper, etc"): the descending half used
+// to be one clean smootherstep taper the whole way down. It now layers a
+// couple of gentle undulations on top of that same base curve -- an
+// envelope that's zero right at the peak and zero right at the true end
+// (so the taper fixes from the last round are untouched) but rises in
+// the middle, modulating a small sine-wave terrace pattern so the slope
+// genuinely eases off and steepens back up a few times on the way down,
+// instead of monotonically softening the whole way.
 function winterAvalancheHillHeightAt(x) {
   if (x <= WINTER_AVALANCHE_START_X || x >= WINTER_AVALANCHE_END_X) return 0;
   const rising = x <= WINTER_AVALANCHE_PEAK_X;
-  const segStart = rising ? WINTER_AVALANCHE_START_X : WINTER_AVALANCHE_PEAK_X;
-  const segEnd = rising ? WINTER_AVALANCHE_PEAK_X : WINTER_AVALANCHE_END_X;
-  const t = (x - segStart) / (segEnd - segStart);
-  // CONFIRMED FIX ("taper the edges of hill"): swapped plain smoothstep
-  // (t*t*(3-2t), zero SLOPE at the edges but a visible kink in curvature)
-  // for smootherstep (zero slope AND zero curvature at the edges), so the
-  // base blends into the flat ground over a wider, gentler run instead of
-  // reading as a short ramp that starts abruptly.
-  const eased = t * t * t * (t * (t * 6 - 15) + 10); // smootherstep
-  return rising ? WINTER_AVALANCHE_PEAK_HEIGHT * eased : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - eased);
+  if (rising) {
+    const t = (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X);
+    return WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheSmootherstep(t);
+  }
+  const t = (x - WINTER_AVALANCHE_PEAK_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
+  const base = WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t));
+  const envelope = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); // 0 at the peak and at the true end, peaks mid-descent
+  const terraces = (Math.sin(t * 9.5) * 0.5 + Math.sin(t * 19 + 1.7) * 0.28) * envelope * WINTER_AVALANCHE_PEAK_HEIGHT * 0.1;
+  return Math.max(0, base + terraces);
 }
 
 // CONFIRMED NEW FEATURE (avalanche snowball hazard, direct spec quote:
@@ -71654,7 +71680,9 @@ const WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT = 55;
 // (tested clearing 120px+ even with mediocre ~100ms timing between
 // presses) reliably clears it, while a single jump alone still can't.
 const WINTER_AVALANCHE_BIG_CLEAR_HEIGHT = 100;
-const WINTER_AVALANCHE_TELEGRAPH_MS = 550; // dust-puff warning at the spawn point before a ball actually starts rolling, same "read it, then react" idea as the icicle pocket's drip warning
+// (telegraph/dust-puff warning removed -- balls now spawn far enough
+// off-screen that they're only ever seen already rolling, per playtest
+// feedback: "i only want to see them rolling")
 // the window (in px either side of the ball's center) where a hit is even
 // checked. This is deliberately narrower than radius + player half-width --
 // a plain "player is standing in the ball's footprint" hitbox made the ball's
@@ -71696,8 +71724,28 @@ function updateWinterAvalanche(deltaTime) {
       // -x) on the near/ascending half, +1 (toward +x) once past the peak
       // -- see the big comment above this function for why this can't
       // just always be -1 anymore.
-      const dir = feetX <= WINTER_AVALANCHE_PEAK_X ? -1 : 1;
-      const leadDist = 420 + pseudoRandom(spawnSeed + 1) * 200;
+      // CONFIRMED CHANGE ("i also dont want this like binary snowball
+      // going left then next goes right when you are at top of
+      // mountian"): a hard feetX<=PEAK_X cutoff meant a player standing
+      // right at the peak got a perfectly mechanical left/right/left
+      // pattern keyed to one exact pixel. Replaced with a weighted coin
+      // flip: winterAvalancheDirBias() eases smoothly from "almost
+      // always the near side" out on the slopes to "close to 50/50,
+      // gently nudged by a slow drift" right around the peak, so which
+      // side a ball comes from still makes sense for where the player
+      // is standing but never reads as a rigid switch.
+      const dirBias = winterAvalancheDirBias(feetX);
+      const dirProbNeg = Math.max(0.05, Math.min(0.95, (1 - dirBias) / 2));
+      const dir = pseudoRandom(spawnSeed + 4) < dirProbNeg ? -1 : 1;
+      // CONFIRMED CHANGE ("i dont want to see snowballs come out of a
+      // chute or anything either like i only want to see them rolling"):
+      // balls no longer sit still with a telegraph puff before rolling --
+      // they move from the instant they exist. To keep that from reading
+      // as "appearing out of nowhere," the lead distance is pushed well
+      // past typical screen width so a ball is always already off-screen,
+      // already rolling, by the time it's created -- the player only
+      // ever sees it arrive already in motion from off-camera, never pop in.
+      const leadDist = 950 + pseudoRandom(spawnSeed + 1) * 350;
       let spawnX = feetX - dir * leadDist;
       // CONFIRMED BUG FIX ("bals should not roll up mountain only come
       // down" / "going to the right"): near the peak, feetX - dir*leadDist
@@ -71740,12 +71788,13 @@ function updateWinterAvalanche(deltaTime) {
 
   const moveAmt = WINTER_AVALANCHE_BALL_SPEED * deltaTime;
   winterAvalancheSnowballs = winterAvalancheSnowballs.filter(b => {
-    const telegraphing = performance.now() - b.spawnedAt < WINTER_AVALANCHE_TELEGRAPH_MS;
-    if (!telegraphing) b.x += b.dir * moveAmt;
+    // rolls from the instant it exists -- see the spawn comment above for
+    // why there's no more stationary telegraph phase
+    b.x += b.dir * moveAmt;
     // rolled off whichever edge it was always headed toward
     if (b.x < WINTER_AVALANCHE_START_X - 80 || b.x > WINTER_AVALANCHE_END_X + 80) return false;
 
-    if (!b.hit && !telegraphing) {
+    if (!b.hit) {
       const hitHalfWidth = WINTER_AVALANCHE_HIT_HALF_WIDTH[b.size];
       if (Math.abs(feetX - b.x) < hitHalfWidth) {
         const clearHeight = b.size === "big" ? WINTER_AVALANCHE_BIG_CLEAR_HEIGHT : WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT;
@@ -71763,17 +71812,40 @@ function updateWinterAvalanche(deltaTime) {
   });
 }
 
-// CONFIRMED NEW FEATURE (avalanche hill visuals): a big soft looming peak
-// drawn behind everything, scaled taller than the walkable ridge and
-// extending well past the top of the canvas -- "walk past a large hill
-// you cant see top of" is the whole point, so this is deliberately NOT
-// scaled to fit the screen. Drawn at a slightly slower parallax factor
-// than the walkable ground itself so it reads as further back/bigger,
-// same depth trick the mid treeline already uses.
+// CONFIRMED CHANGE ("maybe some of the mountain is taller in the middle
+// while the player is on the highest right below 'ledge' ... a connected
+// v slightly shorter mountain"): the backdrop used to just be the
+// walkable ridge's own height curve scaled up, so its peak always sat
+// directly above the walkable peak -- read as one hill, just bigger, not
+// a real neighboring summit. It now has its own independent profile with
+// its peak offset further along (past the walkable summit), taller and
+// spanning wider than the walkable zone itself, so the player's own
+// climb reads as a lower connected shoulder/ledge below the real peak
+// rather than the peak itself.
+const WINTER_AVALANCHE_BACKDROP_PEAK_X = WINTER_AVALANCHE_PEAK_X + WINTER_AVALANCHE_WIDTH * 0.24;
+const WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT = WINTER_AVALANCHE_PEAK_HEIGHT * 2.5;
+const WINTER_AVALANCHE_BACKDROP_START_X = WINTER_AVALANCHE_START_X - 550;
+const WINTER_AVALANCHE_BACKDROP_END_X = WINTER_AVALANCHE_END_X + 550;
+function winterAvalancheBackdropHeightAt(x) {
+  if (x <= WINTER_AVALANCHE_BACKDROP_START_X || x >= WINTER_AVALANCHE_BACKDROP_END_X) return 0;
+  const rising = x <= WINTER_AVALANCHE_BACKDROP_PEAK_X;
+  const segStart = rising ? WINTER_AVALANCHE_BACKDROP_START_X : WINTER_AVALANCHE_BACKDROP_PEAK_X;
+  const segEnd = rising ? WINTER_AVALANCHE_BACKDROP_PEAK_X : WINTER_AVALANCHE_BACKDROP_END_X;
+  const t = (x - segStart) / (segEnd - segStart);
+  const eased = winterAvalancheSmootherstep(t);
+  return rising ? WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * eased : WINTER_AVALANCHE_BACKDROP_PEAK_HEIGHT * (1 - eased);
+}
+
+// a big soft looming peak drawn behind everything, its own taller/offset
+// profile (see above) and extending well past the top of the canvas --
+// "walk past a large hill you cant see top of" is the whole point, so
+// this is deliberately NOT scaled to fit the screen. Drawn at a slightly
+// slower parallax factor than the walkable ground itself so it reads as
+// further back/bigger, same depth trick the mid treeline already uses.
 function drawWinterAvalancheBackdrop(camX) {
-  const STEPS = 20;
-  const zoneStart = WINTER_AVALANCHE_START_X - 200;
-  const zoneEnd = zoneStart + WINTER_AVALANCHE_WIDTH + 400;
+  const STEPS = 26;
+  const zoneStart = WINTER_AVALANCHE_BACKDROP_START_X;
+  const zoneEnd = WINTER_AVALANCHE_BACKDROP_END_X;
   // CONFIRMED BUG FIX ("hill dissappears/reappears when should already be
   // in view"): this used to cull based only on the PEAK's distance from
   // the camera, but the backdrop spans the hill's entire ~900px+ width --
@@ -71788,7 +71860,7 @@ function drawWinterAvalancheBackdrop(camX) {
   ctx.moveTo(zoneStart - camX * 0.85, gy + 40);
   for (let s = 0; s <= STEPS; s++) {
     const x = zoneStart + (s / STEPS) * (zoneEnd - zoneStart);
-    const h = winterAvalancheHillHeightAt(x) * 2.35;
+    const h = winterAvalancheBackdropHeightAt(x);
     const sx = x - camX * 0.85;
     const sy = gy - h - 260; // pushed up well past the canvas top -- the summit is never meant to be reached by eye
     ctx.lineTo(sx, sy);
@@ -71884,31 +71956,10 @@ function drawWinterAvalancheHill(camX) {
   ctx.stroke();
 }
 
-// a small dust-puff telegraph at a snowball's spawn point before it
-// actually starts rolling -- "read it, then react" window, same idea as
-// the icicle pocket's own drip warning
-function drawWinterAvalancheTelegraph(camX, b, tFrac) {
-  const sx = b.x - camX;
-  const sy = gy - winterAvalancheHillHeightAt(b.x) - 6;
-  const grow = 0.4 + tFrac * 0.9;
-  ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - tFrac * 0.4)})`;
-  for (let i = 0; i < 4; i++) {
-    const ang = (i / 4) * Math.PI * 2 + b.spawnedAt * 0.01;
-    const r = 10 * grow;
-    ctx.beginPath();
-    ctx.ellipse(sx + Math.cos(ang) * r, sy - Math.abs(Math.sin(ang)) * r * 0.6, 4 * grow, 3 * grow, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
 function drawWinterAvalancheSnowballs(camX) {
   const now = performance.now();
   winterAvalancheSnowballs.forEach(b => {
     const age = now - b.spawnedAt;
-    if (age < WINTER_AVALANCHE_TELEGRAPH_MS) {
-      drawWinterAvalancheTelegraph(camX, b, age / WINTER_AVALANCHE_TELEGRAPH_MS);
-      return;
-    }
     const radius = b.size === "big" ? WINTER_AVALANCHE_BIG_RADIUS : WINTER_AVALANCHE_SMALL_RADIUS;
     const sx = b.x - camX;
     const groundSy = gy - winterAvalancheHillHeightAt(b.x) - radius;
@@ -71918,8 +71969,7 @@ function drawWinterAvalancheSnowballs(camX) {
     // subset of balls (picked once at spawn) hop as they roll instead of
     // staying glued to the slope -- purely a visual bob, the ground-height
     // collision check is untouched by it.
-    const rollAge = age - WINTER_AVALANCHE_TELEGRAPH_MS;
-    const bouncePhase = (rollAge % 420) / 420;
+    const bouncePhase = (age % 420) / 420;
     const bounceOffset = b.bouncy ? Math.abs(Math.sin(bouncePhase * Math.PI)) * radius * 0.6 : 0;
     const sy = groundSy - bounceOffset;
 
