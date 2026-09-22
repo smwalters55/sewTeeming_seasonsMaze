@@ -5613,6 +5613,30 @@ function applyPhysics(){
     if (Math.abs(winterOwlBranchTiltAngle) < 0.01) winterOwlBranchTiltAngle = 0;
   }
 
+  // CONFIRMED NEW FEATURE (the stomp-to-reset snowball -- see
+  // WINTER_AVALANCHE_RESET_BALL_X's own comment): top-landing collision,
+  // same shape as every other perch on this hill, but landing on it (only
+  // once nothing's already pending) is itself the trigger -- no separate
+  // space-press needed, the stomp IS the interaction.
+  if (currentScene === "winter" && !winterAvalancheResetPendingAt) {
+    const ballTopY = winterAvalancheResetBallTopY(WINTER_AVALANCHE_RESET_BALL_X);
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > WINTER_AVALANCHE_RESET_BALL_X - WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH &&
+      player.x < WINTER_AVALANCHE_RESET_BALL_X + WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH &&
+      playerBottom <= ballTopY &&
+      playerBottom >= ballTopY - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = ballTopY;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      winterAvalancheResetSmashT = 1;
+      winterAvalancheResetPendingAt = performance.now();
+    }
+  }
+
   // CONFIRMED CHANGE ("some slick platforms that have cameray follow as
   // well so it's both high and wide ish"): plain top-landing collision,
   // same shape as sandbox's own block-pile steps -- ordinary single/
@@ -72197,6 +72221,50 @@ const WINTER_AVALANCHE_HOP_PLATFORMS = [
 });
 WINTER_SLICK_PLATFORMS.push(...WINTER_AVALANCHE_HOP_PLATFORMS);
 
+// CONFIRMED NEW FEATURE ("i want a lever like the rushing river where you
+// can like jump on a snow ball or something, have a visual animation of
+// it smashing down, that then brings you back to the strat of the
+// snowball mountain range"): same underlying idea/payoff as the rushing
+// river's own return lever (FOREST_FLOAT_RETURN_LEVER_X) -- a "finished
+// the course, here's a fast way back to run it again" reward sitting past
+// the real end of the run -- but the interaction itself is different on
+// purpose, per the direct ask: not a walk-up-and-press-space lever, a
+// stomp. A big stationary packed-snowball perched on its own little
+// mound just past WINTER_AVALANCHE_END_X; landing on TOP of it (falling
+// onto it from above, same top-landing shape every other hill perch here
+// uses) smashes it flat and, after a beat for that animation to actually
+// read, sends the player back to the base of the hill -- same two-step
+// "arm it, then resolve after a short delay" structure as
+// forestFloatReturnPendingAt, just triggered by a stomp instead of space.
+const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X - 140;
+const WINTER_AVALANCHE_RESET_BALL_RADIUS = 46;
+const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 30;
+const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 44;
+let winterAvalancheResetSmashT = 0; // 0 = round/whole, 1 = fully smashed flat; eases up fast on stomp, back down to 0 once the reset actually fires
+let winterAvalancheResetPendingAt = 0; // 0 = no pending reset; else the performance.now() timestamp it was stomped at
+const WINTER_AVALANCHE_RESET_DELAY_MS = 550;
+function winterAvalancheResetBallTopY(x) {
+  return winterAvalancheHillHeightAt(x) + WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT + WINTER_AVALANCHE_RESET_BALL_RADIUS * 2;
+}
+function updateWinterAvalancheResetBall(deltaTime) {
+  if (winterAvalancheResetSmashT > 0 && !winterAvalancheResetPendingAt) {
+    winterAvalancheResetSmashT = Math.max(0, winterAvalancheResetSmashT - deltaTime * 1.4);
+  }
+  if (winterAvalancheResetPendingAt && performance.now() - winterAvalancheResetPendingAt >= WINTER_AVALANCHE_RESET_DELAY_MS) {
+    cameraX = Math.max(0, WINTER_AVALANCHE_START_X - 200);
+    cameraY = 0;
+    player.x = WINTER_AVALANCHE_START_X - 60;
+    player.y = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.usedDoubleJump = false;
+    // fresh hazard state for the re-run, same "no sticky flags carried
+    // across a re-approach" the near-side walk-out already relies on
+    winterAvalancheSnowballs = [];
+    winterAvalancheResetPendingAt = 0;
+  }
+}
+
 // CONFIRMED NEW FEATURE, the ball-behavior half of the hop platforms
 // above ("makes the balls behave dif on the mountain range"): a ball
 // crossing under one gets knocked into a real deflected bounce -- bigger
@@ -73092,6 +73160,118 @@ function drawWinterAvalancheSnowballs(camX) {
     ctx.fill();
     ctx.restore();
   });
+}
+
+// the stomp-to-reset snowball -- see WINTER_AVALANCHE_RESET_BALL_X's own
+// comment for the feature. Squashes flat (driven by
+// winterAvalancheResetSmashT, 0=round/1=flat) the instant it's stomped,
+// throws a one-shot chunk burst (purely a function of elapsed time since
+// winterAvalancheResetPendingAt, same "no persisted particle array" trick
+// drawWinterAvalancheHitFlash below already uses), then eases back round
+// once the reset has actually fired and the timestamp clears. A small
+// looping arrow hovers above it at rest -- same "give it real identity
+// through its own shape/motif instead of a text sign" approach the hop
+// platforms took, so this reads as "hop on me" without needing a sign.
+function drawWinterAvalancheResetBall(camX) {
+  const x = WINTER_AVALANCHE_RESET_BALL_X;
+  const sx = x - camX;
+  if (sx < -80 || sx > canvas.width + 80) return;
+  const groundH = winterAvalancheHillHeightAt(x);
+  const moundTopY = gy - groundH - WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT;
+
+  // the mound it rests on
+  ctx.fillStyle = "#eef5f9";
+  ctx.beginPath();
+  ctx.ellipse(sx, moundTopY + 6, 60, WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(150,175,195,0.35)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const smashT = winterAvalancheResetSmashT;
+  const radius = WINTER_AVALANCHE_RESET_BALL_RADIUS;
+  // squash-and-widen toward a flattened disc as smashT rises
+  const scaleY = 1 - smashT * 0.72;
+  const scaleX = 1 + smashT * 0.5;
+  const ballCy = moundTopY - radius * scaleY;
+
+  ctx.save();
+  ctx.translate(sx, ballCy);
+  ctx.scale(scaleX, scaleY);
+  const BUMP_PTS = 9;
+  const bumpPath = new Path2D();
+  for (let i = 0; i <= BUMP_PTS; i++) {
+    const ang = (i / BUMP_PTS) * Math.PI * 2;
+    const bumpR = radius * (0.88 + pseudoRandom(4200 + i) * 0.22);
+    const px = Math.cos(ang) * bumpR;
+    const py = Math.sin(ang) * bumpR;
+    if (i === 0) bumpPath.moveTo(px, py); else bumpPath.lineTo(px, py);
+  }
+  bumpPath.closePath();
+  ctx.fillStyle = "#ffffff";
+  ctx.fill(bumpPath);
+  ctx.strokeStyle = "rgba(95,120,145,0.85)";
+  ctx.lineWidth = 2 / Math.max(scaleX, scaleY);
+  ctx.stroke(bumpPath);
+  ctx.save();
+  ctx.clip(bumpPath);
+  for (let i = 0; i < 3; i++) {
+    const pseed = 4300 + i * 11.3;
+    const pang = pseudoRandom(pseed) * Math.PI * 2;
+    const pdist = radius * (0.15 + pseudoRandom(pseed + 1) * 0.45);
+    const px = Math.cos(pang) * pdist;
+    const py = Math.sin(pang) * pdist;
+    const pr = radius * (0.22 + pseudoRandom(pseed + 2) * 0.2);
+    const lit = pseudoRandom(pseed + 3) > 0.45;
+    ctx.fillStyle = lit ? "rgba(255,255,255,0.55)" : "rgba(120,145,170,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(px, py, pr, pr * 0.75, pang, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.restore();
+
+  // one-shot chunk burst right at the moment of the stomp
+  if (winterAvalancheResetPendingAt) {
+    const elapsed = performance.now() - winterAvalancheResetPendingAt;
+    if (elapsed >= 0 && elapsed < 420) {
+      const t = elapsed / 420;
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2 + 0.4;
+        const dist = t * 55;
+        const cx = sx + Math.cos(ang) * dist;
+        const cy = moundTopY - radius * 0.3 + Math.sin(ang) * dist * 0.5 + t * t * 40;
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6 * (1 - t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // a gentle looping arrow hovering above it at rest, inviting the stomp
+  // without needing a text sign
+  if (smashT < 0.05 && !winterAvalancheResetPendingAt) {
+    const bob = Math.sin(performance.now() * 0.0022) * 5;
+    const ay = ballCy - radius * 1.7 + bob;
+    ctx.strokeStyle = "rgba(120,170,200,0.75)";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(sx, ay, 13, Math.PI * 0.15, Math.PI * 1.65);
+    ctx.stroke();
+    // arrowhead
+    const headAng = Math.PI * 1.65;
+    const hx = sx + Math.cos(headAng) * 13, hy = ay + Math.sin(headAng) * 13;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx - 7, hy - 3);
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx - 2, hy - 8);
+    ctx.stroke();
+  }
 }
 
 // a brief snow-burst flash right where the player got clipped -- purely a
@@ -75478,6 +75658,7 @@ function drawWinterScene(camX) {
   // above ground-level scenery
   drawWinterAvalancheSnowballs(camX);
   drawWinterAvalancheHitFlash(camX);
+  drawWinterAvalancheResetBall(camX);
 
   // quiet breather stretch just past the icicle pocket -- a few small
   // fractal snowflakes drifting down, distinct from the general ambient snow
@@ -75506,6 +75687,7 @@ function updateWinterScene(deltaTime) {
   updateWinterSnow(deltaTime);
   updateWinterBreatherSnowflakes(deltaTime);
   updateWinterAvalanche(deltaTime);
+  updateWinterAvalancheResetBall(deltaTime);
 
   // WINTER ICE CLIMB -- grip decay. A pure time check (not position/
   // gravity), so it lives here rather than in applyPhysics -- once a held
