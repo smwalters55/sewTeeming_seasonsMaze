@@ -70083,6 +70083,40 @@ if (currentScene === "pool") {
   ctx.restore();
 }
 
+// winter front-tree occlusion on the avalanche hill -- same "redraw over
+// the player from this shared post-player section" technique as the
+// peanut vine/pool loop cases above. CONFIRMED BUG FIX ("why can i still
+// go in front of this tree while im on the hill behind it"): a chunk of
+// WINTER_FRONT_TREES fall within the avalanche hill's own x-range (front
+// trees are generated across the whole pre-climb stretch, which the hill
+// sits inside, not just before it) -- but they're drawn at the flat
+// ground baseline (gy) while the player standing on the hill's own real
+// sloped terrain there is elevated well above flat ground. Climbing the
+// hill near one of these trees lifts the player's on-screen position up
+// past the tree's canopy, and since the player always draws last, it
+// painted over the tree instead of staying behind it, even though on the
+// actual hill the tree is the thing nearer the camera. Only trees really
+// rooted in the hill's own footprint are candidates, and only once the
+// player is meaningfully off flat ground -- standing at true ground
+// level (player.y near 0) never needs this, a real height above it is
+// what puts the player up inside/behind the canopy.
+if (currentScene === "winter") {
+  const feetXHillOcclude = player.x + player.width / 2;
+  if (player.y > 15) {
+    WINTER_FRONT_TREES.forEach(t => {
+      if (t.x < WINTER_AVALANCHE_START_X || t.x > WINTER_AVALANCHE_END_X) return;
+      const halfSpan = t.hitHalfWidth + 26; // a little wider than the collision footprint -- the drawn canopy reads visually wider than its own hit box
+      if (Math.abs(feetXHillOcclude - t.x) > halfSpan) return;
+      const sx = t.x - camX;
+      if (sx < -60 || sx > canvas.width + 60) return;
+      ctx.save();
+      ctx.translate(0, cameraY);
+      drawWinterPine(sx, gy, t.scale, t.snowy, t.seed);
+      ctx.restore();
+    });
+  }
+}
+
 // pool dive splash -- droplets + ripple, drawn regardless of which scene
 // is currently showing (spans the forest->pool cut mid-splash, see
 // updatePoolDive's own comment). The functions themselves are no-ops once
@@ -71073,20 +71107,29 @@ function getWinterOwlTreeBranchGeom() {
   const canopyBaseOff = -trunkH + 4 * WINTER_OWL_TREE_SCALE; // canopyBase = gy + canopyBaseOff
   const totalH = 78 * WINTER_OWL_TREE_SCALE;
 
+  // CONFIRMED BUGFIX ("why cant i land on the stick the owl is on"): the
+  // landing collision above was real, but these three fractions placed the
+  // branches way higher up the tree than the player can actually jump --
+  // measured apex is ~96px on a single jump and ~134px on a double jump, so
+  // the old 0.66/0.36/0.86 fractions put the main perch at ~211px (not even
+  // reachable with a double jump) and branch3 at ~248px (nowhere close).
+  // Lowered all three while keeping their original relative order
+  // (branch2 lowest, perch in the middle, branch3 the highest/hardest),
+  // each now comfortably inside single- or double-jump reach with margin.
   const perchBaseXOff = -6;
-  const perchBaseYOff = canopyBaseOff - totalH * 0.66;
+  const perchBaseYOff = canopyBaseOff - totalH * 0.22;
   const perch = {
     baseXOff: perchBaseXOff, baseYOff: perchBaseYOff,
     tipXOff: perchBaseXOff + WINTER_OWL_BRANCH_DX, tipYOff: perchBaseYOff + WINTER_OWL_BRANCH_DY,
     width: 5, landHalfWidth: 22
   };
-  const branch2BaseXOff = 5, branch2BaseYOff = canopyBaseOff - totalH * 0.36;
+  const branch2BaseXOff = 5, branch2BaseYOff = canopyBaseOff - totalH * 0.10;
   const branch2 = {
     baseXOff: branch2BaseXOff, baseYOff: branch2BaseYOff,
     tipXOff: branch2BaseXOff + 52, tipYOff: branch2BaseYOff - 14,
     width: 3.4, landHalfWidth: 16
   };
-  const branch3BaseXOff = -4, branch3BaseYOff = canopyBaseOff - totalH * 0.86;
+  const branch3BaseXOff = -4, branch3BaseYOff = canopyBaseOff - totalH * 0.33;
   const branch3 = {
     baseXOff: branch3BaseXOff, baseYOff: branch3BaseYOff,
     tipXOff: branch3BaseXOff - 34, tipYOff: branch3BaseYOff - 9,
@@ -72022,25 +72065,45 @@ function winterAvalancheHillHeightAt(x) {
 // CONFIRMED NEW FEATURE ("lets do like 2 or 3 little things to just hop up
 // on and its a lil icy slippery that also makes the balls behave dif on
 // the mountain range"): a few small icy outcrops on the hill itself, each
-// a real jump above the local terrain, positioned as a fraction along the
-// zone so they scale automatically if the hill's own width/geometry ever
-// changes again. Reuses the existing slick-platform system wholesale
-// (WINTER_SLICK_PLATFORMS/winterSlickPlatformX/drawWinterSlickPlatform,
-// already built for the earlier ice-spike climb) rather than writing a
-// second one from scratch -- that system's collision, drift-carry skate
-// momentum, and visuals all already deliver exactly "icy slippery to
-// stand on," for free, just by appending entries to its array. The only
-// genuinely new part is the ball-side behavior below. Heights are each
-// platform's own LOCAL terrain height (not a flat number), so they sit a
-// real jump above wherever they actually are on the hill regardless of
-// the ripple terrain under them.
+// a real jump above the local terrain. Reuses the existing slick-platform
+// system wholesale (WINTER_SLICK_PLATFORMS/winterSlickPlatformX/
+// drawWinterSlickPlatform, already built for the earlier ice-spike climb)
+// for collision, drift-carry skate momentum, and the base visual -- that
+// part still just works by appending entries to its array. Heights are
+// each platform's own LOCAL terrain height (not a flat number), so they
+// sit a real jump above wherever they actually are on the hill regardless
+// of the ripple terrain under them.
+//
+// CONFIRMED REDESIGN ("i just like why. as is they feel like leftover/
+// lazy mistake or something" -- "give them actual identity, let's try
+// it"): these used to sit at three generic xT fractions (0.30/0.58/0.80)
+// picked for the old, much shorter hill and never revisited through the
+// false summit/ridge/second-rise work -- three identical icy rectangles
+// with no reason to be exactly where they were. Repositioned onto the
+// hill's own named features instead of arbitrary fractions, each with its
+// own role rather than being three copies of "a thing to hop on":
+// - REST: a calm shelf early in the ascent, well before the ridge's own
+//   jump-required step -- a breather, not a shortcut past it.
+// - SUMMIT: sits right at the false summit's own local peak (see
+//   WINTER_AVALANCHE_FALSE_SUMMIT_CENTER_T) -- the resting perch for the
+//   "you think this is the top" moment, not just incidentally nearby it.
+// - LAUNCH: on the descending second rise (see
+//   WINTER_AVALANCHE_SECOND_RISE_CENTER_T), canted for the fast-descent
+//   feel instead of sitting flat like the other two.
+// Left the ridge step itself alone on purpose -- that obstacle already
+// has its own tuned jump-required mechanic (see the RIDGE WALL block),
+// and a platform easing the approach to it would undercut that rather
+// than add identity.
 const WINTER_AVALANCHE_HOP_PLATFORMS = [
-  { xT: 0.30, hopAbove: 78, width: 110, driftAmp: 22, driftSpeed: 0.0013, driftPhase: 1.1 },
-  { xT: 0.58, hopAbove: 82, width: 100, driftAmp: 26, driftSpeed: 0.0011, driftPhase: 2.6 },
-  { xT: 0.80, hopAbove: 74, width: 120, driftAmp: 18, driftSpeed: 0.0015, driftPhase: 4.0 }
+  { role: "rest", t: 0.20, onAscent: true, hopAbove: 78, width: 120, driftAmp: 14, driftSpeed: 0.0009, driftPhase: 1.1 },
+  { role: "summit", t: WINTER_AVALANCHE_FALSE_SUMMIT_CENTER_T, onAscent: true, hopAbove: 66, width: 110, driftAmp: 10, driftSpeed: 0.0006, driftPhase: 2.6 },
+  { role: "launch", t: WINTER_AVALANCHE_SECOND_RISE_CENTER_T, onAscent: false, hopAbove: 84, width: 100, driftAmp: 30, driftSpeed: 0.0017, driftPhase: 4.0 }
 ].map(p => {
-  const x = WINTER_AVALANCHE_START_X + p.xT * WINTER_AVALANCHE_WIDTH;
+  const x = p.onAscent
+    ? WINTER_AVALANCHE_START_X + p.t * (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X)
+    : WINTER_AVALANCHE_PEAK_X + p.t * (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
   return {
+    role: p.role,
     x: x - p.width / 2,
     width: p.width,
     height: winterAvalancheHillHeightAt(x) + p.hopAbove,
@@ -75038,6 +75101,75 @@ function drawWinterSlickPlatform(camX, p, now) {
   }
 }
 
+// CONFIRMED REDESIGN ("give them actual identity, let's try it"): the
+// three avalanche hop platforms share drawWinterSlickPlatform's base
+// shape/shading above (still the right icy-sliver look, no reason to
+// reinvent that), but each now gets its own small accent on top so they
+// read as three distinct, purposeful spots instead of copies of the same
+// object -- see WINTER_AVALANCHE_HOP_PLATFORMS' own comment for what each
+// role means.
+function drawWinterAvalancheHopPlatformAccent(camX, p, now) {
+  const px = winterSlickPlatformX(p, now) - camX;
+  if (px < -p.width - 20 || px > canvas.width + 20) return;
+  const topY = gy - p.height;
+  const cx = px + p.width / 2;
+  const seed = p.x * 0.02;
+
+  if (p.role === "rest") {
+    // a small tuft of frost-fern settled on top -- reads as an
+    // unhurried, safe little spot rather than a hazard-adjacent perch.
+    for (let i = 0; i < 3; i++) {
+      const fx = cx + (i - 1) * 10;
+      const fseed = seed + i * 3.3;
+      ctx.strokeStyle = "rgba(230,245,252,0.85)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(fx, topY - 2);
+      ctx.lineTo(fx - 3, topY - 10 - pseudoRandom(fseed) * 4);
+      ctx.moveTo(fx, topY - 2);
+      ctx.lineTo(fx + 3, topY - 9 - pseudoRandom(fseed + 1) * 4);
+      ctx.moveTo(fx, topY - 2);
+      ctx.lineTo(fx, topY - 12 - pseudoRandom(fseed + 2) * 3);
+      ctx.stroke();
+    }
+  } else if (p.role === "summit") {
+    // a tiny stacked-pebble cairn -- a real "summit marker" silhouette,
+    // plus a slow glint so it reads as the vista/resting moment at the
+    // false summit's own local peak, not just another ledge.
+    const stones = [ { w: 18, h: 8 }, { w: 13, h: 7 }, { w: 8, h: 6 } ];
+    let stackY = topY - 1;
+    stones.forEach((s, i) => {
+      stackY -= s.h * 0.8;
+      ctx.fillStyle = i === stones.length - 1 ? "rgba(235,248,255,0.95)" : "rgba(195,220,235,0.9)";
+      ctx.beginPath();
+      ctx.ellipse(cx, stackY, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(150,185,210,0.6)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+    const glintT = (Math.sin(now * 0.0016 + seed) + 1) / 2;
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + glintT * 0.45})`;
+    ctx.beginPath();
+    ctx.arc(cx + 5, stackY - 3, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.role === "launch") {
+    // canted speed-streaks trailing off the back -- the descent's own
+    // fast-and-loose feel, a launch off the second rise rather than a
+    // flat spot to stand on.
+    for (let i = 0; i < 3; i++) {
+      const sy = topY + 3 + i * 4;
+      const len = 18 - i * 3;
+      ctx.strokeStyle = `rgba(210,232,245,${0.75 - i * 0.15})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px - 4, sy);
+      ctx.lineTo(px - 4 - len, sy + len * 0.35);
+      ctx.stroke();
+    }
+  }
+}
+
 function drawWinterScene(camX) {
   ctx.save();
 
@@ -75154,7 +75286,10 @@ function drawWinterScene(camX) {
 
   // slick platform climb, then the rainbow icicle pocket just past it
   const nowForWinterProps = performance.now();
-  WINTER_SLICK_PLATFORMS.forEach(p => drawWinterSlickPlatform(camX, p, nowForWinterProps));
+  WINTER_SLICK_PLATFORMS.forEach(p => {
+    drawWinterSlickPlatform(camX, p, nowForWinterProps);
+    if (p.avalancheHop) drawWinterAvalancheHopPlatformAccent(camX, p, nowForWinterProps);
+  });
   // watery ice drawn on the ground before the overhang/icicles above it,
   // same draw ordering as the spike hazards relative to the treeline --
   // ground-level hazard first, then whatever's visually above/behind it.
