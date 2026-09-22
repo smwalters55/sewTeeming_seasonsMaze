@@ -2983,9 +2983,27 @@ function handleInput(){
     // closes that loop.
     const wateryHereNow = currentScene === "winter" && !player.jumping &&
       WINTER_WATERY_ICE_ZONES.some(z => { const fx = player.x + player.width / 2; return fx > z.x && fx < z.x + z.width; });
+    // CONFIRMED BUGFIX ("i keep getting hit again just barely while
+    // woozy"): woozySpeedFactor used to apply here even while airborne,
+    // so a jump timed exactly like any normal, safe dodge covered far
+    // less horizontal ground mid-air -- proven directly (flat ground,
+    // identical 150px reaction distance): 15/15 clean dodges at normal
+    // speed, 15/15 hits woozy, every time, no exceptions. That's not a
+    // timing-feel problem, it's the jump itself literally falling short
+    // of where it needs to land. The invuln-window comment on
+    // winterAvalancheHitPlayer already says the intent was "enough time
+    // to ... either dodge or just outrun the woozy slow" once it passes
+    // -- so a dodge silently failing well after invuln ends was never
+    // the design, just an unnoticed side effect of one shared speed
+    // factor covering both walking AND jumping. Excluding jumping keeps
+    // the woozy slow doing its real job (sluggish ground movement, easier
+    // for a chase ball to catch you from behind, the sway wobble) without
+    // quietly sabotaging the one tool -- a jump -- that's supposed to
+    // still work if you time it.
     if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1 && !wateryHereNow) {
-      if (keys.left) { player.x -= player.speed * woozySpeedFactor; player.facing = -1; }
-      if (keys.right) { player.x += player.speed * woozySpeedFactor; player.facing = 1; }
+      const groundSpeedFactor = player.jumping ? 1 : woozySpeedFactor;
+      if (keys.left) { player.x -= player.speed * groundSpeedFactor; player.facing = -1; }
+      if (keys.right) { player.x += player.speed * groundSpeedFactor; player.facing = 1; }
     }
 
     // CONFIRMED BUG FIX ("jump forgiveness is too high... tester went up
@@ -19383,7 +19401,13 @@ if (DEBUG_START_SCENE === "forest") {
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  player.x = 3740;
+  // CONFIRMED CHANGE ("also spawn me right in front of snow ball range"):
+  // same TDZ hardcoding as the note above -- WINTER_AVALANCHE_START_X is
+  // a `const` declared much further down, so it can't be referenced from
+  // this top-level init block. Its actual value is 5000; spawning a
+  // little before that (4850) gives a short walk-up instead of dropping
+  // dead-center in the trigger zone.
+  player.x = 4850;
   player.y = 0;
   addToInventory("shovel");
   addToInventory("windSeed");
@@ -72145,12 +72169,28 @@ function winterAvalancheOutcrop(t, centerT, widthT, height) {
   const localT = (t - lo) / (hi - lo);
   return winterAvalancheOutcropProfile(localT) * height;
 }
+// CONFIRMED BUGFIX (found via the "run some tests ... percentage success
+// variability" bot testing): these outcrops raise the REAL ground height
+// (winterAvalancheHillHeightAt feeds both terrain and the snowball
+// clear-height check), and the original narrow width packed a 95-110px
+// rise into just ~113-103px of the 30%-rise portion of their profile --
+// a grade around 0.8-1.1. A snowball's clear-height check is relative to
+// local ground, but a jump's horizontal speed carries the player up that
+// same rising slope only slightly slower than they gain height, so by
+// the time they reach their jump's absolute apex the ground has climbed
+// most of the way to meet them -- measured relative clearance mid-climb
+// dropped to ~27px, well under even the small-ball 55px requirement.
+// Bots (and real players) were getting hit almost every single time a
+// ball rolled over the steep part of either outcrop, regardless of
+// timing skill -- not a dodge-skill issue, a genuinely unclearable
+// slope. Widened + shortened so the rise is a gentle enough grade for a
+// normal jump to keep pace with, while keeping a real (smaller) shelf.
 const WINTER_AVALANCHE_OUTCROP_ASCEND_CENTER_T = 0.30; // fraction along START_X->PEAK_X, between the rest platform (0.20) and the ridge step (0.45)
-const WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T = 0.045;
-const WINTER_AVALANCHE_OUTCROP_ASCEND_HEIGHT = 95;
+const WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T = 0.08;
+const WINTER_AVALANCHE_OUTCROP_ASCEND_HEIGHT = 60;
 const WINTER_AVALANCHE_OUTCROP_DESCEND_CENTER_T = 0.40; // fraction along PEAK_X->END_X, well clear of the second rise (0.86)
-const WINTER_AVALANCHE_OUTCROP_DESCEND_WIDTH_T = 0.05;
-const WINTER_AVALANCHE_OUTCROP_DESCEND_HEIGHT = 110;
+const WINTER_AVALANCHE_OUTCROP_DESCEND_WIDTH_T = 0.09;
+const WINTER_AVALANCHE_OUTCROP_DESCEND_HEIGHT = 70;
 function winterAvalancheOutcropAscendAt(t) {
   return winterAvalancheOutcrop(t, WINTER_AVALANCHE_OUTCROP_ASCEND_CENTER_T, WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T, WINTER_AVALANCHE_OUTCROP_ASCEND_HEIGHT);
 }
@@ -72283,6 +72323,14 @@ function updateWinterAvalancheResetBall(deltaTime) {
     // fresh hazard state for the re-run, same "no sticky flags carried
     // across a re-approach" the near-side walk-out already relies on
     winterAvalancheSnowballs = [];
+    // CONFIRMED BUGFIX (found via bot-testing the reset lever): without
+    // this, the spawn countdown just kept ticking down from wherever it
+    // was on the run that just ended, so a player who reaches the
+    // trigger zone again a few seconds later (the normal walk from the
+    // reset point) could get a ball thrown at them the instant they
+    // cross it, well before the usual ~1.1-1.3s warm-up every other
+    // approach to the hill gets.
+    winterAvalancheSpawnTimer = 1300;
     winterAvalancheResetPendingAt = 0;
   }
 }
@@ -72642,7 +72690,28 @@ function updateWinterAvalanche(deltaTime) {
         // the ball's -- the ball is still uphill of the player when this check
         // window first opens, so using its local hill height inflated the
         // required jump height by however much the slope rises over that gap
-        if (player.y < winterAvalancheHillHeightAt(feetX) + clearHeight) {
+        //
+        // CONFIRMED BUGFIX (found via the "run some tests ... percentage
+        // success variability" bot testing): a single point-sample at
+        // feetX still isn't enough on any steep local rise (an outcrop,
+        // the false summit, or just a spiky bit of the ripple texture) --
+        // a jumping player's horizontal speed carries them up the slope
+        // nearly as fast as they gain height, so their ABSOLUTE apex
+        // lands right where the ground has already climbed to meet them,
+        // eating almost all of their real clearance (measured as low as
+        // ~27px of relative lift on a steep patch, versus the 55-100px a
+        // dodge actually needs). Sampling the ground a little to each
+        // side and using the LOWEST of the three -- i.e. judging
+        // clearance against wherever the player was realistically
+        // standing/launching from nearby, not the exact spike under
+        // their feet at this instant -- keeps any one steep, narrow rise
+        // from silently swallowing a genuinely well-timed jump.
+        const groundHere = Math.min(
+          winterAvalancheHillHeightAt(feetX - 24),
+          winterAvalancheHillHeightAt(feetX),
+          winterAvalancheHillHeightAt(feetX + 24)
+        );
+        if (player.y < groundHere + clearHeight) {
           b.hit = true;
           winterAvalancheHitPlayer();
         }
