@@ -72236,10 +72236,25 @@ WINTER_SLICK_PLATFORMS.push(...WINTER_AVALANCHE_HOP_PLATFORMS);
 // read, sends the player back to the base of the hill -- same two-step
 // "arm it, then resolve after a short delay" structure as
 // forestFloatReturnPendingAt, just triggered by a stomp instead of space.
-const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X - 140;
-const WINTER_AVALANCHE_RESET_BALL_RADIUS = 46;
-const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 30;
-const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 44;
+// CONFIRMED BUG FIX ("i am confused how these supposed to work"): the
+// original sizing (46px radius + a 30px mound) put the landing band
+// almost 122px above local ground -- past what a plain single jump can
+// reach (measured elsewhere in this file at ~96-114px) and only barely
+// under a full double jump's own apex, so hitting the 14px-tall landing
+// band required near-frame-perfect double-jump timing for what was
+// supposed to be an easy, fun payoff, not a hard optional challenge. It
+// also visually floated well above the player with nothing obviously
+// leading up to it. Shrunk to a real single-jump target instead --
+// comfortably under a plain jump's apex with real margin for error.
+// CONFIRMED TUNING ("push out the snoball smash thing a little to the
+// right. make it smaller"): moved closer to the true end of the hill and
+// shrunk further -- a smaller, clearly-off-to-the-side object reads more
+// like a deliberate little extra than something you're expected to
+// stumble into mid-descent.
+const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X - 60;
+const WINTER_AVALANCHE_RESET_BALL_RADIUS = 24;
+const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 20;
+const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 36;
 let winterAvalancheResetSmashT = 0; // 0 = round/whole, 1 = fully smashed flat; eases up fast on stomp, back down to 0 once the reset actually fires
 let winterAvalancheResetPendingAt = 0; // 0 = no pending reset; else the performance.now() timestamp it was stomped at
 const WINTER_AVALANCHE_RESET_DELAY_MS = 550;
@@ -73182,11 +73197,42 @@ function drawWinterAvalancheResetBall(camX) {
   // the mound it rests on
   ctx.fillStyle = "#eef5f9";
   ctx.beginPath();
-  ctx.ellipse(sx, moundTopY + 6, 60, WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT, 0, 0, Math.PI * 2);
+  ctx.ellipse(sx, moundTopY + 6, 44, WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "rgba(150,175,195,0.35)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
+
+  // CONFIRMED BUG FIX ("how did we show that the rushingriver lever was
+  // for to be being reset at the start of it cus this is way unclear"):
+  // the looping-arrow motif alone didn't read as an instruction, unlike
+  // the river's own return lever, which spells it out on a real wooden
+  // sign (see drawForestFloatReturnSign, "SPACE TO RETURN"). Same sign
+  // language here -- post, plank, monospace lettering -- just worded for
+  // a stomp instead of a space-press.
+  const signX = sx - 46;
+  ctx.strokeStyle = "#5a3e22";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(signX, gy - groundH);
+  ctx.lineTo(signX, gy - groundH - 22);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(signX, gy - groundH - 31);
+  ctx.rotate(0.05);
+  ctx.fillStyle = "#7a5636";
+  ctx.fillRect(-20, -9, 40, 18);
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-20, -9, 40, 18);
+  ctx.fillStyle = "rgba(230,210,170,0.9)";
+  ctx.font = "7px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("HOP ON", 0, -1.5);
+  ctx.fillText("TO RESET", 0, 6.5);
+  ctx.textAlign = "left";
+  ctx.restore();
 
   const smashT = winterAvalancheResetSmashT;
   const radius = WINTER_AVALANCHE_RESET_BALL_RADIUS;
