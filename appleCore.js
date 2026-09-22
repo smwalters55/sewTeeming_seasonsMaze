@@ -70115,6 +70115,35 @@ if (currentScene === "winter") {
       ctx.restore();
     });
   }
+  // CONFIRMED BUG FIX ("the snoballs still go in front ofit instead of
+  // behind it"): the player-vs-tree occlusion just above only ever checks
+  // the PLAYER's own x against each tree, so it never fired for a tree a
+  // snowball happened to be passing near while the player was somewhere
+  // else on the hill -- snowballs are drawn inside drawWinterScene, well
+  // before this shared post-player section, so with nothing re-covering
+  // them here they always painted on top of every tree regardless of
+  // which one was actually nearer the camera. Same redraw-the-tree-again
+  // technique, just keyed to each snowball's own x instead of the
+  // player's. CONFIRMED FOLLOW-UP ("that could be another subtle thing
+  // slighlty hiding balls temporarily behind something"): kept exactly as
+  // wide/generous as the tree's real canopy (no extra widening beyond the
+  // player version's own +26) so this reads as a real, incidental
+  // "ball passes behind a tree for a beat" moment on the low-elevation
+  // stretch of hill these trees actually sit in, not a deliberately
+  // engineered dodge mechanic.
+  winterAvalancheSnowballs.forEach(b => {
+    WINTER_FRONT_TREES.forEach(t => {
+      if (t.x < WINTER_AVALANCHE_START_X || t.x > WINTER_AVALANCHE_END_X) return;
+      const halfSpan = t.hitHalfWidth + 26;
+      if (Math.abs(b.x - t.x) > halfSpan) return;
+      const sx = t.x - camX;
+      if (sx < -60 || sx > canvas.width + 60) return;
+      ctx.save();
+      ctx.translate(0, cameraY);
+      drawWinterPine(sx, gy, t.scale, t.snowy, t.seed);
+      ctx.restore();
+    });
+  });
 }
 
 // pool dive splash -- droplets + ripple, drawn regardless of which scene
@@ -72014,15 +72043,32 @@ function winterAvalancheHillRipple(x) {
 // side -- a smooth bump centered well before the true end so it still
 // tapers back down to a clean 0 by WINTER_AVALANCHE_END_X, same pinch
 // principle as everything else here.
-const WINTER_AVALANCHE_SECOND_RISE_CENTER_T = 0.86; // fraction along PEAK_X->END_X
-const WINTER_AVALANCHE_SECOND_RISE_WIDTH_T = 0.1;
+// CONFIRMED TUNING ("can you make at the end of descent the part a little
+// longer where like you hit that little bump a tiny bit ealirer and habe
+// a slightly longer run off at the end it feels too abrupt rn"): used to
+// be a perfectly symmetric sin bump (same width rising and falling), which
+// meant the run down off it back to WINTER_AVALANCHE_END_X was exactly as
+// short as the climb up it -- right at the very end of the whole hill,
+// that read as an abrupt cutoff rather than a real wind-down. Now
+// asymmetric: the bump's own peak sits a bit earlier (0.78 instead of
+// 0.86) and rises quickly (narrow rise width), but the fall back to 0
+// afterward is stretched out much longer (wide fall width) -- same peak
+// height, same "hit the bump" moment, just a genuinely longer, gentler
+// run-off after it instead of an equally-short mirror of the climb.
+const WINTER_AVALANCHE_SECOND_RISE_CENTER_T = 0.78; // fraction along PEAK_X->END_X
+const WINTER_AVALANCHE_SECOND_RISE_RISE_WIDTH_T = 0.07;
+const WINTER_AVALANCHE_SECOND_RISE_FALL_WIDTH_T = 0.19;
 const WINTER_AVALANCHE_SECOND_RISE_HEIGHT = 230;
 function winterAvalancheSecondRise(t) {
-  const lo = WINTER_AVALANCHE_SECOND_RISE_CENTER_T - WINTER_AVALANCHE_SECOND_RISE_WIDTH_T;
-  const hi = WINTER_AVALANCHE_SECOND_RISE_CENTER_T + WINTER_AVALANCHE_SECOND_RISE_WIDTH_T;
+  const lo = WINTER_AVALANCHE_SECOND_RISE_CENTER_T - WINTER_AVALANCHE_SECOND_RISE_RISE_WIDTH_T;
+  const hi = WINTER_AVALANCHE_SECOND_RISE_CENTER_T + WINTER_AVALANCHE_SECOND_RISE_FALL_WIDTH_T;
   if (t <= lo || t >= hi) return 0;
-  const localT = (t - lo) / (hi - lo);
-  return Math.sin(localT * Math.PI) * WINTER_AVALANCHE_SECOND_RISE_HEIGHT; // smooth 0 -> peak -> 0 bump
+  if (t <= WINTER_AVALANCHE_SECOND_RISE_CENTER_T) {
+    const localT = (t - lo) / (WINTER_AVALANCHE_SECOND_RISE_CENTER_T - lo);
+    return winterAvalancheSmootherstep(localT) * WINTER_AVALANCHE_SECOND_RISE_HEIGHT;
+  }
+  const localT = (t - WINTER_AVALANCHE_SECOND_RISE_CENTER_T) / (hi - WINTER_AVALANCHE_SECOND_RISE_CENTER_T);
+  return (1 - winterAvalancheSmootherstep(localT)) * WINTER_AVALANCHE_SECOND_RISE_HEIGHT;
 }
 // CONFIRMED NEW FEATURE ("i like the real false summit too yes pls"): the
 // same "positive lobe added onto an already-rising base curve" trick as
@@ -72050,6 +72096,42 @@ function winterAvalancheFalseSummit(t) {
   const localT = (t - lo) / (hi - lo);
   return Math.sin(localT * Math.PI) * WINTER_AVALANCHE_FALSE_SUMMIT_HEIGHT;
 }
+// CONFIRMED NEW FEATURE ("what other ways can we make mountain range a lil
+// more interesting" -> "lets sstart w outcropping"): rock outcrops that
+// actually break the smooth snow silhouette, not just another round snow
+// bump like the false summit/second rise above. Same additive-lobe trick
+// as those two, but the shape itself is different on purpose: a fast
+// smootherstep rise, a flat rocky SHELF across the middle, then a fast
+// smootherstep drop -- reads as a real ledge of rock jutting out of the
+// slope instead of a smooth mound, and the flat top means the walk across
+// it has a genuinely different feel (a brief flat rocky stretch) instead
+// of just another slope to keep climbing. One on the ascent (clear of both
+// the rest platform at t=0.20 and the ridge's own jump-required step at
+// t=0.45), one on the descent (clear of the second rise at t=0.86) -- see
+// the rock-facet accent drawn on top of each in drawWinterAvalancheHill.
+function winterAvalancheOutcropProfile(localT) {
+  if (localT <= 0.3) return winterAvalancheSmootherstep(localT / 0.3);
+  if (localT >= 0.7) return winterAvalancheSmootherstep((1 - localT) / 0.3);
+  return 1; // the flat rocky shelf across the middle
+}
+function winterAvalancheOutcrop(t, centerT, widthT, height) {
+  const lo = centerT - widthT, hi = centerT + widthT;
+  if (t <= lo || t >= hi) return 0;
+  const localT = (t - lo) / (hi - lo);
+  return winterAvalancheOutcropProfile(localT) * height;
+}
+const WINTER_AVALANCHE_OUTCROP_ASCEND_CENTER_T = 0.30; // fraction along START_X->PEAK_X, between the rest platform (0.20) and the ridge step (0.45)
+const WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T = 0.045;
+const WINTER_AVALANCHE_OUTCROP_ASCEND_HEIGHT = 95;
+const WINTER_AVALANCHE_OUTCROP_DESCEND_CENTER_T = 0.40; // fraction along PEAK_X->END_X, well clear of the second rise (0.86)
+const WINTER_AVALANCHE_OUTCROP_DESCEND_WIDTH_T = 0.05;
+const WINTER_AVALANCHE_OUTCROP_DESCEND_HEIGHT = 110;
+function winterAvalancheOutcropAscendAt(t) {
+  return winterAvalancheOutcrop(t, WINTER_AVALANCHE_OUTCROP_ASCEND_CENTER_T, WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T, WINTER_AVALANCHE_OUTCROP_ASCEND_HEIGHT);
+}
+function winterAvalancheOutcropDescendAt(t) {
+  return winterAvalancheOutcrop(t, WINTER_AVALANCHE_OUTCROP_DESCEND_CENTER_T, WINTER_AVALANCHE_OUTCROP_DESCEND_WIDTH_T, WINTER_AVALANCHE_OUTCROP_DESCEND_HEIGHT);
+}
 function winterAvalancheHillHeightAt(x) {
   if (x <= WINTER_AVALANCHE_START_X || x >= WINTER_AVALANCHE_END_X) return 0;
   const rising = x <= WINTER_AVALANCHE_PEAK_X;
@@ -72057,8 +72139,8 @@ function winterAvalancheHillHeightAt(x) {
     ? (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X)
     : (x - WINTER_AVALANCHE_PEAK_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
   const base = rising
-    ? WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheAscendingProfile(t) + winterAvalancheFalseSummit(t)
-    : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t)) + winterAvalancheSecondRise(t);
+    ? WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheAscendingProfile(t) + winterAvalancheFalseSummit(t) + winterAvalancheOutcropAscendAt(t)
+    : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t)) + winterAvalancheSecondRise(t) + winterAvalancheOutcropDescendAt(t);
   return Math.max(0, base + winterAvalancheHillRipple(x));
 }
 
@@ -72407,9 +72489,17 @@ function updateWinterAvalanche(deltaTime) {
       // requirement above, this is what makes the descending half
       // genuinely busier instead of just skewing which side the same
       // trickle of balls comes from.
+      // CONFIRMED TUNING ("too much area durinng ascent where no balls
+      // fall"): this 1000-1600ms ascending interval was last tuned back
+      // when PEAK_X sat at 0.4 of the zone width -- since widened to 0.55
+      // (see WINTER_AVALANCHE_PEAK_X), the ascending half is now more than
+      // twice as long as it was when this number was picked, so the same
+      // interval spreads out into real dead stretches with no balls at
+      // all over that much more ground. Tightened to match the descending
+      // side's own already-tuned interval instead of leaving it stale.
       winterAvalancheSpawnTimer = feetX > WINTER_AVALANCHE_PEAK_X
         ? 750 + pseudoRandom(spawnSeed + 2) * 400
-        : 1000 + pseudoRandom(spawnSeed + 2) * 600;
+        : 750 + pseudoRandom(spawnSeed + 2) * 400;
     }
   } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
     // walked back out toward the pool side -- clear the hazard so
@@ -72435,9 +72525,28 @@ function updateWinterAvalanche(deltaTime) {
     // nothing as b.hit here, so a ball that would have connected simply
     // passes through unharmed during the window rather than queuing up
     // to hit the instant it ends.
-    if (!b.hit && performance.now() >= (player.avalancheHitInvulnUntil || 0)) {
+    // CONFIRMED BUGFIX ("maybe i am just relly bad at it but i get hit
+    // constantly both up and down ... can you do some testing on your
+    // end"): a real bot playtest (forced single big-ball approaches,
+    // timed double jumps) turned up a genuine unfairness here, not just a
+    // difficulty complaint. The overlap window (abs(feetX-b.x) <
+    // hitHalfWidth) lasts several frames at these ball speeds, and this
+    // check used to re-run on EVERY one of those frames -- so a player who
+    // timed their jump correctly and was safely above clearHeight on the
+    // FIRST frame of the pass could still get tagged a few frames later if
+    // they were already descending by the time the ball's center actually
+    // lined up with them, even though they genuinely cleared it. That
+    // reads as "I jumped and still got hit" -- because they did jump it,
+    // the window just kept re-rolling against them on the way down.
+    // Now resolved once, on the very first frame the ball's hitbox is
+    // entered: whatever the player's height is at that instant decides
+    // the whole pass, hit or clean, and it's never re-checked -- a
+    // genuinely-timed jump can't be retroactively punished by its own
+    // landing arc.
+    if (!b.checked && performance.now() >= (player.avalancheHitInvulnUntil || 0)) {
       const hitHalfWidth = WINTER_AVALANCHE_HIT_HALF_WIDTH[b.size];
       if (Math.abs(feetX - b.x) < hitHalfWidth) {
+        b.checked = true;
         const clearHeight = b.size === "big" ? WINTER_AVALANCHE_BIG_CLEAR_HEIGHT : WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT;
         // measure clearance against the ground under the PLAYER's own feet, not
         // the ball's -- the ball is still uphill of the player when this check
@@ -72762,7 +72871,74 @@ function drawWinterAvalancheHill(camX) {
     ctx.fill();
   }
 
+  // CONFIRMED NEW FEATURE (outcropping, see winterAvalancheOutcropAscendAt/
+  // DescendAt above): a denser, darker cluster of rock chips right over
+  // each outcrop's own flat shelf, on top of the regular scattered facets
+  // above -- the regular facets are sparse/subtle by design, this makes
+  // the outcrop itself read as a real solid mass of rock, not just a
+  // slightly rockier patch of snow like the rest of the hill's texture.
+  const OUTCROPS = [
+    { centerT: WINTER_AVALANCHE_OUTCROP_ASCEND_CENTER_T, widthT: WINTER_AVALANCHE_OUTCROP_ASCEND_WIDTH_T, rising: true, seedBase: 51000 },
+    { centerT: WINTER_AVALANCHE_OUTCROP_DESCEND_CENTER_T, widthT: WINTER_AVALANCHE_OUTCROP_DESCEND_WIDTH_T, rising: false, seedBase: 52000 }
+  ];
+  OUTCROPS.forEach(o => {
+    const spanX = o.rising ? (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X) : (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
+    const originX = o.rising ? WINTER_AVALANCHE_START_X : WINTER_AVALANCHE_PEAK_X;
+    const loX = originX + (o.centerT - o.widthT) * spanX;
+    const hiX = originX + (o.centerT + o.widthT) * spanX;
+    const CHIP_COUNT = 16;
+    for (let c = 0; c < CHIP_COUNT; c++) {
+      const cseed = o.seedBase + c * 19.3;
+      const cx = loX + pseudoRandom(cseed) * (hiX - loX);
+      const cy = gy - winterAvalancheHillHeightAt(cx) + pseudoRandom(cseed + 1) * 26 - 6;
+      const cr = 20 + pseudoRandom(cseed + 2) * 26;
+      const shade = 95 + pseudoRandom(cseed + 3) * 30;
+      ctx.fillStyle = `rgba(${Math.round(shade + 25)},${Math.round(shade + 15)},${Math.round(shade)},0.5)`;
+      ctx.beginPath();
+      const PTS = 5 + Math.floor(pseudoRandom(cseed + 5) * 3);
+      for (let p = 0; p <= PTS; p++) {
+        const ang = (p / PTS) * Math.PI * 2 + cseed;
+        const rr = cr * (0.7 + pseudoRandom(cseed + 10 + p) * 0.5);
+        const px = (cx - camX) + Math.cos(ang) * rr;
+        const py = cy + Math.sin(ang) * rr * 0.6;
+        if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+
   ctx.restore();
+
+  // jagged rock spikes breaking the ridge line's own silhouette right at
+  // each outcrop -- without this the outcrop is only visible as a color
+  // change under the same smooth curve everything else uses, which reads
+  // as a texture patch rather than an actual rock ledge jutting out.
+  OUTCROPS.forEach(o => {
+    const spanX = o.rising ? (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X) : (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
+    const originX = o.rising ? WINTER_AVALANCHE_START_X : WINTER_AVALANCHE_PEAK_X;
+    const loX = originX + (o.centerT - o.widthT) * spanX;
+    const hiX = originX + (o.centerT + o.widthT) * spanX;
+    const SPIKES = 6;
+    for (let sIdx = 0; sIdx < SPIKES; sIdx++) {
+      const sseed = o.seedBase + 4000 + sIdx * 31.7;
+      const sxWorld = loX + ((sIdx + 0.5) / SPIKES) * (hiX - loX);
+      const baseY = gy - winterAvalancheHillHeightAt(sxWorld);
+      const spikeH = 14 + pseudoRandom(sseed) * 20;
+      const spikeW = 10 + pseudoRandom(sseed + 1) * 10;
+      const sx = sxWorld - camX;
+      ctx.fillStyle = "#8a8078";
+      ctx.beginPath();
+      ctx.moveTo(sx - spikeW * 0.5, baseY + 4);
+      ctx.lineTo(sx + pseudoRandom(sseed + 2) * spikeW * 0.3 - spikeW * 0.15, baseY - spikeH);
+      ctx.lineTo(sx + spikeW * 0.5, baseY + 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(70,65,60,0.4)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  });
 
   // a lit ridge line along the top so the silhouette reads as a real
   // snowy crest, not a flat gradient fill
