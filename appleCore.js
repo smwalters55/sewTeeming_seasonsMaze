@@ -5773,7 +5773,29 @@ function applyPhysics(){
       // not eased in, since the hill's grade can change from one frame
       // to the next as the player walks and there's no single "gotcha
       // this branch" moment to ease from the way the owl branch has.
-      const TILT_SAMPLE = 24;
+      //
+      // CONFIRMED BUGFIX ROUND 2 ("this getting stuck in the hill is still
+      // happening broooo"): the ridge-wall-specific fix above didn't
+      // account for the hill's own ripple texture -- a scan across the
+      // whole walkable slope found ~200 separate x-positions where the
+      // ripple alone (nowhere near the ridge wall) produces a raw slope
+      // steep enough to blow well past the +/-0.32 clamp, some as extreme
+      // as -1.0+ rad before clamping. A narrow 24px sample reads each of
+      // these little bumps almost as a step function -- clamped or not,
+      // the tilt was snapping frame-to-frame between wildly different
+      // angles as the player crossed each one (real trace: +0.18 to -0.06
+      // to -0.32 across a handful of frames), which is exactly what reads
+      // as "jammed/floating" rather than a smooth walk over bumpy ground.
+      // Two changes, kept deliberately independent of the terrain's own
+      // amplitude so the ripple itself is still free to get bumpier later
+      // ("more mountain range") without this regressing again:
+      // 1) widened the sample so it averages across more of a bump's own
+      //    wavelength instead of catching one side of it in isolation --
+      //    softens the raw slope reading without flattening the terrain.
+      // 2) eased toward the target instead of snapping to it every frame
+      //    -- the bumps still come through as real motion, just no longer
+      //    as an instant snap that reads like a collision.
+      const TILT_SAMPLE = 48;
       const hL = winterAvalancheHillHeightAt(feetXHillFinal - TILT_SAMPLE);
       const hR = winterAvalancheHillHeightAt(feetXHillFinal + TILT_SAMPLE);
       const hillSlope = (hR - hL) / (TILT_SAMPLE * 2);
@@ -5792,7 +5814,8 @@ function applyPhysics(){
       // close pass by the wall (walking up before the new slide-back
       // kicks in) still reads as a steep lean, not a corner lifting into
       // the air.
-      winterAvalancheHillTiltAngle = Math.max(-0.32, Math.min(0.32, -hillSlope * 0.7));
+      const targetTilt = Math.max(-0.32, Math.min(0.32, -hillSlope * 0.7));
+      winterAvalancheHillTiltAngle += (targetTilt - winterAvalancheHillTiltAngle) * 0.35;
     } else if (winterAvalancheHillTiltAngle !== 0) {
       // eased back to upright once off the hill entirely, same decay
       // rate the owl branch/bridge tilts use
@@ -70296,7 +70319,15 @@ const WINTER_CONTENT_OFFSET = 380;
 // while and there's real room for the ridge line itself to read as a
 // range (see the ripple terrain in winterAvalancheHillHeightAt below)
 // instead of one hill-shaped bump.
-const WINTER_AVALANCHE_WIDTH = 4600;
+// CONFIRMED CHANGE ("well i want both longer ascent and descent. but deeef
+// longer ascent ya bro. i dont want it to be so fast down though either
+// like. again more adventureee"): widened again, and the peak fraction
+// below (see WINTER_AVALANCHE_PEAK_X) pushed further out so the ascent
+// grows both in absolute width AND as a share of the whole crossing --
+// the descent grows too (this is a straight width increase, not a
+// reallocation away from it), just by less, so going down still reads
+// as the shorter, faster half without being a blink-and-it's-over dash.
+const WINTER_AVALANCHE_WIDTH = 6200;
 // CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
 // further past the old end (right at the icicle pocket's own edge) to fit
 // a real quiet stretch of open ground past the rainbow icicles/watery ice
@@ -71729,7 +71760,14 @@ const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH
 // start w hill flattening out" for how the section ends): a longer, more
 // gradual back half so the descent/flattening genuinely reads as the
 // danger tapering off, not a symmetric wedge.
-const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.4;
+// CONFIRMED CHANGE ("deeef longer ascent ya bro"): pushed from 0.4 to
+// 0.52 -- combined with the wider WINTER_AVALANCHE_WIDTH above, the
+// ascending half goes from 1840px to 3224px (+75%), while the
+// descending half still grows in absolute terms (2760px -> 2976px) even
+// though its share of the crossing shrank a little. Ascent is now
+// unambiguously the longer, slower half; descent stays the shorter,
+// faster payoff.
+const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.52;
 // CONFIRMED FIX ("even taller and bigger" / "make the whole thing a lot
 // bigger!!"): raised again, twice now (320 -> 460 -> 560).
 const WINTER_AVALANCHE_PEAK_HEIGHT = 560; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
@@ -71864,10 +71902,19 @@ function winterAvalancheHillRipple(x) {
   const zt = (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_START_X);
   const clamped = Math.min(1, Math.max(0, zt));
   const envelope = Math.sin(clamped * Math.PI); // 0 at both true ends, 1 at the zone's midpoint
+  // CONFIRMED TUNING ("again more adventureee" / "even more mountain
+  // range"): these frequencies are counted in full oscillations across
+  // the WHOLE zone (zt is 0->1 end to end), so the widened
+  // WINTER_AVALANCHE_WIDTH above would otherwise stretch every bump's
+  // physical wavelength out by the same ~35% and read as a calmer, less
+  // busy ridge than before despite "more adventurous" being the ask.
+  // Scaled up to hold each wave's actual on-ground wavelength roughly
+  // steady as the zone widened, with a little extra on top so the range
+  // reads as genuinely busier, not just the same texture stretched thin.
   return (
-    Math.sin(zt * 15.5 + 1.3) * 0.55 +
-    Math.sin(zt * 28 - 0.7) * 0.3 +
-    Math.sin(zt * 4.4 + 2.1) * 1.4 // the big, slow wave -- reads as separate mini-summits/saddles along the ridge, the "mountain range" part of the ask
+    Math.sin(zt * 21 + 1.3) * 0.55 +
+    Math.sin(zt * 38 - 0.7) * 0.3 +
+    Math.sin(zt * 6.2 + 2.1) * 1.4 // the big, slow wave -- reads as separate mini-summits/saddles along the ridge, the "mountain range" part of the ask
   ) * envelope * WINTER_AVALANCHE_PEAK_HEIGHT * 0.17 * winterAvalancheRidgeRippleSuppression(x);
 }
 // CONFIRMED NEW FEATURE ("have a little part on the right that goes back
@@ -71885,6 +71932,32 @@ function winterAvalancheSecondRise(t) {
   const localT = (t - lo) / (hi - lo);
   return Math.sin(localT * Math.PI) * WINTER_AVALANCHE_SECOND_RISE_HEIGHT; // smooth 0 -> peak -> 0 bump
 }
+// CONFIRMED NEW FEATURE ("i like the real false summit too yes pls"): the
+// same "positive lobe added onto an already-rising base curve" trick as
+// winterAvalancheSecondRise above, just on the ascending half instead --
+// added on top of a curve that's still climbing, so the bump doesn't
+// just add elevation, it creates a real local high point followed by a
+// genuine down-slope saddle (the base curve's own rise over that span is
+// smaller than the bump's own falloff), before the true ascending
+// profile resumes climbing to the actual summit. Centered at t=0.72,
+// well clear of the ridge's jump-required step at t=0.45 (see
+// WINTER_AVALANCHE_RIDGE_T) so the two obstacles don't overlap -- you
+// clear the ridge, keep climbing, crest what reads like the top, dip
+// through a saddle, then find out there's more mountain above you.
+// Purely terrain, same as the ripple/second-rise -- no new physics gate,
+// the existing ground-glue walks it like any other slope (that's safe
+// now that the tilt readout eases through bumps instead of snapping to
+// them, see the "still happening broooo" fix above this function).
+const WINTER_AVALANCHE_FALSE_SUMMIT_CENTER_T = 0.72; // fraction along START_X->PEAK_X
+const WINTER_AVALANCHE_FALSE_SUMMIT_WIDTH_T = 0.11;
+const WINTER_AVALANCHE_FALSE_SUMMIT_HEIGHT = 150; // real local peak, high enough to block the view of the true summit, comfortably under PEAK_HEIGHT so it never reads as the tallest point
+function winterAvalancheFalseSummit(t) {
+  const lo = WINTER_AVALANCHE_FALSE_SUMMIT_CENTER_T - WINTER_AVALANCHE_FALSE_SUMMIT_WIDTH_T;
+  const hi = WINTER_AVALANCHE_FALSE_SUMMIT_CENTER_T + WINTER_AVALANCHE_FALSE_SUMMIT_WIDTH_T;
+  if (t <= lo || t >= hi) return 0;
+  const localT = (t - lo) / (hi - lo);
+  return Math.sin(localT * Math.PI) * WINTER_AVALANCHE_FALSE_SUMMIT_HEIGHT;
+}
 function winterAvalancheHillHeightAt(x) {
   if (x <= WINTER_AVALANCHE_START_X || x >= WINTER_AVALANCHE_END_X) return 0;
   const rising = x <= WINTER_AVALANCHE_PEAK_X;
@@ -71892,7 +71965,7 @@ function winterAvalancheHillHeightAt(x) {
     ? (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X)
     : (x - WINTER_AVALANCHE_PEAK_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
   const base = rising
-    ? WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheAscendingProfile(t)
+    ? WINTER_AVALANCHE_PEAK_HEIGHT * winterAvalancheAscendingProfile(t) + winterAvalancheFalseSummit(t)
     : WINTER_AVALANCHE_PEAK_HEIGHT * (1 - winterAvalancheSmootherstep(t)) + winterAvalancheSecondRise(t);
   return Math.max(0, base + winterAvalancheHillRipple(x));
 }
