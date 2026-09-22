@@ -5689,8 +5689,39 @@ function applyPhysics(){
     } else if (!winterAvalancheRidgeCleared) {
       if (player.y >= WINTER_AVALANCHE_RIDGE_TOP_Y - 4) {
         winterAvalancheRidgeCleared = true; // latched -- a later mid-air dip in y (coming down off the apex) won't undo this
-      } else {
+      } else if (player.jumping) {
+        // mid-air but hasn't reached the ledge yet -- hold them at the wall
+        // face so they can't clip through it horizontally; gravity still
+        // owns their y, so this just stops forward progress until they
+        // land (at which point the slide-back below takes over).
         player.x = WINTER_AVALANCHE_RIDGE_WALL_X - player.width / 2;
+      } else {
+        // CONFIRMED BUGFIX ("i dont like this if no jump. i want it to be
+        // high enough/steep that i like slide back down not like jam into
+        // the hill weirdly like this"): walking into the wall without
+        // jumping used to hard-freeze player.x right at the wall every
+        // frame -- feet glued to the ground there, but the tilt sample
+        // (which straddles the near-vertical step) maxed out its clamp and
+        // stuck, so the sprite just sat there pinned at a steep lean
+        // looking jammed into the cliff face instead of reading as a real
+        // too-steep-to-walk incline.
+        //
+        // CONFIRMED FIX (found via a real walk-in test, not eyeballing):
+        // a first pass just nudged player.x back a few px/frame here, but
+        // that's a losing tug-of-war against the walk key re-adding its
+        // own +3px/frame the very next frame -- net result was the same
+        // jittery standstill right at the wall, just with a wobble instead
+        // of a hard freeze. Instead, a single decisive kick well clear of
+        // the wall (past the tilt sample's own 24px radius either side, so
+        // the lean actually eases back to normal too) -- lands them back
+        // on the <= wallX side immediately, which clears the block above
+        // for that frame, so this only fires once per approach instead of
+        // fighting the walk key frame after frame. Holding right just
+        // walks them straight back into it again for another slide, which
+        // reads as "too steep to climb, keeps sliding you back" instead of
+        // a stuck jam.
+        const WINTER_AVALANCHE_RIDGE_SLIDE_BACK_GAP = 50;
+        player.x = WINTER_AVALANCHE_RIDGE_WALL_X - player.width / 2 - WINTER_AVALANCHE_RIDGE_SLIDE_BACK_GAP;
       }
     }
     const feetXHillFinal = player.x + player.width / 2; // re-derived in case the wall block above just moved player.x
@@ -5750,7 +5781,18 @@ function applyPhysics(){
       // sample straddles a real cliff face, which would otherwise produce
       // a near-90-degree tilt for a frame or two; capped to a believable
       // lean instead of letting the sprite look like it's lying flat.
-      winterAvalancheHillTiltAngle = Math.max(-0.5, Math.min(0.5, -hillSlope * 0.7));
+      //
+      // CONFIRMED TUNING (part of the "jam into the hill weirdly" fix):
+      // the rotation this feeds pivots around the sprite's own center (see
+      // the shared tilt/sway transform), not its feet -- fine for a gentle
+      // lean, but at the old +/-0.5 rad (~29 degrees) clamp a boxy sprite
+      // visibly swings a bottom corner up off the ground around that
+      // pivot, reading as floating/jammed rather than leaning into a
+      // slope. Tightened to +/-0.32 rad (~18 degrees) so even a brief
+      // close pass by the wall (walking up before the new slide-back
+      // kicks in) still reads as a steep lean, not a corner lifting into
+      // the air.
+      winterAvalancheHillTiltAngle = Math.max(-0.32, Math.min(0.32, -hillSlope * 0.7));
     } else if (winterAvalancheHillTiltAngle !== 0) {
       // eased back to upright once off the hill entirely, same decay
       // rate the owl branch/bridge tilts use
