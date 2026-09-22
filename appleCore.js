@@ -69632,6 +69632,7 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
     (typeof forestBridgeTiltAngle !== "undefined" ? forestBridgeTiltAngle : 0) +
     (typeof winterOwlBranchTiltAngle !== "undefined" ? winterOwlBranchTiltAngle : 0) +
     (typeof winterAvalancheHillTiltAngle !== "undefined" ? winterAvalancheHillTiltAngle : 0) +
+    (typeof winterAvalancheResetSpinTilt !== "undefined" ? winterAvalancheResetSpinTilt() : 0) +
     balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
@@ -72247,11 +72248,17 @@ WINTER_SLICK_PLATFORMS.push(...WINTER_AVALANCHE_HOP_PLATFORMS);
 // leading up to it. Shrunk to a real single-jump target instead --
 // comfortably under a plain jump's apex with real margin for error.
 // CONFIRMED TUNING ("push out the snoball smash thing a little to the
-// right. make it smaller"): moved closer to the true end of the hill and
-// shrunk further -- a smaller, clearly-off-to-the-side object reads more
-// like a deliberate little extra than something you're expected to
-// stumble into mid-descent.
-const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X - 60;
+// right. make it smaller"): shrunk further -- a smaller, clearly-off-to-
+// the-side object reads more like a deliberate little extra than
+// something you're expected to stumble into mid-descent.
+// CONFIRMED FOLLOW-UP ("move it more to the right like let player
+// actually get off the range first"): WINTER_AVALANCHE_END_X - 60 still
+// sat inside the hill's own terrain/taper. Moved past END_X entirely, into
+// the open flat stretch between the hill and the next obstacle
+// (WINTER_ICE_DUCK_SHELF at END_X+420) -- well clear of both, so the
+// player is genuinely done with the range and walking flat ground before
+// they reach it.
+const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X + 180;
 const WINTER_AVALANCHE_RESET_BALL_RADIUS = 24;
 const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 20;
 const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 36;
@@ -73259,21 +73266,21 @@ function drawWinterAvalancheResetBall(camX) {
   ctx.strokeStyle = "rgba(95,120,145,0.85)";
   ctx.lineWidth = 2 / Math.max(scaleX, scaleY);
   ctx.stroke(bumpPath);
+  // CONFIRMED BUG FIX ("remove the grey im guessing is supposed to be a
+  // sign of 'reset', but rn it looks like a misplaced grey hook"): the
+  // rolling hazard balls' embedded packed-snow patches (a couple of lit/
+  // unlit blobs) work at their size and while spinning/moving, but this
+  // ball is small, stationary and frozen in place, so the same patches
+  // just sat there fixed and read as a random dark smudge rather than
+  // texture. Swapped for a single soft, subtle directional shade instead
+  // -- reads as "round object catching light," nothing that looks like a
+  // stray mark.
   ctx.save();
   ctx.clip(bumpPath);
-  for (let i = 0; i < 3; i++) {
-    const pseed = 4300 + i * 11.3;
-    const pang = pseudoRandom(pseed) * Math.PI * 2;
-    const pdist = radius * (0.15 + pseudoRandom(pseed + 1) * 0.45);
-    const px = Math.cos(pang) * pdist;
-    const py = Math.sin(pang) * pdist;
-    const pr = radius * (0.22 + pseudoRandom(pseed + 2) * 0.2);
-    const lit = pseudoRandom(pseed + 3) > 0.45;
-    ctx.fillStyle = lit ? "rgba(255,255,255,0.55)" : "rgba(120,145,170,0.28)";
-    ctx.beginPath();
-    ctx.ellipse(px, py, pr, pr * 0.75, pang, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.fillStyle = "rgba(110,135,160,0.16)";
+  ctx.beginPath();
+  ctx.ellipse(radius * 0.3, radius * 0.32, radius * 0.8, radius * 0.55, Math.PI * 0.65, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
   ctx.restore();
 
@@ -73335,6 +73342,71 @@ function drawWinterAvalancheHitFlash(camX) {
     const r = 6 + t * 26;
     ctx.beginPath();
     ctx.ellipse(px + Math.cos(ang) * r, py + Math.sin(ang) * r * 0.7, 4 * (1 - t) + 1, 3 * (1 - t) + 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// CONFIRMED NEW FEATURE ("when you jump on the return snow ball, animation
+// of it spinning you with some sparkles and spinny lines kind of thing but
+// not too fast before it returns you"): purely decorative, tied to the
+// same winterAvalancheResetPendingAt window the smash/teleport already
+// use, so it always lines up exactly with the actual delay -- radiating
+// lines spin one way around the player, a few star sparkles orbit the
+// other way at a wider radius, both fading out toward the end. The
+// player's own body spin (see winterAvalancheResetSpinTilt, folded into
+// totalTilt) is the "spinning YOU" half of the ask; this is the "with
+// sparkles and spinny lines" half around them.
+function winterAvalancheResetSpinTilt() {
+  if (!winterAvalancheResetPendingAt) return 0;
+  const elapsed = performance.now() - winterAvalancheResetPendingAt;
+  const t = Math.max(0, Math.min(1, elapsed / WINTER_AVALANCHE_RESET_DELAY_MS));
+  const ROTATIONS = 1.3; // "not too fast" -- a bit over one full turn across the whole delay
+  return t * Math.PI * 2 * ROTATIONS;
+}
+function drawWinterAvalancheResetSpinFx(camX) {
+  if (!winterAvalancheResetPendingAt) return;
+  const elapsed = performance.now() - winterAvalancheResetPendingAt;
+  if (elapsed < 0 || elapsed > WINTER_AVALANCHE_RESET_DELAY_MS) return;
+  const t = elapsed / WINTER_AVALANCHE_RESET_DELAY_MS;
+  const px = player.x - camX + player.width / 2;
+  const py = gy - player.y - player.height * 0.5;
+  const spinAng = t * Math.PI * 2 * 1.3;
+
+  // spinny radiating lines around the player
+  ctx.strokeStyle = `rgba(150,200,230,${0.8 * (1 - t * 0.6)})`;
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  const LINES = 5;
+  for (let i = 0; i < LINES; i++) {
+    const ang = spinAng + (i / LINES) * Math.PI * 2;
+    const rIn = player.width * 0.55, rOut = player.width * 0.95;
+    ctx.beginPath();
+    ctx.moveTo(px + Math.cos(ang) * rIn, py + Math.sin(ang) * rIn * 0.6);
+    ctx.lineTo(px + Math.cos(ang) * rOut, py + Math.sin(ang) * rOut * 0.6);
+    ctx.stroke();
+  }
+
+  // a few twinkling star sparkles orbiting the other way, at a wider radius
+  const SPARKLES = 4;
+  for (let i = 0; i < SPARKLES; i++) {
+    const sseed = i * 7.1;
+    const ang = -spinAng * 1.4 + (i / SPARKLES) * Math.PI * 2 + sseed;
+    const r = player.width * 1.15;
+    const sx2 = px + Math.cos(ang) * r;
+    const sy2 = py + Math.sin(ang) * r * 0.6;
+    const twinkle = 0.5 + Math.sin(performance.now() * 0.02 + sseed * 3) * 0.5;
+    const sSize = 3 + twinkle * 2.5;
+    ctx.fillStyle = `rgba(255,255,255,${(0.5 + twinkle * 0.5) * (1 - t * 0.4)})`;
+    ctx.beginPath();
+    ctx.moveTo(sx2, sy2 - sSize);
+    ctx.lineTo(sx2 + sSize * 0.35, sy2 - sSize * 0.35);
+    ctx.lineTo(sx2 + sSize, sy2);
+    ctx.lineTo(sx2 + sSize * 0.35, sy2 + sSize * 0.35);
+    ctx.lineTo(sx2, sy2 + sSize);
+    ctx.lineTo(sx2 - sSize * 0.35, sy2 + sSize * 0.35);
+    ctx.lineTo(sx2 - sSize, sy2);
+    ctx.lineTo(sx2 - sSize * 0.35, sy2 - sSize * 0.35);
+    ctx.closePath();
     ctx.fill();
   }
 }
@@ -75705,6 +75777,7 @@ function drawWinterScene(camX) {
   drawWinterAvalancheSnowballs(camX);
   drawWinterAvalancheHitFlash(camX);
   drawWinterAvalancheResetBall(camX);
+  drawWinterAvalancheResetSpinFx(camX);
 
   // quiet breather stretch just past the icicle pocket -- a few small
   // fractal snowflakes drifting down, distinct from the general ambient snow
