@@ -72765,58 +72765,13 @@ function drawFractalSnowflake(cx, cy, size, rot) {
   ctx.fill();
   ctx.restore();
 }
-// the ice duck shelf's "DUCK!" sign -- same post-and-plank language as
-// the forest breather duck branch's own sign (drawForestBreatherDuckSign),
-// re-skinned with a frosty tint since this is winter's own first (and so
-// far only) duck gate. Planted with real lead distance ahead of the shelf
-// itself, same reasoning as the forest sign: the player's moving at a
-// clip through the breather stretch, so it needs a head start to actually
-// be read and reacted to.
-function drawWinterIceDuckSign(camX) {
-  const shelf = WINTER_ICE_DUCK_SHELF;
-  const sx = shelf.x - 110 - camX;
-  const sy = gy;
-  if (sx < -60 || sx > canvas.width + 60) return;
-  ctx.strokeStyle = "#7a8a96";
-  ctx.lineWidth = 2.4;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(sx, sy - 20);
-  ctx.stroke();
-  ctx.save();
-  ctx.translate(sx, sy - 29);
-  ctx.rotate(-0.04);
-  ctx.fillStyle = "#9db8c8";
-  ctx.fillRect(-17, -14, 34, 28);
-  ctx.strokeStyle = "#5c7482";
-  ctx.lineWidth = 1.4;
-  ctx.strokeRect(-17, -14, 34, 28);
-  // a thin frost rime along the top edge -- the one visual tell that
-  // separates this from the forest sign's plain wood
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.beginPath();
-  ctx.moveTo(-17, -14);
-  for (let p = 0; p <= 6; p++) {
-    const t = p / 6;
-    ctx.lineTo(-17 + t * 34, -14 + (pseudoRandom(shelf.x + p) - 0.5) * 3);
-  }
-  ctx.lineTo(17, -10);
-  ctx.lineTo(-17, -10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "rgba(240,248,252,0.95)";
-  ctx.font = "bold 8px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("DUCK!", 0, -4);
-  ctx.strokeStyle = "rgba(240,248,252,0.95)";
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, 8);
-  ctx.stroke();
-  ctx.restore();
-}
+// CONFIRMED CHANGE ("removethe 'duck' sign that is only used once when it
+// is first introduced that is it"): the forest breather duck branch is
+// already established as the one and only "DUCK!" sign in the whole game
+// -- ducking itself was introduced there, not here, so this gate having
+// its own sign was a redundant second first-introduction rather than an
+// actually-first one. Removed; the shelf/icicle silhouette alone is the
+// tell now, same as every other winter hazard.
 
 // CONFIRMED NEW FEATURE, the low ice overhang itself -- solid ceiling
 // slab (anchored off the top of the screen, no visible top edge, reads
@@ -75031,10 +74986,9 @@ function drawWinterScene(camX) {
   // fractal snowflakes drifting down, distinct from the general ambient snow
   drawWinterBreatherSnowflakes(camX);
 
-  // the duck gate, sign first (real lead distance ahead of it) then the
-  // shelf itself -- sits within this same breather stretch, before the
-  // ice climb payoff
-  drawWinterIceDuckSign(camX);
+  // the duck gate -- sits within this same breather stretch, before the
+  // ice climb payoff (no separate sign; see WINTER_ICE_DUCK_SHELF's own
+  // comment for why)
   drawWinterIceDuckShelf(camX);
 
   // the ice axe climb -- the real payoff past the breather stretch
