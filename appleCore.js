@@ -71989,7 +71989,19 @@ const WINTER_AVALANCHE_BALL_SPEED = 230; // px/sec, direction is per-ball (see b
 // to not look like a pop-in") and the mountain-arrival visual (the
 // distance at which a ball is still considered "far/up on the backdrop")
 // -- kept as one named constant so the two stay honest with each other.
-const WINTER_AVALANCHE_ARRIVE_START = 780;
+// CONFIRMED TUNING ("ya shrink dead zone a lil pls" -- the player pointed
+// out that standing near the peak, no ball can ever reach them: a ball
+// only rolls downhill AWAY from whichever side it spawned on, so once
+// this same distance is subtracted from BOTH sides of the peak as the
+// minimum room needed to even attempt a spawn, there's a real dead band
+// straddling the peak, roughly 2x this value wide, where nothing can ever
+// spawn in either direction). Trimmed from 780 to 640 -- still comfortably
+// wider than half the canvas (400px), so a ball is still always genuinely
+// off-screen and already rolling by the time it exists (the whole reason
+// this got raised to 780 in the first place, see the spawn-pop-in fix
+// above), just not so wide that a real chunk of the peak reads as
+// permanently calm.
+const WINTER_AVALANCHE_ARRIVE_START = 640;
 const WINTER_AVALANCHE_SMALL_RADIUS = 15;
 const WINTER_AVALANCHE_BIG_RADIUS = 25;
 // clear heights calibrated against the real jump arcs: a plain jump
@@ -72753,6 +72765,161 @@ function drawFractalSnowflake(cx, cy, size, rot) {
   ctx.fill();
   ctx.restore();
 }
+// the ice duck shelf's "DUCK!" sign -- same post-and-plank language as
+// the forest breather duck branch's own sign (drawForestBreatherDuckSign),
+// re-skinned with a frosty tint since this is winter's own first (and so
+// far only) duck gate. Planted with real lead distance ahead of the shelf
+// itself, same reasoning as the forest sign: the player's moving at a
+// clip through the breather stretch, so it needs a head start to actually
+// be read and reacted to.
+function drawWinterIceDuckSign(camX) {
+  const shelf = WINTER_ICE_DUCK_SHELF;
+  const sx = shelf.x - 110 - camX;
+  const sy = gy;
+  if (sx < -60 || sx > canvas.width + 60) return;
+  ctx.strokeStyle = "#7a8a96";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy - 20);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(sx, sy - 29);
+  ctx.rotate(-0.04);
+  ctx.fillStyle = "#9db8c8";
+  ctx.fillRect(-17, -14, 34, 28);
+  ctx.strokeStyle = "#5c7482";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-17, -14, 34, 28);
+  // a thin frost rime along the top edge -- the one visual tell that
+  // separates this from the forest sign's plain wood
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.beginPath();
+  ctx.moveTo(-17, -14);
+  for (let p = 0; p <= 6; p++) {
+    const t = p / 6;
+    ctx.lineTo(-17 + t * 34, -14 + (pseudoRandom(shelf.x + p) - 0.5) * 3);
+  }
+  ctx.lineTo(17, -10);
+  ctx.lineTo(-17, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(240,248,252,0.95)";
+  ctx.font = "bold 8px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("DUCK!", 0, -4);
+  ctx.strokeStyle = "rgba(240,248,252,0.95)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// CONFIRMED NEW FEATURE, the low ice overhang itself -- solid ceiling
+// slab (anchored off the top of the screen, no visible top edge, reads
+// as part of a bigger overhanging ledge) with a jagged icicle fringe
+// hanging down to exactly shelf.clearance above ground -- same faceted-
+// shard language WINTER_ICE_SPIKE_ZONES uses for its own ground spikes,
+// just pointing down off a ceiling instead of up off the ground. A soft
+// blue glow along the underside brightens while the player's actually
+// ducked underneath it (playerDuckAmount past the shelf's own
+// duckThreshold), a small "you're doing it" readback since there's no
+// other feedback for successfully clearing a gate you can't see past.
+function drawWinterIceDuckShelf(camX) {
+  const shelf = WINTER_ICE_DUCK_SHELF;
+  const sx = shelf.x - camX;
+  if (sx < -80 || sx > canvas.width + 80) return;
+  const seed = shelf.x * 0.017;
+  const ceilingY = gy - shelf.clearance;
+  const halfW = shelf.w / 2 + 14;
+
+  // the solid slab -- flat-bottomed, jagged/irregular top that runs off
+  // the top of the screen, so there's no visible "floating block" edge
+  ctx.fillStyle = "#c3dcec";
+  ctx.beginPath();
+  ctx.moveTo(sx - halfW, -30);
+  const TOP_PTS = 5;
+  for (let p = 0; p <= TOP_PTS; p++) {
+    const t = p / TOP_PTS;
+    const jag = (pseudoRandom(seed + p) - 0.5) * 14;
+    ctx.lineTo(sx - halfW + t * halfW * 2, ceilingY - 22 + jag);
+  }
+  ctx.lineTo(sx + halfW, -30);
+  ctx.closePath();
+  ctx.fill();
+
+  // a slightly darker band right along the flat underside -- gives the
+  // slab real thickness/depth instead of reading as paper-flat
+  const grad = ctx.createLinearGradient(0, ceilingY - 26, 0, ceilingY);
+  grad.addColorStop(0, "rgba(120,155,180,0)");
+  grad.addColorStop(1, "rgba(90,128,155,0.5)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(sx - halfW, ceilingY - 26, halfW * 2, 26);
+
+  // the doing-it-right glow -- soft, wide, only while actually ducked and
+  // roughly under the shelf (not a global tell, has to be earned by
+  // position too)
+  const playerCenterX = player.x + player.width / 2;
+  const nearShelf = Math.abs((playerCenterX + camX) - shelf.x) < shelf.w * 1.4;
+  if (nearShelf && playerDuckAmount > 0.05) {
+    ctx.save();
+    ctx.globalAlpha = playerDuckAmount * 0.5;
+    const glow = ctx.createRadialGradient(sx, ceilingY + 6, 0, sx, ceilingY + 6, shelf.w * 1.1);
+    glow.addColorStop(0, "rgba(210,240,255,0.9)");
+    glow.addColorStop(1, "rgba(210,240,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.ellipse(sx, ceilingY + 6, shelf.w * 1.1, 24, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // jagged icicle fringe hanging down to the real clearance line --
+  // same multi-segment silhouette + lit/shadow flip WINTER_ICE_SPIKE_ZONES
+  // uses, mirrored to point down instead of up
+  const ICICLE_COUNT = 5;
+  for (let i = 0; i < ICICLE_COUNT; i++) {
+    const t = i / (ICICLE_COUNT - 1);
+    const baseX = sx - halfW + 8 + t * (halfW * 2 - 16);
+    const iseed = seed + 300 + i * 9.1;
+    const len = shelf.clearance * (0.45 + pseudoRandom(iseed) * 0.35);
+    const hw = 4 + pseudoRandom(iseed + 1) * 4;
+    const litLeft = pseudoRandom(iseed + 2) < 0.5;
+    const SEGS = 3;
+    const leftPts = [{ x: baseX - hw, y: ceilingY }];
+    const rightPts = [{ x: baseX + hw, y: ceilingY }];
+    let drift = 0;
+    for (let s = 1; s <= SEGS; s++) {
+      const tt = s / SEGS;
+      drift += (pseudoRandom(iseed + 30 + s * 3.3) - 0.5) * hw * 0.5;
+      const px = baseX + drift;
+      const py = ceilingY + len * tt;
+      const envelope = Math.pow(1 - tt, 1.3);
+      const segHw = Math.max(0.3, hw * envelope);
+      leftPts.push({ x: px - segHw, y: py });
+      rightPts.push({ x: px + segHw, y: py });
+    }
+    ctx.beginPath();
+    ctx.moveTo(leftPts[0].x, leftPts[0].y);
+    for (let s = 1; s < leftPts.length; s++) ctx.lineTo(leftPts[s].x, leftPts[s].y);
+    for (let s = rightPts.length - 1; s >= 0; s--) ctx.lineTo(rightPts[s].x, rightPts[s].y);
+    ctx.closePath();
+    const igrad = ctx.createLinearGradient(0, ceilingY, 0, ceilingY + len);
+    if (litLeft) {
+      igrad.addColorStop(0, "rgba(140,172,195,0.9)");
+      igrad.addColorStop(1, "rgba(235,248,255,0.97)");
+    } else {
+      igrad.addColorStop(0, "rgba(120,155,180,0.92)");
+      igrad.addColorStop(1, "rgba(210,230,245,0.95)");
+    }
+    ctx.fillStyle = igrad;
+    ctx.fill();
+  }
+}
+
 function drawWinterBreatherSnowflakes(camX) {
   winterBreatherSnowflakes.forEach(f => {
     const sx = f.x - camX + Math.sin(f.drift) * 10;
@@ -72829,6 +72996,25 @@ function drawWinterBreatherSnowflakes(camX) {
 // own precision-timing challenge read as too rushed. Widened to a real
 // breather stretch.
 const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 650;
+
+// CONFIRMED NEW FEATURE ("lets add a ducking thing" -- picked concept A,
+// a low overhang, but reworked per direct pushback: "would i want player
+// to be able to just walk under it fine, kinda limits its use a lot??").
+// The first pitch made it solid only against a mid-air jump, so it'd do
+// nothing at all for a player who just walks -- correctly called out as
+// low-stakes. Reworked to reuse the EXACT solid-unless-ducked gate the
+// forest breather duck branch already proved out (see
+// FOREST_BREATHER_DUCK_BRANCH/its DUCKING block in updateForestScene):
+// blocks upright walking outright, only passable while actively holding
+// down. That system assumes near-flat ground (player.y<=2), which rules
+// out putting this ON the avalanche hill's own sloped terrain -- so it
+// lives in the breather stretch just past the hill instead (avalanche
+// ends at WINTER_AVALANCHE_END_X, the ice climb wall starts at
+// WINTER_ICE_CLIMB_X, leaving a real flat gap between them), reskinned as
+// a low hanging ice shelf instead of a branch. Winter's own version of
+// the DUCKING easing + gate collision lives in updateWinterScene right
+// below this file's forest one, sharing the same global playerDuckAmount.
+const WINTER_ICE_DUCK_SHELF = { x: WINTER_AVALANCHE_END_X + 420, w: 60, clearance: 62, duckThreshold: 0.4 };
 const WINTER_ICE_ROW_FIRST_HEIGHT = 55;
 const WINTER_ICE_ROW_DY = 75; // same vertical gap the old single-path climb used
 const WINTER_ICE_ROW_COUNT = 9; // same overall climb height as before
@@ -74741,6 +74927,28 @@ function drawWinterScene(camX) {
   ctx.save();
   ctx.translate(0, cameraY);
 
+  // CONFIRMED BUG FIX ("none of the trees should show below the ice
+  // stalagtite things. check all em" -- "like in middle is fine but not
+  // coming under"): this used to draw dead last, after every tree layer
+  // (background, mid, front, the owl tree). The front layer's own
+  // WINTER_ICE_SPIKE_ZONES gaps genuinely keep it clear of overlap either
+  // way, but the background and mid treelines scroll at their own slower
+  // parallax rates (camX*0.5 and camX*0.75) while these spikes scroll at
+  // the plain ground rate -- their on-screen alignment relative to each
+  // other constantly drifts as the camera moves, so no fixed gap
+  // placement can keep them from occasionally overlapping on screen. With
+  // spikes drawn last, wherever that overlap happened a spike rendered
+  // right over a tree's lower canopy/trunk, reading as the tree sinking
+  // in behind/under the ice instead of standing in front of it. Moved to
+  // draw FIRST, before every tree layer, so it's unconditionally ground
+  // texture now -- any tree that overlaps it on screen, background/mid/
+  // front alike, always paints on top and reads as growing up through or
+  // past the spikes, never swallowed by them. Crossing through a spike's
+  // silhouette partway up (the "middle") still looks fine and is
+  // unaffected; this only stops a spike from ever covering a tree's own
+  // base/lower canopy.
+  WINTER_ICE_SPIKE_ZONES.forEach(z => drawWinterIceSpikeZone(camX, z));
+
   // distant frosted treeline -- soft, pale, parallax-lite (drawn at a
   // fixed fraction of camX so it drifts slower than the foreground)
   for (let i = 0; i < 14; i++) {
@@ -74793,12 +75001,8 @@ function drawWinterScene(camX) {
   // clearing, not folded into the procedural WINTER_FRONT_TREES loop
   drawWinterOwlTree(camX);
 
-  // spiky ice hazards on the ground under the platform climb -- drawn
-  // after the front treeline (just above), so a tree trunk sitting in
-  // one of the gaps WINTER_ICE_SPIKE_ZONES already carves out for it
-  // reads as growing up through the spike field rather than being
-  // covered by it.
-  WINTER_ICE_SPIKE_ZONES.forEach(z => drawWinterIceSpikeZone(camX, z));
+  // (WINTER_ICE_SPIKE_ZONES now draws once, right at the top of this
+  // function before any tree layer -- see that call's own comment for why)
 
   drawWinterSnow(camX);
 
@@ -74826,6 +75030,12 @@ function drawWinterScene(camX) {
   // quiet breather stretch just past the icicle pocket -- a few small
   // fractal snowflakes drifting down, distinct from the general ambient snow
   drawWinterBreatherSnowflakes(camX);
+
+  // the duck gate, sign first (real lead distance ahead of it) then the
+  // shelf itself -- sits within this same breather stretch, before the
+  // ice climb payoff
+  drawWinterIceDuckSign(camX);
+  drawWinterIceDuckShelf(camX);
 
   // the ice axe climb -- the real payoff past the breather stretch
   drawWinterIceClimb(camX);
@@ -74866,6 +75076,41 @@ function updateWinterScene(deltaTime) {
   // movement) while it's happening, same pattern updateSpringScene uses.
   if (fallState.active) {
     return;
+  }
+
+  // DUCKING -- winter's own copy of the forest breather duck branch's
+  // mechanic (see FOREST_BREATHER_DUCK_BRANCH's own comment and the
+  // DUCKING block in updateForestScene for the original). Shares the
+  // same global playerDuckAmount the forest one drives -- fine, since the
+  // two scenes never run their own update in the same frame, and the
+  // easing/decay is purely a function of the CURRENT scene's own
+  // conditions each frame either way, so switching scenes just starts
+  // fresh rather than leaking stale state.
+  {
+    const duckTarget = (keys.down && player.y <= 2 && !player.jumping) ? 1 : 0;
+    playerDuckAmount += (duckTarget - playerDuckAmount) * 0.25;
+    if (playerDuckAmount < 0.01) playerDuckAmount = 0;
+    if (playerDuckAmount > 0.999) playerDuckAmount = 1;
+  }
+
+  // the ice duck shelf -- solid to upright walking, passable only ducked,
+  // same push-fully-clear collision shape as the forest duck branch (see
+  // its own comment for why the push subtracts a full player.width, not
+  // half, to actually clear the re-check zone in one go).
+  {
+    const shelf = WINTER_ICE_DUCK_SHELF;
+    const playerCenterX = player.x + player.width / 2;
+    const withinShelfX = playerCenterX > shelf.x - shelf.w / 2 - player.width / 2 &&
+                          playerCenterX < shelf.x + shelf.w / 2 + player.width / 2;
+    const passable = player.y <= 2 && playerDuckAmount > shelf.duckThreshold;
+    if (withinShelfX && !passable) {
+      if (playerCenterX < shelf.x) {
+        player.x = shelf.x - shelf.w / 2 - player.width - 1;
+      } else {
+        player.x = shelf.x + shelf.w / 2 + 1;
+      }
+      player.vx = 0;
+    }
   }
 
   // CONFIRMED CHANGE ("should we do some spiky ice obstacles on ground
