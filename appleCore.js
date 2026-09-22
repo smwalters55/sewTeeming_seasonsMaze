@@ -72304,7 +72304,13 @@ const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 20;
 const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 36;
 let winterAvalancheResetSmashT = 0; // 0 = round/whole, 1 = fully smashed flat; eases up fast on stomp, back down to 0 once the reset actually fires
 let winterAvalancheResetPendingAt = 0; // 0 = no pending reset; else the performance.now() timestamp it was stomped at
-const WINTER_AVALANCHE_RESET_DELAY_MS = 550;
+// CONFIRMED TUNING ("i want the spin to be slower, more like fairy tale
+// spin transform not this like really fast whatever that is spin"): was
+// 550ms total, and the spin itself ran a linear 1.3 full turns across it
+// (~850deg/sec) -- read as a fast whirl-blur, not a graceful transform.
+// Stretched to give the spin room to actually breathe, paired with an
+// eased (slow-start/slow-end) curve and fewer total rotations below.
+const WINTER_AVALANCHE_RESET_DELAY_MS = 1100;
 function winterAvalancheResetBallTopY(x) {
   return winterAvalancheHillHeightAt(x) + WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT + WINTER_AVALANCHE_RESET_BALL_RADIUS * 2;
 }
@@ -73425,12 +73431,19 @@ function drawWinterAvalancheHitFlash(camX) {
 // player's own body spin (see winterAvalancheResetSpinTilt, folded into
 // totalTilt) is the "spinning YOU" half of the ask; this is the "with
 // sparkles and spinny lines" half around them.
+// CONFIRMED TUNING ("i want the spin to be slower, more like fairy tale
+// spin transform not this like really fast whatever that is spin"): eased
+// through winterAvalancheSmootherstep (slow start, slow finish, quickest
+// through the middle) instead of a flat linear spin, and cut down to one
+// single graceful turn instead of 1.3 fast ones -- reads as a deliberate
+// twirl-transform, not a blur.
+const WINTER_AVALANCHE_RESET_SPIN_ROTATIONS = 1;
 function winterAvalancheResetSpinTilt() {
   if (!winterAvalancheResetPendingAt) return 0;
   const elapsed = performance.now() - winterAvalancheResetPendingAt;
   const t = Math.max(0, Math.min(1, elapsed / WINTER_AVALANCHE_RESET_DELAY_MS));
-  const ROTATIONS = 1.3; // "not too fast" -- a bit over one full turn across the whole delay
-  return t * Math.PI * 2 * ROTATIONS;
+  const eased = winterAvalancheSmootherstep(t);
+  return eased * Math.PI * 2 * WINTER_AVALANCHE_RESET_SPIN_ROTATIONS;
 }
 function drawWinterAvalancheResetSpinFx(camX) {
   if (!winterAvalancheResetPendingAt) return;
@@ -73439,7 +73452,7 @@ function drawWinterAvalancheResetSpinFx(camX) {
   const t = elapsed / WINTER_AVALANCHE_RESET_DELAY_MS;
   const px = player.x - camX + player.width / 2;
   const py = gy - player.y - player.height * 0.5;
-  const spinAng = t * Math.PI * 2 * 1.3;
+  const spinAng = winterAvalancheSmootherstep(t) * Math.PI * 2 * WINTER_AVALANCHE_RESET_SPIN_ROTATIONS;
 
   // spinny radiating lines around the player
   ctx.strokeStyle = `rgba(150,200,230,${0.8 * (1 - t * 0.6)})`;
