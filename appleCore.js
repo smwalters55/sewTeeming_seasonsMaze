@@ -71785,7 +71785,21 @@ function winterAvalancheDirBias(feetX) {
   const t = Math.max(-1, Math.min(1, (feetX - WINTER_AVALANCHE_PEAK_X) / WINTER_AVALANCHE_DIR_BIAS_BAND));
   const eased = Math.sign(t) * winterAvalancheSmootherstep(Math.abs(t));
   const drift = Math.sin(performance.now() * 0.00011) * 0.15; // slow independent wobble so a stationary player right at the peak doesn't settle into a fixed 50/50 forever either
-  return eased + drift;
+  // CONFIRMED TUNING ("need larger ratio of balls going down to the right
+  // than to the left. cus going down is way faster so to keep the ratio
+  // closer we need a more going down on right than when going up on
+  // left"): the player covers the descending (right) side of the hill
+  // faster than the ascending (left) side, so with a perfectly symmetric
+  // dir split they spend less time exposed to +1 (rightward/downhill)
+  // balls and the pacing reads lopsided toward the left ones even though
+  // the raw spawn odds are even. A constant rightward skew on the bias
+  // itself (not just on the descending half) pushes the overall dir=+1
+  // share up everywhere along the hill -- still mostly matches each
+  // side's own local downhill direction (this only nudges the existing
+  // curve, doesn't flip it), just weighted so the right side gets more
+  // of its balls in the same amount of (shorter) time there.
+  const RIGHTWARD_SKEW = 0.22;
+  return eased + RIGHTWARD_SKEW + drift;
 }
 // smootherstep-based hill height at a given world x -- 0 outside the zone,
 // rising to WINTER_AVALANCHE_PEAK_HEIGHT at the peak, easing back to 0 by
@@ -73607,6 +73621,19 @@ function drawWinterIceLedge(camX) {
   }
   const icDesc = [...icicles].sort((a, b) => b.ix - a.ix);
 
+  // CONFIRMED CHANGE ("pasted on look still like w these lines"): same
+  // complaint, same fix as the rainbow pool got earlier -- every shape
+  // here (front face, its shadow overlay, the top surface + its outline
+  // stroke) was a flat, hard-edged fill with a crisp boundary, exactly
+  // what reads as a cutout pasted over the backdrop instead of a real ice
+  // formation sitting in the scene. Softens just the big base silhouette
+  // shapes through a blur, same as the pool's base fill/rim did -- the
+  // faceted texture, cracks, snow cap and icicles drawn after this
+  // restore() stay crisp on top, so the fine ice detail isn't muddied,
+  // only the outer "is this pasted on" edge.
+  ctx.save();
+  ctx.filter = "blur(4px)";
+
   // front face: jagged, stepping down toward the wall below the lip,
   // its own bottom edge tapering into a point at each icicle base
   ctx.fillStyle = "#9dc2d8";
@@ -73666,6 +73693,7 @@ function drawWinterIceLedge(camX) {
   ctx.strokeStyle = "rgba(120,160,185,0.45)";
   ctx.lineWidth = 1.2;
   ctx.stroke(topPath);
+  ctx.restore(); // end of the blurred base-silhouette pass -- everything below is crisp
 
   // faceted texture + thin cracks on the top surface, clipped to its own outline
   ctx.save();
@@ -73985,6 +74013,17 @@ function drawWinterWateryIce(camX, zone) {
   ctx.save();
   poolClipPath();
   ctx.clip();
+  // CONFIRMED CHANGE ("can you make the overlapping colors a lil more
+  // smoth overlapping instead of circles overlapping. lil more fuzzy"):
+  // each blob is a radial gradient that IS soft at its own edge, but with
+  // no blur the gradient's falloff is still sharp enough pixel-to-pixel
+  // that where two blobs' edges cross, normal alpha compositing draws a
+  // visible seam/rim right at the boundary -- reads as "circles
+  // overlapping" rather than colors genuinely melting together. A blur on
+  // this whole layer smears that seam away the same way the base pool
+  // shape's own edge was softened earlier, without touching the ripple
+  // rings (those stay crisp in their own separate clipped pass below).
+  ctx.filter = "blur(9px)";
   const BLOB_COUNT = 7;
   for (let i = 0; i < BLOB_COUNT; i++) {
     const bseed = baseSeed + i * 31.7;
