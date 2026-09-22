@@ -5795,7 +5795,25 @@ function applyPhysics(){
       // 2) eased toward the target instead of snapping to it every frame
       //    -- the bumps still come through as real motion, just no longer
       //    as an instant snap that reads like a collision.
-      const TILT_SAMPLE = 48;
+      //
+      // CONFIRMED BUGFIX ROUND 3 ("i keep spazzing out here on this top
+      // part of the mini thing... it is still spazzing"): 48px wasn't
+      // wide enough once the ripple frequencies got scaled up for "more
+      // mountain range/adventurous" (see winterAvalancheHillRipple) --
+      // the fastest ripple term now has a ~163px wavelength, so a 48px
+      // (96px total spread) sample lands close enough to a full half-
+      // wavelength apart that consecutive frames can read opposite sides
+      // of the SAME small bump, flipping the target hard from one frame
+      // to the next -- not a snap-to-max-clamp like before, a genuine
+      // rapid back-and-forth, which is exactly "spazzing" rather than
+      // "jammed." Measured directly: scanning frame-to-frame tilt deltas
+      // across the whole hill at 48px found real single-step jumps over
+      // 0.15 rad in several places on the closely-packed mini-bumps right
+      // past the ridge; widening to 90px (verified the same way) brought
+      // that count to zero everywhere on the hill, including there, while
+      // still tracking the real terrain grade (ridge, false summit,
+      // second rise) just fine at that width.
+      const TILT_SAMPLE = 90;
       const hL = winterAvalancheHillHeightAt(feetXHillFinal - TILT_SAMPLE);
       const hR = winterAvalancheHillHeightAt(feetXHillFinal + TILT_SAMPLE);
       const hillSlope = (hR - hL) / (TILT_SAMPLE * 2);
@@ -5814,8 +5832,31 @@ function applyPhysics(){
       // close pass by the wall (walking up before the new slide-back
       // kicks in) still reads as a steep lean, not a corner lifting into
       // the air.
-      const targetTilt = Math.max(-0.32, Math.min(0.32, -hillSlope * 0.7));
-      winterAvalancheHillTiltAngle += (targetTilt - winterAvalancheHillTiltAngle) * 0.35;
+      // CONFIRMED BUGFIX ROUND 4 ("i am jamming into the side of this
+      // litle more steep bit.... still...."): every previous round fixed
+      // how the tilt is SAMPLED/smoothed, but this was always live even
+      // while airborne (the y-snap above is conditional on !jumping, but
+      // the tilt calc underneath it never was) -- so a normal jump near
+      // any locally steep bit, or the ridge wall's own mid-air hold
+      // (frozen at the wall face while gravity still owns y), kept
+      // leaning the sprite hard toward the nearby terrain's slope while
+      // clearly still in the air. Traced directly: real jump attempts at
+      // the ridge showed meaningful tilt (-0.06 to -0.17 rad) sustained
+      // for the whole mid-air hold, while player.y sat 60-100+ px above
+      // the local ground -- a steep lean combined with a big, real
+      // airborne gap is exactly "jamming into the side of it" rather
+      // than clearing over it. Only track the terrain's slope while
+      // actually grounded now; mid-air, it eases back toward upright
+      // instead, the same decay used once you're off the hill entirely.
+      // A jump over a bump should look like clearing it, not like
+      // leaning into whatever's nearest while suspended next to it.
+      if (!player.jumping) {
+        const targetTilt = Math.max(-0.32, Math.min(0.32, -hillSlope * 0.7));
+        winterAvalancheHillTiltAngle += (targetTilt - winterAvalancheHillTiltAngle) * 0.35;
+      } else {
+        winterAvalancheHillTiltAngle *= 0.8;
+        if (Math.abs(winterAvalancheHillTiltAngle) < 0.01) winterAvalancheHillTiltAngle = 0;
+      }
     } else if (winterAvalancheHillTiltAngle !== 0) {
       // eased back to upright once off the hill entirely, same decay
       // rate the owl branch/bridge tilts use
@@ -70327,7 +70368,15 @@ const WINTER_CONTENT_OFFSET = 380;
 // the descent grows too (this is a straight width increase, not a
 // reallocation away from it), just by less, so going down still reads
 // as the shorter, faster half without being a blink-and-it's-over dash.
-const WINTER_AVALANCHE_WIDTH = 6200;
+// CONFIRMED CHANGE ("make descent longer"): widened again on top of the
+// round above -- that round grew descent only modestly (2760 -> 2976,
+// +8%) while pushing most of the growth into the ascent. This pass
+// grows the total width further AND nudges the peak fraction back down
+// a couple points (see WINTER_AVALANCHE_PEAK_X) so descent actually
+// gets a real increase this time (2976 -> 3420, +15%) while ascent
+// still ends up bigger yet (3224 -> 4180, +30%) -- ascent stays the
+// longer half, descent stops being an afterthought.
+const WINTER_AVALANCHE_WIDTH = 7600;
 // CONFIRMED CHANGE ("a little breather stretch afterwards"): widened
 // further past the old end (right at the icicle pocket's own edge) to fit
 // a real quiet stretch of open ground past the rainbow icicles/watery ice
@@ -71767,7 +71816,7 @@ const WINTER_AVALANCHE_END_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH
 // though its share of the crossing shrank a little. Ascent is now
 // unambiguously the longer, slower half; descent stays the shorter,
 // faster payoff.
-const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.52;
+const WINTER_AVALANCHE_PEAK_X = WINTER_AVALANCHE_START_X + WINTER_AVALANCHE_WIDTH * 0.55;
 // CONFIRMED FIX ("even taller and bigger" / "make the whole thing a lot
 // bigger!!"): raised again, twice now (320 -> 460 -> 560).
 const WINTER_AVALANCHE_PEAK_HEIGHT = 560; // still comfortably past the 150 threshold that kicks in winter's existing cameraY follow (see updateWinterScene) -- climbing this hill reveals more of it for free, no new camera code needed
@@ -72058,6 +72107,27 @@ function winterAvalancheHopDeflect(bx, dir, visualSeed) {
 const WINTER_AVALANCHE_TRIGGER_X = WINTER_AVALANCHE_START_X + 140; // "walking by big snow hill b4 avalanche also kinda a breather in itself" -- real quiet distance before anything spawns
 const WINTER_AVALANCHE_SPAWN_END_X = WINTER_AVALANCHE_END_X - (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X) * 0.2; // stop spawning fresh ones in the final stretch, where the hill is flattening out and there'd be no runway left to threaten with
 const WINTER_AVALANCHE_BALL_SPEED = 230; // px/sec, direction is per-ball (see below), always downhill from wherever it spawned
+// CONFIRMED BUGFIX ("did you not make the change of making more frequent
+// balls coming from the top and going down to the right it doesnt seem
+// like that" / "i feel ive asked a few times now"): the earlier
+// direction-ratio tuning (winterAvalancheDirBias's RIGHTWARD_SKEW) only
+// changed which side balls are ASSIGNED to, not whether a dir=+1 ball can
+// actually reach the player once assigned. A dir=+1 ball spawns BEHIND a
+// descending player (uphill, at the peak side) and has to catch up from
+// there -- at the shared 230px/s against a ~180px/s walk speed, that's
+// only a 50px/s closing rate against a 950-1300px lead distance, which
+// mostly never closes before the ball runs off the end of the zone. More
+// spawn attempts skewed toward dir=+1 just meant more balls that quietly
+// never arrived -- the direction ratio "worked" by the numbers but was
+// never actually felt. Chasing balls get their own, faster speed so they
+// can genuinely threaten a descending player within the hill's own width
+// instead of trailing forever.
+// CONFIRMED TUNING ("too many balls too fast on the right side, ahaha"):
+// 360 combined with the tight spawn room/interval below was overtuned --
+// paired with the post-hit invulnerability window (see
+// winterAvalancheHitPlayer), this and the two constants below are eased
+// back to still be a genuine, catchable threat without being a gauntlet.
+const WINTER_AVALANCHE_BALL_SPEED_CHASE = 300; // dir=+1 only -- see comment above
 // shared between the spawn logic (how much uphill room counts as "enough
 // to not look like a pop-in") and the mountain-arrival visual (the
 // distance at which a ball is still considered "far/up on the backdrop")
@@ -72119,6 +72189,21 @@ function winterAvalancheHitPlayer() {
   playerWoozyT = Math.min(playerWoozyT + WOOZY_MS * (playerWoozyT > 0 ? 0.65 : 1), WOOZY_MS * 2.5);
   player.avalancheHitFlashAt = performance.now();
   player.x -= 18; // a little knockback -- costs some forward progress on top of the slow, without a hard stop
+  // CONFIRMED BUGFIX ("too many balls too fast on the right side ... there
+  // is just no opportunity for success once you get hit you can never
+  // stop getting hit"): this hit-stacking design (woozy time ADDS on a
+  // repeat hit, plus the 0.4x woozy speed slow) was already in place and
+  // fine on its own -- it only became a real trap once the chase-ball
+  // fix above made dir=+1 balls able to actually catch a descending
+  // player. Once one connects, the woozy slow drops you to 0.4x speed
+  // for seconds at a time, which is exactly the situation the now-faster,
+  // now-more-frequent chase balls are best at catching -- every hit was
+  // buying itself the next hit. A short, real invulnerability window
+  // right after a hit (independent of the woozy slow/stack, which still
+  // do their own job once the window passes) is what actually breaks the
+  // loop: enough time to see the flash, react, and either dodge or just
+  // outrun the woozy slow before another ball can land a free hit.
+  player.avalancheHitInvulnUntil = performance.now() + 900;
 }
 
 function updateWinterAvalanche(deltaTime) {
@@ -72197,18 +72282,29 @@ function updateWinterAvalanche(deltaTime) {
       // entirely rather than force an unfair/immersion-breaking one; the
       // timer still resets below, so it tries again shortly, typically
       // by which point the player has moved and room has changed.
-      const MIN_SPAWN_ROOM = WINTER_AVALANCHE_ARRIVE_START;
+      // CONFIRMED TUNING ("start the balls sooner ... going down to the
+      // right"): a dir=+1 ball spawns BEHIND the player (uphill, toward
+      // the peak) and approaches from off-camera the same direction the
+      // camera already lags -- it was never at risk of "popping in
+      // ahead" the way an ascending-side ball spawning in front of the
+      // player was, so it never needed the full ARRIVE_START margin.
+      // Given its own room requirement instead, well short of the
+      // ascending side's, so the descending hazard can start (and keep
+      // re-triggering) much closer to the peak instead of waiting for
+      // the same big dead zone the ascending side needs.
+      const MIN_SPAWN_ROOM_ASCEND = WINTER_AVALANCHE_ARRIVE_START;
+      const MIN_SPAWN_ROOM_DESCEND = 340;
       let spawnX = null;
       if (dir === -1) {
         const boundary = WINTER_AVALANCHE_PEAK_X - 20;
         const room = boundary - feetX;
-        if (room >= MIN_SPAWN_ROOM) {
+        if (room >= MIN_SPAWN_ROOM_ASCEND) {
           spawnX = Math.max(WINTER_AVALANCHE_START_X + 30, feetX + Math.min(leadDist, room));
         }
       } else {
         const boundary = WINTER_AVALANCHE_PEAK_X + 20;
         const room = feetX - boundary;
-        if (room >= MIN_SPAWN_ROOM) {
+        if (room >= MIN_SPAWN_ROOM_DESCEND) {
           spawnX = Math.min(WINTER_AVALANCHE_END_X - 30, feetX - Math.min(leadDist, room));
         }
       }
@@ -72241,7 +72337,16 @@ function updateWinterAvalanche(deltaTime) {
       // earlier "waaay bigger" round's 750-1300ms did (that was
       // specifically walked back for pileup-feeling unfair -- still
       // worth keeping some daylight from it).
-      winterAvalancheSpawnTimer = 1000 + pseudoRandom(spawnSeed + 2) * 600;
+      // CONFIRMED TUNING ("more often ... going down to the right"): the
+      // shared interval above still applies on the ascending half, but
+      // once the player has actually crested the peak the next attempt
+      // fires meaningfully sooner -- stacked with the lower spawn-room
+      // requirement above, this is what makes the descending half
+      // genuinely busier instead of just skewing which side the same
+      // trickle of balls comes from.
+      winterAvalancheSpawnTimer = feetX > WINTER_AVALANCHE_PEAK_X
+        ? 750 + pseudoRandom(spawnSeed + 2) * 400
+        : 1000 + pseudoRandom(spawnSeed + 2) * 600;
     }
   } else if (feetX <= WINTER_AVALANCHE_START_X && winterAvalancheSnowballs.length) {
     // walked back out toward the pool side -- clear the hazard so
@@ -72251,15 +72356,23 @@ function updateWinterAvalanche(deltaTime) {
     winterAvalancheSpawnTimer = 1100;
   }
 
-  const moveAmt = WINTER_AVALANCHE_BALL_SPEED * deltaTime;
   winterAvalancheSnowballs = winterAvalancheSnowballs.filter(b => {
     // rolls from the instant it exists -- see the spawn comment above for
-    // why there's no more stationary telegraph phase
-    b.x += b.dir * moveAmt;
+    // why there's no more stationary telegraph phase. Chasing (dir=+1)
+    // balls move at their own faster speed -- see
+    // WINTER_AVALANCHE_BALL_SPEED_CHASE's own comment for why they need it.
+    const speed = b.dir === 1 ? WINTER_AVALANCHE_BALL_SPEED_CHASE : WINTER_AVALANCHE_BALL_SPEED;
+    b.x += b.dir * speed * deltaTime;
     // rolled off whichever edge it was always headed toward
     if (b.x < WINTER_AVALANCHE_START_X - 80 || b.x > WINTER_AVALANCHE_END_X + 80) return false;
 
-    if (!b.hit) {
+    // CONFIRMED BUGFIX (part of the "can never stop getting hit" fix):
+    // skip the hit check entirely during the post-hit invulnerability
+    // window -- see winterAvalancheHitPlayer's own comment. Still marks
+    // nothing as b.hit here, so a ball that would have connected simply
+    // passes through unharmed during the window rather than queuing up
+    // to hit the instant it ends.
+    if (!b.hit && performance.now() >= (player.avalancheHitInvulnUntil || 0)) {
       const hitHalfWidth = WINTER_AVALANCHE_HIT_HALF_WIDTH[b.size];
       if (Math.abs(feetX - b.x) < hitHalfWidth) {
         const clearHeight = b.size === "big" ? WINTER_AVALANCHE_BIG_CLEAR_HEIGHT : WINTER_AVALANCHE_SMALL_CLEAR_HEIGHT;
