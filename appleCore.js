@@ -203,7 +203,12 @@ const camera = { topDown:false, locked:false };
 // changes): switched to "winter" -- see the new DEBUG_START_SCENE ===
 // "winter" block further down, positioned right at the base of the slick
 // platform climb.
-const DEBUG_START_SCENE = "winter";
+// CONFIRMED CHANGE ("spawn me right after the fungus tree like right
+// readyy to go up into the rock climbining where we go into the swimming
+// hoops"): switched back to "forest" -- see the DEBUG_START_SCENE ===
+// "forest" block further down, repositioned to sit right before
+// FOREST_ROCK_CLIMB_X instead of its old winter-door test spot.
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -2995,13 +3000,20 @@ function handleInput(){
     // to ... either dodge or just outrun the woozy slow" once it passes
     // -- so a dodge silently failing well after invuln ends was never
     // the design, just an unnoticed side effect of one shared speed
-    // factor covering both walking AND jumping. Excluding jumping keeps
-    // the woozy slow doing its real job (sluggish ground movement, easier
-    // for a chase ball to catch you from behind, the sway wobble) without
-    // quietly sabotaging the one tool -- a jump -- that's supposed to
-    // still work if you time it.
+    // factor covering both walking AND jumping.
+    //
+    // CONFIRMED TUNING ("i still want woozy air time though. but just not
+    // as much"): fully exempting jumps (1x) fixed the dodge but apparently
+    // went further than wanted -- some sluggishness mid-air while woozy is
+    // still part of the feel. Splitting the difference instead of picking
+    // an endpoint: jumpSpeedFactor sits halfway between the full ground
+    // slow and normal speed (0.7x at deepest woozy, easing up to 1x as
+    // woozy tapers out, same as the ground factor's own taper). Still
+    // noticeably slower in the air than normal, just not the full 0.4x
+    // that was silently eating jumps.
     if (!player.onWinterIceSlide && player.winterSlickPlatformIndex === -1 && !wateryHereNow) {
-      const groundSpeedFactor = player.jumping ? 1 : woozySpeedFactor;
+      const jumpSpeedFactor = (woozySpeedFactor + 1) / 2;
+      const groundSpeedFactor = player.jumping ? jumpSpeedFactor : woozySpeedFactor;
       if (keys.left) { player.x -= player.speed * groundSpeedFactor; player.facing = -1; }
       if (keys.right) { player.x += player.speed * groundSpeedFactor; player.facing = 1; }
     }
@@ -19357,7 +19369,15 @@ if (DEBUG_START_SCENE === "forest") {
   forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
   forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
-  player.x = connections[8].doors.forest.x - 60; // right in front of the new winter door
+  // CONFIRMED CHANGE ("spawn me right after the fungus tree like right
+  // readyy to go up into the rock climbining where we go into the
+  // swimming hoops"): same TDZ hardcoding as the other debug spawns --
+  // FOREST_ROCK_CLIMB_X is a `const` declared further down, so it can't
+  // be referenced from this top-level init block. Its chain: 15120
+  // (FOREST_FLOAT_ZONE_END_X) + 40 (return lever) + 1050 (fungus tree) +
+  // 520 (rock climb) = 16730. A short walk-up before the climb instead
+  // of dropping dead-center on the first handhold.
+  player.x = 16670;
   player.y = 0;
   // CONFIRMED CHANGE ("ok byut now the inventory is gone?" -- the
   // shovel/windSeed/bucket grant only lived in the topsyturvy debug
