@@ -72483,6 +72483,12 @@ const WINTER_AVALANCHE_BIG_CLEAR_HEIGHT = 100;
 // of needing to be phase-perfect.
 const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
 
+// CONFIRMED BUGFIX ("there are waaaay too many snoballs at once" -- see
+// the spawn-site comment where this is actually enforced): nothing ever
+// capped how many could be alive together, since a ball only leaves the
+// array once it crosses the WHOLE hill, not once it's past the player.
+const WINTER_AVALANCHE_MAX_CONCURRENT_BALLS = 2;
+
 let winterAvalancheSnowballs = [];
 let winterAvalancheSpawnTimer = 1300;
 
@@ -72617,7 +72623,20 @@ function updateWinterAvalanche(deltaTime) {
           spawnX = Math.min(WINTER_AVALANCHE_END_X - 30, feetX - Math.min(leadDist, room));
         }
       }
-      if (spawnX !== null) {
+      // CONFIRMED BUGFIX ("there are waaaay too many snoballs at once" --
+      // "tester was like absoluute wtf"): there was never an actual cap on
+      // how many balls could be alive at the same time -- one only left
+      // the array once it rolled all the way off whichever edge of the
+      // WHOLE hill it was headed toward (see the filter below), which is
+      // a much longer trip than just getting past the player. The spawn
+      // timer kept firing on its own fixed 750-1150ms cadence regardless
+      // of how many were already in flight, so nothing stopped them from
+      // piling up into a genuine crowd around the player at once. Capping
+      // concurrent balls keeps the timer's own cadence (a skipped spawn
+      // here just retries next interval, same as the existing spawnX ===
+      // null skip above) but stops the field from ever getting that
+      // stacked -- normally one ball at a time, occasionally two.
+      if (spawnX !== null && winterAvalancheSnowballs.length < WINTER_AVALANCHE_MAX_CONCURRENT_BALLS) {
         const bouncy = pseudoRandom(spawnSeed + 5) < 0.35; // "want some to have a light bounce" -- purely a visual hop, doesn't change the hitbox
         // fixed per-ball seed for its visual texture (irregular clumped
         // silhouette, embedded packed-snow patches) -- stored once so the
