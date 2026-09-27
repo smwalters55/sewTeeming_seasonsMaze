@@ -19513,12 +19513,17 @@ if (DEBUG_START_SCENE === "winter") {
 // gaps (85/55/90/50/80), matching the scattered-not-a-grid treatment the
 // second patch past the fungus tree got.
 const FOREST_GROUND_MUSHROOMS = [
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 160, scale: 0.85, squishT: 9999 },
+  // CONFIRMED TUNING ("more breathing room less equidistant"): widened
+  // gaps (95/130/60/110/75, all distinct -- was 85/55/90/50/80, which had
+  // two near-duplicate pairs that still read as semi-gridded) and pushed
+  // the span out a touch (150->620, was 160->520), still well clear of
+  // the lever's 28px interact radius and the tree's left mat at +770.
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 150, scale: 0.85, squishT: 9999 },
   { x: FOREST_FLOAT_RETURN_LEVER_X + 245, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 300, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 390, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 440, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 520, scale: 1.2, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 375, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 435, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 545, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 620, scale: 1.2, squishT: 9999 },
   // CONFIRMED CHANGE ("after a few more hoppy fround mushrooms"): a
   // second, smaller patch past the fungus tree -- same exact mechanic,
   // just continuing the walking path out toward the new rock climb. Well
@@ -19549,9 +19554,14 @@ const FOREST_GROUND_MUSHROOMS = [
   // same safe span reads as real scattered breathing room instead of a
   // packed row, matching the scattered-not-a-grid feel of the first patch
   // above.
-  { x: FOREST_FUNGUS_TREE_X + 100, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 215, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 290, scale: 0.75, squishT: 9999 },
+  // CONFIRMED TUNING ("more breathing room less equidistant"): reshuffled
+  // gaps to 100/70/130 (all distinct, max gap now 130 vs prior 115) --
+  // still starts well past the tree's own right mat (+30) and still ends
+  // at +390, the confirmed-safe distance from the rock wall's worst-case
+  // jitter and the handhold catch zone.
+  { x: FOREST_FUNGUS_TREE_X + 90, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 190, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 260, scale: 0.75, squishT: 9999 },
   { x: FOREST_FUNGUS_TREE_X + 390, scale: 1.05, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
