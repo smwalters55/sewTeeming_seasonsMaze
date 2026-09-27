@@ -214,7 +214,11 @@ const camera = { topDown:false, locked:false };
 // player.x set to right before the avalanche trigger zone from the
 // earlier "spawn me right in front of snowball range" request, untouched
 // since.
-const DEBUG_START_SCENE = "forest";
+// CONFIRMED CHANGE ("put me at the beginning spawn again"): reverted to
+// "autumn" -- the real game start, not a debug test spot. Per this file's
+// own standing convention above, leave this alone unless a future debug
+// request explicitly asks to be dropped somewhere else again.
+const DEBUG_START_SCENE = "autumn";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -19513,56 +19517,36 @@ if (DEBUG_START_SCENE === "winter") {
 // gaps (85/55/90/50/80), matching the scattered-not-a-grid treatment the
 // second patch past the fungus tree got.
 const FOREST_GROUND_MUSHROOMS = [
-  // CONFIRMED TUNING ("more breathing room less equidistant"): widened
-  // gaps (95/130/60/110/75, all distinct -- was 85/55/90/50/80, which had
-  // two near-duplicate pairs that still read as semi-gridded) and pushed
-  // the span out a touch (150->620, was 160->520), still well clear of
-  // the lever's 28px interact radius and the tree's left mat at +770.
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 150, scale: 0.85, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 245, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 375, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 435, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 545, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 620, scale: 1.2, squishT: 9999 },
-  // CONFIRMED CHANGE ("after a few more hoppy fround mushrooms"): a
-  // second, smaller patch past the fungus tree -- same exact mechanic,
-  // just continuing the walking path out toward the new rock climb. Well
-  // clear of the tree's own right mat (FOREST_FUNGUS_TREE_X + 30).
-  // CONFIRMED TUNING ("add more of the hoppy muhshrooms between fungus
-  // tree and rock climb pool" / "spread the mushrooms out a little more.
-  // more breathing room between"): the old patch (4 mushrooms, +90 to
-  // +285, ~65-70px apart) also left a big empty dead stretch from +285 all
-  // the way to the rock climb at +520 with nothing in it.
-  // (A prior round pulled this patch back to end at +365 to dodge the
-  // rock climb's first-handhold catch zone starting around +437 -- see
-  // the CONFIRMED BUGFIX ROUND 2 comment on the fall-catch check itself
-  // in applyPhysics, which excludes mushroom bounces from that catch
-  // directly at the source now.)
-  // CONFIRMED BUGFIX ("i should not be bouncing on a mushroom here" --
-  // standing right at the rock wall itself): the handhold catch zone
-  // isn't the only thing near the rock climb -- the wall's own visible
-  // rock face (forestRockWallEdgeX, side=-1 at ground level) can sit as
-  // close as FOREST_ROCK_CLIMB_X-73 in its worst-case jitter, i.e.
-  // FOREST_FUNGUS_TREE_X+447, so a mushroom anywhere near there put its
-  // hit radius right where a player naturally stands to approach/grab the
-  // wall. Pulled the whole patch's reach back to end at +390 (390+20
-  // radius = 410, a real ~37px clear of that worst case), not just clear
-  // of the handhold band.
-  // CONFIRMED TUNING ("i dont want equidistant mushrooms" / "give more
-  // breathing room"): down to 4 (from 6) with deliberately uneven gaps
-  // (115/75/100, not a repeating ~80 grid) -- fewer mushrooms across the
-  // same safe span reads as real scattered breathing room instead of a
-  // packed row, matching the scattered-not-a-grid feel of the first patch
-  // above.
-  // CONFIRMED TUNING ("more breathing room less equidistant"): reshuffled
-  // gaps to 100/70/130 (all distinct, max gap now 130 vs prior 115) --
-  // still starts well past the tree's own right mat (+30) and still ends
-  // at +390, the confirmed-safe distance from the rock wall's worst-case
-  // jitter and the handhold catch zone.
-  { x: FOREST_FUNGUS_TREE_X + 90, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 190, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 260, scale: 0.75, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 390, scale: 1.05, squishT: 9999 }
+  // CONFIRMED TUNING ("more breathing room. more mushrooms" -- round 3):
+  // 6 -> 8 mushrooms, span widened further (100->730, was 130->670), all
+  // 7 gaps distinct (75/95/55/115/65/105/120) -- still a real ~40px margin
+  // clear of the tree's left mat at +770 and well clear of the lever's
+  // 28px interact radius.
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 100, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 175, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 270, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 325, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 440, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 505, scale: 1.2, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 610, scale: 0.95, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 730, scale: 1.1, squishT: 9999 },
+  // Second, smaller patch past the fungus tree, continuing the walking
+  // path toward the rock climb. This span is boxed in on both ends: the
+  // tree's own right mat (FOREST_FUNGUS_TREE_X + 30) on the left, and the
+  // rock wall's worst-case jitter (forestRockWallEdgeX, side=-1, ground
+  // level) on the right, which can sit as close as FOREST_ROCK_CLIMB_X-73,
+  // i.e. FOREST_FUNGUS_TREE_X+447. A mushroom's own +20 hit radius means
+  // the patch can only safely reach FOREST_FUNGUS_TREE_X+400 (a real ~27px
+  // clear of that worst case) without risking a bounce right where the
+  // player is trying to approach/grab the wall.
+  // CONFIRMED TUNING ("more breathing room. more mushrooms" -- round 3):
+  // back up to 4 mushrooms (from 3), using the full safe box (85->400) with
+  // distinct gaps (75/130/110) -- more mushrooms than the 3-mushroom round
+  // while still reading as genuinely scattered, not a packed row.
+  { x: FOREST_FUNGUS_TREE_X + 85, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 160, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 290, scale: 0.75, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 400, scale: 1.05, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
 // approximate world-space height of a mushroom's own cap top, matching
