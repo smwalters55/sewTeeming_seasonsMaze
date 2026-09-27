@@ -72528,10 +72528,15 @@ const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
 // with the old "only despawns off the whole hill's edge" behavior choked
 // throughput far more than intended -- see the despawn-distance fix at
 // the filter site (now frees a slot once a ball is genuinely past the
-// player, not once it crosses the entire zone). With that fixed, capacity
-// can afford to be a little more generous too -- 3 still stops the real
-// swarm/pileup feeling, just without the field going this empty.
-const WINTER_AVALANCHE_MAX_CONCURRENT_BALLS = 3;
+// player, not once it crosses the entire zone).
+// CONFIRMED TUNING ROUND 2 ("more balls than that i feel like you went
+// from 150 to like 50"): 3 was still reading as noticeably thinned out --
+// with the despawn fix already keeping slots turning over quickly (a ball
+// frees its slot as soon as it's genuinely past the player, not after the
+// whole zone), raising the cap doesn't reintroduce the original swarm-
+// around-the-player pileup, it just lets more be in flight across the
+// hill's own much wider span at once.
+const WINTER_AVALANCHE_MAX_CONCURRENT_BALLS = 5;
 
 let winterAvalancheSnowballs = [];
 let winterAvalancheSpawnTimer = 1300;
