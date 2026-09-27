@@ -3617,7 +3617,17 @@ function applyPhysics(){
   // jump's apex), not grab a grounded one -- added the same player.jumping
   // requirement the manual mid-air grab above already uses, so walking on
   // solid ground next to the wall is just walking again.
-  if (currentScene === "forest" && player.jumping && player.vy <= 0) {
+  // CONFIRMED BUGFIX ROUND 2 ("i need to be able to go left here without
+  // being forced onto the rock hold"): the player.jumping guard above
+  // fixed plain ground walking, but a ground mushroom's hop (see
+  // mushroomHit in the y<=0 landing block) ALSO sets player.jumping=true
+  // for the length of its bounce -- same as a real jump, from this check's
+  // point of view -- so simply hopping across a mushroom that happened to
+  // land within a handhold's catch band still silently grabbed the wall,
+  // no deliberate climb attempt involved. A mushroom bounce is never a
+  // real climbing fall, so it should never feed this soft-catch; excluded
+  // via the same mushroomHopActive flag the bounce itself already sets.
+  if (currentScene === "forest" && player.jumping && player.vy <= 0 && !player.mushroomHopActive) {
     const fallCatch = FOREST_ROCK_HANDHOLDS.find(h => Math.abs(player.x + player.width / 2 - h.x) < FOREST_ROCK_HANDHOLD_RADIUS &&
       Math.abs(player.y - h.height) < FOREST_ROCK_HANDHOLD_BAND);
     if (fallCatch) {
@@ -4575,8 +4585,21 @@ function applyPhysics(){
     } else if (fungusHit) {
       forestFungusLaunch(fungusHit, 0);
     } else if (mushroomHit) {
+      // CONFIRMED CHANGE ("during mushroom hop i hop on the ground rather
+      // than just hit the top of mushroom"): the bounce always snapped
+      // player.y to 0 (true ground level) as its launch origin, same as
+      // every other launcher sharing this block -- fine for something
+      // flush with the ground, but a mushroom has a real visible cap
+      // sitting well above 0, so bouncing from 0 read as launching from
+      // beside/through it rather than off its top. Launches from the
+      // cap's own approximate top height instead (matches the draw
+      // function's stemH + capRy geometry, scaled the same way per-
+      // mushroom via m.scale) -- gravity still pulls the player back down
+      // through and past that height to the real ground on the way down,
+      // same as before, this only changes where the bounce itself starts.
+      const capHeight = FOREST_GROUND_MUSHROOM_CAP_HEIGHT(mushroomHit);
       const fallSpeed = Math.abs(player.vy);
-      player.y = 0;
+      player.y = capHeight;
       player.vy = Math.min(FOREST_GROUND_MUSHROOM_MAX_VY, Math.max(FOREST_GROUND_MUSHROOM_MIN_VY, fallSpeed * FOREST_GROUND_MUSHROOM_BOUNCE_MULT));
       player.jumping = true;
       player.usedDoubleJump = false;
@@ -17871,6 +17894,22 @@ function drawForestScene(camX) {
   // grass-blade texture yet, kept simple for this base pass
   ctx.fillStyle = "#4d5c35";
   ctx.fillRect(0, gy, canvas.width, canvas.height - gy);
+  // CONFIRMED BUGFIX ("i dont wnat a line for fog layer!!! blend it fold
+  // it in"): the sky fill above (drawn in fixed screen space, BEFORE this
+  // translate) is a flat "#5a6a42" past its own gy cutoff -- exactly
+  // where this ground fill's own top edge sits once cameraY pushes it
+  // down while climbing. Two flat, different-colored rects butted right
+  // against each other with zero blend between them reads as a hard ruled
+  // line (what looked like a "fog layer" edge) instead of ground meeting
+  // sky. A short gradient strip right at the seam, fading from the sky's
+  // own flat color down into the ground's, folds the two together instead
+  // of leaving a visible seam -- drawn inside this same translated block
+  // so it always lands exactly on the real seam regardless of cameraY.
+  const groundSeamBlend = ctx.createLinearGradient(0, gy - 4, 0, gy + 36);
+  groundSeamBlend.addColorStop(0, "#5a6a42");
+  groundSeamBlend.addColorStop(1, "#4d5c35");
+  ctx.fillStyle = groundSeamBlend;
+  ctx.fillRect(0, gy - 4, canvas.width, 40);
   // mossy/dirt patches -- randomized per WORLD tile (size, position
   // jitter, alpha, occasional skip, occasional brownish dirt tint).
   // Iterates true world-space tile indices (derived from camX), not
@@ -19466,13 +19505,20 @@ if (DEBUG_START_SCENE === "winter") {
 // a 300px total span, now 380) while pulling the start point back in a
 // touch (290 -> 260) so the last one still lands well clear of the
 // tree's own left mat (770) instead of eating into that breathing room.
+// CONFIRMED TUNING ("same with the mushroom bouncy set more to the left.
+// make them not equidistant"): shifted the whole patch left (still well
+// clear of the lever's own tight 28px interact radius) and swapped the
+// steadily-shrinking 90/80/75/70/65 gap progression -- which still reads
+// as a deliberate, almost-mechanical taper -- for genuinely irregular
+// gaps (85/55/90/50/80), matching the scattered-not-a-grid treatment the
+// second patch past the fungus tree got.
 const FOREST_GROUND_MUSHROOMS = [
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 260, scale: 0.85, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 350, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 430, scale: 0.7, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 505, scale: 1.05, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 575, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FLOAT_RETURN_LEVER_X + 640, scale: 1.2, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 160, scale: 0.85, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 245, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 300, scale: 0.7, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 390, scale: 1.05, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 440, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FLOAT_RETURN_LEVER_X + 520, scale: 1.2, squishT: 9999 },
   // CONFIRMED CHANGE ("after a few more hoppy fround mushrooms"): a
   // second, smaller patch past the fungus tree -- same exact mechanic,
   // just continuing the walking path out toward the new rock climb. Well
@@ -19481,28 +19527,41 @@ const FOREST_GROUND_MUSHROOMS = [
   // tree and rock climb pool" / "spread the mushrooms out a little more.
   // more breathing room between"): the old patch (4 mushrooms, +90 to
   // +285, ~65-70px apart) also left a big empty dead stretch from +285 all
-  // the way to the rock climb at +520 with nothing in it. Now 5 mushrooms
-  // with wider ~85px gaps, starting further out (clear of the now-thicker
-  // trunk, see TW in drawForestFungusClimb).
-  // CONFIRMED BUGFIX ("i need to be able to go left here without being
-  // forced onto the rock hold"): the +455 entry (this patch's push toward
-  // "continuing right up near the rock climb's own approach") landed
-  // right inside the first handhold's own catch zone -- handhold 0 sits
-  // at FOREST_ROCK_CLIMB_X-35 (FOREST_FUNGUS_TREE_X+485) with a 48px
-  // catch radius, i.e. anything from +437 on already overlaps it, and the
-  // fall-catch check only guards against grabbing while grounded, not
-  // while mid-hop -- so bouncing across that last mushroom (which sets
-  // player.jumping briefly, same as a real jump) silently yanked the
-  // player onto the wall even just passing through. Pulled the patch back
-  // to end at +365, a real ~72px clear of the catch zone, so hopping
-  // across every mushroom here stays on the ground until a real jump/
-  // grab press is what puts you on the wall.
-  { x: FOREST_FUNGUS_TREE_X + 110, scale: 1.0, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 185, scale: 0.8, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 275, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 365, scale: 0.9, squishT: 9999 }
+  // the way to the rock climb at +520 with nothing in it.
+  // (A prior round pulled this patch back to end at +365 to dodge the
+  // rock climb's first-handhold catch zone starting around +437 -- see
+  // the CONFIRMED BUGFIX ROUND 2 comment on the fall-catch check itself
+  // in applyPhysics, which excludes mushroom bounces from that catch
+  // directly at the source now.)
+  // CONFIRMED BUGFIX ("i should not be bouncing on a mushroom here" --
+  // standing right at the rock wall itself): the handhold catch zone
+  // isn't the only thing near the rock climb -- the wall's own visible
+  // rock face (forestRockWallEdgeX, side=-1 at ground level) can sit as
+  // close as FOREST_ROCK_CLIMB_X-73 in its worst-case jitter, i.e.
+  // FOREST_FUNGUS_TREE_X+447, so a mushroom anywhere near there put its
+  // hit radius right where a player naturally stands to approach/grab the
+  // wall. Pulled the whole patch's reach back to end at +390 (390+20
+  // radius = 410, a real ~37px clear of that worst case), not just clear
+  // of the handhold band.
+  // CONFIRMED TUNING ("i dont want equidistant mushrooms" / "give more
+  // breathing room"): down to 4 (from 6) with deliberately uneven gaps
+  // (115/75/100, not a repeating ~80 grid) -- fewer mushrooms across the
+  // same safe span reads as real scattered breathing room instead of a
+  // packed row, matching the scattered-not-a-grid feel of the first patch
+  // above.
+  { x: FOREST_FUNGUS_TREE_X + 100, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 215, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 290, scale: 0.75, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 390, scale: 1.05, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
+// approximate world-space height of a mushroom's own cap top, matching
+// drawForestGroundMushroom's geometry (stemH=9*scale, capRy=capR*0.68=
+// 15*scale*0.68, cap drawn centered ~0.4*capRy above the stem, so its top
+// edge sits stemH + capRy*1.4 above the ground) -- used so the bounce (see
+// mushroomHit in applyPhysics) launches from roughly the cap's own top
+// instead of from flat ground level.
+const FOREST_GROUND_MUSHROOM_CAP_HEIGHT = m => 9 * m.scale + (15 * m.scale * 0.68) * 1.4;
 // CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
 // little too long to build up... walked across the ground mushrooms you
 // would keep doing that cute little hop down the line"): the hop HEIGHT
@@ -25110,7 +25169,12 @@ function drawTopsyTurvyTree(camX, t) {
 // two-leaf overlapping blanket with visible veins instead of one flat
 // ellipse, and a tiny moss tuft at the base for extra texture.
 function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
-  const nx = sx + side * 15 * s, ny = y(localHeight);
+  // CONFIRMED BUGFIX ("sleeper being is still half outside the trunk"):
+  // pulled in from 15 to 7 -- see the matching change at this function's
+  // call site for the full reasoning (the glow ellipse drawn there must
+  // stay aligned with this hollow, so both pull-out constants moved
+  // together).
+  const nx = sx + side * 7 * s, ny = y(localHeight);
   const seed = nx * 3.1 + ny * 1.7;
 
   // raised bark lip -- a slightly lighter, larger irregular ring behind
@@ -29014,7 +29078,17 @@ function drawForestFungusClimb(camX) {
   // painting over every cap no matter how close.
   const fungusY = h => gy - h;
   const FUNGUS_VIGNETTE_SCALE = 2.3;
-  const nookX = sx + 1 * 15 * FUNGUS_VIGNETTE_SCALE, nookY = fungusY(150);
+  // CONFIRMED BUGFIX ("sleeper being is still half outside the trunk"):
+  // even after widening the trunk (TW) and shrinking the leaf blanket,
+  // pixel-level comparison against a screenshot showed the hollow's own
+  // right tip and the blanket's bottom leaves still crossed past the
+  // trunk's actual silhouette edge at this height into the background --
+  // the vignette's horizontal pull-out (15 * scale, both here and inside
+  // drawTreeClimbSleepyNook's own nx) put its center further from the
+  // trunk's own centerline than the trunk is actually wide there. Pulled
+  // both in to 7 * scale so the whole assembly sits well inside the
+  // silhouette with real margin, not right at its edge.
+  const nookX = sx + 1 * 7 * FUNGUS_VIGNETTE_SCALE, nookY = fungusY(150);
   ctx.fillStyle = "rgba(15,10,6,0.5)";
   ctx.beginPath();
   ctx.ellipse(nookX, nookY, 15 * FUNGUS_VIGNETTE_SCALE * 0.55, 12 * FUNGUS_VIGNETTE_SCALE * 0.55, 0, 0, Math.PI * 2);
