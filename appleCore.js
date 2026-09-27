@@ -72080,6 +72080,27 @@ function winterAvalancheDirBias(feetX) {
 // obstacle demands is always exactly WINTER_AVALANCHE_RIDGE_STEP_HEIGHT,
 // full stop, regardless of where that band happens to sample the terrain
 // texture. Every other part of the hill is completely unaffected.
+// CONFIRMED BUGFIX ("if i hold down rightaarrow player spazzes here at the
+// first ... mini hill differential on snowball hill coming from the
+// left"): traced the actual ground-height function frame-by-frame walking
+// from the hill start and found the player getting physically stuck,
+// oscillating in place, right around the ridge -- the terrain height was
+// making four separate near-vertical cliffs there, each one the FULL
+// ripple amplitude (~30-35px) appearing/disappearing across a single
+// pixel of x. Root cause: the two margin-ramp branches below had their
+// smootherstep interpolation backwards. Intent was "ease DOWN to 0 as x
+// approaches the suppressed band from either side", but the code computed
+// smootherstep((x-lo)/margin) / smootherstep((hi-x)/margin) directly,
+// which actually eases FROM 0 UP TO 1 heading INTO the band and eases
+// FROM 1 DOWN TO 0 heading AWAY from it -- exactly inverted. That put a
+// full 0-to-1 (or 1-to-0) swing right at each band boundary instead of
+// spread smoothly across the 90px margin: measured cliffs at lo (1->0),
+// bandLo (~1->0), bandHi (0->~1), and hi (~0->1), all within a couple px.
+// Fixed by flipping both branches to 1 - smootherstep(...), which now
+// continuously matches the flat 1 on the far side and the flat 0 across
+// the suppressed band on the near side -- verified via direct sampling,
+// suppression now ramps smoothly 1->0->...->0->1 with no jumps anywhere
+// in the margin.
 function winterAvalancheRidgeRippleSuppression(x) {
   const bandLo = WINTER_AVALANCHE_RIDGE_WALL_X - 10;
   const bandHi = WINTER_AVALANCHE_RIDGE_X + 10;
@@ -72088,11 +72109,11 @@ function winterAvalancheRidgeRippleSuppression(x) {
   if (x < bandLo) {
     const lo = bandLo - margin;
     if (x <= lo) return 1;
-    return winterAvalancheSmootherstep((x - lo) / margin);
+    return 1 - winterAvalancheSmootherstep((x - lo) / margin);
   }
   const hi = bandHi + margin;
   if (x >= hi) return 1;
-  return winterAvalancheSmootherstep((hi - x) / margin);
+  return 1 - winterAvalancheSmootherstep((hi - x) / margin);
 }
 function winterAvalancheHillRipple(x) {
   const zt = (x - WINTER_AVALANCHE_START_X) / (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_START_X);
@@ -72324,7 +72345,16 @@ WINTER_SLICK_PLATFORMS.push(...WINTER_AVALANCHE_HOP_PLATFORMS);
 // (WINTER_ICE_DUCK_SHELF at END_X+420) -- well clear of both, so the
 // player is genuinely done with the range and walking flat ground before
 // they reach it.
-const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X + 180;
+// CONFIRMED TUNING ("move out the hop-to-restart snowball hill quite a bit
+// more well i mean not too too much but rn i keep accidentally jumping on
+// it while just leaving the mountain range and accidentally restart the
+// whole thing"): +180 put it close enough past END_X that normal exit
+// momentum off the hill's own taper could still carry a jump onto it.
+// Pushed further out (+300) -- still well clear of WINTER_ICE_DUCK_SHELF
+// at END_X+420 (shelf spans roughly +390 to +450, this ball's own land
+// footprint only reaches out to +336), just enough extra flat-ground gap
+// that reaching it takes a deliberate walk instead of a leftover hop.
+const WINTER_AVALANCHE_RESET_BALL_X = WINTER_AVALANCHE_END_X + 300;
 const WINTER_AVALANCHE_RESET_BALL_RADIUS = 24;
 const WINTER_AVALANCHE_RESET_BALL_MOUND_HEIGHT = 20;
 const WINTER_AVALANCHE_RESET_BALL_LAND_HALFWIDTH = 36;
@@ -72493,7 +72523,15 @@ const WINTER_AVALANCHE_HIT_HALF_WIDTH = { small: 15, big: 16 };
 // the spawn-site comment where this is actually enforced): nothing ever
 // capped how many could be alive together, since a ball only leaves the
 // array once it crosses the WHOLE hill, not once it's past the player.
-const WINTER_AVALANCHE_MAX_CONCURRENT_BALLS = 2;
+// CONFIRMED TUNING ("we do need more snowballs, now there is barely any.
+// you flipped from like the million to barely any"): a cap of 2 combined
+// with the old "only despawns off the whole hill's edge" behavior choked
+// throughput far more than intended -- see the despawn-distance fix at
+// the filter site (now frees a slot once a ball is genuinely past the
+// player, not once it crosses the entire zone). With that fixed, capacity
+// can afford to be a little more generous too -- 3 still stops the real
+// swarm/pileup feeling, just without the field going this empty.
+const WINTER_AVALANCHE_MAX_CONCURRENT_BALLS = 3;
 
 let winterAvalancheSnowballs = [];
 let winterAvalancheSpawnTimer = 1300;
@@ -72707,6 +72745,23 @@ function updateWinterAvalanche(deltaTime) {
     b.x += b.dir * speed * deltaTime;
     // rolled off whichever edge it was always headed toward
     if (b.x < WINTER_AVALANCHE_START_X - 80 || b.x > WINTER_AVALANCHE_END_X + 80) return false;
+    // CONFIRMED BUGFIX ("we do need more snowballs, now there is barely
+    // any. you flipped from like the million to barely any"): the concurrent
+    // cap (see WINTER_AVALANCHE_MAX_CONCURRENT_BALLS) stops new balls from
+    // spawning while it's full, but a ball only ever left the array by
+    // rolling off the WHOLE hill's edge -- a much longer trip than just
+    // getting past the player, especially now the zone is this wide. With
+    // a small cap that meant the field sat full of balls that were long
+    // done interacting with the player, starving the spawn timer of room
+    // to ever fire -- the cap fix traded "too many at once" for "next to
+    // none," not the middle ground intended. A ball is genuinely finished
+    // once it's well behind the player in whatever direction it's already
+    // heading (it can only ever move further away from here on, same
+    // direction the whole trip) -- despawning then frees a cap slot right
+    // away instead of waiting out the rest of its trip to the real edge.
+    const PASS_DESPAWN_MARGIN = 480;
+    if (b.dir === -1 && b.x < feetX - PASS_DESPAWN_MARGIN) return false;
+    if (b.dir === 1 && b.x > feetX + PASS_DESPAWN_MARGIN) return false;
 
     // CONFIRMED BUGFIX (part of the "can never stop getting hit" fix):
     // skip the hit check entirely during the post-hit invulnerability
@@ -73120,31 +73175,62 @@ function drawWinterAvalancheHill(camX) {
 
   ctx.restore();
 
-  // jagged rock spikes breaking the ridge line's own silhouette right at
-  // each outcrop -- without this the outcrop is only visible as a color
-  // change under the same smooth curve everything else uses, which reads
-  // as a texture patch rather than an actual rock ledge jutting out.
+  // rock chunks breaking the ridge line's own silhouette right at each
+  // outcrop -- without this the outcrop is only visible as a color change
+  // under the same smooth curve everything else uses, which reads as a
+  // texture patch rather than an actual rock ledge jutting out.
+  //
+  // CONFIRMED REWORK ("i dont like this pasted on look of the triangles--
+  // supposed to be rock outcrops? this looks like kindergarten"): the old
+  // version was a literal symmetric 3-point isoceles triangle per spike --
+  // one flat fill color, a hard dead-straight base line, evenly spaced
+  // like a picket fence. That combination (perfect symmetry + flat single
+  // shade + straight base) is exactly what reads as a clip-art "mountain"
+  // icon glued on top, not real broken rock. Replaced each spike with an
+  // irregular multi-point silhouette (jittered peak position and base, not
+  // a single centered point), fewer/bigger/more spaced-out chunks instead
+  // of a uniform row, and simple two-tone shading (a darker shadowed half)
+  // so each one reads as a solid 3D chunk of rock instead of a flat
+  // triangle silhouette.
   OUTCROPS.forEach(o => {
     const spanX = o.rising ? (WINTER_AVALANCHE_PEAK_X - WINTER_AVALANCHE_START_X) : (WINTER_AVALANCHE_END_X - WINTER_AVALANCHE_PEAK_X);
     const originX = o.rising ? WINTER_AVALANCHE_START_X : WINTER_AVALANCHE_PEAK_X;
     const loX = originX + (o.centerT - o.widthT) * spanX;
     const hiX = originX + (o.centerT + o.widthT) * spanX;
-    const SPIKES = 6;
+    const SPIKES = 4;
     for (let sIdx = 0; sIdx < SPIKES; sIdx++) {
       const sseed = o.seedBase + 4000 + sIdx * 31.7;
-      const sxWorld = loX + ((sIdx + 0.5) / SPIKES) * (hiX - loX);
+      // uneven spacing instead of a perfectly even row -- a little jitter
+      // on top of the even slot so the chunks read as scattered, not lined up
+      const slotT = (sIdx + 0.5) / SPIKES + (pseudoRandom(sseed + 40) - 0.5) * 0.5 / SPIKES;
+      const sxWorld = loX + slotT * (hiX - loX);
       const baseY = gy - winterAvalancheHillHeightAt(sxWorld);
-      const spikeH = 14 + pseudoRandom(sseed) * 20;
-      const spikeW = 10 + pseudoRandom(sseed + 1) * 10;
+      const spikeH = 20 + pseudoRandom(sseed) * 30;
+      const spikeW = 26 + pseudoRandom(sseed + 1) * 24;
       const sx = sxWorld - camX;
-      ctx.fillStyle = "#8a8078";
+      const PTS = 6;
+      const pts = [];
+      for (let p = 0; p <= PTS; p++) {
+        const tt = p / PTS; // 0 at left base, 1 at right base
+        const lift = Math.sin(tt * Math.PI) * spikeH * (0.5 + pseudoRandom(sseed + 10 + p) * 0.75);
+        const jitterX = (pseudoRandom(sseed + 20 + p) - 0.5) * spikeW * 0.22;
+        const baseJitter = (pseudoRandom(sseed + 30 + p) - 0.5) * 8;
+        pts.push({ x: sx - spikeW * 0.5 + tt * spikeW + jitterX, y: baseY + 4 + baseJitter - lift });
+      }
+      ctx.fillStyle = "#847a70";
       ctx.beginPath();
-      ctx.moveTo(sx - spikeW * 0.5, baseY + 4);
-      ctx.lineTo(sx + pseudoRandom(sseed + 2) * spikeW * 0.3 - spikeW * 0.15, baseY - spikeH);
-      ctx.lineTo(sx + spikeW * 0.5, baseY + 4);
+      pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = "rgba(70,65,60,0.4)";
+      // darker shadow half (right side of the peak) for a real 3D read
+      const peakIdx = pts.reduce((best, p, i) => p.y < pts[best].y ? i : best, 0);
+      ctx.fillStyle = "rgba(55,50,46,0.4)";
+      ctx.beginPath();
+      ctx.moveTo(pts[peakIdx].x, pts[peakIdx].y);
+      for (let p = peakIdx; p <= PTS; p++) ctx.lineTo(pts[p].x, pts[p].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(60,55,50,0.45)";
       ctx.lineWidth = 1;
       ctx.stroke();
     }
