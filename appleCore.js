@@ -19483,13 +19483,24 @@ const FOREST_GROUND_MUSHROOMS = [
   // +285, ~65-70px apart) also left a big empty dead stretch from +285 all
   // the way to the rock climb at +520 with nothing in it. Now 5 mushrooms
   // with wider ~85px gaps, starting further out (clear of the now-thicker
-  // trunk, see TW in drawForestFungusClimb) and continuing right up near
-  // the rock climb's own approach instead of stopping well short of it.
+  // trunk, see TW in drawForestFungusClimb).
+  // CONFIRMED BUGFIX ("i need to be able to go left here without being
+  // forced onto the rock hold"): the +455 entry (this patch's push toward
+  // "continuing right up near the rock climb's own approach") landed
+  // right inside the first handhold's own catch zone -- handhold 0 sits
+  // at FOREST_ROCK_CLIMB_X-35 (FOREST_FUNGUS_TREE_X+485) with a 48px
+  // catch radius, i.e. anything from +437 on already overlaps it, and the
+  // fall-catch check only guards against grabbing while grounded, not
+  // while mid-hop -- so bouncing across that last mushroom (which sets
+  // player.jumping briefly, same as a real jump) silently yanked the
+  // player onto the wall even just passing through. Pulled the patch back
+  // to end at +365, a real ~72px clear of the catch zone, so hopping
+  // across every mushroom here stays on the ground until a real jump/
+  // grab press is what puts you on the wall.
   { x: FOREST_FUNGUS_TREE_X + 110, scale: 1.0, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 195, scale: 0.8, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 285, scale: 1.15, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 370, scale: 0.9, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 455, scale: 1.05, squishT: 9999 }
+  { x: FOREST_FUNGUS_TREE_X + 185, scale: 0.8, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 275, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 365, scale: 0.9, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
 // CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
