@@ -214,7 +214,7 @@ const camera = { topDown:false, locked:false };
 // player.x set to right before the avalanche trigger zone from the
 // earlier "spawn me right in front of snowball range" request, untouched
 // since.
-const DEBUG_START_SCENE = "winter";
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -19477,10 +19477,19 @@ const FOREST_GROUND_MUSHROOMS = [
   // second, smaller patch past the fungus tree -- same exact mechanic,
   // just continuing the walking path out toward the new rock climb. Well
   // clear of the tree's own right mat (FOREST_FUNGUS_TREE_X + 30).
-  { x: FOREST_FUNGUS_TREE_X + 90, scale: 1.0, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 160, scale: 0.75, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 225, scale: 1.1, squishT: 9999 },
-  { x: FOREST_FUNGUS_TREE_X + 285, scale: 0.9, squishT: 9999 }
+  // CONFIRMED TUNING ("add more of the hoppy muhshrooms between fungus
+  // tree and rock climb pool" / "spread the mushrooms out a little more.
+  // more breathing room between"): the old patch (4 mushrooms, +90 to
+  // +285, ~65-70px apart) also left a big empty dead stretch from +285 all
+  // the way to the rock climb at +520 with nothing in it. Now 5 mushrooms
+  // with wider ~85px gaps, starting further out (clear of the now-thicker
+  // trunk, see TW in drawForestFungusClimb) and continuing right up near
+  // the rock climb's own approach instead of stopping well short of it.
+  { x: FOREST_FUNGUS_TREE_X + 110, scale: 1.0, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 195, scale: 0.8, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 285, scale: 1.15, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 370, scale: 0.9, squishT: 9999 },
+  { x: FOREST_FUNGUS_TREE_X + 455, scale: 1.05, squishT: 9999 }
 ];
 const FOREST_GROUND_MUSHROOM_RADIUS = 20;
 // CONFIRMED CHANGE ("little mushrooms have enough hop, but it takes a
@@ -25143,23 +25152,34 @@ function drawTreeClimbSleepyNook(sx, y, s, side, localHeight) {
 
   // a real two-leaf blanket, overlapping, each with a visible center
   // vein -- reads as actual leaves stitched together, not a flat oval
-  [{ ox: -1.6, rot: -0.25, c: "#5a8a3a" }, { ox: 2.2, rot: 0.3, c: "#4f7d33" }].forEach(leaf => {
-    const lx = nx + leaf.ox * s, ly = ny + 1.3 * s;
+  //
+  // CONFIRMED BUGFIX ("why is sleepy guy more than half hanging out of
+  // it"): screenshot comparison against the actual hollow showed the
+  // blanket, not the creature's own body, was the real overflow culprit --
+  // at 5*s x 3.4*s per leaf (more than double the sleeper's own bodyR of
+  // 2.4*s) it visually dominated the whole vignette and read as a solid
+  // green mass spilling out past the hollow's edge, with the small tan
+  // snout barely visible poking out from under it. Scaled both leaves down
+  // and pulled their offsets in so the blanket reads as draped over a
+  // small curled sleeper sitting inside the hollow, not the other way
+  // around.
+  [{ ox: -1.1, rot: -0.25, c: "#5a8a3a" }, { ox: 1.5, rot: 0.3, c: "#4f7d33" }].forEach(leaf => {
+    const lx = nx + leaf.ox * s, ly = ny + 1.0 * s;
     ctx.save();
     ctx.translate(lx, ly);
     ctx.rotate(leaf.rot);
     ctx.fillStyle = leaf.c;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 5 * s, 3.4 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 3.5 * s, 2.4 * s, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "rgba(30,50,20,0.5)";
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(-4.2 * s, 0);
-    ctx.lineTo(4.2 * s, 0);
-    for (let v = -3; v <= 3; v += 2) {
+    ctx.moveTo(-3 * s, 0);
+    ctx.lineTo(3 * s, 0);
+    for (let v = -2; v <= 2; v += 2) {
       ctx.moveTo(v * s, 0);
-      ctx.lineTo(v * 1.2 * s, -1.3 * s * Math.sign(v || 1));
+      ctx.lineTo(v * 1.2 * s, -0.9 * s * Math.sign(v || 1));
     }
     ctx.stroke();
     ctx.restore();
@@ -28803,7 +28823,13 @@ function drawForestFungusClimb(camX) {
   // canopy anchor above still line up cleanly with a tidy silhouette
   // right at the join, same idea as before, just gnarlier everywhere
   // below it.
-  const TW = 1.7;
+  // CONFIRMED TUNING ("make fungus trunk thicker. why is sleepy guy more
+  // than half hanging out of it"): 1.7 still left the sleepy-nook vignette
+  // (embedded at FUNGUS_VIGNETTE_SCALE, a good chunk of the trunk's own
+  // width) looking like it had more bark-hollow than actual trunk around
+  // it. Widened further for real breathing room around the embedded
+  // vignettes.
+  const TW = 2.15;
   const gnarl = i => (pseudoRandom(seed + i * 4.1) - 0.5) * 16 * TW;
   const leftPts = [
     { x: sx - 34 * TW + gnarl(0), y: gy },
