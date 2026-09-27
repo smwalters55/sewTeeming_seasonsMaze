@@ -208,7 +208,13 @@ const camera = { topDown:false, locked:false };
 // hoops"): switched back to "forest" -- see the DEBUG_START_SCENE ===
 // "forest" block further down, repositioned to sit right before
 // FOREST_ROCK_CLIMB_X instead of its old winter-door test spot.
-const DEBUG_START_SCENE = "forest";
+// CONFIRMED CHANGE ("spawn me in front of snow balls plls" -- testing the
+// concurrent-ball cap fix): switched back to "winter" -- the
+// DEBUG_START_SCENE === "winter" block further down already has its
+// player.x set to right before the avalanche trigger zone from the
+// earlier "spawn me right in front of snowball range" request, untouched
+// since.
+const DEBUG_START_SCENE = "winter";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
