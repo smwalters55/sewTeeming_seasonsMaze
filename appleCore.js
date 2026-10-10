@@ -221,9 +221,14 @@ const camera = { topDown:false, locked:false };
 // CONFIRMED CHANGE ("put me right in front of the rushing river pls --
 // debug spawn"): switched to "forest" -- see the DEBUG_START_SCENE ===
 // "forest" block further down, now repositioned to the river's near
-// bank instead of its old winter-door test spot. TEMPORARY -- flip back
-// to "autumn" once done testing, per this file's own standing convention.
-const DEBUG_START_SCENE = "forest";
+// bank instead of its old winter-door test spot.
+// CONFIRMED CHANGE ("maybe debug spawn me at the start of winter so my
+// friend can play this"): switched to "winter" -- see the
+// DEBUG_START_SCENE === "winter" block further down, now repositioned to
+// winter's actual start (right past the forest-winter door) instead of
+// its old snowball-range test spot. TEMPORARY -- flip back to "autumn"
+// once done testing, per this file's own standing convention.
+const DEBUG_START_SCENE = "winter";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -19455,6 +19460,15 @@ if (DEBUG_START_SCENE === "forest") {
   // it even once renders the WHOLE strip, including lamp/aragonite/geode
   // -- so it's not enough to just skip calling it for those specific
   // items, every item added here has to skip it, including appleSlice.
+  // CONFIRMED CHANGE ("remove the 'curved wood' panel thing showing"):
+  // drawCarvedWoodPrompt's own draw call (~line 6977) shows the boomerang
+  // tutorial bubble any time inventory.boomerang > 0 and
+  // promptEverShown is still false -- true by default the first time
+  // boomerang lands in inventory, debug grant or not. Marking it shown
+  // up front here, same as real play retires it after the first actual
+  // throw, so debug-granting the boomerang doesn't also force the
+  // one-time tutorial popup on every load.
+  boomerangPromptState.promptEverShown = true;
   heldItem = null;
 }
 
@@ -19480,24 +19494,20 @@ if (DEBUG_START_SCENE === "forest") {
 // (max of x+width+driftAmp across WINTER_SLICK_PLATFORMS, currently the
 // last platform: 3180+100+38 = 3318) plus clearance so the spawn sits
 // cleanly past every spike zone, not right at its trailing edge.
-// CONFIRMED CHANGE ("lets move everything to the right to gve breathing
-// room"): the whole climb shifted by WINTER_CONTENT_OFFSET (380), so this
-// hardcoded spawn moves by the same amount: 3360 + 380 = 3740.
+// CONFIRMED CHANGE ("maybe debug spawn me at the start of winter so my
+// friend can play this"): retargeted from the snowball-range test spot
+// to the actual start of winter -- the same landing position a real
+// player gets walking through the forest-winter door (see
+// sceneSpawn.winter: connections[8].doors.winter.x - 25, hardcoded here
+// since sceneSpawn is declared after this block runs). No debug
+// inventory grant this time either -- a friend playing for real should
+// start with nothing handed to them, same as a normal game start, not a
+// testing cheat kit.
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  // CONFIRMED CHANGE ("also spawn me right in front of snow ball range"):
-  // same TDZ hardcoding as the note above -- WINTER_AVALANCHE_START_X is
-  // a `const` declared much further down, so it can't be referenced from
-  // this top-level init block. Its actual value is 5000; spawning a
-  // little before that (4850) gives a short walk-up instead of dropping
-  // dead-center in the trigger zone.
-  player.x = 4850;
+  player.x = 175; // connections[8].doors.winter.x (200) - 25
   player.y = 0;
-  addToInventory("shovel");
-  addToInventory("windSeed");
-  addToInventory("bucket");
-  heldItem = "shovel";
 }
 
 // CONFIRMED CHANGE ("i think i might have some ground hooping mushrooms
