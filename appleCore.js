@@ -19419,21 +19419,43 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
 // needs to be marked built or the very first physics frame would snap
 // the player back to the near bank before a single screenshot could be
 // taken.
-// CONFIRMED CHANGE ("give me the inventory i should have at this point.
-// at minimum the logs to build the bridge"): dropped the
-// shovel/windSeed/bucket/appleSlice grant -- those were specifically for
-// testing the winter door this spot used to sit at, not anything a
-// player has actually earned by just reaching the river bank. Logs
-// aren't a general inventory item (see the big comment on
-// FOREST_RIVER_LOG_SEGMENTS above) -- they live as a pile count at the
-// log pile spot, so filling forestRiverLogPile to a full 7 puts a
-// ready-to-use stack right there instead of faking an inventory entry
-// that doesn't exist.
+// CONFIRMED CHANGE ("dude you gave me no inventory. i need bucket.
+// shovel. seed, logs, and a bunch of other stuff" -- walked back the
+// prior "only what's story-accurate" trim, which guessed wrong): back to
+// a full debug kit -- every persistent tool-type item in the game (see
+// NO_COUNT_LABEL's own list above for the canonical set), not just the
+// three this spot happened to have before. Logs still handled separately
+// via forestRiverLogPile (not a general inventory item -- see the big
+// comment on FOREST_RIVER_LOG_SEGMENTS above).
+// CONFIRMED BUG FIX ("Cannot access 'aragoniteShined' before
+// initialization", same for lampEverUsedInRatroom): addToInventory()
+// unconditionally calls updateInventoryUI() at the end, which draws each
+// item's icon -- and several icons (lamp, aragonite, geode, ...) read
+// cosmetic state `let`s declared much further down the file. This debug
+// block runs at top-level script order, BEFORE those lines execute, so
+// calling addToInventory() here is a real TDZ crash, not a false alarm.
+// Setting inventory/inventoryOrder directly (same two lines
+// addToInventory itself does, minus its trailing updateInventoryUI()
+// call) sidesteps the icon draw entirely -- the main loop's own
+// currentScene-change check further down already calls updateInventoryUI
+// on the very first real frame regardless, by which point the whole
+// script (including those later `let`s) has finished loading, so the
+// strip still renders correctly, just one frame later instead of
+// mid-script.
 if (DEBUG_START_SCENE === "forest") {
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
   player.x = FOREST_RIVER_NEAR_BANK_X - 40;
   player.y = 0;
   forestRiverLogPile = FOREST_RIVER_LOG_SEGMENTS;
+  ["shovel", "windSeed", "bucket", "boomerang", "lamp", "paperAirplane", "marble", "aragonite", "geode", "pinwheel", "goldenLadle", "appleSlice"].forEach(type => {
+    inventory[type] = (inventory[type] || 0) + 1;
+    touchInventoryOrder(type);
+  });
+  // NOT addToInventory(...)/updateInventoryUI() for any of these: calling
+  // it even once renders the WHOLE strip, including lamp/aragonite/geode
+  // -- so it's not enough to just skip calling it for those specific
+  // items, every item added here has to skip it, including appleSlice.
+  heldItem = null;
 }
 
 // TEMPORARY debug spawn, same one-off pattern as the "forest" block just
