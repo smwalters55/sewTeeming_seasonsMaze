@@ -76553,18 +76553,25 @@ if (apple.landed && !apple.settled) {
     }
   }
 } 
-// --- CREATE 3 APPLE PIECES ---
+// --- CREATE APPLE PIECES ---
 // ================== APPLE SPLIT SPAWN ==================
 if (apple.split) {
 
   const appleCenterX = apple.x;
   const appleCenterY = apple.y;
 
-  const spread = Math.PI / 3;      // total 60° fan
+  // bumped from 3 -> 5 pieces: there are exactly 3 appleSlice doors
+  // (autumn-spring, spring-forest, forest-winter), each consuming one
+  // slice on placement, so a 1-for-1 piece count left zero margin for
+  // error -- missing/mis-collecting even one piece stranded the player
+  // at whichever door they reached last. 2 spare pieces now cover that.
+  const PIECE_COUNT = 5;
+  const totalFan = Math.PI * 2 / 3;              // same overall 120° fan as before
+  const spread = totalFan / (PIECE_COUNT - 1);   // per-piece angle step
   const baseAngle = -Math.PI / 2;  // upward
 
-  for (let i = 0; i < 3; i++) {
-    const angle = baseAngle + spread * (i - 1);
+  for (let i = 0; i < PIECE_COUNT; i++) {
+    const angle = baseAngle + spread * (i - (PIECE_COUNT - 1) / 2);
     const speed = 180 + Math.random() * 40;
 
     applePieces.push(
