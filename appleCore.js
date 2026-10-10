@@ -218,7 +218,12 @@ const camera = { topDown:false, locked:false };
 // "autumn" -- the real game start, not a debug test spot. Per this file's
 // own standing convention above, leave this alone unless a future debug
 // request explicitly asks to be dropped somewhere else again.
-const DEBUG_START_SCENE = "autumn";
+// CONFIRMED CHANGE ("put me right in front of the rushing river pls --
+// debug spawn"): switched to "forest" -- see the DEBUG_START_SCENE ===
+// "forest" block further down, now repositioned to the river's near
+// bank instead of its old winter-door test spot. TEMPORARY -- flip back
+// to "autumn" once done testing, per this file's own standing convention.
+const DEBUG_START_SCENE = "forest";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -19414,19 +19419,16 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
 // needs to be marked built or the very first physics frame would snap
 // the player back to the near bank before a single screenshot could be
 // taken.
+// CONFIRMED CHANGE ("put me right in front of the rushing river pls"):
+// retargeted from the winter-door test spot to the river's near bank --
+// NOT pre-filling forestRiverSegmentsStrung/Decked this time, since
+// standing in front of (not past) the river needs no bridge at all; a
+// built bridge would just hide the rushing water under decking instead
+// of showing it. discoveredScenes.molehole still set so the bank/bridge
+// post visuals render per their own gate.
 if (DEBUG_START_SCENE === "forest") {
-  forestRiverSegmentsStrung = FOREST_RIVER_LOG_SEGMENTS;
-  forestRiverSegmentsDecked = FOREST_RIVER_LOG_SEGMENTS;
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
-  // CONFIRMED CHANGE ("spawn me right after the fungus tree like right
-  // readyy to go up into the rock climbining where we go into the
-  // swimming hoops"): same TDZ hardcoding as the other debug spawns --
-  // FOREST_ROCK_CLIMB_X is a `const` declared further down, so it can't
-  // be referenced from this top-level init block. Its chain: 15120
-  // (FOREST_FLOAT_ZONE_END_X) + 40 (return lever) + 1050 (fungus tree) +
-  // 520 (rock climb) = 16730. A short walk-up before the climb instead
-  // of dropping dead-center on the first handhold.
-  player.x = 16670;
+  player.x = FOREST_RIVER_NEAR_BANK_X - 40;
   player.y = 0;
   // CONFIRMED CHANGE ("ok byut now the inventory is gone?" -- the
   // shovel/windSeed/bucket grant only lived in the topsyturvy debug
