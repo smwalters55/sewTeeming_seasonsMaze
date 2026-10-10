@@ -19419,29 +19419,21 @@ const FOREST_FUNGUS_TREE_X = FOREST_FLOAT_RETURN_LEVER_X + 1050;
 // needs to be marked built or the very first physics frame would snap
 // the player back to the near bank before a single screenshot could be
 // taken.
-// CONFIRMED CHANGE ("put me right in front of the rushing river pls"):
-// retargeted from the winter-door test spot to the river's near bank --
-// NOT pre-filling forestRiverSegmentsStrung/Decked this time, since
-// standing in front of (not past) the river needs no bridge at all; a
-// built bridge would just hide the rushing water under decking instead
-// of showing it. discoveredScenes.molehole still set so the bank/bridge
-// post visuals render per their own gate.
+// CONFIRMED CHANGE ("give me the inventory i should have at this point.
+// at minimum the logs to build the bridge"): dropped the
+// shovel/windSeed/bucket/appleSlice grant -- those were specifically for
+// testing the winter door this spot used to sit at, not anything a
+// player has actually earned by just reaching the river bank. Logs
+// aren't a general inventory item (see the big comment on
+// FOREST_RIVER_LOG_SEGMENTS above) -- they live as a pile count at the
+// log pile spot, so filling forestRiverLogPile to a full 7 puts a
+// ready-to-use stack right there instead of faking an inventory entry
+// that doesn't exist.
 if (DEBUG_START_SCENE === "forest") {
   discoveredScenes.molehole = true; // matches drawForestRiver/FrontRail's own gate -- no bridge visuals without it
   player.x = FOREST_RIVER_NEAR_BANK_X - 40;
   player.y = 0;
-  // CONFIRMED CHANGE ("ok byut now the inventory is gone?" -- the
-  // shovel/windSeed/bucket grant only lived in the topsyturvy debug
-  // block, which stopped running the moment this "forest" spawn took
-  // over): granting the same three seed-plot tools here too, so
-  // switching between debug spawns doesn't silently drop them.
-  addToInventory("shovel");
-  addToInventory("windSeed");
-  addToInventory("bucket");
-  heldItem = "shovel";
-  // also grant an apple slice so the new winter door can actually be
-  // unlocked/walked through right away while testing, not just looked at
-  addToInventory("appleSlice");
+  forestRiverLogPile = FOREST_RIVER_LOG_SEGMENTS;
 }
 
 // TEMPORARY debug spawn, same one-off pattern as the "forest" block just
