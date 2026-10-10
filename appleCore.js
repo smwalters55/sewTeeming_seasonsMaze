@@ -47424,7 +47424,17 @@ function drawFallingBooks(camX) {
     const tumble = (1 - eased) * 4; // extra spin while still falling, settles out as it lands
     const rot = book.startRot + (book.rot - book.startRot) * eased + tumble;
     ctx.save();
-    ctx.translate(x - camX, gy - y);
+    // CONFIRMED BUG FIX ("in oak when u jump... on the book piles... it
+    // lifts other stuff up and shows the white... with camera follow
+    // cameraY"): this was `gy - y`, the only draw call in the whole giant
+    // pile collapse chain that dropped cameraY -- every sibling
+    // (drawScatteredBooksField, drawBookPile, the player itself) uses
+    // `gy + cameraY - y`. The collapse only fires once the player has
+    // actually climbed the capstone pile, i.e. exactly when cameraY is at
+    // its largest, so the falling books rendered cameraY px too high --
+    // detached from the (correctly shifted-down) floor and piles, reading
+    // as stuff getting yanked upward mid-jump.
+    ctx.translate(x - camX, gy + cameraY - y);
     ctx.rotate(rot);
     ctx.fillStyle = book.color;
     ctx.fillRect(-book.w / 2, -book.h / 2, book.w, book.h);
