@@ -5874,6 +5874,38 @@ function applyPhysics(){
     }
   }
 
+  // CONFIRMED NEW FEATURE (the walking beat past the halfpipe landing --
+  // see WINTER_WALKING_BEAT_START_X's own comment): same "unconditional
+  // glue while grounded, tolerance-band re-snap while airborne" shape the
+  // avalanche hill just below uses for its own continuous sloped ground,
+  // just with a much gentler height function and no ridge-wall/tilt
+  // treatment -- the bump amplitude here (~20px) is small enough that
+  // skipping those doesn't read as jittery or wrong the way it would on
+  // the much steeper hill. Guarded on player.winterSlickPlatformIndex/
+  // winterIceShelfIndex both staying -1 for the same reason the hill's
+  // own glue skips itself while standing on one of ITS hop platforms --
+  // nothing actually overlaps this zone right now, but keeping the same
+  // defensive shape costs nothing and protects against it later.
+  {
+    const feetXBeat = player.x + player.width / 2;
+    const onBeatNow = feetXBeat > WINTER_WALKING_BEAT_START_X - 5 && feetXBeat < WINTER_WALKING_BEAT_END_X + 5;
+    if (onBeatNow && player.winterSlickPlatformIndex === -1 && player.winterIceShelfIndex === -1) {
+      const beatHeight = winterWalkingBeatHeightAt(feetXBeat);
+      if (!player.jumping) {
+        player.y = beatHeight;
+        player.vy = 0;
+      } else if (player.vy <= 0) {
+        const heightDiff = beatHeight - player.y;
+        if (heightDiff >= -10 && heightDiff <= 10) {
+          player.y = beatHeight;
+          player.vy = 0;
+          player.jumping = false;
+          player.usedDoubleJump = false;
+        }
+      }
+    }
+  }
+
   // CONFIRMED NEW FEATURE (avalanche hill): ground-height across the hill
   // zone. CONFIRMED BUG FIX (found via real-keyboard testing, not just
   // tick()-based testing): a tolerance-banded re-snap (the shape every
@@ -74090,12 +74122,16 @@ function drawFractalSnowflake(cx, cy, size, rot) {
 // ducked underneath it (playerDuckAmount past the shelf's own
 // duckThreshold), a small "you're doing it" readback since there's no
 // other feedback for successfully clearing a gate you can't see past.
-function drawWinterIceDuckShelf(camX) {
-  const shelf = WINTER_ICE_DUCK_SHELF;
+// CONFIRMED CHANGE (needed for the new walking-beat duck gates -- see
+// WINTER_WALKING_BEAT_DUCKS' own comment): took a `groundRef` param
+// (default 0, so the ice climb's own call below is pixel-identical to
+// before) so this can draw correctly up at the halfpipe landing's
+// elevation and the walking beat's own bumps, not just at true ground.
+function drawWinterIceDuckShelf(camX, shelf, groundRef = 0) {
   const sx = shelf.x - camX;
   if (sx < -80 || sx > canvas.width + 80) return;
   const seed = shelf.x * 0.017;
-  const ceilingY = gy - shelf.clearance;
+  const ceilingY = gy - groundRef - shelf.clearance;
   const halfW = shelf.w / 2 + 14;
 
   // the solid slab -- flat-bottomed, jagged/irregular top that runs off
@@ -74728,14 +74764,74 @@ const WINTER_HALFPIPE_OUTER_FLARE = Math.max(20, Math.min(70, WINTER_HALFPIPE_MO
 // gets tuned later.
 const WINTER_HALFPIPE_LANDING = { x: WINTER_HALFPIPE_RELEASE_X + 180, height: 900, width: 900 };
 
+// CONFIRMED NEW FEATURE ("lets start working on the snoboarding thing. i
+// want another beat beffore we start sliding down. like its a kind of
+// snowy walking area? like not just 100% flat like little ups and downs
+// and things to jump over or duck under" -- build order confirmed via
+// follow-up question, walking beat first, snowboard-down mechanic itself
+// not started yet): a real walking stretch stitched directly onto the far
+// edge of the halfpipe's own landing platform, continuing at that SAME
+// elevation (900) rather than dropping back to true ground -- this is
+// still the top of the climb, exactly the spot WINTER_HALFPIPE_LANDING's
+// own comment already flagged as "a natural spot for the snowboard-down
+// payoff to start from, later." Gentle rolling terrain (small bumps, not
+// a real hazard) plus a handful of simple hurdle (jump-over) and duck
+// (duck-under) gates, reusing the two obstacle shapes already proven out
+// elsewhere: the plain "solid unless airborne above clearance" gate the
+// forest float zone's non-spiky jump obstacles use, and winter's own
+// WINTER_ICE_DUCK_SHELF gate (generalized below into a real list, since
+// this wants more than one -- see winterWalkingBeatHeightAt/
+// applyWinterDuckGate/applyWinterHurdleGate's own comments for why both
+// needed small generalizations, not just copy-pasted constants, to work
+// correctly up at this elevation).
+const WINTER_WALKING_BEAT_START_X = WINTER_HALFPIPE_LANDING.x + WINTER_HALFPIPE_LANDING.width;
+const WINTER_WALKING_BEAT_BASE_HEIGHT = WINTER_HALFPIPE_LANDING.height;
+const WINTER_WALKING_BEAT_LENGTH = 1700;
+const WINTER_WALKING_BEAT_END_X = WINTER_WALKING_BEAT_START_X + WINTER_WALKING_BEAT_LENGTH;
+
+// the rolling-bump ground height -- two overlapping sine terms, each a
+// whole multiple of PI over the beat's own length so both vanish exactly
+// at t=0 AND t=1: the seam against the landing platform on one side and
+// whatever comes next (the eventual snowboard-down start) on the other
+// both stay perfectly flush, no matter how the amplitude/frequency below
+// get tuned later. Small amplitude on purpose (max ~20px combined) -- "a
+// kind of snowy walking area... little ups and downs", not a real
+// climbing challenge like the avalanche hill a ways back.
+function winterWalkingBeatHeightAt(x) {
+  const t = Math.max(0, Math.min(1, (x - WINTER_WALKING_BEAT_START_X) / WINTER_WALKING_BEAT_LENGTH));
+  const bump = Math.sin(t * Math.PI * 5) * 14 + Math.sin(t * Math.PI * 8) * 6;
+  return WINTER_WALKING_BEAT_BASE_HEIGHT + bump;
+}
+
+// "things to jump over" -- plain hurdle gates, same shape as the forest
+// float zone's own non-spiky "jump" obstacles (solid unless player.y
+// clears the clearance line), just standalone here since there's no
+// current/drift to ride through them. See applyWinterHurdleGate for the
+// actual collision (it takes a local ground-reference height so this
+// still works correctly against the bumpy terrain above, not just a flat
+// 0).
+const WINTER_WALKING_BEAT_HURDLES = [
+  { x: WINTER_WALKING_BEAT_START_X + 420, w: 46, clearance: 58 },
+  { x: WINTER_WALKING_BEAT_START_X + 1180, w: 46, clearance: 58 },
+];
+
+// "things to duck under" -- a real list this time (plural, per direct
+// request), generalized off WINTER_ICE_DUCK_SHELF's own shape (that
+// original constant/gate is untouched below, still the ice climb's one
+// and only gate). See applyWinterDuckGate for the collision.
+const WINTER_WALKING_BEAT_DUCKS = [
+  { x: WINTER_WALKING_BEAT_START_X + 800, w: 60, clearance: 62, duckThreshold: 0.4 },
+  { x: WINTER_WALKING_BEAT_START_X + 1480, w: 60, clearance: 62, duckThreshold: 0.4 },
+];
+
 // the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing/
-// halfpipe's own extent is known -- see WINTER_PRE_CLIMB_WIDTH's own
-// comment for why this couldn't just be declared back where that one is.
-// Now measured from the halfpipe's own landing platform (previously the
-// shelf crossing's far reach, before the halfpipe existed) plus a little
-// landing room past it -- a natural spot for the snowboard-down payoff to
-// start from, later.
-const WINTER_WIDTH = WINTER_HALFPIPE_LANDING.x + WINTER_HALFPIPE_LANDING.width + 320;
+// halfpipe/walking-beat's own extent is known -- see WINTER_PRE_CLIMB_WIDTH's
+// own comment for why this couldn't just be declared back where that one
+// is. Now measured from the walking beat's own far end (previously the
+// halfpipe landing's far reach, before the beat existed) plus a little
+// landing room past it -- still a natural spot for the snowboard-down
+// payoff to start from, later.
+const WINTER_WIDTH = WINTER_WALKING_BEAT_END_X + 320;
 
 // own state for the scripted ride -- same "fully owns position for a short
 // duration, everything else returns early" shape as poolSlideExit, just
@@ -77022,6 +77118,106 @@ function drawWinterHalfpipe(camX, now) {
   ctx.stroke();
 }
 
+// CONFIRMED NEW FEATURE (the walking beat past the halfpipe landing --
+// see WINTER_WALKING_BEAT_START_X's own comment for the full request/
+// reasoning). A real continuous ground slab -- not a thin line -- whose
+// top edge traces winterWalkingBeatHeightAt so the drawn surface and the
+// actual collision glue in applyPhysics can never drift apart, same
+// shared-geometry approach the halfpipe's own surface (winterHalfpipeCurveAt)
+// and the slick platforms' drift already use. Same darkened top-face/
+// underside palette the slick platforms and ice shelves settled on after
+// the earlier contrast bug fix ("the ice disappear thing"), so this reads
+// as the same family of ice/snow surface rather than a new, inconsistent
+// material.
+function drawWinterWalkingBeat(camX, now) {
+  const leftX = WINTER_WALKING_BEAT_START_X - camX;
+  const rightX = WINTER_WALKING_BEAT_END_X - camX;
+  if (rightX < -80 || leftX > canvas.width + 80) return;
+
+  const SEGS = 24;
+  const topPts = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const wx = WINTER_WALKING_BEAT_START_X + t * WINTER_WALKING_BEAT_LENGTH;
+    topPts.push({ x: wx - camX, y: gy - winterWalkingBeatHeightAt(wx) });
+  }
+  const SLAB_THICKNESS = 50;
+
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y + SLAB_THICKNESS);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y + SLAB_THICKNESS);
+  ctx.closePath();
+  // darker underside first (same layering order as drawWinterSlickPlatform)
+  ctx.fillStyle = "rgba(120,160,190,0.9)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y + 18);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y + 18);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, topPts[0].y - 10, 0, topPts[0].y + 18);
+  grad.addColorStop(0, "rgba(205,228,245,0.97)");
+  grad.addColorStop(1, "rgba(140,185,215,0.95)");
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(80,125,160,0.85)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  ctx.stroke();
+
+  // a light dusting of snow texture along the top -- small irregular
+  // white-ish specks, purely decorative, so the "little ups and downs"
+  // actually reads as snow rather than bare ice
+  const SPECKS = 26;
+  for (let i = 0; i < SPECKS; i++) {
+    const seed = i * 7.7 + 4200;
+    const wx = WINTER_WALKING_BEAT_START_X + pseudoRandom(seed) * WINTER_WALKING_BEAT_LENGTH;
+    const sx = wx - camX;
+    if (sx < -10 || sx > canvas.width + 10) continue;
+    const sy = gy - winterWalkingBeatHeightAt(wx) - 2 - pseudoRandom(seed + 1) * 5;
+    ctx.fillStyle = `rgba(255,255,255,${0.4 + pseudoRandom(seed + 2) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.5 + pseudoRandom(seed + 3) * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // "things to jump over" -- small rounded snow/ice mounds, topped flat at
+  // the real clearance line so the silhouette actually telegraphs how high
+  // a jump needs to clear.
+  WINTER_WALKING_BEAT_HURDLES.forEach(h => {
+    const hx = h.x - camX;
+    if (hx < -60 || hx > canvas.width + 60) return;
+    const groundRef = winterWalkingBeatHeightAt(h.x);
+    const topY = gy - groundRef - h.clearance;
+    const baseY = gy - groundRef + 4;
+    const halfW = h.w / 2;
+    ctx.beginPath();
+    ctx.moveTo(hx - halfW, baseY);
+    ctx.quadraticCurveTo(hx - halfW, topY, hx, topY);
+    ctx.quadraticCurveTo(hx + halfW, topY, hx + halfW, baseY);
+    ctx.closePath();
+    const hgrad = ctx.createLinearGradient(0, topY, 0, baseY);
+    hgrad.addColorStop(0, "#eaf4fb");
+    hgrad.addColorStop(1, "#b9d6ea");
+    ctx.fillStyle = hgrad;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(80,125,160,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+
+  // "things to duck under" -- reuses the ice climb's own overhang gate
+  // art wholesale (see drawWinterIceDuckShelf's groundRef generalization)
+  WINTER_WALKING_BEAT_DUCKS.forEach(d => {
+    drawWinterIceDuckShelf(camX, d, winterWalkingBeatHeightAt(d.x));
+  });
+}
+
 function drawWinterScene(camX) {
   ctx.save();
 
@@ -77164,7 +77360,7 @@ function drawWinterScene(camX) {
   // the duck gate -- sits within this same breather stretch, before the
   // ice climb payoff (no separate sign; see WINTER_ICE_DUCK_SHELF's own
   // comment for why)
-  drawWinterIceDuckShelf(camX);
+  drawWinterIceDuckShelf(camX, WINTER_ICE_DUCK_SHELF);
 
   // the ice axe climb -- the real payoff past the breather stretch
   drawWinterIceClimb(camX);
@@ -77176,6 +77372,12 @@ function drawWinterScene(camX) {
 
   // the halfpipe -- the payoff past the crossing, see its own comment
   drawWinterHalfpipe(camX, nowForWinterProps);
+
+  // the walking beat past the halfpipe's own landing -- see its own
+  // constants' comments. Drawn after the halfpipe itself (same "further
+  // into the level, drawn later" ordering every other winter set-piece
+  // here follows) so nothing from it can ever paint over this.
+  drawWinterWalkingBeat(camX, nowForWinterProps);
 
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
@@ -77230,8 +77432,22 @@ function updateWinterScene(deltaTime) {
   // easing/decay is purely a function of the CURRENT scene's own
   // conditions each frame either way, so switching scenes just starts
   // fresh rather than leaking stale state.
+  // CONFIRMED CHANGE (needed for the new walking-beat duck gates -- see
+  // WINTER_WALKING_BEAT_DUCKS' own comment): this used to gate purely on
+  // player.y <= 2, i.e. "near TRUE ground (0)" -- correct for the ice
+  // climb's own gate (which really does sit at true ground) but wrong up
+  // on the halfpipe landing's elevation (~900) and the walking beat's own
+  // bumps riding on top of it, where standing-still player.y never gets
+  // anywhere near 2. Generalized to compare against whatever height the
+  // player's feet are actually standing at right now instead of a flat
+  // 0 -- resolves to the old literal 0 everywhere outside the walking
+  // beat, so the existing ice climb gate's behavior is unchanged.
+  const winterDuckFeetX = player.x + player.width / 2;
+  const winterDuckGroundRef = (winterDuckFeetX > WINTER_WALKING_BEAT_START_X && winterDuckFeetX < WINTER_WALKING_BEAT_END_X)
+    ? winterWalkingBeatHeightAt(winterDuckFeetX)
+    : 0;
   {
-    const duckTarget = (keys.down && player.y <= 2 && !player.jumping) ? 1 : 0;
+    const duckTarget = (keys.down && player.y <= winterDuckGroundRef + 2 && !player.jumping) ? 1 : 0;
     playerDuckAmount += (duckTarget - playerDuckAmount) * 0.25;
     if (playerDuckAmount < 0.01) playerDuckAmount = 0;
     if (playerDuckAmount > 0.999) playerDuckAmount = 1;
@@ -77240,13 +77456,16 @@ function updateWinterScene(deltaTime) {
   // the ice duck shelf -- solid to upright walking, passable only ducked,
   // same push-fully-clear collision shape as the forest duck branch (see
   // its own comment for why the push subtracts a full player.width, not
-  // half, to actually clear the re-check zone in one go).
-  {
-    const shelf = WINTER_ICE_DUCK_SHELF;
+  // half, to actually clear the re-check zone in one go). Pulled out into
+  // a real function (taking a local ground-reference height, see the
+  // generalization comment just above) so the new walking-beat duck gates
+  // below can reuse the exact same collision instead of a copy-pasted
+  // block per gate.
+  const applyWinterDuckGate = (shelf, groundRef) => {
     const playerCenterX = player.x + player.width / 2;
     const withinShelfX = playerCenterX > shelf.x - shelf.w / 2 - player.width / 2 &&
                           playerCenterX < shelf.x + shelf.w / 2 + player.width / 2;
-    const passable = player.y <= 2 && playerDuckAmount > shelf.duckThreshold;
+    const passable = player.y <= groundRef + 2 && playerDuckAmount > shelf.duckThreshold;
     if (withinShelfX && !passable) {
       if (playerCenterX < shelf.x) {
         player.x = shelf.x - shelf.w / 2 - player.width - 1;
@@ -77255,7 +77474,31 @@ function updateWinterScene(deltaTime) {
       }
       player.vx = 0;
     }
-  }
+  };
+  applyWinterDuckGate(WINTER_ICE_DUCK_SHELF, 0);
+  WINTER_WALKING_BEAT_DUCKS.forEach(d => applyWinterDuckGate(d, winterWalkingBeatHeightAt(d.x)));
+
+  // "things to jump over" -- the walking beat's own hurdle gates (see
+  // WINTER_WALKING_BEAT_HURDLES' own comment): same plain "solid unless
+  // airborne above clearance" shape the forest float zone's non-spiky
+  // jump obstacles use, just taking a local ground-reference height so it
+  // reads correctly against the beat's own bumpy terrain rather than a
+  // flat 0.
+  const applyWinterHurdleGate = (ob, groundRef) => {
+    const playerCenterX = player.x + player.width / 2;
+    const within = playerCenterX > ob.x - ob.w / 2 - player.width / 2 &&
+                   playerCenterX < ob.x + ob.w / 2 + player.width / 2;
+    const passable = player.y > groundRef + ob.clearance;
+    if (within && !passable) {
+      if (playerCenterX < ob.x) {
+        player.x = ob.x - ob.w / 2 - player.width - 1;
+      } else {
+        player.x = ob.x + ob.w / 2 + 1;
+      }
+      player.vx = 0;
+    }
+  };
+  WINTER_WALKING_BEAT_HURDLES.forEach(h => applyWinterHurdleGate(h, winterWalkingBeatHeightAt(h.x)));
 
   // CONFIRMED CHANGE ("should we do some spiky ice obstacles on ground
   // below the icy moving platforms? so player has to really time their
