@@ -74913,6 +74913,23 @@ const WINTER_WALKING_BEAT_BASE_HEIGHT = WINTER_HALFPIPE_LANDING.height;
 const WINTER_WALKING_BEAT_LENGTH = 1650;
 const WINTER_WALKING_BEAT_END_X = WINTER_WALKING_BEAT_START_X + WINTER_WALKING_BEAT_LENGTH;
 
+// CONFIRMED BUG FIX ("i want the rainbow ice to pool in more a convace
+// shape part so it makes sense, not on top a convex part. also make it
+// larger actually this too small"): the small ice-patch pool up on this
+// beat used to just sit wherever the ambient rolling-bump terrain
+// happened to be at its x -- sometimes a convex hump, which never reads
+// as a "pool" (pools sit in dips, not on top of bumps). These three
+// constants define a real carved basin in the ground itself, centered
+// under the pool's own footprint (WINTER_WATERY_ICE_ZONES' second entry
+// uses the same X/WIDTH so the two always stay in sync), that
+// winterWalkingBeatHeightAt below actually subtracts into the terrain --
+// a genuine concave dip the pool can sit flush inside, not just a visual
+// overlay pretending to be one. Also widened from the original 220 to
+// 340 per "too small".
+const WINTER_BEAT_POOL_X = WINTER_WALKING_BEAT_START_X + 650;
+const WINTER_BEAT_POOL_WIDTH = 340;
+const WINTER_BEAT_POOL_DIP_DEPTH = 30; // deeper than the ambient bump's own ~20px combined amplitude, so the dip reads as a real basin, not just a flattened bump
+
 // the rolling-bump ground height -- two overlapping sine terms, each a
 // whole multiple of PI over the beat's own length so both vanish exactly
 // at t=0 AND t=1: the seam against the landing platform on one side and
@@ -74924,7 +74941,17 @@ const WINTER_WALKING_BEAT_END_X = WINTER_WALKING_BEAT_START_X + WINTER_WALKING_B
 function winterWalkingBeatHeightAt(x) {
   const t = Math.max(0, Math.min(1, (x - WINTER_WALKING_BEAT_START_X) / WINTER_WALKING_BEAT_LENGTH));
   const bump = Math.sin(t * Math.PI * 5) * 14 + Math.sin(t * Math.PI * 8) * 6;
-  return WINTER_WALKING_BEAT_BASE_HEIGHT + bump;
+  // CONFIRMED BUG FIX ("i want the rainbow ice to pool in more a convace
+  // shape part... not on top a convex part"): a smooth basin carved
+  // around the pool's own footprint, padded by DIP_MARGIN on each side so
+  // it tapers to exactly 0 right at the padded edges -- blends seamlessly
+  // into the ambient bump terrain on either side instead of creating a
+  // new hard seam of its own.
+  const DIP_MARGIN = 80;
+  const dipSpan = WINTER_BEAT_POOL_WIDTH + DIP_MARGIN * 2;
+  const dipT = (x - (WINTER_BEAT_POOL_X - DIP_MARGIN)) / dipSpan;
+  const dip = dipT > 0 && dipT < 1 ? Math.sin(dipT * Math.PI) * WINTER_BEAT_POOL_DIP_DEPTH : 0;
+  return WINTER_WALKING_BEAT_BASE_HEIGHT + bump - dip;
 }
 
 // CONFIRMED NEW FEATURE ("start with the jump/duck/double jump, then the
@@ -76253,7 +76280,11 @@ function drawWinterIceClimbSlipFlash(camX) {
 // drawWinterWateryIce below).
 const WINTER_WATERY_ICE_ZONES = [
   { x: WINTER_RAINBOW_POCKET_X, width: WINTER_RAINBOW_OVERHANG_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS },
-  { x: WINTER_WALKING_BEAT_START_X + 740, width: 220, colors: WINTER_RAINBOW_ICICLE_COLORS, groundRef: winterWalkingBeatHeightAt },
+  // CONFIRMED BUG FIX ("make it larger actually this too small"): shares
+  // WINTER_BEAT_POOL_X/WIDTH with the carved terrain dip above, instead of
+  // its own separate numbers, so the pool's visual footprint and the real
+  // ground basin it sits in can never drift out of sync again.
+  { x: WINTER_BEAT_POOL_X, width: WINTER_BEAT_POOL_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS, groundRef: winterWalkingBeatHeightAt },
 ];
 
 // CONFIRMED NEW FEATURE ("a drip from above occasionally landing in the
@@ -76348,13 +76379,27 @@ function drawWinterWateryIce(camX, zone) {
   const POOL_DEPTH = 92; // how far the middle's bottom edge bulges down past the top edge
   const topPts = [];
   const botPts = [];
+  // CONFIRMED BUG FIX ("blend icicle tops into the platform more!! no
+  // paste on look. i want the rainbow ice to pool in more a convace
+  // shape part so it makes sense, not on top a convex part"): every
+  // segment used to be offset from the single flat `top` value (sampled
+  // once at the zone's own center), so the pool's own top edge was a
+  // basically-straight line laid across whatever the real undulating
+  // terrain was doing underneath it -- crossing over bumps instead of
+  // following them, which is exactly what reads as "pasted on top"
+  // rather than embedded in the ground. Each segment now samples the
+  // real local ground height at its own x (through the carved basin in
+  // winterWalkingBeatHeightAt above, when this zone has a groundRef) so
+  // the pool's top edge genuinely follows the terrain it's sitting in.
   for (let s = 0; s <= SEGS; s++) {
     const t = s / SEGS;
     const wx = sx + zone.width * t;
     const worldX = wx + camX;
+    const localGroundH = zone.groundRef ? zone.groundRef(worldX) : zoneGroundH;
+    const localTop = gy - localGroundH - 7;
     const envelope = Math.pow(Math.sin(Math.PI * t), 0.6); // 0 at both ends, 1 in the middle, rounds sooner than a plain sine
     const jag = (pseudoRandom(baseSeed + worldX * 0.05) - 0.5) * 6;
-    const topY = top + jag * envelope; // jitter itself also fades out at the tapered ends, not just the depth
+    const topY = localTop + jag * envelope; // jitter itself also fades out at the tapered ends, not just the depth
     const botDepth = POOL_DEPTH + (pseudoRandom(baseSeed + 50 + worldX * 0.04) - 0.5) * 8;
     const botY = topY + envelope * botDepth;
     topPts.push({ x: wx, y: topY });
