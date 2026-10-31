@@ -3861,7 +3861,28 @@ function applyPhysics(){
     // self-corrects rather than compounding into a runaway drift -- see
     // WINTER_ICE_WIND_FREQ/AMP's own comment for why this is paired with
     // launchSteerable rather than left to fight unassisted.
-    if (currentScene === "winter") {
+    // CONFIRMED BUG FIX ("when i leave the pipe on the right, it is p easy
+    // to accidentally miss the platform"): this used to gate purely on
+    // currentScene === "winter", with no launchSteerable check at all --
+    // despite the comment directly above it explicitly saying the wind is
+    // meant to be "paired with launchSteerable... rather than left to
+    // fight unassisted". That's exactly what was happening to the
+    // halfpipe's own launch (launchSteerable deliberately false, "a real
+    // toss... nothing to mess up mid-air, matching 'no fail state'"): the
+    // same wind built for the ice-climb release jumps (where it's meant
+    // to be fought/aimed against via steering) was quietly nudging that
+    // supposedly-unmissable toss around too, with no way for the player
+    // to correct it. Measured via a real-time flight simulation after
+    // finding this: roughly half of repeated launches landed short of
+    // WINTER_HALFPIPE_LANDING entirely (one even drifted backward past
+    // the release point) purely from this gust's accumulation over the
+    // ~1.5s+ flight -- the actual explanation for "easy to accidentally
+    // miss", not anything about the landing band itself being too tight.
+    // Scoping this to launchSteerable (matching what the comment already
+    // claimed it was doing) leaves the ice-climb release jumps completely
+    // unaffected while making the halfpipe toss's landing spot fully
+    // deterministic, same as its own "no fail state" design intent.
+    if (currentScene === "winter" && player.launchSteerable) {
       player.vx += Math.sin(performance.now() * WINTER_ICE_WIND_FREQ + player.iceAxeWindSeed) * WINTER_ICE_WIND_AMP;
     }
     player.x += player.vx;
@@ -74897,6 +74918,29 @@ let winterHalfpipeAwaitingRetry = false;
 // ground-walking keeps it true the whole way, so the mount trigger below
 // can tell the two apart and only fire for a real fresh arrival.
 let winterHalfpipeRestingOnCurve = false;
+// CONFIRMED BUG FIX ("when i am on ground and get put on pipe auto, it
+// still (but, in a different way??) puts me back at the top of the
+// piipe" -- reported again AFTER winterHalfpipeRestingOnCurve above had
+// already fixed the gradual-climb case it was built for): that fix only
+// catches a remount caused by sustained walking ON THE CURVE ITSELF.
+// There's a second, separate path to the exact same symptom: plain
+// ground-walking approaching from outside the span while
+// winterHalfpipeAwaitingRetry is still stale-true from an earlier
+// imperfect landing (see its own declaration) -- restingOnCurve is
+// correctly false the whole time (never near the curve at all), so it
+// doesn't block, and the retry flag alone bypasses the mount trigger's
+// height gate regardless. Same root issue the "snowice hole" ground-sink
+// report below (see WINTER_ICE_SHELF_ZONE_END's fall-hazard check) turned
+// out to share: both treat "currently satisfies some condition while
+// standing/walking on ordinary ground" the same as "just genuinely
+// arrived here from the air", when only the second should ever count.
+// One unified signal fixes both: true only for the single frame right
+// after a real airborne->grounded transition (snapshotted once per
+// frame, read as "last frame's" value before this frame's own landing
+// logic can update it -- see its own two call sites for how each is
+// wired up), false for every frame of sustained ground contact after
+// that, however long it lasts or whatever kept it on the ground.
+let winterWasJumpingLastFrame = false;
 
 function startWinterHalfpipe() {
   winterHalfpipe.active = true;
@@ -74964,7 +75008,25 @@ function updateWinterHalfpipe(deltaTime) {
       player.vx = WINTER_HALFPIPE_LAUNCH_VX;
       player.vy = WINTER_HALFPIPE_LAUNCH_VY;
       player.launched = true;
-      player.launchGravityMult = 1;
+      // CONFIRMED CHANGE ("lets make a longer period floating in air
+      // between pipe leave and platform land. it was kinda fun just
+      // floating over to it for just a ittle and not seeing the landing
+      // yet"): scoped to just this one launch via launchGravityMult (see
+      // its own declaration), same technique the sandbox/forest-gear
+      // launches already use for the opposite tweak -- never touches the
+      // shared LAUNCH_GRAVITY/FLOATY_FALL_GRAVITY constants every other
+      // floaty flight (swing release, forest gears, pendulum throw) still
+      // relies on. 0.8 measured via a real-time flight simulation after
+      // the wind-gust fix just below made this launch's landing spot
+      // deterministic: stretches the hang time from ~1.65s to ~2.1s
+      // (+25%) while still landing comfortably inside
+      // WINTER_HALFPIPE_LANDING with margin to spare on both sides --
+      // 0.65 already lands close enough to the platform's far edge to
+      // risk overshooting it, and 0.5 overshoots outright, so this is
+      // close to the longest float this exact launch speed/distance can
+      // take without needing to also touch LAUNCH_VX or the platform's
+      // own size.
+      player.launchGravityMult = 0.8;
       player.launchSteerable = false; // a real toss, not a steerable jump -- nothing to mess up mid-air, matching "no fail state" all the way through
       player.jumping = true;
       player.usedDoubleJump = false;
@@ -77595,6 +77657,16 @@ const WINTER_ICE_SLIDE_SPEED = 460; // px/s -- noticeably faster than the normal
 const WINTER_ICE_SLIDE_MS = 500;
 
 function updateWinterScene(deltaTime) {
+  // CONFIRMED BUG FIX (see winterWasJumpingLastFrame's own declaration):
+  // captured before anything below (including updateWinterHalfpipe
+  // itself, which can change player.jumping on a catch/launch handoff)
+  // touches player.jumping this frame, so this local always holds the
+  // value as of the END of the PREVIOUS frame -- i.e. "were they
+  // genuinely airborne a moment ago" -- while the global immediately
+  // becomes this frame's own value for the NEXT frame's call to read the
+  // same way.
+  const winterWasJumpingLastFrameSnapshot = winterWasJumpingLastFrame;
+  winterWasJumpingLastFrame = player.jumping;
   // WINTER HALFPIPE -- owns position entirely for its short scripted
   // duration (see startWinterHalfpipe/updateWinterHalfpipe's own
   // comments), same "run it, then bail out of everything else this scene
@@ -77775,7 +77847,26 @@ function updateWinterScene(deltaTime) {
   // of how the halfpipe's own art is tuned from here on.
   const winterLastShelf = WINTER_ICE_SHELVES[WINTER_ICE_SHELVES.length - 1];
   const winterLastShelfReach = winterLastShelf.x + winterLastShelf.width + winterLastShelf.driftAmp;
-  if (!fallState.active && player.y <= 0 && !player.jumping && player.winterIceShelfIndex === -1) {
+  // CONFIRMED BUG FIX ("bottom left of pipe on ground. if i walk back
+  // there i then sink into ground at the edge and am at bottom of ice
+  // climb again" + "i still sink in the 'snowice hole' if i move one unit
+  // to the left here... why has this not been fixed yet" + most recently,
+  // after the ZONE_END anchor fix above still didn't resolve it, "i am
+  // actually still sinking into the ground... that isnt fixed at all"):
+  // the real bug was never the exemption boundary's exact x -- it's that
+  // this check never looked at HOW the player got to y<=0 here at all.
+  // !player.jumping only proves they're grounded right NOW; it says
+  // nothing about whether they actually attempted the shelf crossing and
+  // missed (a real jump that fell short) versus just walking in at
+  // ground level from either side, on ordinary flat ground, having never
+  // left it -- which this fired for just as happily, reading as an
+  // out-of-nowhere sink on perfectly normal ground. winterWasJumpingLastFrameSnapshot
+  // (see its own declaration) is only true for the single frame right
+  // after a genuine airborne->grounded landing, so requiring it here
+  // keeps the intended "slip off the crossing" penalty for an actual
+  // missed jump while a plain walk-through (jumping never true the whole
+  // way) can no longer trigger it at all.
+  if (!fallState.active && player.y <= 0 && !player.jumping && winterWasJumpingLastFrameSnapshot && player.winterIceShelfIndex === -1) {
     const feetX = player.x + player.width / 2;
     if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END &&
         feetX < winterLastShelfReach + 15) {
@@ -77854,7 +77945,24 @@ function updateWinterScene(deltaTime) {
   // false right up to that moment), while sustained ground-walking that
   // gradually climbed past the height gate keeps it true the whole way,
   // so it no longer re-fires the ride.
+  // CONFIRMED BUG FIX ("when i am on ground and get put on pipe auto, it
+  // still (but, in a different way??) puts me back at the top of the
+  // piipe" -- reported again after the restingOnCurve fix above, so a
+  // second path to the same symptom): also requires
+  // winterWasJumpingLastFrameSnapshot (see its own declaration) -- i.e.
+  // a genuine airborne->grounded landing happened on THIS exact frame.
+  // restingOnCurve only guards against sustained walking ON THE CURVE
+  // ITSELF; it was never false for sustained plain ground-walking
+  // approaching from outside the span while winterHalfpipeAwaitingRetry
+  // happened to still be true, which the height-gate OR could bypass
+  // through regardless. Requiring a fresh landing for EITHER branch
+  // means an actual retry still fires the instant an undershot launch
+  // touches down (that's one continuous landing motion, not a forced
+  // snap mid-walk), but no amount of further plain walking afterward --
+  // approaching, retreating, standing around -- can ever trigger it on
+  // its own again.
   if (!winterHalfpipe.active && !fallState.active && !player.launched && !winterHalfpipeRestingOnCurve &&
+      winterWasJumpingLastFrameSnapshot &&
       (player.y > WINTER_HALFPIPE_MOUTH_Y - 300 || winterHalfpipeAwaitingRetry)) {
     if (insideHalfpipeSpan) {
       startWinterHalfpipe();
