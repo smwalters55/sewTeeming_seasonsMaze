@@ -4059,11 +4059,23 @@ function applyPhysics(){
     if (currentScene === "winter" && player.vy <= 0) {
       const ledge = WINTER_ICE_LEDGE;
       const platformTop = ledge.height;
+      // CONFIRMED BUG FIX ("player disappear into the ground... at the
+      // ice climb wall" -- same fixed-catch-band tunneling class as
+      // WINTER_SLICK_PLATFORMS/WINTER_ICE_SHELVES (see applyPhysics' own
+      // comment on that fix): this ledge had its own separate hand-rolled
+      // landing check with the same hardcoded 14px band, missed in that
+      // earlier pass since it's not part of either platforms array. A
+      // fast enough fall/slide arrival (more than 14px of vertical travel
+      // in one frame) skipped straight past the ledge and dropped the
+      // player through to true ground below -- read from outside as
+      // sinking straight into the ice. Same fix: scale the band with how
+      // fast the player is actually falling.
+      const ledgeCatchBand = Math.max(14, Math.abs(player.vy) + 2);
       if (
         player.x + player.width > ledge.x - ledge.width / 2 &&
         player.x < ledge.x + ledge.width / 2 &&
         player.y <= platformTop &&
-        player.y >= platformTop - 14
+        player.y >= platformTop - ledgeCatchBand
       ) {
         player.y = platformTop;
         player.vx = 0;
@@ -6088,11 +6100,17 @@ function applyPhysics(){
     const left = l.x - l.width / 2;
     const right = l.x + l.width / 2;
     const playerBottom = player.y;
+    // CONFIRMED BUG FIX (same fixed-catch-band tunneling class as the
+    // launched-flight ledge check above and the slick-platform/ice-shelf
+    // fix in applyPhysics -- see either's own comment): scale the band
+    // with fall speed instead of a flat 14px, so a fast arrival doesn't
+    // skip past this ledge and drop the player through to true ground.
+    const ledgeCatchBand2 = Math.max(14, Math.abs(player.vy) + 2);
     if (
       player.x + player.width > left &&
       player.x < right &&
       playerBottom <= l.height &&
-      playerBottom >= l.height - 14 &&
+      playerBottom >= l.height - ledgeCatchBand2 &&
       player.vy <= 0
     ) {
       player.y = l.height;
@@ -77374,9 +77392,30 @@ function updateWinterScene(deltaTime) {
       else if (tAtX > C[2] && tAtX < C[3]) steepBand = [C[2], C[3]];
     }
     if (steepBand && nearCurve) {
-      // too steep to stand on -- held right at the nearer edge of the
-      // wall instead of wherever the walk input tried to push past it
-      const clampedT = (tAtX - steepBand[0] < steepBand[1] - tAtX) ? steepBand[0] : steepBand[1];
+      // too steep to stand on -- held right at the edge of the wall
+      // instead of wherever the walk input tried to push past it.
+      // CONFIRMED BUG FIX ("player disappear into the ground... to the
+      // left of the halfpipe while walking on ground from right to
+      // left"): this used to always clamp to whichever edge was
+      // numerically NEAREST the player's current x -- which, for someone
+      // actively walking OUT of the pipe through the mouth-side wall, is
+      // almost always the edge they just came FROM (the basin side),
+      // since they've only taken one small step past it. That snapped
+      // them backward every single frame, undoing each frame's own walk
+      // progress and permanently trapping them right at that boundary --
+      // reads from outside as getting stuck/swallowed right at the
+      // pipe's mouth, never actually making it out. Clamp toward the
+      // edge in the direction of whatever's actually held (left -> the
+      // lower-t edge, right -> the higher-t edge) instead, so a sustained
+      // walk keeps inching the clamp point toward the far edge each
+      // frame until the player's real position finally crosses it and
+      // leaves the band outright -- same "can't stand mid-wall" feel
+      // while idle (falls back to nearest-edge when neither key is held),
+      // but an active, held walk now actually carries you through.
+      let clampedT;
+      if (keys.left && !keys.right) clampedT = steepBand[0];
+      else if (keys.right && !keys.left) clampedT = steepBand[1];
+      else clampedT = (tAtX - steepBand[0] < steepBand[1] - tAtX) ? steepBand[0] : steepBand[1];
       const clampedPt = winterHalfpipeCurveAt(clampedT);
       player.x = clampedPt.x - player.width / 2;
       player.y = clampedPt.h;
