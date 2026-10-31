@@ -222,13 +222,13 @@ const camera = { topDown:false, locked:false };
 // debug spawn"): switched to "forest" -- see the DEBUG_START_SCENE ===
 // "forest" block further down, now repositioned to the river's near
 // bank instead of its old winter-door test spot.
-// CONFIRMED CHANGE ("maybe debug spawn me at the start of winter so my
-// friend can play this"): switched to "winter" -- see the
-// DEBUG_START_SCENE === "winter" block further down, now repositioned to
-// winter's actual start (right past the forest-winter door) instead of
-// its old snowball-range test spot. TEMPORARY -- flip back to "autumn"
-// once done testing, per this file's own standing convention.
-const DEBUG_START_SCENE = "winter";
+// CONFIRMED CHANGE ("can you debug spawn me at the start of the whole
+// game"): switched back to "autumn" -- none of the DEBUG_START_SCENE
+// override blocks further down match "autumn", so no debug spawn fires at
+// all and the game just starts from its own real initial declarations
+// (player x:400/y:0, currentScene "autumn") -- the true beginning, not a
+// debug teleport to it.
+const DEBUG_START_SCENE = "autumn";
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
