@@ -222,16 +222,13 @@ const camera = { topDown:false, locked:false };
 // debug spawn"): switched to "forest" -- see the DEBUG_START_SCENE ===
 // "forest" block further down, now repositioned to the river's near
 // bank instead of its old winter-door test spot.
-// CONFIRMED CHANGE ("can you now put me in oak room on top of ratroom
-// entrance with leaf crown and boomerang and marked as having done
-// everything in ratroom that needs to be done" + "oh and with pumpkin"):
-// switched to "oak" -- see the DEBUG_START_SCENE === "oak" block further
-// down (sets position/crown/inventory, everything declared early enough
-// in the file to set directly there) and its deferred counterpart inside
-// update() (same TDZ-safe pattern as the existing molehole debug block,
-// for the ratroom-specific state declared later in the file: the marble,
-// the lamp, the rat NPC's feather quest).
-const DEBUG_START_SCENE = "oak";
+// CONFIRMED CHANGE ("cam u put ,e bavck in winter last playtform be4
+// pipe"): switched back to "winter" -- the existing DEBUG_START_SCENE ===
+// "winter" block further down already spawns at WINTER_ICE_SHELVES[5],
+// the last shelf before the halfpipe, exactly this spot (see that
+// block's own comment). The "oak" block above is left in place, untouched,
+// in case that spawn is wanted again later -- just not the active one.
+const DEBUG_START_SCENE = "winter";
 let debugOakRatroomApplied = false; // guards the deferred, update()-run half of the "oak" debug spawn below so it only ever runs once, not every frame
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
