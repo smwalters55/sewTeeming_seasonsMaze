@@ -19599,19 +19599,18 @@ if (DEBUG_START_SCENE === "forest") {
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  // CONFIRMED CHANGE: retargeted again now that the halfpipe (shelf
-  // crossing -> scripted slide -> launch) is built -- the actual current
-  // frontier is WINTER_HALFPIPE_LANDING, the platform its launch tosses
-  // the player onto, and the natural spot for the still-unbuilt
-  // snowboard-down to start from next. Both values hardcoded, same TDZ
-  // reason as every other debug spawn here -- WINTER_HALFPIPE_LANDING is
-  // a `const` declared much further down the file:
-  //   WINTER_HALFPIPE_LANDING = { x: 16080, height: 900, width: 220 }
-  // Spawns a little inset from its left edge (x+10) rather than exactly
-  // on it, same "comfortably inside the platform, not right on its edge"
-  // margin every other platform-top debug spawn in this file uses.
-  player.x = 16090;
-  player.y = 900;
+  // CONFIRMED CHANGE ("debug spawn me last platform pre pipe"): retargeted
+  // from WINTER_HALFPIPE_LANDING (the halfpipe's own far-side landing) to
+  // shelf 5 -- the last of WINTER_ICE_SHELVES, the actual jumping-off
+  // point into the halfpipe's gap/catch/ride, useful for testing that
+  // entry directly instead of needing to also re-cross the whole shelf
+  // run first every time. Hardcoded, same TDZ reason as every other debug
+  // spawn here -- WINTER_ICE_SHELVES[5] is declared much further down:
+  //   WINTER_ICE_SHELVES[5] = { x: 15000, height: 880, width: 140, ... }
+  // Spawned a little inset from its left edge (x+20), same margin every
+  // other platform-top debug spawn in this file uses.
+  player.x = 15020;
+  player.y = 880;
 }
 
 // CONFIRMED CHANGE ("can you spawn debug me in front of mirrors"): drops
