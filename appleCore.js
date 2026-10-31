@@ -78570,6 +78570,20 @@ if (currentScene === "autumn") {
     delete inventory.feather; // carried-then-hung, not a kept inventory item -- matches the real hang flow
     ratFeatherThankQueued = false;
     ratDialogue.active = false;
+    // CONFIRMED CHANGE ("wait no put teahouse in there too!!!"): the oak
+    // tea nook (the baby owl offering tea beside the cushion pile -- the
+    // only tea-related spot in the whole game) has no completion flag of
+    // its own (purely passive/repeatable, see teaSpot's own comment), but
+    // it AND the cushion pile it sits beside are both gated behind
+    // oakLamp.collected -- a separate pickup from the ratroom lamp itself
+    // (same physical lamp, but a second real-world spot in oak you grab
+    // it from, gated on ratNPC.fed -- see updateOakLampTable). Setting
+    // inventory.lamp directly above never flipped this, so the tea nook
+    // (and cushion pile, and the Metaphors book shelf) were all still
+    // locked despite the lamp supposedly being "done". oakLamp.x itself
+    // is declared before this point in the file (~44351, well before this
+    // deferred block runs), so no TDZ risk setting it here.
+    oakLamp.collected = true;
   }
 
   if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
