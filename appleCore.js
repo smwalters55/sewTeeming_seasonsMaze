@@ -74991,13 +74991,57 @@ const WINTER_SNOWBALL_LEVELS = 4; // ground -> up to 4 tiers, though higher tier
 const WINTER_SNOWBALL_SPACING_AVG = 54; // only an average now -- tier 0's own spacing is irregular, not fixed
 const WINTER_SNOWBALL_BASE_RADIUS = 24;
 const WINTER_SNOWBALL_LEVEL_RISE = 37; // vertical rise climbing one tier -- comfortably inside a single jump's reach (see the hurdle clearance bands elsewhere in this zone)
+// CONFIRMED BUG FIX ("why so much air within the ball pile?"): upper
+// tiers used to be placed with a flat vertical rise (WINTER_SNOWBALL_LEVEL_RISE
+// per level) regardless of how far apart their two support balls actually
+// were -- real touching contact was never checked, so a ball nested over
+// a wider-than-average gap just floated above its supports with visible
+// background showing through underneath. Replaced with real circle-to-
+// circle tangent contact math: each upper-tier ball's position (both x
+// AND y, not just a midpoint+jitter x) is solved so it genuinely touches
+// both of its two support balls, the same way physical stacked spheres
+// actually rest against each other. Falls back to resting directly
+// tangent on whichever single support is tallest/closest when a gap is
+// too wide to bridge touching both at once (a real pile does this too --
+// not every ball bridges two neighbors).
+function winterSnowballRestPos(a, b, rC, seed) {
+  const r1 = a.radius + rC, r2 = b.radius + rC;
+  const dx = b.x - a.x, dy = b.centerY - a.centerY;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d > 1e-6 && d < r1 + r2) {
+    const aLen = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+    const hSq = r1 * r1 - aLen * aLen;
+    if (hSq >= 0) {
+      const h = Math.sqrt(hSq);
+      const px = a.x + (aLen * dx) / d, py = a.centerY + (aLen * dy) / d;
+      const perpx = -dy / d, perpy = dx / d;
+      const c1 = { x: px + h * perpx, y: py + h * perpy };
+      const c2 = { x: px - h * perpx, y: py - h * perpy };
+      return c1.y >= c2.y ? c1 : c2; // the "upper" intersection -- the one actually resting above both
+    }
+  }
+  // fallback: gap too wide to bridge both -- rest tangent on just the
+  // taller support instead, small x jitter kept safely inside the tangent
+  // circle's own radius so it's still real contact, not a flat offset.
+  const base = a.centerY + a.radius >= b.centerY + b.radius ? a : b;
+  const maxJitter = (base.radius + rC) * 0.35;
+  const jx = (pseudoRandom(seed) - 0.5) * 2 * maxJitter;
+  const cy = base.centerY + Math.sqrt(Math.max(0, (base.radius + rC) ** 2 - jx * jx));
+  return { x: base.x + jx, y: cy };
+}
+
 const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
   const balls = [];
   const footprintW = WINTER_SNOWBALL_TIER0_COUNT * WINTER_SNOWBALL_SPACING_AVG;
 
   // tier 0: irregular gap-weighted spacing across the footprint (small
   // weight = tight cluster, big weight = wide lone gap -- same technique
-  // getWinterIceSlabIcicles uses for its own origins).
+  // getWinterIceSlabIcicles uses for its own origins). Ground tier rests
+  // directly on the flat pile floor (centerY = own radius, tangent at
+  // height 0) -- the pile's own footprint sits entirely past
+  // WINTER_WALKING_BEAT_END_X, where winterWalkingBeatHeightAt's bump
+  // term is always exactly 0, so "flat ground" here is exact, not an
+  // approximation.
   const gapWeights = [];
   let gapSum = 0;
   for (let i = 0; i < WINTER_SNOWBALL_TIER0_COUNT; i++) {
@@ -75015,6 +75059,7 @@ const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
     const radius = WINTER_SNOWBALL_BASE_RADIUS + (pseudoRandom(seed) - 0.5) * 7; // "some slightly dif sizes"
     const ball = {
       x,
+      centerY: radius,
       level: 0,
       radius,
       hitHalfWidth: radius - 3, // slightly narrower than the drawn ball so near-miss jumps/side-blocks don't feel unfair against the round silhouette
@@ -75028,9 +75073,9 @@ const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
       // against a bare 37 could never catch, so a real jump attempt never
       // landed no matter how it was timed -- this is the actual root
       // cause, the side-block fix below only ever masked part of it.
-      // Standing on this tier now means resting at the real local ground
-      // height plus (level+1) full rises up.
-      topY: WINTER_WALKING_BEAT_BASE_HEIGHT + WINTER_SNOWBALL_LEVEL_RISE,
+      // Now derived from this exact ball's own centerY+radius (its real
+      // physical top point) rather than a uniform per-level number.
+      topY: WINTER_WALKING_BEAT_BASE_HEIGHT + radius + radius,
       seed,
     };
     balls.push(ball);
@@ -75038,7 +75083,9 @@ const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
   }
 
   // tiers 1+: nest each new ball into a gap between two neighboring balls
-  // of the tier directly below -- never aligned with either one's own x.
+  // of the tier directly below -- never aligned with either one's own x,
+  // and now genuinely touching both (or the taller one) via
+  // winterSnowballRestPos above, not floating on a flat per-level rise.
   for (let level = 1; level < WINTER_SNOWBALL_LEVELS; level++) {
     if (prevTier.length < 2) break;
     const gapIdxs = [];
@@ -75061,16 +75108,25 @@ const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
       const a = prevTier[gapIdx];
       const b = prevTier[gapIdx + 1];
       const seed = a.seed + b.seed + level * 7.7 + pi * 3.1;
-      const x = (a.x + b.x) / 2 + (pseudoRandom(seed) - 0.5) * 10; // jittered off the true midpoint, not pinned dead-center either
-      const levelBaseRadius = WINTER_SNOWBALL_BASE_RADIUS - level * 2; // each tier up is slightly smaller
-      const radius = levelBaseRadius + (pseudoRandom(seed + 1) - 0.5) * 6;
+      // CONFIRMED CHANGE ("also make some of the higher up snoballs a lil
+      // smaller pls"): steeper per-tier falloff (was -2px/level, now
+      // -4.5px/level) and the random size variance itself shrinks with
+      // height too, so upper tiers don't occasionally roll back up to a
+      // tier-0-sized ball -- they read as consistently smaller the higher
+      // up the pile goes.
+      const levelBaseRadius = WINTER_SNOWBALL_BASE_RADIUS - level * 4.5;
+      const radius = levelBaseRadius + (pseudoRandom(seed + 1) - 0.5) * Math.max(3, 6 - level);
+      const rest = winterSnowballRestPos(a, b, radius, seed + 2);
       const ball = {
-        x,
+        x: rest.x,
+        centerY: rest.y,
         level,
         radius,
         hitHalfWidth: radius - 3,
-        // same WINTER_WALKING_BEAT_BASE_HEIGHT offset fix as tier 0 above
-        topY: WINTER_WALKING_BEAT_BASE_HEIGHT + (level + 1) * WINTER_SNOWBALL_LEVEL_RISE,
+        // same WINTER_WALKING_BEAT_BASE_HEIGHT offset fix as tier 0 above,
+        // now from this ball's own real resting centerY, not a uniform
+        // per-level rise.
+        topY: WINTER_WALKING_BEAT_BASE_HEIGHT + rest.y + radius,
         seed,
       };
       balls.push(ball);
@@ -77926,10 +77982,16 @@ function drawWinterSnowballPile(camX) {
   // top of the flat ground, same height unit the collision's topY uses --
   // so a tier genuinely reads as sitting up on the balls below it, not
   // floating at the same height as every other ball.
+  // CONFIRMED BUG FIX ("why so much air within the ball pile?"): now
+  // derived from this exact ball's real contact centerY (from the
+  // tangent-circle math in buildWinterSnowballPile) instead of a flat
+  // per-level rise -- so the drawn ball lands exactly where the generator
+  // actually computed it to be touching its supports, not at a generic
+  // tier height that happened to leave a gap underneath.
   WINTER_WALKING_BEAT_SNOWBALLS.forEach((b, bi) => {
     const bx = b.x - camX;
     if (bx < -60 || bx > canvas.width + 60) return;
-    const groundY = gy - (winterWalkingBeatHeightAt(b.x) + b.level * WINTER_SNOWBALL_LEVEL_RISE);
+    const groundY = gy - (winterWalkingBeatHeightAt(b.x) + b.centerY - b.radius);
     const seed = b.x * 0.09 + bi;
     const rx = b.radius * (0.92 + pseudoRandom(seed) * 0.16);
     const ry = b.radius * (0.88 + pseudoRandom(seed + 1) * 0.14);
