@@ -74412,15 +74412,82 @@ const WINTER_HALFPIPE_GAP = 50;
 const WINTER_HALFPIPE_ENTRY_X = WINTER_ICE_SHELF_ZONE_END + WINTER_HALFPIPE_GAP;
 const WINTER_HALFPIPE_MOUTH_X = WINTER_HALFPIPE_ENTRY_X;
 const WINTER_HALFPIPE_MOUTH_Y = 850; // level with the nearby shelves -- the lip reads as a continuation of the crossing, not a separate drop
-const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 260;
+// CONFIRMED CHANGE ("make half pipe wider"): each half widened from 260 to
+// 320 (520 -> 640 total span) -- reads as a real bowl instead of a narrow
+// notch, without pushing WINTER_WIDTH out enough to matter.
+const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 320;
 const WINTER_HALFPIPE_BOTTOM_Y = 0; // true ground -- the actual dip of the pipe
-const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 260;
+const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 320;
 const WINTER_HALFPIPE_RELEASE_Y = 500; // partway up the far wall -- the scripted ride hands off to a real launch from here, already rising
-const WINTER_HALFPIPE_CATCH_MS = 150; // brief ease from wherever the generous catch actually caught you to the mouth point, so a slightly early/late jump doesn't visually snap
-const WINTER_HALFPIPE_DOWN_MS = 550; // steep accelerating drop
-const WINTER_HALFPIPE_UP_MS = 500; // decelerating rise, bleeding momentum off against the far wall, slightly quicker than the drop
+// CONFIRMED CHANGE ("i also dont want it to me like a full sharp spike on
+// each end. soften the tips and make the sides a lill less straight like.
+// more natural"): the first pass used a plain ease-out/ease-in POWER curve
+// per half (see the dead WINTER_HALFPIPE_CURVE_POWER this replaced), which
+// has its STEEPEST slope exactly at the mouth/release tips -- i.e. right
+// where the curve meets the flat shelf/launch, the sharpest possible kink,
+// reading as a spike instead of a soft lip. It's also very likely what the
+// reported "player hops" at the start and end of the ride actually was:
+// the ride's own velocity peaked right at those endpoints, then got
+// stomped flat by the catch's/launch's own fixed speeds at the handoff.
+// Smootherstep (zero first AND second derivative at both ends of each
+// half) fixes both at once -- soft, rounded tips, a properly organic S-
+// curve through the middle instead of a geometric power-law, and a ride
+// velocity that's naturally near zero right at the lip and at release, so
+// there's nothing left to snap into/out of at either handoff.
+function winterHalfpipeSmootherstep(p) {
+  return p * p * p * (p * (p * 6 - 15) + 10);
+}
+// CONFIRMED CHANGE ("slow it down slightly" + de-jolt): CATCH/DOWN/UP used
+// to be three separately-timed phases with their own independent 0-1
+// easing, which is also what caused the catch->down velocity jump (catch
+// eased out to a dead stop, down then started again at full speed from
+// zero) -- see winterHalfpipeCurveAt's own comment for the bigger bug this
+// was tangled up with. Down+up are now one continuous WINTER_HALFPIPE_SLIDE_MS
+// timer driving a single curve parameter straight through the bottom, so
+// there's no seam there at all; only CATCH_MS remains separate (the lead-in
+// from wherever the mount actually caught you, still its own short beat).
+// Both nudged up a bit for "slow it down slightly" (1050ms total slide ->
+// 1250ms, ~19% slower; catch 150ms -> 180ms).
+const WINTER_HALFPIPE_CATCH_MS = 180;
+const WINTER_HALFPIPE_SLIDE_MS = 1250;
 const WINTER_HALFPIPE_LAUNCH_VX = 5; // small forward carry, same small-number scale as WINTER_ICE_CLIMB_SPEED
 const WINTER_HALFPIPE_LAUNCH_VY = 16; // a real toss -- with LAUNCH_GRAVITY (0.3), apexes a little past RELEASE_Y+425, comfortably above every shelf
+// CONFIRMED FIX ("make player be flush with the ice as it moves on it" +
+// "the animation is also a bit jolty rn"): the ride used to compute player.x
+// and player.y off the SAME eased(p) value in each of the down/up phases.
+// Since both coordinates rode the identical scalar, the easing only ever
+// changed how fast you traveled along a straight line from mouth->bottom
+// and bottom->release -- the path itself was dead straight, a sharp V, even
+// though the drawn ice (below) used a real x-linear/height-eased curve. The
+// player was cutting a straight chord through visibly curved ice, which is
+// exactly why it didn't look flush and why the direction change at the
+// bottom felt like a jolt instead of a smooth carve. This one function is
+// now the single source of truth for the curve's shape, called from BOTH
+// updateWinterHalfpipe (the ride) and drawWinterHalfpipe (the visual), so
+// they can never diverge again. t=0 is the mouth, t=0.5 the flat bottom,
+// t=1 the release point.
+function winterHalfpipeCurveAt(t) {
+  t = Math.max(0, Math.min(1, t));
+  const x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X) * t;
+  let h;
+  if (t <= 0.5) {
+    const dt = t / 0.5;
+    const eased = winterHalfpipeSmootherstep(dt); // soft off the lip, steep through the middle, soft into the bottom
+    h = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
+  } else {
+    const ut = (t - 0.5) / 0.5;
+    const eased = winterHalfpipeSmootherstep(ut); // soft off the bottom, steep through the middle, soft into the far wall
+    h = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
+  }
+  return { x, h };
+}
+// how much of the curve's actual geometric tangent angle gets applied as
+// player lean (see updateWinterHalfpipe's "slide" phase) -- 1.0 would be
+// the literal slope angle, which gets close to vertical right at the lip/
+// wall for a sprite this blocky; scaled down and clamped so it still reads
+// as "hugging the curve" without flattening out sideways.
+const WINTER_HALFPIPE_LEAN_STRENGTH = 0.55;
+const WINTER_HALFPIPE_LEAN_MAX = 1.1;
 // the landing -- static (not drifting, not part of WINTER_ICE_SHELVES),
 // since it's not a timing challenge, it's the guaranteed target the launch
 // above is tuned to reach. This IS the new frontier/natural high
@@ -74465,7 +74532,7 @@ const WINTER_WIDTH = WINTER_HALFPIPE_LANDING.x + WINTER_HALFPIPE_LANDING.width +
 // updateWinterScene's own top for where this is called/early-returned on).
 let winterHalfpipe = {
   active: false,
-  phase: "idle", // "catch" -> "down" -> "up" -> hands off to player.launched and goes inactive
+  phase: "idle", // "catch" -> "slide" -> hands off to player.launched and goes inactive
   startedAt: 0,
   fromX: 0,
   fromY: 0,
@@ -74491,41 +74558,47 @@ function updateWinterHalfpipe(deltaTime) {
   if (!winterHalfpipe.active) return;
   const now = performance.now();
   if (winterHalfpipe.phase === "catch") {
+    // CONFIRMED FIX ("the animation is also a bit jolty rn" / reported
+    // "player hops" at the start of the ride): now that the slide itself
+    // starts at near-zero velocity (see winterHalfpipeSmootherstep -- soft
+    // tips means soft opening speed, not the old curve's max-speed-right-
+    // at-the-lip), the catch should settle in the same soft way rather
+    // than accelerating hard into a handoff that's no longer there to
+    // match. Same smootherstep as the slide curve: eases in from the
+    // standstill the mount leaves you at, eases back down to a gentle stop
+    // right as the slide picks up, nothing to snap between the two.
     const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_CATCH_MS);
-    const eased = 1 - (1 - p) * (1 - p);
+    const eased = winterHalfpipeSmootherstep(p);
     player.x = winterHalfpipe.fromX + (WINTER_HALFPIPE_MOUTH_X - winterHalfpipe.fromX) * eased;
     player.y = winterHalfpipe.fromY + (WINTER_HALFPIPE_MOUTH_Y - winterHalfpipe.fromY) * eased;
     if (p >= 1) {
-      winterHalfpipe.phase = "down";
+      winterHalfpipe.phase = "slide";
       winterHalfpipe.startedAt = now;
     }
-  } else if (winterHalfpipe.phase === "down") {
-    // CONFIRMED BUG FIX ("half pipe must be concave... essential"): a real
-    // halfpipe's wall is steepest right at the lip and flattens out
-    // smoothly into the flat bottom -- that's ease-OUT (fast initial
-    // drop, slowing into the transition), not ease-in. The original pass
-    // had this backwards (slow start, accelerating into the bottom),
-    // which draws/rides as a CONVEX overhang curving away from the lip,
-    // the opposite of the concave scooped-out pipe shape asked for.
-    const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_DOWN_MS);
-    const eased = 1 - (1 - p) * (1 - p); // ease-out -- steep off the lip, flattening into the bottom
-    player.x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_BOTTOM_X - WINTER_HALFPIPE_MOUTH_X) * eased;
-    player.y = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
-    winterHalfpipe.tiltAngle = eased * 0.35; // leaning into the dive
-    if (p >= 1) {
-      winterHalfpipe.phase = "up";
-      winterHalfpipe.startedAt = now;
-    }
-  } else if (winterHalfpipe.phase === "up") {
-    // same concavity fix, mirrored -- the rising wall should leave the
-    // flat bottom gently (small initial slope) and steepen toward the far
-    // lip/launch point, which is ease-IN (p*p), not ease-out.
-    const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_UP_MS);
-    const eased = p * p; // ease-in -- flat off the bottom, steepening into the far wall
-    player.x = WINTER_HALFPIPE_BOTTOM_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_BOTTOM_X) * eased;
-    player.y = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
-    winterHalfpipe.tiltAngle = 0.35 - eased * 0.6; // swings from the dive-lean through upright to a backward launch lean
-    if (p >= 1) {
+  } else if (winterHalfpipe.phase === "slide") {
+    // CONFIRMED FIX ("make player be flush with the ice as it moves on it"
+    // + de-jolt): down and up used to be two separately-timed phases, each
+    // easing its OWN full 0-1 range, which is what actually produced the
+    // straight-line-chord bug described on winterHalfpipeCurveAt -- and
+    // even once that's fixed, two independently-timed phases still meet at
+    // the bottom with mismatched horizontal speed (different px/ms on
+    // either side) which reads as a stutter right at the deepest point.
+    // One continuous timer across the whole mouth->bottom->release curve
+    // removes both problems at once: a single t sweeps start to finish,
+    // winterHalfpipeCurveAt is the ONLY place the shape is defined (so the
+    // ride can never again diverge from what's drawn), and the tilt is the
+    // curve's own real tangent angle rather than a hand-tuned constant --
+    // the sprite leans exactly as steep as the ice actually is beneath it.
+    const t = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_SLIDE_MS);
+    const pt = winterHalfpipeCurveAt(t);
+    player.x = pt.x;
+    player.y = pt.h;
+    const eps = 0.004;
+    const a = winterHalfpipeCurveAt(Math.max(0, t - eps));
+    const b = winterHalfpipeCurveAt(Math.min(1, t + eps));
+    const rawAngle = Math.atan2(-(b.h - a.h), b.x - a.x); // negative dh (height dropping) -> positive lean, same "diving forward" sign as before
+    winterHalfpipe.tiltAngle = Math.max(-WINTER_HALFPIPE_LEAN_MAX, Math.min(WINTER_HALFPIPE_LEAN_MAX, rawAngle * WINTER_HALFPIPE_LEAN_STRENGTH));
+    if (t >= 1) {
       player.x = WINTER_HALFPIPE_RELEASE_X;
       player.y = WINTER_HALFPIPE_RELEASE_Y;
       player.vx = WINTER_HALFPIPE_LAUNCH_VX;
@@ -76495,30 +76568,16 @@ function drawWinterHalfpipe(camX, now) {
   const rightX = WINTER_HALFPIPE_RELEASE_X - camX;
   if (rightX < -20 || leftX > canvas.width + 20) return;
 
-  // surface profile -- same down(t^2)/up(1-(1-t)^2) shape
-  // updateWinterHalfpipe's own "down"/"up" phases drive the player through,
-  // just sampled here purely for the visual so the ice actually looks like
-  // the path the ride follows.
+  // surface profile -- sampled straight from winterHalfpipeCurveAt, the
+  // same function updateWinterHalfpipe's "slide" phase rides along, so the
+  // drawn ice and the player's actual path can never drift apart again
+  // (see that shared function's own comment for the bug this replaced).
   const SEGS = 28;
   const topPts = [];
   for (let i = 0; i <= SEGS; i++) {
     const t = i / SEGS;
-    const x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X) * t;
-    let h;
-    // same concavity fix as updateWinterHalfpipe's own "down"/"up" phases
-    // (ease-out then ease-in, not the reverse) -- see that function's
-    // comment for why. Kept in sync so the drawn ice actually traces the
-    // path the ride follows.
-    if (t <= 0.5) {
-      const dt = t / 0.5;
-      const eased = 1 - (1 - dt) * (1 - dt);
-      h = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
-    } else {
-      const ut = (t - 0.5) / 0.5;
-      const eased = ut * ut;
-      h = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
-    }
-    topPts.push({ x: x - camX, y: gy - h });
+    const pt = winterHalfpipeCurveAt(t);
+    topPts.push({ x: pt.x - camX, y: gy - pt.h });
   }
 
   ctx.globalAlpha = 1;
@@ -76888,7 +76947,14 @@ function updateWinterScene(deltaTime) {
   // extent (up to RELEASE_X, where the scripted ride hands off to a real
   // launch anyway) so it only fires for an actual arrival into the ride,
   // never for already being past it.
-  if (!winterHalfpipe.active && !fallState.active) {
+  // CONFIRMED BUG FIX, caught via the ride test harness after widening the
+  // pipe: the launch itself starts exactly AT RELEASE_X, i.e. right on this
+  // check's own upper bound. The launched flight's ambient winter wind
+  // gust (see WINTER_ICE_WIND_FREQ/AMP) can drift vx briefly negative right
+  // after launch, pulling feetX back under RELEASE_X for a frame or two --
+  // which, with no guard against an in-progress launch, re-mounted the
+  // ride mid-flight. player.launched now excludes that window entirely.
+  if (!winterHalfpipe.active && !fallState.active && !player.launched) {
     const feetX = player.x + player.width / 2;
     if (feetX > WINTER_HALFPIPE_ENTRY_X && feetX < WINTER_HALFPIPE_RELEASE_X) {
       startWinterHalfpipe();
