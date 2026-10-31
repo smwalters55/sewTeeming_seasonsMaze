@@ -74287,7 +74287,15 @@ function winterIceBuildHolds() {
       // margin, so it can only ever tighten the earlier spread-based
       // clamp, never override the row's intended variety where there's
       // genuinely room for it.
-      const wallT = Math.max(0, Math.min(1, h.height / winterIceWallTopHeight()));
+      // inlined instead of calling winterIceWallTopHeight(): that function
+      // reads WINTER_ICE_LEDGE, which is declared further down the file
+      // than this one runs (WINTER_ICE_HOLDS is built immediately, at
+      // module load) -- calling it here hit WINTER_ICE_LEDGE's own
+      // temporal-dead-zone and threw on every page load. Same formula,
+      // built straight from the constants this function already has
+      // available this early.
+      const wallTopHeightInline = WINTER_ICE_ROW_FIRST_HEIGHT + WINTER_ICE_ROW_COUNT * WINTER_ICE_ROW_DY + 40;
+      const wallT = Math.max(0, Math.min(1, h.height / wallTopHeightInline));
       const edgeOffset = winterIceWallEdgeX(wallT, h.dir);
       const holdRadius = 48 * h.sizeScale;
       const maxCenterOffset = edgeOffset - h.dir * (holdRadius + 12);
@@ -76839,39 +76847,56 @@ function drawWinterHalfpipe(camX, now) {
   // small a fraction of this much larger shape to read as "light shining
   // into it"). Varied size/depth/drift keeps it irregular, same reasoning
   // as before, so it still never reads as a repeating pattern.
-  // CONFIRMED CHANGE ("i really dont like the color splotches on the
-  // 'ice'... this looks like weird ice paint ball or something"): the
-  // previous pass (bigger radius, 0.4 alpha, 11 of them to cover the
-  // wider pipe) ended up reading as solid blobs of paint sitting ON the
-  // ice rather than color shining faintly through clear ice. Pulled back
-  // on every axis at once -- fewer, smaller, and much lower opacity --
-  // so what little color there is reads as a soft tint, not a splotch.
-  // Kept the same curve-sampled placement/depth-spread logic from the
-  // last round (that part was correct -- it's what actually got color
-  // reaching the whole span instead of just the mouth), just toned way
-  // down.
+  // CONFIRMED CHANGE ("lets try the oil slick color thing" -- brainstormed
+  // against "i really dont like the color splotches on the 'ice'...this
+  // looks like weird ice paint ball or something"): dropped the glint-blob
+  // approach entirely in favor of a genuine moving sheen -- one continuous
+  // diagonal rainbow band, slid slowly back and forth across the whole
+  // clipped ice shape over time, the way light actually shifts across an
+  // oily/glassy surface as you move past it, rather than a handful of
+  // fixed colored circles sitting in place. The color stops themselves
+  // are built once, in a fixed ascending order (never shuffled per
+  // frame), and all the motion comes from sliding the gradient's own
+  // start/end points with a sine wave -- smooth and seamless both
+  // directions, no wraparound jump the way a modulo-based sweep would
+  // need to handle.
   ctx.save();
   ctx.clip();
-  const GLINTS = 8;
-  for (let i = 0; i < GLINTS; i++) {
-    const t = (i + 0.5) / GLINTS;
-    const pt = topPts[Math.round(t * SEGS)];
-    const seed = i * 2.37;
-    const driftX = Math.sin(now * 0.00014 + seed) * 18;
-    const driftY = Math.cos(now * 0.00011 + seed * 1.3) * 10;
-    const depthFrac = 0.15 + ((i * 47) % 6) / 6 * 0.55; // 0.15..0.70 of the way down into the ice mass, not just at the surface
-    const gx = pt.x + driftX;
-    const gy2 = pt.y + (gy + 40 - pt.y) * depthFrac + driftY;
-    const r = 22 + ((i * 29) % 14);
-    const hue = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
-    const glintGrad = ctx.createRadialGradient(gx, gy2, 0, gx, gy2, r);
-    glintGrad.addColorStop(0, `rgba(${hue},0.16)`);
-    glintGrad.addColorStop(1, `rgba(${hue},0)`);
-    ctx.fillStyle = glintGrad;
-    ctx.beginPath();
-    ctx.arc(gx, gy2, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const sheenColors = WINTER_RAINBOW_ICICLE_COLORS;
+  const sheenDiag = (topPts[topPts.length - 1].x - topPts[0].x) + 500;
+  const sheenSweep = Math.sin(now * 0.00008) * sheenDiag * 0.5;
+  const sheenX0 = topPts[0].x - 250 + sheenSweep;
+  const sheenY0 = topPts[0].y - 180;
+  const sheenX1 = sheenX0 + sheenDiag;
+  const sheenY1 = gy + 80;
+  const sheenGrad = ctx.createLinearGradient(sheenX0, sheenY0, sheenX1, sheenY1);
+  const sheenN = sheenColors.length;
+  sheenColors.forEach((hue, i) => {
+    const center = (i + 0.5) / sheenN;
+    const band = 0.5 / sheenN;
+    sheenGrad.addColorStop(Math.max(0, center - band), `rgba(${hue},0)`);
+    sheenGrad.addColorStop(center, `rgba(${hue},0.15)`);
+    sheenGrad.addColorStop(Math.min(1, center + band), `rgba(${hue},0)`);
+  });
+  ctx.fillStyle = sheenGrad;
+  ctx.fillRect(topPts[0].x - 400, topPts[0].y - 300, sheenDiag + 800, (gy + 80) - (topPts[0].y - 300));
+  // a second, faster/finer sheen layered on top at even lower opacity --
+  // without this the single broad band reads a little too uniform/flat
+  // across the huge surface; the second layer breaks it up subtly, same
+  // "light catching an uneven surface differently in different spots"
+  // idea the wall's own facet texture uses.
+  const sheen2Sweep = Math.sin(now * 0.00013 + 2.1) * sheenDiag * 0.5;
+  const sheen2X0 = topPts[0].x - 250 + sheen2Sweep;
+  const sheen2Grad = ctx.createLinearGradient(sheen2X0, sheenY1, sheen2X0 + sheenDiag, sheenY0);
+  sheenColors.forEach((hue, i) => {
+    const center = ((i + 0.5) / sheenN + 0.08) % 1;
+    const band = 0.35 / sheenN;
+    sheen2Grad.addColorStop(Math.max(0, center - band), `rgba(${hue},0)`);
+    sheen2Grad.addColorStop(center, `rgba(${hue},0.08)`);
+    sheen2Grad.addColorStop(Math.min(1, center + band), `rgba(${hue},0)`);
+  });
+  ctx.fillStyle = sheen2Grad;
+  ctx.fillRect(topPts[0].x - 400, topPts[0].y - 300, sheenDiag + 800, (gy + 80) - (topPts[0].y - 300));
   ctx.restore();
 
   // glossy highlight tracing the curve -- the "really smooth, steep glassy
