@@ -74133,19 +74133,31 @@ function drawWinterIceDuckShelf(camX, shelf, groundRef = 0) {
   const seed = shelf.x * 0.017;
   const ceilingY = gy - groundRef - shelf.clearance;
   const halfW = shelf.w / 2 + 14;
-
-  // the solid slab -- flat-bottomed, jagged/irregular top that runs off
-  // the top of the screen, so there's no visible "floating block" edge
+  // CONFIRMED BUG FIX ("why is this on a pillar coming from the ground
+  // no?? it should look like an overhang we just cant see the top of,
+  // not a pillar"): the slab's "goes off the top of the screen" edge was
+  // a flat literal -30 -- correct ONLY when drawn with no extra vertical
+  // offset (true ground level, cameraY effectively 0), where -30 really
+  // does sit just above the visible canvas. This function is drawn
+  // inside drawWinterScene's own ctx.translate(0, cameraY), though, and
+  // cameraY grows large up at an elevation like the walking beat's (~750
+  // while standing on it) -- so that same raw -30 was landing hundreds
+  // of px INTO the visible frame instead of off the top of it, stretching
+  // the "slab" all the way down past the ground line into a solid pillar.
+  // A fixed, generously-off-screen constant instead of a value tuned for
+  // one specific camera offset -- guaranteed to stay off the top of the
+  // screen no matter how far the translate shifts things.
+  const SLAB_TOP_Y = -2000;
   ctx.fillStyle = "#c3dcec";
   ctx.beginPath();
-  ctx.moveTo(sx - halfW, -30);
+  ctx.moveTo(sx - halfW, SLAB_TOP_Y);
   const TOP_PTS = 5;
   for (let p = 0; p <= TOP_PTS; p++) {
     const t = p / TOP_PTS;
     const jag = (pseudoRandom(seed + p) - 0.5) * 14;
     ctx.lineTo(sx - halfW + t * halfW * 2, ceilingY - 22 + jag);
   }
-  ctx.lineTo(sx + halfW, -30);
+  ctx.lineTo(sx + halfW, SLAB_TOP_Y);
   ctx.closePath();
   ctx.fill();
 
@@ -74860,6 +74872,31 @@ let winterHalfpipe = {
 // the pipe's own x-span without re-mounting, so it can't become a
 // permanent ground-level bypass for an unrelated later visit.
 let winterHalfpipeAwaitingRetry = false;
+// CONFIRMED BUG FIX ("when you are on ground walking left, well either
+// direction it puts you back on the pipe floor automatically... then u
+// auto in the bottom of pipe, and so it makes you walk up the left a
+// little then catches that area of 'must go down pipe' and brings you to
+// the top of the pipe on left to go down and up it fully again"): the
+// mount trigger's own height gate (player.y > MOUTH_Y-300) was meant to
+// stop an illegitimate re-mount from plain standing/walking at true
+// ground level (see that gate's own comment -- this exact bug was
+// already reported and partly fixed once). It's still not enough on its
+// own, though: the separate ground-conforming snap just below (lets the
+// player walk the pipe's own curve like solid ground instead of sinking
+// into it) has NO height limit of its own, so a sustained walk up the
+// mouth-side wall gradually raises player.y right past that gate's own
+// threshold through perfectly ordinary walking -- no jump, no real
+// arrival, just conforming to the slope one step at a time -- and once
+// it crosses 550 the mount trigger fires anyway, yanking the player back
+// up to a full scripted ride. Tracks whether the player was ALREADY
+// resting on the curve last frame (set at the bottom of the ground-
+// conform block below, cleared whenever they're not currently resting on
+// it -- jumping, mid-air, or off the curve's footprint entirely). A
+// genuine arrival off the shelf crossing comes in via a real jump/fall,
+// so this reads false right up until the moment of landing; sustained
+// ground-walking keeps it true the whole way, so the mount trigger below
+// can tell the two apart and only fire for a real fresh arrival.
+let winterHalfpipeRestingOnCurve = false;
 
 function startWinterHalfpipe() {
   winterHalfpipe.active = true;
@@ -77118,6 +77155,102 @@ function drawWinterHalfpipe(camX, now) {
   ctx.stroke();
 }
 
+// CONFIRMED NEW FEATURE (giving WINTER_HALFPIPE_LANDING a real visual --
+// see its own call site's comment in drawWinterScene for the full
+// reasoning). Flat (no height variation -- this is still a static landing
+// target, not the walking beat), wavy underside + sparse icicles reusing
+// the exact same drip profile the walking beat settled on, and a rounded
+// left cap where the halfpipe's own ice wedge meets it. The right edge is
+// a plain vertical -- it runs straight into the walking beat's own
+// already-rounded left cap with no gap, so rounding it too would just
+// read as a seam/notch between two curves facing each other.
+function drawWinterHalfpipeLanding(camX) {
+  const lp = WINTER_HALFPIPE_LANDING;
+  const leftX = lp.x - camX;
+  const rightX = lp.x + lp.width - camX;
+  if (rightX < -80 || leftX > canvas.width + 80) return;
+
+  const topY = gy - lp.height;
+  const SEGS = 14;
+  const botPts = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const wx = lp.x + t * lp.width;
+    const seed = wx * 0.013;
+    const thickness = 46 + Math.sin(t * Math.PI * 3.1 + 0.6) * 11 + (pseudoRandom(seed) - 0.5) * 9;
+    botPts.push({ x: wx - camX, y: topY + thickness });
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY);
+  ctx.lineTo(rightX, topY);
+  ctx.lineTo(botPts[botPts.length - 1].x, botPts[botPts.length - 1].y);
+  for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
+  const capCtrlX = leftX - 36;
+  const capCtrlY = (topY + botPts[0].y) / 2;
+  ctx.quadraticCurveTo(capCtrlX, capCtrlY, leftX, topY);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(120,160,190,0.9)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY + 18);
+  ctx.lineTo(rightX, topY + 18);
+  ctx.lineTo(rightX, topY);
+  ctx.lineTo(leftX, topY);
+  const faceCapCtrlX = leftX - 20;
+  ctx.quadraticCurveTo(faceCapCtrlX, topY + 9, leftX, topY + 18);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, topY - 10, 0, topY + 18);
+  grad.addColorStop(0, "rgba(205,228,245,0.97)");
+  grad.addColorStop(1, "rgba(140,185,215,0.95)");
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(80,125,160,0.85)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY);
+  ctx.lineTo(rightX, topY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(leftX, topY);
+  ctx.quadraticCurveTo(capCtrlX, capCtrlY, botPts[0].x, botPts[0].y);
+  ctx.stroke();
+
+  for (let i = 1; i < botPts.length - 1; i += 3) {
+    const bp = botPts[i];
+    const iseed = bp.x * 0.07 + i;
+    const len = 10 + pseudoRandom(iseed) * 16;
+    const hw = 3 + pseudoRandom(iseed + 1) * 2.5;
+    ctx.beginPath();
+    ctx.moveTo(bp.x - hw, bp.y);
+    ctx.lineTo(bp.x + hw, bp.y);
+    ctx.lineTo(bp.x + (pseudoRandom(iseed + 2) - 0.5) * hw, bp.y + len);
+    ctx.closePath();
+    const igrad = ctx.createLinearGradient(0, bp.y, 0, bp.y + len);
+    igrad.addColorStop(0, "rgba(120,155,180,0.85)");
+    igrad.addColorStop(1, "rgba(220,238,250,0.9)");
+    ctx.fillStyle = igrad;
+    ctx.fill();
+  }
+
+  // a light dusting of snow texture along the flat top, same style the
+  // walking beat uses
+  const SPECKS = 14;
+  for (let i = 0; i < SPECKS; i++) {
+    const seed = i * 7.7 + 9100;
+    const wx = lp.x + pseudoRandom(seed) * lp.width;
+    const sx = wx - camX;
+    if (sx < -10 || sx > canvas.width + 10) continue;
+    const sy = topY - 2 - pseudoRandom(seed + 1) * 5;
+    ctx.fillStyle = `rgba(255,255,255,${0.4 + pseudoRandom(seed + 2) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1.5 + pseudoRandom(seed + 3) * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // CONFIRMED NEW FEATURE (the walking beat past the halfpipe landing --
 // see WINTER_WALKING_BEAT_START_X's own comment for the full request/
 // reasoning). A real continuous ground slab -- not a thin line -- whose
@@ -77136,17 +77269,40 @@ function drawWinterWalkingBeat(camX, now) {
 
   const SEGS = 24;
   const topPts = [];
+  const botPts = [];
   for (let i = 0; i <= SEGS; i++) {
     const t = i / SEGS;
     const wx = WINTER_WALKING_BEAT_START_X + t * WINTER_WALKING_BEAT_LENGTH;
-    topPts.push({ x: wx - camX, y: gy - winterWalkingBeatHeightAt(wx) });
+    const topY = gy - winterWalkingBeatHeightAt(wx);
+    topPts.push({ x: wx - camX, y: topY });
+    // CONFIRMED BUG FIX ("def not this straight line down at the start,
+    // and straight line under... an already icy has slightly melted
+    // bottom side like that is a little wavy not just 100% flat"): the
+    // underside used to be a perfectly flat line SLAB_THICKNESS below the
+    // top edge, same y the whole way across -- a real wavy, uneven drip
+    // profile instead, its own slower sine (different frequency from the
+    // top surface's bump curve, so the two edges never line up into a
+    // uniform-thickness slab) plus a bit of per-point jag, reading as
+    // worn/melted ice rather than a machine-sliced block.
+    const seed = wx * 0.013;
+    const thickness = 46 + Math.sin(t * Math.PI * 3.3 + 0.6) * 11 + (pseudoRandom(seed) - 0.5) * 9;
+    botPts.push({ x: wx - camX, y: topY + thickness });
   }
-  const SLAB_THICKNESS = 50;
 
+  // the main slab -- top edge traces the real collision curve, underside
+  // is the new wavy drip profile above, and the LEFT starting edge (the
+  // seam against the halfpipe landing) is a rounded curve instead of a
+  // sheer vertical drop, per direct request ("round the left side of
+  // this start part too"). The right edge stays a plain vertical for now
+  // -- that's still the unbuilt frontier future content picks up from,
+  // see WINTER_WALKING_BEAT_END_X's own comment.
   ctx.beginPath();
-  ctx.moveTo(topPts[0].x, topPts[0].y + SLAB_THICKNESS);
+  ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-  ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y + SLAB_THICKNESS);
+  for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
+  const capCtrlX = topPts[0].x - 36;
+  const capCtrlY = (topPts[0].y + botPts[0].y) / 2;
+  ctx.quadraticCurveTo(capCtrlX, capCtrlY, topPts[0].x, topPts[0].y);
   ctx.closePath();
   // darker underside first (same layering order as drawWinterSlickPlatform)
   ctx.fillStyle = "rgba(120,160,190,0.9)";
@@ -77156,6 +77312,9 @@ function drawWinterWalkingBeat(camX, now) {
   ctx.moveTo(topPts[0].x, topPts[0].y + 18);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
   ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y + 18);
+  const faceCapCtrlX = topPts[0].x - 20;
+  const faceCapCtrlY = topPts[0].y + 9;
+  ctx.quadraticCurveTo(faceCapCtrlX, faceCapCtrlY, topPts[0].x, topPts[0].y + 18);
   ctx.closePath();
   const grad = ctx.createLinearGradient(0, topPts[0].y - 10, 0, topPts[0].y + 18);
   grad.addColorStop(0, "rgba(205,228,245,0.97)");
@@ -77169,6 +77328,34 @@ function drawWinterWalkingBeat(camX, now) {
   ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
   ctx.stroke();
+  // the rounded left cap's own outline -- stroked separately so the top
+  // edge's stroke above stays exactly as before (unbroken single path)
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  ctx.quadraticCurveTo(capCtrlX, capCtrlY, botPts[0].x, botPts[0].y);
+  ctx.stroke();
+
+  // icicles hanging off the now-wavy underside -- anchored to botPts
+  // itself (not a separate straight baseline), so they read as dripping
+  // off real uneven, already-melted ice rather than off a flat ledge.
+  // Sparse (every third sampled point) and short, a subtle detail rather
+  // than a dense fringe like the duck gate's own overhang icicles.
+  for (let i = 1; i < botPts.length - 1; i += 3) {
+    const bp = botPts[i];
+    const iseed = bp.x * 0.07 + i;
+    const len = 10 + pseudoRandom(iseed) * 16;
+    const hw = 3 + pseudoRandom(iseed + 1) * 2.5;
+    ctx.beginPath();
+    ctx.moveTo(bp.x - hw, bp.y);
+    ctx.lineTo(bp.x + hw, bp.y);
+    ctx.lineTo(bp.x + (pseudoRandom(iseed + 2) - 0.5) * hw, bp.y + len);
+    ctx.closePath();
+    const igrad = ctx.createLinearGradient(0, bp.y, 0, bp.y + len);
+    igrad.addColorStop(0, "rgba(120,155,180,0.85)");
+    igrad.addColorStop(1, "rgba(220,238,250,0.9)");
+    ctx.fillStyle = igrad;
+    ctx.fill();
+  }
 
   // a light dusting of snow texture along the top -- small irregular
   // white-ish specks, purely decorative, so the "little ups and downs"
@@ -77373,6 +77560,24 @@ function drawWinterScene(camX) {
   // the halfpipe -- the payoff past the crossing, see its own comment
   drawWinterHalfpipe(camX, nowForWinterProps);
 
+  // CONFIRMED NEW FEATURE ("i doooo like the more floaty/forgiving jumps
+  // up here so you can jump float all the way to the platform. how can
+  // we still do that but not be able to just float still in the air up
+  // here" -- investigated alongside a real freeze/crash bug, see the
+  // defensive fix in update() for that half; this is the other half):
+  // WINTER_HALFPIPE_LANDING itself was never actually drawn, anywhere --
+  // real collision, real width, completely invisible. During the launch's
+  // own deliberately slow/floaty descent (FLOATY_FALL_GRAVITY), with
+  // nothing else on screen out here yet either, that meant several real
+  // seconds of genuinely slow motion against a totally blank sky with no
+  // visual reference to judge progress against -- reading as "stuck
+  // floating" even on a perfectly healthy flight. Same slab language the
+  // walking beat uses (flat here, since the landing itself has no height
+  // variation), rounded on the left where the halfpipe's own ice meets it
+  // -- NOT rounded on the right, since that edge now runs straight into
+  // the walking beat's own already-rounded left cap with no seam.
+  drawWinterHalfpipeLanding(camX);
+
   // the walking beat past the halfpipe's own landing -- see its own
   // constants' comments. Drawn after the halfpipe itself (same "further
   // into the level, drawn later" ordering every other winter set-piece
@@ -77461,11 +77666,28 @@ function updateWinterScene(deltaTime) {
   // generalization comment just above) so the new walking-beat duck gates
   // below can reuse the exact same collision instead of a copy-pasted
   // block per gate.
-  const applyWinterDuckGate = (shelf, groundRef) => {
+  // CONFIRMED BUG FIX ("if i duck under a thing going to right i should
+  // be able to duck under it going back to the left"): this used to take
+  // a `groundRef` computed ONCE at the gate's own fixed x -- fine on
+  // flat ground (every x has the same height anyway) but wrong on the
+  // walking beat's own bumpy terrain, where the ground height a few px
+  // either side of the gate can genuinely differ from the height at the
+  // gate's exact x by more than the passable check's small tolerance.
+  // The player's own y is always glued to the LOCAL height under their
+  // OWN feet (see the walking-beat glue in applyPhysics), not the gate's
+  // height -- so comparing against the gate's fixed height could reject
+  // a fully-ducked player forever, and which direction that happened to
+  // bite from depended on exactly where the approach stopped relative to
+  // the local slope. Now takes no groundRef at all -- reuses the same
+  // winterDuckGroundRef computed just above from the player's OWN current
+  // position every frame, the exact value their own y is actually held
+  // to, so passability can never disagree with where they really are,
+  // approaching from either side alike.
+  const applyWinterDuckGate = (shelf) => {
     const playerCenterX = player.x + player.width / 2;
     const withinShelfX = playerCenterX > shelf.x - shelf.w / 2 - player.width / 2 &&
                           playerCenterX < shelf.x + shelf.w / 2 + player.width / 2;
-    const passable = player.y <= groundRef + 2 && playerDuckAmount > shelf.duckThreshold;
+    const passable = player.y <= winterDuckGroundRef + 2 && playerDuckAmount > shelf.duckThreshold;
     if (withinShelfX && !passable) {
       if (playerCenterX < shelf.x) {
         player.x = shelf.x - shelf.w / 2 - player.width - 1;
@@ -77475,20 +77697,22 @@ function updateWinterScene(deltaTime) {
       player.vx = 0;
     }
   };
-  applyWinterDuckGate(WINTER_ICE_DUCK_SHELF, 0);
-  WINTER_WALKING_BEAT_DUCKS.forEach(d => applyWinterDuckGate(d, winterWalkingBeatHeightAt(d.x)));
+  applyWinterDuckGate(WINTER_ICE_DUCK_SHELF);
+  WINTER_WALKING_BEAT_DUCKS.forEach(applyWinterDuckGate);
 
   // "things to jump over" -- the walking beat's own hurdle gates (see
   // WINTER_WALKING_BEAT_HURDLES' own comment): same plain "solid unless
   // airborne above clearance" shape the forest float zone's non-spiky
-  // jump obstacles use, just taking a local ground-reference height so it
-  // reads correctly against the beat's own bumpy terrain rather than a
-  // flat 0.
-  const applyWinterHurdleGate = (ob, groundRef) => {
+  // jump obstacles use. Same fix as the duck gate just above -- measures
+  // clearance against the player's OWN local terrain height (their
+  // actual feet position), not the obstacle's fixed-x height, so this
+  // can't disagree with where the player's y is really glued to either.
+  const applyWinterHurdleGate = (ob) => {
     const playerCenterX = player.x + player.width / 2;
     const within = playerCenterX > ob.x - ob.w / 2 - player.width / 2 &&
                    playerCenterX < ob.x + ob.w / 2 + player.width / 2;
-    const passable = player.y > groundRef + ob.clearance;
+    const hurdleGroundRef = winterWalkingBeatHeightAt(playerCenterX);
+    const passable = player.y > hurdleGroundRef + ob.clearance;
     if (within && !passable) {
       if (playerCenterX < ob.x) {
         player.x = ob.x - ob.w / 2 - player.width - 1;
@@ -77498,7 +77722,7 @@ function updateWinterScene(deltaTime) {
       player.vx = 0;
     }
   };
-  WINTER_WALKING_BEAT_HURDLES.forEach(h => applyWinterHurdleGate(h, winterWalkingBeatHeightAt(h.x)));
+  WINTER_WALKING_BEAT_HURDLES.forEach(applyWinterHurdleGate);
 
   // CONFIRMED CHANGE ("should we do some spiky ice obstacles on ground
   // below the icy moving platforms? so player has to really time their
@@ -77624,7 +77848,13 @@ function updateWinterScene(deltaTime) {
   // retry permission useless. Only a grounded walk out of the span should
   // clear it.
   if (!insideHalfpipeSpan && !player.launched) winterHalfpipeAwaitingRetry = false; // walked all the way out -- the retry window is gone, a fresh approach needs a real arrival again
-  if (!winterHalfpipe.active && !fallState.active && !player.launched &&
+  // CONFIRMED BUG FIX (see winterHalfpipeRestingOnCurve's own declaration
+  // for the full story): also requires NOT already resting on the curve
+  // last frame -- a real arrival is a fresh touch-down (this flag is
+  // false right up to that moment), while sustained ground-walking that
+  // gradually climbed past the height gate keeps it true the whole way,
+  // so it no longer re-fires the ride.
+  if (!winterHalfpipe.active && !fallState.active && !player.launched && !winterHalfpipeRestingOnCurve &&
       (player.y > WINTER_HALFPIPE_MOUTH_Y - 300 || winterHalfpipeAwaitingRetry)) {
     if (insideHalfpipeSpan) {
       startWinterHalfpipe();
@@ -77663,6 +77893,13 @@ function updateWinterScene(deltaTime) {
   // already falling/still" guard the walkable snap below uses, so a real
   // jump sails over this untouched -- it only ever acts once you're
   // settling back onto the ice, never mid-arc.
+  // CONFIRMED BUG FIX (see winterHalfpipeRestingOnCurve's own declaration):
+  // defaults to false every frame; only the two branches below that
+  // actually rest the player on the curve set it back to true. Anything
+  // that skips this block entirely (mid-ride, launched, jumping, outside
+  // the span) naturally leaves it false too, so it can never carry a
+  // stale "true" into a later, genuinely fresh arrival.
+  winterHalfpipeRestingOnCurve = false;
   if (!winterHalfpipe.active && !player.launched && insideHalfpipeSpan &&
       !player.jumping && player.vy <= 0) {
     const tAtX = Math.max(0, Math.min(1, (feetX - WINTER_HALFPIPE_MOUTH_X) / (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X)));
@@ -77676,6 +77913,7 @@ function updateWinterScene(deltaTime) {
       else if (tAtX > C[2] && tAtX < C[3]) steepBand = [C[2], C[3]];
     }
     if (steepBand && nearCurve) {
+      winterHalfpipeRestingOnCurve = true;
       // too steep to stand on -- held right at the edge of the wall
       // instead of wherever the walk input tried to push past it.
       // CONFIRMED BUG FIX ("player disappear into the ground... to the
@@ -77708,6 +77946,7 @@ function updateWinterScene(deltaTime) {
       player.jumping = false;
       player.usedDoubleJump = false;
     } else if (!steepBand && nearCurve) {
+      winterHalfpipeRestingOnCurve = true;
       player.y = pipeHeight;
       player.vy = 0;
       player.jumping = false;
@@ -78477,6 +78716,36 @@ function update(){
 const now = performance.now();
 const deltaTime = Math.min((now - lastTime) / 1000, 0.05);
 lastTime = now;
+
+  // CONFIRMED BUG FIX ("floating still in the air" -- found while
+  // investigating: reproduced a real crash, "Failed to execute
+  // 'createLinearGradient'... The provided double value is non-finite",
+  // thrown from drawWinterAvalancheHill once player.x/cameraX had gone
+  // NaN during the winter halfpipe's scripted ride). Once that throws,
+  // the whole render loop dies right there -- draw() never finishes, so
+  // requestAnimationFrame(update) for the NEXT frame never even gets
+  // scheduled. Nothing is actually floating; the game is frozen dead,
+  // which reads as identical to floating since the last rendered frame
+  // just sits there forever. Whatever upstream state produces that NaN,
+  // a bad position/camera should never be able to kill the entire loop
+  // outright -- this recovers to a safe resting state instead, once per
+  // frame, before anything downstream reads these values.
+  if (!Number.isFinite(player.x) || !Number.isFinite(player.y) ||
+      !Number.isFinite(cameraX) || !Number.isFinite(cameraY)) {
+    player.x = Number.isFinite(player.x) ? player.x : 0;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.jumping = false;
+    player.launched = false;
+    player.launchSteerable = false;
+    cameraX = Number.isFinite(cameraX) ? cameraX : 0;
+    cameraY = 0;
+    fallState.active = false;
+    winterHalfpipe.active = false;
+    winterHalfpipe.phase = "idle";
+    winterHalfpipeAwaitingRetry = false;
+  }
 
   // CONFIRMED BUG FIX ("wonky still continues forever after a ball hit"):
   // playerWoozyT's own decay used to live inside updateBookPileFalls,
