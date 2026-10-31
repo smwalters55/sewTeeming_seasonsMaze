@@ -3573,6 +3573,12 @@ function applyPhysics(){
   // return shape (see updatePoolSlideExit/startPoolSlideExit's own comments).
   if (poolSlideExit.active) return;
 
+  // WINTER HALFPIPE -- same reasoning/shape as the two just above (see
+  // startWinterHalfpipe/updateWinterHalfpipe's own comments): position is
+  // fully scripted for the ride's short duration, nothing else here should
+  // touch it.
+  if (winterHalfpipe.active) return;
+
   // FOREST SLIDE BASE IMPACT -- same reasoning, own early-return shape (see
   // updateForestSlideBaseImpact's own comment above its declaration).
   if (forestSlideBaseImpact.active) return;
@@ -4056,6 +4062,39 @@ function applyPhysics(){
       if (
         player.x + player.width > ledge.x - ledge.width / 2 &&
         player.x < ledge.x + ledge.width / 2 &&
+        player.y <= platformTop &&
+        player.y >= platformTop - 14
+      ) {
+        player.y = platformTop;
+        player.vx = 0;
+        player.vy = 0;
+        player.jumping = false;
+        player.usedDoubleJump = false;
+        player.launched = false;
+        player.launchSteerable = false;
+        return;
+      }
+    }
+
+    // CONFIRMED BUG FIX, caught during testing: the halfpipe's own launch
+    // (see startWinterHalfpipe/updateWinterHalfpipe) sets player.launched
+    // same as the ice climb release does, so it needed this exact same
+    // dedicated in-flight catch -- the plain top-landing check further
+    // down in applyPhysics (right after WINTER_ICE_SHELVES' own forEach)
+    // NEVER actually runs while player.launched is true, same reason the
+    // ledge catch just above exists as its own block instead of relying
+    // on that later code. Caught a full test flight sailing straight
+    // through WINTER_HALFPIPE_LANDING down to true ground before this was
+    // added here. Band shape (not a crossing check) for the same reason
+    // the ledge/forest-rock-ledge catches use one -- this launch's arc
+    // apexes only partway above the landing height and sinks back down
+    // through it, rather than ever crossing up past it from below.
+    if (currentScene === "winter" && player.vy <= 0) {
+      const lp = WINTER_HALFPIPE_LANDING;
+      const platformTop = lp.height;
+      if (
+        player.x + player.width > lp.x &&
+        player.x < lp.x + lp.width &&
         player.y <= platformTop &&
         player.y >= platformTop - 14
       ) {
@@ -5771,6 +5810,31 @@ function applyPhysics(){
       player.winterIceShelfIndex = si;
     }
   });
+
+  // the halfpipe's own landing platform -- plain top-landing collision,
+  // same shape as every other winter platform here, but static (not part
+  // of WINTER_ICE_SHELVES) since it's not a drift-timing challenge, it's
+  // the guaranteed target startWinterHalfpipe's launch is tuned to reach.
+  // Applies during an ordinary player.launched flight same as any other
+  // winter platform landing -- see WINTER_HALFPIPE_LANDING's own comment.
+  {
+    const lp = WINTER_HALFPIPE_LANDING;
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > lp.x &&
+      player.x < lp.x + lp.width &&
+      playerBottom <= lp.height &&
+      playerBottom >= lp.height - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = lp.height;
+      player.vy = 0;
+      player.vx = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.launched = false;
+    }
+  }
 
   // CONFIRMED NEW FEATURE (avalanche hill): ground-height across the hill
   // zone. CONFIRMED BUG FIX (found via real-keyboard testing, not just
@@ -19535,26 +19599,19 @@ if (DEBUG_START_SCENE === "forest") {
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  // CONFIRMED CHANGE ("put me like at the current end of winter to add
-  // more stuff"): retargeted from winter's real start (connections[8]
-  // door landing) to the actual current frontier of built winter
-  // content -- the top of the ice climb, standing on WINTER_ICE_LEDGE
-  // itself. Verified stable (vy settles to 0, doesn't fall through) via
-  // an isolated debug harness before landing this. Both values hardcoded,
-  // same TDZ reason as WINTER_ICE_SPIKE_END/MIRROR_STALL_X above --
-  // WINTER_ICE_CLIMB_X and WINTER_ICE_LEDGE are `const`s declared much
-  // further down the file:
-  //   WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH (13130) + 650 = 13780
-  //   WINTER_ICE_LEDGE.height = WINTER_ICE_ROW_FIRST_HEIGHT (55)
-  //     + WINTER_ICE_ROW_COUNT (9) * WINTER_ICE_ROW_DY (75) = 730
-  // WINTER_WIDTH itself (14260) sits 320px further out than this --
-  // described in its own comment as "a little landing room past the
-  // ledge... a natural spot for [future content] to start from" -- but
-  // that strip isn't confirmed to have actual ground under it, so this
-  // spawns ON the ledge itself, the last confirmed-solid built ground,
-  // rather than in the untested gap just past it.
-  player.x = 13780;
-  player.y = 730;
+  // CONFIRMED CHANGE: retargeted again now that the halfpipe (shelf
+  // crossing -> scripted slide -> launch) is built -- the actual current
+  // frontier is WINTER_HALFPIPE_LANDING, the platform its launch tosses
+  // the player onto, and the natural spot for the still-unbuilt
+  // snowboard-down to start from next. Both values hardcoded, same TDZ
+  // reason as every other debug spawn here -- WINTER_HALFPIPE_LANDING is
+  // a `const` declared much further down the file:
+  //   WINTER_HALFPIPE_LANDING = { x: 16080, height: 900, width: 220 }
+  // Spawns a little inset from its left edge (x+10) rather than exactly
+  // on it, same "comfortably inside the platform, not right on its edge"
+  // margin every other platform-top debug spawn in this file uses.
+  player.x = 16090;
+  player.y = 900;
 }
 
 // CONFIRMED CHANGE ("can you spawn debug me in front of mirrors"): drops
@@ -69819,6 +69876,10 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
   // poolDiveTilt just above. getPoolSwimTilt() is reset to 0 the instant
   // the slide starts (see startPoolSlideExit) so the two never stack.
   const poolSlideTilt = (typeof poolSlideExit !== "undefined" && poolSlideExit.active) ? poolSlideExit.tiltAngle : 0;
+  // the halfpipe's own lean -- same additive-tilt shape as poolSlideTilt
+  // just above, for the exact same reason (a scripted ride with its own
+  // tiltAngle field driven by updateWinterHalfpipe).
+  const winterHalfpipeTilt = (typeof winterHalfpipe !== "undefined" && winterHalfpipe.active) ? winterHalfpipe.tiltAngle : 0;
   // CONFIRMED ADD ("player jumps to platform, gets turned upside down
   // while sticking to the platform"): reuses this exact same additive-
   // tilt mechanism (same trick every other "player visually flips/leans"
@@ -69892,7 +69953,7 @@ if (currentScene === "pool" || drawPy < gy + cameraY) { // still at least partly
     (typeof winterOwlBranchTiltAngle !== "undefined" ? winterOwlBranchTiltAngle : 0) +
     (typeof winterAvalancheHillTiltAngle !== "undefined" ? winterAvalancheHillTiltAngle : 0) +
     (typeof winterAvalancheResetSpinTilt !== "undefined" ? winterAvalancheResetSpinTilt() : 0) +
-    balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
+    balanceBallFallTilt + ballPitSwimTilt + poolSwimTilt + poolDiveTilt + poolSlideTilt + winterHalfpipeTilt + topsyInvertTilt + topsyStackWobbleTilt + topsyChefPotDiveDryShake + topsyChefPotDiveSpin;
   const swayCx = px + player.width / 2, swayCy = drawPy + player.height / 2;
   ctx.translate(swayCx, swayCy);
   ctx.rotate(totalTilt);
@@ -74122,7 +74183,16 @@ const WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH + 650;
 const WINTER_ICE_DUCK_SHELF = { x: WINTER_AVALANCHE_END_X + 420, w: 60, clearance: 62, duckThreshold: 0.4 };
 const WINTER_ICE_ROW_FIRST_HEIGHT = 55;
 const WINTER_ICE_ROW_DY = 75; // same vertical gap the old single-path climb used
-const WINTER_ICE_ROW_COUNT = 9; // same overall climb height as before
+// CONFIRMED CHANGE ("make the ice climb go higher up, so the sliding down
+// halfpipe thing gets a little mroe time, and then have it toss player up
+// quite high"): raised from 9 to 11 rows (+150 total height) -- buys the
+// new halfpipe feature (see WINTER_HALFPIPE_* below) more vertical room to
+// dip and rise, and lets its launch toss the player up to a natural
+// snowboard-start altitude without needing a second separate climb.
+// WINTER_ICE_LEDGE.height and every WINTER_ICE_SHELVES height were shifted
+// up by this same +150 so the whole climb-to-shelf-crossing stays at a
+// consistent relative altitude.
+const WINTER_ICE_ROW_COUNT = 11;
 
 function winterIceBuildHolds() {
   const holds = [];
@@ -74274,13 +74344,19 @@ const WINTER_ICE_LEDGE = {
 // gap from the ledge edge, matching the ~80-90px gaps used between every
 // later shelf pair, and re-verified via the same scripted crossing test
 // (see the project's own testing notes) before trusting the layout.
+// CONFIRMED CHANGE: every height here bumped +150 to track the ice climb's
+// own raise (WINTER_ICE_ROW_COUNT 9->11, see its own comment) -- the
+// crossing still hovers right at the ledge's new height, just higher up
+// overall. Relative heights between shelves (the actual jump-timing
+// challenge) are untouched, so the already-verified crossing timing still
+// holds exactly as tested.
 const WINTER_ICE_SHELVES = [
-  { x: 14030, width: 120, height: 700, driftAmp: 35, driftSpeed: 0.0012, driftPhase: 0.3, colorIndex: 0 },
-  { x: 14230, width: 100, height: 760, driftAmp: 45, driftSpeed: 0.0009, driftPhase: 1.6, colorIndex: 1 },
-  { x: 14420, width: 130, height: 680, driftAmp: 50, driftSpeed: 0.0014, driftPhase: 2.8, colorIndex: 2 },
-  { x: 14630, width: 90,  height: 750, driftAmp: 40, driftSpeed: 0.0011, driftPhase: 4.0, colorIndex: 3 },
-  { x: 14800, width: 120, height: 700, driftAmp: 48, driftSpeed: 0.0016, driftPhase: 5.1, colorIndex: 4 },
-  { x: 15000, width: 140, height: 730, driftAmp: 30, driftSpeed: 0.001,  driftPhase: 0.9, colorIndex: 5 }
+  { x: 14030, width: 120, height: 850, driftAmp: 35, driftSpeed: 0.0012, driftPhase: 0.3, colorIndex: 0 },
+  { x: 14230, width: 100, height: 910, driftAmp: 45, driftSpeed: 0.0009, driftPhase: 1.6, colorIndex: 1 },
+  { x: 14420, width: 130, height: 830, driftAmp: 50, driftSpeed: 0.0014, driftPhase: 2.8, colorIndex: 2 },
+  { x: 14630, width: 90,  height: 900, driftAmp: 40, driftSpeed: 0.0011, driftPhase: 4.0, colorIndex: 3 },
+  { x: 14800, width: 120, height: 850, driftAmp: 48, driftSpeed: 0.0016, driftPhase: 5.1, colorIndex: 4 },
+  { x: 15000, width: 140, height: 880, driftAmp: 30, driftSpeed: 0.001,  driftPhase: 0.9, colorIndex: 5 }
 ];
 // current world-x of a shelf's LEFT edge this frame -- own function (not
 // a shared one with winterSlickPlatformX) so the two drifting-platform
@@ -74296,13 +74372,158 @@ function winterIceShelfX(s, now) {
 const WINTER_ICE_SHELF_ZONE_START = WINTER_ICE_LEDGE.x + WINTER_ICE_LEDGE.width / 2 + 40;
 const WINTER_ICE_SHELF_ZONE_END = Math.max(...WINTER_ICE_SHELVES.map(s => s.x + s.width + s.driftAmp)) + 40;
 
-// the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing's own
-// extent is known -- see WINTER_PRE_CLIMB_WIDTH's own comment for why this
-// couldn't just be declared back where that one is. Now measured from the
-// shelf crossing's own far reach (previously the ledge itself, before the
-// crossing existed) plus a little landing room past it -- a natural spot
-// for the snowboard-down payoff to start from, later.
-const WINTER_WIDTH = WINTER_ICE_SHELF_ZONE_END + 320;
+// CONFIRMED NEW FEATURE ("what if after the last moving platform thing, the
+// only thing you can see on the right is like a really smooth, steep
+// glassy ice thing going down... kinda like a half pipe but essentially
+// you can only jump to it, down to right, then you auto go into a steep
+// slide down... then slide with momentum up, and that plants you on
+// another platform thing that will then lead to snowboard hill"): the
+// payoff that connects the shelf crossing to the (not-yet-built)
+// snowboard-down. Three pieces:
+//   1. A real open-air gap past the last shelf (WINTER_HALFPIPE_GAP) --
+//      jumping off shelf 5 genuinely falls through empty air for a beat,
+//      the "little bit of air" look explicitly asked for, before anything
+//      catches you.
+//   2. A generous mount catch starting at WINTER_HALFPIPE_ENTRY_X -- NOT a
+//      precise landing band like every other platform here. Any time the
+//      player's feet cross past this x while out past the shelf crossing
+//      (see the trigger in updateWinterScene), the ride auto-mounts,
+//      regardless of exact height. This is deliberately how "no fail
+//      state at the entry" AND "can't trigger it before the last shelf"
+//      are both satisfied at once, per direct request ("i think no fail
+//      state at the end there... also NOT be able to jump on it earlier
+//      until you reach the last platform"): the catch is wide/forgiving
+//      enough that nothing short of reaching it can miss, and it's simply
+//      unreachable in one jump from any earlier shelf or the ledge, so
+//      there's no separate gate/flag doing the "earlier" gatekeeping --
+//      the geometry itself does.
+//   3. A scripted down-then-up slide (own winterHalfpipe state + phases,
+//      see startWinterHalfpipe/updateWinterHalfpipe below), input frozen
+//      the whole ride, ending in a real player.launched hand-off -- same
+//      generic flight system winterIceClimbRelease already uses -- so the
+//      final toss up to WINTER_HALFPIPE_LANDING just rides ordinary
+//      gravity/arc code, no new physics system needed.
+const WINTER_HALFPIPE_GAP = 170;
+const WINTER_HALFPIPE_ENTRY_X = WINTER_ICE_SHELF_ZONE_END + WINTER_HALFPIPE_GAP;
+const WINTER_HALFPIPE_MOUTH_X = WINTER_HALFPIPE_ENTRY_X;
+const WINTER_HALFPIPE_MOUTH_Y = 850; // level with the nearby shelves -- the lip reads as a continuation of the crossing, not a separate drop
+const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 260;
+const WINTER_HALFPIPE_BOTTOM_Y = 0; // true ground -- the actual dip of the pipe
+const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 260;
+const WINTER_HALFPIPE_RELEASE_Y = 500; // partway up the far wall -- the scripted ride hands off to a real launch from here, already rising
+const WINTER_HALFPIPE_CATCH_MS = 150; // brief ease from wherever the generous catch actually caught you to the mouth point, so a slightly early/late jump doesn't visually snap
+const WINTER_HALFPIPE_DOWN_MS = 550; // steep accelerating drop
+const WINTER_HALFPIPE_UP_MS = 500; // decelerating rise, bleeding momentum off against the far wall, slightly quicker than the drop
+const WINTER_HALFPIPE_LAUNCH_VX = 5; // small forward carry, same small-number scale as WINTER_ICE_CLIMB_SPEED
+const WINTER_HALFPIPE_LAUNCH_VY = 16; // a real toss -- with LAUNCH_GRAVITY (0.3), apexes a little past RELEASE_Y+425, comfortably above every shelf
+// the landing -- static (not drifting, not part of WINTER_ICE_SHELVES),
+// since it's not a timing challenge, it's the guaranteed target the launch
+// above is tuned to reach. This IS the new frontier/natural high
+// snowboard-start spot the raised climb + big toss were built to set up.
+// CONFIRMED BUG FIX, caught during testing: player.launchSteerable is
+// false for this launch (deliberately -- "no fail state", nothing for
+// input to mess up mid-air), which means applyPhysics's launched branch
+// never resets player.vx from launchBaseVx each frame the way a
+// steerable launch does -- it only ever ADDS the ambient winter wind
+// gust to whatever vx already is, every frame, with nothing pulling it
+// back. Over this flight's real duration (a couple hundred frames, much
+// longer than the climb's own hold-to-hold hops that system was tuned
+// for) that drift compounds into real, noticeable extra distance by the
+// time the arc comes back down to landing height. Rather than fight the
+// shared launch system's own accumulation quirk, widened generously so
+// the landing is still a sure thing across the actual drifted range
+// measured via the debug harness (a real test flight's x was already
+// past a width-220 platform's end before even reaching landing height).
+const WINTER_HALFPIPE_LANDING = { x: 16080, height: 900, width: 900 };
+
+// the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing/
+// halfpipe's own extent is known -- see WINTER_PRE_CLIMB_WIDTH's own
+// comment for why this couldn't just be declared back where that one is.
+// Now measured from the halfpipe's own landing platform (previously the
+// shelf crossing's far reach, before the halfpipe existed) plus a little
+// landing room past it -- a natural spot for the snowboard-down payoff to
+// start from, later.
+const WINTER_WIDTH = WINTER_HALFPIPE_LANDING.x + WINTER_HALFPIPE_LANDING.width + 320;
+
+// own state for the scripted ride -- same "fully owns position for a short
+// duration, everything else returns early" shape as poolSlideExit, just
+// winter-scoped (the scene never changes mid-ride here, so this doesn't
+// need poolSlideExit's own "runs regardless of scene" treatment -- see
+// updateWinterScene's own top for where this is called/early-returned on).
+let winterHalfpipe = {
+  active: false,
+  phase: "idle", // "catch" -> "down" -> "up" -> hands off to player.launched and goes inactive
+  startedAt: 0,
+  fromX: 0,
+  fromY: 0,
+  tiltAngle: 0
+};
+
+function startWinterHalfpipe() {
+  winterHalfpipe.active = true;
+  winterHalfpipe.phase = "catch";
+  winterHalfpipe.startedAt = performance.now();
+  winterHalfpipe.fromX = player.x;
+  winterHalfpipe.fromY = Math.max(0, player.y);
+  winterHalfpipe.tiltAngle = 0;
+  player.vx = 0;
+  player.vy = 0;
+  player.jumping = false;
+  player.usedDoubleJump = false;
+  player.launched = false;
+  player.winterIceShelfIndex = -1;
+}
+
+function updateWinterHalfpipe(deltaTime) {
+  if (!winterHalfpipe.active) return;
+  const now = performance.now();
+  if (winterHalfpipe.phase === "catch") {
+    const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_CATCH_MS);
+    const eased = 1 - (1 - p) * (1 - p);
+    player.x = winterHalfpipe.fromX + (WINTER_HALFPIPE_MOUTH_X - winterHalfpipe.fromX) * eased;
+    player.y = winterHalfpipe.fromY + (WINTER_HALFPIPE_MOUTH_Y - winterHalfpipe.fromY) * eased;
+    if (p >= 1) {
+      winterHalfpipe.phase = "down";
+      winterHalfpipe.startedAt = now;
+    }
+  } else if (winterHalfpipe.phase === "down") {
+    const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_DOWN_MS);
+    const eased = p * p; // accelerating -- the steep glassy drop
+    player.x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_BOTTOM_X - WINTER_HALFPIPE_MOUTH_X) * eased;
+    player.y = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
+    winterHalfpipe.tiltAngle = eased * 0.35; // leaning into the dive
+    if (p >= 1) {
+      winterHalfpipe.phase = "up";
+      winterHalfpipe.startedAt = now;
+    }
+  } else if (winterHalfpipe.phase === "up") {
+    const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_UP_MS);
+    const eased = 1 - (1 - p) * (1 - p); // decelerating -- momentum bleeding off climbing the far wall
+    player.x = WINTER_HALFPIPE_BOTTOM_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_BOTTOM_X) * eased;
+    player.y = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
+    winterHalfpipe.tiltAngle = 0.35 - eased * 0.6; // swings from the dive-lean through upright to a backward launch lean
+    if (p >= 1) {
+      player.x = WINTER_HALFPIPE_RELEASE_X;
+      player.y = WINTER_HALFPIPE_RELEASE_Y;
+      player.vx = WINTER_HALFPIPE_LAUNCH_VX;
+      player.vy = WINTER_HALFPIPE_LAUNCH_VY;
+      player.launched = true;
+      player.launchGravityMult = 1;
+      player.launchSteerable = false; // a real toss, not a steerable jump -- nothing to mess up mid-air, matching "no fail state" all the way through
+      player.jumping = true;
+      player.usedDoubleJump = false;
+      winterHalfpipe.active = false;
+      winterHalfpipe.phase = "idle";
+      winterHalfpipe.tiltAngle = 0;
+    }
+  }
+  // vertical camera follow -- same shape every other winter climbing bit
+  // uses, owned here directly since updateWinterScene returns early the
+  // whole time this is active (see its own top). Horizontal camera needs
+  // nothing special: the generic player.x-following ease in update() picks
+  // this up automatically.
+  cameraY = Math.max(0, player.y - 150);
+}
 
 // shared by the grab branches (input handler) and the release below --
 // launches using whichever hold player.iceAxeClingIndex currently points at.
@@ -76237,6 +76458,120 @@ function drawWinterAvalancheHopPlatformAccent(camX, p, now) {
   }
 }
 
+// CONFIRMED NEW FEATURE -- the halfpipe itself. Explicit color direction,
+// corrected from the shelves' own look ("i dont want solid hue per segment
+// at all... a few colors light wash shining through across some of the
+// glassy halfpipe. that otherwise does look mostly icy glassy not snow at
+// all"): the base material is a clear/glassy gradient only -- no per-
+// section hue tint anywhere in it, unlike drawWinterIceShelf's underside/
+// glow treatment -- with a handful of soft low-opacity diagonal color
+// bands drawn ON TOP, clipped to the ice shape, read as light passing
+// through the glass at an angle rather than the ice itself being colored.
+function drawWinterHalfpipe(camX, now) {
+  const leftX = WINTER_HALFPIPE_MOUTH_X - camX;
+  const rightX = WINTER_HALFPIPE_RELEASE_X - camX;
+  if (rightX < -20 || leftX > canvas.width + 20) return;
+
+  // surface profile -- same down(t^2)/up(1-(1-t)^2) shape
+  // updateWinterHalfpipe's own "down"/"up" phases drive the player through,
+  // just sampled here purely for the visual so the ice actually looks like
+  // the path the ride follows.
+  const SEGS = 28;
+  const topPts = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X) * t;
+    let h;
+    if (t <= 0.5) {
+      const dt = t / 0.5;
+      const eased = dt * dt;
+      h = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
+    } else {
+      const ut = (t - 0.5) / 0.5;
+      const eased = 1 - (1 - ut) * (1 - ut);
+      h = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
+    }
+    topPts.push({ x: x - camX, y: gy - h });
+  }
+
+  ctx.globalAlpha = 1;
+
+  // the ice mass -- the surface curve down to true ground baseline, a
+  // solid-feeling wedge of ice rather than a thin ribbon
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  ctx.lineTo(topPts[topPts.length - 1].x, gy + 40);
+  ctx.lineTo(topPts[0].x, gy + 40);
+  ctx.closePath();
+
+  // clear/glassy base -- deliberately no color tint mixed in here, just a
+  // pale-to-deeper-blue glass gradient top to bottom, so it reads as clear
+  // ice, not snow, before any light streak is added on top. CONFIRMED BUG
+  // FIX, caught via a real screenshot: the first pass's low alphas (0.5-
+  // 0.6) sat too close to the sky's own pale blue behind it, reading as
+  // nearly invisible rather than "really smooth, steep glassy ice" --
+  // bumped up and deepened the gradient so the mass itself reads as a
+  // real solid surface, same "actually opaque enough to read" lesson
+  // drawWinterSlickPlatform's own darker underside layer already applies.
+  const baseGrad = ctx.createLinearGradient(0, gy - WINTER_HALFPIPE_MOUTH_Y - 10, 0, gy + 20);
+  baseGrad.addColorStop(0, "rgba(195,228,248,0.94)");
+  baseGrad.addColorStop(0.45, "rgba(150,202,230,0.92)");
+  baseGrad.addColorStop(1, "rgba(90,145,185,0.96)");
+  ctx.fillStyle = baseGrad;
+  ctx.fill();
+  // a clean outer edge -- the fill alone still reads too close to the
+  // sky's own pale blue at a distance (caught via a real screenshot), so
+  // a visible boundary line does the rest of the "this is a solid object"
+  // work the slick platforms/shelves get for free from their much smaller
+  // silhouettes against the sky.
+  ctx.strokeStyle = "rgba(70,120,160,0.55)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // a few soft diagonal color-light streaks shining through the glass --
+  // low-opacity, clipped to the ice shape, NOT one hue per section (that's
+  // the shelves' look, deliberately not repeated here). Stable per-frame
+  // positions derived from `now` so they drift very slowly, like light
+  // shifting through moving ice, rather than sitting static.
+  ctx.save();
+  ctx.clip();
+  const streakColors = WINTER_RAINBOW_ICICLE_COLORS;
+  const STREAKS = 4;
+  for (let i = 0; i < STREAKS; i++) {
+    const hue = streakColors[(i * 2) % streakColors.length];
+    const drift = Math.sin(now * 0.00018 + i * 1.7) * 30;
+    const cx = leftX + (rightX - leftX) * ((i + 0.5) / STREAKS) + drift;
+    const cy = gy - WINTER_HALFPIPE_MOUTH_Y * 0.4;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.55); // a consistent diagonal slant, like light raking across the curve
+    const streakGrad = ctx.createLinearGradient(-26, 0, 26, 0);
+    streakGrad.addColorStop(0, `rgba(${hue},0)`);
+    streakGrad.addColorStop(0.5, `rgba(${hue},0.22)`);
+    streakGrad.addColorStop(1, `rgba(${hue},0)`);
+    ctx.fillStyle = streakGrad;
+    ctx.fillRect(-26, -260, 52, 520);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // glossy highlight tracing the curve -- the "really smooth, steep glassy
+  // ice" read, a bright thin line riding right along the surface
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  ctx.strokeStyle = "rgba(255,255,255,0.75)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(140,185,215,0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y + 3);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y + 3));
+  ctx.stroke();
+}
+
 function drawWinterScene(camX) {
   ctx.save();
 
@@ -76389,6 +76724,9 @@ function drawWinterScene(camX) {
   // built) snowboard-down, see WINTER_ICE_SHELVES' own comment
   WINTER_ICE_SHELVES.forEach(s => drawWinterIceShelf(camX, s, nowForWinterProps));
 
+  // the halfpipe -- the payoff past the crossing, see its own comment
+  drawWinterHalfpipe(camX, nowForWinterProps);
+
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
 
@@ -76400,6 +76738,13 @@ const WINTER_ICE_SLIDE_SPEED = 460; // px/s -- noticeably faster than the normal
 const WINTER_ICE_SLIDE_MS = 500;
 
 function updateWinterScene(deltaTime) {
+  // WINTER HALFPIPE -- owns position entirely for its short scripted
+  // duration (see startWinterHalfpipe/updateWinterHalfpipe's own
+  // comments), same "run it, then bail out of everything else this scene
+  // would otherwise do" shape the fallState-active check just below uses.
+  updateWinterHalfpipe(deltaTime);
+  if (winterHalfpipe.active) return;
+
   updateWinterSnow(deltaTime);
   updateWinterBreatherSnowflakes(deltaTime);
   updateWinterAvalanche(deltaTime);
@@ -76496,6 +76841,30 @@ function updateWinterScene(deltaTime) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "winterShelfFall";
+    }
+  }
+
+  // CONFIRMED NEW FEATURE -- the halfpipe's own mount trigger. Deliberately
+  // NOT a precise landing check like everything else here: any time the
+  // player's feet cross past WINTER_HALFPIPE_ENTRY_X, at ANY height, flying
+  // or grounded, the ride mounts. This is what makes it fail-proof (there's
+  // nothing to miss) while also making it un-triggerable before the last
+  // shelf (reaching this x at all requires having survived the shelf
+  // crossing's own fail trigger just above, which spans everything up to
+  // WINTER_ICE_SHELF_ZONE_END, a comfortable 170px -- WINTER_HALFPIPE_GAP --
+  // short of this). See WINTER_HALFPIPE_ENTRY_X's own comment for the full
+  // reasoning.
+  // CONFIRMED BUG FIX, caught during testing: with no upper bound, this
+  // re-triggered on EVERY frame the player happened to stand anywhere past
+  // ENTRY_X -- including already on WINTER_HALFPIPE_LANDING itself, which
+  // sits well past the ride's own span. Bounded to the pipe's actual
+  // extent (up to RELEASE_X, where the scripted ride hands off to a real
+  // launch anyway) so it only fires for an actual arrival into the ride,
+  // never for already being past it.
+  if (!winterHalfpipe.active && !fallState.active) {
+    const feetX = player.x + player.width / 2;
+    if (feetX > WINTER_HALFPIPE_ENTRY_X && feetX < WINTER_HALFPIPE_RELEASE_X) {
+      startWinterHalfpipe();
     }
   }
 
