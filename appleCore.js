@@ -431,6 +431,12 @@ const player = {
   winterSkateVX: 0,
   winterSlickPlatformPrevX: null,
   winterSlickPlatformPrevIndex: -1,
+  // the ice-shelf crossing past the climb ledge -- same re-derive-every-
+  // frame shape as winterSlickPlatformIndex/PrevX just above, own fields
+  // so the two drifting-platform systems can't cross-contaminate state.
+  winterIceShelfIndex: -1,
+  winterIceShelfPrevX: null,
+  winterIceShelfPrevIndex: -1,
   // CONFIRMED NEW FEATURE ("translucent watery ice on the ground that
   // moves you every which way in surprising ways so at least semi
   // controlled random... like u slip sliding everywhere"): re-derived
@@ -5740,6 +5746,29 @@ function applyPhysics(){
       player.jumping = false;
       player.usedDoubleJump = false;
       player.winterSlickPlatformIndex = pi;
+    }
+  });
+
+  // the shelf crossing past the ledge -- same plain top-landing shape as
+  // the slick platforms just above (own array/index though, see
+  // WINTER_ICE_SHELVES' own comment for why they're kept separate)
+  player.winterIceShelfIndex = -1;
+  WINTER_ICE_SHELVES.forEach((s, si) => {
+    const shelfTop = s.height;
+    const shelfX = winterIceShelfX(s, winterNowMs);
+    const playerBottom = player.y;
+    if (
+      player.x + player.width > shelfX &&
+      player.x < shelfX + s.width &&
+      playerBottom <= shelfTop &&
+      playerBottom >= shelfTop - 14 &&
+      player.vy <= 0
+    ) {
+      player.y = shelfTop;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.winterIceShelfIndex = si;
     }
   });
 
@@ -19506,7 +19535,46 @@ if (DEBUG_START_SCENE === "forest") {
 if (DEBUG_START_SCENE === "winter") {
   discoveredScenes.forest = true;
   discoveredScenes.winter = true;
-  player.x = 175; // connections[8].doors.winter.x (200) - 25
+  // CONFIRMED CHANGE ("put me like at the current end of winter to add
+  // more stuff"): retargeted from winter's real start (connections[8]
+  // door landing) to the actual current frontier of built winter
+  // content -- the top of the ice climb, standing on WINTER_ICE_LEDGE
+  // itself. Verified stable (vy settles to 0, doesn't fall through) via
+  // an isolated debug harness before landing this. Both values hardcoded,
+  // same TDZ reason as WINTER_ICE_SPIKE_END/MIRROR_STALL_X above --
+  // WINTER_ICE_CLIMB_X and WINTER_ICE_LEDGE are `const`s declared much
+  // further down the file:
+  //   WINTER_ICE_CLIMB_X = WINTER_PRE_CLIMB_WIDTH (13130) + 650 = 13780
+  //   WINTER_ICE_LEDGE.height = WINTER_ICE_ROW_FIRST_HEIGHT (55)
+  //     + WINTER_ICE_ROW_COUNT (9) * WINTER_ICE_ROW_DY (75) = 730
+  // WINTER_WIDTH itself (14260) sits 320px further out than this --
+  // described in its own comment as "a little landing room past the
+  // ledge... a natural spot for [future content] to start from" -- but
+  // that strip isn't confirmed to have actual ground under it, so this
+  // spawns ON the ledge itself, the last confirmed-solid built ground,
+  // rather than in the untested gap just past it.
+  player.x = 13780;
+  player.y = 730;
+}
+
+// CONFIRMED CHANGE ("can you spawn debug me in front of mirrors"): drops
+// the player right at the mirror stall. CONFIRMED BUG FIX, caught during
+// testing: the mirror stall is drawn by drawMoleholeScene() under
+// currentScene === "molehole" (line ~69492) -- "tunneltown" is a
+// completely different, separate digging-tunnel scene (drawTunnelTownScene,
+// its own tunnelWalkLimit/dig-frontier mechanic) that just happens to be
+// reached via the molehole's own deeper hole. First attempt at this debug
+// spawn wrongly used "tunneltown" and landed the player in the dig tunnel
+// instead, clamped back to the frontier edge. The stall itself (and its
+// roof/collision) is gated behind mineCartEverRidden ("i dont want mirror
+// wall appearing until after first gold mine visit") -- that's a `let`
+// declared much further down the file, so this top-level block can't set
+// it directly (same TDZ class as everything else in this file's debug
+// blocks); it's set instead in update()'s first real frame, right next to
+// the updateInventoryUI deferral this same gotcha already uses.
+if (DEBUG_START_SCENE === "molehole") {
+  discoveredScenes.molehole = true;
+  player.x = 2500; // MIRROR_STALL_X -- hardcoded, same TDZ reason as WINTER_ICE_SPIKE_END above: it's a `const` declared much further down the file, and this block runs at top-level script init before that line executes
   player.y = 0;
 }
 
@@ -74169,12 +74237,72 @@ const WINTER_ICE_LEDGE = {
   width: 320 // widened along with the wall -- catches a launch from anywhere across the final row's spread of candidates
 };
 
-// the real WINTER_WIDTH, now that the ice climb/ledge's own extent is
-// known -- see WINTER_PRE_CLIMB_WIDTH's own comment for why this couldn't
-// just be declared back where that one is. A little landing room past the
-// ledge itself, room to breathe at the top (and a natural spot for the
-// snowboard-down payoff to start from, later).
-const WINTER_WIDTH = WINTER_ICE_LEDGE.x + WINTER_ICE_LEDGE.width / 2 + 320;
+// CONFIRMED NEW FEATURE ("i want to have a bit of a beat before another
+// downhill slide thing starting up high... they first need to cross
+// moving ice shelves with some rainbow on them dripping then if they slip
+// off they need to ice climb again. then after the cross is the
+// snowboard"): a real beat between the climb and the (not-yet-built)
+// snowboard-down, past the ledge -- a short run of drifting ice shelves,
+// each a true horizontal jump-timing crossing over open air (nothing
+// below but a long drop to true ground, same consequence shape as the
+// spike zone below the climb: miss it and you redo the climb, not a free
+// do-over). Visually a deliberate callback to the rainbow icicle pocket
+// earlier in the climb -- same WINTER_RAINBOW_ICICLE_COLORS palette,
+// reused here as a dripping color wash on each shelf -- rather than new
+// plain ice, so the "rainbow" motif pays off twice. Reuses the slick
+// platforms' own drift math (winterSlickPlatformX's shape, just its own
+// function/array so the two systems don't share mutable state) and own
+// top-landing collision pattern, but deliberately does NOT give the
+// skate-momentum feel the slick platforms use -- greenlit as "different
+// enough" already thanks to the open-air stakes + rainbow dripping visual,
+// and a pure normal-walk timing challenge keeps this crossing testing
+// jump timing specifically, not stacking a second momentum system on top.
+// Heights hover near the ledge's own 730 (a real horizontal crossing, not
+// a climb or descent), gaps/widths varied for genuine timing stakes.
+// CONFIRMED CHANGE, explicit choice over a softer landing spot ("lets just
+// try it this way first, get a vibe if its too easy to fall"): a miss
+// sends the player all the way back to the base of the ice climb (see the
+// "winterShelfFall" fallState mode), same destination winterSpike already
+// uses -- the harsher of two options discussed, picked deliberately to
+// feel out the difficulty before softening it if it turns out too brutal.
+// CONFIRMED BUG FIX, caught during testing: the first pass put shelf 0's
+// own x a full 150px past the ledge's actual right edge (WINTER_ICE_LEDGE.x
+// + width/2 = 13940) -- combined with no running start (stepping off a
+// static ledge, not already carrying jump momentum from a previous shelf),
+// a scripted edge-triggered jump test fell on the very first gap every
+// time, well before even reaching shelf 0. Pulled shelf 0 in to a ~90px
+// gap from the ledge edge, matching the ~80-90px gaps used between every
+// later shelf pair, and re-verified via the same scripted crossing test
+// (see the project's own testing notes) before trusting the layout.
+const WINTER_ICE_SHELVES = [
+  { x: 14030, width: 120, height: 700, driftAmp: 35, driftSpeed: 0.0012, driftPhase: 0.3, colorIndex: 0 },
+  { x: 14230, width: 100, height: 760, driftAmp: 45, driftSpeed: 0.0009, driftPhase: 1.6, colorIndex: 1 },
+  { x: 14420, width: 130, height: 680, driftAmp: 50, driftSpeed: 0.0014, driftPhase: 2.8, colorIndex: 2 },
+  { x: 14630, width: 90,  height: 750, driftAmp: 40, driftSpeed: 0.0011, driftPhase: 4.0, colorIndex: 3 },
+  { x: 14800, width: 120, height: 700, driftAmp: 48, driftSpeed: 0.0016, driftPhase: 5.1, colorIndex: 4 },
+  { x: 15000, width: 140, height: 730, driftAmp: 30, driftSpeed: 0.001,  driftPhase: 0.9, colorIndex: 5 }
+];
+// current world-x of a shelf's LEFT edge this frame -- own function (not
+// a shared one with winterSlickPlatformX) so the two drifting-platform
+// systems can't accidentally cross-contaminate state, even though the
+// math itself is identical.
+function winterIceShelfX(s, now) {
+  if (!s.driftAmp) return s.x;
+  return s.x + Math.sin(now * s.driftSpeed + s.driftPhase) * s.driftAmp;
+}
+// the ground-level span under the whole shelf crossing -- landing here
+// (grounded, not on a shelf) means a miss, same detection shape as
+// WINTER_ICE_SPIKE_START/END below the climb use for the same purpose.
+const WINTER_ICE_SHELF_ZONE_START = WINTER_ICE_LEDGE.x + WINTER_ICE_LEDGE.width / 2 + 40;
+const WINTER_ICE_SHELF_ZONE_END = Math.max(...WINTER_ICE_SHELVES.map(s => s.x + s.width + s.driftAmp)) + 40;
+
+// the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing's own
+// extent is known -- see WINTER_PRE_CLIMB_WIDTH's own comment for why this
+// couldn't just be declared back where that one is. Now measured from the
+// shelf crossing's own far reach (previously the ledge itself, before the
+// crossing existed) plus a little landing room past it -- a natural spot
+// for the snowboard-down payoff to start from, later.
+const WINTER_WIDTH = WINTER_ICE_SHELF_ZONE_END + 320;
 
 // shared by the grab branches (input handler) and the release below --
 // launches using whichever hold player.iceAxeClingIndex currently points at.
@@ -75934,6 +76062,112 @@ function drawWinterSlickPlatform(camX, p, now) {
   }
 }
 
+// the shelf crossing past the ice ledge -- same tapered-sliver base shape
+// as drawWinterSlickPlatform (reused deliberately, it's the right icy-
+// platform silhouette already), but recolored with a dripping rainbow
+// wash pulling from WINTER_RAINBOW_ICICLE_COLORS, the same palette the
+// icicle pocket mid-climb and the watery ice zone already use -- a
+// deliberate visual callback tying the whole climb-then-cross arc
+// together, not just a reskin. See WINTER_ICE_SHELVES' own comment for
+// the full feature rationale.
+function drawWinterIceShelf(camX, s, now) {
+  const px = winterIceShelfX(s, now) - camX;
+  if (px < -s.width - 20 || px > canvas.width + 20) return;
+  const topY = gy - s.height;
+  const seed = s.x * 0.02;
+  const hue = WINTER_RAINBOW_ICICLE_COLORS[s.colorIndex % WINTER_RAINBOW_ICICLE_COLORS.length];
+
+  ctx.globalAlpha = 1;
+
+  const SEGS = 9;
+  const topPts = [];
+  const botPts = [];
+  for (let i = 0; i <= SEGS; i++) {
+    const t = i / SEGS;
+    const x = px + s.width * t;
+    const envelope = Math.sin(Math.PI * t);
+    const topBump = 0.55 + pseudoRandom(seed + i * 3.1) * 0.7;
+    const botBump = 0.55 + pseudoRandom(seed + 40 + i * 2.7) * 0.7;
+    topPts.push({ x, y: topY - envelope * 6 * topBump });
+    botPts.push({ x, y: topY + envelope * 9 * botBump });
+  }
+
+  // underside -- same darker base as the slick platforms, tinted faintly
+  // toward the shelf's own hue so even the shadowed face reads as colored
+  // ice rather than plain blue-grey
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  for (let i = SEGS; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = `rgba(${hue},0.22)`;
+  ctx.fill();
+  ctx.fillStyle = "rgba(140,175,200,0.65)";
+  ctx.fill();
+
+  // icy top face -- same pale gradient base as the slick platforms, with
+  // a soft radial wash of the shelf's own rainbow hue melded in on top,
+  // same "color blob sitting in translucent ice" read the watery ice zone
+  // already established
+  const grad = ctx.createLinearGradient(0, topY - 8, 0, topY + 9);
+  grad.addColorStop(0, "rgba(225,242,252,0.95)");
+  grad.addColorStop(1, "rgba(175,210,230,0.9)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(topPts[0].x, topPts[0].y);
+  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
+  for (let i = SEGS; i >= 0; i--) {
+    const t = i / SEGS;
+    const envelope = Math.sin(Math.PI * t);
+    ctx.lineTo(botPts[i].x, topY + envelope * 3);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  const glowCx = px + s.width * (0.35 + pseudoRandom(seed + 2) * 0.3);
+  const glowGrad = ctx.createRadialGradient(glowCx, topY, 0, glowCx, topY, s.width * 0.55);
+  glowGrad.addColorStop(0, `rgba(${hue},0.5)`);
+  glowGrad.addColorStop(1, `rgba(${hue},0)`);
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(px - 10, topY - 16, s.width + 20, 26);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // a couple of jagged surface cracks, same shape the slick platforms use
+  for (let c = 0; c < 2; c++) {
+    const cSeed = seed + c * 5.1;
+    const startX = px + s.width * (0.3 + c * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(startX, topY - 3);
+    ctx.lineTo(startX + (pseudoRandom(cSeed) - 0.5) * 16, topY + 2);
+    ctx.lineTo(startX + (pseudoRandom(cSeed + 1) - 0.5) * 22, topY + 6);
+    ctx.strokeStyle = "rgba(120,160,190,0.55)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // the "dripping" half of "rainbow on them dripping" -- a single
+  // looping droplet falling from the underside in the shelf's own hue,
+  // same timing shape the rainbow icicles' own melt drip already uses
+  // (a pure performance.now() cycle, no persisted state needed)
+  const dripCycle = 2400 + pseudoRandom(seed + 6) * 2000;
+  const dripPhase = pseudoRandom(seed + 7) * dripCycle;
+  const dp = ((now + dripPhase) % dripCycle) / dripCycle;
+  if (dp < 0.6) {
+    const fall = dp / 0.6;
+    const dripX = px + s.width * (0.3 + pseudoRandom(seed + 8) * 0.4);
+    ctx.fillStyle = `rgba(${hue},${(1 - fall) * 0.65})`;
+    ctx.beginPath();
+    ctx.ellipse(dripX, topY + 10 + fall * 30, 1.3, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // CONFIRMED REDESIGN ("give them actual identity, let's try it"): the
 // three avalanche hop platforms share drawWinterSlickPlatform's base
 // shape/shading above (still the right icy-sliver look, no reason to
@@ -76151,6 +76385,10 @@ function drawWinterScene(camX) {
   drawWinterIceClimb(camX);
   drawWinterIceClimbSlipFlash(camX);
 
+  // the shelf crossing past the ledge -- the beat before the (not yet
+  // built) snowboard-down, see WINTER_ICE_SHELVES' own comment
+  WINTER_ICE_SHELVES.forEach(s => drawWinterIceShelf(camX, s, nowForWinterProps));
+
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
 
@@ -76239,6 +76477,25 @@ function updateWinterScene(deltaTime) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "winterSpike";
+    }
+  }
+
+  // CONFIRMED NEW FEATURE ("if they slip off they need to ice climb
+  // again"): same detection shape as the spike check just above --
+  // grounded, not mid-jump, and within the shelf crossing's own span
+  // (WINTER_ICE_SHELF_ZONE_START/END) but NOT actually standing on a
+  // shelf (winterIceShelfIndex still -1, set by the landing check earlier
+  // in this function). There's no ground hazard to land on here like the
+  // spikes -- missing every shelf just means a long fall all the way down
+  // to true ground level, same consequence the spike zone uses once it
+  // actually resolves: back to the base of the climb via its own
+  // "winterShelfFall" fallState mode (see updateFallState).
+  if (!fallState.active && player.y <= 0 && !player.jumping && player.winterIceShelfIndex === -1) {
+    const feetX = player.x + player.width / 2;
+    if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END) {
+      fallState.active = true;
+      fallState.t = 0;
+      fallState.mode = "winterShelfFall";
     }
   }
 
@@ -76410,6 +76667,26 @@ function updateWinterScene(deltaTime) {
     player.winterSlickPlatformPrevX = null;
     player.winterSlickPlatformPrevIndex = -1;
     player.winterSkateVX = 0;
+  }
+
+  // the shelf crossing -- same drift-carry shape as the slick platforms
+  // just above (so standing on a drifting shelf doesn't visually leave
+  // the player floating in place while it slides out from under them),
+  // but deliberately no skate-momentum override: normal instant-stop
+  // walking stays in effect the whole crossing, since this is meant to
+  // test jump TIMING against the drift, not stack a second momentum feel
+  // on top of it (see WINTER_ICE_SHELVES' own comment).
+  if (player.winterIceShelfIndex !== -1) {
+    const shelf = WINTER_ICE_SHELVES[player.winterIceShelfIndex];
+    const curShelfX = winterIceShelfX(shelf, performance.now());
+    if (player.winterIceShelfPrevX !== null && player.winterIceShelfPrevIndex === player.winterIceShelfIndex) {
+      player.x += curShelfX - player.winterIceShelfPrevX;
+    }
+    player.winterIceShelfPrevX = curShelfX;
+    player.winterIceShelfPrevIndex = player.winterIceShelfIndex;
+  } else {
+    player.winterIceShelfPrevX = null;
+    player.winterIceShelfPrevIndex = -1;
   }
 
   // back through the door to forest
@@ -76840,6 +77117,25 @@ function updateFallState(deltaTime) {
       player.winterSlickPlatformIndex = -1;
       cameraY = 0;
       cameraX = Math.max(0, player.x - canvas.width * 0.4);
+    } else if (fallState.mode === "winterShelfFall") {
+      // CONFIRMED NEW FEATURE ("if they slip off they need to ice climb
+      // again"): sent back to the base of the ICE CLIMB itself (not the
+      // slick platforms, like winterSpike above) -- same exact spot/
+      // clearing shape winterIceClimbRelease's own missed-grab fallback
+      // uses, so a shelf miss and a missed-grab miss land you in the same
+      // familiar place. The penalty is redoing the climb, same explicit
+      // choice as winterSpike, just one stage later.
+      player.iceAxeClingIndex = -1;
+      player.x = WINTER_ICE_CLIMB_X - player.width / 2;
+      player.y = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+      player.winterIceShelfIndex = -1;
+      player.winterIceShelfPrevX = null;
+      player.winterIceShelfPrevIndex = -1;
+      cameraY = 0;
+      cameraX = Math.max(0, player.x - canvas.width * 0.4);
     } else {
       // faze back to the start of the spring zone
       player.x = sceneSpawns.spring.x;
@@ -77258,6 +77554,16 @@ if (currentScene === "autumn") {
   if (currentScene !== lastInventoryUIScene) {
     lastInventoryUIScene = currentScene;
     updateInventoryUI();
+  }
+
+  // same TDZ-safe deferral as updateInventoryUI just above: the
+  // DEBUG_START_SCENE === "molehole" block (top-level, runs before
+  // `let mineCartEverRidden` further down the file is initialized) can't
+  // set it directly, so it's set here instead, on the first real frame --
+  // by which point the whole script has finished loading. Condition keeps
+  // it a no-op every frame after the first.
+  if (DEBUG_START_SCENE === "molehole" && !mineCartEverRidden) {
+    mineCartEverRidden = true;
   }
 
   if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
