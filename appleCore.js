@@ -75175,6 +75175,52 @@ const WINTER_SNOWBALL_PILE_END_X = Math.max(...WINTER_WALKING_BEAT_SNOWBALLS.fil
 // the snowboard-down payoff to start from, later.
 const WINTER_WIDTH = WINTER_SNOWBALL_PILE_END_X + 320;
 
+// CONFIRMED NEW FEATURE ("start thinkig building snowman npc" -- "maybe we
+// talk to a snowman before going down w the snowboard?"): standing on the
+// flat landing room just past the pile, where the (not-yet-built)
+// snowboard-down slope will eventually start. Same seesaw-style shape as
+// every gated NPC in this game -- a plain {x, talkedTo} object, flipped
+// once via keys.spaceJustPressed + isPlayerNear, then read wherever the
+// gated action needs to check it. The slope itself doesn't exist yet (see
+// WINTER_WIDTH's own comment), so there's nothing to AND this into right
+// now -- talkedTo is just set and ready for that gate once the slope is
+// built, same spirit as shovel/bucket already sitting in inventory ready
+// for a dig site that comes later.
+const WINTER_SNOWMAN_X = WINTER_SNOWBALL_PILE_END_X + 140;
+const winterSnowmanNPC = {
+  x: WINTER_SNOWMAN_X,
+  talkedTo: false,
+};
+
+// CONFIRMED NEW FEATURE: elder-style beats (each entry is itself an array
+// of lines shown together in one bubble) so a second beat can be dropped
+// in later with zero restructuring -- user explicitly said "maybe 2? but
+// can do 1 for now for base." Voice note (per the user's own standing
+// direction for this NPC): warm, fairy-tale language, a vague hint rather
+// than a flat statement of fact, a little rascal/fox-like in the wording.
+let winterSnowmanDialogue = { active: false, index: 0 };
+const WINTER_SNOWMAN_DIALOGUE_LINES = [
+  [
+    "Ho there — found your way through three whole seasons, did you?",
+    "The hill past me remembers every rider who trusted it... and forgets the ones who didn't.",
+    "Go on, then. Give it a push. I won't tell if you wobble.",
+  ],
+];
+
+function startWinterSnowmanDialogue() {
+  winterSnowmanDialogue.active = true;
+  winterSnowmanDialogue.index = 0;
+  winterSnowmanNPC.talkedTo = true;
+}
+
+function advanceWinterSnowmanDialogue() {
+  if (winterSnowmanDialogue.index < WINTER_SNOWMAN_DIALOGUE_LINES.length - 1) {
+    winterSnowmanDialogue.index++;
+  } else {
+    winterSnowmanDialogue.active = false;
+  }
+}
+
 // own state for the scripted ride -- same "fully owns position for a short
 // duration, everything else returns early" shape as poolSlideExit, just
 // winter-scoped (the scene never changes mid-ride here, so this doesn't
@@ -78083,6 +78129,169 @@ function drawWinterSnowballPile(camX) {
   });
 }
 
+// CONFIRMED NEW FEATURE (snowman NPC): classic three-tier body, stacked
+// in true tangent contact bottom-to-top (same reasoning as the snowball
+// pile's own tangent-contact fix just above -- no floating gaps here
+// either), carrot nose, coal buttons, twig arms angled like the
+// elder/owl's own branch-stick language elsewhere in winter, a knit
+// scarf in the rainbow-icicle palette so it visually rhymes with the
+// rest of this platform, and a small hook-top cane planted at its side
+// per direct request ("give it a cane too").
+const WINTER_SNOWMAN_BOTTOM_R = 34;
+const WINTER_SNOWMAN_MID_R = 24;
+const WINTER_SNOWMAN_HEAD_R = 16;
+
+function drawWinterSnowman(camX) {
+  const sx = winterSnowmanNPC.x - camX;
+  if (sx < -70 || sx > canvas.width + 70) return;
+  const groundY = gy - WINTER_WALKING_BEAT_BASE_HEIGHT;
+
+  const bottomCY = groundY - WINTER_SNOWMAN_BOTTOM_R + 4; // slightly embedded, matching the snowball pile's own "sits in the snow, not floating" treatment
+  const midCY = bottomCY - WINTER_SNOWMAN_BOTTOM_R - WINTER_SNOWMAN_MID_R;
+  const headCY = midCY - WINTER_SNOWMAN_MID_R - WINTER_SNOWMAN_HEAD_R;
+
+  const ballGrad = (cy, r) => {
+    const g = ctx.createRadialGradient(sx - r * 0.3, cy - r * 0.35, r * 0.15, sx, cy, r * 1.1);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.55, "#f3f8fb");
+    g.addColorStop(1, "#d3e2ee");
+    return g;
+  };
+  const drawBall = (cy, r) => {
+    ctx.beginPath();
+    ctx.arc(sx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = ballGrad(cy, r);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.beginPath();
+    ctx.arc(sx + r * 0.32, cy + r * 0.28, r * 0.9, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(140,170,195,0.22)";
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "rgba(100,140,170,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(sx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+
+  // cane, drawn first so the body overlaps its grip end -- hook-top
+  // variant of the elder's own straight cane (see that function's own
+  // comment), matching the twig-arm rustic material instead of the
+  // elder's polished wood.
+  const caneX = sx + WINTER_SNOWMAN_BOTTOM_R - 4;
+  ctx.strokeStyle = "#5c4326";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(caneX, bottomCY + WINTER_SNOWMAN_BOTTOM_R - 2);
+  ctx.lineTo(caneX, midCY - 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(caneX - 4, midCY - 2, 4, -Math.PI * 0.1, Math.PI * 1.05);
+  ctx.stroke();
+
+  drawBall(bottomCY, WINTER_SNOWMAN_BOTTOM_R);
+  drawBall(midCY, WINTER_SNOWMAN_MID_R);
+
+  // twig arms, angled out from the mid ball -- same simple stroked-branch
+  // language the owl tree's own small branches use, just two straight
+  // segments each for a believable stick-bend rather than one rigid line.
+  ctx.strokeStyle = "#5c4326";
+  ctx.lineWidth = 2.6;
+  [-1, 1].forEach(dir => {
+    const shoulderX = sx + dir * WINTER_SNOWMAN_MID_R * 0.85;
+    const shoulderY = midCY - WINTER_SNOWMAN_MID_R * 0.2;
+    const elbowX = shoulderX + dir * 16;
+    const elbowY = shoulderY - 6;
+    const tipX = elbowX + dir * 12;
+    const tipY = elbowY - 14;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(elbowX, elbowY);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+  });
+
+  // scarf -- a short wrapped band at the neck seam plus one trailing end,
+  // striped in the rainbow icicle palette so it visually rhymes with the
+  // colorful ice elsewhere on this platform instead of reading as a
+  // separate, unrelated prop.
+  const scarfY = midCY - WINTER_SNOWMAN_MID_R + 2;
+  const scarfColors = WINTER_RAINBOW_ICICLE_COLORS;
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(sx, scarfY, WINTER_SNOWMAN_MID_R * 0.95, 6, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const stripeW = (WINTER_SNOWMAN_MID_R * 1.9) / scarfColors.length;
+  scarfColors.forEach((c, i) => {
+    ctx.fillStyle = `rgb(${c})`;
+    ctx.fillRect(sx - WINTER_SNOWMAN_MID_R * 0.95 + i * stripeW, scarfY - 6, stripeW + 1, 12);
+  });
+  ctx.restore();
+  // trailing end, draped down the front
+  ctx.fillStyle = `rgb(${scarfColors[0]})`;
+  ctx.beginPath();
+  ctx.moveTo(sx - 5, scarfY + 2);
+  ctx.lineTo(sx + 2, scarfY + 2);
+  ctx.lineTo(sx + 3, scarfY + 22);
+  ctx.lineTo(sx - 4, scarfY + 20);
+  ctx.closePath();
+  ctx.fill();
+
+  drawBall(headCY, WINTER_SNOWMAN_HEAD_R);
+
+  // coal eyes + button-row mouth, carrot nose
+  ctx.fillStyle = "#2a2420";
+  [-1, 1].forEach(dir => {
+    ctx.beginPath();
+    ctx.arc(sx + dir * 5, headCY - 2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  for (let m = -1; m <= 1; m++) {
+    ctx.beginPath();
+    ctx.arc(sx + m * 3.5, headCY + 7, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#e08030";
+  ctx.beginPath();
+  ctx.moveTo(sx, headCY + 1);
+  ctx.lineTo(sx + 12, headCY + 2.5);
+  ctx.lineTo(sx, headCY + 4.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // three coat-button coals down the mid ball's own front, echoing the
+  // head's coal palette so the whole figure reads as one consistent material
+  ctx.fillStyle = "#2a2420";
+  for (let b = 0; b < 3; b++) {
+    ctx.beginPath();
+    ctx.arc(sx, midCY - WINTER_SNOWMAN_MID_R * 0.3 + b * 9, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawWinterSnowmanDialogue(camX) {
+  if (!winterSnowmanDialogue.active) return;
+  const beat = WINTER_SNOWMAN_DIALOGUE_LINES[winterSnowmanDialogue.index];
+  const isLast = winterSnowmanDialogue.index === WINTER_SNOWMAN_DIALOGUE_LINES.length - 1;
+  const displayLines = isLast ? beat : [...beat.slice(0, -1), beat[beat.length - 1] + "..."];
+  const sx = winterSnowmanNPC.x - camX;
+  // CONFIRMED BUG FIX (verified via screenshot -- found during testing,
+  // not reported by the user): this platform's own cameraY follow
+  // (= player.y - 150) only leaves about 150px of true headroom above
+  // the ground line before content goes off the top of the canvas, and
+  // the snowman's own head already sits close to that ceiling. Stacking
+  // the bubble ABOVE the head the way the elder's own bubble does (that
+  // NPC stands at true ground level, where there's ~450px of headroom
+  // instead) pushed it off-screen entirely. Placed beside the head
+  // instead -- plenty of clear horizontal room, and drawFittedSpeechBubble
+  // already clamps x to stay on-screen on its own.
+  const groundY = gy - WINTER_WALKING_BEAT_BASE_HEIGHT;
+  const headCY = groundY - WINTER_SNOWMAN_BOTTOM_R + 4 - WINTER_SNOWMAN_BOTTOM_R - WINTER_SNOWMAN_MID_R - WINTER_SNOWMAN_MID_R - WINTER_SNOWMAN_HEAD_R;
+  drawFittedSpeechBubble(ctx, sx + WINTER_SNOWMAN_BOTTOM_R + 14, headCY - 10, displayLines);
+}
+
 function drawWinterScene(camX) {
   ctx.save();
 
@@ -78265,6 +78474,12 @@ function drawWinterScene(camX) {
   // the snowball pile, past the beat's own end -- see its own constants'
   // comments. Same "further into the level, drawn later" ordering.
   drawWinterSnowballPile(camX);
+
+  // the snowman, standing on the flat landing room past the pile -- see
+  // winterSnowmanNPC's own comment. Dialogue bubble drawn separately,
+  // right after, so it always layers on top of the snowman's own body.
+  drawWinterSnowman(camX);
+  drawWinterSnowmanDialogue(camX);
 
   // the owl's own caution, drawn last so it sits on top of everything else
   drawWinterOwlDialogue(camX);
@@ -78898,6 +79113,19 @@ function updateWinterScene(deltaTime) {
     )
   ) {
     startSeasonTransition("forest");
+  }
+
+  // CONFIRMED NEW FEATURE (snowman NPC -- see winterSnowmanNPC's own
+  // comment): same open/advance/auto-close shape the elder uses --
+  // keys.spaceJustPressed opens it or advances a beat, walking away mid-
+  // conversation closes it early rather than leaving it stuck open and
+  // silently blocking the next spacebar press on something unrelated.
+  const nearSnowman = isPlayerNear(winterSnowmanNPC.x, WINTER_WALKING_BEAT_BASE_HEIGHT, 45, 30, 20);
+  if (winterSnowmanDialogue.active) {
+    if (keys.spaceJustPressed) advanceWinterSnowmanDialogue();
+    else if (!nearSnowman) winterSnowmanDialogue.active = false;
+  } else if (keys.spaceJustPressed && nearSnowman) {
+    startWinterSnowmanDialogue();
   }
 
   // CONFIRMED CHANGE: real cameraY tracking for the new slick-platform
