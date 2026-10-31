@@ -74270,6 +74270,33 @@ function winterIceBuildHolds() {
       const wantsBig = h.quality === "strong";
       const readsBig = misleading ? !wantsBig : wantsBig;
       h.sizeScale = readsBig ? 1.05 + sizeRoll * 0.3 : 0.75 + sizeRoll * 0.25;
+      // CONFIRMED BUG FIX ("ice hold hanging in air on right"): the x
+      // clamp above only ever kept the hold's CENTER point inside a
+      // flat +-120 band -- it never accounted for the hold's own drawn
+      // size (up to ~1.35x WINTER_ICE_HOLD_RADIUS, used here as a
+      // literal 48 since that const isn't declared until after this
+      // function runs), nor for the wall's real edge narrowing at
+      // higher rows (down to ~135 half-width at the very top, per
+      // winterIceWallEdgeX) or its own jagged per-point jitter. A hold
+      // clamped right at +-120 near a high row, sized up toward its max,
+      // could end up with its icon's own edge drawn well past the
+      // wall's actual jagged silhouette -- reading as a hold floating in
+      // open air past the ice. Re-clamped here against the REAL wall
+      // edge at this exact height (same function the wall itself draws
+      // from), leaving room for the icon's own radius plus a small
+      // margin, so it can only ever tighten the earlier spread-based
+      // clamp, never override the row's intended variety where there's
+      // genuinely room for it.
+      const wallT = Math.max(0, Math.min(1, h.height / winterIceWallTopHeight()));
+      const edgeOffset = winterIceWallEdgeX(wallT, h.dir);
+      const holdRadius = 48 * h.sizeScale;
+      const maxCenterOffset = edgeOffset - h.dir * (holdRadius + 12);
+      const centerOffset = h.x - WINTER_ICE_CLIMB_X;
+      if (h.dir > 0 && centerOffset > maxCenterOffset) {
+        h.x = WINTER_ICE_CLIMB_X + Math.max(0, maxCenterOffset);
+      } else if (h.dir < 0 && centerOffset < maxCenterOffset) {
+        h.x = WINTER_ICE_CLIMB_X + Math.min(0, maxCenterOffset);
+      }
     });
     holds.push(...rowHolds);
   }
