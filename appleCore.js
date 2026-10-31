@@ -74413,12 +74413,12 @@ const WINTER_HALFPIPE_GAP = 50;
 const WINTER_HALFPIPE_ENTRY_X = WINTER_ICE_SHELF_ZONE_END + WINTER_HALFPIPE_GAP;
 const WINTER_HALFPIPE_MOUTH_X = WINTER_HALFPIPE_ENTRY_X;
 const WINTER_HALFPIPE_MOUTH_Y = 850; // level with the nearby shelves -- the lip reads as a continuation of the crossing, not a separate drop
-// CONFIRMED CHANGE ("make half pipe wider" x2): each half widened from the
-// original 260 to 320, then to 370 on request ("make it slightly wider
-// again") -- 740 total span now, up from 520 at the start.
-const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 370;
+// CONFIRMED CHANGE ("make half pipe wider" x3): each half widened from the
+// original 260 to 320, to 370, and now to 430 -- 860 total span, up from
+// 520 at the start.
+const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 430;
 const WINTER_HALFPIPE_BOTTOM_Y = 0; // true ground -- the actual dip of the pipe
-const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 370;
+const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 430;
 const WINTER_HALFPIPE_RELEASE_Y = 500; // partway up the far wall -- the scripted ride hands off to a real launch from here, already rising
 // CONFIRMED CHANGE ("i also dont want it to me like a full sharp spike on
 // each end. soften the tips and make the sides a lill less straight like.
@@ -76605,20 +76605,31 @@ function drawWinterHalfpipe(camX, now) {
 
   // the ice mass -- the surface curve down to true ground baseline, a
   // solid-feeling wedge of ice rather than a thin ribbon
-  // CONFIRMED CHANGE ("make the outer walls of halfpipe not stick straight.
-  // make them like a little wider at the bottom and easing up to the top
-  // of it as a diagonal line on both ends"): the two closing edges used to
-  // drop straight down from each lip point to the ground baseline --
-  // literal vertical walls. Each now flares outward by WINTER_HALFPIPE_
-  // OUTER_FLARE as it reaches the baseline, so both outer edges read as a
-  // simple diagonal taper (wide foot, narrowing up to the lip) instead of
-  // a sheer drop, like a real mass of ice/snow settling at its base.
-  const flare = WINTER_HALFPIPE_OUTER_FLARE;
+  // CONFIRMED CHANGE ("i dont want a straight diagonal line for the sides
+  // of this thing, i want it to look more real. like icy chunks maybe a
+  // mini over hang"): a single straight lerp from lip to base (the first
+  // pass's fix for the original dead-vertical walls) still read as too
+  // clean/geometric. Each outer wall is now a fixed sequence of points --
+  // not a straight line, and not randomized per frame (would read as
+  // flickering/noisy) -- with one point bulging out past its neighbors on
+  // each side, like a real chunk of ice jutting past the mass below it.
+  // Left and right use different point sequences on purpose, not mirrored
+  // copies of each other, so the two walls don't read as a repeated motif.
+  const edgeSide = (topX, topY, dir, pattern) => pattern.map(([t, extra]) => ({
+    x: topX + dir * (WINTER_HALFPIPE_OUTER_FLARE * t + extra),
+    y: topY + (gy + 40 - topY) * t
+  }));
+  const leftEdge = edgeSide(topPts[0].x, topPts[0].y, -1, [
+    [0, 0], [0.18, -5], [0.4, 22], [0.62, -4], [0.82, 9], [1, 0]
+  ]);
+  const rightEdge = edgeSide(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y, 1, [
+    [0, 0], [0.15, 9], [0.35, -6], [0.55, 26], [0.78, -3], [0.92, 8], [1, 0]
+  ]);
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-  ctx.lineTo(topPts[topPts.length - 1].x + flare, gy + 40);
-  ctx.lineTo(topPts[0].x - flare, gy + 40);
+  rightEdge.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+  leftEdge.slice().reverse().forEach(pt => ctx.lineTo(pt.x, pt.y));
   ctx.closePath();
 
   // clear/glassy base -- deliberately no color tint mixed in here, just a
@@ -76654,12 +76665,19 @@ function drawWinterHalfpipe(camX, now) {
   // twice, so two of the four bars were always the same rose/red while the
   // other hues barely showed). Replaced with a handful of soft, irregular
   // round glints instead of straight repeating bars -- no two the same
-  // size, no fixed grid spacing, a single pale color (ice glinting in
-  // light, not a rainbow print), reads as light on an uneven surface
-  // rather than a fabric pattern.
+  // size, no fixed grid spacing.
+  // CONFIRMED BUG FIX ("there is no color on the pipe at all anymore it is
+  // just like dark blue?"): the glints above went all-white to kill the
+  // stripe look, but that also threw out every bit of the color wash the
+  // original design wanted ("a few colors light wash shining through" --
+  // see this function's own top comment), leaving nothing but the plain
+  // blue glass gradient. Each glint now takes its own color straight from
+  // WINTER_RAINBOW_ICICLE_COLORS by its own index (no shared modulo bug
+  // this time), still irregular in size/position so it never reads as a
+  // repeated pattern, just actually colored again.
   ctx.save();
   ctx.clip();
-  const GLINTS = 5;
+  const GLINTS = 6;
   for (let i = 0; i < GLINTS; i++) {
     // irregular placement/size per glint, not an evenly-spaced row -- the
     // whole point is to NOT look like a repeating pattern
@@ -76668,10 +76686,11 @@ function drawWinterHalfpipe(camX, now) {
     const driftY = Math.cos(now * 0.00011 + seed * 1.3) * 10;
     const gx = leftX + (rightX - leftX) * ((i + 0.5 + Math.sin(seed) * 0.3) / GLINTS) + driftX;
     const gy2 = gy - WINTER_HALFPIPE_MOUTH_Y * (0.25 + 0.35 * ((i * 53) % 7) / 7) + driftY;
-    const r = 14 + ((i * 29) % 13);
+    const r = 16 + ((i * 29) % 15);
+    const hue = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
     const glintGrad = ctx.createRadialGradient(gx, gy2, 0, gx, gy2, r);
-    glintGrad.addColorStop(0, "rgba(255,255,255,0.3)");
-    glintGrad.addColorStop(1, "rgba(255,255,255,0)");
+    glintGrad.addColorStop(0, `rgba(${hue},0.32)`);
+    glintGrad.addColorStop(1, `rgba(${hue},0)`);
     ctx.fillStyle = glintGrad;
     ctx.beginPath();
     ctx.arc(gx, gy2, r, 0, Math.PI * 2);
@@ -76958,9 +76977,23 @@ function updateWinterScene(deltaTime) {
   // to true ground level, same consequence the spike zone uses once it
   // actually resolves: back to the base of the climb via its own
   // "winterShelfFall" fallState mode (see updateFallState).
+  // CONFIRMED BUG FIX ("bottom left of pipe on ground. if i walk back
+  // there i then sink into ground at the edge and am at bottom of ice
+  // climb again"): the halfpipe's drawn ice mass flares out past its own
+  // MOUTH_X (see WINTER_HALFPIPE_OUTER_FLARE), and that flare reaches far
+  // enough left to visually overlap this check's own zone -- so standing
+  // on what looks like solid ice at the pipe's near edge could still be
+  // inside WINTER_ICE_SHELF_ZONE_END's x range, with no shelf under you
+  // (shelfIndex still -1, nothing shelf-like exists way out here), which
+  // reads to this check as having slipped off the crossing. The halfpipe
+  // owns everything from its own mouth leftward past the widest the ice
+  // ever visually flares -- none of that should ever count as the
+  // shelf-crossing's own fail zone, regardless of how the flare itself is
+  // tuned later.
   if (!fallState.active && player.y <= 0 && !player.jumping && player.winterIceShelfIndex === -1) {
     const feetX = player.x + player.width / 2;
-    if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END) {
+    if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END &&
+        feetX < WINTER_HALFPIPE_MOUTH_X - WINTER_HALFPIPE_OUTER_FLARE - 40) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "winterShelfFall";
