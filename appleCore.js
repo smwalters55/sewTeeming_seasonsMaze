@@ -74992,6 +74992,57 @@ const WINTER_WALKING_BEAT_DUCKS = [
   { x: WINTER_WALKING_BEAT_START_X + 1270, w: 60, clearance: 62, duckThreshold: 0.4 },
 ];
 
+// CONFIRMED NEW FEATURE ("place the crystal into a glass 'door' with a
+// crystal shape hole in it for it to slide open or something" -- re-scoped
+// via direct follow-up: not literally a walkthrough door after all (too
+// close to the real winter-exit door, several screens back the other
+// direction), and the payoff isn't decided yet either ("you put the
+// crystal into a thing, get [an] animation [of it] turn[ing] into [the]
+// thing, and something else happens" -- but what that "something else"
+// is wasn't settled). Scoped down to exactly that: a standing glass
+// socket with a crystal-shaped cutout, sitting in the one genuinely open
+// stretch of the walking beat -- past the second duck gate, before the
+// snowball pile starts -- clear of both the exit door and every existing
+// obstacle gate. Reuses the same `placementSlots` system the molehole
+// lift shaft's own gear socket already proved out (acceptsItemType/
+// onFill/startPlaceAnimation handle the "walk up holding it, press down,
+// item flies in and gets consumed" part for free), plus its own bespoke
+// "crystal turns into place, then the panel lights" flourish, the same
+// way the shaft got its own bespoke light-beam flourish. `onFill` only
+// flips winterCrystalSocketFilled true and starts the flourish -- no
+// further payoff wired yet on purpose, so a real "something else happens"
+// can hang off that one flag later without touching this beat again.
+const WINTER_CRYSTAL_SOCKET_X = WINTER_WALKING_BEAT_START_X + 1480;
+// CONFIRMED BUG FIX (caught before it ever shipped, comparing against the
+// walking-beat duck/hurdle gates' own "don't assume true ground" fixes):
+// placementSlots' heightAboveGround is always compared directly against
+// player.y (see pressedDownNear/isPlayerNear), which is the player's real
+// height above TRUE ground -- fine for every existing slot (doorways,
+// the molehole shaft), all of which sit at true ground level, but this
+// socket sits up on the walking beat's own ~900-high elevation. Baking
+// the local terrain height in here (once, since this x is fixed) keeps
+// the press-to-place reach check correct without having to touch the
+// shared generic system's signature for every other slot.
+const WINTER_CRYSTAL_SOCKET_HEIGHT = winterWalkingBeatHeightAt(WINTER_CRYSTAL_SOCKET_X) + 8;
+let winterCrystalSocketFilled = false;
+// drives the insert/turn flourish -- -1 = inactive, else counts up in ms,
+// clamped at the duration (not reset back to -1 like the molehole shaft's
+// own one-shot flourish) so drawWinterCrystalSocketActivation can tell
+// "still mid-turn" apart from "done, stay lit" with just this one value.
+let winterCrystalSocketActivateT = -1;
+const WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION = 1400;
+placementSlots.push({
+  id: "winterCrystalSocketSlot",
+  x: WINTER_CRYSTAL_SOCKET_X,
+  heightAboveGround: WINTER_CRYSTAL_SOCKET_HEIGHT,
+  acceptsItemType: "crystal",
+  filled: false,
+  onFill: () => {
+    winterCrystalSocketFilled = true;
+    winterCrystalSocketActivateT = 0;
+  }
+});
+
 // CONFIRMED NEW FEATURE, redesigned twice ("put the snowballs into a pile
 // you jump up on dif levels of it. so like more snoballs too, and some
 // slightly dif sizes" then "also i dont want like vertical stacks of snow
@@ -78000,6 +78051,156 @@ function drawWinterWalkingBeat(camX, now) {
   WINTER_WALKING_BEAT_DUCKS.forEach(d => {
     drawWinterIceDuckShelf(camX, d, winterWalkingBeatHeightAt(d.x));
   });
+
+  // the crystal socket -- see WINTER_CRYSTAL_SOCKET_X's own comment.
+  // Drawn last in this function (furthest along the beat of everything
+  // drawn here, same "further into the level, drawn later" ordering the
+  // rest of winter follows) so nothing above can ever paint over it.
+  drawWinterCrystalSocket(camX);
+}
+
+// CONFIRMED NEW FEATURE -- see WINTER_CRYSTAL_SOCKET_X's own comment. A
+// standing glass pane with a crystal-shaped cutout hole, sharing the
+// exact hexagonal silhouette drawCrystalShape's own gem body uses, so the
+// hole reads as "a crystal clearly belongs here" rather than a generic
+// shape. Icy/glassy palette borrowed from the halfpipe's own glass look
+// (drawWinterHalfpipe), not the walking beat's plainer packed-snow look,
+// so it reads as a deliberate feature, not more terrain.
+function drawWinterCrystalSocket(camX) {
+  const sx = WINTER_CRYSTAL_SOCKET_X - camX;
+  if (sx < -70 || sx > canvas.width + 70) return;
+  const groundRef = winterWalkingBeatHeightAt(WINTER_CRYSTAL_SOCKET_X);
+  const baseY = gy - groundRef + 4;
+  const panelW = 70, panelH = 118;
+  const topY = baseY - panelH;
+
+  // the glass pane body
+  const grad = ctx.createLinearGradient(0, topY, 0, baseY);
+  grad.addColorStop(0, "rgba(222,240,255,0.55)");
+  grad.addColorStop(1, "rgba(158,198,228,0.45)");
+  ctx.fillStyle = grad;
+  roundRect(ctx, sx - panelW / 2, topY, panelW, panelH, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(90,140,180,0.8)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // a little frost texture along the panel's edge, so it reads as real
+  // ice/glass rather than a flat plain colored rectangle
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    const fy = topY + 10 + i * (panelH - 20) / 4;
+    ctx.beginPath();
+    ctx.moveTo(sx - panelW / 2 + 4, fy);
+    ctx.lineTo(sx - panelW / 2 + 4 + 8, fy - 3);
+    ctx.stroke();
+  }
+
+  // the crystal-shaped cutout -- same hexagon path as drawCrystalShape's
+  // own gem body (just not rotated/scaled by that function, since this
+  // needs to stay a static hole, not a drawn gem)
+  const cx = sx, cy = topY + panelH * 0.5;
+  const hs = 22; // hole size
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - hs);
+  ctx.lineTo(cx + hs * 0.7, cy - hs * 0.2);
+  ctx.lineTo(cx + hs * 0.4, cy + hs);
+  ctx.lineTo(cx - hs * 0.4, cy + hs);
+  ctx.lineTo(cx - hs * 0.7, cy - hs * 0.2);
+  ctx.closePath();
+  // CONFIRMED CHANGE: while winterCrystalSocketActivateT is still mid-
+  // flourish (0 <= t < duration), drawWinterCrystalSocketActivation owns
+  // drawing the crystal itself (the spin-into-place animation) -- this
+  // branch only shows the plain resting crystal once that's fully done,
+  // so the two never draw two different crystals on top of each other.
+  const fullyActivated = winterCrystalSocketFilled && winterCrystalSocketActivateT >= WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION;
+  if (!fullyActivated) {
+    // empty (or still-animating) hole -- darker so it reads as a real
+    // cutout straight through the pane, not a shape drawn on top of it
+    ctx.fillStyle = "rgba(40,60,80,0.35)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  } else {
+    ctx.clip();
+    drawCrystalShape(ctx, cx, cy, hs * 0.9, 0);
+  }
+  ctx.restore();
+}
+
+// CONFIRMED NEW FEATURE -- the insert/turn flourish: the crystal (already
+// flown into the cutout by the generic placementSlots/flyingItems system)
+// visibly ROTATES into its final resting orientation and locks in, then
+// the whole socket gets a soft ambient glow that stays lit for good --
+// the explicit "animation turn of it in thing, and something else
+// happens" direct feedback asked for, even though what that something
+// else actually IS hasn't been decided yet (see WINTER_CRYSTAL_SOCKET_X's
+// own comment -- a real payoff can hang off winterCrystalSocketFilled
+// later without touching this function again). Drawn as its own pass,
+// same "activation flourish gets its own function" shape as
+// drawMoleholeShaftActivation.
+function drawWinterCrystalSocketActivation(camX) {
+  if (winterCrystalSocketActivateT < 0) return;
+  const sx = WINTER_CRYSTAL_SOCKET_X - camX;
+  if (sx < -70 || sx > canvas.width + 70) return;
+  const groundRef = winterWalkingBeatHeightAt(WINTER_CRYSTAL_SOCKET_X);
+  const baseY = gy - groundRef + 4;
+  const panelH = 118;
+  const cy = (baseY - panelH) + panelH * 0.5;
+  const p = winterCrystalSocketActivateT / WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION; // 0..1
+  const hs = 22;
+
+  if (p < 1) {
+    // a few full spins that ease down to a dead stop right at its
+    // resting orientation -- reads as a key turning into a lock, not
+    // just spinning forever
+    const spinT = easeOutCubic(Math.min(1, p / 0.75));
+    const rotation = (1 - spinT) * Math.PI * 2 * 3;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sx, cy - hs);
+    ctx.lineTo(sx + hs * 0.7, cy - hs * 0.2);
+    ctx.lineTo(sx + hs * 0.4, cy + hs);
+    ctx.lineTo(sx - hs * 0.4, cy + hs);
+    ctx.lineTo(sx - hs * 0.7, cy - hs * 0.2);
+    ctx.closePath();
+    ctx.clip();
+    drawCrystalShape(ctx, sx, cy, hs * 0.9, rotation);
+    ctx.restore();
+  }
+
+  // a brief outward ring burst right as the turn finishes and locks in
+  if (p >= 0.7) {
+    const ringP = (p - 0.7) / 0.3;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - ringP);
+    ctx.strokeStyle = "#bfe0ff";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(sx, cy, 10 + ringP * 50, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // persistent ambient glow once fully activated -- stays lit for good,
+  // the visible "this is now live" state for whatever payoff gets wired
+  // to winterCrystalSocketFilled in a follow-up pass
+  if (p >= 1) {
+    const pulse = Math.sin(performance.now() * 0.003) * 0.5 + 0.5;
+    ctx.save();
+    const glowR = 50 + pulse * 10;
+    const glow = ctx.createRadialGradient(sx, cy, 0, sx, cy, glowR);
+    glow.addColorStop(0, `rgba(140,200,255,${0.25 + pulse * 0.15})`);
+    glow.addColorStop(1, "rgba(140,200,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(sx, cy, glowR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 // CONFIRMED NEW FEATURE (snowball pile -- see WINTER_SNOWBALL_PILE_START_X's
@@ -78470,6 +78671,12 @@ function drawWinterScene(camX) {
   // into the level, drawn later" ordering every other winter set-piece
   // here follows) so nothing from it can ever paint over this.
   drawWinterWalkingBeat(camX, nowForWinterProps);
+
+  // the crystal socket's own insert/turn flourish + persistent glow --
+  // drawn as its own pass right after the beat's static art (which
+  // already drew the socket itself), same split drawMoleholeShaftActivation
+  // uses against its own static pole art.
+  drawWinterCrystalSocketActivation(camX);
 
   // the snowball pile, past the beat's own end -- see its own constants'
   // comments. Same "further into the level, drawn later" ordering.
@@ -79128,6 +79335,17 @@ function updateWinterScene(deltaTime) {
     startWinterSnowmanDialogue();
   }
 
+  // CONFIRMED NEW FEATURE (crystal socket insert/turn flourish -- see
+  // WINTER_CRYSTAL_SOCKET_X's own comment): clamps at the duration
+  // instead of resetting to -1 like the molehole shaft's one-shot
+  // flourish does, since drawWinterCrystalSocketActivation needs to keep
+  // reading "done" (t >= duration, stay lit) on every frame after, not
+  // just the one frame it crosses the line.
+  if (winterCrystalSocketActivateT >= 0 && winterCrystalSocketActivateT < WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION) {
+    winterCrystalSocketActivateT += deltaTime * 1000;
+    if (winterCrystalSocketActivateT > WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION) winterCrystalSocketActivateT = WINTER_CRYSTAL_SOCKET_ACTIVATE_DURATION;
+  }
+
   // CONFIRMED CHANGE: real cameraY tracking for the new slick-platform
   // climb ("cameray follow as well so it's both high and wide ish") --
   // same pattern as forest's fungus climb/oak/topsy-turvy's own climbs,
@@ -79454,7 +79672,16 @@ function updateGenericPlacementAndDoors() {
       heldItem = null;
       updateInventoryUI();
 
-      startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround, () => {
+      // CONFIRMED BUG FIX (found building the winter crystal socket, the
+      // first placementSlots entry to ever sit somewhere cameraY != 0):
+      // flyingItems draws f.y completely raw, with no cameraY of its own
+      // (see getHeldItemWorldPos's own `+ cameraY` comment for why the
+      // FROM side already needs it) -- so the TO side needs the exact
+      // same `+ cameraY` or the flight animation visibly lands somewhere
+      // other than the actual socket the instant cameraY != 0. A pure
+      // no-op for every other existing slot (all sit at true ground
+      // level, where cameraY always resets to 0 on scene entry).
+      startPlaceAnimation(itemToPlace, slot.x, gy - slot.heightAboveGround + cameraY, () => {
         slot.filled = true;
         slot.onFill(itemToPlace);
       });
