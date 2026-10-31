@@ -69752,17 +69752,30 @@ const inPotGauntletShadowSpan = currentScene === "topsyturvy" &&
   player.x + player.width / 2 > TOPSY_POT_GAUNTLET_START_X - 80 &&
   player.x + player.width / 2 < TOPSY_POT_GAUNTLET_END_X + 80;
 if (currentScene !== "pool" && !inPotGauntletShadowSpan) {
-  // shadow shrinks along with the body sinking in -- pinned to the
-  // visual ground line, which itself scrolls with cameraY in tunnel
-  // town's climbing shaft (a no-op everywhere else, since cameraY is 0)
+  // CONFIRMED BUG FIX ("wait have i been floating above the ground in
+  // winter the whole time like this??? i dont like how that looks here"):
+  // this was always pinned to the flat true-ground line (gy+cameraY),
+  // full stop, regardless of player.y. That reads right for a JUMP --
+  // the body rises, the shadow stays put on the real ground below it, a
+  // landing-spot indicator -- but it's wrong the instant player.y
+  // represents standing on solid, elevated ground (a shelf, the halfpipe
+  // curve, any ramp), not airborne height above it: the shadow kept
+  // drawing all the way down at true ground, fully disconnected below
+  // the player's actual feet, reading as floating above their own
+  // shadow on anything but flat ground. While actually grounded (not
+  // jumping), the shadow now sits right at the surface the player is
+  // standing on; only while genuinely airborne does it stay pinned to
+  // the true ground line as the landing-spot indicator it was designed
+  // to be.
+  const shadowGroundY = gy + cameraY + 5 - (player.jumping ? 0 : player.y);
   ctx.fillStyle = `rgba(60,40,20,${0.18 * (1 - fallProgress)})`;
   ctx.beginPath();
-  ctx.ellipse(px + player.width/2, gy + cameraY + 5, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
+  ctx.ellipse(px + player.width/2, shadowGroundY, 18 * (1 - fallProgress * 0.5), 6 * (1 - fallProgress * 0.5), 0, 0, Math.PI*2);
   ctx.fill();
   // ground contact tint
   ctx.fillStyle = `rgba(90,70,40,${0.08 * (1 - fallProgress)})`;
   ctx.beginPath();
-  ctx.ellipse(px + player.width/2, gy + cameraY + 6, 22, 8, 0, 0, Math.PI*2);
+  ctx.ellipse(px + player.width/2, shadowGroundY + 1, 22, 8, 0, 0, Math.PI*2);
   ctx.fill();
 }
 
@@ -74494,6 +74507,54 @@ function winterHalfpipeHeightAtX(worldX) {
   const t = (worldX - WINTER_HALFPIPE_MOUTH_X) / (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X);
   return winterHalfpipeCurveAt(t).h;
 }
+// roughly 42 degrees -- past this it's the pipe's real wall, not standable
+// ground. See WINTER_HALFPIPE_SLOPE_CROSSINGS right below for where that
+// line actually falls on the curve.
+const WINTER_HALFPIPE_WALKABLE_SLOPE = 0.9;
+// CONFIRMED BUG FIX ("in this exact location if i press right i jitter
+// stuck in place" + "when i press up right at the spot it puts me like a
+// lot higher on the right... not normal jump height"): the first pass at
+// "too steep to stand" recomputed the walkable/steep split from scratch
+// EVERY frame off the player's own just-moved position, then tried to
+// fight that same frame's walk input by nudging back toward the bottom a
+// small fixed step -- two forces pushing against each other every frame
+// right at the boundary is exactly a jitter generator, and the "slides
+// toward 0.5" math had no floor on how far it could end up moving in one
+// go if it mis-fired on a frame where player.jumping hadn't been set yet,
+// which is what sent a jump flying to the wrong height entirely. Fixed by
+// finding the walkable/steep SPLIT POINTS once, up front (the curve's own
+// |slope| vs WINTER_HALFPIPE_WALKABLE_SLOPE crosses exactly four times --
+// a shoulder near the mouth, the basin, a shoulder near release), and
+// using those as a fixed invisible wall position instead of a per-frame
+// recomputed push-back -- same "clamp back to one exact boundary point,
+// every time" shape as the duck shelf's own collision elsewhere in this
+// file, which is why it doesn't jitter: there's nothing left to fight
+// over, the wall is just in one place.
+const WINTER_HALFPIPE_SLOPE_CROSSINGS = (() => {
+  function slopeAt(t) {
+    const eps = 0.001;
+    const a = winterHalfpipeCurveAt(Math.max(0, t - eps));
+    const b = winterHalfpipeCurveAt(Math.min(1, t + eps));
+    return (b.h - a.h) / (b.x - a.x);
+  }
+  const crossings = [];
+  const STEPS = 2000;
+  let prevSteep = Math.abs(slopeAt(0)) > WINTER_HALFPIPE_WALKABLE_SLOPE;
+  for (let i = 1; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const steep = Math.abs(slopeAt(t)) > WINTER_HALFPIPE_WALKABLE_SLOPE;
+    if (steep !== prevSteep) {
+      let lo = (i - 1) / STEPS, hi = t;
+      for (let k = 0; k < 30; k++) {
+        const mid = (lo + hi) / 2;
+        if ((Math.abs(slopeAt(mid)) > WINTER_HALFPIPE_WALKABLE_SLOPE) === prevSteep) lo = mid; else hi = mid;
+      }
+      crossings.push((lo + hi) / 2);
+    }
+    prevSteep = steep;
+  }
+  return crossings;
+})();
 // how much of the curve's actual geometric tangent angle gets applied as
 // player lean (see updateWinterHalfpipe's "slide" phase) -- 1.0 would be
 // the literal slope angle, which gets close to vertical right at the lip/
@@ -76650,21 +76711,33 @@ function drawWinterHalfpipe(camX, now) {
   // of this thing, i want it to look more real. like icy chunks maybe a
   // mini over hang"): a single straight lerp from lip to base (the first
   // pass's fix for the original dead-vertical walls) still read as too
-  // clean/geometric. Each outer wall is now a fixed sequence of points --
-  // not a straight line, and not randomized per frame (would read as
-  // flickering/noisy) -- with one point bulging out past its neighbors on
-  // each side, like a real chunk of ice jutting past the mass below it.
-  // Left and right use different point sequences on purpose, not mirrored
-  // copies of each other, so the two walls don't read as a repeated motif.
+  // clean/geometric.
+  // CONFIRMED CHANGE ("make sidings more organic looking. rather than
+  // just canging one diagonale likne to 3 separate diagonal lines on
+  // each side"): the first attempt at this (6 points, one bulge) was
+  // still just a small handful of long straight segments -- recognizably
+  // "a few diagonal lines" rather than a real broken/natural ice edge.
+  // Each wall is now a much denser fixed sequence of points (13, not 6),
+  // with small, non-repeating in/out jogs at every one of them instead
+  // of one lone bulge among mostly-straight stretches -- short enough
+  // segments between points that the eye reads it as an irregular
+  // natural silhouette, not a handful of diagonal lines. Still a fixed
+  // sequence, not randomized per frame (would read as flickering/noisy),
+  // and left/right still use different point sequences so the two walls
+  // don't read as a repeated/mirrored motif.
   const edgeSide = (topX, topY, dir, pattern) => pattern.map(([t, extra]) => ({
     x: topX + dir * (WINTER_HALFPIPE_OUTER_FLARE * t + extra),
     y: topY + (gy + 40 - topY) * t
   }));
   const leftEdge = edgeSide(topPts[0].x, topPts[0].y, -1, [
-    [0, 0], [0.18, -5], [0.4, 22], [0.62, -4], [0.82, 9], [1, 0]
+    [0, 0], [0.08, -4], [0.15, 3], [0.22, -6], [0.3, 10], [0.38, 4],
+    [0.46, 15], [0.54, 7], [0.62, 13], [0.7, -3], [0.78, 6], [0.86, -2],
+    [0.93, 8], [1, 0]
   ]);
   const rightEdge = edgeSide(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y, 1, [
-    [0, 0], [0.15, 9], [0.35, -6], [0.55, 26], [0.78, -3], [0.92, 8], [1, 0]
+    [0, 0], [0.07, 5], [0.14, -3], [0.21, 9], [0.29, -2], [0.37, 11],
+    [0.45, 3], [0.53, 16], [0.61, 5], [0.69, 10], [0.77, -4], [0.85, 7],
+    [0.92, -3], [1, 0]
   ]);
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
@@ -76682,10 +76755,16 @@ function drawWinterHalfpipe(camX, now) {
   // bumped up and deepened the gradient so the mass itself reads as a
   // real solid surface, same "actually opaque enough to read" lesson
   // drawWinterSlickPlatform's own darker underside layer already applies.
+  // CONFIRMED CHANGE ("i really dont like the color splotches on the
+  // 'ice', which should look whiter/clearer besides some color shining
+  // through it. this looks like weird ice paint ball or something"):
+  // pushed the whole gradient several steps whiter/paler than before --
+  // this should read first and foremost as clear ice, with color as a
+  // subtle secondary detail, not the other way around.
   const baseGrad = ctx.createLinearGradient(0, gy - WINTER_HALFPIPE_MOUTH_Y - 10, 0, gy + 20);
-  baseGrad.addColorStop(0, "rgba(195,228,248,0.94)");
-  baseGrad.addColorStop(0.45, "rgba(150,202,230,0.92)");
-  baseGrad.addColorStop(1, "rgba(90,145,185,0.96)");
+  baseGrad.addColorStop(0, "rgba(228,240,251,0.93)");
+  baseGrad.addColorStop(0.45, "rgba(196,222,240,0.9)");
+  baseGrad.addColorStop(1, "rgba(150,188,215,0.93)");
   ctx.fillStyle = baseGrad;
   ctx.fill();
   // a clean outer edge -- the fill alone still reads too close to the
@@ -76733,9 +76812,20 @@ function drawWinterHalfpipe(camX, now) {
   // small a fraction of this much larger shape to read as "light shining
   // into it"). Varied size/depth/drift keeps it irregular, same reasoning
   // as before, so it still never reads as a repeating pattern.
+  // CONFIRMED CHANGE ("i really dont like the color splotches on the
+  // 'ice'... this looks like weird ice paint ball or something"): the
+  // previous pass (bigger radius, 0.4 alpha, 11 of them to cover the
+  // wider pipe) ended up reading as solid blobs of paint sitting ON the
+  // ice rather than color shining faintly through clear ice. Pulled back
+  // on every axis at once -- fewer, smaller, and much lower opacity --
+  // so what little color there is reads as a soft tint, not a splotch.
+  // Kept the same curve-sampled placement/depth-spread logic from the
+  // last round (that part was correct -- it's what actually got color
+  // reaching the whole span instead of just the mouth), just toned way
+  // down.
   ctx.save();
   ctx.clip();
-  const GLINTS = 11;
+  const GLINTS = 8;
   for (let i = 0; i < GLINTS; i++) {
     const t = (i + 0.5) / GLINTS;
     const pt = topPts[Math.round(t * SEGS)];
@@ -76745,10 +76835,10 @@ function drawWinterHalfpipe(camX, now) {
     const depthFrac = 0.15 + ((i * 47) % 6) / 6 * 0.55; // 0.15..0.70 of the way down into the ice mass, not just at the surface
     const gx = pt.x + driftX;
     const gy2 = pt.y + (gy + 40 - pt.y) * depthFrac + driftY;
-    const r = 34 + ((i * 29) % 20);
+    const r = 22 + ((i * 29) % 14);
     const hue = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
     const glintGrad = ctx.createRadialGradient(gx, gy2, 0, gx, gy2, r);
-    glintGrad.addColorStop(0, `rgba(${hue},0.4)`);
+    glintGrad.addColorStop(0, `rgba(${hue},0.16)`);
     glintGrad.addColorStop(1, `rgba(${hue},0)`);
     ctx.fillStyle = glintGrad;
     ctx.beginPath();
@@ -77038,26 +77128,31 @@ function updateWinterScene(deltaTime) {
   // "winterShelfFall" fallState mode (see updateFallState).
   // CONFIRMED BUG FIX ("bottom left of pipe on ground. if i walk back
   // there i then sink into ground at the edge and am at bottom of ice
-  // climb again"): the halfpipe's drawn ice mass flares out past its own
-  // MOUTH_X (see WINTER_HALFPIPE_OUTER_FLARE), and that flare reaches far
-  // enough left to visually overlap this check's own zone -- so standing
-  // on what looks like solid ice at the pipe's near edge could still be
-  // inside WINTER_ICE_SHELF_ZONE_END's x range, with no shelf under you
-  // (shelfIndex still -1, nothing shelf-like exists way out here), which
-  // reads to this check as having slipped off the crossing. The halfpipe
-  // owns everything from its own mouth leftward past the widest the ice
-  // ever visually flares -- none of that should ever count as the
-  // shelf-crossing's own fail zone, regardless of how the flare itself is
-  // tuned later.
+  // climb again" + later, after two rounds of chasing the halfpipe's own
+  // flare geometry for this, "i still sink in the 'snowice hole' if i
+  // move one unit to the left here... why has this not been fixed yet"):
+  // tying this check's safe boundary to the halfpipe's own drawn ice
+  // (WINTER_HALFPIPE_OUTER_FLARE) was the wrong anchor from the start --
+  // it kept this zone's own exemption boundary dependent on an unrelated
+  // visual's exact pixel reach, which is fragile (two rounds of tuning
+  // that number still left a real gap) and conceptually backwards: this
+  // check exists to punish MISSING A SHELF, so its real boundary should
+  // be how far a shelf can actually be missed FROM, not where some other
+  // feature's art happens to end. WINTER_ICE_SHELF_ZONE_END carries its
+  // own separate +40 safety pad (see its own declaration), so the
+  // existing hazard already reached 40px past the last shelf's own
+  // rightmost drift reach -- a stretch of perfectly ordinary-looking
+  // open ground, nowhere near any shelf OR the halfpipe's ice, that still
+  // silently counted as "slipped off the crossing." Anchoring directly to
+  // the LAST shelf's own true reach (plus a small forgiving pad of its
+  // own, not a borrowed one) removes that dead zone outright, regardless
+  // of how the halfpipe's own art is tuned from here on.
+  const winterLastShelf = WINTER_ICE_SHELVES[WINTER_ICE_SHELVES.length - 1];
+  const winterLastShelfReach = winterLastShelf.x + winterLastShelf.width + winterLastShelf.driftAmp;
   if (!fallState.active && player.y <= 0 && !player.jumping && player.winterIceShelfIndex === -1) {
     const feetX = player.x + player.width / 2;
-    // CONFIRMED BUG FIX: no extra margin here anymore -- WINTER_HALFPIPE_
-    // OUTER_FLARE is now itself capped to always land inside the gap (see
-    // its own comment), so its real visual reach is already the correct,
-    // exact exemption boundary. Padding this further only reopens the
-    // overlap into shelf 5's own legitimate miss-fall zone.
     if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END &&
-        feetX < WINTER_HALFPIPE_MOUTH_X - WINTER_HALFPIPE_OUTER_FLARE) {
+        feetX < winterLastShelfReach + 15) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "winterShelfFall";
@@ -77151,10 +77246,45 @@ function updateWinterScene(deltaTime) {
   // undershot landing settling somewhere in the footprint well below the
   // mouth) -- anything higher gets caught by the mount trigger just above
   // instead.
-  if (!winterHalfpipe.active && !player.launched && insideHalfpipeSpan) {
+  // CONFIRMED CHANGE ("idk that i should be able to sit here what u
+  // think"): standing still works fine as a fix for flat-ish ground, but
+  // the walls either side of the bottom are deliberately "very steep
+  // steep" glassy ice (the ride's own whole premise) -- letting the
+  // player just walk up and stand there read as wrong for exactly that
+  // reason, a glassy wall that steep shouldn't hold a stationary stance.
+  // CONFIRMED BUG FIX ("i jitter stuck in place" + "press up... takes me
+  // a lot higher... not normal jump height"): see
+  // WINTER_HALFPIPE_SLOPE_CROSSINGS's own comment for the full story --
+  // this now clamps to one of those four fixed boundary points instead of
+  // recomputing a push-back from scratch every frame, and the whole thing
+  // is gated behind the same "actually near the curve, not jumping,
+  // already falling/still" guard the walkable snap below uses, so a real
+  // jump sails over this untouched -- it only ever acts once you're
+  // settling back onto the ice, never mid-arc.
+  if (!winterHalfpipe.active && !player.launched && insideHalfpipeSpan &&
+      !player.jumping && player.vy <= 0) {
+    const tAtX = Math.max(0, Math.min(1, (feetX - WINTER_HALFPIPE_MOUTH_X) / (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X)));
     const pipeHeight = winterHalfpipeHeightAtX(feetX);
     const heightDiff = pipeHeight - player.y;
-    if (heightDiff >= -6 && heightDiff <= 10 && player.vy <= 0) {
+    const nearCurve = heightDiff >= -6 && heightDiff <= 10;
+    const C = WINTER_HALFPIPE_SLOPE_CROSSINGS;
+    let steepBand = null;
+    if (C.length === 4) {
+      if (tAtX > C[0] && tAtX < C[1]) steepBand = [C[0], C[1]];
+      else if (tAtX > C[2] && tAtX < C[3]) steepBand = [C[2], C[3]];
+    }
+    if (steepBand && nearCurve) {
+      // too steep to stand on -- held right at the nearer edge of the
+      // wall instead of wherever the walk input tried to push past it
+      const clampedT = (tAtX - steepBand[0] < steepBand[1] - tAtX) ? steepBand[0] : steepBand[1];
+      const clampedPt = winterHalfpipeCurveAt(clampedT);
+      player.x = clampedPt.x - player.width / 2;
+      player.y = clampedPt.h;
+      player.vx = 0;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
+    } else if (!steepBand && nearCurve) {
       player.y = pipeHeight;
       player.vy = 0;
       player.jumping = false;
