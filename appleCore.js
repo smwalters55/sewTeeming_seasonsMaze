@@ -74482,6 +74482,18 @@ function winterHalfpipeCurveAt(t) {
   }
   return { x, h };
 }
+// winterHalfpipeCurveAt is parametrized by t (0..1 along the curve), not by
+// world x directly -- but the curve's x(t) is a plain linear map, so this
+// just inverts that to answer "how tall is the ice at this world x",
+// clamped to the pipe's own span at either end. Used by the ground-follow
+// collision below (CONFIRMED FIX, "does this make sense it looks like im
+// floating") so simply walking/standing anywhere in the footprint rests the
+// player ON the visible curve instead of sinking to true ground underneath
+// a solid-looking ice fill that was never collision at all.
+function winterHalfpipeHeightAtX(worldX) {
+  const t = (worldX - WINTER_HALFPIPE_MOUTH_X) / (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X);
+  return winterHalfpipeCurveAt(t).h;
+}
 // how much of the curve's actual geometric tangent angle gets applied as
 // player lean (see updateWinterHalfpipe's "slide" phase) -- 1.0 would be
 // the literal slope angle, which gets close to vertical right at the lip/
@@ -74492,7 +74504,23 @@ const WINTER_HALFPIPE_LEAN_MAX = 1.1;
 // how far each outer wall of the drawn ice mass flares outward at the
 // ground baseline, see drawWinterHalfpipe's own comment on the two
 // closing edges.
-const WINTER_HALFPIPE_OUTER_FLARE = 70;
+// CONFIRMED BUG FIX ("and no i still fall into sink hole when i walk from
+// the right towards the left of the left half pipe endge while on the
+// ground"): this used to be a flat 70 regardless of geometry, and the
+// winterShelfFall exemption below it tried to compensate with its own
+// extra -40px margin -- which actually overshot the WINTER_HALFPIPE_GAP
+// (50px) between WINTER_ICE_SHELF_ZONE_END and MOUTH_X, reaching back INTO
+// shelf 5's own legitimate "missed it, fall" territory. That's backwards:
+// widening the exemption there doesn't fix anything, because the real
+// mismatch was the flare's VISUAL reach outrunning the gap it has to fit
+// in -- the ice looked solid well past where shelf 5's own miss-fall zone
+// still legitimately applies, so a spot that reads as "standing on the
+// pipe's near edge" was actually still inside the shelf crossing's own
+// fail check. Capping the flare to always fit inside the gap (with a
+// little room to spare) keeps the drawn ice and the fall check honestly
+// in sync by construction, instead of two independently-tuned numbers
+// that can drift apart again later if the gap or flare ever change.
+const WINTER_HALFPIPE_OUTER_FLARE = Math.max(20, Math.min(70, WINTER_HALFPIPE_MOUTH_X - WINTER_ICE_SHELF_ZONE_END - 10));
 // the landing -- static (not drifting, not part of WINTER_ICE_SHELVES),
 // since it's not a timing challenge, it's the guaranteed target the launch
 // above is tuned to reach. This IS the new frontier/natural high
@@ -76587,7 +76615,20 @@ function drawWinterAvalancheHopPlatformAccent(camX, p, now) {
 function drawWinterHalfpipe(camX, now) {
   const leftX = WINTER_HALFPIPE_MOUTH_X - camX;
   const rightX = WINTER_HALFPIPE_RELEASE_X - camX;
-  if (rightX < -20 || leftX > canvas.width + 20) return;
+  // CONFIRMED BUG FIX ("if i move one step to right whole half pipe
+  // disappears"): this off-screen cull only ever checked MOUTH_X/RELEASE_X
+  // themselves with a tight 20px margin, but the actually-drawn shape now
+  // reaches further out than those two anchor points on both sides --
+  // WINTER_HALFPIPE_OUTER_FLARE plus the jagged edge's own outward bulges
+  // (up to ~96px total past MOUTH_X/RELEASE_X, see the edge pattern
+  // arrays). With only a 20px margin, the real visible sliver of ice (the
+  // flared/jagged edge sticking out past RELEASE_X or MOUTH_X) was getting
+  // cut off and vanishing a full ~75px before the shape was actually off
+  // screen -- one step of camera movement was enough to cross that gap and
+  // make the whole thing pop out of existence at once. Margin widened to
+  // comfortably clear the real maximum reach with room to spare.
+  const CULL_MARGIN = 150;
+  if (rightX < -CULL_MARGIN || leftX > canvas.width + CULL_MARGIN) return;
 
   // surface profile -- sampled straight from winterHalfpipeCurveAt, the
   // same function updateWinterHalfpipe's "slide" phase rides along, so the
@@ -76675,21 +76716,39 @@ function drawWinterHalfpipe(camX, now) {
   // WINTER_RAINBOW_ICICLE_COLORS by its own index (no shared modulo bug
   // this time), still irregular in size/position so it never reads as a
   // repeated pattern, just actually colored again.
+  // CONFIRMED BUG FIX ("also no color shining lightly into ice of half
+  // pipe? this should not all be dark blue"): the glints were positioned
+  // off a formula tied to a FIXED fraction of MOUTH_Y, not to the actual
+  // curve -- on the pipe's now much wider/deeper geometry (860 total span,
+  // up from 520), most of that placement math landed up near the mouth/
+  // wall tops, leaving the whole wide middle stretch of ice with no glint
+  // anywhere near it at all, so it kept reading as plain dark blue glass
+  // no matter how the individual glint colors were fixed. Now sampled
+  // straight off topPts (the real curve, already screen-space), spread
+  // evenly along its full length, each pushed down to its own varied depth
+  // into the ice body rather than hugging the surface line -- so the
+  // color wash actually tracks the curve's real shape and reaches every
+  // part of the now much bigger mass. Bigger radius and a touch more
+  // opacity for the same reason (small 16-30px glints were simply too
+  // small a fraction of this much larger shape to read as "light shining
+  // into it"). Varied size/depth/drift keeps it irregular, same reasoning
+  // as before, so it still never reads as a repeating pattern.
   ctx.save();
   ctx.clip();
-  const GLINTS = 6;
+  const GLINTS = 11;
   for (let i = 0; i < GLINTS; i++) {
-    // irregular placement/size per glint, not an evenly-spaced row -- the
-    // whole point is to NOT look like a repeating pattern
+    const t = (i + 0.5) / GLINTS;
+    const pt = topPts[Math.round(t * SEGS)];
     const seed = i * 2.37;
-    const driftX = Math.sin(now * 0.00014 + seed) * 22;
+    const driftX = Math.sin(now * 0.00014 + seed) * 18;
     const driftY = Math.cos(now * 0.00011 + seed * 1.3) * 10;
-    const gx = leftX + (rightX - leftX) * ((i + 0.5 + Math.sin(seed) * 0.3) / GLINTS) + driftX;
-    const gy2 = gy - WINTER_HALFPIPE_MOUTH_Y * (0.25 + 0.35 * ((i * 53) % 7) / 7) + driftY;
-    const r = 16 + ((i * 29) % 15);
+    const depthFrac = 0.15 + ((i * 47) % 6) / 6 * 0.55; // 0.15..0.70 of the way down into the ice mass, not just at the surface
+    const gx = pt.x + driftX;
+    const gy2 = pt.y + (gy + 40 - pt.y) * depthFrac + driftY;
+    const r = 34 + ((i * 29) % 20);
     const hue = WINTER_RAINBOW_ICICLE_COLORS[i % WINTER_RAINBOW_ICICLE_COLORS.length];
     const glintGrad = ctx.createRadialGradient(gx, gy2, 0, gx, gy2, r);
-    glintGrad.addColorStop(0, `rgba(${hue},0.32)`);
+    glintGrad.addColorStop(0, `rgba(${hue},0.4)`);
     glintGrad.addColorStop(1, `rgba(${hue},0)`);
     ctx.fillStyle = glintGrad;
     ctx.beginPath();
@@ -76992,8 +77051,13 @@ function updateWinterScene(deltaTime) {
   // tuned later.
   if (!fallState.active && player.y <= 0 && !player.jumping && player.winterIceShelfIndex === -1) {
     const feetX = player.x + player.width / 2;
+    // CONFIRMED BUG FIX: no extra margin here anymore -- WINTER_HALFPIPE_
+    // OUTER_FLARE is now itself capped to always land inside the gap (see
+    // its own comment), so its real visual reach is already the correct,
+    // exact exemption boundary. Padding this further only reopens the
+    // overlap into shelf 5's own legitimate miss-fall zone.
     if (feetX > WINTER_ICE_SHELF_ZONE_START && feetX < WINTER_ICE_SHELF_ZONE_END &&
-        feetX < WINTER_HALFPIPE_MOUTH_X - WINTER_HALFPIPE_OUTER_FLARE - 40) {
+        feetX < WINTER_HALFPIPE_MOUTH_X - WINTER_HALFPIPE_OUTER_FLARE) {
       fallState.active = true;
       fallState.t = 0;
       fallState.mode = "winterShelfFall";
@@ -77067,6 +77131,34 @@ function updateWinterScene(deltaTime) {
       (player.y > WINTER_HALFPIPE_MOUTH_Y - 300 || winterHalfpipeAwaitingRetry)) {
     if (insideHalfpipeSpan) {
       startWinterHalfpipe();
+    }
+  }
+
+  // CONFIRMED FIX ("does this make sense it looks like im floating"):
+  // outside the scripted ride itself (the ride drives player.x/y directly,
+  // see updateWinterHalfpipe), resting height anywhere in this footprint
+  // used to always be true ground (y=0) -- correct only at the pipe's own
+  // flat bottom, which really is 0, but visually wrong everywhere else,
+  // where the drawn ice curve sits well above 0 and the player read as
+  // sunk inside/underneath a solid-looking fill that was never actually
+  // collision at all. Same sampled-ramp snap technique
+  // forestRiverBridgeHeightAt's own collision uses for the river bridge's
+  // arc (see updateForestScene) -- follow the curve's real height at the
+  // player's own x, snapping on only while already close to it and not
+  // moving upward, so a jump or the ride's own launch-off isn't yanked
+  // back onto it mid-air. Only matters for the low-height edge case the
+  // mount trigger's own height gate deliberately leaves alone (an
+  // undershot landing settling somewhere in the footprint well below the
+  // mouth) -- anything higher gets caught by the mount trigger just above
+  // instead.
+  if (!winterHalfpipe.active && !player.launched && insideHalfpipeSpan) {
+    const pipeHeight = winterHalfpipeHeightAtX(feetX);
+    const heightDiff = pipeHeight - player.y;
+    if (heightDiff >= -6 && heightDiff <= 10 && player.vy <= 0) {
+      player.y = pipeHeight;
+      player.vy = 0;
+      player.jumping = false;
+      player.usedDoubleJump = false;
     }
   }
 
