@@ -4105,6 +4105,7 @@ function applyPhysics(){
         player.usedDoubleJump = false;
         player.launched = false;
         player.launchSteerable = false;
+        winterHalfpipeAwaitingRetry = false; // a real landing -- no retry needed
         return;
       }
     }
@@ -74412,12 +74413,12 @@ const WINTER_HALFPIPE_GAP = 50;
 const WINTER_HALFPIPE_ENTRY_X = WINTER_ICE_SHELF_ZONE_END + WINTER_HALFPIPE_GAP;
 const WINTER_HALFPIPE_MOUTH_X = WINTER_HALFPIPE_ENTRY_X;
 const WINTER_HALFPIPE_MOUTH_Y = 850; // level with the nearby shelves -- the lip reads as a continuation of the crossing, not a separate drop
-// CONFIRMED CHANGE ("make half pipe wider"): each half widened from 260 to
-// 320 (520 -> 640 total span) -- reads as a real bowl instead of a narrow
-// notch, without pushing WINTER_WIDTH out enough to matter.
-const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 320;
+// CONFIRMED CHANGE ("make half pipe wider" x2): each half widened from the
+// original 260 to 320, then to 370 on request ("make it slightly wider
+// again") -- 740 total span now, up from 520 at the start.
+const WINTER_HALFPIPE_BOTTOM_X = WINTER_HALFPIPE_MOUTH_X + 370;
 const WINTER_HALFPIPE_BOTTOM_Y = 0; // true ground -- the actual dip of the pipe
-const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 320;
+const WINTER_HALFPIPE_RELEASE_X = WINTER_HALFPIPE_BOTTOM_X + 370;
 const WINTER_HALFPIPE_RELEASE_Y = 500; // partway up the far wall -- the scripted ride hands off to a real launch from here, already rising
 // CONFIRMED CHANGE ("i also dont want it to me like a full sharp spike on
 // each end. soften the tips and make the sides a lill less straight like.
@@ -74488,6 +74489,10 @@ function winterHalfpipeCurveAt(t) {
 // as "hugging the curve" without flattening out sideways.
 const WINTER_HALFPIPE_LEAN_STRENGTH = 0.55;
 const WINTER_HALFPIPE_LEAN_MAX = 1.1;
+// how far each outer wall of the drawn ice mass flares outward at the
+// ground baseline, see drawWinterHalfpipe's own comment on the two
+// closing edges.
+const WINTER_HALFPIPE_OUTER_FLARE = 70;
 // the landing -- static (not drifting, not part of WINTER_ICE_SHELVES),
 // since it's not a timing challenge, it's the guaranteed target the launch
 // above is tuned to reach. This IS the new frontier/natural high
@@ -74538,6 +74543,20 @@ let winterHalfpipe = {
   fromY: 0,
   tiltAngle: 0
 };
+// CONFIRMED ADD, needed alongside the mount trigger's new height gate (see
+// its own comment): that gate correctly stops an illegitimate re-mount
+// from just standing/walking at true ground level, but it also blocks the
+// legitimate case -- an undershot launch that lands short, on true ground
+// instead of WINTER_HALFPIPE_LANDING, used to always get caught again by
+// the old X-only trigger ("no fail state", retry until the wind-drift
+// cooperates). Without this flag that recovery path is gone too: a short
+// landing has no height to re-qualify with and the player is just stuck.
+// Set true the moment the halfpipe's own launch hands off to
+// player.launched, cleared on an actual landing on WINTER_HALFPIPE_LANDING
+// or on re-mounting; also cleared if the player walks all the way out of
+// the pipe's own x-span without re-mounting, so it can't become a
+// permanent ground-level bypass for an unrelated later visit.
+let winterHalfpipeAwaitingRetry = false;
 
 function startWinterHalfpipe() {
   winterHalfpipe.active = true;
@@ -74546,6 +74565,7 @@ function startWinterHalfpipe() {
   winterHalfpipe.fromX = player.x;
   winterHalfpipe.fromY = Math.max(0, player.y);
   winterHalfpipe.tiltAngle = 0;
+  winterHalfpipeAwaitingRetry = false;
   player.vx = 0;
   player.vy = 0;
   player.jumping = false;
@@ -74608,6 +74628,7 @@ function updateWinterHalfpipe(deltaTime) {
       player.launchSteerable = false; // a real toss, not a steerable jump -- nothing to mess up mid-air, matching "no fail state" all the way through
       player.jumping = true;
       player.usedDoubleJump = false;
+      winterHalfpipeAwaitingRetry = true; // see its own declaration -- cleared on a real landing or a fresh re-mount
       winterHalfpipe.active = false;
       winterHalfpipe.phase = "idle";
       winterHalfpipe.tiltAngle = 0;
@@ -76584,11 +76605,20 @@ function drawWinterHalfpipe(camX, now) {
 
   // the ice mass -- the surface curve down to true ground baseline, a
   // solid-feeling wedge of ice rather than a thin ribbon
+  // CONFIRMED CHANGE ("make the outer walls of halfpipe not stick straight.
+  // make them like a little wider at the bottom and easing up to the top
+  // of it as a diagonal line on both ends"): the two closing edges used to
+  // drop straight down from each lip point to the ground baseline --
+  // literal vertical walls. Each now flares outward by WINTER_HALFPIPE_
+  // OUTER_FLARE as it reaches the baseline, so both outer edges read as a
+  // simple diagonal taper (wide foot, narrowing up to the lip) instead of
+  // a sheer drop, like a real mass of ice/snow settling at its base.
+  const flare = WINTER_HALFPIPE_OUTER_FLARE;
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-  ctx.lineTo(topPts[topPts.length - 1].x, gy + 40);
-  ctx.lineTo(topPts[0].x, gy + 40);
+  ctx.lineTo(topPts[topPts.length - 1].x + flare, gy + 40);
+  ctx.lineTo(topPts[0].x - flare, gy + 40);
   ctx.closePath();
 
   // clear/glassy base -- deliberately no color tint mixed in here, just a
@@ -76615,30 +76645,37 @@ function drawWinterHalfpipe(camX, now) {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // a few soft diagonal color-light streaks shining through the glass --
-  // low-opacity, clipped to the ice shape, NOT one hue per section (that's
-  // the shelves' look, deliberately not repeated here). Stable per-frame
-  // positions derived from `now` so they drift very slowly, like light
-  // shifting through moving ice, rather than sitting static.
+  // CONFIRMED CHANGE ("the color streaks really do not look good it looks
+  // like a shirt with lines on it or something can you do it differently"
+  // + "why are the lines only red i dont like that"): that was a repeating
+  // row of identically-shaped diagonal bars -- bound to read as a printed
+  // stripe pattern no matter the color, and the color itself was also
+  // broken (picking streakColors[(i*2) % 6] over i=0..3 lands on index 0
+  // twice, so two of the four bars were always the same rose/red while the
+  // other hues barely showed). Replaced with a handful of soft, irregular
+  // round glints instead of straight repeating bars -- no two the same
+  // size, no fixed grid spacing, a single pale color (ice glinting in
+  // light, not a rainbow print), reads as light on an uneven surface
+  // rather than a fabric pattern.
   ctx.save();
   ctx.clip();
-  const streakColors = WINTER_RAINBOW_ICICLE_COLORS;
-  const STREAKS = 4;
-  for (let i = 0; i < STREAKS; i++) {
-    const hue = streakColors[(i * 2) % streakColors.length];
-    const drift = Math.sin(now * 0.00018 + i * 1.7) * 30;
-    const cx = leftX + (rightX - leftX) * ((i + 0.5) / STREAKS) + drift;
-    const cy = gy - WINTER_HALFPIPE_MOUTH_Y * 0.4;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-0.55); // a consistent diagonal slant, like light raking across the curve
-    const streakGrad = ctx.createLinearGradient(-26, 0, 26, 0);
-    streakGrad.addColorStop(0, `rgba(${hue},0)`);
-    streakGrad.addColorStop(0.5, `rgba(${hue},0.22)`);
-    streakGrad.addColorStop(1, `rgba(${hue},0)`);
-    ctx.fillStyle = streakGrad;
-    ctx.fillRect(-26, -260, 52, 520);
-    ctx.restore();
+  const GLINTS = 5;
+  for (let i = 0; i < GLINTS; i++) {
+    // irregular placement/size per glint, not an evenly-spaced row -- the
+    // whole point is to NOT look like a repeating pattern
+    const seed = i * 2.37;
+    const driftX = Math.sin(now * 0.00014 + seed) * 22;
+    const driftY = Math.cos(now * 0.00011 + seed * 1.3) * 10;
+    const gx = leftX + (rightX - leftX) * ((i + 0.5 + Math.sin(seed) * 0.3) / GLINTS) + driftX;
+    const gy2 = gy - WINTER_HALFPIPE_MOUTH_Y * (0.25 + 0.35 * ((i * 53) % 7) / 7) + driftY;
+    const r = 14 + ((i * 29) % 13);
+    const glintGrad = ctx.createRadialGradient(gx, gy2, 0, gx, gy2, r);
+    glintGrad.addColorStop(0, "rgba(255,255,255,0.3)");
+    glintGrad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glintGrad;
+    ctx.beginPath();
+    ctx.arc(gx, gy2, r, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 
@@ -76954,9 +76991,48 @@ function updateWinterScene(deltaTime) {
   // after launch, pulling feetX back under RELEASE_X for a frame or two --
   // which, with no guard against an in-progress launch, re-mounted the
   // ride mid-flight. player.launched now excludes that window entirely.
-  if (!winterHalfpipe.active && !fallState.active && !player.launched) {
-    const feetX = player.x + player.width / 2;
-    if (feetX > WINTER_HALFPIPE_ENTRY_X && feetX < WINTER_HALFPIPE_RELEASE_X) {
+  // CONFIRMED BUG FIX ("i shouldnt be able to do this on the bottom in
+  // front of it. i go one step right ans it forces me 'catching' me... on
+  // the top left of the pipe" + "we still get stuck mid air afterward" +
+  // "if i go left after that it throws me to the start"): this whole time
+  // the check only ever looked at X -- ANY height within ENTRY_X..RELEASE_X
+  // counted, including just standing at true ground in front of the wall,
+  // or anywhere on the pipe's own flat bottom. That's also the real
+  // explanation for the other two reports, not a separate bug: an
+  // undershot launch that lands short (at true ground, not on
+  // WINTER_HALFPIPE_LANDING) is still within this X span, so it
+  // immediately re-mounts and snaps back up to the mouth the instant
+  // player.launched clears -- which plays as "stuck", since the only
+  // visible motion is the brief catch-phase ease before the ride takes
+  // over again, and as "walking left throws me to the start", since
+  // walking left from anywhere in that span (including off the landing
+  // platform's near edge) does the exact same re-mount. A real arrival
+  // off the shelf crossing is always up near MOUTH_Y (850); nothing
+  // standing at the pipe's own floor or on true ground ever should be.
+  // Generous enough (300 below the mouth) to still forgive a slightly low/
+  // early/late jump off the shelf, same spirit as the wide X catch.
+  // CONFIRMED FOLLOW-UP FIX: that height gate also quietly broke the "no
+  // fail state" retry -- an undershot launch landing short on true ground
+  // now has no height to re-qualify with, so it was just stuck with no way
+  // back in. winterHalfpipeAwaitingRetry (set the instant the halfpipe's
+  // own launch hands off, cleared on a real landing or a fresh re-mount)
+  // carries the "this specific miss still gets a retry" permission across
+  // that height gate without reopening it to ordinary ground-level
+  // walking -- a normal walk-up never sets that flag in the first place.
+  const feetX = player.x + player.width / 2;
+  const insideHalfpipeSpan = feetX > WINTER_HALFPIPE_ENTRY_X && feetX < WINTER_HALFPIPE_RELEASE_X;
+  // CONFIRMED BUG FIX, caught via the ride test harness right after adding
+  // this: the ballistic arc itself routinely flies PAST RELEASE_X on its
+  // way to the landing platform, which sits further out still -- that's
+  // the normal, intended flight path, not the player "walking out". Without
+  // the !player.launched guard here, the flag was getting wiped mid-air on
+  // every single launch before it could ever even land short, making the
+  // retry permission useless. Only a grounded walk out of the span should
+  // clear it.
+  if (!insideHalfpipeSpan && !player.launched) winterHalfpipeAwaitingRetry = false; // walked all the way out -- the retry window is gone, a fresh approach needs a real arrival again
+  if (!winterHalfpipe.active && !fallState.active && !player.launched &&
+      (player.y > WINTER_HALFPIPE_MOUTH_Y - 300 || winterHalfpipeAwaitingRetry)) {
+    if (insideHalfpipeSpan) {
       startWinterHalfpipe();
     }
   }
