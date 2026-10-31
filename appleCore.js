@@ -74402,7 +74402,13 @@ const WINTER_ICE_SHELF_ZONE_END = Math.max(...WINTER_ICE_SHELVES.map(s => s.x + 
 //      generic flight system winterIceClimbRelease already uses -- so the
 //      final toss up to WINTER_HALFPIPE_LANDING just rides ordinary
 //      gravity/arc code, no new physics system needed.
-const WINTER_HALFPIPE_GAP = 170;
+// CONFIRMED CHANGE ("start of halfpipe needs to be closer to the right of
+// the last platform"): pulled way in from the first pass's 170 -- note
+// this is measured from WINTER_ICE_SHELF_ZONE_END, which already sits 40px
+// past shelf 5's own rightmost drift reach, so the real gap the player
+// feels (last solid ice to the catch) is this value plus that 40, not just
+// this number alone.
+const WINTER_HALFPIPE_GAP = 50;
 const WINTER_HALFPIPE_ENTRY_X = WINTER_ICE_SHELF_ZONE_END + WINTER_HALFPIPE_GAP;
 const WINTER_HALFPIPE_MOUTH_X = WINTER_HALFPIPE_ENTRY_X;
 const WINTER_HALFPIPE_MOUTH_Y = 850; // level with the nearby shelves -- the lip reads as a continuation of the crossing, not a separate drop
@@ -74433,7 +74439,15 @@ const WINTER_HALFPIPE_LAUNCH_VY = 16; // a real toss -- with LAUNCH_GRAVITY (0.3
 // the landing is still a sure thing across the actual drifted range
 // measured via the debug harness (a real test flight's x was already
 // past a width-220 platform's end before even reaching landing height).
-const WINTER_HALFPIPE_LANDING = { x: 16080, height: 900, width: 900 };
+// CONFIRMED BUG FIX, caught while shrinking WINTER_HALFPIPE_GAP: this used
+// to be a disconnected literal (16080, tuned back when RELEASE_X was
+// 15900) -- shrinking the gap moved RELEASE_X left without moving this,
+// silently widening the real air-time/distance between release and
+// landing from what was actually tested. Rebased off RELEASE_X so the two
+// stay in the same relative position (180 past RELEASE_X, matching the
+// original 16080-15900 offset) no matter how the gap/entry geometry above
+// gets tuned later.
+const WINTER_HALFPIPE_LANDING = { x: WINTER_HALFPIPE_RELEASE_X + 180, height: 900, width: 900 };
 
 // the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing/
 // halfpipe's own extent is known -- see WINTER_PRE_CLIMB_WIDTH's own
@@ -74486,8 +74500,15 @@ function updateWinterHalfpipe(deltaTime) {
       winterHalfpipe.startedAt = now;
     }
   } else if (winterHalfpipe.phase === "down") {
+    // CONFIRMED BUG FIX ("half pipe must be concave... essential"): a real
+    // halfpipe's wall is steepest right at the lip and flattens out
+    // smoothly into the flat bottom -- that's ease-OUT (fast initial
+    // drop, slowing into the transition), not ease-in. The original pass
+    // had this backwards (slow start, accelerating into the bottom),
+    // which draws/rides as a CONVEX overhang curving away from the lip,
+    // the opposite of the concave scooped-out pipe shape asked for.
     const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_DOWN_MS);
-    const eased = p * p; // accelerating -- the steep glassy drop
+    const eased = 1 - (1 - p) * (1 - p); // ease-out -- steep off the lip, flattening into the bottom
     player.x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_BOTTOM_X - WINTER_HALFPIPE_MOUTH_X) * eased;
     player.y = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
     winterHalfpipe.tiltAngle = eased * 0.35; // leaning into the dive
@@ -74496,8 +74517,11 @@ function updateWinterHalfpipe(deltaTime) {
       winterHalfpipe.startedAt = now;
     }
   } else if (winterHalfpipe.phase === "up") {
+    // same concavity fix, mirrored -- the rising wall should leave the
+    // flat bottom gently (small initial slope) and steepen toward the far
+    // lip/launch point, which is ease-IN (p*p), not ease-out.
     const p = Math.min(1, (now - winterHalfpipe.startedAt) / WINTER_HALFPIPE_UP_MS);
-    const eased = 1 - (1 - p) * (1 - p); // decelerating -- momentum bleeding off climbing the far wall
+    const eased = p * p; // ease-in -- flat off the bottom, steepening into the far wall
     player.x = WINTER_HALFPIPE_BOTTOM_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_BOTTOM_X) * eased;
     player.y = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
     winterHalfpipe.tiltAngle = 0.35 - eased * 0.6; // swings from the dive-lean through upright to a backward launch lean
@@ -76481,13 +76505,17 @@ function drawWinterHalfpipe(camX, now) {
     const t = i / SEGS;
     const x = WINTER_HALFPIPE_MOUTH_X + (WINTER_HALFPIPE_RELEASE_X - WINTER_HALFPIPE_MOUTH_X) * t;
     let h;
+    // same concavity fix as updateWinterHalfpipe's own "down"/"up" phases
+    // (ease-out then ease-in, not the reverse) -- see that function's
+    // comment for why. Kept in sync so the drawn ice actually traces the
+    // path the ride follows.
     if (t <= 0.5) {
       const dt = t / 0.5;
-      const eased = dt * dt;
+      const eased = 1 - (1 - dt) * (1 - dt);
       h = WINTER_HALFPIPE_MOUTH_Y + (WINTER_HALFPIPE_BOTTOM_Y - WINTER_HALFPIPE_MOUTH_Y) * eased;
     } else {
       const ut = (t - 0.5) / 0.5;
-      const eased = 1 - (1 - ut) * (1 - ut);
+      const eased = ut * ut;
       h = WINTER_HALFPIPE_BOTTOM_Y + (WINTER_HALFPIPE_RELEASE_Y - WINTER_HALFPIPE_BOTTOM_Y) * eased;
     }
     topPts.push({ x: x - camX, y: gy - h });
