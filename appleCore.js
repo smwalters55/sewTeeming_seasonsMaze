@@ -222,13 +222,17 @@ const camera = { topDown:false, locked:false };
 // debug spawn"): switched to "forest" -- see the DEBUG_START_SCENE ===
 // "forest" block further down, now repositioned to the river's near
 // bank instead of its old winter-door test spot.
-// CONFIRMED CHANGE ("can you debug spawn me at the start of the whole
-// game"): switched back to "autumn" -- none of the DEBUG_START_SCENE
-// override blocks further down match "autumn", so no debug spawn fires at
-// all and the game just starts from its own real initial declarations
-// (player x:400/y:0, currentScene "autumn") -- the true beginning, not a
-// debug teleport to it.
-const DEBUG_START_SCENE = "autumn";
+// CONFIRMED CHANGE ("can you now put me in oak room on top of ratroom
+// entrance with leaf crown and boomerang and marked as having done
+// everything in ratroom that needs to be done" + "oh and with pumpkin"):
+// switched to "oak" -- see the DEBUG_START_SCENE === "oak" block further
+// down (sets position/crown/inventory, everything declared early enough
+// in the file to set directly there) and its deferred counterpart inside
+// update() (same TDZ-safe pattern as the existing molehole debug block,
+// for the ratroom-specific state declared later in the file: the marble,
+// the lamp, the rat NPC's feather quest).
+const DEBUG_START_SCENE = "oak";
+let debugOakRatroomApplied = false; // guards the deferred, update()-run half of the "oak" debug spawn below so it only ever runs once, not every frame
 let currentScene = DEBUG_START_SCENE;
 let hasReturnedFromClouds = false; // set true the moment a cloud-hole fall completes — the willow's real unlock condition
 
@@ -19654,6 +19658,46 @@ if (DEBUG_START_SCENE === "winter") {
   // other platform-top debug spawn in this file uses.
   player.x = 15020;
   player.y = 880;
+}
+
+// CONFIRMED CHANGE ("put me in oak room on top of ratroom entrance with
+// leaf crown and boomerang and marked as having done everything in
+// ratroom that needs to be done" + "oh and with pumpkin"): everything
+// here is declared early enough in the file to set directly (crownState/
+// crownLeaves at ~6554, boomerang/vinePumpkin at ~1103/9970, discoveredScenes
+// at ~1295, all well before this point) -- the ratroom-specific state
+// (marble, lamp, the rat NPC's feather quest) is declared much further
+// down the file and would hit the same TDZ crash class flagged elsewhere
+// in this file's own debug spawns, so that half is deferred into update()
+// behind debugOakRatroomApplied, same pattern as the existing molehole
+// debug block.
+if (DEBUG_START_SCENE === "oak") {
+  discoveredScenes.oak = true;
+  discoveredScenes.ratroom = true;
+  // nookRug.x hardcoded (1957) -- same TDZ reason as every other debug
+  // spawn here, nookRug itself is declared much further down (~43113).
+  // "On top of" the ratroom entrance: standing right at the rug/trap
+  // door, ground level, not dropped into ratroom itself.
+  player.x = 1957;
+  player.y = 0;
+
+  // leaf crown -- fully assembled and worn, not just in-progress
+  crownState.ready = true;
+  crownState.worn = true;
+  crownState.promptEverShown = true;
+  crownLeaves = [];
+  for (let i = 0; i < CROWN_LEAVES_NEEDED; i++) {
+    crownLeaves.push({ shape: i % 2 ? "maple" : "round", color: LEAF_COLORS[i % LEAF_COLORS.length] });
+  }
+
+  // boomerang + pumpkin, collected at their actual in-world sources so
+  // nothing double-spawns/re-offers itself later
+  boomerang.collected = true;
+  vinePumpkin.collected = true;
+  inventory.boomerang = 1;
+  inventory.pumpkin = 1;
+  touchInventoryOrder("boomerang");
+  touchInventoryOrder("pumpkin");
 }
 
 // CONFIRMED CHANGE ("can you spawn debug me in front of mirrors"): drops
@@ -78496,6 +78540,36 @@ if (currentScene === "autumn") {
   // it a no-op every frame after the first.
   if (DEBUG_START_SCENE === "molehole" && !mineCartEverRidden) {
     mineCartEverRidden = true;
+  }
+
+  // same TDZ-safe deferral, same reason, for the "oak" debug spawn's own
+  // ratroom-completion half: marbleSpot/lampEverUsedInRatroom/ratNPC/
+  // ratRoomFeather/featherHung are all declared much further down the
+  // file than the top-level DEBUG_START_SCENE === "oak" block that needs
+  // to set them, so they're applied here instead, once, on the first
+  // real frame. debugOakRatroomApplied keeps it a no-op every frame after.
+  if (DEBUG_START_SCENE === "oak" && !debugOakRatroomApplied) {
+    debugOakRatroomApplied = true;
+    // the lamp -- found and already used in ratroom at least once, which
+    // is also what permanently unlocks past OAK_JUMPRUN_GATE_X
+    inventory.lamp = 1;
+    touchInventoryOrder("lamp");
+    lampEverUsedInRatroom = true;
+    ratLampAcknowledged = true;
+    // the marble -- collected off the far right-cluster shelf
+    marbleSpot.collected = true;
+    inventory.marble = 1;
+    touchInventoryOrder("marble");
+    // the rat NPC -- talked to, fed, and the feather quest fully resolved
+    // (collected off its hook, hung back on the wall spot, no queued
+    // thank-you dialogue left dangling)
+    ratNPC.talkedTo = true;
+    ratNPC.fed = true;
+    ratRoomFeather.collected = true;
+    featherHung = true;
+    delete inventory.feather; // carried-then-hung, not a kept inventory item -- matches the real hang flow
+    ratFeatherThankQueued = false;
+    ratDialogue.active = false;
   }
 
   if (keys.space && heldItem === "boomerang" && !boomerangThrow) {
