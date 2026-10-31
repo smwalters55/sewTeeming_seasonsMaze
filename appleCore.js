@@ -74656,8 +74656,14 @@ function winterHalfpipeSmootherstep(p) {
 // from wherever the mount actually caught you, still its own short beat).
 // Both nudged up a bit for "slow it down slightly" (1050ms total slide ->
 // 1250ms, ~19% slower; catch 150ms -> 180ms).
-const WINTER_HALFPIPE_CATCH_MS = 180;
-const WINTER_HALFPIPE_SLIDE_MS = 1250;
+// CONFIRMED CHANGE ("can you make the half pipe animation a lil slower
+// too its sooo funnnn"): nudged up again, same proportional bump as the
+// change above (~28% slower this time) -- the ride itself
+// (winterHalfpipeCurveAt) is a pure 0-1 shape parameterized by t, so
+// stretching how long it takes to sweep t from 0 to 1 doesn't change the
+// shape/geometry at all, just lets it play out longer.
+const WINTER_HALFPIPE_CATCH_MS = 230;
+const WINTER_HALFPIPE_SLIDE_MS = 1600;
 const WINTER_HALFPIPE_LAUNCH_VX = 5; // small forward carry, same small-number scale as WINTER_ICE_CLIMB_SPEED
 const WINTER_HALFPIPE_LAUNCH_VY = 16; // a real toss -- with LAUNCH_GRAVITY (0.3), apexes a little past RELEASE_Y+425, comfortably above every shelf
 // CONFIRMED FIX ("make player be flush with the ice as it moves on it" +
