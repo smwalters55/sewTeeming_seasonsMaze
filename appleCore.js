@@ -5913,14 +5913,21 @@ function applyPhysics(){
   // winterSnowballLevel fresh every frame (reset to -1 first, same
   // "no sticky flags" approach winterSlickPlatformIndex uses) so walking
   // off the edge of a tier immediately hands control back to the normal
-  // ground glue/gravity. Any ball the player ISN'T landing on top of
-  // still side-blocks them while they're below its own top (reusing the
-  // same "push back out, zero vx" shape applyWinterHurdleGate uses) --
-  // that's what forces a real jump up onto each tier instead of letting
-  // the player walk straight through a lower tier's balls to reach a
-  // gap. Balls are deliberately NOT skipped once "landed" on a lower
-  // tier this same frame -- a higher tier's own side-block still applies
-  // normally, since its topY is a separate, taller threshold.
+  // ground glue/gravity.
+  // CONFIRMED BUG FIX ("snowballs arent jump land-able"): the side-block
+  // below used to fire unconditionally any time the player was within a
+  // ball's x footprint and below its top -- which is true for almost the
+  // ENTIRE rise of a real jump toward that ball's own landing band (you're
+  // below topY for most of the arc, only briefly at/near the peak do you
+  // reach it). That shoved the player sideways out of the footprint well
+  // before they ever got a chance to rise into the catch band, so landing
+  // never actually happened in real play even though it looked fine in a
+  // scripted test that kept retrying. Side-block is now gated on
+  // !player.jumping -- it still blocks plain ground-walking straight
+  // through a lower tier's balls (the original ask: each ball takes a
+  // real jump, you can't just walk past it), but an active jump now
+  // passes through the footprint freely and is caught purely by the
+  // top-landing check above once it actually reaches the band.
   player.winterSnowballLevel = -1;
   WINTER_WALKING_BEAT_SNOWBALLS.forEach(ob => {
     const left = ob.x - ob.hitHalfWidth;
@@ -5941,6 +5948,7 @@ function applyPhysics(){
       player.winterSnowballLevel = ob.level;
       return; // landed on this tier -- skip the side-block below for this ball
     }
+    if (player.jumping) return; // mid-jump -- let it pass through, only a real landing (above) or ground-walking (below) interacts with this ball
     const playerCenterX = player.x + player.width / 2;
     const within = playerCenterX > left - player.width / 2 && playerCenterX < right + player.width / 2;
     if (within && player.y < topY - 2) {
@@ -74894,7 +74902,15 @@ const WINTER_HALFPIPE_LANDING = { x: WINTER_HALFPIPE_RELEASE_X + 180, height: 90
 // correctly up at this elevation).
 const WINTER_WALKING_BEAT_START_X = WINTER_HALFPIPE_LANDING.x + WINTER_HALFPIPE_LANDING.width;
 const WINTER_WALKING_BEAT_BASE_HEIGHT = WINTER_HALFPIPE_LANDING.height;
-const WINTER_WALKING_BEAT_LENGTH = 1700;
+// CONFIRMED CHANGE (jump/duck/double-jump -> ice patch -> jump/duck
+// resequence, see WINTER_WALKING_BEAT_HURDLES' own comment): was 1700,
+// nudged to fit the new gauntlet/ice-patch/gauntlet layout with "medium"
+// spacing between each piece. The small bump this length change makes to
+// WINTER_SNOWBALL_PILE_START_X (still defined as this beat's own end + a
+// fixed gap) is exactly the "move the pile a little to the right for
+// breathing room" that was asked for -- no separate pile-position edit
+// needed.
+const WINTER_WALKING_BEAT_LENGTH = 1650;
 const WINTER_WALKING_BEAT_END_X = WINTER_WALKING_BEAT_START_X + WINTER_WALKING_BEAT_LENGTH;
 
 // the rolling-bump ground height -- two overlapping sine terms, each a
@@ -74911,16 +74927,33 @@ function winterWalkingBeatHeightAt(x) {
   return WINTER_WALKING_BEAT_BASE_HEIGHT + bump;
 }
 
+// CONFIRMED NEW FEATURE ("start with the jump/duck/double jump, then the
+// first (up there first, and only) slippery color ice section, then jump
+// duck again, thennn the snowball climb"): the beat's own obstacle layout
+// is now a real sequence -- gauntlet one (hurdle, duck, a taller hurdle
+// that forces a real double jump) into the small colorful ice patch (see
+// WINTER_WATERY_ICE_ZONES' own new entry below), then gauntlet two
+// (hurdle, duck again), then into the snowball pile. The original 2
+// hurdles + 2 ducks are reused/repositioned into these two gauntlets
+// rather than adding a wholly separate obstacle type, per direct
+// instruction.
+//
 // "things to jump over" -- plain hurdle gates, same shape as the forest
 // float zone's own non-spiky "jump" obstacles (solid unless player.y
 // clears the clearance line), just standalone here since there's no
 // current/drift to ride through them. See applyWinterHurdleGate for the
 // actual collision (it takes a local ground-reference height so this
 // still works correctly against the bumpy terrain above, not just a flat
-// 0).
+// 0). The middle entry (clearance: 115) is the "double jump" beat --
+// FOREST_FLOAT_OBSTACLES already proved this exact band forces a real
+// double jump rather than a reflexive second tap: a single jump here
+// peaks at ~96, a double jump reaches ~134-151, so 115 sits squarely
+// between the two (same proven value as that course's own gentler,
+// non-spiky double-jump gate).
 const WINTER_WALKING_BEAT_HURDLES = [
-  { x: WINTER_WALKING_BEAT_START_X + 420, w: 46, clearance: 58 },
-  { x: WINTER_WALKING_BEAT_START_X + 1180, w: 46, clearance: 58 },
+  { x: WINTER_WALKING_BEAT_START_X + 150, w: 46, clearance: 58 },
+  { x: WINTER_WALKING_BEAT_START_X + 540, w: 46, clearance: 115 },
+  { x: WINTER_WALKING_BEAT_START_X + 1080, w: 46, clearance: 58 },
 ];
 
 // "things to duck under" -- a real list this time (plural, per direct
@@ -74928,54 +74961,126 @@ const WINTER_WALKING_BEAT_HURDLES = [
 // original constant/gate is untouched below, still the ice climb's one
 // and only gate). See applyWinterDuckGate for the collision.
 const WINTER_WALKING_BEAT_DUCKS = [
-  { x: WINTER_WALKING_BEAT_START_X + 800, w: 60, clearance: 62, duckThreshold: 0.4 },
-  { x: WINTER_WALKING_BEAT_START_X + 1480, w: 60, clearance: 62, duckThreshold: 0.4 },
+  { x: WINTER_WALKING_BEAT_START_X + 340, w: 60, clearance: 62, duckThreshold: 0.4 },
+  { x: WINTER_WALKING_BEAT_START_X + 1270, w: 60, clearance: 62, duckThreshold: 0.4 },
 ];
 
-// CONFIRMED NEW FEATURE, redesigned ("put the snowballs into a pile you
-// jump up on dif levels of it. so like more snoballs too, and some
-// slightly dif sizes"): originally a single flat row of 7 balls, each
-// its own hurdle gate cleared by jumping straight over it (see the prior
-// version of this comment block, still true of the flat extension this
-// sits on). Replaced the row with a stepped pyramid/ziggurat of tiers --
-// each tier a row of balls sitting on TOP of the tier below, narrower by
-// 2 balls per tier (countAtLevel = BASE_COUNT - 2*level), so the player
-// climbs it one jump-up per tier (ground -> tier 0 -> tier 1 -> ...)
-// rather than hopping over a single row. More total balls than before
-// (16 vs 7) and each tier's own radius tapers down slightly (plus a
-// small per-ball jitter) for real size variety instead of uniform balls.
+// CONFIRMED NEW FEATURE, redesigned twice ("put the snowballs into a pile
+// you jump up on dif levels of it. so like more snoballs too, and some
+// slightly dif sizes" then "also i dont want like vertical stacks of snow
+// balls next to each toehr. i want a messy full pile you jump dif levels
+// on"): originally a single flat row of 7 balls (hurdle-gate, jump clean
+// over). First redesign made a stepped pyramid/ziggurat -- symmetric rows
+// per tier, each tier directly centered over the one below, which read as
+// neat vertical towers rather than a real pile. This version keeps the
+// "climb tier by tier" idea but drops the column alignment entirely: each
+// tier is built by nesting its balls into the GAPS between neighboring
+// balls of the tier below (x = midpoint of two lower balls, jittered),
+// the way real piled spheres actually settle into the valley between two
+// others -- no ball ever sits directly above a single lower ball's own
+// center, so there's nothing that reads as a straight vertical stack.
+// Not every gap gets filled either (random subset per tier, random which
+// side tapers first), so the silhouette is lopsided/irregular rather than
+// a clean symmetric pyramid -- a real messy pile. Tier 0 itself also uses
+// irregular gap-weighted spacing (same clustering technique the icicle
+// fringe below already uses) instead of a ruler-even row, so even the
+// base doesn't look mechanical.
 const WINTER_SNOWBALL_PILE_START_X = WINTER_WALKING_BEAT_END_X + 110; // breathing gap after the second duck gate
-const WINTER_SNOWBALL_BASE_COUNT = 7; // tier 0's own count -- "5-8 times" original range, kept as the base row's width
-const WINTER_SNOWBALL_LEVELS = 4; // ground -> 4 tiers up (countAtLevel: 7,5,3,1 = 16 balls total)
-const WINTER_SNOWBALL_SPACING = 62; // close enough together within a tier that a single jump can't clear two
+const WINTER_SNOWBALL_TIER0_COUNT = 8; // wide messy base -- more balls than the original flat row
+const WINTER_SNOWBALL_LEVELS = 4; // ground -> up to 4 tiers, though higher tiers taper off irregularly and may end sooner
+const WINTER_SNOWBALL_SPACING_AVG = 54; // only an average now -- tier 0's own spacing is irregular, not fixed
 const WINTER_SNOWBALL_BASE_RADIUS = 24;
 const WINTER_SNOWBALL_LEVEL_RISE = 37; // vertical rise climbing one tier -- comfortably inside a single jump's reach (see the hurdle clearance bands elsewhere in this zone)
-function winterSnowballCountAtLevel(level) {
-  return WINTER_SNOWBALL_BASE_COUNT - 2 * level;
-}
-const WINTER_SNOWBALL_PILE_CENTER_X = WINTER_SNOWBALL_PILE_START_X + ((WINTER_SNOWBALL_BASE_COUNT - 1) / 2) * WINTER_SNOWBALL_SPACING;
-const WINTER_WALKING_BEAT_SNOWBALLS = [];
-for (let level = 0; level < WINTER_SNOWBALL_LEVELS; level++) {
-  const count = winterSnowballCountAtLevel(level);
-  const startOffset = -((count - 1) / 2) * WINTER_SNOWBALL_SPACING;
-  const levelBaseRadius = WINTER_SNOWBALL_BASE_RADIUS - level * 2; // each tier up is slightly smaller
-  for (let i = 0; i < count; i++) {
-    const x = WINTER_SNOWBALL_PILE_CENTER_X + startOffset + i * WINTER_SNOWBALL_SPACING;
-    const seed = x * 0.091 + level * 7.3;
-    const radius = levelBaseRadius + (pseudoRandom(seed) - 0.5) * 6; // "some slightly dif sizes" -- real per-ball jitter, not just a per-tier step
-    WINTER_WALKING_BEAT_SNOWBALLS.push({
+const WINTER_WALKING_BEAT_SNOWBALLS = (function buildWinterSnowballPile() {
+  const balls = [];
+  const footprintW = WINTER_SNOWBALL_TIER0_COUNT * WINTER_SNOWBALL_SPACING_AVG;
+
+  // tier 0: irregular gap-weighted spacing across the footprint (small
+  // weight = tight cluster, big weight = wide lone gap -- same technique
+  // getWinterIceSlabIcicles uses for its own origins).
+  const gapWeights = [];
+  let gapSum = 0;
+  for (let i = 0; i < WINTER_SNOWBALL_TIER0_COUNT; i++) {
+    const w = 0.5 + pseudoRandom(8000 + i * 5.3) * 1.1;
+    gapWeights.push(w);
+    gapSum += w;
+  }
+  let acc = 0;
+  let prevTier = [];
+  for (let i = 0; i < WINTER_SNOWBALL_TIER0_COUNT; i++) {
+    acc += gapWeights[i];
+    const t = (acc - gapWeights[i] * 0.5) / gapSum;
+    const x = WINTER_SNOWBALL_PILE_START_X + t * footprintW;
+    const seed = x * 0.091;
+    const radius = WINTER_SNOWBALL_BASE_RADIUS + (pseudoRandom(seed) - 0.5) * 7; // "some slightly dif sizes"
+    const ball = {
       x,
-      level,
+      level: 0,
       radius,
       hitHalfWidth: radius - 3, // slightly narrower than the drawn ball so near-miss jumps/side-blocks don't feel unfair against the round silhouette
-      // topY is in the same "height above ground" units as player.y --
-      // standing on this ball's own tier means resting at (level+1) full
-      // rises up, same unit the top-landing check below compares against.
-      topY: (level + 1) * WINTER_SNOWBALL_LEVEL_RISE,
+      // topY is in the same "height above ground" units as player.y.
+      // CONFIRMED BUG FIX ("snowballs arent jump land-able"): this used
+      // to be just WINTER_SNOWBALL_LEVEL_RISE on its own (a bare small
+      // number like 37) -- but this whole zone's actual ground height is
+      // WINTER_WALKING_BEAT_BASE_HEIGHT (~900, since the beat sits
+      // elevated on top of the halfpipe landing, not down at true y=0).
+      // Comparing player.y (which is really ~900 while standing here)
+      // against a bare 37 could never catch, so a real jump attempt never
+      // landed no matter how it was timed -- this is the actual root
+      // cause, the side-block fix below only ever masked part of it.
+      // Standing on this tier now means resting at the real local ground
+      // height plus (level+1) full rises up.
+      topY: WINTER_WALKING_BEAT_BASE_HEIGHT + WINTER_SNOWBALL_LEVEL_RISE,
       seed,
-    });
+    };
+    balls.push(ball);
+    prevTier.push(ball);
   }
-}
+
+  // tiers 1+: nest each new ball into a gap between two neighboring balls
+  // of the tier directly below -- never aligned with either one's own x.
+  for (let level = 1; level < WINTER_SNOWBALL_LEVELS; level++) {
+    if (prevTier.length < 2) break;
+    const gapIdxs = [];
+    for (let i = 0; i < prevTier.length - 1; i++) gapIdxs.push(i);
+    // randomly pick which gaps actually get filled this tier (not all of
+    // them) -- this is what keeps the taper lopsided/messy instead of a
+    // clean symmetric pyramid.
+    const targetCount = Math.max(1, prevTier.length - 2);
+    const avail = gapIdxs.slice();
+    const picked = [];
+    for (let p = 0; p < targetCount && avail.length; p++) {
+      const seed = level * 311.7 + p * 17.3;
+      const idx = Math.floor(pseudoRandom(seed) * avail.length);
+      picked.push(avail[idx]);
+      avail.splice(idx, 1);
+    }
+    picked.sort((a, b) => a - b);
+    const tierBalls = [];
+    picked.forEach((gapIdx, pi) => {
+      const a = prevTier[gapIdx];
+      const b = prevTier[gapIdx + 1];
+      const seed = a.seed + b.seed + level * 7.7 + pi * 3.1;
+      const x = (a.x + b.x) / 2 + (pseudoRandom(seed) - 0.5) * 10; // jittered off the true midpoint, not pinned dead-center either
+      const levelBaseRadius = WINTER_SNOWBALL_BASE_RADIUS - level * 2; // each tier up is slightly smaller
+      const radius = levelBaseRadius + (pseudoRandom(seed + 1) - 0.5) * 6;
+      const ball = {
+        x,
+        level,
+        radius,
+        hitHalfWidth: radius - 3,
+        // same WINTER_WALKING_BEAT_BASE_HEIGHT offset fix as tier 0 above
+        topY: WINTER_WALKING_BEAT_BASE_HEIGHT + (level + 1) * WINTER_SNOWBALL_LEVEL_RISE,
+        seed,
+      };
+      balls.push(ball);
+      tierBalls.push(ball);
+    });
+    prevTier = tierBalls;
+  }
+
+  return balls;
+})();
 const WINTER_SNOWBALL_PILE_END_X = Math.max(...WINTER_WALKING_BEAT_SNOWBALLS.filter(b => b.level === 0).map(b => b.x)) + WINTER_SNOWBALL_BASE_RADIUS + 90;
 
 // the real WINTER_WIDTH, now that the ice climb/ledge/shelf-crossing/
@@ -76076,8 +76181,23 @@ function drawWinterIceClimbSlipFlash(camX) {
 // spanLeft/spanRight (see drawWinterRainbowOverhang) with a little extra
 // reach so the ice reads as sitting under the full icicle cluster, not
 // just its narrower center.
+// CONFIRMED NEW FEATURE ("start with the jump/duck/double jump, then the
+// first (up there first, and only) slippery color ice section, then jump
+// duck again, thennn the snowball climb" -- see WINTER_WALKING_BEAT_HURDLES'
+// own comment for the full sequence): the "a few times later in winter
+// too" the original zone's own comment predicted, now actually used --
+// a second, smaller patch of the exact same colorful current/slip
+// mechanic (same WATERY_ICE_CURRENT speed, untouched below), sitting up
+// on the walking beat between the two obstacle gauntlets rather than down
+// at true ground level. `groundRef` is new: the original zone has none
+// (defaults to flat true ground, 0), this one points at
+// winterWalkingBeatHeightAt so the pool sits at the beat's own elevation
+// instead of floating at sea level or sinking through the platform (see
+// the groundRef generalization in both the onWateryIce physics check and
+// drawWinterWateryIce below).
 const WINTER_WATERY_ICE_ZONES = [
-  { x: WINTER_RAINBOW_POCKET_X, width: WINTER_RAINBOW_OVERHANG_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS }
+  { x: WINTER_RAINBOW_POCKET_X, width: WINTER_RAINBOW_OVERHANG_WIDTH, colors: WINTER_RAINBOW_ICICLE_COLORS },
+  { x: WINTER_WALKING_BEAT_START_X + 740, width: 220, colors: WINTER_RAINBOW_ICICLE_COLORS, groundRef: winterWalkingBeatHeightAt },
 ];
 
 // CONFIRMED NEW FEATURE ("a drip from above occasionally landing in the
@@ -76121,7 +76241,13 @@ function drawWinterWateryIce(camX, zone) {
   const sx = zone.x - camX;
   if (sx < -zone.width - 60 || sx > canvas.width + 60) return;
   const now = performance.now();
-  const top = gy - 7;
+  // CONFIRMED CHANGE (second ice patch up on the walking beat -- see
+  // WINTER_WATERY_ICE_ZONES' own comment): `top` used to assume every
+  // zone sits at true ground level (gy - 7). A zone with its own
+  // groundRef draws at that elevation instead, so the pool actually sits
+  // on the beat's own surface instead of floating down at sea level.
+  const zoneGroundH = zone.groundRef ? zone.groundRef(zone.x + zone.width / 2) : 0;
+  const top = gy - zoneGroundH - 7;
   const baseSeed = zone.x * 0.013;
 
   // CONFIRMED CHANGE ("this needs to tape off not rectangle. also show it
@@ -77448,14 +77574,37 @@ function drawWinterIceSlabIcicles(camX, startWX, endWX, botYAtFn, seedBase) {
     const lean = (pseudoRandom(seed + 2) - 0.5) * baseHalfW * 1.6;
     const neckHalfW = baseHalfW * 0.28;
     const SEGS = 7;
-    const leftPts = [{ x: sx - neckHalfW, y: by }];
-    const rightPts = [{ x: sx + neckHalfW, y: by }];
+    // CONFIRMED BUG FIX ("i want the icicles to blend more into the
+    // platform they are hanging off of. not look pasted on. also none
+    // that have space between top of the icicle and the platform it is
+    // supposed to be hanging from"): the neck used to start exactly AT
+    // the slab's own underside y (`by`), flush with it. That only looks
+    // seamless if the icicle's own computed `by` lines up pixel-for-pixel
+    // with wherever the slab's polygon actually got drawn at that x -- but
+    // the slab body is a sparse-sampled straight-edged polygon (its own
+    // SEGS points connected with plain lineTo) while `winterIceSlabThicknessAt`
+    // is a continuous sine+noise function, so between two slab sample
+    // points the real drawn edge and the icicle's own exact-function `by`
+    // can disagree by a few px -- exactly what read as icicles with a gap
+    // of visible background between them and the ice, or looking stuck on
+    // rather than grown from it. Fixed the same way the rainbow icicles'
+    // own `embedY` already does it: start the neck embedded a little bit
+    // ABOVE `by`, up inside the slab's own body (comfortably less than the
+    // slab's minimum real thickness, so it never pokes out the top) --
+    // drawn after the slab fill, so that embedded stretch paints over part
+    // of the slab's own color, fusing the two with no seam regardless of
+    // small sampling mismatches.
+    const embedDepth = 8 + pseudoRandom(seed + 90) * 8;
+    const embedY = by - embedDepth;
+    const totalLen = embedDepth + len; // tip still ends up at the same by+len as before
+    const leftPts = [{ x: sx - neckHalfW, y: embedY }];
+    const rightPts = [{ x: sx + neckHalfW, y: embedY }];
     let drift = 0;
     for (let s = 1; s <= SEGS; s++) {
       const tt = s / SEGS;
       drift += (pseudoRandom(seed + 60 + s * 3.1) - 0.5) * baseHalfW * 0.65;
       const px = sx + lean * tt + drift;
-      const py = by + len * tt;
+      const py = embedY + totalLen * tt;
       const neckIn = Math.min(1, tt / 0.28); // 0 at the slab -> 1 by the belly
       const taperOut = Math.pow(1 - tt, 1.15);
       const envelope = neckIn * taperOut;
@@ -77472,7 +77621,7 @@ function drawWinterIceSlabIcicles(camX, startWX, endWX, botYAtFn, seedBase) {
     const rightPtsRev = rightPts.slice().reverse();
     smoothPolylineTo(ctx, rightPtsRev);
     ctx.closePath();
-    const igrad = ctx.createLinearGradient(0, by, 0, by + len);
+    const igrad = ctx.createLinearGradient(0, embedY, 0, by + len);
     igrad.addColorStop(0, "rgba(120,155,180,0.82)");
     igrad.addColorStop(1, "rgba(220,238,250,0.22)");
     ctx.fillStyle = igrad;
@@ -77528,6 +77677,17 @@ function drawWinterHalfpipeLanding(camX) {
     botPts.push({ x: wx - camX, y: topY + winterIceSlabThicknessAt(wx) });
   }
 
+  // CONFIRMED BUG FIX ("i dont like this 100% flat line of light then
+  // dark" + "blur them into each other"): this used to be TWO separate
+  // fills -- the full body one flat solid color, then a second patch
+  // layered on top only for the first ~18px down from the top edge with
+  // its own light-to-less-light gradient -- and that second patch's own
+  // flat bottom edge is exactly what read as a hard-edged straight seam
+  // partway down the slab. Merged into one single fill with one gradient
+  // spanning light (right at the top edge) smoothly down into the body's
+  // own darker blue tone, so there's no second shape and therefore no
+  // seam line left to draw at all -- the whole face just reads as one
+  // continuously lit piece of ice.
   ctx.beginPath();
   ctx.moveTo(leftX, topY);
   ctx.lineTo(rightX, topY);
@@ -77537,20 +77697,10 @@ function drawWinterHalfpipeLanding(camX) {
   const capCtrlY = (topY + botPts[0].y) / 2;
   ctx.quadraticCurveTo(capCtrlX, capCtrlY, leftX, topY);
   ctx.closePath();
-  ctx.fillStyle = "rgba(120,160,190,0.9)";
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(leftX, topY + 18);
-  ctx.lineTo(rightX, topY + 18);
-  ctx.lineTo(rightX, topY);
-  ctx.lineTo(leftX, topY);
-  const faceCapCtrlX = leftX - 20;
-  ctx.quadraticCurveTo(faceCapCtrlX, topY + 9, leftX, topY + 18);
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, topY - 10, 0, topY + 18);
+  const grad = ctx.createLinearGradient(0, topY - 6, 0, topY + 70);
   grad.addColorStop(0, "rgba(205,228,245,0.97)");
-  grad.addColorStop(1, "rgba(140,185,215,0.95)");
+  grad.addColorStop(0.3, "rgba(160,197,222,0.93)");
+  grad.addColorStop(1, "rgba(120,160,190,0.9)");
   ctx.fillStyle = grad;
   ctx.fill();
 
@@ -77631,24 +77781,20 @@ function drawWinterWalkingBeat(camX, now) {
   // landing's own right edge exactly (same shared thickness function, same
   // x) -- the two shapes overlap perfectly at the boundary with nothing
   // left to visibly cross.
+  // CONFIRMED BUG FIX ("i dont like this 100% flat line of light then
+  // dark" + "blur them into each other" -- see drawWinterHalfpipeLanding's
+  // own comment for the full story): merged the old flat-solid body fill
+  // plus separately-layered 18px highlight patch into one single fill
+  // with one gradient, so there's no hard seam partway down the slab.
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
   for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
   ctx.closePath();
-  // darker underside first (same layering order as drawWinterSlickPlatform)
-  ctx.fillStyle = "rgba(120,160,190,0.9)";
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(topPts[0].x, topPts[0].y + 18);
-  topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
-  ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y + 18);
-  ctx.lineTo(topPts[0].x, topPts[0].y + 18);
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, topPts[0].y - 10, 0, topPts[0].y + 18);
+  const grad = ctx.createLinearGradient(0, topPts[0].y - 6, 0, topPts[0].y + 70);
   grad.addColorStop(0, "rgba(205,228,245,0.97)");
-  grad.addColorStop(1, "rgba(140,185,215,0.95)");
+  grad.addColorStop(0.3, "rgba(160,197,222,0.93)");
+  grad.addColorStop(1, "rgba(120,160,190,0.9)");
   ctx.fillStyle = grad;
   ctx.fill();
 
@@ -77732,23 +77878,20 @@ function drawWinterSnowballPile(camX) {
     botPts.push({ x: wx - camX, y: topY + winterIceSlabThicknessAt(wx) });
   }
 
+  // CONFIRMED BUG FIX ("i dont like this 100% flat line of light then
+  // dark" + "blur them into each other" -- see drawWinterHalfpipeLanding's
+  // own comment for the full story): merged the old flat-solid body fill
+  // plus separately-layered 18px highlight patch into one single fill
+  // with one gradient, so there's no hard seam partway down the slab.
   ctx.beginPath();
   ctx.moveTo(leftX, topY);
   ctx.lineTo(rightX, topY);
   for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
   ctx.closePath();
-  ctx.fillStyle = "rgba(120,160,190,0.9)";
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(leftX, topY + 18);
-  ctx.lineTo(rightX, topY + 18);
-  ctx.lineTo(rightX, topY);
-  ctx.lineTo(leftX, topY);
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, topY - 10, 0, topY + 18);
+  const grad = ctx.createLinearGradient(0, topY - 6, 0, topY + 70);
   grad.addColorStop(0, "rgba(205,228,245,0.97)");
-  grad.addColorStop(1, "rgba(140,185,215,0.95)");
+  grad.addColorStop(0.3, "rgba(160,197,222,0.93)");
+  grad.addColorStop(1, "rgba(120,160,190,0.9)");
   ctx.fillStyle = grad;
   ctx.fill();
 
@@ -77759,7 +77902,16 @@ function drawWinterSnowballPile(camX) {
   ctx.lineTo(rightX, topY);
   ctx.stroke();
 
-  drawWinterIceSlabIcicles(camX, startX, endX, () => topY, startX * 0.07 + 1300);
+  // CONFIRMED BUG FIX ("i want the icicles to blend more into the
+  // platform... none that have space between top of the icicle and the
+  // platform it is supposed to be hanging from"): this was passing the
+  // slab's own TOP edge (`() => topY`) as the icicle fringe's underside
+  // reference instead of the slab's actual bottom edge -- hanging every
+  // icicle here from the wrong line entirely, which is exactly what read
+  // as a big gap of visible background between the ice and the icicles on
+  // this span. Matches the other two callers now: the real underside,
+  // `topY + winterIceSlabThicknessAt(wx)`.
+  drawWinterIceSlabIcicles(camX, startX, endX, wx => topY + winterIceSlabThicknessAt(wx), startX * 0.07 + 1300);
 
   // the balls themselves -- round, snow-white with light blue-grey shadow
   // shading on the lower-left (ambient light reads from upper-right
@@ -78468,9 +78620,18 @@ function updateWinterScene(deltaTime) {
   // (a secret single-direction launch, now disabled) this is always
   // visible and it's an ONGOING current while you're standing in it, not
   // a one-shot push.
+  // CONFIRMED CHANGE (second ice patch up on the walking beat -- see
+  // WINTER_WATERY_ICE_ZONES' own comment): this used to compare player.y
+  // against a bare 0, true ground level -- fine for the original zone
+  // down there, but the new beat-elevation zone's real "ground" sits much
+  // higher up. Generalized the same way the beat's own hurdle/duck gates
+  // already were: each zone can carry its own `groundRef(x)` function
+  // (defaulting to flat true ground, 0, for the original zone), evaluated
+  // at the player's own x so this still works correctly on bumpy terrain.
   const feetXWatery = player.x + player.width / 2;
-  player.onWateryIce = !fallState.active && player.y <= 0 && !player.jumping &&
-    WINTER_WATERY_ICE_ZONES.some(z => feetXWatery > z.x && feetXWatery < z.x + z.width);
+  const wateryZone = WINTER_WATERY_ICE_ZONES.find(z => feetXWatery > z.x && feetXWatery < z.x + z.width);
+  const wateryGroundRef = wateryZone && wateryZone.groundRef ? wateryZone.groundRef(feetXWatery) : 0;
+  player.onWateryIce = !fallState.active && !!wateryZone && player.y <= wateryGroundRef && !player.jumping;
 
   if (player.onWateryIce) {
     // "semi controlled random": two slow sine waves at different periods,
