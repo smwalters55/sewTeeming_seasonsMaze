@@ -5766,10 +5766,30 @@ function applyPhysics(){
   // reads this index.
   player.winterSlickPlatformIndex = -1;
   const winterNowMs = performance.now();
+  // CONFIRMED BUG FIX ("i have fallen throw an ice platform like i jumped
+  // in the middle of it and went down through it to spike ice... during
+  // the last half of the moving platforms there"): this catch band was a
+  // flat 14px regardless of how fast the player was actually falling --
+  // fine for an ordinary short hop between neighboring platforms, but the
+  // "last half" of this set swings through big height differences (up to
+  // ~140px between neighbors, more if a jump arcs up first before coming
+  // back down), and gravity is cumulative: fall far enough and vy grows
+  // well past what a single frame's flat 14px window can catch, so the
+  // player's own bottom edge jumps from clearly above the platform to
+  // clearly below it in one tick, skipping the landing check entirely and
+  // free-falling straight through to the spikes underneath. Verified
+  // directly: a ~350+px fall reliably tunnels through with the old fixed
+  // band. Widened to scale with the player's own current fall speed (at
+  // least the old 14px, more if they're actually falling faster than
+  // that), so the catch window always covers at least as much vertical
+  // distance as this exact frame's own fall could cover -- the same fix
+  // shape as a swept/velocity-widened collision check, without needing a
+  // full rewrite of this plain top-landing shape.
   WINTER_SLICK_PLATFORMS.forEach((p, pi) => {
     const platformTop = p.height;
     const platformX = winterSlickPlatformX(p, winterNowMs);
     const playerBottom = player.y;
+    const catchBand = Math.max(14, Math.abs(player.vy) + 2);
     // CONFIRMED CHANGE ("no for the ice platforms yu should be able to
     // lnd on the tapered tip"): a prior pass inset the landable span to
     // avoid the tapered ends -- reverted per direct correction, full
@@ -5778,7 +5798,7 @@ function applyPhysics(){
       player.x + player.width > platformX &&
       player.x < platformX + p.width &&
       playerBottom <= platformTop &&
-      playerBottom >= platformTop - 14 &&
+      playerBottom >= platformTop - catchBand &&
       player.vy <= 0
     ) {
       player.y = platformTop;
@@ -5791,17 +5811,21 @@ function applyPhysics(){
 
   // the shelf crossing past the ledge -- same plain top-landing shape as
   // the slick platforms just above (own array/index though, see
-  // WINTER_ICE_SHELVES' own comment for why they're kept separate)
+  // WINTER_ICE_SHELVES' own comment for why they're kept separate).
+  // Same velocity-widened catch band fix as the slick platforms above --
+  // the shelves drift by just as much and sit at similarly varied
+  // heights, so they're exposed to the identical fast-fall tunneling risk.
   player.winterIceShelfIndex = -1;
   WINTER_ICE_SHELVES.forEach((s, si) => {
     const shelfTop = s.height;
     const shelfX = winterIceShelfX(s, winterNowMs);
     const playerBottom = player.y;
+    const catchBand = Math.max(14, Math.abs(player.vy) + 2);
     if (
       player.x + player.width > shelfX &&
       player.x < shelfX + s.width &&
       playerBottom <= shelfTop &&
-      playerBottom >= shelfTop - 14 &&
+      playerBottom >= shelfTop - catchBand &&
       player.vy <= 0
     ) {
       player.y = shelfTop;
@@ -76485,15 +76509,26 @@ function drawWinterSlickPlatform(camX, p, now) {
   topPts.forEach(pt => ctx.lineTo(pt.x, pt.y));
   for (let s = SEGS; s >= 0; s--) ctx.lineTo(botPts[s].x, botPts[s].y);
   ctx.closePath();
-  ctx.fillStyle = "rgba(140,175,200,0.85)";
+  ctx.fillStyle = "rgba(120,160,190,0.9)";
   ctx.fill();
 
   // icy top face -- a slightly shallower tapered sliver sitting inside
   // the underside shape, same points pulled in toward the top edge, so
   // it reads as a real faceted plane rather than a flat cap
+  // CONFIRMED BUG FIX ("the ice disappear thing" -- caught via a direct
+  // Playwright repro, not guessed at: the low/near-ground platforms
+  // (the practice platforms especially, height 40-85) sit against the
+  // winter sky gradient right where it's nearly white (#eef5fa at the
+  // horizon), and this gradient's lightest stop (225,242,252 @ 0.95) was
+  // close enough to that background to read as functionally invisible --
+  // especially once a low-bitrate screen recording crushes the thin,
+  // low-contrast shape away entirely. Darkened/saturated both stops a
+  // real step so the ice reads as itself against every winter sky
+  // position, not just the darker upper sky the taller platforms sit
+  // against.
   const grad = ctx.createLinearGradient(0, topY - 8, 0, topY + 9);
-  grad.addColorStop(0, "rgba(225,242,252,0.95)");
-  grad.addColorStop(1, "rgba(175,210,230,0.9)");
+  grad.addColorStop(0, "rgba(205,228,245,0.97)");
+  grad.addColorStop(1, "rgba(140,185,215,0.95)");
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
@@ -76505,8 +76540,15 @@ function drawWinterSlickPlatform(camX, p, now) {
   }
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.6)";
-  ctx.lineWidth = 1;
+  // CONFIRMED BUG FIX (same pass as above): the outline used to be a
+  // near-white 0.6-alpha stroke, meant as a highlight catching the light
+  // -- but against the pale sky that's drawn the platform's own visible
+  // edge invisible too, removing the one thing that could've kept its
+  // silhouette readable even if the fill blended in. Darker steel-blue,
+  // higher alpha, a touch thicker -- still reads as an icy rim, not a
+  // harsh outline, but now it's an edge that actually shows up.
+  ctx.strokeStyle = "rgba(80,125,160,0.85)";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // a couple of jagged surface cracks, seeded off the platform's own
@@ -76564,16 +76606,19 @@ function drawWinterIceShelf(camX, s, now) {
   ctx.closePath();
   ctx.fillStyle = `rgba(${hue},0.22)`;
   ctx.fill();
-  ctx.fillStyle = "rgba(140,175,200,0.65)";
+  ctx.fillStyle = "rgba(120,160,190,0.75)";
   ctx.fill();
 
   // icy top face -- same pale gradient base as the slick platforms, with
   // a soft radial wash of the shelf's own rainbow hue melded in on top,
   // same "color blob sitting in translucent ice" read the watery ice zone
   // already established
+  // CONFIRMED BUG FIX ("the ice disappear thing" -- same contrast fix as
+  // drawWinterSlickPlatform's own, see its comment): darkened/saturated
+  // so the shelf doesn't blend into the pale winter sky either.
   const grad = ctx.createLinearGradient(0, topY - 8, 0, topY + 9);
-  grad.addColorStop(0, "rgba(225,242,252,0.95)");
-  grad.addColorStop(1, "rgba(175,210,230,0.9)");
+  grad.addColorStop(0, "rgba(205,228,245,0.97)");
+  grad.addColorStop(1, "rgba(140,185,215,0.95)");
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.moveTo(topPts[0].x, topPts[0].y);
@@ -76596,8 +76641,11 @@ function drawWinterIceShelf(camX, s, now) {
   ctx.fillRect(px - 10, topY - 16, s.width + 20, 26);
   ctx.restore();
 
-  ctx.strokeStyle = "rgba(255,255,255,0.6)";
-  ctx.lineWidth = 1;
+  // CONFIRMED BUG FIX (same pass as above): near-white outline -> darker
+  // steel-blue, higher alpha, a touch thicker, same reasoning as
+  // drawWinterSlickPlatform's own stroke fix.
+  ctx.strokeStyle = "rgba(80,125,160,0.85)";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   // a couple of jagged surface cracks, same shape the slick platforms use
